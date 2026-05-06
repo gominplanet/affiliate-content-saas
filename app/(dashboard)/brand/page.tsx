@@ -146,7 +146,7 @@ export default function BrandPage() {
         affiliate_disclaimer: row.affiliate_disclaimer ?? DEFAULT.affiliate_disclaimer,
         primary_color: row.primary_color ?? '#0071e3',
         secondary_color: row.secondary_color ?? '#34c759',
-        writing_sample: (row as any).writing_sample ?? '',
+        writing_sample: row.writing_sample ?? '',
       })
     }
     setLoading(false)

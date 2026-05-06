@@ -24,7 +24,8 @@ export async function GET() {
 
   const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 
-  return new NextResponse(buffer, {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new NextResponse(buffer as any, {
     headers: {
       'Content-Type': 'application/zip',
       'Content-Disposition': 'attachment; filename="kadence-affiliate-child.zip"',

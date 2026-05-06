@@ -26,15 +26,13 @@ export interface Database {
           author_name: string | null
           website_url: string | null
           niches: string[]
-          target_audience: string | null
-          audience_pain_points: string | null
-          awareness_level: string | null
           tone: string[]
           post_length: string
           cta_style: string
           affiliate_disclaimer: string | null
           primary_color: string | null
           secondary_color: string | null
+          writing_sample: string | null
           created_at: string
           updated_at: string
         }
@@ -48,10 +46,15 @@ export interface Database {
           youtube_api_key: string | null
           youtube_channel_id: string | null
           wordpress_url: string | null
+          wordpress_username: string | null
           wordpress_app_password: string | null
           hostinger_api_key: string | null
           anthropic_api_key: string | null
           gemini_api_key: string | null
+          setup_status: string | null
+          setup_subscription_id: string | null
+          setup_job_id: string | null
+          vidiq_snapshot: Json | null
           created_at: string
           updated_at: string
         }
@@ -70,6 +73,8 @@ export interface Database {
           channel_title: string
           published_at: string
           view_count: number | null
+          like_count: number | null
+          comment_count: number | null
           transcript: string | null
           transcript_fetched_at: string | null
           created_at: string
