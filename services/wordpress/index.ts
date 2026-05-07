@@ -95,14 +95,9 @@ export class WordPressService {
       headers: { Cookie: cookies },
     })
     const html = await adminRes.text()
-    console.log('[WP nonce] admin page length:', html.length, 'status:', adminRes.status)
     let m = html.match(/createNonceMiddleware\("([^"]+)"\)/)
     if (!m) m = html.match(/"nonce"\s*:\s*"([^"]+)"/)
-    if (!m) {
-      console.error('[WP nonce] failed to extract — first 500 chars:', html.slice(0, 500))
-      throw new Error('Could not extract REST API nonce from WP admin')
-    }
-    console.log('[WP nonce] extracted:', m[1].slice(0, 4) + '...')
+    if (!m) throw new Error('Could not extract REST API nonce from WP admin')
     this.nonceCache = { cookies, nonce: m[1], expiry: Date.now() + 20 * 60 * 1000 }
     return this.nonceCache
   }
