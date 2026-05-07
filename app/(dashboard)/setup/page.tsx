@@ -528,20 +528,6 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
         </p>
       </div>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-left w-full max-w-md">
-        <p className="text-xs font-semibold text-amber-900 mb-1">One manual step: assign the nav menu</p>
-        <p className="text-xs text-amber-800 mb-2">Your menu was created — just assign it to the header location.</p>
-        <ol className="text-xs text-amber-800 space-y-1">
-          <li>1. WP Admin → Appearance → Menus</li>
-          <li>2. Select your site&apos;s menu from the dropdown</li>
-          <li>3. Check &quot;Primary Menu&quot; under Display location</li>
-          <li>4. Save Menu</li>
-        </ol>
-        <a href={`${wordpressUrl}/wp-admin/nav-menus.php`} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs mt-3 inline-flex">
-          Open Menu Settings <ExternalLink size={11} />
-        </a>
-      </div>
-
       <div className="bg-[#f5f5f7] rounded-xl p-4 text-left w-full max-w-md">
         <p className="text-xs font-semibold text-[#1d1d1f] mb-2">What&apos;s next:</p>
         <ul className="text-xs text-[#6e6e73] space-y-1.5 list-disc list-inside">
