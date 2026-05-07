@@ -277,10 +277,27 @@ export async function POST(request: Request) {
 
     // ── 14. Create nav menu ───────────────────────────────────────────────────
     try {
+      // Discover which location slugs this theme actually registers
+      let locationSlugs: string[] = ['primary']
+      try {
+        const locs = await req<Record<string, unknown>[]>('/menu-locations')
+        if (Array.isArray(locs) && locs.length) {
+          locationSlugs = locs.map((l: Record<string, unknown>) => l.slug as string).filter(Boolean)
+        }
+      } catch { /* use default */ }
+
       const menu = await req<{ id: number }>('/menus', {
         method: 'POST',
-        body: JSON.stringify({ name: brandName, locations: ['primary', 'primary-menu', 'main-menu'] }),
+        body: JSON.stringify({ name: brandName, locations: locationSlugs }),
       })
+      // Also PATCH to ensure locations are assigned (some WP versions need this)
+      try {
+        await req(`/menus/${menu.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ locations: locationSlugs }),
+        })
+      } catch { /* non-fatal */ }
+
       const menuItems = [
         { title: 'All Reviews', url: `${siteUrl}/` },
         ...categories.map(c => ({ title: c.name, url: `${siteUrl}/category/${c.slug}/` })),
