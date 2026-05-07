@@ -76,16 +76,10 @@ function GateItem({ done, label, desc, href }: { done: boolean; label: string; d
 }
 
 // ── Generation status badge ───────────────────────────────────────────────────
-type GenStatus = 'idle' | 'generating' | 'done' | 'error'
+type GenStatus = 'idle' | 'generating' | 'done' | 'adding-images' | 'images-done' | 'error'
 
-const STATUS_STEPS = [
-  'Reading transcript…',
-  'Generating blog post…',
-  'Creating hero image…',
-  'Creating lifestyle image…',
-  'Creating setting image…',
-  'Uploading to WordPress…',
-]
+const GEN_STEPS = ['Reading transcript…', 'Generating blog post…', 'Publishing to WordPress…']
+const IMG_STEPS = ['Fetching YouTube thumbnail…', 'Uploading to WordPress…', 'Setting as featured image…']
 
 function GenerateButton({
   videoId,
@@ -93,19 +87,24 @@ function GenerateButton({
   onDone,
 }: {
   videoId: string
-  existingPost?: { url: string; title: string } | null
-  onDone: (url: string, title: string) => void
+  existingPost?: { url: string; title: string; postId?: string; hasImages?: boolean } | null
+  onDone: (url: string, title: string, postId: string) => void
 }) {
-  const [status, setStatus] = useState<GenStatus>(existingPost ? 'done' : 'idle')
+  const initStatus: GenStatus = existingPost
+    ? (existingPost.hasImages ? 'images-done' : 'done')
+    : 'idle'
+  const [status, setStatus] = useState<GenStatus>(initStatus)
   const [stepIdx, setStepIdx] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState(existingPost || null)
+  const [postId, setPostId] = useState<string | null>(existingPost?.postId || null)
 
   useEffect(() => {
-    if (status !== 'generating') return
+    if (status !== 'generating' && status !== 'adding-images') return
+    const steps = status === 'generating' ? GEN_STEPS : IMG_STEPS
     const interval = setInterval(() => {
-      setStepIdx((i) => (i < STATUS_STEPS.length - 1 ? i + 1 : i))
-    }, 8000)
+      setStepIdx((i) => (i < steps.length - 1 ? i + 1 : i))
+    }, 9000)
     return () => clearInterval(interval)
   }, [status])
 
@@ -119,27 +118,76 @@ function GenerateButton({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Generation failed')
-      setResult({ url: data.wordpressUrl, title: data.title })
+      let data: Record<string, unknown> = {}
+      try { data = await res.json() } catch {
+        throw new Error(`Server error (${res.status}) — check Vercel logs`)
+      }
+      if (!res.ok) throw new Error((data.error as string) || 'Generation failed')
+      setResult({ url: data.wordpressUrl as string, title: data.title as string })
+      setPostId(data.postId as string)
       setStatus('done')
-      onDone(data.wordpressUrl, data.title)
+      onDone(data.wordpressUrl as string, data.title as string, data.postId as string)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unknown error')
       setStatus('error')
     }
   }
 
+  async function addImages() {
+    if (!postId) {
+      setError('Post ID missing — please regenerate the post first')
+      return
+    }
+    setStatus('adding-images')
+    setStepIdx(0)
+    setError(null)
+    try {
+      const res = await fetch('/api/blog/images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      })
+      let data: Record<string, unknown> = {}
+      try { data = await res.json() } catch {
+        throw new Error(`Server error (${res.status}) — check Vercel logs`)
+      }
+      if (!res.ok) throw new Error((data.error as string) || 'Image generation failed')
+      setStatus('images-done')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+      setStatus('done') // fall back to "done without images" so user can retry
+    }
+  }
+
+  if (status === 'images-done' && result) {
+    return (
+      <div className="flex items-center gap-3">
+        <a href={result.url} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline">
+          <CheckCircle size={13} /> View post <ExternalLink size={11} />
+        </a>
+        <span className="text-xs text-[#86868b]">· thumbnail set</span>
+      </div>
+    )
+  }
+
   if (status === 'done' && result) {
     return (
-      <a
-        href={result.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline"
-      >
-        <CheckCircle size={13} /> View post <ExternalLink size={11} />
-      </a>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-3 flex-wrap">
+          <a href={result.url} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline">
+            <CheckCircle size={13} /> View post <ExternalLink size={11} />
+          </a>
+          <button onClick={addImages}
+            className="flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:underline">
+            <Sparkles size={12} /> Set thumbnail
+          </button>
+        </div>
+        {error && (
+          <p className="text-xs text-[#ff3b30]">{error}</p>
+        )}
+      </div>
     )
   }
 
@@ -147,7 +195,16 @@ function GenerateButton({
     return (
       <div className="flex items-center gap-2 text-xs text-[#6e6e73]">
         <Loader2 size={13} className="animate-spin text-[#0071e3]" />
-        <span>{STATUS_STEPS[stepIdx]}</span>
+        <span>{GEN_STEPS[stepIdx]}</span>
+      </div>
+    )
+  }
+
+  if (status === 'adding-images') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-[#6e6e73]">
+        <Loader2 size={13} className="animate-spin text-[#ff9500]" />
+        <span>{IMG_STEPS[stepIdx]}</span>
       </div>
     )
   }
@@ -155,7 +212,7 @@ function GenerateButton({
   if (status === 'error') {
     return (
       <div className="flex flex-col gap-1">
-        <p className="text-xs text-[#ff3b30] line-clamp-2">{error}</p>
+        <p className="text-xs text-[#ff3b30] line-clamp-3">{error}</p>
         <button onClick={generate} className="text-xs text-[#0071e3] hover:underline text-left">
           Retry →
         </button>
@@ -164,10 +221,8 @@ function GenerateButton({
   }
 
   return (
-    <button
-      onClick={generate}
-      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors"
-    >
+    <button onClick={generate}
+      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
       <Wand2 size={12} /> Generate post
     </button>
   )
@@ -180,8 +235,8 @@ function VideoCard({
   onGenerated,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string } | null
-  onGenerated: (videoId: string, url: string, title: string) => void
+  post?: { url: string; title: string; postId?: string; hasImages?: boolean } | null
+  onGenerated: (videoId: string, url: string, title: string, postId: string) => void
 }) {
   const thumb = video.thumbnail_url as string
   const title = video.title as string
@@ -210,7 +265,7 @@ function VideoCard({
         <GenerateButton
           videoId={id}
           existingPost={post}
-          onDone={(url, t) => onGenerated(id, url, t)}
+          onDone={(url, t, pid) => onGenerated(id, url, t, pid)}
         />
       </div>
     </div>
@@ -221,7 +276,7 @@ function VideoCard({
 export default function ContentPage() {
   const supabase = createBrowserClient()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; hasImages?: boolean }>>({})
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -241,7 +296,7 @@ export default function ContentPage() {
         supabase.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password').eq('user_id', user.id).single(),
         supabase
           .from('blog_posts')
-          .select('video_id,wordpress_url,title')
+          .select('id,video_id,wordpress_url,title,has_images')
           .eq('user_id', user.id)
           .eq('status', 'published'),
       ])
@@ -257,12 +312,14 @@ export default function ContentPage() {
 
     setVideos((vids as Record<string, unknown>[]) ?? [])
 
-    const postMap: Record<string, { url: string; title: string }> = {}
+    const postMap: Record<string, { url: string; title: string; postId?: string; hasImages?: boolean }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       if (p.video_id && p.wordpress_url) {
         postMap[p.video_id as string] = {
           url: p.wordpress_url as string,
           title: p.title as string,
+          postId: p.id as string,
+          hasImages: !!(p.has_images),
         }
       }
     }
@@ -340,8 +397,8 @@ export default function ContentPage() {
               key={video.id as string}
               video={video}
               post={posts[video.id as string] || null}
-              onGenerated={(vid, url, title) => {
-                setPosts((prev) => ({ ...prev, [vid]: { url, title } }))
+              onGenerated={(vid, url, title, postId) => {
+                setPosts((prev) => ({ ...prev, [vid]: { url, title, postId, hasImages: false } }))
               }}
             />
           ))}

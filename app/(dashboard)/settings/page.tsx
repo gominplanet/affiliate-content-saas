@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
-import { User, Key, Bell, Eye, EyeOff, Save, Check, Loader2 } from 'lucide-react'
+import { User, Key, Bell, Eye, EyeOff, Save, Check, Loader2, Wifi } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 type Tab = 'profile' | 'integrations' | 'notifications'
@@ -79,23 +79,19 @@ function Toggle({ label, description, defaultChecked }: { label: string; descrip
 }
 
 interface IntegrationData {
-  youtube_api_key: string
   youtube_channel_id: string
   wordpress_url: string
   wordpress_username: string
   wordpress_app_password: string
-  anthropic_api_key: string
-  hostinger_api_key: string
+  wordpress_api_token: string
 }
 
 const DEFAULT_INTEGRATIONS: IntegrationData = {
-  youtube_api_key: '',
   youtube_channel_id: '',
   wordpress_url: '',
   wordpress_username: '',
   wordpress_app_password: '',
-  anthropic_api_key: '',
-  hostinger_api_key: '',
+  wordpress_api_token: '',
 }
 
 export default function SettingsPage() {
@@ -106,6 +102,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [wpTesting, setWpTesting] = useState(false)
+  const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -119,13 +117,11 @@ export default function SettingsPage() {
     const row = data as any
     if (row) {
       setIntegrations({
-        youtube_api_key: row.youtube_api_key ?? '',
         youtube_channel_id: row.youtube_channel_id ?? '',
         wordpress_url: row.wordpress_url ?? '',
         wordpress_username: row.wordpress_username ?? '',
         wordpress_app_password: row.wordpress_app_password ?? '',
-        anthropic_api_key: row.anthropic_api_key ?? '',
-        hostinger_api_key: row.hostinger_api_key ?? '',
+        wordpress_api_token: row.wordpress_api_token ?? '',
       })
     }
     setLoading(false)
@@ -137,6 +133,29 @@ export default function SettingsPage() {
     setIntegrations((prev) => ({ ...prev, [key]: value }))
   }
 
+  async function testWordPress() {
+    setWpTesting(true)
+    setWpTestResult(null)
+    try {
+      const res = await fetch('/api/wordpress/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: integrations.wordpress_url,
+          username: integrations.wordpress_username,
+          password: integrations.wordpress_app_password,
+          apiToken: integrations.wordpress_api_token || undefined,
+        }),
+      })
+      const data = await res.json()
+      setWpTestResult({ ok: data.ok, message: data.message || data.error })
+    } catch {
+      setWpTestResult({ ok: false, message: 'Request failed — check your site URL' })
+    } finally {
+      setWpTesting(false)
+    }
+  }
+
   async function saveIntegrations() {
     setSaving(true)
     setError(null)
@@ -145,13 +164,11 @@ export default function SettingsPage() {
     const { error: err } = await supabase.from('integrations').upsert(
       {
         user_id: user.id,
-        youtube_api_key: integrations.youtube_api_key || null,
         youtube_channel_id: integrations.youtube_channel_id || null,
         wordpress_url: integrations.wordpress_url || null,
         wordpress_username: integrations.wordpress_username || null,
         wordpress_app_password: integrations.wordpress_app_password || null,
-        anthropic_api_key: integrations.anthropic_api_key || null,
-        hostinger_api_key: integrations.hostinger_api_key || null,
+        wordpress_api_token: integrations.wordpress_api_token || null,
       },
       { onConflict: 'user_id' },
     )
@@ -189,25 +206,6 @@ export default function SettingsPage() {
             </div>
           ) : (
             <>
-              {/* AI */}
-              <div className="card p-6">
-                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-                  <div className="w-8 h-8 rounded-lg bg-[#0071e3]/10 flex items-center justify-center text-sm font-bold text-[#0071e3]">A</div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#1d1d1f]">Anthropic</p>
-                    <p className="text-xs text-[#86868b]">Powers blog post generation</p>
-                  </div>
-                  <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-[#0071e3] hover:underline">Get key ↗</a>
-                </div>
-                <SecretField
-                  label="Anthropic API Key"
-                  value={integrations.anthropic_api_key}
-                  onChange={(v) => setField('anthropic_api_key', v)}
-                  placeholder="sk-ant-..."
-                  hint="Required to generate blog posts from your videos."
-                />
-              </div>
-
               {/* YouTube */}
               <div className="card p-6">
                 <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
@@ -216,26 +214,19 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-[#1d1d1f]">YouTube</p>
-                    <p className="text-xs text-[#86868b]">Sync videos and transcripts</p>
+                    <p className="text-xs text-[#86868b]">Paste your channel ID to sync videos</p>
                   </div>
                 </div>
-                <div className="flex flex-col gap-4">
-                  <SecretField
-                    label="YouTube API Key"
-                    value={integrations.youtube_api_key}
-                    onChange={(v) => setField('youtube_api_key', v)}
-                    placeholder="AIzaSy..."
+                <div>
+                  <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Channel ID</label>
+                  <input
+                    type="text"
+                    value={integrations.youtube_channel_id}
+                    onChange={(e) => setField('youtube_channel_id', e.target.value)}
+                    placeholder="UCxxxxxxxxxxxxxxx"
+                    className="input-field font-mono text-xs"
                   />
-                  <div>
-                    <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Channel ID</label>
-                    <input
-                      type="text"
-                      value={integrations.youtube_channel_id}
-                      onChange={(e) => setField('youtube_channel_id', e.target.value)}
-                      placeholder="UCxxxxxxxxxxxxxxx"
-                      className="input-field font-mono text-xs"
-                    />
-                  </div>
+                  <p className="text-xs text-[#86868b] mt-1">Found in your YouTube Studio → Settings → Channel → Advanced</p>
                 </div>
               </div>
 
@@ -278,24 +269,31 @@ export default function SettingsPage() {
                     placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
                     hint="WP Admin → Users → Profile → Application Passwords"
                   />
-                </div>
-              </div>
-
-              {/* Hostinger */}
-              <div className="card p-6">
-                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-                  <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-sm font-bold text-purple-600">H</div>
-                  <div>
-                    <p className="text-sm font-semibold text-[#1d1d1f]">Hostinger <span className="text-xs font-normal text-[#86868b]">optional</span></p>
-                    <p className="text-xs text-[#86868b]">VPS management API</p>
+                  <SecretField
+                    label={<>API Token <span className="text-xs font-normal text-[#86868b]">— recommended for Hostinger</span></>}
+                    value={integrations.wordpress_api_token}
+                    onChange={(v) => setField('wordpress_api_token', v)}
+                    placeholder="ctt_k8mP2xQnR5vL9wJ3..."
+                    hint="Set this in wp-config.php as CONTENT_TOOL_TOKEN and install the mu-plugin — bypasses host auth issues"
+                  />
+                  {/* Test connection */}
+                  <div className="flex items-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={testWordPress}
+                      disabled={wpTesting || !integrations.wordpress_url || !integrations.wordpress_username || !integrations.wordpress_app_password}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 rounded-lg text-[#1d1d1f] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors"
+                    >
+                      {wpTesting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
+                      Test connection
+                    </button>
+                    {wpTestResult && (
+                      <span className={`text-xs font-medium ${wpTestResult.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>
+                        {wpTestResult.message}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <SecretField
-                  label="Hostinger API Key"
-                  value={integrations.hostinger_api_key}
-                  onChange={(v) => setField('hostinger_api_key', v)}
-                  placeholder="hs_live_..."
-                />
               </div>
 
               {error && (
@@ -309,7 +307,7 @@ export default function SettingsPage() {
                   ? <><Check size={14} /> Saved!</>
                   : saving
                   ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
-                  : <><Save size={14} /> Save API keys</>
+                  : <><Save size={14} /> Save</>
                 }
               </button>
             </>

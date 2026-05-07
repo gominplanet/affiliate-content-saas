@@ -1,14 +1,24 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
-import { createOpenAIService } from '@/services/openai'
 import { createWordPressService } from '@/services/wordpress'
 import { YoutubeTranscript } from 'youtube-transcript'
 
-// Allow up to 120s — generation + 3 images + WP publish
-export const maxDuration = 120
+// Phase 1: Claude generation + WordPress text publish only (~30-40s)
+// Images are generated separately via /api/blog/images
+export const maxDuration = 300
 
 export async function POST(request: Request) {
+  try {
+    return await handleGenerate(request)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[/api/blog/generate] unhandled error:', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
+
+async function handleGenerate(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -16,7 +26,7 @@ export async function POST(request: Request) {
   const { videoId } = await request.json()
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
-  // ── 1. Fetch video from DB ────────────────────────────────────────────────
+  // ── 1. Fetch video ────────────────────────────────────────────────────────
   const { data: video, error: videoErr } = await supabase
     .from('youtube_videos')
     .select('*')
@@ -52,7 +62,7 @@ export async function POST(request: Request) {
   const wp = integration as Record<string, string> | null
   if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
     return NextResponse.json(
-      { error: 'WordPress not connected. Complete setup first.' },
+      { error: 'WordPress not connected. Add your WordPress credentials in Settings.' },
       { status: 400 },
     )
   }
@@ -66,13 +76,11 @@ export async function POST(request: Request) {
         { lang: 'en' },
       )
       transcript = segments.map((s: { text: string }) => s.text).join(' ')
-      // Cache it
       await supabase
         .from('youtube_videos')
         .update({ transcript, transcript_fetched_at: new Date().toISOString() })
         .eq('id', videoId)
     } catch {
-      // Transcript unavailable — Claude will work with description only
       transcript = ''
     }
   }
@@ -109,65 +117,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 
-  // ── 6. Generate 3 images with DALL-E 3 ───────────────────────────────────
-  let images: { hero: string; lifestyle: string; setting: string } | null = null
-  try {
-    const openai = createOpenAIService()
-    images = await openai.generateImageSet(generated.imagePrompts)
-  } catch (err: unknown) {
-    // Image generation failure is non-fatal — publish without images
-    console.error('Image generation failed:', err)
-  }
+  // ── 6. Strip image placeholders (images added later via /api/blog/images) ─
+  const content = generated.content
+    .replace('{{LIFESTYLE_IMAGE}}', '')
+    .replace('{{SETTING_IMAGE}}', '')
 
-  // ── 7. Upload images to WordPress ─────────────────────────────────────────
+  const slug = generated.slug.slice(0, 60)
+
+  // ── 7. Resolve tag IDs ────────────────────────────────────────────────────
   const wpService = createWordPressService(
     wp.wordpress_url,
     wp.wordpress_username,
     wp.wordpress_app_password,
+    wp.wordpress_api_token || undefined,
   )
 
-  const slug = generated.slug.slice(0, 60)
-  let heroMediaId: number | undefined
-  let lifestyleUrl = ''
-  let settingUrl = ''
-
-  if (images) {
-    try {
-      const [heroMedia, lifestyleMedia, settingMedia] = await Promise.all([
-        wpService.uploadImageFromBase64(images.hero, `${slug}-hero.png`),
-        wpService.uploadImageFromBase64(images.lifestyle, `${slug}-lifestyle.png`),
-        wpService.uploadImageFromBase64(images.setting, `${slug}-setting.png`),
-      ])
-      heroMediaId = heroMedia.id
-      lifestyleUrl = lifestyleMedia.source_url
-      settingUrl = settingMedia.source_url
-    } catch (err: unknown) {
-      console.error('Image upload failed:', err)
-    }
-  }
-
-  // ── 8. Inject image URLs into content ─────────────────────────────────────
-  let content = generated.content
-
-  if (lifestyleUrl) {
-    content = content.replace(
-      '{{LIFESTYLE_IMAGE}}',
-      `<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${lifestyleUrl}" alt="${generated.title} in use"/><figcaption class="gr-img-caption">Tested in real conditions</figcaption></figure><!-- /wp:image -->`,
-    )
-  } else {
-    content = content.replace('{{LIFESTYLE_IMAGE}}', '')
-  }
-
-  if (settingUrl) {
-    content = content.replace(
-      '{{SETTING_IMAGE}}',
-      `<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${settingUrl}" alt="${generated.title}"/></figure><!-- /wp:image -->`,
-    )
-  } else {
-    content = content.replace('{{SETTING_IMAGE}}', '')
-  }
-
-  // ── 9. Resolve tag IDs in WordPress ───────────────────────────────────────
   let tagIds: number[] = []
   try {
     tagIds = await wpService.resolveTagIds(generated.tags.slice(0, 8))
@@ -175,7 +139,7 @@ export async function POST(request: Request) {
     console.error('Tag resolution failed:', err)
   }
 
-  // ── 10. Publish to WordPress ──────────────────────────────────────────────
+  // ── 8. Publish text post to WordPress ────────────────────────────────────
   let wpPost
   try {
     wpPost = await wpService.createPost({
@@ -185,7 +149,6 @@ export async function POST(request: Request) {
       excerpt: generated.excerpt,
       status: 'publish',
       tags: tagIds,
-      ...(heroMediaId ? { featured_media: heroMediaId } : {}),
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'WordPress publish failed'
@@ -193,7 +156,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 
-  // ── 11. Save to blog_posts table ──────────────────────────────────────────
+  // ── 9. Save to blog_posts ─────────────────────────────────────────────────
   const { data: savedPost } = await supabase
     .from('blog_posts')
     .insert({
@@ -209,6 +172,8 @@ export async function POST(request: Request) {
       ai_model: 'claude-sonnet-4-5',
       generation_prompt_version: 'v2.0',
       published_at: new Date().toISOString(),
+      // Store image prompts so Phase 2 can use them
+      image_prompts: generated.imagePrompts,
     })
     .select()
     .single()
@@ -219,6 +184,7 @@ export async function POST(request: Request) {
     wordpressPostId: wpPost.id,
     wordpressUrl: wpPost.link,
     title: generated.title,
+    hasImages: false,
   })
 }
 

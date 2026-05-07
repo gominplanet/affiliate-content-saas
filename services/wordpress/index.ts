@@ -33,23 +33,98 @@ export interface WPTagResponse {
 
 export class WordPressService {
   private baseUrl: string
+  private siteUrl: string
   private authHeader: string
+  private apiToken: string
+  private username: string
+  private password: string
+  private nonceCache: { cookies: string; nonce: string; expiry: number } | null = null
 
-  constructor(siteUrl: string, username: string, appPassword: string) {
-    this.baseUrl = `${siteUrl.replace(/\/$/, '')}/wp-json/wp/v2`
+  constructor(siteUrl: string, username: string, appPassword: string, apiToken?: string) {
+    this.siteUrl = siteUrl.replace(/\/$/, '')
+    this.baseUrl = `${this.siteUrl}/wp-json/wp/v2`
     const cleanPassword = appPassword.replace(/\s+/g, '')
     const encoded = Buffer.from(`${username}:${cleanPassword}`).toString('base64')
     this.authHeader = `Basic ${encoded}`
+    this.apiToken = apiToken || ''
+    this.username = username
+    this.password = cleanPassword
+  }
+
+  // ── Nonce-based auth fallback (for hosts that strip Authorization headers) ──
+
+  private async loginAndGetNonce(): Promise<{ cookies: string; nonce: string }> {
+    if (this.nonceCache && Date.now() < this.nonceCache.expiry) {
+      return this.nonceCache
+    }
+    // apiToken holds the real WP password when set by connect-and-setup.
+    // For gominreviews.com it holds an API token but we never reach this path there.
+    const loginPassword = this.apiToken || this.password
+    const loginBody = new URLSearchParams({
+      log: this.username,
+      pwd: loginPassword,
+      'wp-submit': 'Log In',
+      redirect_to: '/wp-admin/',
+      testcookie: '1',
+    })
+    const loginRes = await fetch(`${this.siteUrl}/wp-login.php`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Cookie: 'wordpress_test_cookie=WP+Cookie+check',
+      },
+      body: loginBody.toString(),
+      redirect: 'manual',
+    })
+    const rawCookies: string[] = []
+    loginRes.headers.forEach((val, key) => {
+      if (key.toLowerCase() === 'set-cookie') rawCookies.push(val)
+    })
+    if (!rawCookies.some(c => c.includes('wordpress_logged_in_'))) {
+      throw new Error('WordPress login failed — credentials may have changed')
+    }
+    const seen = new Set<string>()
+    const cookieParts: string[] = []
+    for (const raw of rawCookies) {
+      const kv = raw.split(';')[0].trim()
+      const key = kv.split('=')[0]
+      if (!seen.has(key)) { seen.add(key); cookieParts.push(kv) }
+    }
+    const cookies = cookieParts.join('; ')
+    const adminRes = await fetch(`${this.siteUrl}/wp-admin/index.php`, {
+      headers: { Cookie: cookies },
+    })
+    const html = await adminRes.text()
+    const m = html.match(/createNonceMiddleware\("([^"]+)"\)/) || html.match(/"nonce"\s*:\s*"([^"]+)"/)
+    if (!m) throw new Error('Could not extract REST API nonce from WP admin')
+    this.nonceCache = { cookies, nonce: m[1], expiry: Date.now() + 20 * 60 * 1000 }
+    return this.nonceCache
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      ...options,
-      headers: {
-        Authorization: this.authHeader,
-        ...options.headers,
-      },
-    })
+    const method = (options.method || 'GET').toUpperCase()
+    const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+
+    const buildHeaders = (nonce?: { cookies: string; nonce: string }): Record<string, string> => {
+      if (nonce) return { Cookie: nonce.cookies, 'X-WP-Nonce': nonce.nonce }
+      if (this.apiToken) return { 'X-Api-Token': this.apiToken }
+      return { Authorization: this.authHeader }
+    }
+
+    const run = (authHeaders: Record<string, string>) =>
+      fetch(`${this.baseUrl}${path}`, {
+        ...options,
+        headers: { ...authHeaders, ...(options.headers as Record<string, string> || {}) },
+      })
+
+    let res = await run(buildHeaders())
+
+    // On write 401, retry with login+nonce (server strips Authorization on POST)
+    if (res.status === 401 && isWrite) {
+      const nonce = await this.loginAndGetNonce()
+      res = await run(buildHeaders(nonce))
+    }
+
     if (!res.ok) {
       const body = await res.text()
       throw new Error(`WordPress ${res.status}: ${body.slice(0, 300)}`)
@@ -83,21 +158,29 @@ export class WordPressService {
 
   // ── Media ─────────────────────────────────────────────────────────────────
 
-  async uploadImageFromBase64(
-    b64: string,
+  private async mediaUpload(
+    buffer: Buffer,
     filename: string,
-    mimeType = 'image/png',
+    contentType: string,
   ): Promise<WPMediaResponse> {
-    const buffer = Buffer.from(b64, 'base64')
-    const res = await fetch(`${this.baseUrl}/media`, {
-      method: 'POST',
-      headers: {
-        Authorization: this.authHeader,
-        'Content-Type': mimeType,
-        'Content-Disposition': `attachment; filename="${filename}"`,
-      },
-      body: buffer,
+    const buildHeaders = (nonce?: { cookies: string; nonce: string }): Record<string, string> => ({
+      ...(nonce
+        ? { Cookie: nonce.cookies, 'X-WP-Nonce': nonce.nonce }
+        : this.apiToken
+          ? { 'X-Api-Token': this.apiToken }
+          : { Authorization: this.authHeader }),
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
     })
+
+    const run = (h: Record<string, string>) =>
+      fetch(`${this.baseUrl}/media`, { method: 'POST', headers: h, body: buffer as BodyInit })
+
+    let res = await run(buildHeaders())
+    if (res.status === 401) {
+      const nonce = await this.loginAndGetNonce()
+      res = await run(buildHeaders(nonce))
+    }
     if (!res.ok) {
       const body = await res.text()
       throw new Error(`WP media upload ${res.status}: ${body.slice(0, 300)}`)
@@ -105,25 +188,16 @@ export class WordPressService {
     return res.json() as Promise<WPMediaResponse>
   }
 
+  async uploadImageFromBase64(b64: string, filename: string, mimeType = 'image/png'): Promise<WPMediaResponse> {
+    return this.mediaUpload(Buffer.from(b64, 'base64'), filename, mimeType)
+  }
+
   async uploadImageFromUrl(imageUrl: string, filename: string): Promise<WPMediaResponse> {
     const imgRes = await fetch(imageUrl)
     if (!imgRes.ok) throw new Error(`Failed to fetch image from URL: ${imageUrl}`)
     const buffer = Buffer.from(await imgRes.arrayBuffer())
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
-    const res = await fetch(`${this.baseUrl}/media`, {
-      method: 'POST',
-      headers: {
-        Authorization: this.authHeader,
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${filename}"`,
-      },
-      body: buffer,
-    })
-    if (!res.ok) {
-      const body = await res.text()
-      throw new Error(`WP media upload ${res.status}: ${body.slice(0, 300)}`)
-    }
-    return res.json() as Promise<WPMediaResponse>
+    return this.mediaUpload(buffer, filename, contentType)
   }
 
   // ── Posts ─────────────────────────────────────────────────────────────────
@@ -150,12 +224,124 @@ export class WordPressService {
       return true
     } catch { return false }
   }
+
+  // ── Site setup ────────────────────────────────────────────────────────────
+
+  async setSiteSettings(settings: Record<string, unknown>): Promise<void> {
+    await this.request('/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    })
+  }
+
+  async createCategory(name: string): Promise<number> {
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    // Check if already exists
+    try {
+      const existing = await this.request<{ id: number; slug: string }[]>(
+        `/categories?search=${encodeURIComponent(name)}&per_page=5`,
+      )
+      const match = existing.find(c => c.slug === slug)
+      if (match) return match.id
+    } catch { /* proceed to create */ }
+    const created = await this.request<{ id: number }>('/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, slug }),
+    })
+    return created.id
+  }
+
+  async createPage(title: string, content: string): Promise<{ id: number; link: string }> {
+    return this.request<{ id: number; link: string }>('/pages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content, status: 'publish' }),
+    })
+  }
+
+  async createNavMenu(name: string, items: { title: string; url: string }[]): Promise<void> {
+    try {
+      const menu = await this.request<{ id: number }>('/menus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, locations: ['primary', 'primary-menu', 'main-menu'] }),
+      })
+      await Promise.all(
+        items.map((item, i) =>
+          this.request('/menu-items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: item.title, url: item.url, menus: menu.id, menu_order: i + 1, type: 'custom', status: 'publish' }),
+          }),
+        ),
+      )
+    } catch { /* non-fatal — user can assign menu manually */ }
+  }
+
+  // Inject CSS into WordPress Global Styles (block themes, WP 5.9+).
+  // Falls back to Customizer additional_css for classic themes.
+  // Idempotent — checks for a marker comment before writing.
+  async injectGlobalCss(css: string, marker: string): Promise<boolean> {
+    const marked = `/* ${marker} */\n${css}`
+    // ── Try Global Styles API (block/FSE themes) ──────────────────────────
+    try {
+      const list = await this.request<{ id: number; styles?: { css?: string } }[]>(
+        '/global-styles?per_page=1',
+      )
+      if (list.length) {
+        const { id, styles } = list[0]
+        const existing = styles?.css || ''
+        if (existing.includes(marker)) return true // already injected
+        await this.request(`/global-styles/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ styles: { ...styles, css: existing + '\n' + marked } }),
+        })
+        return true
+      }
+    } catch { /* not a block theme or no global styles — try next */ }
+
+    // ── Try Customizer additional_css (classic themes) ────────────────────
+    try {
+      const siteRes = await fetch(`${this.baseUrl.replace('/wp/v2', '')}/`, {
+        headers: this.apiToken
+          ? { 'X-Api-Token': this.apiToken }
+          : { Authorization: this.authHeader },
+      })
+      if (!siteRes.ok) return false
+
+      // Read existing custom CSS post
+      const rawBase = this.baseUrl.replace('/wp/v2', '')
+      const cssRes = await fetch(`${rawBase}/wp/v2/posts?type=custom_css&per_page=1`, {
+        headers: this.apiToken
+          ? { 'X-Api-Token': this.apiToken }
+          : { Authorization: this.authHeader },
+      })
+      if (!cssRes.ok) return false
+      const cssPosts = await cssRes.json() as { id: number; content: { raw: string } }[]
+      if (!cssPosts.length) return false
+
+      const { id, content } = cssPosts[0]
+      const existing = content?.raw || ''
+      if (existing.includes(marker)) return true
+
+      await this.request(`/posts/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: existing + '\n' + marked }),
+      })
+      return true
+    } catch { return false }
+  }
 }
 
 export function createWordPressService(
   siteUrl: string,
   username: string,
   appPassword: string,
+  apiToken?: string,
 ) {
-  return new WordPressService(siteUrl, username, appPassword)
+  return new WordPressService(siteUrl, username, appPassword, apiToken)
 }

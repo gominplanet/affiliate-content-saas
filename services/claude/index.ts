@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { jsonrepair } from 'jsonrepair'
 
 export interface BrandProfile {
   name: string
@@ -94,8 +95,13 @@ CRITICAL RULES — FOLLOW STRICTLY
 
 5. LENGTH — Hit the target length. Long-form wins on SEO and signals quality.
 
-6. IMAGES — Generate 3 image prompts for DALL-E 3. Specific to the actual product.
-   Photorealistic. Visually distinct from each other.
+6. NO CAPTIONS — Never output any <p class="gr-img-caption"> or caption text anywhere.
+   No figure captions, no image descriptions, no alt-text paragraphs in the HTML output.
+
+7. IMAGES — Generate 3 DALL-E 3 prompts. Rules:
+   NEVER invent a new product design, new colorway, or show the box/packaging.
+   The product must look exactly as it appears in the video and on its product page.
+   Reference the exact product name and its real visual characteristics (color, shape, material) in every prompt.
 
 ═══════════════════════════════════════
 EXACT POST STRUCTURE — IN THIS ORDER
@@ -135,7 +141,7 @@ Use exactly this structure with {VIDEO_ID} replaced:
 .gr-rating-text{font-size:15px;color:rgba(255,255,255,.8);line-height:1.6;max-width:480px}
 .gr-cta-link{display:inline-flex;align-items:center;gap:8px;background:#FFC200;color:#111;font-size:13px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:14px 24px;border-radius:3px;text-decoration:none;margin:8px 0}
 .gr-cta-link:hover{background:#111;color:#FFC200}
-.gr-img-caption{font-size:12px;color:#888;text-align:center;margin-top:6px;font-style:italic}
+.wp-post-image,.post-thumbnail img,.entry-thumbnail img{width:100%!important;height:auto!important;aspect-ratio:16/9;object-fit:cover}
 @media(max-width:600px){.gr-verdict-cols{grid-template-columns:1fr}.gr-rating-box{flex-direction:column;align-items:flex-start}}
 </style>
 <div class="gr-video-wrap">
@@ -180,16 +186,19 @@ Use exactly this structure with {VIDEO_ID} replaced:
 
   Section C: <!-- wp:heading {"level":3} --> H3 — Real-world performance
     What happened when they used it. Specific conditions from transcript.
-    After this section insert lifestyle image placeholder:
-    {{LIFESTYLE_IMAGE}}
 
   Section D: <!-- wp:heading {"level":3} --> H3 — The thing most reviews miss
     An insight from transcript others wouldn't cover.
 
+  After Section D insert mid-article CTA (HTML block — exact same button as [7]):
+  <!-- wp:html -->
+  <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-link">
+    🛒 See Today's Price on Amazon →
+  </a>
+  <!-- /wp:html -->
+
   Section E: <!-- wp:heading {"level":3} --> H3 — Who this is actually for
     Specific scenarios. Real household/lifestyle contexts.
-    After this section insert setting image placeholder:
-    {{SETTING_IMAGE}}
 
   Section F: <!-- wp:heading {"level":3} --> H3 — Direct comparison
     This product vs the next best option. Honest trade-offs.
@@ -217,30 +226,42 @@ Each Q: <!-- wp:heading {"level":3} --><h3>{question}</h3><!-- /wp:heading -->
 </a>
 
 ═══════════════════════════════════════
-OUTPUT — VALID JSON ONLY, NO MARKDOWN
+OUTPUT FORMAT — TWO BLOCKS, IN THIS ORDER
 ═══════════════════════════════════════
 
-{
-  "title": "Product Name Review: Opinionated subtitle answering the key question",
-  "slug": "product-name-review-slug",
-  "excerpt": "2 sentences, max 160 chars, SEO-optimized.",
-  "tags": ["brand name", "product type review", "product type 2026", "feature keyword", "use case keyword", "vs comparison", "niche keyword", "specific detail"],
-  "rating": "4.2",
-  "content": "...full assembled HTML [1]–[7] with {VIDEO_ID} and {AFFILIATE_URL} filled in...",
-  "imagePrompts": {
-    "hero": "Professional product photography of [exact product name], [complementary background], soft studio lighting, sharp focus, 4K, commercial product shot, no text, no watermark",
-    "lifestyle": "Candid lifestyle photo, person using [exact product] in [specific real-world context from transcript], natural lighting, authentic, warm tones",
-    "setting": "[Exact product name] in [different context/setting from transcript], [flat lay or environmental shot], professional photography, natural light"
-  }
-}
+BLOCK 1 — metadata only, no HTML content:
+%%META_START%%
+{"title":"...","slug":"...","excerpt":"...","tags":[...],"rating":"4.2","imagePrompts":{"hero":"...","lifestyle":"...","setting":"..."}}
+%%META_END%%
+
+BLOCK 2 — full HTML content, no JSON escaping needed:
+%%CONTENT_START%%
+[full assembled HTML blocks [1]–[7] with {VIDEO_ID} and {AFFILIATE_URL} filled in]
+%%CONTENT_END%%
+
+BLOCK 1 rules:
+- Valid JSON, no line breaks inside strings
+- excerpt: max 160 chars
+- tags: 8 items
+- imagePrompts.hero: YouTube thumbnail style. Bold text overlay with short specific verdict (max 6 words, specific to this product outcome). NO hype words: never HONEST, TRUTH, REAL, SHOCKING, AMAZING, LEGIT, FINALLY, ACTUALLY, WORTH IT. Dramatic product close-up, studio lighting, high contrast. No packaging, no box.
+- imagePrompts.lifestyle: Person using exact product, shallow depth of field, bokeh background, no box/packaging.
+- imagePrompts.setting: Clean flat lay, exact product, neutral surface, no box/packaging.
+
+BLOCK 2 rules:
+- Raw HTML only — no JSON, no markdown fences
+- Include everything from [1] affiliate disclaimer through [7] CTA button
 
 QUALITY CHECK:
 ✅ Transcript referenced throughout
-✅ Affiliate link 3+ times
+✅ Affiliate link 3+ times (intro, body, mid-article button, final CTA)
 ✅ Buy/Skip items specific to THIS product
 ✅ FAQ product-specific
 ✅ Content hits ${targetLength}
-✅ Image prompts name the actual product`
+✅ No captions anywhere in the HTML
+✅ Image prompts name the actual product with its real color/shape/material
+✅ Hero prompt includes bold text overlay with punchy verdict
+✅ Lifestyle prompt has bokeh/blurred background
+✅ Setting prompt is a flat lay — no box, no packaging`
 }
 
 function extractAffiliateUrl(description: string): string {
@@ -279,7 +300,7 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
 
     const message = await this.client.messages.create({
       model: 'claude-sonnet-4-5',
-      max_tokens: 8192,
+      max_tokens: 16000,
       system: [
         {
           type: 'text',
@@ -292,13 +313,44 @@ ${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available
     })
 
     const raw = message.content[0].type === 'text' ? message.content[0].text : ''
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
 
-    let parsed: BlogGenerationOutput
+    // Extract metadata block %%META_START%% ... %%META_END%%
+    const metaMatch = raw.match(/%%META_START%%\s*([\s\S]*?)\s*%%META_END%%/)
+    const contentMatch = raw.match(/%%CONTENT_START%%\s*([\s\S]*?)\s*%%CONTENT_END%%/)
+
+    if (!metaMatch || !contentMatch) {
+      // Fallback: try legacy single-JSON approach
+      const start = raw.indexOf('{')
+      const end = raw.lastIndexOf('}')
+      const extracted = start >= 0 && end > start ? raw.slice(start, end + 1) : raw.trim()
+      let parsed: BlogGenerationOutput
+      try {
+        parsed = JSON.parse(extracted)
+      } catch {
+        try {
+          parsed = JSON.parse(jsonrepair(extracted))
+        } catch {
+          throw new Error(`Claude returned invalid JSON: ${raw.slice(0, 300)}`)
+        }
+      }
+      parsed.content = parsed.content.replace(/{VIDEO_ID}/g, video.videoId)
+      return parsed
+    }
+
+    let meta: Omit<BlogGenerationOutput, 'content'>
     try {
-      parsed = JSON.parse(cleaned)
+      meta = JSON.parse(metaMatch[1])
     } catch {
-      throw new Error(`Claude returned invalid JSON: ${raw.slice(0, 300)}`)
+      try {
+        meta = JSON.parse(jsonrepair(metaMatch[1]))
+      } catch {
+        throw new Error(`Claude returned invalid metadata JSON: ${metaMatch[1].slice(0, 200)}`)
+      }
+    }
+
+    let parsed: BlogGenerationOutput = {
+      ...meta,
+      content: contentMatch[1].replace(/{VIDEO_ID}/g, video.videoId),
     }
 
     parsed.content = parsed.content.replace(/{VIDEO_ID}/g, video.videoId)
