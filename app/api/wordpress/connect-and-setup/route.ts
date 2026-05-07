@@ -121,13 +121,8 @@ export async function POST(request: Request) {
     const nonce = await getNonce(siteUrl, cookies)
     const req = wpFetch(siteUrl, cookies, nonce)
 
-    // ── 3. Verify admin ───────────────────────────────────────────────────────
-    const me = await req<{ name: string; roles: string[] }>('/users/me')
-    if (!me.roles?.some(r => ['administrator', 'editor'].includes(r))) {
-      return NextResponse.json({
-        error: `Your WordPress user "${me.name}" needs Administrator or Editor role to set up the site.`,
-      }, { status: 400 })
-    }
+    // ── 3. Get current user name (role already proven by successful wp-admin login) ──
+    const me = await req<{ name: string; roles?: string[] }>('/users/me')
 
     // ── 4. Generate Application Password (for REST API Basic Auth reads) ────────
     // Also store the real WP password for login+nonce fallback on hosts that

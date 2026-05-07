@@ -95,8 +95,14 @@ export class WordPressService {
       headers: { Cookie: cookies },
     })
     const html = await adminRes.text()
-    const m = html.match(/createNonceMiddleware\("([^"]+)"\)/) || html.match(/"nonce"\s*:\s*"([^"]+)"/)
-    if (!m) throw new Error('Could not extract REST API nonce from WP admin')
+    console.log('[WP nonce] admin page length:', html.length, 'status:', adminRes.status)
+    let m = html.match(/createNonceMiddleware\("([^"]+)"\)/)
+    if (!m) m = html.match(/"nonce"\s*:\s*"([^"]+)"/)
+    if (!m) {
+      console.error('[WP nonce] failed to extract — first 500 chars:', html.slice(0, 500))
+      throw new Error('Could not extract REST API nonce from WP admin')
+    }
+    console.log('[WP nonce] extracted:', m[1].slice(0, 4) + '...')
     this.nonceCache = { cookies, nonce: m[1], expiry: Date.now() + 20 * 60 * 1000 }
     return this.nonceCache
   }
@@ -107,7 +113,6 @@ export class WordPressService {
 
     const buildHeaders = (nonce?: { cookies: string; nonce: string }): Record<string, string> => {
       if (nonce) return { Cookie: nonce.cookies, 'X-WP-Nonce': nonce.nonce }
-      if (this.apiToken) return { 'X-Api-Token': this.apiToken }
       return { Authorization: this.authHeader }
     }
 
@@ -119,8 +124,8 @@ export class WordPressService {
 
     let res = await run(buildHeaders())
 
-    // On write 401, retry with login+nonce (server strips Authorization on POST)
-    if (res.status === 401 && isWrite) {
+    // On write 401/403, retry with login+nonce (server strips Authorization on POST)
+    if ((res.status === 401 || res.status === 403) && isWrite) {
       const nonce = await this.loginAndGetNonce()
       res = await run(buildHeaders(nonce))
     }
@@ -166,9 +171,7 @@ export class WordPressService {
     const buildHeaders = (nonce?: { cookies: string; nonce: string }): Record<string, string> => ({
       ...(nonce
         ? { Cookie: nonce.cookies, 'X-WP-Nonce': nonce.nonce }
-        : this.apiToken
-          ? { 'X-Api-Token': this.apiToken }
-          : { Authorization: this.authHeader }),
+        : { Authorization: this.authHeader }),
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${filename}"`,
     })
@@ -177,7 +180,7 @@ export class WordPressService {
       fetch(`${this.baseUrl}/media`, { method: 'POST', headers: h, body: buffer as BodyInit })
 
     let res = await run(buildHeaders())
-    if (res.status === 401) {
+    if (res.status === 401 || res.status === 403) {
       const nonce = await this.loginAndGetNonce()
       res = await run(buildHeaders(nonce))
     }
@@ -306,18 +309,14 @@ export class WordPressService {
     // ── Try Customizer additional_css (classic themes) ────────────────────
     try {
       const siteRes = await fetch(`${this.baseUrl.replace('/wp/v2', '')}/`, {
-        headers: this.apiToken
-          ? { 'X-Api-Token': this.apiToken }
-          : { Authorization: this.authHeader },
+        headers: { Authorization: this.authHeader },
       })
       if (!siteRes.ok) return false
 
       // Read existing custom CSS post
       const rawBase = this.baseUrl.replace('/wp/v2', '')
       const cssRes = await fetch(`${rawBase}/wp/v2/posts?type=custom_css&per_page=1`, {
-        headers: this.apiToken
-          ? { 'X-Api-Token': this.apiToken }
-          : { Authorization: this.authHeader },
+        headers: { Authorization: this.authHeader },
       })
       if (!cssRes.ok) return false
       const cssPosts = await cssRes.json() as { id: number; content: { raw: string } }[]
