@@ -9,6 +9,8 @@ export interface AboutPageOptions {
   instagramUrl?: string
   tiktokUrl?: string
   twitterUrl?: string
+  pinterestUrl?: string
+  facebookUrl?: string
 }
 
 function esc(str: string) {
@@ -16,13 +18,15 @@ function esc(str: string) {
 }
 
 export function generateAboutPage(opts: AboutPageOptions): { title: string; content: string } {
-  const { brandName, authorName, aboutText, accentColor, headshotUrl, contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl } = opts
+  const { brandName, authorName, aboutText, accentColor, headshotUrl, contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl } = opts
 
   const socials: string[] = []
   if (youtubeUrl) socials.push(`<a class="ab-social" href="${esc(youtubeUrl)}" target="_blank" rel="noopener">▶ YouTube</a>`)
   if (instagramUrl) socials.push(`<a class="ab-social" href="${esc(instagramUrl)}" target="_blank" rel="noopener">◈ Instagram</a>`)
   if (tiktokUrl) socials.push(`<a class="ab-social" href="${esc(tiktokUrl)}" target="_blank" rel="noopener">♪ TikTok</a>`)
   if (twitterUrl) socials.push(`<a class="ab-social" href="${esc(twitterUrl)}" target="_blank" rel="noopener">✕ Twitter</a>`)
+  if (pinterestUrl) socials.push(`<a class="ab-social" href="${esc(pinterestUrl)}" target="_blank" rel="noopener">📌 Pinterest</a>`)
+  if (facebookUrl) socials.push(`<a class="ab-social" href="${esc(facebookUrl)}" target="_blank" rel="noopener">f Facebook</a>`)
 
   const css = `
 .ab-wrap{max-width:680px;margin:0 auto;padding:20px 0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}

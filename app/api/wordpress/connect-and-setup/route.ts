@@ -127,7 +127,7 @@ export async function POST(request: Request) {
       logoBase64, logoMime, logoFilename,
       headshotBase64, headshotMime, headshotFilename,
       aboutText, contactEmail,
-      youtubeUrl, instagramUrl, tiktokUrl, twitterUrl,
+      youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl,
     } = body
 
     if (!rawUrl || !username || !password) {
@@ -232,15 +232,31 @@ export async function POST(request: Request) {
       } catch { /* skip */ }
     }
 
-    // ── 10. Create home page ──────────────────────────────────────────────────
+    // ── 10. Create or update home page ───────────────────────────────────────
     const { title, content } = generateHomePage({
       brandName, accentColor, categories, siteUrl, tagline,
-      youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, contactEmail, affiliateDisclaimer,
+      youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl,
+      contactEmail, affiliateDisclaimer,
     })
-    const page = await req<{ id: number; link: string }>('/pages', {
-      method: 'POST',
-      body: JSON.stringify({ title, content, status: 'publish' }),
-    })
+
+    // If a front page is already set, update it instead of creating a new one
+    let page: { id: number; link: string }
+    try {
+      const settings = await req<{ page_on_front?: number; show_on_front?: string }>('/settings')
+      if (settings.show_on_front === 'page' && settings.page_on_front) {
+        page = await req<{ id: number; link: string }>(`/pages/${settings.page_on_front}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ title, content }),
+        })
+      } else {
+        throw new Error('no front page set')
+      }
+    } catch {
+      page = await req<{ id: number; link: string }>('/pages', {
+        method: 'POST',
+        body: JSON.stringify({ title, content, status: 'publish' }),
+      })
+    }
 
     // ── 11. Set as front page ─────────────────────────────────────────────────
     try {
@@ -256,7 +272,7 @@ export async function POST(request: Request) {
       try {
         const { title: aTitle, content: aContent } = generateAboutPage({
           brandName, authorName, aboutText, accentColor, headshotUrl,
-          contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl,
+          contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl,
         })
         const aboutPage = await req<{ id: number; link: string }>('/pages', {
           method: 'POST',
@@ -275,7 +291,16 @@ export async function POST(request: Request) {
       })
     } catch { /* non-fatal */ }
 
-    // ── 14. Create nav menu ───────────────────────────────────────────────────
+    // ── 14. Inject CSS to hide empty Kadence footer widget areas ─────────────
+    try {
+      const kadenceCss = `.footer-widget-area:empty,.site-footer .widget-area:empty{display:none!important}.site-footer .footer-widget-area .widget:only-child:empty{display:none!important}`
+      await req('/settings', {
+        method: 'POST',
+        body: JSON.stringify({ custom_css: kadenceCss }),
+      })
+    } catch { /* non-fatal */ }
+
+    // ── 15. Create nav menu ───────────────────────────────────────────────────
     try {
       // Discover which location slugs this theme actually registers
       let locationSlugs: string[] = ['primary']
@@ -318,7 +343,7 @@ export async function POST(request: Request) {
       ))
     } catch { /* non-fatal */ }
 
-    // ── 15. Save credentials + brand extras ──────────────────────────────────
+    // ── 16. Save credentials + brand extras ──────────────────────────────────
     await supabase.from('integrations').upsert(
       {
         user_id: user.id,

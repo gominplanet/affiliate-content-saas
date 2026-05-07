@@ -258,6 +258,8 @@ interface BrandData {
   instagramUrl: string
   tiktokUrl: string
   twitterUrl: string
+  pinterestUrl: string
+  facebookUrl: string
 }
 
 function Step3({ onNext }: { onNext: (data: BrandData) => void }) {
@@ -269,9 +271,11 @@ function Step3({ onNext }: { onNext: (data: BrandData) => void }) {
   const [instagramUrl, setInstagramUrl] = useState('')
   const [tiktokUrl, setTiktokUrl] = useState('')
   const [twitterUrl, setTwitterUrl] = useState('')
+  const [pinterestUrl, setPinterestUrl] = useState('')
+  const [facebookUrl, setFacebookUrl] = useState('')
 
   function handleNext() {
-    onNext({ logo, headshot, aboutText, contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl })
+    onNext({ logo, headshot, aboutText, contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl })
   }
 
   return (
@@ -337,6 +341,8 @@ function Step3({ onNext }: { onNext: (data: BrandData) => void }) {
           { label: 'Instagram URL', value: instagramUrl, set: setInstagramUrl, placeholder: 'https://instagram.com/yourhandle' },
           { label: 'TikTok URL', value: tiktokUrl, set: setTiktokUrl, placeholder: 'https://tiktok.com/@yourhandle' },
           { label: 'Twitter / X URL', value: twitterUrl, set: setTwitterUrl, placeholder: 'https://x.com/yourhandle' },
+          { label: 'Pinterest URL', value: pinterestUrl, set: setPinterestUrl, placeholder: 'https://pinterest.com/yourhandle' },
+          { label: 'Facebook URL', value: facebookUrl, set: setFacebookUrl, placeholder: 'https://facebook.com/yourpage' },
         ].map(({ label, value, set, placeholder }) => (
           <div key={label}>
             <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">{label}</label>
@@ -396,6 +402,8 @@ function Step4({ brandData, onNext }: { brandData: BrandData; onNext: (url: stri
           instagramUrl: brandData.instagramUrl || undefined,
           tiktokUrl: brandData.tiktokUrl || undefined,
           twitterUrl: brandData.twitterUrl || undefined,
+          pinterestUrl: brandData.pinterestUrl || undefined,
+          facebookUrl: brandData.facebookUrl || undefined,
         }),
       })
       setLoadingStep('Setting up your site…')
@@ -556,7 +564,7 @@ export default function SetupPage() {
   const [accentColor, setAccentColor] = useState('#f5a623')
   const [brandData, setBrandData] = useState<BrandData>({
     logo: null, headshot: null, aboutText: '', contactEmail: '',
-    youtubeUrl: '', instagramUrl: '', tiktokUrl: '', twitterUrl: '',
+    youtubeUrl: '', instagramUrl: '', tiktokUrl: '', twitterUrl: '', pinterestUrl: '', facebookUrl: '',
   })
 
   return (

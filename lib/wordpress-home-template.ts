@@ -8,6 +8,8 @@ export interface HomePageOptions {
   instagramUrl?: string
   tiktokUrl?: string
   twitterUrl?: string
+  pinterestUrl?: string
+  facebookUrl?: string
   contactEmail?: string
   affiliateDisclaimer?: string
 }
@@ -17,7 +19,7 @@ function escHtml(str: string): string {
 }
 
 export function generateHomePage(opts: HomePageOptions): { title: string; content: string } {
-  const { brandName, accentColor, categories, siteUrl, tagline, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, contactEmail, affiliateDisclaimer } = opts
+  const { brandName, accentColor, categories, siteUrl, tagline, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl, contactEmail, affiliateDisclaimer } = opts
   const base = siteUrl.replace(/\/$/, '')
 
   const tabLinks = [
@@ -55,7 +57,7 @@ export function generateHomePage(opts: HomePageOptions): { title: string; conten
   ].join('')
 
   const js = `(function(){
-  fetch('/wp-json/wp/v2/posts?per_page=10&orderby=date&order=desc&_embed=wp:featuredmedia,wp:term')
+  fetch('${base}/wp-json/wp/v2/posts?per_page=10&orderby=date&order=desc&_embed=wp:featuredmedia,wp:term')
     .then(function(r){return r.json()})
     .then(function(posts){
       var el=document.getElementById('gr-home');
@@ -98,6 +100,8 @@ export function generateHomePage(opts: HomePageOptions): { title: string; conten
   if (instagramUrl) socialLinks.push(`<a class="gr-footer-social" href="${instagramUrl}" target="_blank" rel="noopener">◈ Instagram</a>`)
   if (tiktokUrl) socialLinks.push(`<a class="gr-footer-social" href="${tiktokUrl}" target="_blank" rel="noopener">♪ TikTok</a>`)
   if (twitterUrl) socialLinks.push(`<a class="gr-footer-social" href="${twitterUrl}" target="_blank" rel="noopener">✕ Twitter</a>`)
+  if (pinterestUrl) socialLinks.push(`<a class="gr-footer-social" href="${pinterestUrl}" target="_blank" rel="noopener">📌 Pinterest</a>`)
+  if (facebookUrl) socialLinks.push(`<a class="gr-footer-social" href="${facebookUrl}" target="_blank" rel="noopener">f Facebook</a>`)
   if (contactEmail) socialLinks.push(`<a class="gr-footer-social" href="mailto:${contactEmail}">✉ Contact</a>`)
 
   const disclaimer = affiliateDisclaimer || `${brandName} uses affiliate links. When you buy through our links, we may earn a commission at no extra cost to you.`
