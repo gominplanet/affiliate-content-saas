@@ -3,6 +3,13 @@ export interface HomePageOptions {
   accentColor: string
   categories: { name: string; slug: string }[]
   siteUrl: string
+  tagline?: string
+  youtubeUrl?: string
+  instagramUrl?: string
+  tiktokUrl?: string
+  twitterUrl?: string
+  contactEmail?: string
+  affiliateDisclaimer?: string
 }
 
 function escHtml(str: string): string {
@@ -10,7 +17,7 @@ function escHtml(str: string): string {
 }
 
 export function generateHomePage(opts: HomePageOptions): { title: string; content: string } {
-  const { brandName, accentColor, categories, siteUrl } = opts
+  const { brandName, accentColor, categories, siteUrl, tagline, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, contactEmail, affiliateDisclaimer } = opts
   const base = siteUrl.replace(/\/$/, '')
 
   const tabLinks = [
@@ -39,6 +46,12 @@ export function generateHomePage(opts: HomePageOptions): { title: string; conten
     `.gr-tag{display:inline-block;background:#1d1d1f;color:#fff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 8px;border-radius:4px;margin:10px 0 5px;text-decoration:none}`,
     `@media(max-width:768px){.gr-hero{grid-template-columns:1fr}.gr-grid{grid-template-columns:repeat(2,1fr)}}`,
     `@media(max-width:480px){.gr-grid{grid-template-columns:1fr}}`,
+    `.gr-footer{margin-top:48px;padding-top:24px;border-top:1px solid #e8e8ed;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center}`,
+    `.gr-footer-socials{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}`,
+    `.gr-footer-social{font-size:12px;font-weight:600;color:${accentColor};text-decoration:none;padding:5px 12px;border:1.5px solid ${accentColor}33;border-radius:100px;transition:all .15s}`,
+    `.gr-footer-social:hover{background:${accentColor};color:#fff}`,
+    `.gr-footer-copy{font-size:12px;color:#aeaeb2;margin:0}`,
+    `.gr-footer-disclaimer{font-size:11px;color:#c7c7cc;line-height:1.5;max-width:600px;margin:0}`,
   ].join('')
 
   const js = `(function(){
@@ -80,11 +93,28 @@ export function generateHomePage(opts: HomePageOptions): { title: string; conten
     }).catch(function(){});
 })();`
 
+  const socialLinks: string[] = []
+  if (youtubeUrl) socialLinks.push(`<a class="gr-footer-social" href="${youtubeUrl}" target="_blank" rel="noopener">▶ YouTube</a>`)
+  if (instagramUrl) socialLinks.push(`<a class="gr-footer-social" href="${instagramUrl}" target="_blank" rel="noopener">◈ Instagram</a>`)
+  if (tiktokUrl) socialLinks.push(`<a class="gr-footer-social" href="${tiktokUrl}" target="_blank" rel="noopener">♪ TikTok</a>`)
+  if (twitterUrl) socialLinks.push(`<a class="gr-footer-social" href="${twitterUrl}" target="_blank" rel="noopener">✕ Twitter</a>`)
+  if (contactEmail) socialLinks.push(`<a class="gr-footer-social" href="mailto:${contactEmail}">✉ Contact</a>`)
+
+  const disclaimer = affiliateDisclaimer || `${brandName} uses affiliate links. When you buy through our links, we may earn a commission at no extra cost to you.`
+  const year = new Date().getFullYear()
+
+  const footer = `<div class="gr-footer">
+${socialLinks.length ? `<div class="gr-footer-socials">${socialLinks.join('')}</div>` : ''}
+<p class="gr-footer-copy">© ${year} ${escHtml(brandName)}${tagline ? ` — ${escHtml(tagline)}` : ''}</p>
+<p class="gr-footer-disclaimer">${escHtml(disclaimer)}</p>
+</div>`
+
   const content = `<!-- wp:html -->
 <style>${css}</style>
 <div class="gr-tabs">${tabLinks}</div>
 <div id="gr-home"></div>
 <script>${js}</script>
+${footer}
 <!-- /wp:html -->`
 
   return { title: brandName, content }
