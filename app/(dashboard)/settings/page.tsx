@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
-import { User, Key, Bell, Eye, EyeOff, Save } from 'lucide-react'
+import { User, Key, Bell, Eye, EyeOff, Save, Check, Loader2 } from 'lucide-react'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 type Tab = 'profile' | 'integrations' | 'notifications'
 
@@ -21,9 +22,16 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   )
 }
 
-function ApiKeyField({ label, placeholder, envKey }: { label: string; placeholder: string; envKey: string }) {
+function SecretField({
+  label, value, onChange, placeholder, hint,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  hint?: string
+}) {
   const [show, setShow] = useState(false)
-  const [value, setValue] = useState('')
   return (
     <div>
       <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">{label}</label>
@@ -31,7 +39,7 @@ function ApiKeyField({ label, placeholder, envKey }: { label: string; placeholde
         <input
           type={show ? 'text' : 'password'}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className="input-field pr-10 font-mono text-xs"
         />
@@ -43,7 +51,7 @@ function ApiKeyField({ label, placeholder, envKey }: { label: string; placeholde
           {show ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
       </div>
-      <p className="text-xs text-[#86868b] mt-1">Stored encrypted. Env var: <code className="font-mono bg-gray-100 px-1 rounded">{envKey}</code></p>
+      {hint && <p className="text-xs text-[#86868b] mt-1">{hint}</p>}
     </div>
   )
 }
@@ -70,14 +78,96 @@ function Toggle({ label, description, defaultChecked }: { label: string; descrip
   )
 }
 
+interface IntegrationData {
+  youtube_api_key: string
+  youtube_channel_id: string
+  wordpress_url: string
+  wordpress_username: string
+  wordpress_app_password: string
+  anthropic_api_key: string
+  hostinger_api_key: string
+}
+
+const DEFAULT_INTEGRATIONS: IntegrationData = {
+  youtube_api_key: '',
+  youtube_channel_id: '',
+  wordpress_url: '',
+  wordpress_username: '',
+  wordpress_app_password: '',
+  anthropic_api_key: '',
+  hostinger_api_key: '',
+}
+
 export default function SettingsPage() {
-  const [tab, setTab] = useState<Tab>('profile')
+  const supabase = createBrowserClient()
+  const [tab, setTab] = useState<Tab>('integrations')
+  const [integrations, setIntegrations] = useState<IntegrationData>(DEFAULT_INTEGRATIONS)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase
+      .from('integrations')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = data as any
+    if (row) {
+      setIntegrations({
+        youtube_api_key: row.youtube_api_key ?? '',
+        youtube_channel_id: row.youtube_channel_id ?? '',
+        wordpress_url: row.wordpress_url ?? '',
+        wordpress_username: row.wordpress_username ?? '',
+        wordpress_app_password: row.wordpress_app_password ?? '',
+        anthropic_api_key: row.anthropic_api_key ?? '',
+        hostinger_api_key: row.hostinger_api_key ?? '',
+      })
+    }
+    setLoading(false)
+  }, [supabase])
+
+  useEffect(() => { load() }, [load])
+
+  function setField(key: keyof IntegrationData, value: string) {
+    setIntegrations((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function saveIntegrations() {
+    setSaving(true)
+    setError(null)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { error: err } = await supabase.from('integrations').upsert(
+      {
+        user_id: user.id,
+        youtube_api_key: integrations.youtube_api_key || null,
+        youtube_channel_id: integrations.youtube_channel_id || null,
+        wordpress_url: integrations.wordpress_url || null,
+        wordpress_username: integrations.wordpress_username || null,
+        wordpress_app_password: integrations.wordpress_app_password || null,
+        anthropic_api_key: integrations.anthropic_api_key || null,
+        hostinger_api_key: integrations.hostinger_api_key || null,
+      },
+      { onConflict: 'user_id' },
+    )
+    setSaving(false)
+    if (err) {
+      setError(err.message)
+    } else {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    }
+  }
 
   return (
     <>
       <Header title="Settings" subtitle="Manage your account, integrations and notifications." />
 
-      {/* Tab bar */}
       <div className="flex items-center gap-1 bg-[#f5f5f7] p-1 rounded-xl w-fit mb-6">
         <TabButton active={tab === 'profile'} onClick={() => setTab('profile')}>
           <User size={14} /> Profile
@@ -90,143 +180,166 @@ export default function SettingsPage() {
         </TabButton>
       </div>
 
+      {/* Integrations tab */}
+      {tab === 'integrations' && (
+        <div className="max-w-xl flex flex-col gap-5">
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-[#86868b] py-8">
+              <Loader2 size={16} className="animate-spin" /> Loading…
+            </div>
+          ) : (
+            <>
+              {/* AI */}
+              <div className="card p-6">
+                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                  <div className="w-8 h-8 rounded-lg bg-[#0071e3]/10 flex items-center justify-center text-sm font-bold text-[#0071e3]">A</div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#1d1d1f]">Anthropic</p>
+                    <p className="text-xs text-[#86868b]">Powers blog post generation</p>
+                  </div>
+                  <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-[#0071e3] hover:underline">Get key ↗</a>
+                </div>
+                <SecretField
+                  label="Anthropic API Key"
+                  value={integrations.anthropic_api_key}
+                  onChange={(v) => setField('anthropic_api_key', v)}
+                  placeholder="sk-ant-..."
+                  hint="Required to generate blog posts from your videos."
+                />
+              </div>
+
+              {/* YouTube */}
+              <div className="card p-6">
+                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                  <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#FF0000"><path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.54 3.5 12 3.5 12 3.5s-7.54 0-9.38.55A3.02 3.02 0 0 0 .5 6.19C0 8.03 0 12 0 12s0 3.97.5 5.81a3.02 3.02 0 0 0 2.12 2.14C4.46 20.5 12 20.5 12 20.5s7.54 0 9.38-.55a3.02 3.02 0 0 0 2.12-2.14C24 15.97 24 12 24 12s0-3.97-.5-5.81zM9.75 15.5v-7l6.5 3.5-6.5 3.5z"/></svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#1d1d1f]">YouTube</p>
+                    <p className="text-xs text-[#86868b]">Sync videos and transcripts</p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-4">
+                  <SecretField
+                    label="YouTube API Key"
+                    value={integrations.youtube_api_key}
+                    onChange={(v) => setField('youtube_api_key', v)}
+                    placeholder="AIzaSy..."
+                  />
+                  <div>
+                    <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Channel ID</label>
+                    <input
+                      type="text"
+                      value={integrations.youtube_channel_id}
+                      onChange={(e) => setField('youtube_channel_id', e.target.value)}
+                      placeholder="UCxxxxxxxxxxxxxxx"
+                      className="input-field font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* WordPress */}
+              <div className="card p-6">
+                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#21759B"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#1d1d1f]">WordPress</p>
+                    <p className="text-xs text-[#86868b]">Auto-publish blog posts</p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">WordPress Site URL</label>
+                    <input
+                      type="url"
+                      value={integrations.wordpress_url}
+                      onChange={(e) => setField('wordpress_url', e.target.value)}
+                      placeholder="https://yourdomain.com"
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">WordPress Username</label>
+                    <input
+                      type="text"
+                      value={integrations.wordpress_username}
+                      onChange={(e) => setField('wordpress_username', e.target.value)}
+                      placeholder="admin"
+                      className="input-field"
+                    />
+                  </div>
+                  <SecretField
+                    label="Application Password"
+                    value={integrations.wordpress_app_password}
+                    onChange={(v) => setField('wordpress_app_password', v)}
+                    placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
+                    hint="WP Admin → Users → Profile → Application Passwords"
+                  />
+                </div>
+              </div>
+
+              {/* Hostinger */}
+              <div className="card p-6">
+                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                  <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-sm font-bold text-purple-600">H</div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#1d1d1f]">Hostinger <span className="text-xs font-normal text-[#86868b]">optional</span></p>
+                    <p className="text-xs text-[#86868b]">VPS management API</p>
+                  </div>
+                </div>
+                <SecretField
+                  label="Hostinger API Key"
+                  value={integrations.hostinger_api_key}
+                  onChange={(v) => setField('hostinger_api_key', v)}
+                  placeholder="hs_live_..."
+                />
+              </div>
+
+              {error && (
+                <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">
+                  {error}
+                </p>
+              )}
+
+              <button onClick={saveIntegrations} disabled={saving} className="btn-primary self-start">
+                {saved
+                  ? <><Check size={14} /> Saved!</>
+                  : saving
+                  ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
+                  : <><Save size={14} /> Save API keys</>
+                }
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Profile tab */}
       {tab === 'profile' && (
         <div className="max-w-xl flex flex-col gap-5">
           <div className="card p-6">
             <h2 className="text-sm font-semibold text-[#1d1d1f] mb-4">Personal Information</h2>
             <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-4 pb-4 border-b border-gray-100">
-                <div className="w-14 h-14 rounded-full bg-[#0071e3]/10 flex items-center justify-center text-xl font-semibold text-[#0071e3]">
-                  J
-                </div>
-                <div>
-                  <button className="btn-secondary text-xs">Change photo</button>
-                  <p className="text-xs text-[#86868b] mt-1">JPG, PNG up to 2MB</p>
-                </div>
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">First name</label>
-                  <input type="text" defaultValue="Jane" className="input-field" />
+                  <input type="text" className="input-field" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Last name</label>
-                  <input type="text" defaultValue="Smith" className="input-field" />
+                  <input type="text" className="input-field" />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Email</label>
-                <input type="email" defaultValue="jane@example.com" className="input-field" />
+                <input type="email" className="input-field" />
               </div>
             </div>
           </div>
-
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] mb-4">Change Password</h2>
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Current password</label>
-                <input type="password" placeholder="••••••••" className="input-field" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">New password</label>
-                <input type="password" placeholder="Min. 8 characters" className="input-field" />
-              </div>
-            </div>
-          </div>
-
-          <button className="btn-primary self-start">
-            <Save size={14} /> Save changes
-          </button>
-
-          <div className="card p-5 border-[#ff3b30]/20 bg-[#ff3b30]/3">
-            <h2 className="text-sm font-semibold text-[#ff3b30] mb-1">Danger Zone</h2>
-            <p className="text-xs text-[#6e6e73] mb-3">Permanently delete your account and all data.</p>
-            <button className="btn-danger text-xs">Delete account</button>
-          </div>
-        </div>
-      )}
-
-      {/* Integrations tab */}
-      {tab === 'integrations' && (
-        <div className="max-w-xl flex flex-col gap-5">
-          <div className="card p-6">
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-              <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="#FF0000"><path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.54 3.5 12 3.5 12 3.5s-7.54 0-9.38.55A3.02 3.02 0 0 0 .5 6.19C0 8.03 0 12 0 12s0 3.97.5 5.81a3.02 3.02 0 0 0 2.12 2.14C4.46 20.5 12 20.5 12 20.5s7.54 0 9.38-.55a3.02 3.02 0 0 0 2.12-2.14C24 15.97 24 12 24 12s0-3.97-.5-5.81zM9.75 15.5v-7l6.5 3.5-6.5 3.5z"/></svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-[#1d1d1f]">YouTube</p>
-                <p className="text-xs text-[#86868b]">Sync videos and transcripts</p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-4">
-              <ApiKeyField label="YouTube API Key" placeholder="AIzaSy..." envKey="YOUTUBE_API_KEY" />
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Channel ID</label>
-                <input type="text" placeholder="UCxxxxxxxxxxxxxxx" className="input-field font-mono text-xs" />
-              </div>
-            </div>
-          </div>
-
-          <div className="card p-6">
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="#21759B"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-[#1d1d1f]">WordPress / Hostinger</p>
-                <p className="text-xs text-[#86868b]">Auto-publish blog posts</p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">WordPress Site URL</label>
-                <input type="url" placeholder="https://yourdomain.com" className="input-field" />
-              </div>
-              <ApiKeyField label="Application Password" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" envKey="WORDPRESS_APP_PASSWORD" />
-              <ApiKeyField label="Hostinger API Key (optional)" placeholder="hs_live_..." envKey="HOSTINGER_API_KEY" />
-            </div>
-          </div>
-
-          {/* VidIQ */}
-          <div className="card p-6">
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-              <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="8" fill="#7B2FBE"/><text x="5" y="22" fontSize="14" fontWeight="bold" fill="white">V</text></svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-[#1d1d1f]">VidIQ</p>
-                <p className="text-xs text-[#86868b]">Keyword research, video analytics & transcripts</p>
-              </div>
-              <a href="https://geni.us/I8Hz" target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-[#0071e3] hover:underline">
-                Create account ↗
-              </a>
-            </div>
-            <ApiKeyField label="VidIQ API Key" placeholder="vidiq_..." envKey="VIDIQ_API_KEY" />
-          </div>
-
-          {/* Geniuslink */}
-          <div className="card p-6">
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-              <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#FF6B35"/><text x="5" y="22" fontSize="14" fontWeight="bold" fill="white">G</text></svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-[#1d1d1f]">Geniuslink <span className="badge bg-[#ff9500]/10 text-[#ff9500] ml-1">Recommended</span></p>
-                <p className="text-xs text-[#86868b]">Smart affiliate links that work globally</p>
-              </div>
-              <a href="https://geni.us/Y70p9R" target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-[#0071e3] hover:underline">
-                Create account ↗
-              </a>
-            </div>
-            <ApiKeyField label="Geniuslink API Key" placeholder="gl_..." envKey="GENIUSLINK_API_KEY" />
-          </div>
-
-          <button className="btn-primary self-start">
-            <Save size={14} /> Save API keys
-          </button>
+          <button className="btn-primary self-start"><Save size={14} /> Save changes</button>
         </div>
       )}
 
@@ -235,13 +348,11 @@ export default function SettingsPage() {
         <div className="max-w-xl">
           <div className="card p-6">
             <h2 className="text-sm font-semibold text-[#1d1d1f] mb-4">Email Notifications</h2>
-            <div>
-              <Toggle label="New video detected" description="Get notified when a new YouTube video is found in your channel." defaultChecked />
-              <Toggle label="Blog post published" description="Confirmation when a post is successfully published to WordPress." defaultChecked />
-              <Toggle label="Draft ready for review" description="Alert when social drafts are generated and waiting for approval." defaultChecked />
-              <Toggle label="Job failures" description="Immediate alert when a content generation or publishing job fails." defaultChecked />
-              <Toggle label="Weekly digest" description="Weekly summary of your content pipeline performance." />
-            </div>
+            <Toggle label="New video detected" description="Get notified when a new YouTube video is found." defaultChecked />
+            <Toggle label="Blog post published" description="Confirmation when a post is published to WordPress." defaultChecked />
+            <Toggle label="Draft ready for review" description="Alert when social drafts are waiting for approval." defaultChecked />
+            <Toggle label="Job failures" description="Immediate alert when a generation or publishing job fails." defaultChecked />
+            <Toggle label="Weekly digest" description="Weekly summary of your content pipeline." />
           </div>
         </div>
       )}
