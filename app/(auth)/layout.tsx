@@ -12,7 +12,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             alt="MVP Affiliate"
             width={320}
             height={320}
-            className="rounded-3xl w-56 h-56 md:w-80 md:h-80 object-contain"
+            className="w-56 h-56 md:w-80 md:h-80 object-contain mix-blend-multiply dark:mix-blend-screen"
             priority
           />
         </div>
