@@ -47,9 +47,9 @@ function ColorPicker({
   return (
     <div>
       <div className="flex items-center gap-2 mb-2">
-        <div className="w-5 h-5 rounded-md border border-gray-200 flex-shrink-0" style={{ backgroundColor: value }} />
-        <p className="text-xs font-medium text-[#6e6e73]">{label}</p>
-        <code className="text-xs font-mono text-[#86868b] ml-auto">{value}</code>
+        <div className="w-5 h-5 rounded-md border border-gray-200 dark:border-white/10 flex-shrink-0" style={{ backgroundColor: value }} />
+        <p className="text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0]">{label}</p>
+        <code className="text-xs font-mono text-[#86868b] dark:text-[#8e8e93] ml-auto">{value}</code>
       </div>
       <div className="grid grid-cols-8 gap-1.5">
         {COLORS.map((color) => (
@@ -81,7 +81,7 @@ function WordCount({ text, max }: { text: string; max: number }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className={`text-xs tabular-nums ${over ? 'text-[#ff3b30]' : 'text-[#86868b]'}`}>
+      <span className={`text-xs tabular-nums ${over ? 'text-[#ff3b30]' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
         {words} / {max} words
       </span>
     </div>
@@ -182,7 +182,7 @@ export default function BrandPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20 text-[#86868b] text-sm">
+      <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
         Loading…
       </div>
     )
@@ -211,10 +211,10 @@ export default function BrandPage() {
 
           {/* Basic info */}
           <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] mb-4">Brand Identity</h2>
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Brand Identity</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Brand / Site name</label>
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Brand / Site name</label>
                 <input
                   type="text"
                   value={data.name}
@@ -224,7 +224,7 @@ export default function BrandPage() {
                 />
               </div>
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Tagline</label>
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Tagline</label>
                 <input
                   type="text"
                   value={data.tagline}
@@ -234,7 +234,7 @@ export default function BrandPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Author name</label>
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Author name</label>
                 <input
                   type="text"
                   value={data.author_name}
@@ -244,7 +244,7 @@ export default function BrandPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Website URL</label>
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Website URL</label>
                 <input
                   type="url"
                   value={data.website_url}
@@ -258,8 +258,8 @@ export default function BrandPage() {
 
           {/* Niches */}
           <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] mb-1">Affiliate Niches</h2>
-            <p className="text-xs text-[#6e6e73] mb-4">Select the product categories you promote.</p>
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Affiliate Niches</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Select the product categories you promote.</p>
             <div className="flex flex-wrap gap-2">
               {NICHES.map((niche) => {
                 const active = data.niches.includes(niche)
@@ -270,7 +270,7 @@ export default function BrandPage() {
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                       active
                         ? 'bg-[#0071e3]/10 text-[#0071e3] border-[#0071e3]/30'
-                        : 'bg-white text-[#6e6e73] border-gray-200 hover:border-[#0071e3]/40 hover:text-[#0071e3]'
+                        : 'bg-white dark:bg-[#1c1c1e] text-[#6e6e73] dark:text-[#ebebf0] border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 hover:text-[#0071e3]'
                     }`}
                   >
                     {niche}
@@ -282,8 +282,8 @@ export default function BrandPage() {
 
           {/* Writing sample */}
           <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] mb-1">Your Writing Style</h2>
-            <p className="text-xs text-[#6e6e73] mb-4">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your Writing Style</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
               Paste a sample of your writing — a blog post, email, or caption you&apos;re happy with.
               The AI uses this to match your voice and tone when generating content.
             </p>
@@ -304,8 +304,8 @@ export default function BrandPage() {
 
           {/* Tone */}
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] mb-1">Brand Tone</h2>
-            <p className="text-xs text-[#6e6e73] mb-4">Select all that apply.</p>
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Brand Tone</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Select all that apply.</p>
             <div className="flex flex-col gap-1">
               {TONE_OPTIONS.map((tone) => {
                 const active = data.tone.includes(tone)
@@ -319,7 +319,7 @@ export default function BrandPage() {
                     >
                       {active && <Check size={10} className="text-white" />}
                     </div>
-                    <span className="text-sm text-[#1d1d1f]">{tone}</span>
+                    <span className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">{tone}</span>
                   </label>
                 )
               })}
@@ -328,10 +328,10 @@ export default function BrandPage() {
 
           {/* Writing preferences */}
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] mb-4">Content Preferences</h2>
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Content Preferences</h2>
             <div className="flex flex-col gap-3">
               <div>
-                <label className="block text-xs font-medium text-[#6e6e73] mb-1.5">Post length</label>
+                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">Post length</label>
                 <select
                   value={data.post_length}
                   onChange={(e) => set('post_length', e.target.value)}
@@ -344,7 +344,7 @@ export default function BrandPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#6e6e73] mb-1.5">CTA style</label>
+                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">CTA style</label>
                 <select
                   value={data.cta_style}
                   onChange={(e) => set('cta_style', e.target.value)}
@@ -357,7 +357,7 @@ export default function BrandPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#6e6e73] mb-1.5">Affiliate disclaimer</label>
+                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">Affiliate disclaimer</label>
                 <textarea
                   rows={3}
                   value={data.affiliate_disclaimer}
@@ -370,7 +370,7 @@ export default function BrandPage() {
 
           {/* Brand colors */}
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] mb-4">Brand Colors</h2>
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Brand Colors</h2>
             <div className="flex flex-col gap-5">
               <ColorPicker
                 label="Primary color"

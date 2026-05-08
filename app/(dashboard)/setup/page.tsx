@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ExternalLink, CheckCircle, ChevronRight, Loader2,
@@ -29,11 +29,31 @@ const PRESET_COLORS = [
   { hex: '#ff2d55', label: 'Pink' },
 ]
 
+const STORAGE_KEY = 'affiliateos_setup_v2'
+
 interface ImageData {
   base64: string
   mime: string
   filename: string
   preview: string
+}
+
+interface BrandData {
+  logo: ImageData | null
+  headshot: ImageData | null
+  aboutText: string
+  contactEmail: string
+  youtubeUrl: string
+  instagramUrl: string
+  tiktokUrl: string
+  twitterUrl: string
+  pinterestUrl: string
+  facebookUrl: string
+}
+
+const defaultBrand: BrandData = {
+  logo: null, headshot: null, aboutText: '', contactEmail: '',
+  youtubeUrl: '', instagramUrl: '', tiktokUrl: '', twitterUrl: '', pinterestUrl: '', facebookUrl: '',
 }
 
 function StepIndicator({ current }: { current: Step }) {
@@ -49,11 +69,11 @@ function StepIndicator({ current }: { current: Step }) {
               <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
                 done ? 'bg-[#34c759] text-white' :
                 active ? 'bg-[#0071e3] text-white' :
-                'bg-gray-100 text-[#86868b]'
+                'bg-gray-100 text-[#86868b] dark:text-[#8e8e93]'
               }`}>
                 {done ? <CheckCircle size={18} /> : <Icon size={16} />}
               </div>
-              <span className={`text-xs font-medium whitespace-nowrap ${active ? 'text-[#1d1d1f]' : 'text-[#86868b]'}`}>
+              <span className={`text-xs font-medium whitespace-nowrap ${active ? 'text-[#1d1d1f] dark:text-[#f5f5f7]' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
                 {s.label}
               </span>
             </div>
@@ -87,15 +107,15 @@ function ImageUpload({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">{label}</label>
-      {hint && <p className="text-xs text-[#86868b] mb-2">{hint}</p>}
+      <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">{label}</label>
+      {hint && <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-2">{hint}</p>}
       <div className="flex items-center gap-4">
         {value ? (
           <div className="relative">
             <img
               src={value.preview}
               alt=""
-              className={`w-20 h-20 object-cover border border-gray-200 ${shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`}
+              className={`w-20 h-20 object-cover border border-gray-200 dark:border-white/10 ${shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`}
             />
             <button
               type="button"
@@ -109,10 +129,10 @@ function ImageUpload({
           <button
             type="button"
             onClick={() => ref.current?.click()}
-            className={`w-20 h-20 border-2 border-dashed border-gray-300 hover:border-[#0071e3] bg-[#f5f5f7] flex flex-col items-center justify-center gap-1 transition-colors ${shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`}
+            className={`w-20 h-20 border-2 border-dashed border-gray-300 hover:border-[#0071e3] bg-[#f5f5f7] dark:bg-[#000] flex flex-col items-center justify-center gap-1 transition-colors ${shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`}
           >
-            <Upload size={16} className="text-[#86868b]" />
-            <span className="text-[10px] text-[#86868b]">Upload</span>
+            <Upload size={16} className="text-[#86868b] dark:text-[#8e8e93]" />
+            <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Upload</span>
           </button>
         )}
         <button
@@ -167,8 +187,8 @@ function Step1({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] mb-1">Create your Hostinger account</h2>
-        <p className="text-sm text-[#6e6e73]">
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Create your Hostinger account</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           Hostinger is where your affiliate blog will live. You&apos;ll get a domain and fast hosting for under $3/month.
         </p>
       </div>
@@ -178,8 +198,8 @@ function Step1({ onNext }: { onNext: () => void }) {
             <Globe size={20} className="text-[#0071e3]" />
           </div>
           <div className="flex-1">
-            <p className="text-sm font-semibold text-[#1d1d1f] mb-0.5">Hostinger Web Hosting</p>
-            <p className="text-xs text-[#6e6e73] mb-3">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Hostinger Web Hosting</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
               Includes a free domain name, 1-click WordPress installer, fast SSD hosting, and free SSL.
               The <strong>Premium</strong> plan is the sweet spot.
             </p>
@@ -189,8 +209,8 @@ function Step1({ onNext }: { onNext: () => void }) {
           </div>
         </div>
       </div>
-      <div className="bg-[#f5f5f7] rounded-xl p-5">
-        <p className="text-xs font-semibold text-[#1d1d1f] mb-3">What to do on Hostinger:</p>
+      <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">What to do on Hostinger:</p>
         <ol className="flex flex-col gap-3">
           {[
             'Click the link above and choose a hosting plan — Premium or Business recommended.',
@@ -200,14 +220,14 @@ function Step1({ onNext }: { onNext: () => void }) {
           ].map((text, i) => (
             <li key={i} className="flex items-start gap-3">
               <span className="w-5 h-5 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-              <p className="text-xs text-[#6e6e73]">{text}</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
             </li>
           ))}
         </ol>
       </div>
       <div className="flex items-center gap-3">
         <button onClick={onNext} className="btn-primary">I have a Hostinger account <ChevronRight size={15} /></button>
-        <p className="text-xs text-[#86868b]">Already signed up? Skip ahead.</p>
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Already signed up? Skip ahead.</p>
       </div>
     </div>
   )
@@ -218,8 +238,8 @@ function Step2({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] mb-1">Install WordPress on your domain</h2>
-        <p className="text-sm text-[#6e6e73]">Hostinger has a built-in 1-click WordPress installer. Follow these steps inside hPanel.</p>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Install WordPress on your domain</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">Hostinger has a built-in 1-click WordPress installer. Follow these steps inside hPanel.</p>
       </div>
       <div className="flex flex-col gap-3">
         {[
@@ -229,11 +249,11 @@ function Step2({ onNext }: { onNext: () => void }) {
           { title: 'Set your admin credentials', desc: 'Enter an admin username, email, and a strong password. Write these down — you\'ll need them in Step 4.' },
           { title: 'Click "Install" and wait', desc: 'WordPress installs in about 1–2 minutes. You\'ll see a success message when done.' },
         ].map(({ title, desc, action }, i) => (
-          <div key={i} className="flex items-start gap-4 p-4 rounded-xl bg-[#f5f5f7]">
+          <div key={i} className="flex items-start gap-4 p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000]">
             <span className="w-6 h-6 rounded-full bg-[#1d1d1f] text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
             <div className="flex-1">
-              <p className="text-sm font-medium text-[#1d1d1f] mb-0.5">{title}</p>
-              <p className="text-xs text-[#6e6e73]">{desc}</p>
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">{title}</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{desc}</p>
             </div>
             {action && (
               <a href={action.href} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs px-3 py-1.5 flex-shrink-0">
@@ -249,109 +269,91 @@ function Step2({ onNext }: { onNext: () => void }) {
 }
 
 // ─── Step 3: Brand customization ──────────────────────────────────────────────
-interface BrandData {
-  logo: ImageData | null
-  headshot: ImageData | null
-  aboutText: string
-  contactEmail: string
-  youtubeUrl: string
-  instagramUrl: string
-  tiktokUrl: string
-  twitterUrl: string
-  pinterestUrl: string
-  facebookUrl: string
-}
-
-function Step3({ onNext }: { onNext: (data: BrandData) => void }) {
-  const [logo, setLogo] = useState<ImageData | null>(null)
-  const [headshot, setHeadshot] = useState<ImageData | null>(null)
-  const [aboutText, setAboutText] = useState('')
-  const [contactEmail, setContactEmail] = useState('')
-  const [youtubeUrl, setYoutubeUrl] = useState('')
-  const [instagramUrl, setInstagramUrl] = useState('')
-  const [tiktokUrl, setTiktokUrl] = useState('')
-  const [twitterUrl, setTwitterUrl] = useState('')
-  const [pinterestUrl, setPinterestUrl] = useState('')
-  const [facebookUrl, setFacebookUrl] = useState('')
-
-  function handleNext() {
-    onNext({ logo, headshot, aboutText, contactEmail, youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl })
+function Step3({
+  data, onChange, onNext,
+}: {
+  data: BrandData
+  onChange: (d: BrandData) => void
+  onNext: () => void
+}) {
+  function set<K extends keyof BrandData>(key: K, val: BrandData[K]) {
+    onChange({ ...data, [key]: val })
   }
 
   return (
     <div className="flex flex-col gap-7">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] mb-1">Customize your site</h2>
-        <p className="text-sm text-[#6e6e73]">
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Customize your site</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           This is what makes your blog feel like <em>yours</em>. All fields are optional — skip what you don&apos;t have yet.
         </p>
       </div>
 
       {/* Logo + Headshot */}
-      <div className="flex flex-col gap-5 p-5 bg-[#f5f5f7] rounded-xl">
-        <p className="text-xs font-semibold text-[#1d1d1f] uppercase tracking-wider">Visuals</p>
+      <div className="flex flex-col gap-5 p-5 bg-[#f5f5f7] dark:bg-[#000] rounded-xl">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Visuals</p>
         <ImageUpload
           label="Brand logo"
           hint="Square or circle — shown as your site favicon and in the footer."
           shape="square"
-          value={logo}
-          onChange={setLogo}
+          value={data.logo}
+          onChange={v => set('logo', v)}
         />
         <ImageUpload
           label="Your photo / headshot"
           hint="Used on your About page to put a face to the brand."
           shape="circle"
-          value={headshot}
-          onChange={setHeadshot}
+          value={data.headshot}
+          onChange={v => set('headshot', v)}
         />
       </div>
 
       {/* About */}
-      <div className="flex flex-col gap-4 p-5 bg-[#f5f5f7] rounded-xl">
-        <p className="text-xs font-semibold text-[#1d1d1f] uppercase tracking-wider">About you</p>
+      <div className="flex flex-col gap-4 p-5 bg-[#f5f5f7] dark:bg-[#000] rounded-xl">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">About you</p>
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">About us / bio</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">About us / bio</label>
           <textarea
-            value={aboutText}
-            onChange={e => setAboutText(e.target.value)}
+            value={data.aboutText}
+            onChange={e => set('aboutText', e.target.value)}
             placeholder="Tell your story. What do you review, why should people trust you, what makes your take different?"
             rows={5}
             className="input-field resize-none"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Contact email</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Contact email</label>
           <input
             type="email"
-            value={contactEmail}
-            onChange={e => setContactEmail(e.target.value)}
+            value={data.contactEmail}
+            onChange={e => set('contactEmail', e.target.value)}
             placeholder="hello@yourdomain.com"
             className="input-field"
           />
-          <p className="text-xs text-[#86868b] mt-1">Shown on your About page and Privacy Policy.</p>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Shown on your About page and Privacy Policy.</p>
         </div>
       </div>
 
       {/* Social links */}
-      <div className="flex flex-col gap-4 p-5 bg-[#f5f5f7] rounded-xl">
-        <p className="text-xs font-semibold text-[#1d1d1f] uppercase tracking-wider">Social links</p>
-        <p className="text-xs text-[#6e6e73] -mt-2">Added to your site footer and About page.</p>
+      <div className="flex flex-col gap-4 p-5 bg-[#f5f5f7] dark:bg-[#000] rounded-xl">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Social links</p>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] -mt-2">Added to your site footer and About page.</p>
         {[
-          { label: 'YouTube channel URL', value: youtubeUrl, set: setYoutubeUrl, placeholder: 'https://youtube.com/@yourchannel' },
-          { label: 'Instagram URL', value: instagramUrl, set: setInstagramUrl, placeholder: 'https://instagram.com/yourhandle' },
-          { label: 'TikTok URL', value: tiktokUrl, set: setTiktokUrl, placeholder: 'https://tiktok.com/@yourhandle' },
-          { label: 'Twitter / X URL', value: twitterUrl, set: setTwitterUrl, placeholder: 'https://x.com/yourhandle' },
-          { label: 'Pinterest URL', value: pinterestUrl, set: setPinterestUrl, placeholder: 'https://pinterest.com/yourhandle' },
-          { label: 'Facebook URL', value: facebookUrl, set: setFacebookUrl, placeholder: 'https://facebook.com/yourpage' },
-        ].map(({ label, value, set, placeholder }) => (
-          <div key={label}>
-            <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">{label}</label>
-            <input type="url" value={value} onChange={e => set(e.target.value)} placeholder={placeholder} className="input-field" />
+          { label: 'YouTube channel URL', key: 'youtubeUrl' as const, placeholder: 'https://youtube.com/@yourchannel' },
+          { label: 'Instagram URL', key: 'instagramUrl' as const, placeholder: 'https://instagram.com/yourhandle' },
+          { label: 'TikTok URL', key: 'tiktokUrl' as const, placeholder: 'https://tiktok.com/@yourhandle' },
+          { label: 'Twitter / X URL', key: 'twitterUrl' as const, placeholder: 'https://x.com/yourhandle' },
+          { label: 'Pinterest URL', key: 'pinterestUrl' as const, placeholder: 'https://pinterest.com/yourhandle' },
+          { label: 'Facebook URL', key: 'facebookUrl' as const, placeholder: 'https://facebook.com/yourpage' },
+        ].map(({ label, key, placeholder }) => (
+          <div key={key}>
+            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">{label}</label>
+            <input type="url" value={data[key] as string} onChange={e => set(key, e.target.value)} placeholder={placeholder} className="input-field" />
           </div>
         ))}
       </div>
 
-      <button onClick={handleNext} className="btn-primary self-start">
+      <button onClick={onNext} className="btn-primary self-start">
         Continue <ChevronRight size={15} />
       </button>
     </div>
@@ -359,12 +361,24 @@ function Step3({ onNext }: { onNext: (data: BrandData) => void }) {
 }
 
 // ─── Step 4: Connect & Launch ─────────────────────────────────────────────────
-function Step4({ brandData, onNext }: { brandData: BrandData; onNext: (url: string, color: string) => void }) {
-  const [siteUrl, setSiteUrl] = useState('')
-  const [username, setUsername] = useState('')
+function Step4({
+  brandData,
+  siteUrl, setSiteUrl,
+  username, setUsername,
+  accentColor, setAccentColor,
+  onNext,
+}: {
+  brandData: BrandData
+  siteUrl: string
+  setSiteUrl: (v: string) => void
+  username: string
+  setUsername: (v: string) => void
+  accentColor: string
+  setAccentColor: (v: string) => void
+  onNext: (url: string) => void
+}) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [accentColor, setAccentColor] = useState('#f5a623')
   const [customHex, setCustomHex] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingStep, setLoadingStep] = useState('')
@@ -409,7 +423,7 @@ function Step4({ brandData, onNext }: { brandData: BrandData; onNext: (url: stri
       setLoadingStep('Setting up your site…')
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Setup failed')
-      onNext(url, activeColor)
+      onNext(url)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed. Check your credentials.')
     } finally {
@@ -421,16 +435,16 @@ function Step4({ brandData, onNext }: { brandData: BrandData; onNext: (url: stri
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] mb-1">Connect &amp; launch your site</h2>
-        <p className="text-sm text-[#6e6e73]">
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect &amp; launch your site</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           Enter your WordPress credentials and pick your brand color. We&apos;ll build your site automatically.
         </p>
       </div>
 
       {/* Theme download */}
-      <div className="bg-[#f5f5f7] rounded-xl p-5">
-        <p className="text-xs font-semibold text-[#1d1d1f] mb-1">First: install the Kadence theme</p>
-        <p className="text-xs text-[#6e6e73] mb-3">
+      <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">First: install the Kadence theme</p>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
           Download and upload this theme via WP Admin → Appearance → Themes → Add New → Upload Theme.
         </p>
         <a href="/api/wordpress/theme" download="kadence-affiliate-child.zip" className="btn-primary text-sm inline-flex">
@@ -441,15 +455,15 @@ function Step4({ brandData, onNext }: { brandData: BrandData; onNext: (url: stri
       {/* Credentials */}
       <div className="flex flex-col gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">WordPress site URL</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress site URL</label>
           <input type="text" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="yourdomain.com" className="input-field" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">WordPress username</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress username</label>
           <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="admin" className="input-field" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">WordPress password</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress password</label>
           <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'}
@@ -458,17 +472,17 @@ function Step4({ brandData, onNext }: { brandData: BrandData; onNext: (url: stri
               placeholder="Your wp-admin login password"
               className="input-field pr-10"
             />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] hover:text-[#1d1d1f]">
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:text-[#f5f5f7]">
               {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
           </div>
-          <p className="text-xs text-[#86868b] mt-1">Same password you use to log into wp-admin.</p>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Same password you use to log into wp-admin.</p>
         </div>
       </div>
 
       {/* Color picker */}
       <div>
-        <label className="block text-sm font-medium text-[#1d1d1f] mb-3">Accent color</label>
+        <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Accent color</label>
         <div className="flex flex-wrap gap-2.5 mb-3">
           {PRESET_COLORS.map(c => (
             <button
@@ -485,7 +499,7 @@ function Step4({ brandData, onNext }: { brandData: BrandData; onNext: (url: stri
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-full border border-gray-200 flex-shrink-0" style={{ backgroundColor: activeColor }} />
+          <div className="w-7 h-7 rounded-full border border-gray-200 dark:border-white/10 flex-shrink-0" style={{ backgroundColor: activeColor }} />
           <input
             type="text"
             value={customHex}
@@ -512,7 +526,7 @@ function Step4({ brandData, onNext }: { brandData: BrandData; onNext: (url: stri
             : <><Sparkles size={15} /> Launch my site</>
           }
         </button>
-        {!loading && <p className="text-xs text-[#86868b]">~20 seconds</p>}
+        {!loading && <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">~20 seconds</p>}
       </div>
     </div>
   )
@@ -527,8 +541,8 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
         <CheckCircle size={32} style={{ color: accentColor }} />
       </div>
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] mb-1">Your site is live!</h2>
-        <p className="text-sm text-[#6e6e73]">
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your site is live!</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           Home page, About page, Privacy Policy, and navigation are all set up at{' '}
           <a href={wordpressUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline font-medium">
             {wordpressUrl}
@@ -536,9 +550,9 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
         </p>
       </div>
 
-      <div className="bg-[#f5f5f7] rounded-xl p-4 text-left w-full max-w-md">
-        <p className="text-xs font-semibold text-[#1d1d1f] mb-2">What&apos;s next:</p>
-        <ul className="text-xs text-[#6e6e73] space-y-1.5 list-disc list-inside">
+      <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-4 text-left w-full max-w-md">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">What&apos;s next:</p>
+        <ul className="text-xs text-[#6e6e73] dark:text-[#ebebf0] space-y-1.5 list-disc list-inside">
           <li>Finish your Brand Profile — tone, writing sample, CTA style</li>
           <li>Connect your YouTube channel in Settings</li>
           <li>Come back to Content and generate your first post</li>
@@ -562,16 +576,45 @@ export default function SetupPage() {
   const [step, setStep] = useState<Step>(1)
   const [wordpressUrl, setWordpressUrl] = useState('')
   const [accentColor, setAccentColor] = useState('#f5a623')
-  const [brandData, setBrandData] = useState<BrandData>({
-    logo: null, headshot: null, aboutText: '', contactEmail: '',
-    youtubeUrl: '', instagramUrl: '', tiktokUrl: '', twitterUrl: '', pinterestUrl: '', facebookUrl: '',
-  })
+  const [siteUrl, setSiteUrl] = useState('')
+  const [username, setUsername] = useState('')
+  const [brandData, setBrandData] = useState<BrandData>(defaultBrand)
+  const [hydrated, setHydrated] = useState(false)
+
+  // Load persisted state on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const d = JSON.parse(raw)
+        if (d.step && d.step < 5) setStep(d.step as Step)
+        if (d.brandData) setBrandData(d.brandData)
+        if (d.siteUrl) setSiteUrl(d.siteUrl)
+        if (d.username) setUsername(d.username)
+        if (d.accentColor) setAccentColor(d.accentColor)
+        if (d.wordpressUrl) setWordpressUrl(d.wordpressUrl)
+      }
+    } catch { /* ignore */ }
+    setHydrated(true)
+  }, [])
+
+  // Persist state whenever it changes
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        step, brandData, siteUrl, username, accentColor, wordpressUrl,
+      }))
+    } catch { /* ignore quota errors */ }
+  }, [step, brandData, siteUrl, username, accentColor, wordpressUrl, hydrated])
+
+  if (!hydrated) return null
 
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#1d1d1f] tracking-tight">Blog Setup</h1>
-        <p className="text-sm text-[#6e6e73] mt-0.5">Get your WordPress affiliate blog running in minutes.</p>
+        <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in minutes.</p>
       </div>
 
       <StepIndicator current={step} />
@@ -580,12 +623,22 @@ export default function SetupPage() {
         {step === 1 && <Step1 onNext={() => setStep(2)} />}
         {step === 2 && <Step2 onNext={() => setStep(3)} />}
         {step === 3 && (
-          <Step3 onNext={data => { setBrandData(data); setStep(4) }} />
+          <Step3
+            data={brandData}
+            onChange={setBrandData}
+            onNext={() => setStep(4)}
+          />
         )}
         {step === 4 && (
           <Step4
             brandData={brandData}
-            onNext={(url, color) => { setWordpressUrl(url); setAccentColor(color); setStep(5) }}
+            siteUrl={siteUrl}
+            setSiteUrl={setSiteUrl}
+            username={username}
+            setUsername={setUsername}
+            accentColor={accentColor}
+            setAccentColor={setAccentColor}
+            onNext={url => { setWordpressUrl(url); setStep(5) }}
           />
         )}
         {step === 5 && <Step5 wordpressUrl={wordpressUrl} accentColor={accentColor} />}

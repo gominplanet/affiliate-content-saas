@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { YoutubeTranscript } from 'youtube-transcript'
+import { checkUsageLimit } from '@/lib/tier'
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
 // Images are generated separately via /api/blog/images
@@ -25,6 +26,12 @@ async function handleGenerate(request: Request) {
 
   const { videoId } = await request.json()
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
+
+  // ── Usage limit check ─────────────────────────────────────────────────────
+  const usage = await checkUsageLimit(supabase, user.id)
+  if (!usage.allowed) {
+    return NextResponse.json({ error: usage.reason, limitReached: true }, { status: 403 })
+  }
 
   // ── 1. Fetch video ────────────────────────────────────────────────────────
   const { data: video, error: videoErr } = await supabase
@@ -149,6 +156,8 @@ async function handleGenerate(request: Request) {
       excerpt: generated.excerpt,
       status: 'publish',
       tags: tagIds,
+      comment_status: 'closed',
+      ping_status: 'closed',
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'WordPress publish failed'
@@ -156,27 +165,71 @@ async function handleGenerate(request: Request) {
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 
-  // ── 9. Save to blog_posts ─────────────────────────────────────────────────
-  const { data: savedPost } = await supabase
-    .from('blog_posts')
-    .insert({
-      user_id: user.id,
-      video_id: videoId,
-      title: generated.title,
-      slug,
-      content,
-      excerpt: generated.excerpt,
-      status: 'published',
-      wordpress_post_id: wpPost.id,
-      wordpress_url: wpPost.link,
-      ai_model: 'claude-sonnet-4-5',
-      generation_prompt_version: 'v2.0',
-      published_at: new Date().toISOString(),
-      // Store image prompts so Phase 2 can use them
-      image_prompts: generated.imagePrompts,
+  // ── 8.5. Upload YouTube thumbnail as featured image ───────────────────────
+  const youtubeVideoId = (v as Record<string, unknown>).youtube_video_id as string
+  try {
+    const thumbUrl = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
+    let media
+    try {
+      media = await wpService.uploadImageFromUrl(thumbUrl, `${youtubeVideoId}.jpg`)
+    } catch {
+      const fallback = `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`
+      media = await wpService.uploadImageFromUrl(fallback, `${youtubeVideoId}.jpg`)
+    }
+    await wpService.updatePost(wpPost.id, {
+      title: generated.title, slug, content, excerpt: generated.excerpt,
+      status: 'publish', tags: tagIds, featured_media: media.id,
     })
-    .select()
+  } catch { /* non-fatal — post is already published without thumbnail */ }
+
+  // ── 9. Save to blog_posts (upsert so re-generates update the WP post ID) ──
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existingPost } = await (supabase as any)
+    .from('blog_posts')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('video_id', videoId)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .single()
+
+  const blogPayload = {
+    user_id: user.id,
+    video_id: videoId,
+    title: generated.title,
+    slug,
+    content,
+    excerpt: generated.excerpt,
+    status: 'published',
+    wordpress_post_id: wpPost.id,
+    wordpress_url: wpPost.link,
+    ai_model: 'claude-sonnet-4-5',
+    generation_prompt_version: 'v2.0',
+    published_at: new Date().toISOString(),
+    image_prompts: generated.imagePrompts,
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ep = existingPost as any
+  let savedPost
+  if (ep?.id) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('blog_posts')
+      .update(blogPayload)
+      .eq('id', ep.id)
+      .select()
+      .single()
+    savedPost = data
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('blog_posts')
+      .insert(blogPayload)
+      .select()
+      .single()
+    savedPost = data
+  }
 
   return NextResponse.json({
     success: true,

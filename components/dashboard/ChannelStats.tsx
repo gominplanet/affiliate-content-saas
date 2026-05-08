@@ -48,8 +48,8 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
       <div className="card p-5 mb-6 border border-dashed border-gray-300">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-[#1d1d1f]">Channel Analytics</p>
-            <p className="text-xs text-[#86868b] mt-0.5">Connect VidIQ to see your channel growth.</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Channel Analytics</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Connect VidIQ to see your channel growth.</p>
           </div>
           <button onClick={handleSync} disabled={syncing} className="btn-secondary text-xs">
             <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
@@ -96,8 +96,8 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
             <img src={stats.thumbnail} alt={stats.title} className="w-7 h-7 rounded-full object-cover" />
           )}
           <div>
-            <p className="text-sm font-semibold text-[#1d1d1f]">{stats.title}</p>
-            <p className="text-xs text-[#86868b]">Last 30 days · synced {stats.syncedAt}</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{stats.title}</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Last 30 days · synced {stats.syncedAt}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -116,8 +116,8 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
               <Icon size={15} className={color} />
             </div>
             <div>
-              <p className="text-lg font-semibold text-[#1d1d1f] leading-tight">{value}</p>
-              <p className="text-xs text-[#86868b]">{label}</p>
+              <p className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] leading-tight">{value}</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">{label}</p>
               <p className="text-xs text-[#34c759] font-medium mt-0.5">{growth}</p>
             </div>
           </div>

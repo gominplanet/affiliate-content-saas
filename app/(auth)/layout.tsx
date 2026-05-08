@@ -1,6 +1,6 @@
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#f5f5f7] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -9,8 +9,8 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
-          <h1 className="text-xl font-semibold text-[#1d1d1f]">AffiliateOS</h1>
-          <p className="text-sm text-[#6e6e73] mt-1">Content automation platform</p>
+          <h1 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">AffiliateOS</h1>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-1">Content automation platform</p>
         </div>
         {children}
       </div>

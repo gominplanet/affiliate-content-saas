@@ -31,12 +31,12 @@ export default function LoginForm() {
 
   return (
     <div className="card p-8">
-      <h2 className="text-lg font-semibold text-[#1d1d1f] mb-1">Welcome back</h2>
-      <p className="text-sm text-[#6e6e73] mb-6">Sign in to your account to continue.</p>
+      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Welcome back</h2>
+      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Sign in to your account to continue.</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Email</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
           <input
             type="email"
             required
@@ -48,7 +48,7 @@ export default function LoginForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Password</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Password</label>
           <input
             type="password"
             required
@@ -70,7 +70,7 @@ export default function LoginForm() {
         </button>
       </form>
 
-      <p className="text-sm text-center text-[#6e6e73] mt-5">
+      <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
         Don&apos;t have an account?{' '}
         <Link href="/signup" className="text-[#0071e3] hover:underline font-medium">
           Sign up

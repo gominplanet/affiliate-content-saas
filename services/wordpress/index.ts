@@ -10,6 +10,8 @@ export interface WPPost {
   categories?: number[]
   tags?: number[]
   featured_media?: number
+  comment_status?: 'open' | 'closed'
+  ping_status?: 'open' | 'closed'
 }
 
 export interface WPPostResponse extends WPPost {
@@ -214,6 +216,10 @@ export class WordPressService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(post),
     })
+  }
+
+  async deletePost(id: number): Promise<void> {
+    await this.request(`/posts/${id}?force=true`, { method: 'DELETE' })
   }
 
   async checkConnection(): Promise<boolean> {

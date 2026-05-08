@@ -58,7 +58,7 @@ export default function SetupChecklist() {
       {/* Header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/60 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 dark:bg-[#2c2c2e]/60 transition-colors"
       >
         <div className="flex items-center gap-3">
           <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -67,29 +67,29 @@ export default function SetupChecklist() {
             {allDone ? '✓' : `${doneCount}/${allRequired.length}`}
           </div>
           <div className="text-left">
-            <p className="text-sm font-semibold text-[#1d1d1f]">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
               {allDone ? 'Setup complete!' : 'Get started — create your accounts'}
             </p>
-            <p className="text-xs text-[#86868b]">
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
               {allDone
                 ? 'All required accounts are set up.'
                 : `${allRequired.length - doneCount} required step${allRequired.length - doneCount !== 1 ? 's' : ''} remaining`}
             </p>
           </div>
         </div>
-        {collapsed ? <ChevronDown size={16} className="text-[#86868b]" /> : <ChevronUp size={16} className="text-[#86868b]" />}
+        {collapsed ? <ChevronDown size={16} className="text-[#86868b] dark:text-[#8e8e93]" /> : <ChevronUp size={16} className="text-[#86868b] dark:text-[#8e8e93]" />}
       </button>
 
       {/* Steps */}
       {!collapsed && (
-        <div className="border-t border-gray-100">
+        <div className="border-t border-gray-100 dark:border-white/10">
           {steps.map((step, i) => {
             const done = !!completed[step.id]
             return (
               <div
                 key={step.id}
                 className={`flex items-start gap-4 px-5 py-4 ${
-                  i !== steps.length - 1 ? 'border-b border-gray-100' : ''
+                  i !== steps.length - 1 ? 'border-b border-gray-100 dark:border-white/10' : ''
                 }`}
               >
                 {/* Checkbox */}
@@ -106,14 +106,14 @@ export default function SetupChecklist() {
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <p className={`text-sm font-medium ${done ? 'text-[#86868b] line-through' : 'text-[#1d1d1f]'}`}>
+                    <p className={`text-sm font-medium ${done ? 'text-[#86868b] dark:text-[#8e8e93] line-through' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
                       {step.label}
                     </p>
                     {!step.required && (
                       <span className="badge bg-[#ff9500]/10 text-[#ff9500]">Recommended</span>
                     )}
                   </div>
-                  <p className="text-xs text-[#86868b]">{step.description}</p>
+                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">{step.description}</p>
                 </div>
 
                 {/* CTA */}

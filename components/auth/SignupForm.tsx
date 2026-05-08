@@ -42,8 +42,8 @@ export default function SignupForm() {
             <path d="M20 6L9 17l-5-5" stroke="#34c759" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
-        <h2 className="text-lg font-semibold text-[#1d1d1f] mb-2">Check your email</h2>
-        <p className="text-sm text-[#6e6e73]">
+        <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Check your email</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account.
         </p>
       </div>
@@ -52,12 +52,12 @@ export default function SignupForm() {
 
   return (
     <div className="card p-8">
-      <h2 className="text-lg font-semibold text-[#1d1d1f] mb-1">Create your account</h2>
-      <p className="text-sm text-[#6e6e73] mb-6">Start automating your affiliate content today.</p>
+      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Create your account</h2>
+      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Start automating your affiliate content today.</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Full name</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Full name</label>
           <input
             type="text"
             required
@@ -69,7 +69,7 @@ export default function SignupForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Email</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
           <input
             type="email"
             required
@@ -81,7 +81,7 @@ export default function SignupForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] mb-1.5">Password</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Password</label>
           <input
             type="password"
             required
@@ -104,7 +104,7 @@ export default function SignupForm() {
         </button>
       </form>
 
-      <p className="text-sm text-center text-[#6e6e73] mt-5">
+      <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
         Already have an account?{' '}
         <Link href="/login" className="text-[#0071e3] hover:underline font-medium">
           Sign in

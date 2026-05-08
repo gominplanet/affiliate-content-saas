@@ -19,7 +19,7 @@ function VideoCard({ video }: { video: Video }) {
   return (
     <div className="card p-5">
       <div className="flex items-start gap-4">
-        <div className="w-32 h-[72px] rounded-lg bg-[#f5f5f7] border border-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+        <div className="w-32 h-[72px] rounded-lg bg-[#f5f5f7] dark:bg-[#000] border border-gray-200 dark:border-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
           {video.thumbnail_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -35,8 +35,8 @@ function VideoCard({ video }: { video: Video }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-[#1d1d1f] leading-snug">{video.title}</h3>
-              <p className="text-xs text-[#86868b] mt-0.5">
+              <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug">{video.title}</h3>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">
                 {video.channel_title} · {formatDate(video.published_at)} · {formatNumber(video.view_count ?? 0)} views
               </p>
             </div>
@@ -58,12 +58,12 @@ function VideoCard({ video }: { video: Video }) {
 
           <div className="flex items-center gap-4 mt-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#6e6e73] font-medium">Blog post</span>
-              <span className="badge bg-gray-100 text-[#86868b]">Pending</span>
+              <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0] font-medium">Blog post</span>
+              <span className="badge bg-gray-100 dark:bg-[#2c2c2e] text-[#86868b] dark:text-[#8e8e93]">Pending</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#6e6e73] font-medium">Socials</span>
-              <span className="text-xs text-[#86868b]">No drafts yet</span>
+              <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0] font-medium">Socials</span>
+              <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">No drafts yet</span>
             </div>
           </div>
         </div>
@@ -104,7 +104,7 @@ export default function ContentList({ videos }: { videos: Video[] }) {
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 f === 'All'
                   ? 'bg-[#1d1d1f] text-white'
-                  : 'bg-white border border-gray-200 text-[#6e6e73] hover:border-gray-300 hover:text-[#1d1d1f]'
+                  : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300 hover:text-[#1d1d1f] dark:text-[#f5f5f7]'
               }`}
             >
               {f}
@@ -113,7 +113,7 @@ export default function ContentList({ videos }: { videos: Video[] }) {
         </div>
         <div className="flex items-center gap-3">
           {syncMsg && (
-            <span className="text-xs text-[#6e6e73]">{syncMsg}</span>
+            <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{syncMsg}</span>
           )}
           <button
             onClick={handleSync}
@@ -130,8 +130,8 @@ export default function ContentList({ videos }: { videos: Video[] }) {
       {videos.length === 0 ? (
         <div className="card p-16 text-center">
           <PlaySquare size={32} className="text-[#d2d2d7] mx-auto mb-3" />
-          <p className="text-sm font-medium text-[#1d1d1f] mb-1">No videos yet</p>
-          <p className="text-xs text-[#86868b] mb-4">Click "Sync YouTube" to import your channel videos.</p>
+          <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No videos yet</p>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4">Click "Sync YouTube" to import your channel videos.</p>
           <button onClick={handleSync} disabled={syncing} className="btn-primary mx-auto">
             <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Syncing…' : 'Sync YouTube'}

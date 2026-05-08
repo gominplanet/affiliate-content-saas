@@ -5,7 +5,7 @@ export const maxDuration = 15
 
 export async function POST(request: Request) {
   try {
-    const { url, username, password, apiToken } = await request.json()
+    const { url, username, password } = await request.json()
 
     if (!url || !username || !password) {
       return NextResponse.json({ error: 'url, username, and password are required' }, { status: 400 })
@@ -14,11 +14,7 @@ export async function POST(request: Request) {
     const baseUrl = `${url.replace(/\/$/, '')}/wp-json/wp/v2`
     const cleanPassword = password.replace(/\s+/g, '')
     const encoded = Buffer.from(`${username}:${cleanPassword}`).toString('base64')
-
-    // Use API token if provided, otherwise fall back to Basic Auth
-    const authHeaders: Record<string, string> = apiToken
-      ? { 'X-Api-Token': apiToken }
-      : { Authorization: `Basic ${encoded}` }
+    const authHeaders = { Authorization: `Basic ${encoded}` }
 
     // Step 1: Check if WP REST API is reachable
     let siteRes
@@ -61,7 +57,7 @@ export async function POST(request: Request) {
     // Inject global CSS for 16:9 thumbnail display (idempotent)
     const THUMBNAIL_CSS = `.post-thumbnail img,.wp-post-image,.wp-block-post-featured-image img,.entry-thumbnail img,.featured-image img{width:100%!important;height:auto!important;aspect-ratio:16/9;object-fit:cover}`
     try {
-      const wpService = createWordPressService(url, username, password, apiToken || undefined)
+      const wpService = createWordPressService(url, username, password)
       await wpService.injectGlobalCss(THUMBNAIL_CSS, 'gomin-thumbnail-ratio')
     } catch { /* non-fatal — CSS injection is best-effort */ }
 

@@ -29,7 +29,7 @@ const statusBadge: Record<FailureStatus, string> = {
   pending_retry: 'bg-[#ff9500]/10 text-[#ff9500]',
   retrying: 'bg-[#0071e3]/10 text-[#0071e3]',
   resolved: 'bg-[#34c759]/10 text-[#34c759]',
-  dismissed: 'bg-gray-100 text-[#86868b]',
+  dismissed: 'bg-gray-100 text-[#86868b] dark:text-[#8e8e93]',
 }
 
 const mockFailures: Failure[] = [
@@ -86,7 +86,7 @@ function FailureRow({ failure }: { failure: Failure }) {
         onClick={() => setExpanded(!expanded)}
       >
         <td className="py-3 px-4">
-          <button className="text-[#86868b]">
+          <button className="text-[#86868b] dark:text-[#8e8e93]">
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
         </td>
@@ -94,26 +94,26 @@ function FailureRow({ failure }: { failure: Failure }) {
           <span className={`badge ${jt.color}`}>{jt.label}</span>
         </td>
         <td className="py-3 px-4">
-          <p className="text-sm text-[#1d1d1f] font-medium max-w-[220px] truncate">
+          <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] font-medium max-w-[220px] truncate">
             {failure.videoTitle}
           </p>
         </td>
         <td className="py-3 px-4">
           <div className="flex items-center gap-1.5 max-w-[260px]">
             <AlertCircle size={13} className="text-[#ff3b30] flex-shrink-0" />
-            <p className="text-xs text-[#6e6e73] truncate">{failure.errorMessage}</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] truncate">{failure.errorMessage}</p>
           </div>
         </td>
         <td className="py-3 px-4">
-          <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[#6e6e73]">
+          <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[#6e6e73] dark:text-[#ebebf0]">
             {failure.errorCode}
           </code>
         </td>
         <td className="py-3 px-4">
-          <span className="text-xs text-[#86868b]">{failure.failedAt}</span>
+          <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">{failure.failedAt}</span>
         </td>
         <td className="py-3 px-4">
-          <span className="text-xs text-[#86868b]">{failure.retryCount}×</span>
+          <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">{failure.retryCount}×</span>
         </td>
         <td className="py-3 px-4">
           <span className={`badge ${statusBadge[failure.status]}`}>
@@ -127,25 +127,25 @@ function FailureRow({ failure }: { failure: Failure }) {
                 <RefreshCw size={11} /> Retry
               </button>
             )}
-            <button className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-[#86868b] hover:text-[#ff3b30] hover:bg-[#ff3b30]/8 transition-colors">
+            <button className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] hover:bg-[#ff3b30]/8 transition-colors">
               <Trash2 size={11} />
             </button>
           </div>
         </td>
       </tr>
       {expanded && (
-        <tr className="bg-[#f5f5f7]/60">
+        <tr className="bg-[#f5f5f7] dark:bg-[#000]/60">
           <td colSpan={9} className="px-4 py-3">
             <div className="flex gap-6 text-xs">
               <div>
-                <p className="font-medium text-[#6e6e73] mb-1">Full error</p>
-                <p className="text-[#1d1d1f] font-mono bg-white border border-gray-200 rounded-lg px-3 py-2 max-w-2xl">
+                <p className="font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Full error</p>
+                <p className="text-[#1d1d1f] dark:text-[#f5f5f7] font-mono bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 max-w-2xl">
                   {failure.errorMessage}
                 </p>
               </div>
               <div>
-                <p className="font-medium text-[#6e6e73] mb-1">Suggested fix</p>
-                <p className="text-[#1d1d1f]">
+                <p className="font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Suggested fix</p>
+                <p className="text-[#1d1d1f] dark:text-[#f5f5f7]">
                   {failure.errorCode === 'WP_AUTH_401' && 'Regenerate your WordPress application password in Settings → Integrations.'}
                   {failure.errorCode === 'ANTHROPIC_RATE_LIMIT' && 'Wait 60 seconds and retry. Consider upgrading your Anthropic plan.'}
                   {failure.errorCode === 'YOUTUBE_QUOTA_EXCEEDED' && 'YouTube API quota resets at midnight PST. Job will auto-retry tomorrow.'}
@@ -191,7 +191,7 @@ export default function FailuresPage() {
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
               typeFilter === t
                 ? 'bg-[#1d1d1f] text-white'
-                : 'bg-white border border-gray-200 text-[#6e6e73] hover:border-gray-300'
+                : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'
             }`}
           >
             {t === 'all' ? 'All jobs' : jobTypeLabel[t].label}
@@ -203,16 +203,16 @@ export default function FailuresPage() {
       <div className="card overflow-hidden">
         <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-gray-100 bg-[#f5f5f7]/60">
+            <tr className="border-b border-gray-100 bg-[#f5f5f7] dark:bg-[#000]/60">
               <th className="py-2.5 px-4 w-8" />
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Type</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Video</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Error</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Code</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">When</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Retries</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Status</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Actions</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Type</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Video</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Error</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Code</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">When</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Retries</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Status</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -221,7 +221,7 @@ export default function FailuresPage() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-sm text-[#86868b]">
+                <td colSpan={9} className="py-12 text-center text-sm text-[#86868b] dark:text-[#8e8e93]">
                   No failures found.
                 </td>
               </tr>

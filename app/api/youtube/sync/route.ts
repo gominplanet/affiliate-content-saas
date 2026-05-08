@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeService } from '@/services/youtube'
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -17,12 +17,18 @@ export async function POST() {
     return NextResponse.json({ error: 'YouTube API key or Channel ID not configured' }, { status: 400 })
   }
 
+  let pageToken: string | undefined
+  try {
+    const body = await request.json().catch(() => ({}))
+    pageToken = body.pageToken || undefined
+  } catch { /* no body */ }
+
   try {
     const youtube = createYouTubeService(apiKey)
-    const videos = await youtube.getChannelVideos(channelId, 50)
+    const { videos, nextPageToken } = await youtube.getChannelVideos(channelId, 50, pageToken)
 
     if (videos.length === 0) {
-      return NextResponse.json({ synced: 0, message: 'No videos found' })
+      return NextResponse.json({ synced: 0, message: 'No videos found', nextPageToken: null })
     }
 
     const rows = videos.map((v) => ({
@@ -43,7 +49,7 @@ export async function POST() {
 
     if (error) throw error
 
-    return NextResponse.json({ synced: videos.length })
+    return NextResponse.json({ synced: videos.length, nextPageToken: nextPageToken ?? null })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: message }, { status: 500 })

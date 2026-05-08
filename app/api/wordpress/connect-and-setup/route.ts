@@ -151,6 +151,23 @@ export async function POST(request: Request) {
     // ── 3. Get current user ───────────────────────────────────────────────────
     const me = await req<{ name: string; roles?: string[] }>('/users/me')
 
+    // ── 3b. Delete default WordPress content ─────────────────────────────────
+    try {
+      const [defaultPosts, defaultPages] = await Promise.all([
+        req<{ id: number; slug: string }[]>('/posts?per_page=20&status=any'),
+        req<{ id: number; slug: string }[]>('/pages?per_page=20&status=any'),
+      ])
+      const junkSlugs = new Set(['hello-world', 'sample-page', 'privacy-policy'])
+      await Promise.all([
+        ...defaultPosts.filter(p => junkSlugs.has(p.slug)).map(p =>
+          req(`/posts/${p.id}?force=true`, { method: 'DELETE' }),
+        ),
+        ...defaultPages.filter(p => junkSlugs.has(p.slug)).map(p =>
+          req(`/pages/${p.id}?force=true`, { method: 'DELETE' }),
+        ),
+      ])
+    } catch { /* non-fatal */ }
+
     // ── 4. Generate Application Password ─────────────────────────────────────
     let appPassword = ''
     try {
@@ -291,7 +308,24 @@ export async function POST(request: Request) {
       })
     } catch { /* non-fatal */ }
 
-    // ── 14. Inject CSS to hide empty Kadence footer widget areas ─────────────
+    // ── 14. Disable comments site-wide ───────────────────────────────────────
+    try {
+      await req('/settings', {
+        method: 'POST',
+        body: JSON.stringify({ default_comment_status: 'closed', default_ping_status: 'closed' }),
+      })
+      // Close comments on all existing posts and pages
+      const [existingPosts, existingPages] = await Promise.all([
+        req<{ id: number }[]>('/posts?per_page=100&status=publish'),
+        req<{ id: number }[]>('/pages?per_page=100&status=publish'),
+      ])
+      await Promise.all([
+        ...existingPosts.map(p => req(`/posts/${p.id}`, { method: 'PATCH', body: JSON.stringify({ comment_status: 'closed', ping_status: 'closed' }) })),
+        ...existingPages.map(p => req(`/pages/${p.id}`, { method: 'PATCH', body: JSON.stringify({ comment_status: 'closed', ping_status: 'closed' }) })),
+      ])
+    } catch { /* non-fatal */ }
+
+    // ── 14b. Inject CSS to hide empty Kadence footer widget areas ────────────
     try {
       const kadenceCss = `.footer-widget-area:empty,.site-footer .widget-area:empty{display:none!important}.site-footer .footer-widget-area .widget:only-child:empty{display:none!important}`
       await req('/settings', {
@@ -343,7 +377,28 @@ export async function POST(request: Request) {
       ))
     } catch { /* non-fatal */ }
 
-    // ── 16. Save credentials + brand extras ──────────────────────────────────
+    // ── 16. Save brand options to WordPress (used by front-page.php) ─────────
+    try {
+      await req('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          affiliateos_accent_color: accentColor,
+          affiliateos_about_text: aboutText || '',
+          affiliateos_author_name: authorName,
+          affiliateos_author_img: headshotUrl || '',
+          affiliateos_youtube_url: youtubeUrl || '',
+          affiliateos_instagram_url: instagramUrl || '',
+          affiliateos_tiktok_url: tiktokUrl || '',
+          affiliateos_twitter_url: twitterUrl || '',
+          affiliateos_pinterest_url: pinterestUrl || '',
+          affiliateos_facebook_url: facebookUrl || '',
+          affiliateos_contact_email: contactEmail || '',
+          affiliateos_disclaimer: affiliateDisclaimer,
+        }),
+      })
+    } catch { /* non-fatal */ }
+
+    // ── 17. Save credentials + brand extras ──────────────────────────────────
     await supabase.from('integrations').upsert(
       {
         user_id: user.id,
@@ -363,6 +418,8 @@ export async function POST(request: Request) {
       ...(instagramUrl ? { instagram_url: instagramUrl } : {}),
       ...(tiktokUrl ? { tiktok_url: tiktokUrl } : {}),
       ...(twitterUrl ? { twitter_url: twitterUrl } : {}),
+      ...(pinterestUrl ? { pinterest_url: pinterestUrl } : {}),
+      ...(facebookUrl ? { facebook_url: facebookUrl } : {}),
     }).eq('user_id', user.id)
 
     return NextResponse.json({

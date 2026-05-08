@@ -36,32 +36,34 @@ export class YouTubeService {
     return playlistId
   }
 
-  async getChannelVideos(channelId: string, maxResults = 50): Promise<YouTubeVideo[]> {
+  async getChannelVideos(
+    channelId: string,
+    maxResults = 50,
+    pageToken?: string,
+  ): Promise<{ videos: YouTubeVideo[]; nextPageToken?: string }> {
     const uploadsPlaylistId = await this.getUploadsPlaylistId(channelId)
 
-    // Fetch playlist items (gives us video IDs + basic snippet)
-    const playlistData = await this.get<any>('/playlistItems', {
+    const params: Record<string, string> = {
       part: 'snippet',
       playlistId: uploadsPlaylistId,
       maxResults: String(Math.min(maxResults, 50)),
-    })
+    }
+    if (pageToken) params.pageToken = pageToken
+
+    const playlistData = await this.get<any>('/playlistItems', params)
 
     const items = playlistData.items ?? []
-    if (items.length === 0) return []
+    if (items.length === 0) return { videos: [] }
 
-    // Fetch view counts in one batch call
     const videoIds = items.map((i: any) => i.snippet.resourceId.videoId).join(',')
-    const statsData = await this.get<any>('/videos', {
-      part: 'statistics',
-      id: videoIds,
-    })
+    const statsData = await this.get<any>('/videos', { part: 'statistics', id: videoIds })
 
     const statsMap: Record<string, number> = {}
     for (const v of statsData.items ?? []) {
       statsMap[v.id] = parseInt(v.statistics?.viewCount ?? '0', 10)
     }
 
-    return items.map((item: any) => {
+    const videos = items.map((item: any) => {
       const s = item.snippet
       const videoId = s.resourceId.videoId
       return {
@@ -79,6 +81,8 @@ export class YouTubeService {
         viewCount: statsMap[videoId] ?? 0,
       }
     })
+
+    return { videos, nextPageToken: playlistData.nextPageToken }
   }
 }
 

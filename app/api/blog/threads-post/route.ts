@@ -1,0 +1,66 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { ThreadsService } from '@/services/threads'
+import Anthropic from '@anthropic-ai/sdk'
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+
+const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { postId } = await request.json()
+    if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [{ data: post }, { data: integration }] = await Promise.all([
+      (supabase as any).from('blog_posts').select('*, youtube_videos(thumbnail_url)').eq('id', postId).single(),
+      (supabase as any).from('integrations').select('*').eq('user_id', user.id).single(),
+    ])
+
+    const p = post as any
+    const ig = integration as any
+
+    if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+    if (!ig?.threads_access_token) return NextResponse.json({ error: 'Threads not connected' }, { status: 400 })
+    if (!ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing — try reconnecting Threads in Settings' }, { status: 400 })
+
+    // Claude generates the thread text
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `Write a Threads post for this blog article. Make it punchy and conversational — like a creator sharing a genuine find. Start with a hook that stops the scroll. Include the blog URL. End with 2-3 relevant hashtags. Keep the ENTIRE post under 450 characters (leave room for the disclaimer).
+
+Blog title: ${p.title}
+Blog excerpt: ${p.excerpt || p.content?.substring(0, 300) || ''}
+Blog URL: ${p.wordpress_url}
+
+Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`,
+      }],
+    })
+
+    const postText = (msg.content[0] as { type: string; text: string }).text.trim()
+    const fullText = `${postText}\n\n${DISCLAIMER}`
+
+    // Use YouTube thumbnail (hero image with person + product)
+    const imageUrl = p.youtube_videos?.thumbnail_url || null
+
+    const threads = new ThreadsService(ig.threads_access_token, ig.threads_user_id)
+    const result = await threads.createPost(fullText, imageUrl ?? undefined)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('blog_posts').update({ threads_post_id: result.id }).eq('id', postId)
+
+    return NextResponse.json({ ok: true, postId: result.id })
+  } catch (err: unknown) {
+    console.error('threads-post error:', err)
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
