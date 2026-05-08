@@ -8,24 +8,17 @@ import Link from 'next/link'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
-const recentActivity = [
-  { action: 'YouTube channel synced', video: '2,816 videos imported', time: 'just now', status: 'success' },
-  { action: 'VidIQ stats loaded', video: '+1.1M views this month', time: '1 min ago', status: 'success' },
-]
-
 export default async function DashboardPage() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: videos }, { data: failures }, { data: snapshot }] = await Promise.all([
+  const [{ data: videos }, { data: failures }] = await Promise.all([
     supabase.from('youtube_videos').select('id').eq('user_id', user!.id),
     supabase.from('job_failures').select('id').eq('user_id', user!.id).eq('status', 'pending_retry'),
-    supabase.from('integrations').select('vidiq_snapshot').eq('user_id', user!.id).single(),
   ])
 
   const videoCount = videos?.length ?? 0
   const failureCount = failures?.length ?? 0
-  const channelStats = (snapshot?.vidiq_snapshot as any) ?? null
 
   const stats = [
     { label: 'Videos Tracked', value: String(videoCount), icon: PlaySquare, color: 'text-[#0071e3]', bg: 'bg-[#0071e3]/8' },
@@ -53,7 +46,7 @@ export default async function DashboardPage() {
       />
 
       <SetupChecklist />
-      <ChannelStats data={channelStats} />
+      <ChannelStats />
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-8">
@@ -115,21 +108,26 @@ export default async function DashboardPage() {
         {/* Activity Feed */}
         <div className="card p-5">
           <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Recent Activity</h2>
-          <div className="flex flex-col gap-3">
-            {recentActivity.map((item, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${item.status === 'error' ? 'bg-[#ff3b30]' : 'bg-[#34c759]'}`} />
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug">{item.action}</p>
-                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93] truncate">{item.video}</p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <Clock size={10} className="text-[#86868b] dark:text-[#8e8e93]" />
-                    <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">{item.time}</span>
+          {recentVideos && recentVideos.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {recentVideos.slice(0, 4).map((video) => (
+                <div key={video.id} className="flex items-start gap-2.5">
+                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 bg-[#0071e3]" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug truncate">{video.title}</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <Clock size={10} className="text-[#86868b] dark:text-[#8e8e93]" />
+                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+                        {new Date(video.published_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">No activity yet.</p>
+          )}
         </div>
       </div>
     </>

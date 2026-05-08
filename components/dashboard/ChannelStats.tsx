@@ -1,60 +1,49 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { RefreshCw, TrendingUp, Users, Eye, PlaySquare } from 'lucide-react'
 import { formatNumber } from '@/lib/utils'
-
-interface DailySnapshot {
-  date: string
-  subscribers: number
-  views: number
-  videos: number
-}
 
 interface ChannelStatsData {
   title: string
   thumbnail: string
-  currentStats: {
-    subscribers: number
-    views: number
-    videos: number
-  }
-  growth: {
-    subscribersGained: number
-    viewsGained: number
-    videosPublished: number
-  }
-  dailyStats: DailySnapshot[]
+  currentStats: { subscribers: number; views: number; videos: number }
+  growth: { subscribersGained: number; viewsGained: number; videosPublished: number }
   syncedAt: string
 }
 
-export default function ChannelStats({ data }: { data: ChannelStatsData | null }) {
+export default function ChannelStats() {
+  const [stats, setStats] = useState<ChannelStatsData | null>(null)
+  const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
-  const [stats, setStats] = useState<ChannelStatsData | null>(data)
 
-  async function handleSync() {
-    setSyncing(true)
+  async function fetchStats() {
     try {
-      const res = await fetch('/api/vidiq/channel/sync', { method: 'POST' })
-      const json = await res.json()
-      if (res.ok) setStats(json)
+      const res = await fetch('/api/youtube/channel-stats')
+      if (res.ok) setStats(await res.json())
     } finally {
-      setSyncing(false)
+      setLoading(false)
     }
   }
 
+  useEffect(() => { fetchStats() }, [])
+
+  async function handleSync() {
+    setSyncing(true)
+    await fetchStats()
+    setSyncing(false)
+  }
+
+  if (loading) return null
+
   if (!stats) {
     return (
-      <div className="card p-5 mb-6 border border-dashed border-gray-300">
+      <div className="card p-5 mb-6 border border-dashed border-gray-300 dark:border-white/10">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Channel Analytics</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Connect VidIQ to see your channel growth.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Add your YouTube channel ID in Settings to see stats.</p>
           </div>
-          <button onClick={handleSync} disabled={syncing} className="btn-secondary text-xs">
-            <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
-            {syncing ? 'Loading…' : 'Load stats'}
-          </button>
         </div>
       </div>
     )
@@ -64,7 +53,7 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
     {
       label: 'Subscribers',
       value: formatNumber(stats.currentStats.subscribers),
-      growth: `+${formatNumber(stats.growth.subscribersGained)}`,
+      sub: 'total',
       icon: Users,
       color: 'text-[#0071e3]',
       bg: 'bg-[#0071e3]/8',
@@ -72,7 +61,7 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
     {
       label: 'Total Views',
       value: formatNumber(stats.currentStats.views),
-      growth: `+${formatNumber(stats.growth.viewsGained)} this month`,
+      sub: 'all time',
       icon: Eye,
       color: 'text-[#34c759]',
       bg: 'bg-[#34c759]/8',
@@ -80,10 +69,10 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
     {
       label: 'Videos',
       value: formatNumber(stats.currentStats.videos),
-      growth: `+${stats.growth.videosPublished} this month`,
+      sub: `+${stats.growth.videosPublished} last 30 days`,
       icon: PlaySquare,
       color: 'text-purple-500',
-      bg: 'bg-purple-50',
+      bg: 'bg-purple-50 dark:bg-purple-500/10',
     },
   ]
 
@@ -97,12 +86,12 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
           )}
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{stats.title}</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Last 30 days · synced {stats.syncedAt}</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">YouTube channel · synced {stats.syncedAt}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <TrendingUp size={14} className="text-[#34c759]" />
-          <span className="text-xs font-medium text-[#34c759]">Growing</span>
+          <span className="text-xs font-medium text-[#34c759]">Live</span>
           <button onClick={handleSync} disabled={syncing} className="btn-secondary text-xs px-2.5 py-1.5 ml-1">
             <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
           </button>
@@ -110,7 +99,7 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        {metrics.map(({ label, value, growth, icon: Icon, color, bg }) => (
+        {metrics.map(({ label, value, sub, icon: Icon, color, bg }) => (
           <div key={label} className="flex items-start gap-3">
             <div className={`w-8 h-8 rounded-xl ${bg} flex items-center justify-center flex-shrink-0`}>
               <Icon size={15} className={color} />
@@ -118,7 +107,7 @@ export default function ChannelStats({ data }: { data: ChannelStatsData | null }
             <div>
               <p className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] leading-tight">{value}</p>
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">{label}</p>
-              <p className="text-xs text-[#34c759] font-medium mt-0.5">{growth}</p>
+              <p className="text-xs text-[#34c759] font-medium mt-0.5">{sub}</p>
             </div>
           </div>
         ))}
