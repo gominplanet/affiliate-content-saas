@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
 
-const publicPaths = ['/login', '/signup', '/api/auth']
+const publicPaths = ['/login', '/signup', '/api/auth', '/pricing', '/privacy', '/terms']
+
+function isPublicRoot(pathname: string) {
+  return pathname === '/'
+}
 
 function isPublic(pathname: string) {
   return publicPaths.some((p) => pathname.startsWith(p))
@@ -13,7 +17,7 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
 
-  if (!session && !isPublic(pathname)) {
+  if (!session && !isPublic(pathname) && !isPublicRoot(pathname)) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
