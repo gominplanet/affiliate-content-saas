@@ -14,6 +14,7 @@ import {
   CreditCard,
   Sun,
   Moon,
+  Paintbrush,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -22,6 +23,7 @@ const nav = [
   { href: '/content', label: 'Content', icon: PlaySquare },
   { href: '/brand', label: 'Brand Profile', icon: Palette },
   { href: '/setup', label: 'Blog Setup', icon: Wrench },
+  { href: '/customize', label: 'Customize Blog', icon: Paintbrush },
 ]
 
 const secondaryNav = [
