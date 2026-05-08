@@ -107,7 +107,44 @@ add_filter('the_content', function ($content) {
     return $output;
 });
 
-// Footer section — bio, socials, custom links
+// ── Top social bar — slim strip above header ──────────────────────────────────
+add_action('kadence_before_header', function () {
+    $data    = affiliateos_get_data();
+    $profile = $data['profile'] ?? [];
+
+    $social_defs = [
+        'youtubeUrl'   => ['label' => 'YouTube',   'svg' => '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1C4.5 20.5 12 20.5 12 20.5s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.8 15.5V8.5l6.3 3.5-6.3 3.5z"/></svg>'],
+        'facebookUrl'  => ['label' => 'Facebook',  'svg' => '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.1C24 5.4 18.6 0 12 0S0 5.4 0 12.1C0 18.1 4.4 23.1 10.1 24v-8.4H7.1v-3.5h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9v2.2h3.4l-.5 3.5H14V24C19.6 23.1 24 18.1 24 12.1z"/></svg>'],
+        'instagramUrl' => ['label' => 'Instagram', 'svg' => '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.2c3.2 0 3.6 0 4.9.1 3.3.1 4.8 1.7 4.9 4.9.1 1.3.1 1.6.1 4.8 0 3.2 0 3.6-.1 4.8-.1 3.2-1.7 4.8-4.9 4.9-1.3.1-1.6.1-4.9.1-3.2 0-3.6 0-4.8-.1-3.3-.1-4.8-1.7-4.9-4.9C2.2 15.6 2.2 15.2 2.2 12c0-3.2 0-3.6.1-4.8C2.4 3.9 4 2.3 7.2 2.3c1.2-.1 1.6-.1 4.8-.1zM12 0C8.7 0 8.3 0 7.1.1 2.7.3.3 2.7.1 7.1.0 8.3 0 8.7 0 12c0 3.3 0 3.7.1 4.9.2 4.4 2.6 6.8 7 7C8.3 24 8.7 24 12 24c3.3 0 3.7 0 4.9-.1 4.4-.2 6.8-2.6 7-7 .1-1.2.1-1.6.1-4.9 0-3.3 0-3.7-.1-4.9C23.7 2.7 21.3.3 16.9.1 15.7 0 15.3 0 12 0zm0 5.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 12 5.8zm0 10.2a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.4-11.8a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z"/></svg>'],
+        'tiktokUrl'    => ['label' => 'TikTok',    'svg' => '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.6 3.3A4.8 4.8 0 0 1 14.9 0h-3.6v16.4a2.9 2.9 0 0 1-2.9 2.5 2.9 2.9 0 0 1-2.9-2.9 2.9 2.9 0 0 1 2.9-2.9c.3 0 .5 0 .8.1V9.5a6.4 6.4 0 0 0-.8-.1 6.5 6.5 0 0 0-6.5 6.5 6.5 6.5 0 0 0 6.5 6.5 6.5 6.5 0 0 0 6.5-6.5V8.2a8.4 8.4 0 0 0 4.9 1.6V6.2a4.8 4.8 0 0 1-2.2-2.9z"/></svg>'],
+        'twitterUrl'   => ['label' => 'X',         'svg' => '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.3 1.5h3.5L14.3 10l8.8 11.5H16l-5.2-6.8-6 6.8H1.3l8-9.2L1 1.5h7l4.7 6.2 5.6-6.2zm-1.2 18.5h1.9L7 3.4H5L17.1 20z"/></svg>'],
+        'pinterestUrl' => ['label' => 'Pinterest', 'svg' => '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12c0 5.1 3.2 9.5 7.8 11.2-.1-.9-.2-2.4.1-3.4.2-.8 1.5-6.5 1.5-6.5s-.4-.8-.4-1.9c0-1.8 1.1-3.2 2.4-3.2 1.1 0 1.7.8 1.7 1.8 0 1.1-.7 2.8-1 4.3-.3 1.3.6 2.3 1.8 2.3 2.1 0 3.6-2.3 3.6-5.5 0-2.9-2-4.9-4.9-4.9-3.3 0-5.3 2.5-5.3 5.1 0 1 .4 2.1.9 2.7.1.1.1.2.1.4-.1.4-.3 1.3-.3 1.5-.1.2-.2.3-.4.2-1.5-.7-2.4-2.9-2.4-4.7 0-3.8 2.8-7.4 8.1-7.4 4.2 0 7.5 3 7.5 7.1 0 4.2-2.6 7.6-6.3 7.6-1.2 0-2.4-.6-2.8-1.4l-.8 2.9c-.3 1-.9 2.2-1.4 3 1 .3 2.1.5 3.2.5 6.6 0 12-5.4 12-12C24 5.4 18.6 0 12 0z"/></svg>'],
+    ];
+
+    $has_links = false;
+    foreach ($social_defs as $key => $_) {
+        if (!empty($profile[$key])) { $has_links = true; break; }
+    }
+    if (!$has_links) return;
+    ?>
+    <div class="affiliateos-topbar" style="background:var(--global-palette1,#1a1a2e);padding:6px 20px;">
+      <div style="max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:flex-end;gap:8px;">
+        <?php foreach ($social_defs as $key => $info):
+            if (empty($profile[$key])) continue;
+        ?>
+        <a href="<?php echo esc_url($profile[$key]); ?>" target="_blank" rel="noopener" aria-label="<?php echo esc_attr($info['label']); ?>"
+           style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:rgba(255,255,255,0.1);color:#fff;text-decoration:none;transition:background .2s;"
+           onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+           onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+          <?php echo $info['svg']; ?>
+        </a>
+        <?php endforeach; ?>
+      </div>
+    </div>
+    <?php
+});
+
+// ── Footer section — bio, socials, custom links
 add_action('kadence_before_footer', function () {
     $data    = affiliateos_get_data();
     $footer  = $data['footer'] ?? [];
