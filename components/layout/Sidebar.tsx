@@ -45,12 +45,13 @@ export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUr
       {/* Logo */}
       <div className="px-4 pt-5 pb-4" style={{ borderBottom: '1px solid var(--border-2)' }}>
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-[#0071e3] flex items-center justify-center flex-shrink-0">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-          <span className="font-semibold text-sm tracking-tight" style={{ color: 'var(--text)' }}>AffiliateOS</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/mvp-affiliate-logo.png"
+            alt="MVP Affiliate"
+            className="w-7 h-7 rounded-lg object-contain mix-blend-multiply dark:mix-blend-screen flex-shrink-0"
+          />
+          <span className="font-semibold text-sm tracking-tight" style={{ color: 'var(--text)' }}>MVP Affiliate</span>
         </div>
       </div>
 
