@@ -421,7 +421,9 @@ function Step4({
         }),
       })
       setLoadingStep('Setting up your site…')
-      const data = await res.json()
+      const raw = await res.text()
+      let data: Record<string, string> = {}
+      try { data = JSON.parse(raw) } catch { throw new Error(`Server returned unexpected response: ${raw.slice(0, 300)}`) }
       if (!res.ok) throw new Error(data.error || 'Setup failed')
       onNext(url)
     } catch (err: unknown) {
