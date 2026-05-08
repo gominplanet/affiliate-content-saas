@@ -15,6 +15,7 @@ import {
   Sun,
   Moon,
   Paintbrush,
+  ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -32,7 +33,7 @@ const secondaryNav = [
   { href: '/admin/failures', label: 'Failures', icon: AlertTriangle, danger: true },
 ]
 
-export default function Sidebar({ email }: { email?: string }) {
+export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUrl?: string | null }) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
 
@@ -84,6 +85,19 @@ export default function Sidebar({ email }: { email?: string }) {
 
       {/* Footer: theme toggle + user */}
       <div className="px-3 pb-4 pt-3" style={{ borderTop: '1px solid var(--border-2)' }}>
+        {/* Visit Blog */}
+        {wpSiteUrl && (
+          <a
+            href={wpSiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="nav-item w-full mb-2"
+          >
+            <ExternalLink size={16} className="flex-shrink-0 text-[#0071e3]" />
+            <span className="text-[#0071e3] font-medium">Visit Blog</span>
+          </a>
+        )}
+
         {/* Dark mode toggle */}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}

@@ -8,9 +8,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!user) redirect('/login')
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: intRow } = await (supabase as any)
+    .from('integrations')
+    .select('wp_site_url')
+    .eq('user_id', user.id)
+    .single()
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      <Sidebar email={user.email} />
+      <Sidebar email={user.email} wpSiteUrl={intRow?.wp_site_url ?? null} />
       <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg)' }}>
         <div className="max-w-6xl mx-auto px-8 py-8">
           {children}
