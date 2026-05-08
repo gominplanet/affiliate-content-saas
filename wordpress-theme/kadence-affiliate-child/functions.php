@@ -109,19 +109,43 @@ add_filter('the_content', function ($content) {
 
 // Footer section — bio, socials, custom links
 add_action('kadence_before_footer', function () {
-    $data   = affiliateos_get_data();
-    $footer = $data['footer'] ?? [];
-    $bio    = trim($footer['bio'] ?? '');
-    $socials = $footer['socials'] ?? [];
-    $links  = $footer['links'] ?? [];
+    $data    = affiliateos_get_data();
+    $footer  = $data['footer'] ?? [];
+    $profile = $data['profile'] ?? [];
 
-    if (!$bio && empty(array_filter((array)$socials)) && empty($links)) return;
+    // Bio: prefer footer-specific override, fall back to profile bio
+    $bio = trim($footer['bio'] ?? ($profile['authorBio'] ?? ''));
+    $socials = $footer['socials'] ?? [];
+
+    // Populate socials from profile URLs if not overridden in footer
+    if (empty($socials['youtube'])   && !empty($profile['youtubeUrl']))   $socials['youtube']   = $profile['youtubeUrl'];
+    if (empty($socials['facebook'])  && !empty($profile['facebookUrl']))  $socials['facebook']  = $profile['facebookUrl'];
+    if (empty($socials['instagram']) && !empty($profile['instagramUrl'])) $socials['instagram'] = $profile['instagramUrl'];
+    if (empty($socials['threads'])   && !empty($profile['threadsUrl']))   $socials['threads']   = $profile['threadsUrl'];
+    if (empty($socials['pinterest']) && !empty($profile['pinterestUrl'])) $socials['pinterest'] = $profile['pinterestUrl'];
+
+    $links        = $footer['links'] ?? [];
+    $headshot_url = trim($profile['headshotUrl'] ?? '');
+    $author_name  = trim($profile['authorName'] ?? '');
+
+    if (!$bio && !$headshot_url && !$author_name && empty(array_filter((array)$socials)) && empty($links)) return;
     ?>
     <div class="affiliateos-footer" style="background:var(--global-palette1,#1a1a2e);color:#fff;padding:40px 20px;">
       <div style="max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;">
-        <?php if ($bio): ?>
-        <div style="flex:1;min-width:220px;">
-          <p style="font-size:0.95rem;line-height:1.7;opacity:0.85;margin:0;"><?php echo esc_html($bio); ?></p>
+        <?php if ($headshot_url || $author_name || $bio): ?>
+        <div style="flex:1;min-width:220px;display:flex;gap:16px;align-items:flex-start;">
+          <?php if ($headshot_url): ?>
+          <img src="<?php echo esc_url($headshot_url); ?>" alt="<?php echo esc_attr($author_name); ?>"
+               style="width:60px;height:60px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid rgba(255,255,255,0.2);" />
+          <?php endif; ?>
+          <div>
+            <?php if ($author_name): ?>
+            <p style="font-size:0.9rem;font-weight:700;margin:0 0 4px;opacity:1;"><?php echo esc_html($author_name); ?></p>
+            <?php endif; ?>
+            <?php if ($bio): ?>
+            <p style="font-size:0.875rem;line-height:1.6;opacity:0.8;margin:0;"><?php echo esc_html($bio); ?></p>
+            <?php endif; ?>
+          </div>
         </div>
         <?php endif; ?>
 

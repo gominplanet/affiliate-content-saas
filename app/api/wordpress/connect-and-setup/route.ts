@@ -377,23 +377,31 @@ export async function POST(request: Request) {
       ))
     } catch { /* non-fatal */ }
 
-    // ── 16. Save brand options to WordPress (used by front-page.php) ─────────
+    // ── 16. Save profile/brand data to WordPress via custom endpoint ──────────
+    // We use our own affiliateos/v1/customizations endpoint rather than /settings
+    // because WordPress only exposes whitelisted options via the REST settings API.
     try {
-      await req('/settings', {
+      const authHeader = password
+        ? { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` }
+        : {}
+      await fetch(`${siteUrl}/wp-json/affiliateos/v1/customizations`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({
-          affiliateos_accent_color: accentColor,
-          affiliateos_about_text: aboutText || '',
-          affiliateos_author_name: authorName,
-          affiliateos_author_img: headshotUrl || '',
-          affiliateos_youtube_url: youtubeUrl || '',
-          affiliateos_instagram_url: instagramUrl || '',
-          affiliateos_tiktok_url: tiktokUrl || '',
-          affiliateos_twitter_url: twitterUrl || '',
-          affiliateos_pinterest_url: pinterestUrl || '',
-          affiliateos_facebook_url: facebookUrl || '',
-          affiliateos_contact_email: contactEmail || '',
-          affiliateos_disclaimer: affiliateDisclaimer,
+          profile: {
+            authorName,
+            authorBio: aboutText || '',
+            headshotUrl: headshotUrl || '',
+            accentColor,
+            youtubeUrl: youtubeUrl || '',
+            instagramUrl: instagramUrl || '',
+            facebookUrl: facebookUrl || '',
+            pinterestUrl: pinterestUrl || '',
+            tiktokUrl: tiktokUrl || '',
+            twitterUrl: twitterUrl || '',
+            contactEmail: contactEmail || '',
+            affiliateDisclaimer,
+          },
         }),
       })
     } catch { /* non-fatal */ }
@@ -411,7 +419,7 @@ export async function POST(request: Request) {
       { onConflict: 'user_id' },
     )
 
-    // Save social/contact info to brand_profiles for future use
+    // Save social/contact info + profile assets to brand_profiles for future use
     await supabase.from('brand_profiles').update({
       ...(contactEmail ? { contact_email: contactEmail } : {}),
       ...(youtubeUrl ? { youtube_channel_url: youtubeUrl } : {}),
@@ -420,6 +428,8 @@ export async function POST(request: Request) {
       ...(twitterUrl ? { twitter_url: twitterUrl } : {}),
       ...(pinterestUrl ? { pinterest_url: pinterestUrl } : {}),
       ...(facebookUrl ? { facebook_url: facebookUrl } : {}),
+      ...(aboutText ? { author_bio: aboutText } : {}),
+      ...(headshotUrl ? { headshot_url: headshotUrl } : {}),
     }).eq('user_id', user.id)
 
     return NextResponse.json({
