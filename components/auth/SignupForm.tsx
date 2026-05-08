@@ -53,7 +53,7 @@ export default function SignupForm() {
   return (
     <div className="card p-8">
       <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Create your account</h2>
-      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Start automating your affiliate content today.</p>
+      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Start turning your YouTube content into affiliate revenue.</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>

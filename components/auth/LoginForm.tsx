@@ -32,7 +32,7 @@ export default function LoginForm() {
   return (
     <div className="card p-8">
       <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Welcome back</h2>
-      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Sign in to your account to continue.</p>
+      <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">Sign in to your MVP Affiliate account.</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
