@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import {
   LayoutDashboard,
@@ -16,8 +16,10 @@ import {
   Moon,
   Paintbrush,
   ExternalLink,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -35,7 +37,14 @@ const secondaryNav = [
 
 export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUrl?: string | null }) {
   const pathname = usePathname()
+  const router = useRouter()
   const { theme, setTheme } = useTheme()
+  const supabase = createBrowserClient()
+
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href)
@@ -132,6 +141,15 @@ export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUr
           </div>
           <ChevronRight size={14} style={{ color: 'var(--text-3)' }} className="opacity-0 group-hover:opacity-100 transition-opacity" />
         </Link>
+
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className="nav-item w-full mt-1 hover:!text-[#ff3b30]"
+        >
+          <LogOut size={16} className="flex-shrink-0" />
+          Sign out
+        </button>
       </div>
     </aside>
   )
