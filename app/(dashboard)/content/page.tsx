@@ -455,6 +455,8 @@ export default function ContentPage() {
   const [postsLoading, setPostsLoading] = useState(false)
   const [postsLoaded, setPostsLoaded] = useState(false)
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null)
+  const [selectedPostIds, setSelectedPostIds] = useState<Set<number>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
 
@@ -595,6 +597,36 @@ export default function ContentPage() {
     }
   }
 
+  async function bulkDeleteSelected() {
+    if (selectedPostIds.size === 0) return
+    if (!confirm(`Delete ${selectedPostIds.size} post${selectedPostIds.size !== 1 ? 's' : ''} from WordPress? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    const ids = [...selectedPostIds]
+    let deleted = 0
+    for (const wpPostId of ids) {
+      try {
+        await fetch('/api/blog/delete', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wpPostId }),
+        })
+        setAllBlogPosts(prev => prev.filter(p => p.id !== wpPostId))
+        deleted++
+      } catch { /* continue */ }
+    }
+    setSelectedPostIds(new Set())
+    setFixCatResult(`Deleted ${deleted} post${deleted !== 1 ? 's' : ''}.`)
+    setBulkDeleting(false)
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedPostIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
   async function syncVideos() {
     setSyncing(true)
     const res = await fetch('/api/youtube/sync', { method: 'POST' })
@@ -707,6 +739,41 @@ export default function ContentPage() {
         </div>
       ) : activeTab === 'posts' ? (
         <div className="flex flex-col gap-2">
+          {/* Bulk action toolbar */}
+          {!postsLoading && allBlogPosts.length > 0 && (
+            <div className="flex items-center gap-3 pb-1 flex-wrap">
+              <button
+                onClick={() => setSelectedPostIds(new Set(allBlogPosts.filter(p => !p.thumbnail).map(p => p.id)))}
+                className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
+              >
+                Select no-thumbnail
+              </button>
+              <button
+                onClick={() => setSelectedPostIds(new Set(allBlogPosts.map(p => p.id)))}
+                className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
+              >
+                Select all
+              </button>
+              {selectedPostIds.size > 0 && (
+                <>
+                  <button
+                    onClick={() => setSelectedPostIds(new Set())}
+                    className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
+                  >
+                    Clear ({selectedPostIds.size})
+                  </button>
+                  <button
+                    onClick={bulkDeleteSelected}
+                    disabled={bulkDeleting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-60 transition-colors"
+                  >
+                    {bulkDeleting ? <><Loader2 size={11} className="animate-spin" /> Deleting…</> : `Delete ${selectedPostIds.size} selected`}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {postsLoading ? (
             <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
               <Loader2 size={16} className="animate-spin" /> Loading posts from WordPress…
@@ -717,7 +784,13 @@ export default function ContentPage() {
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Generate your first blog post from the Videos tab.</p>
             </div>
           ) : allBlogPosts.map(post => (
-            <div key={post.id} className="card p-4 flex items-center gap-4">
+            <div key={post.id} className={`card p-4 flex items-center gap-3 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#0071e3]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
+              <input
+                type="checkbox"
+                checked={selectedPostIds.has(post.id)}
+                onChange={() => toggleSelect(post.id)}
+                className="flex-shrink-0 w-4 h-4 rounded accent-[#0071e3] cursor-pointer"
+              />
               <div className="w-24 h-14 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-[#2c2c2e]">
                 {post.thumbnail
                   ? <img src={post.thumbnail} alt="" className="w-full h-full object-cover" />
