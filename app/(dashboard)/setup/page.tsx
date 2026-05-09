@@ -234,21 +234,26 @@ function Step1({ onNext }: { onNext: () => void }) {
   )
 }
 
-// ─── Step 2: Install WordPress ────────────────────────────────────────────────
+// ─── Step 2: Install WordPress + theme + plugins ──────────────────────────────
 function Step2({ onNext }: { onNext: () => void }) {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Install WordPress on your domain</h2>
-        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">Hostinger has a built-in 1-click WordPress installer. Follow these steps inside hPanel.</p>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Install WordPress, theme &amp; plugins</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
+          Complete all three sections below before moving on. Each one takes about 2 minutes.
+        </p>
       </div>
+
+      {/* Part A — WordPress */}
       <div className="flex flex-col gap-3">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Part 1 — Install WordPress</p>
         {[
-          { title: 'Log in to hPanel', desc: 'Go to hpanel.hostinger.com and sign in.', action: { label: 'Open hPanel', href: 'https://hpanel.hostinger.com' } },
-          { title: 'Click "WordPress" in the sidebar', desc: 'In the left menu, find the WordPress section and click it.' },
-          { title: 'Click "Install"', desc: 'Hit the Install button and select your domain from the dropdown.' },
-          { title: 'Set your admin credentials', desc: 'Enter an admin username, email, and a strong password. Write these down — you\'ll need them in Step 4.' },
-          { title: 'Click "Install" and wait', desc: 'WordPress installs in about 1–2 minutes. You\'ll see a success message when done.' },
+          { title: 'Log in to hPanel', desc: 'Go to hpanel.hostinger.com and sign in to your Hostinger account.', action: { label: 'Open hPanel', href: 'https://hpanel.hostinger.com' } },
+          { title: 'Click "WordPress" in the sidebar', desc: 'In the left menu find the WordPress section and click it.' },
+          { title: 'Click "Install"', desc: 'Hit Install and select your domain name from the dropdown.' },
+          { title: 'Set your admin credentials', desc: 'Enter a username, your email, and a strong password. Write these down — you\'ll need them in the Launch step.' },
+          { title: 'Click "Install" and wait ~2 minutes', desc: 'WordPress will install automatically. You\'ll see a success screen when done.' },
         ].map(({ title, desc, action }, i) => (
           <div key={i} className="flex items-start gap-4 p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000]">
             <span className="w-6 h-6 rounded-full bg-[#1d1d1f] text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
@@ -264,7 +269,68 @@ function Step2({ onNext }: { onNext: () => void }) {
           </div>
         ))}
       </div>
-      <button onClick={onNext} className="btn-primary self-start">WordPress is installed <ChevronRight size={15} /></button>
+
+      {/* Part B — Kadence theme */}
+      <div className="flex flex-col gap-3">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Part 2 — Install the Kadence theme</p>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+          This is the theme that powers your blog layout. Download the ZIP below, then upload it to WordPress.
+        </p>
+        <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] flex flex-col gap-3">
+          <a href="/api/wordpress/theme" download="kadence-affiliate-child.zip" className="btn-primary text-sm self-start inline-flex">
+            <Download size={14} /> Download theme ZIP
+          </a>
+          <ol className="flex flex-col gap-2">
+            {[
+              'In your WordPress admin, go to Appearance → Themes.',
+              'Click "Add New Theme" → "Upload Theme".',
+              'Choose the ZIP file you just downloaded and click Install Now.',
+              'Click "Activate" once it finishes.',
+            ].map((text, i) => (
+              <li key={i} className="flex items-start gap-2.5">
+                <span className="w-4 h-4 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+            To get to wp-admin: visit <span className="font-mono">yourdomain.com/wp-admin</span> and log in with the credentials you set in Part 1.
+          </p>
+        </div>
+      </div>
+
+      {/* Part C — Code Snippets plugin */}
+      <div className="flex flex-col gap-3">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Part 3 — Install the Code Snippets plugin</p>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+          Code Snippets is a free WordPress plugin that lets the tool install custom features on your blog automatically — things like your social links in the footer and your customization settings. Without it, the Launch step can&apos;t fully configure your site.
+        </p>
+        <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] flex flex-col gap-3">
+          <a
+            href="https://wordpress.org/plugins/code-snippets/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary text-sm self-start inline-flex"
+          >
+            View on WordPress.org <ExternalLink size={13} />
+          </a>
+          <ol className="flex flex-col gap-2">
+            {[
+              'In wp-admin, go to Plugins → Add New Plugin.',
+              'Search for "Code Snippets" (by Code Snippets Pro).',
+              'Click "Install Now", then "Activate".',
+              'You\'ll see a new "Snippets" menu in the sidebar — that\'s it, nothing else to configure.',
+            ].map((text, i) => (
+              <li key={i} className="flex items-start gap-2.5">
+                <span className="w-4 h-4 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+
+      <button onClick={onNext} className="btn-primary self-start">Theme &amp; plugins installed <ChevronRight size={15} /></button>
     </div>
   )
 }
@@ -444,15 +510,22 @@ function Step4({
         </p>
       </div>
 
-      {/* Theme download */}
+      {/* Pre-flight checklist */}
       <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
-        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">First: install the Kadence theme</p>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          Download and upload this theme via WP Admin → Appearance → Themes → Add New → Upload Theme.
-        </p>
-        <a href="/api/wordpress/theme" download="kadence-affiliate-child.zip" className="btn-primary text-sm inline-flex">
-          <Download size={14} /> Download theme ZIP
-        </a>
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Before you launch — quick check:</p>
+        <ul className="flex flex-col gap-2">
+          {[
+            'WordPress is installed and you can log in to wp-admin',
+            'The Kadence theme is installed and activated (from Step 2)',
+            'The Code Snippets plugin is installed and activated (from Step 2)',
+            'Your domain is live — not just "DNS propagating" (can take up to 24h after signup)',
+          ].map((item, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className="text-[#34c759] mt-0.5 flex-shrink-0">✓</span>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{item}</p>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* Credentials */}
@@ -479,7 +552,7 @@ function Step4({
               {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
           </div>
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Same password you use to log into wp-admin.</p>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">The password you set during WordPress installation (the one you use to log into <span className="font-mono">yourdomain.com/wp-admin</span>). Not an application password.</p>
         </div>
       </div>
 
