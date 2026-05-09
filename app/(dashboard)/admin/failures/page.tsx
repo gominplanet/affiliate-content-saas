@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Header from '@/components/layout/Header'
-import { RefreshCw, Trash2, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { RefreshCw, Trash2, AlertCircle, ChevronDown, ChevronRight, CheckCircle2 } from 'lucide-react'
 
 type JobType = 'blog_generation' | 'wp_publish' | 'social_draft' | 'youtube_sync'
 type FailureStatus = 'pending_retry' | 'retrying' | 'resolved' | 'dismissed'
@@ -19,17 +19,32 @@ interface Failure {
 }
 
 const jobTypeLabel: Record<JobType, { label: string; color: string }> = {
-  blog_generation: { label: 'Blog generation', color: 'bg-[#0071e3]/8 text-[#0071e3]' },
-  wp_publish: { label: 'WP publish', color: 'bg-[#ff9500]/8 text-[#ff9500]' },
-  social_draft: { label: 'Social draft', color: 'bg-purple-50 text-purple-600' },
-  youtube_sync: { label: 'YouTube sync', color: 'bg-red-50 text-red-500' },
+  blog_generation: { label: 'Content creation', color: 'bg-[#0071e3]/8 text-[#0071e3]' },
+  wp_publish:      { label: 'Blog publishing',  color: 'bg-[#ff9500]/8 text-[#ff9500]' },
+  social_draft:    { label: 'Social posts',     color: 'bg-purple-50 text-purple-600' },
+  youtube_sync:    { label: 'YouTube sync',     color: 'bg-red-50 text-red-500' },
 }
 
-const statusBadge: Record<FailureStatus, string> = {
-  pending_retry: 'bg-[#ff9500]/10 text-[#ff9500]',
-  retrying: 'bg-[#0071e3]/10 text-[#0071e3]',
-  resolved: 'bg-[#34c759]/10 text-[#34c759]',
-  dismissed: 'bg-gray-100 text-[#86868b] dark:text-[#8e8e93]',
+const statusConfig: Record<FailureStatus, { label: string; style: string }> = {
+  pending_retry: { label: 'Will retry',  style: 'bg-[#ff9500]/10 text-[#ff9500]' },
+  retrying:      { label: 'Retrying…',   style: 'bg-[#0071e3]/10 text-[#0071e3]' },
+  resolved:      { label: 'Resolved',    style: 'bg-[#34c759]/10 text-[#34c759]' },
+  dismissed:     { label: 'Dismissed',   style: 'bg-gray-100 text-[#86868b] dark:text-[#8e8e93]' },
+}
+
+// User-facing error messages — no API names, no technical codes
+const friendlyError: Record<string, string> = {
+  WP_AUTH_401:          "Couldn't connect to your blog. Your WordPress password may need updating.",
+  ANTHROPIC_RATE_LIMIT: 'Content generation was busy — will retry automatically shortly.',
+  YOUTUBE_QUOTA_EXCEEDED: 'YouTube sync is paused for today and will resume automatically overnight.',
+  GEMINI_EMPTY_RESPONSE: "Couldn't generate content for this video — try retrying manually.",
+}
+
+const friendlyFix: Record<string, string> = {
+  WP_AUTH_401:          'Go to Settings → Integrations and re-enter your WordPress password.',
+  ANTHROPIC_RATE_LIMIT: 'No action needed — the job is queued and will retry automatically. If this keeps happening, consider upgrading your plan.',
+  YOUTUBE_QUOTA_EXCEEDED: 'No action needed — YouTube resets daily limits overnight and the sync will resume automatically.',
+  GEMINI_EMPTY_RESPONSE: 'Click Retry below. If it fails again, try editing the video title to be more specific.',
 }
 
 const mockFailures: Failure[] = [
@@ -78,14 +93,18 @@ const mockFailures: Failure[] = [
 function FailureRow({ failure }: { failure: Failure }) {
   const [expanded, setExpanded] = useState(false)
   const jt = jobTypeLabel[failure.jobType]
+  const st = statusConfig[failure.status]
+  const message = friendlyError[failure.errorCode] ?? failure.errorMessage
+  const fix = friendlyFix[failure.errorCode]
+  const isActive = failure.status === 'pending_retry' || failure.status === 'retrying'
 
   return (
     <>
       <tr
-        className="border-b border-gray-100 hover:bg-gray-50/60 cursor-pointer"
+        className="border-b border-gray-100 hover:bg-gray-50/60 cursor-pointer transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        <td className="py-3 px-4">
+        <td className="py-3 px-4 w-8">
           <button className="text-[#86868b] dark:text-[#8e8e93]">
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           </button>
@@ -94,35 +113,28 @@ function FailureRow({ failure }: { failure: Failure }) {
           <span className={`badge ${jt.color}`}>{jt.label}</span>
         </td>
         <td className="py-3 px-4">
-          <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] font-medium max-w-[220px] truncate">
+          <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] max-w-[220px] truncate">
             {failure.videoTitle}
           </p>
         </td>
         <td className="py-3 px-4">
-          <div className="flex items-center gap-1.5 max-w-[260px]">
-            <AlertCircle size={13} className="text-[#ff3b30] flex-shrink-0" />
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] truncate">{failure.errorMessage}</p>
+          <div className="flex items-center gap-1.5 max-w-[300px]">
+            {failure.status === 'resolved'
+              ? <CheckCircle2 size={13} className="text-[#34c759] flex-shrink-0" />
+              : <AlertCircle size={13} className="text-[#ff9500] flex-shrink-0" />
+            }
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] truncate">{message}</p>
           </div>
         </td>
         <td className="py-3 px-4">
-          <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[#6e6e73] dark:text-[#ebebf0]">
-            {failure.errorCode}
-          </code>
+          <span className="text-xs text-[#86868b] dark:text-[#8e8e93] whitespace-nowrap">{failure.failedAt}</span>
         </td>
         <td className="py-3 px-4">
-          <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">{failure.failedAt}</span>
+          <span className={`badge ${st.style}`}>{st.label}</span>
         </td>
         <td className="py-3 px-4">
-          <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">{failure.retryCount}×</span>
-        </td>
-        <td className="py-3 px-4">
-          <span className={`badge ${statusBadge[failure.status]}`}>
-            {failure.status.replace('_', ' ')}
-          </span>
-        </td>
-        <td className="py-3 px-4">
-          <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-            {failure.status !== 'resolved' && failure.status !== 'dismissed' && (
+          <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+            {isActive && (
               <button className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#0071e3]/8 text-[#0071e3] hover:bg-[#0071e3]/15 transition-colors">
                 <RefreshCw size={11} /> Retry
               </button>
@@ -133,25 +145,19 @@ function FailureRow({ failure }: { failure: Failure }) {
           </div>
         </td>
       </tr>
+
       {expanded && (
         <tr className="bg-[#f5f5f7] dark:bg-[#000]/60">
-          <td colSpan={9} className="px-4 py-3">
-            <div className="flex gap-6 text-xs">
-              <div>
-                <p className="font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Full error</p>
-                <p className="text-[#1d1d1f] dark:text-[#f5f5f7] font-mono bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 max-w-2xl">
-                  {failure.errorMessage}
-                </p>
-              </div>
-              <div>
-                <p className="font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Suggested fix</p>
-                <p className="text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {failure.errorCode === 'WP_AUTH_401' && 'Regenerate your WordPress application password in Settings → Integrations.'}
-                  {failure.errorCode === 'ANTHROPIC_RATE_LIMIT' && 'Wait 60 seconds and retry. Consider upgrading your Anthropic plan.'}
-                  {failure.errorCode === 'YOUTUBE_QUOTA_EXCEEDED' && 'YouTube API quota resets at midnight PST. Job will auto-retry tomorrow.'}
-                  {failure.errorCode === 'GEMINI_EMPTY_RESPONSE' && 'The prompt may have triggered a safety filter. Review and rephrase the video title or description.'}
-                </p>
-              </div>
+          <td colSpan={7} className="px-6 py-4">
+            <div className="flex flex-col gap-1.5 max-w-xl">
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">What happened</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{message}</p>
+              {fix && (
+                <>
+                  <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-2">What to do</p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{fix}</p>
+                </>
+              )}
             </div>
           </td>
         </tr>
@@ -163,28 +169,28 @@ function FailureRow({ failure }: { failure: Failure }) {
 export default function FailuresPage() {
   const [typeFilter, setTypeFilter] = useState<JobType | 'all'>('all')
 
-  const filtered = mockFailures.filter((f) =>
+  const filtered = mockFailures.filter(f =>
     typeFilter === 'all' ? true : f.jobType === typeFilter,
   )
-
-  const open = mockFailures.filter((f) => f.status === 'pending_retry' || f.status === 'retrying').length
+  const open = mockFailures.filter(f => f.status === 'pending_retry' || f.status === 'retrying').length
 
   return (
     <>
       <Header
-        title="Failures"
-        subtitle={`${open} job${open !== 1 ? 's' : ''} require attention.`}
+        title="Issues"
+        subtitle={open > 0 ? `${open} item${open !== 1 ? 's' : ''} need attention.` : 'Everything is running smoothly.'}
         actions={
-          <button className="btn-primary">
-            <RefreshCw size={14} />
-            Retry all pending
-          </button>
+          open > 0 && (
+            <button className="btn-primary flex items-center gap-2">
+              <RefreshCw size={14} /> Retry all
+            </button>
+          )
         }
       />
 
       {/* Filters */}
       <div className="flex items-center gap-1.5 mb-5">
-        {(['all', 'blog_generation', 'wp_publish', 'social_draft', 'youtube_sync'] as const).map((t) => (
+        {(['all', 'blog_generation', 'wp_publish', 'social_draft', 'youtube_sync'] as const).map(t => (
           <button
             key={t}
             onClick={() => setTypeFilter(t)}
@@ -194,7 +200,7 @@ export default function FailuresPage() {
                 : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'
             }`}
           >
-            {t === 'all' ? 'All jobs' : jobTypeLabel[t].label}
+            {t === 'all' ? 'All' : jobTypeLabel[t].label}
           </button>
         ))}
       </div>
@@ -207,22 +213,18 @@ export default function FailuresPage() {
               <th className="py-2.5 px-4 w-8" />
               <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Type</th>
               <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Video</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Error</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Code</th>
+              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">What happened</th>
               <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">When</th>
-              <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Retries</th>
               <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Status</th>
               <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b] dark:text-[#8e8e93]">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((f) => (
-              <FailureRow key={f.id} failure={f} />
-            ))}
+            {filtered.map(f => <FailureRow key={f.id} failure={f} />)}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-sm text-[#86868b] dark:text-[#8e8e93]">
-                  No failures found.
+                <td colSpan={7} className="py-12 text-center text-sm text-[#86868b] dark:text-[#8e8e93]">
+                  No issues found.
                 </td>
               </tr>
             )}
