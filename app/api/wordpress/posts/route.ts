@@ -37,7 +37,7 @@ export async function GET() {
     let page = 1
     while (true) {
       const res = await fetch(
-        `${base}/wp-json/wp/v2/posts?per_page=100&page=${page}&status=publish&orderby=date&order=desc&_embed=wp:featuredmedia&_fields=id,title,link,date,_links,_embedded`,
+        `${base}/wp-json/wp/v2/posts?per_page=100&page=${page}&status=publish&orderby=date&order=desc&_embed=wp:featuredmedia`,
         { headers },
       )
       if (!res.ok) break

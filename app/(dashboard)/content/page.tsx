@@ -533,8 +533,14 @@ export default function ContentPage() {
     try {
       const res = await fetch('/api/wordpress/posts')
       const data = await res.json()
-      if (data.posts) setAllBlogPosts(data.posts)
+      if (!res.ok || data.error) {
+        setFixCatResult(`Failed to load posts: ${data.error || res.status}`)
+      } else {
+        setAllBlogPosts(data.posts ?? [])
+      }
       setPostsLoaded(true)
+    } catch (e) {
+      setFixCatResult(`Failed to load posts: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       setPostsLoading(false)
     }
