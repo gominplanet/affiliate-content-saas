@@ -222,9 +222,18 @@ function GenerateButton({
 
   if (status === 'done' && result) {
     return (
-      <a href={result.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline">
-        <CheckCircle size={13} /> View post <ExternalLink size={11} />
-      </a>
+      <div className="flex items-center gap-2">
+        <a href={result.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline">
+          <CheckCircle size={13} /> View post <ExternalLink size={11} />
+        </a>
+        <button
+          onClick={generate}
+          className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors"
+          title="Rewrite this post with fresh AI content"
+        >
+          <RefreshCw size={11} /> Rewrite
+        </button>
+      </div>
     )
   }
   if (status === 'generating') {
