@@ -74,6 +74,18 @@ export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUr
           </Link>
         ))}
 
+        {/* Visit Blog */}
+        <a
+          href={wpSiteUrl || '/setup'}
+          target={wpSiteUrl ? '_blank' : '_self'}
+          rel="noopener noreferrer"
+          className="nav-item"
+          style={wpSiteUrl ? {} : { opacity: 0.45 }}
+        >
+          <ExternalLink size={16} className="flex-shrink-0" style={wpSiteUrl ? { color: '#0071e3' } : {}} />
+          <span style={wpSiteUrl ? { color: '#0071e3', fontWeight: 500 } : {}}>Visit Blog</span>
+        </a>
+
         <div className="mt-4 mb-2 pt-4" style={{ borderTop: '1px solid var(--border-2)' }}>
           <p className="section-label px-2 mb-2">System</p>
           {secondaryNav.map(({ href, label, icon: Icon, danger }) => (
@@ -95,19 +107,6 @@ export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUr
 
       {/* Footer: theme toggle + user */}
       <div className="px-3 pb-4 pt-3" style={{ borderTop: '1px solid var(--border-2)' }}>
-        {/* Visit Blog */}
-        {wpSiteUrl && (
-          <a
-            href={wpSiteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="nav-item w-full mb-2"
-          >
-            <ExternalLink size={16} className="flex-shrink-0 text-[#0071e3]" />
-            <span className="text-[#0071e3] font-medium">Visit Blog</span>
-          </a>
-        )}
-
         {/* Dark mode toggle */}
         <button
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
