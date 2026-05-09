@@ -153,6 +153,24 @@ const FORCE_FRONT_PAGE_PHP = `add_filter('frontpage_template', function (\$templ
     return get_page_template();
 });`
 
+// Runs once on first activation to disable LiteSpeed Cache's REST API caching,
+// which otherwise serves stale customization data to the homepage JS.
+const LITESPEED_FIX_PHP = `if (!get_option('aff_ls_cache_patched')) {
+    // Newer LiteSpeed (per-key options)
+    update_option('litespeed.conf.cache-rest', 0);
+    // Older LiteSpeed (single array option)
+    \$conf = get_option('litespeed.conf', []);
+    if (is_array(\$conf)) {
+        \$conf['cache-rest'] = 0;
+        update_option('litespeed.conf', \$conf);
+    }
+    // Purge any already-cached REST responses
+    if (class_exists('LiteSpeed\\\\Purge')) {
+        do_action('litespeed_purge_all');
+    }
+    update_option('aff_ls_cache_patched', 1);
+}`
+
 async function wpMediaUpload(
   siteUrl: string,
   cookies: string,
@@ -224,6 +242,9 @@ export async function POST(request: Request) {
     try {
       await ensureCodeSnippet(siteUrl, cookies, nonce, 'Force Front Page Template', FORCE_FRONT_PAGE_PHP)
     } catch { /* non-fatal */ }
+    try {
+      await ensureCodeSnippet(siteUrl, cookies, nonce, 'Disable LiteSpeed REST Cache', LITESPEED_FIX_PHP)
+    } catch { /* non-fatal — site may not have LiteSpeed installed */ }
 
     // ── 3b. Delete default WordPress content ─────────────────────────────────
     try {
