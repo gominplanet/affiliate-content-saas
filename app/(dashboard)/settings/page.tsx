@@ -347,6 +347,8 @@ function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [wpTesting, setWpTesting] = useState(false)
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [fixingCss, setFixingCss] = useState(false)
+  const [fixCssResult, setFixCssResult] = useState<string | null>(null)
 
   // Profile tab state
   const [firstName, setFirstName] = useState('')
@@ -512,6 +514,26 @@ function SettingsPage() {
     await fetch('/api/auth/threads/disconnect', { method: 'POST' })
     setThreads({ connected: false, userId: '', username: '' })
     setThDisconnecting(false)
+  }
+
+  async function fixCssCorruption() {
+    setFixingCss(true)
+    setFixCssResult(null)
+    try {
+      const res = await fetch('/api/wordpress/fix-css-corruption', { method: 'POST' })
+      const data = await res.json()
+      if (data.error) {
+        setFixCssResult(`Error: ${data.error}`)
+      } else if (data.affected === 0) {
+        setFixCssResult('No corrupted posts found — all clean!')
+      } else {
+        setFixCssResult(`Fixed ${data.fixed} of ${data.affected} affected post${data.affected !== 1 ? 's' : ''}.`)
+      }
+    } catch {
+      setFixCssResult('Request failed.')
+    } finally {
+      setFixingCss(false)
+    }
   }
 
   async function testWordPress() {
@@ -727,7 +749,7 @@ function SettingsPage() {
                     hint="Set this in wp-config.php as CONTENT_TOOL_TOKEN and install the mu-plugin — bypasses host auth issues"
                   />
                   {/* Test connection */}
-                  <div className="flex items-center gap-3 pt-1">
+                  <div className="flex flex-wrap items-center gap-3 pt-1">
                     <button
                       type="button"
                       onClick={testWordPress}
@@ -737,9 +759,23 @@ function SettingsPage() {
                       {wpTesting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
                       Test connection
                     </button>
+                    <button
+                      type="button"
+                      onClick={fixCssCorruption}
+                      disabled={fixingCss || !integrations.wordpress_url}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#ff3b30]/40 disabled:opacity-40 transition-colors"
+                    >
+                      {fixingCss ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                      Fix corrupted posts
+                    </button>
                     {wpTestResult && (
                       <span className={`text-xs font-medium ${wpTestResult.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>
                         {wpTestResult.message}
+                      </span>
+                    )}
+                    {fixCssResult && (
+                      <span className={`text-xs font-medium ${fixCssResult.startsWith('Error') ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>
+                        {fixCssResult}
                       </span>
                     )}
                   </div>
