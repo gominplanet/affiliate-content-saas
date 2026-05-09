@@ -138,15 +138,18 @@ const AFFILIATEOS_CORE_PHP = `add_action('rest_api_init', function () {
     ]);
 });
 
-function affiliateos_save_customizations(WP_REST_Request $request): WP_REST_Response {
-    $data = $request->get_json_params();
-    update_option('affiliateos_customizations', $data);
+function affiliateos_save_customizations(WP_REST_Request \$request): WP_REST_Response {
+    \$data = \$request->get_json_params();
+    update_option('affiliateos_customizations', \$data);
+    // Purge page cache so changes appear immediately
+    do_action('litespeed_purge_all');
+    if (function_exists('wp_cache_flush')) wp_cache_flush();
     return new WP_REST_Response(['saved' => true], 200);
 }
 
 function affiliateos_get_customizations(): WP_REST_Response {
-    $data = get_option('affiliateos_customizations', []);
-    return new WP_REST_Response($data, 200);
+    \$data = get_option('affiliateos_customizations', []);
+    return new WP_REST_Response(\$data, 200);
 }`
 
 const FORCE_FRONT_PAGE_PHP = `add_filter('frontpage_template', function (\$template) {
