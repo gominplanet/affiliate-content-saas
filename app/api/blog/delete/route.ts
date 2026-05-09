@@ -8,20 +8,14 @@ export async function DELETE(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { postId } = await request.json()
-    if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    const body = await request.json()
+    // Accept either postId (Supabase UUID) or wpPostId (WP integer)
+    const postId = body.postId as string | undefined
+    const wpPostId = body.wpPostId as number | undefined
 
-    // Get the post + WP credentials
-    const { data: postRow } = await supabase
-      .from('blog_posts')
-      .select('id,wordpress_post_id')
-      .eq('id', postId)
-      .eq('user_id', user.id)
-      .single()
-
-    if (!postRow) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const post = postRow as any
+    if (!postId && !wpPostId) {
+      return NextResponse.json({ error: 'postId or wpPostId required' }, { status: 400 })
+    }
 
     const { data: wpRow } = await supabase
       .from('integrations')
@@ -31,8 +25,22 @@ export async function DELETE(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const wp = wpRow as any
 
-    // Delete from WordPress (best-effort)
-    if (wp?.wordpress_url && post.wordpress_post_id) {
+    // Resolve the WP post ID to delete
+    let resolvedWpPostId: number | null = wpPostId ?? null
+
+    if (postId && !resolvedWpPostId) {
+      const { data: postRow } = await supabase
+        .from('blog_posts')
+        .select('wordpress_post_id')
+        .eq('id', postId)
+        .eq('user_id', user.id)
+        .single()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      resolvedWpPostId = (postRow as any)?.wordpress_post_id ?? null
+    }
+
+    // Delete from WordPress
+    if (wp?.wordpress_url && resolvedWpPostId) {
       try {
         const wpService = createWordPressService(
           wp.wordpress_url,
@@ -40,12 +48,20 @@ export async function DELETE(request: Request) {
           wp.wordpress_app_password,
           wp.wordpress_api_token || undefined,
         )
-        await wpService.deletePost(post.wordpress_post_id)
-      } catch { /* non-fatal — still remove from our DB */ }
+        await wpService.deletePost(resolvedWpPostId)
+      } catch { /* non-fatal */ }
     }
 
-    // Remove from our database
-    await supabase.from('blog_posts').delete().eq('id', postId).eq('user_id', user.id)
+    // Remove from Supabase if we have a UUID
+    if (postId) {
+      await supabase.from('blog_posts').delete().eq('id', postId).eq('user_id', user.id)
+    } else if (resolvedWpPostId) {
+      // Also clean up by WP post ID in case it exists
+      await supabase.from('blog_posts')
+        .delete()
+        .eq('wordpress_post_id', resolvedWpPostId)
+        .eq('user_id', user.id)
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
