@@ -65,13 +65,27 @@ export async function GET() {
       } catch { /* thumbnails are non-fatal */ }
     }
 
-    // ── 3. Assemble final list ────────────────────────────────────────────────
+    // ── 3. Fetch video_id mapping from blog_posts table ───────────────────────
+    const wpIds = rawPosts.map(p => p.id)
+    const { data: dbPosts } = await supabase
+      .from('blog_posts')
+      .select('wordpress_post_id,video_id')
+      .eq('user_id', user.id)
+      .in('wordpress_post_id', wpIds)
+
+    const videoIdMap: Record<number, string> = {}
+    for (const p of (dbPosts ?? []) as { wordpress_post_id: number; video_id: string }[]) {
+      if (p.wordpress_post_id && p.video_id) videoIdMap[p.wordpress_post_id] = p.video_id
+    }
+
+    // ── 4. Assemble final list ────────────────────────────────────────────────
     const posts = rawPosts.map(p => ({
       id: p.id,
       title: p.title?.rendered ?? '',
       link: p.link,
       date: p.date,
       thumbnail: thumbMap[p.featured_media] ?? null,
+      videoId: videoIdMap[p.id] ?? null,
     }))
 
     return NextResponse.json({ posts })

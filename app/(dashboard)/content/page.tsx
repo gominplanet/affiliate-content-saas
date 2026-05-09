@@ -450,7 +450,8 @@ export default function ContentPage() {
   const [fixingCategories, setFixingCategories] = useState(false)
   const [fixCatResult, setFixCatResult] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'videos' | 'posts'>('videos')
-  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null }[]>([])
+  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null }[]>([])
+  const [rewritingPostId, setRewritingPostId] = useState<number | null>(null)
   const [postsLoading, setPostsLoading] = useState(false)
   const [postsLoaded, setPostsLoaded] = useState(false)
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null)
@@ -552,6 +553,30 @@ export default function ContentPage() {
       setFixCatResult(`Failed to load posts: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       setPostsLoading(false)
+    }
+  }
+
+  async function rewritePost(wpPostId: number, videoId: string) {
+    setRewritingPostId(wpPostId)
+    try {
+      const res = await fetch('/api/blog/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setFixCatResult(`Rewrite failed: ${data.error || res.status}`)
+      } else {
+        setFixCatResult(`Rewritten: "${data.title}"`)
+        setAllBlogPosts(prev => prev.map(p =>
+          p.id === wpPostId ? { ...p, title: data.title, link: data.wordpressUrl ?? p.link } : p
+        ))
+      }
+    } catch {
+      setFixCatResult('Rewrite failed.')
+    } finally {
+      setRewritingPostId(null)
     }
   }
 
@@ -705,6 +730,16 @@ export default function ContentPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                {post.videoId && (
+                  <button
+                    onClick={() => rewritePost(post.id, post.videoId!)}
+                    disabled={rewritingPostId === post.id}
+                    className="text-xs text-[#86868b] hover:text-[#0071e3] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                  >
+                    {rewritingPostId === post.id ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                    {rewritingPostId === post.id ? 'Rewriting…' : 'Rewrite'}
+                  </button>
+                )}
                 {post.link && (
                   <a href={post.link} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex items-center gap-1">
                     <ExternalLink size={11} /> View
