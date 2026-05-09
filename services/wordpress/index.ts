@@ -315,33 +315,10 @@ export class WordPressService {
       }
     } catch { /* not a block theme or no global styles — try next */ }
 
-    // ── Try Customizer additional_css (classic themes) ────────────────────
-    try {
-      const siteRes = await fetch(`${this.baseUrl.replace('/wp/v2', '')}/`, {
-        headers: { Authorization: this.authHeader },
-      })
-      if (!siteRes.ok) return false
-
-      // Read existing custom CSS post
-      const rawBase = this.baseUrl.replace('/wp/v2', '')
-      const cssRes = await fetch(`${rawBase}/wp/v2/posts?type=custom_css&per_page=1`, {
-        headers: { Authorization: this.authHeader },
-      })
-      if (!cssRes.ok) return false
-      const cssPosts = await cssRes.json() as { id: number; content: { raw: string } }[]
-      if (!cssPosts.length) return false
-
-      const { id, content } = cssPosts[0]
-      const existing = content?.raw || ''
-      if (existing.includes(marker)) return true
-
-      await this.request(`/posts/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: existing + '\n' + marked }),
-      })
-      return true
-    } catch { return false }
+    // Classic theme fallback removed — was using wrong endpoint (/posts?type=custom_css)
+    // which matched regular posts and corrupted their content. CSS is managed via
+    // Customizer Additional CSS instead.
+    return false
   }
 }
 
