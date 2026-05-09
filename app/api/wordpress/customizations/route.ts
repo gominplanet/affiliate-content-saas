@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createWordPressService } from '@/services/wordpress'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -42,24 +43,20 @@ export async function POST(req: Request) {
 
   if (intRow?.wordpress_url && intRow?.wordpress_username && intRow?.wordpress_app_password) {
     try {
-      const creds = Buffer.from(
-        `${intRow.wordpress_username}:${intRow.wordpress_app_password.replace(/\s+/g, '')}`,
-      ).toString('base64')
-      const auth = intRow.wordpress_api_token
-        ? `Basic ${Buffer.from(`${intRow.wordpress_username}:${intRow.wordpress_api_token}`).toString('base64')}`
-        : `Basic ${creds}`
+      const wpService = createWordPressService(
+        intRow.wordpress_url,
+        intRow.wordpress_username,
+        intRow.wordpress_app_password,
+        intRow.wordpress_api_token || undefined,
+      )
 
-      // Fetch existing profile data so we only override footer-related fields
+      // Fetch existing data so we only override footer-related fields
       let existing: Record<string, unknown> = {}
       try {
-        const getRes = await fetch(
-          `${intRow.wordpress_url}/wp-json/affiliateos/v1/customizations`,
-          { headers: { Authorization: auth } },
-        )
-        if (getRes.ok) existing = await getRes.json()
+        existing = await wpService.getCustomEndpoint('/wp-json/affiliateos/v1/customizations') as Record<string, unknown>
       } catch { /* start fresh */ }
 
-      // Map footer.socials → profile keys that the WP plugin understands
+      // Map footer.socials → profile keys the WP plugin expects
       const socials = customizations?.footer?.socials ?? {}
       const mergedProfile = {
         ...(existing?.profile ?? {}),
@@ -74,15 +71,10 @@ export async function POST(req: Request) {
         ...(customizations?.footer?.bio ? { authorBio: customizations.footer.bio } : {}),
       }
 
-      const wpRes = await fetch(`${intRow.wordpress_url}/wp-json/affiliateos/v1/customizations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: auth },
-        body: JSON.stringify({ ...existing, ...customizations, profile: mergedProfile }),
-      })
-      if (!wpRes.ok) {
-        const text = await wpRes.text()
-        console.error('WP push failed:', text)
-      }
+      await wpService.postCustomEndpoint(
+        '/wp-json/affiliateos/v1/customizations',
+        { ...existing, ...customizations, profile: mergedProfile },
+      )
     } catch (e) {
       console.error('WP push error:', e)
     }

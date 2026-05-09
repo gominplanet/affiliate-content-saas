@@ -134,6 +134,45 @@ export class WordPressService {
     return res.json() as Promise<T>
   }
 
+  // ── Custom endpoint (nonce fallback for non-/wp/v2 paths) ────────────────
+
+  async postCustomEndpoint(fullPath: string, body: unknown): Promise<unknown> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: this.authHeader,
+    }
+    let res = await fetch(`${this.siteUrl}${fullPath}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+    if (res.status === 401 || res.status === 403) {
+      const nonce = await this.loginAndGetNonce()
+      res = await fetch(`${this.siteUrl}${fullPath}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: nonce.cookies,
+          'X-WP-Nonce': nonce.nonce,
+        },
+        body: JSON.stringify(body),
+      })
+    }
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`WordPress ${res.status}: ${text.slice(0, 300)}`)
+    }
+    return res.json()
+  }
+
+  async getCustomEndpoint(fullPath: string): Promise<unknown> {
+    const res = await fetch(`${this.siteUrl}${fullPath}`, {
+      headers: { Authorization: this.authHeader },
+    })
+    if (!res.ok) return {}
+    return res.json()
+  }
+
   // ── Tags ──────────────────────────────────────────────────────────────────
 
   async findOrCreateTag(name: string): Promise<number> {
