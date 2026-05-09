@@ -1,21 +1,18 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Header from '@/components/layout/Header'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
-  Plus, Trash2, Save, Loader2, Image, Code2, ToggleLeft, ToggleRight,
-  Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp, Twitter, Mail
+  Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
+  Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp,
+  Twitter, Mail, Upload, X,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type BlockType = 'html' | 'image'
-
 interface AdBlock {
   id: string
-  type: BlockType
-  html: string
   imageUrl: string
   linkUrl: string
   position: number // in-content only: after paragraph N
@@ -64,26 +61,81 @@ const defaultCustomizations: BlogCustomizations = {
 }
 
 function newBlock(): AdBlock {
-  return { id: crypto.randomUUID(), type: 'html', html: '', imageUrl: '', linkUrl: '', position: 2, enabled: true }
+  return { id: crypto.randomUUID(), imageUrl: '', linkUrl: '', position: 2, enabled: true }
 }
 
-// ── Ad Block Editor ───────────────────────────────────────────────────────────
+// Migrate legacy blocks that had type/html fields
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function migrateBlock(raw: any): AdBlock {
+  return {
+    id: raw.id ?? crypto.randomUUID(),
+    imageUrl: raw.imageUrl ?? '',
+    linkUrl: raw.linkUrl ?? '',
+    position: raw.position ?? 2,
+    enabled: raw.enabled ?? true,
+  }
+}
 
-function AdBlockEditor({
+// ── Image upload helper ───────────────────────────────────────────────────────
+
+async function uploadBannerImage(file: File, userId: string): Promise<string> {
+  const supabase = createBrowserClient()
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const { error } = await supabase.storage.from('ad-banners').upload(path, file, {
+    cacheControl: '31536000',
+    upsert: false,
+  })
+  if (error) throw new Error(error.message)
+  const { data } = supabase.storage.from('ad-banners').getPublicUrl(path)
+  return data.publicUrl
+}
+
+// ── Banner Block Editor ───────────────────────────────────────────────────────
+
+function BannerBlockEditor({
   block,
   onChange,
   onDelete,
   showPosition,
+  userId,
 }: {
   block: AdBlock
   onChange: (b: AdBlock) => void
   onDelete: () => void
   showPosition: boolean
+  userId: string
 }) {
   const [open, setOpen] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function handleFile(file: File) {
+    if (!file.type.startsWith('image/')) { setUploadError('Please upload an image file.'); return }
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const url = await uploadBannerImage(file, userId)
+      onChange({ ...block, imageUrl: url })
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : 'Upload failed. Try pasting an image URL instead.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) handleFile(file)
+  }
 
   return (
     <div className="border border-[var(--border-2)] rounded-xl overflow-hidden">
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-[var(--surface-2)]">
         <div className="flex items-center gap-3">
           <button onClick={() => onChange({ ...block, enabled: !block.enabled })} className="text-[var(--text-3)]">
@@ -91,9 +143,7 @@ function AdBlockEditor({
               ? <ToggleRight size={20} className="text-[#0071e3]" />
               : <ToggleLeft size={20} />}
           </button>
-          <span className="text-sm font-medium text-[var(--text)]">
-            {block.type === 'html' ? 'HTML Block' : 'Image Block'}
-          </span>
+          <span className="text-sm font-medium text-[var(--text)]">Affiliate Banner</span>
           {!block.enabled && <span className="text-xs text-[var(--text-3)]">(disabled)</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -107,81 +157,86 @@ function AdBlockEditor({
       </div>
 
       {open && (
-        <div className="p-4 flex flex-col gap-3">
-          {/* Type toggle */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => onChange({ ...block, type: 'html' })}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                block.type === 'html'
-                  ? 'bg-[#0071e3] text-white'
-                  : 'bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--border-2)]'
-              }`}
-            >
-              <Code2 size={12} /> HTML
-            </button>
-            <button
-              onClick={() => onChange({ ...block, type: 'image' })}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                block.type === 'image'
-                  ? 'bg-[#0071e3] text-white'
-                  : 'bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--border-2)]'
-              }`}
-            >
-              <Image size={12} /> Image + Link
-            </button>
-          </div>
+        <div className="p-4 flex flex-col gap-4">
 
-          {block.type === 'html' ? (
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">HTML Code</label>
-              <textarea
-                value={block.html}
-                onChange={e => onChange({ ...block, html: e.target.value })}
-                rows={5}
-                placeholder="Paste any HTML, ad code, or affiliate widget here…"
-                className="input-field w-full font-mono text-xs resize-y"
+          {/* Image upload / preview */}
+          {block.imageUrl ? (
+            <div className="relative">
+              <img
+                src={block.imageUrl}
+                alt="Banner preview"
+                className="w-full rounded-lg border border-[var(--border-2)] object-cover max-h-40"
               />
+              <button
+                onClick={() => onChange({ ...block, imageUrl: '' })}
+                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow"
+              >
+                <X size={12} />
+              </button>
             </div>
           ) : (
-            <>
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Image URL</label>
-                <input
-                  type="url"
-                  value={block.imageUrl}
-                  onChange={e => onChange({ ...block, imageUrl: e.target.value })}
-                  placeholder="https://example.com/banner.jpg"
-                  className="input-field w-full"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Affiliate Link URL</label>
-                <input
-                  type="url"
-                  value={block.linkUrl}
-                  onChange={e => onChange({ ...block, linkUrl: e.target.value })}
-                  placeholder="https://amzn.to/your-link"
-                  className="input-field w-full"
-                />
-              </div>
-              {block.imageUrl && (
-                <div className="rounded-lg overflow-hidden border border-[var(--border-2)] max-w-xs">
-                  <img src={block.imageUrl} alt="preview" className="w-full h-auto" />
-                </div>
-              )}
-            </>
+            <div
+              className={`relative rounded-xl border-2 border-dashed transition-colors ${
+                dragging ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-[var(--border-2)] hover:border-[#0071e3]'
+              }`}
+              onDragOver={e => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+            >
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="w-full flex flex-col items-center gap-2 py-8 text-[var(--text-3)] hover:text-[var(--text)] transition-colors"
+              >
+                {uploading
+                  ? <Loader2 size={22} className="animate-spin text-[#0071e3]" />
+                  : <Upload size={22} />
+                }
+                <span className="text-xs font-medium">
+                  {uploading ? 'Uploading…' : 'Click to upload or drag an image here'}
+                </span>
+                <span className="text-[11px] text-[var(--text-3)]">PNG, JPG, GIF, WebP</span>
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
+              />
+            </div>
           )}
 
+          {uploadError && (
+            <p className="text-xs text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">
+              {uploadError}
+            </p>
+          )}
+
+          {/* Affiliate link */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Affiliate link</label>
+            <input
+              type="url"
+              value={block.linkUrl}
+              onChange={e => onChange({ ...block, linkUrl: e.target.value })}
+              placeholder="https://amzn.to/your-link"
+              className="input-field w-full"
+            />
+            <p className="text-[11px] text-[var(--text-3)] mt-1">Visitors who click the image will go to this URL.</p>
+          </div>
+
+          {/* Position (in-content only) */}
           {showPosition && (
             <div>
-              <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Insert after paragraph</label>
+              <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Show after paragraph</label>
               <select
                 value={block.position}
                 onChange={e => onChange({ ...block, position: Number(e.target.value) })}
-                className="input-field w-40"
+                className="input-field w-44"
               >
-                {[1, 2, 3, 4, 5].map(n => (
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
                   <option key={n} value={n}>Paragraph {n}</option>
                 ))}
               </select>
@@ -215,10 +270,12 @@ export default function CustomizePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [userId, setUserId] = useState('')
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    setUserId(user.id)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: row } = await (supabase as any)
       .from('integrations')
@@ -228,7 +285,6 @@ export default function CustomizePage() {
     if (row?.blog_customizations) {
       const bc = row.blog_customizations
       const profile = bc.profile ?? {}
-      // Back-fill footer.socials from profile fields for users who onboarded before this sync was added
       const socials: SocialLinks = {
         youtube:   bc.footer?.socials?.youtube   || profile.youtubeUrl   || '',
         instagram: bc.footer?.socials?.instagram || profile.instagramUrl || '',
@@ -242,6 +298,8 @@ export default function CustomizePage() {
       setData({
         ...defaultCustomizations,
         ...bc,
+        sidebar:   (bc.sidebar   ?? []).map(migrateBlock),
+        incontent: (bc.incontent ?? []).map(migrateBlock),
         footer: { ...emptyFooter, ...(bc.footer ?? {}), socials },
       })
     }
@@ -326,48 +384,50 @@ export default function CustomizePage() {
 
         {/* Sidebar */}
         <Section
-          title="Sidebar Ads"
-          description="These blocks appear in the right sidebar column on every blog post."
+          title="Sidebar Banners"
+          description="Clickable image banners shown in the right sidebar on every blog post. Great for featured products or affiliate offers."
         >
           <div className="flex flex-col gap-3">
             {data.sidebar.map(block => (
-              <AdBlockEditor
+              <BannerBlockEditor
                 key={block.id}
                 block={block}
                 onChange={b => updateSidebarBlock(block.id, b)}
                 onDelete={() => deleteSidebarBlock(block.id)}
                 showPosition={false}
+                userId={userId}
               />
             ))}
             <button
               onClick={addSidebarBlock}
               className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors"
             >
-              <Plus size={15} /> Add sidebar block
+              <Plus size={15} /> Add sidebar banner
             </button>
           </div>
         </Section>
 
         {/* In-content */}
         <Section
-          title="In-Content Ads"
-          description="Injected directly inside each blog post after the specified paragraph."
+          title="In-Content Banners"
+          description="Clickable image banners injected directly inside each blog post. Choose which paragraph they appear after."
         >
           <div className="flex flex-col gap-3">
             {data.incontent.map(block => (
-              <AdBlockEditor
+              <BannerBlockEditor
                 key={block.id}
                 block={block}
                 onChange={b => updateIncontentBlock(block.id, b)}
                 onDelete={() => deleteIncontentBlock(block.id)}
                 showPosition={true}
+                userId={userId}
               />
             ))}
             <button
               onClick={addIncontentBlock}
               className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors"
             >
-              <Plus size={15} /> Add in-content block
+              <Plus size={15} /> Add in-content banner
             </button>
           </div>
         </Section>
@@ -399,14 +459,14 @@ export default function CustomizePage() {
               <div className="flex flex-col gap-2">
                 {(
                   [
-                    { key: 'youtube',   label: 'YouTube',   icon: Youtube,   placeholder: 'https://youtube.com/@yourchannel' },
-                    { key: 'instagram', label: 'Instagram', icon: Instagram, placeholder: 'https://instagram.com/yourhandle' },
-                    { key: 'tiktok',    label: 'TikTok',    icon: Link,      placeholder: 'https://tiktok.com/@yourhandle' },
-                    { key: 'twitter',   label: 'X / Twitter', icon: Twitter, placeholder: 'https://x.com/yourhandle' },
-                    { key: 'pinterest', label: 'Pinterest', icon: Link,      placeholder: 'https://pinterest.com/yourprofile' },
-                    { key: 'facebook',  label: 'Facebook',  icon: Facebook,  placeholder: 'https://facebook.com/yourpage' },
-                    { key: 'threads',   label: 'Threads',   icon: Link,      placeholder: 'https://threads.net/@yourhandle' },
-                    { key: 'contact',   label: 'Contact email', icon: Mail,  placeholder: 'hello@yourdomain.com' },
+                    { key: 'youtube',   label: 'YouTube',      icon: Youtube,   placeholder: 'https://youtube.com/@yourchannel' },
+                    { key: 'instagram', label: 'Instagram',    icon: Instagram, placeholder: 'https://instagram.com/yourhandle' },
+                    { key: 'tiktok',    label: 'TikTok',       icon: Link,      placeholder: 'https://tiktok.com/@yourhandle' },
+                    { key: 'twitter',   label: 'X / Twitter',  icon: Twitter,   placeholder: 'https://x.com/yourhandle' },
+                    { key: 'pinterest', label: 'Pinterest',    icon: Link,      placeholder: 'https://pinterest.com/yourprofile' },
+                    { key: 'facebook',  label: 'Facebook',     icon: Facebook,  placeholder: 'https://facebook.com/yourpage' },
+                    { key: 'threads',   label: 'Threads',      icon: Link,      placeholder: 'https://threads.net/@yourhandle' },
+                    { key: 'contact',   label: 'Contact email', icon: Mail,     placeholder: 'hello@yourdomain.com' },
                   ] as const
                 ).map(({ key, label, icon: Icon, placeholder }) => (
                   <div key={key} className="flex items-center gap-3">
@@ -414,7 +474,7 @@ export default function CustomizePage() {
                       <Icon size={15} className="text-[var(--text-3)]" />
                     </div>
                     <input
-                      type="url"
+                      type={key === 'contact' ? 'email' : 'url'}
                       value={data.footer.socials[key]}
                       onChange={e => updateSocial(key, e.target.value)}
                       placeholder={placeholder}
