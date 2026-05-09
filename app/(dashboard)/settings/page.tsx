@@ -349,6 +349,8 @@ function SettingsPage() {
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [fixingCss, setFixingCss] = useState(false)
   const [fixCssResult, setFixCssResult] = useState<string | null>(null)
+  const [fixingThumbs, setFixingThumbs] = useState(false)
+  const [fixThumbsResult, setFixThumbsResult] = useState<string | null>(null)
 
   // Profile tab state
   const [firstName, setFirstName] = useState('')
@@ -533,6 +535,24 @@ function SettingsPage() {
       setFixCssResult('Request failed.')
     } finally {
       setFixingCss(false)
+    }
+  }
+
+  async function fixThumbnails() {
+    setFixingThumbs(true)
+    setFixThumbsResult(null)
+    try {
+      const res = await fetch('/api/wordpress/fix-thumbnails', { method: 'POST' })
+      const data = await res.json()
+      if (data.error) {
+        setFixThumbsResult(`Error: ${data.error}`)
+      } else {
+        setFixThumbsResult(`Fixed ${data.fixed} thumbnail${data.fixed !== 1 ? 's' : ''} (${data.skipped} already good, ${data.failed} failed).`)
+      }
+    } catch {
+      setFixThumbsResult('Request failed.')
+    } finally {
+      setFixingThumbs(false)
     }
   }
 
@@ -773,9 +793,23 @@ function SettingsPage() {
                         {wpTestResult.message}
                       </span>
                     )}
+                    <button
+                      type="button"
+                      onClick={fixThumbnails}
+                      disabled={fixingThumbs || !integrations.wordpress_url}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#ff9500]/40 disabled:opacity-40 transition-colors"
+                    >
+                      {fixingThumbs ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                      Fix thumbnails
+                    </button>
                     {fixCssResult && (
                       <span className={`text-xs font-medium ${fixCssResult.startsWith('Error') ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>
                         {fixCssResult}
+                      </span>
+                    )}
+                    {fixThumbsResult && (
+                      <span className={`text-xs font-medium ${fixThumbsResult.startsWith('Error') ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>
+                        {fixThumbsResult}
                       </span>
                     )}
                   </div>
