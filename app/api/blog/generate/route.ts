@@ -146,6 +146,16 @@ async function handleGenerate(request: Request) {
     console.error('Tag resolution failed:', err)
   }
 
+  // ── 7.1. Resolve category from brand niches ───────────────────────────────
+  let categoryIds: number[] = []
+  try {
+    const niches = ((brand as Record<string, unknown>).niches as string[]) || []
+    if (niches.length > 0) {
+      const catId = await wpService.createCategory(niches[0])
+      categoryIds = [catId]
+    }
+  } catch { /* non-fatal */ }
+
   // ── 7.5. Sync author display name to WordPress ───────────────────────────
   const authorName = (brand as Record<string, unknown>).author_name as string | null
   if (authorName) {
@@ -164,6 +174,7 @@ async function handleGenerate(request: Request) {
       excerpt: generated.excerpt,
       status: 'publish',
       tags: tagIds,
+      categories: categoryIds,
       comment_status: 'closed',
       ping_status: 'closed',
     })
