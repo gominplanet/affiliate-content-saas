@@ -441,8 +441,10 @@ export default function ContentPage() {
   const [fixingCategories, setFixingCategories] = useState(false)
   const [fixCatResult, setFixCatResult] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'videos' | 'posts'>('videos')
-  const [allBlogPosts, setAllBlogPosts] = useState<{ id: string; title: string; wordpress_url: string; published_at: string; wordpress_post_id: number }[]>([])
-  const [deletingPostId, setDeletingPostId] = useState<string | null>(null)
+  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string }[]>([])
+  const [postsLoading, setPostsLoading] = useState(false)
+  const [postsLoaded, setPostsLoaded] = useState(false)
+  const [deletingPostId, setDeletingPostId] = useState<number | null>(null)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
 
@@ -488,16 +490,6 @@ export default function ContentPage() {
       }
     }
     setPosts(postMap)
-
-    // Also load all blog posts for the Posts tab
-    const { data: allPosts } = await sb
-      .from('blog_posts')
-      .select('id,title,wordpress_url,published_at,wordpress_post_id')
-      .eq('user_id', user.id)
-      .eq('status', 'published')
-      .order('published_at', { ascending: false })
-    setAllBlogPosts((allPosts as typeof allBlogPosts) ?? [])
-
     setLoading(false)
   }, [supabase])
 
@@ -536,16 +528,28 @@ export default function ContentPage() {
     }
   }
 
-  async function deletePostFromList(postId: string, wpPostId: number) {
-    if (!confirm('Delete this post from WordPress and remove it here?')) return
-    setDeletingPostId(postId)
+  async function loadWpPosts() {
+    setPostsLoading(true)
+    try {
+      const res = await fetch('/api/wordpress/posts')
+      const data = await res.json()
+      if (data.posts) setAllBlogPosts(data.posts)
+      setPostsLoaded(true)
+    } finally {
+      setPostsLoading(false)
+    }
+  }
+
+  async function deletePostFromList(wpPostId: number) {
+    if (!confirm('Delete this post from WordPress?')) return
+    setDeletingPostId(wpPostId)
     try {
       await fetch('/api/blog/delete', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, wpPostId }),
+        body: JSON.stringify({ wpPostId }),
       })
-      setAllBlogPosts(prev => prev.filter(p => p.id !== postId))
+      setAllBlogPosts(prev => prev.filter(p => p.id !== wpPostId))
     } finally {
       setDeletingPostId(null)
     }
@@ -637,14 +641,17 @@ export default function ContentPage() {
         {(['videos', 'posts'] as const).map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              setActiveTab(tab)
+              if (tab === 'posts' && !postsLoaded && !postsLoading) loadWpPosts()
+            }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
               activeTab === tab
                 ? 'border-[#0071e3] text-[#0071e3]'
                 : 'border-transparent text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
             }`}
           >
-            {tab === 'videos' ? 'Videos' : `Posts${!loading ? ` (${allBlogPosts.length})` : ''}`}
+            {tab === 'videos' ? 'Videos' : `Posts${postsLoaded ? ` (${allBlogPosts.length})` : ''}`}
           </button>
         ))}
       </div>
@@ -662,7 +669,11 @@ export default function ContentPage() {
         </div>
       ) : activeTab === 'posts' ? (
         <div className="flex flex-col gap-2">
-          {allBlogPosts.length === 0 ? (
+          {postsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
+              <Loader2 size={16} className="animate-spin" /> Loading posts from WordPress…
+            </div>
+          ) : allBlogPosts.length === 0 ? (
             <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
               <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No posts yet</p>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Generate your first blog post from the Videos tab.</p>
@@ -670,19 +681,19 @@ export default function ContentPage() {
           ) : allBlogPosts.map(post => (
             <div key={post.id} className="card p-4 flex items-center gap-4">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{post.title}</p>
+                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate" dangerouslySetInnerHTML={{ __html: post.title }} />
                 <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">
-                  {post.published_at ? new Date(post.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''}
+                  {post.date ? new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''}
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {post.wordpress_url && (
-                  <a href={post.wordpress_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex items-center gap-1">
+                {post.link && (
+                  <a href={post.link} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex items-center gap-1">
                     <ExternalLink size={11} /> View
                   </a>
                 )}
                 <button
-                  onClick={() => deletePostFromList(post.id, post.wordpress_post_id)}
+                  onClick={() => deletePostFromList(post.id)}
                   disabled={deletingPostId === post.id}
                   className="text-xs text-red-500 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors"
                 >
