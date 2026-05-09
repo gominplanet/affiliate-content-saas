@@ -65,7 +65,7 @@ export async function GET() {
       } catch { /* thumbnails are non-fatal */ }
     }
 
-    // ── 3. Fetch video_id mapping from blog_posts table ───────────────────────
+    // ── 3. Build videoId map from blog_posts table ────────────────────────────
     const wpIds = rawPosts.map(p => p.id)
     const { data: dbPosts } = await supabase
       .from('blog_posts')
@@ -73,20 +73,53 @@ export async function GET() {
       .eq('user_id', user.id)
       .in('wordpress_post_id', wpIds)
 
-    const videoIdMap: Record<number, string> = {}
+    const wpToVideoId: Record<number, string> = {}
     for (const p of (dbPosts ?? []) as { wordpress_post_id: number; video_id: string }[]) {
-      if (p.wordpress_post_id && p.video_id) videoIdMap[p.wordpress_post_id] = p.video_id
+      if (p.wordpress_post_id && p.video_id) wpToVideoId[p.wordpress_post_id] = p.video_id
     }
 
-    // ── 4. Assemble final list ────────────────────────────────────────────────
-    const posts = rawPosts.map(p => ({
-      id: p.id,
-      title: p.title?.rendered ?? '',
-      link: p.link,
-      date: p.date,
-      thumbnail: thumbMap[p.featured_media] ?? null,
-      videoId: videoIdMap[p.id] ?? null,
-    }))
+    // ── 4. For unmapped posts, extract YouTube ID from thumbnail filename ─────
+    // Thumbnail was uploaded as {youtubeVideoId}.jpg — extract from source_url
+    const ytVideoIds = new Set<string>()
+    for (const p of rawPosts) {
+      if (wpToVideoId[p.id]) continue
+      const thumb = thumbMap[p.featured_media]
+      if (!thumb) continue
+      const filename = thumb.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+      // YouTube IDs are 11 chars, alphanumeric + - _
+      if (/^[A-Za-z0-9_-]{11}$/.test(filename)) ytVideoIds.add(filename)
+    }
+
+    // Look up youtube_video row IDs by youtube_video_id
+    const ytIdToRowId: Record<string, string> = {}
+    if (ytVideoIds.size > 0) {
+      const { data: ytRows } = await supabase
+        .from('youtube_videos')
+        .select('id,youtube_video_id')
+        .eq('user_id', user.id)
+        .in('youtube_video_id', [...ytVideoIds])
+      for (const r of (ytRows ?? []) as { id: string; youtube_video_id: string }[]) {
+        ytIdToRowId[r.youtube_video_id] = r.id
+      }
+    }
+
+    // ── 5. Assemble final list ────────────────────────────────────────────────
+    const posts = rawPosts.map(p => {
+      let videoId = wpToVideoId[p.id] ?? null
+      if (!videoId) {
+        const thumb = thumbMap[p.featured_media]
+        const filename = thumb?.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+        if (/^[A-Za-z0-9_-]{11}$/.test(filename)) videoId = ytIdToRowId[filename] ?? null
+      }
+      return {
+        id: p.id,
+        title: p.title?.rendered ?? '',
+        link: p.link,
+        date: p.date,
+        thumbnail: thumbMap[p.featured_media] ?? null,
+        videoId,
+      }
+    })
 
     return NextResponse.json({ posts })
   } catch (err: unknown) {
