@@ -87,6 +87,72 @@ function wpFetch(siteUrl: string, cookies: string, nonce: string) {
   }
 }
 
+// Install or update a Code Snippets plugin snippet (nonce-authenticated)
+async function ensureCodeSnippet(
+  siteUrl: string,
+  cookies: string,
+  nonce: string,
+  name: string,
+  code: string,
+): Promise<void> {
+  const headers = {
+    Cookie: cookies,
+    'X-WP-Nonce': nonce,
+    'Content-Type': 'application/json',
+  }
+  // List existing snippets to find a match by name
+  const listRes = await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets`, { headers })
+  if (!listRes.ok) throw new Error(`Code Snippets list ${listRes.status}`)
+  const list = await listRes.json() as { snippets?: { id: number; name: string }[] }
+  const snippets = list.snippets ?? (Array.isArray(list) ? list as { id: number; name: string }[] : [])
+  const existing = snippets.find((s) => s.name === name)
+
+  const payload = { name, code, active: true, scope: 'global' }
+  if (existing) {
+    await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets/${existing.id}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    })
+  } else {
+    await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    })
+  }
+}
+
+const AFFILIATEOS_CORE_PHP = `add_action('rest_api_init', function () {
+    register_rest_route('affiliateos/v1', '/customizations', [
+        [
+            'methods'             => 'GET',
+            'callback'            => 'affiliateos_get_customizations',
+            'permission_callback' => '__return_true',
+        ],
+        [
+            'methods'             => 'POST',
+            'callback'            => 'affiliateos_save_customizations',
+            'permission_callback' => '__return_true',
+        ],
+    ]);
+});
+
+function affiliateos_save_customizations(WP_REST_Request $request): WP_REST_Response {
+    $data = $request->get_json_params();
+    update_option('affiliateos_customizations', $data);
+    return new WP_REST_Response(['saved' => true], 200);
+}
+
+function affiliateos_get_customizations(): WP_REST_Response {
+    $data = get_option('affiliateos_customizations', []);
+    return new WP_REST_Response($data, 200);
+}`
+
+const FORCE_FRONT_PAGE_PHP = `add_filter('frontpage_template', function (\$template) {
+    return get_page_template();
+});`
+
 async function wpMediaUpload(
   siteUrl: string,
   cookies: string,
@@ -150,6 +216,14 @@ export async function POST(request: Request) {
 
     // ── 3. Get current user ───────────────────────────────────────────────────
     const me = await req<{ name: string; roles?: string[] }>('/users/me')
+
+    // ── 3c. Install AffiliateOS PHP snippets via Code Snippets plugin ─────────
+    try {
+      await ensureCodeSnippet(siteUrl, cookies, nonce, 'AffiliateOS Core', AFFILIATEOS_CORE_PHP)
+    } catch { /* Code Snippets plugin may not be installed — step 16 will still try the endpoint */ }
+    try {
+      await ensureCodeSnippet(siteUrl, cookies, nonce, 'Force Front Page Template', FORCE_FRONT_PAGE_PHP)
+    } catch { /* non-fatal */ }
 
     // ── 3b. Delete default WordPress content ─────────────────────────────────
     try {
