@@ -440,6 +440,9 @@ export default function ContentPage() {
   const [pinPublishingFor, setPinPublishingFor] = useState<string | null>(null)
   const [fixingCategories, setFixingCategories] = useState(false)
   const [fixCatResult, setFixCatResult] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'videos' | 'posts'>('videos')
+  const [allBlogPosts, setAllBlogPosts] = useState<{ id: string; title: string; wordpress_url: string; published_at: string; wordpress_post_id: number }[]>([])
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
 
@@ -485,6 +488,16 @@ export default function ContentPage() {
       }
     }
     setPosts(postMap)
+
+    // Also load all blog posts for the Posts tab
+    const { data: allPosts } = await sb
+      .from('blog_posts')
+      .select('id,title,wordpress_url,published_at,wordpress_post_id')
+      .eq('user_id', user.id)
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+    setAllBlogPosts((allPosts as typeof allBlogPosts) ?? [])
+
     setLoading(false)
   }, [supabase])
 
@@ -520,6 +533,21 @@ export default function ContentPage() {
       setPinPreview(null)
     } finally {
       setPinPublishingFor(null)
+    }
+  }
+
+  async function deletePostFromList(postId: string, wpPostId: number) {
+    if (!confirm('Delete this post from WordPress and remove it here?')) return
+    setDeletingPostId(postId)
+    try {
+      await fetch('/api/blog/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, wpPostId }),
+      })
+      setAllBlogPosts(prev => prev.filter(p => p.id !== postId))
+    } finally {
+      setDeletingPostId(null)
     }
   }
 
@@ -582,24 +610,47 @@ export default function ContentPage() {
         title="Content"
         subtitle={
           loading ? 'Loading…' :
-          visibleVideos.length > 0
-            ? `${visibleVideos.length} video${visibleVideos.length !== 1 ? 's' : ''} · ${generatedCount} post${generatedCount !== 1 ? 's' : ''} published`
-            : 'Sync your YouTube channel to get started.'
+          activeTab === 'posts'
+            ? `${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} published`
+            : visibleVideos.length > 0
+              ? `${visibleVideos.length} video${visibleVideos.length !== 1 ? 's' : ''} · ${generatedCount} post${generatedCount !== 1 ? 's' : ''} published`
+              : 'Sync your YouTube channel to get started.'
         }
         actions={
           <div className="flex items-center gap-2">
-            <button onClick={fixCategories} disabled={fixingCategories} className="btn-secondary text-sm" title="Auto-assign categories to all uncategorized posts">
-              {fixingCategories ? <><Loader2 size={14} className="animate-spin" /> Fixing…</> : 'Fix Categories'}
-            </button>
-            <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
-              {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : <><RefreshCw size={14} /> Sync videos</>}
-            </button>
+            {activeTab === 'videos' && (
+              <button onClick={fixCategories} disabled={fixingCategories} className="btn-secondary text-sm" title="Auto-assign categories to all uncategorized posts">
+                {fixingCategories ? <><Loader2 size={14} className="animate-spin" /> Fixing…</> : 'Fix Categories'}
+              </button>
+            )}
+            {activeTab === 'videos' && (
+              <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
+                {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : <><RefreshCw size={14} /> Sync videos</>}
+              </button>
+            )}
           </div>
         }
       />
 
+      {/* Tab bar */}
+      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 -mt-2 mb-4">
+        {(['videos', 'posts'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
+              activeTab === tab
+                ? 'border-[#0071e3] text-[#0071e3]'
+                : 'border-transparent text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
+            }`}
+          >
+            {tab === 'videos' ? 'Videos' : `Posts${!loading ? ` (${allBlogPosts.length})` : ''}`}
+          </button>
+        ))}
+      </div>
+
       {fixCatResult && (
-        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">
           <span>{fixCatResult}</span>
           <button onClick={() => setFixCatResult(null)} className="text-[#86868b] hover:text-[#1d1d1f]"><X size={14} /></button>
         </div>
@@ -608,6 +659,38 @@ export default function ContentPage() {
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
           <Loader2 size={16} className="animate-spin" /> Loading…
+        </div>
+      ) : activeTab === 'posts' ? (
+        <div className="flex flex-col gap-2">
+          {allBlogPosts.length === 0 ? (
+            <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No posts yet</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Generate your first blog post from the Videos tab.</p>
+            </div>
+          ) : allBlogPosts.map(post => (
+            <div key={post.id} className="card p-4 flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{post.title}</p>
+                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">
+                  {post.published_at ? new Date(post.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {post.wordpress_url && (
+                  <a href={post.wordpress_url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex items-center gap-1">
+                    <ExternalLink size={11} /> View
+                  </a>
+                )}
+                <button
+                  onClick={() => deletePostFromList(post.id, post.wordpress_post_id)}
+                  disabled={deletingPostId === post.id}
+                  className="text-xs text-red-500 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                >
+                  {deletingPostId === post.id ? <Loader2 size={12} className="animate-spin" /> : 'Delete'}
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       ) : !allReady ? (
         <SetupGate checks={checks!} />
