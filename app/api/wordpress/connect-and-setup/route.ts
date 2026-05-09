@@ -432,6 +432,51 @@ export async function POST(request: Request) {
       ...(headshotUrl ? { headshot_url: headshotUrl } : {}),
     }).eq('user_id', user.id)
 
+    // Sync social links into blog_customizations so the Customize page pre-populates correctly
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existingCustom } = await (supabase as any)
+      .from('integrations')
+      .select('blog_customizations')
+      .eq('user_id', user.id)
+      .single()
+    const existing = existingCustom?.blog_customizations ?? {}
+    const mergedCustomizations = {
+      ...existing,
+      profile: {
+        ...(existing.profile ?? {}),
+        authorName,
+        authorBio: aboutText || existing.profile?.authorBio || '',
+        headshotUrl: headshotUrl || existing.profile?.headshotUrl || '',
+        accentColor,
+        youtubeUrl:    youtubeUrl    || existing.profile?.youtubeUrl    || '',
+        instagramUrl:  instagramUrl  || existing.profile?.instagramUrl  || '',
+        facebookUrl:   facebookUrl   || existing.profile?.facebookUrl   || '',
+        pinterestUrl:  pinterestUrl  || existing.profile?.pinterestUrl  || '',
+        tiktokUrl:     tiktokUrl     || existing.profile?.tiktokUrl     || '',
+        twitterUrl:    twitterUrl    || existing.profile?.twitterUrl    || '',
+        contactEmail:  contactEmail  || existing.profile?.contactEmail  || '',
+      },
+      footer: {
+        ...(existing.footer ?? {}),
+        bio: aboutText || existing.footer?.bio || '',
+        socials: {
+          ...(existing.footer?.socials ?? {}),
+          ...(youtubeUrl   ? { youtube:   youtubeUrl   } : {}),
+          ...(instagramUrl ? { instagram: instagramUrl } : {}),
+          ...(facebookUrl  ? { facebook:  facebookUrl  } : {}),
+          ...(pinterestUrl ? { pinterest: pinterestUrl } : {}),
+          ...(tiktokUrl    ? { tiktok:    tiktokUrl    } : {}),
+          ...(twitterUrl   ? { twitter:   twitterUrl   } : {}),
+          ...(contactEmail ? { contact:   contactEmail } : {}),
+        },
+      },
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any)
+      .from('integrations')
+      .update({ blog_customizations: mergedCustomizations })
+      .eq('user_id', user.id)
+
     return NextResponse.json({
       ok: true,
       siteUrl,

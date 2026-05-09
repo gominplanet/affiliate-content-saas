@@ -226,7 +226,24 @@ export default function CustomizePage() {
       .eq('user_id', user.id)
       .single()
     if (row?.blog_customizations) {
-      setData({ ...defaultCustomizations, ...row.blog_customizations })
+      const bc = row.blog_customizations
+      const profile = bc.profile ?? {}
+      // Back-fill footer.socials from profile fields for users who onboarded before this sync was added
+      const socials: SocialLinks = {
+        youtube:   bc.footer?.socials?.youtube   || profile.youtubeUrl   || '',
+        instagram: bc.footer?.socials?.instagram || profile.instagramUrl || '',
+        facebook:  bc.footer?.socials?.facebook  || profile.facebookUrl  || '',
+        pinterest: bc.footer?.socials?.pinterest || profile.pinterestUrl || '',
+        tiktok:    bc.footer?.socials?.tiktok    || profile.tiktokUrl    || '',
+        twitter:   bc.footer?.socials?.twitter   || profile.twitterUrl   || '',
+        threads:   bc.footer?.socials?.threads   || profile.threadsUrl   || '',
+        contact:   bc.footer?.socials?.contact   || profile.contactEmail || '',
+      }
+      setData({
+        ...defaultCustomizations,
+        ...bc,
+        footer: { ...emptyFooter, ...(bc.footer ?? {}), socials },
+      })
     }
     setLoading(false)
   }, [supabase])
