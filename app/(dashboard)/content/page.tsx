@@ -441,7 +441,7 @@ export default function ContentPage() {
   const [fixingCategories, setFixingCategories] = useState(false)
   const [fixCatResult, setFixCatResult] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'videos' | 'posts'>('videos')
-  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string }[]>([])
+  const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null }[]>([])
   const [postsLoading, setPostsLoading] = useState(false)
   const [postsLoaded, setPostsLoaded] = useState(false)
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null)
@@ -622,11 +622,9 @@ export default function ContentPage() {
         }
         actions={
           <div className="flex items-center gap-2">
-            {activeTab === 'videos' && (
-              <button onClick={fixCategories} disabled={fixingCategories} className="btn-secondary text-sm" title="Auto-assign categories to all uncategorized posts">
-                {fixingCategories ? <><Loader2 size={14} className="animate-spin" /> Fixing…</> : 'Fix Categories'}
-              </button>
-            )}
+            <button onClick={fixCategories} disabled={fixingCategories} className="btn-secondary text-sm" title="Auto-assign categories to all uncategorized posts">
+              {fixingCategories ? <><Loader2 size={14} className="animate-spin" /> Fixing…</> : 'Fix Categories'}
+            </button>
             {activeTab === 'videos' && (
               <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
                 {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : <><RefreshCw size={14} /> Sync videos</>}
@@ -680,9 +678,14 @@ export default function ContentPage() {
             </div>
           ) : allBlogPosts.map(post => (
             <div key={post.id} className="card p-4 flex items-center gap-4">
+              <div className="w-24 h-14 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-[#2c2c2e]">
+                {post.thumbnail
+                  ? <img src={post.thumbnail} alt="" className="w-full h-full object-cover" />
+                  : <div className="w-full h-full" />}
+              </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate" dangerouslySetInnerHTML={{ __html: post.title }} />
-                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">
+                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-snug" dangerouslySetInnerHTML={{ __html: post.title }} />
+                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">
                   {post.date ? new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''}
                 </p>
               </div>
