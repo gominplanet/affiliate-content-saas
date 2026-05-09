@@ -146,6 +146,14 @@ async function handleGenerate(request: Request) {
     console.error('Tag resolution failed:', err)
   }
 
+  // ── 7.5. Sync author display name to WordPress ───────────────────────────
+  const authorName = (brand as Record<string, unknown>).author_name as string | null
+  if (authorName) {
+    try {
+      await wpService.updateCurrentUserDisplayName(authorName)
+    } catch { /* non-fatal */ }
+  }
+
   // ── 8. Publish text post to WordPress ────────────────────────────────────
   let wpPost
   try {

@@ -162,6 +162,48 @@ export default function BrandPage() {
       { ...data, user_id: user.id },
       { onConflict: 'user_id' },
     )
+
+    // Sync to WordPress if connected
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: intRow } = await (supabase as any)
+        .from('integrations')
+        .select('wp_site_url, wordpress_username, wordpress_app_password')
+        .eq('user_id', user.id)
+        .single()
+
+      if (intRow?.wp_site_url && intRow?.wordpress_username && intRow?.wordpress_app_password) {
+        const creds = Buffer.from(`${intRow.wordpress_username}:${intRow.wordpress_app_password}`).toString('base64')
+
+        // Update WP user display name
+        await fetch(`${intRow.wp_site_url}/wp-json/wp/v2/users/me`, {
+          method: 'POST',
+          headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: data.author_name || data.name, nickname: data.author_name || data.name }),
+        }).catch(() => {})
+
+        // Sync brand profile to WordPress customizations
+        const existingRes = await fetch(`${intRow.wp_site_url}/wp-json/affiliateos/v1/customizations`, {
+          headers: { 'Authorization': `Basic ${creds}` },
+        }).catch(() => null)
+        const existing = existingRes?.ok ? await existingRes.json().catch(() => ({})) : {}
+
+        await fetch(`${intRow.wp_site_url}/wp-json/affiliateos/v1/customizations`, {
+          method: 'POST',
+          headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...existing,
+            profile: {
+              ...(existing?.profile ?? {}),
+              brandName: data.name,
+              tagline: data.tagline,
+              authorName: data.author_name,
+            },
+          }),
+        }).catch(() => {})
+      }
+    } catch { /* non-fatal */ }
+
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)

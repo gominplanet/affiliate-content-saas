@@ -229,6 +229,14 @@ export class WordPressService {
     } catch { return false }
   }
 
+  async updateCurrentUserDisplayName(displayName: string): Promise<void> {
+    await this.request('/users/me', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: displayName, nickname: displayName }),
+    })
+  }
+
   // ── Site setup ────────────────────────────────────────────────────────────
 
   async setSiteSettings(settings: Record<string, unknown>): Promise<void> {

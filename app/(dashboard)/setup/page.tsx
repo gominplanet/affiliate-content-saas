@@ -7,6 +7,7 @@ import {
   Globe, Wrench, Sparkles, Link2, Rocket, Eye, EyeOff,
   Download, Upload, X,
 } from 'lucide-react'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 type Step = 1 | 2 | 3 | 4 | 5
 
@@ -582,22 +583,47 @@ export default function SetupPage() {
   const [username, setUsername] = useState('')
   const [brandData, setBrandData] = useState<BrandData>(defaultBrand)
   const [hydrated, setHydrated] = useState(false)
+  const [setupComplete, setSetupComplete] = useState(false)
+  const [completedUrl, setCompletedUrl] = useState('')
+  const supabase = createBrowserClient()
 
-  // Load persisted state on mount
+  // Check DB for existing WP connection + load local state
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const d = JSON.parse(raw)
-        if (d.step && d.step < 5) setStep(d.step as Step)
-        if (d.brandData) setBrandData(d.brandData)
-        if (d.siteUrl) setSiteUrl(d.siteUrl)
-        if (d.username) setUsername(d.username)
-        if (d.accentColor) setAccentColor(d.accentColor)
-        if (d.wordpressUrl) setWordpressUrl(d.wordpressUrl)
-      }
-    } catch { /* ignore */ }
-    setHydrated(true)
+    async function init() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: intRow } = await (supabase as any)
+            .from('integrations')
+            .select('wp_site_url')
+            .eq('user_id', user.id)
+            .single()
+          if (intRow?.wp_site_url) {
+            setSetupComplete(true)
+            setCompletedUrl(intRow.wp_site_url)
+            setHydrated(true)
+            return
+          }
+        }
+      } catch { /* ignore */ }
+
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        if (raw) {
+          const d = JSON.parse(raw)
+          if (d.step && d.step < 5) setStep(d.step as Step)
+          if (d.brandData) setBrandData(d.brandData)
+          if (d.siteUrl) setSiteUrl(d.siteUrl)
+          if (d.username) setUsername(d.username)
+          if (d.accentColor) setAccentColor(d.accentColor)
+          if (d.wordpressUrl) setWordpressUrl(d.wordpressUrl)
+        }
+      } catch { /* ignore */ }
+      setHydrated(true)
+    }
+    init()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Persist state whenever it changes
@@ -610,7 +636,45 @@ export default function SetupPage() {
     } catch { /* ignore quota errors */ }
   }, [step, brandData, siteUrl, username, accentColor, wordpressUrl, hydrated])
 
+  function handleReset() {
+    try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+    setSetupComplete(false)
+    setStep(1)
+    setBrandData(defaultBrand)
+    setSiteUrl('')
+    setUsername('')
+    setAccentColor('#f5a623')
+    setWordpressUrl('')
+  }
+
   if (!hydrated) return null
+
+  if (setupComplete) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
+        </div>
+        <div className="card p-8 flex flex-col items-center text-center gap-5">
+          <div className="w-14 h-14 rounded-full bg-[#34c759]/10 flex items-center justify-center">
+            <CheckCircle size={28} className="text-[#34c759]" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Setup completed</h2>
+            <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">Your WordPress blog is connected and ready to publish content.</p>
+          </div>
+          <div className="flex gap-3 flex-wrap justify-center">
+            <a href={completedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-2">
+              Visit Blog <ExternalLink size={13} />
+            </a>
+            <button onClick={handleReset} className="btn-secondary text-[#ff3b30] border-[#ff3b30]/30 hover:border-[#ff3b30]">
+              Reset Setup
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-2xl mx-auto">

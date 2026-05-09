@@ -107,6 +107,62 @@ add_filter('the_content', function ($content) {
     return $output;
 });
 
+// ── Fix: ensure all published posts show on archives/categories/homepage ──────
+add_action('pre_get_posts', function (WP_Query $query) {
+    if (is_admin() || !$query->is_main_query()) return;
+    if (is_home() || is_front_page()) {
+        $query->set('posts_per_page', 12);
+        $query->set('post_status', 'publish');
+    }
+    if (is_category() || is_tag() || is_archive() || is_search()) {
+        $query->set('posts_per_page', 12);
+        $query->set('post_status', 'publish');
+        $query->set('ignore_sticky_posts', false);
+    }
+});
+
+// ── Flush rewrite rules on theme activation (fixes category 404s) ─────────────
+add_action('after_switch_theme', function () {
+    flush_rewrite_rules();
+});
+
+// ── Randomized "You Might Also Like" section — 8 posts below main content ─────
+add_action('kadence_after_main_content', function () {
+    if (!is_singular('post') && !is_home() && !is_front_page() && !is_archive()) return;
+
+    $exclude = is_singular('post') ? [get_the_ID()] : [];
+
+    $random_posts = new WP_Query([
+        'post_type'           => 'post',
+        'post_status'         => 'publish',
+        'posts_per_page'      => 8,
+        'orderby'             => 'rand',
+        'post__not_in'        => $exclude,
+        'ignore_sticky_posts' => 1,
+    ]);
+
+    if (!$random_posts->have_posts()) return;
+    ?>
+    <div class="affiliateos-random-posts" style="max-width:1200px;margin:48px auto;padding:0 20px;">
+      <h3 style="font-size:1.1rem;font-weight:700;margin:0 0 20px;color:var(--global-palette1,#1a1a2e);">You Might Also Like</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px;">
+        <?php while ($random_posts->have_posts()): $random_posts->the_post(); ?>
+        <a href="<?php the_permalink(); ?>" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;border-radius:10px;overflow:hidden;border:1px solid #e5e5ea;transition:box-shadow .2s;" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow='none'">
+          <?php if (has_post_thumbnail()): ?>
+          <div style="aspect-ratio:16/9;overflow:hidden;">
+            <?php the_post_thumbnail('medium', ['style' => 'width:100%;height:100%;object-fit:cover;display:block;']); ?>
+          </div>
+          <?php endif; ?>
+          <div style="padding:12px 14px 14px;">
+            <p style="font-size:0.85rem;font-weight:600;margin:0;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"><?php the_title(); ?></p>
+          </div>
+        </a>
+        <?php endwhile; wp_reset_postdata(); ?>
+      </div>
+    </div>
+    <?php
+});
+
 // ── Top social bar — slim strip above header ──────────────────────────────────
 add_action('kadence_before_header', function () {
     $data    = affiliateos_get_data();

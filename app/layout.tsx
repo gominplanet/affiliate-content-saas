@@ -4,8 +4,8 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'AffiliateOS',
-    template: '%s · AffiliateOS',
+    default: 'MVP Affiliate',
+    template: '%s · MVP Affiliate',
   },
   description: 'Automate your affiliate content pipeline from YouTube to blog to social.',
 }
