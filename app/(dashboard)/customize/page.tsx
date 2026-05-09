@@ -6,7 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
   Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp,
-  Twitter, Mail, Upload, X,
+  Twitter, Mail, Upload, X, RefreshCw,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -270,6 +270,8 @@ export default function CustomizePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [purging, setPurging] = useState(false)
+  const [purged, setPurged] = useState(false)
   const [userId, setUserId] = useState('')
 
   const load = useCallback(async () => {
@@ -307,6 +309,19 @@ export default function CustomizePage() {
   }, [supabase])
 
   useEffect(() => { load() }, [load])
+
+  async function purgeCache() {
+    setPurging(true)
+    try {
+      const res = await fetch('/api/wordpress/purge-cache', { method: 'POST' })
+      const json = await res.json()
+      if (json.error) { alert(json.error); return }
+      setPurged(true)
+      setTimeout(() => setPurged(false), 3000)
+    } finally {
+      setPurging(false)
+    }
+  }
 
   async function save() {
     setSaving(true)
@@ -369,14 +384,25 @@ export default function CustomizePage() {
         title="Customize Blog"
         subtitle="Manage your WordPress blog's sidebar, content, and footer."
         actions={
-          <button
-            onClick={save}
-            disabled={saving}
-            className="btn-primary flex items-center gap-2"
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            {saved ? 'Saved!' : saving ? 'Saving…' : 'Save & Push to WordPress'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={purgeCache}
+              disabled={purging || saving}
+              className="btn-secondary flex items-center gap-2"
+              title="Clear LiteSpeed cache so your latest changes appear immediately on the blog"
+            >
+              {purging ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {purged ? 'Cache cleared!' : purging ? 'Clearing…' : 'Clear Cache'}
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="btn-primary flex items-center gap-2"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {saved ? 'Saved!' : saving ? 'Saving…' : 'Save & Push to WordPress'}
+            </button>
+          </div>
         }
       />
 
