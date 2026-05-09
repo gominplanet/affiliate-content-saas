@@ -438,6 +438,8 @@ export default function ContentPage() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
   const [pinPreview, setPinPreview] = useState<PinPreviewData | null>(null)
   const [pinPublishingFor, setPinPublishingFor] = useState<string | null>(null)
+  const [fixingCategories, setFixingCategories] = useState(false)
+  const [fixCatResult, setFixCatResult] = useState<string | null>(null)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
 
@@ -530,6 +532,25 @@ export default function ContentPage() {
     setSyncing(false)
   }
 
+  async function fixCategories() {
+    setFixingCategories(true)
+    setFixCatResult(null)
+    try {
+      const res = await fetch('/api/blog/bulk-categorize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await res.json()
+      if (data.error) {
+        setFixCatResult(`Error: ${data.error}`)
+      } else if (data.fixed === 0) {
+        setFixCatResult(data.message || 'All posts already have categories.')
+      } else {
+        setFixCatResult(`Done — ${data.fixed} post${data.fixed !== 1 ? 's' : ''} categorized (${data.skipped} already had categories).`)
+      }
+    } catch {
+      setFixCatResult('Something went wrong.')
+    }
+    setFixingCategories(false)
+  }
+
   async function loadMore() {
     if (!nextPageToken) return
     setLoadingMore(true)
@@ -566,11 +587,23 @@ export default function ContentPage() {
             : 'Sync your YouTube channel to get started.'
         }
         actions={
-          <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
-            {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : <><RefreshCw size={14} /> Sync videos</>}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={fixCategories} disabled={fixingCategories} className="btn-secondary text-sm" title="Auto-assign categories to all uncategorized posts">
+              {fixingCategories ? <><Loader2 size={14} className="animate-spin" /> Fixing…</> : 'Fix Categories'}
+            </button>
+            <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
+              {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : <><RefreshCw size={14} /> Sync videos</>}
+            </button>
+          </div>
         }
       />
+
+      {fixCatResult && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+          <span>{fixCatResult}</span>
+          <button onClick={() => setFixCatResult(null)} className="text-[#86868b] hover:text-[#1d1d1f]"><X size={14} /></button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
