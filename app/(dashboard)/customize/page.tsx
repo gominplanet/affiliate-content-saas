@@ -5,7 +5,7 @@ import Header from '@/components/layout/Header'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, Image, Code2, ToggleLeft, ToggleRight,
-  Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp
+  Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp, Twitter, Mail
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -28,6 +28,9 @@ interface SocialLinks {
   instagram: string
   threads: string
   pinterest: string
+  tiktok: string
+  twitter: string
+  contact: string
 }
 
 interface CustomLink {
@@ -50,7 +53,7 @@ interface BlogCustomizations {
 
 const emptyFooter: FooterData = {
   bio: '',
-  socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '' },
+  socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
   links: [],
 }
 
@@ -379,11 +382,14 @@ export default function CustomizePage() {
               <div className="flex flex-col gap-2">
                 {(
                   [
-                    { key: 'youtube', label: 'YouTube', icon: Youtube, placeholder: 'https://youtube.com/@yourchannel' },
-                    { key: 'facebook', label: 'Facebook', icon: Facebook, placeholder: 'https://facebook.com/yourpage' },
+                    { key: 'youtube',   label: 'YouTube',   icon: Youtube,   placeholder: 'https://youtube.com/@yourchannel' },
                     { key: 'instagram', label: 'Instagram', icon: Instagram, placeholder: 'https://instagram.com/yourhandle' },
-                    { key: 'threads', label: 'Threads', icon: Link, placeholder: 'https://threads.net/@yourhandle' },
-                    { key: 'pinterest', label: 'Pinterest', icon: Link, placeholder: 'https://pinterest.com/yourprofile' },
+                    { key: 'tiktok',    label: 'TikTok',    icon: Link,      placeholder: 'https://tiktok.com/@yourhandle' },
+                    { key: 'twitter',   label: 'X / Twitter', icon: Twitter, placeholder: 'https://x.com/yourhandle' },
+                    { key: 'pinterest', label: 'Pinterest', icon: Link,      placeholder: 'https://pinterest.com/yourprofile' },
+                    { key: 'facebook',  label: 'Facebook',  icon: Facebook,  placeholder: 'https://facebook.com/yourpage' },
+                    { key: 'threads',   label: 'Threads',   icon: Link,      placeholder: 'https://threads.net/@yourhandle' },
+                    { key: 'contact',   label: 'Contact email', icon: Mail,  placeholder: 'hello@yourdomain.com' },
                   ] as const
                 ).map(({ key, label, icon: Icon, placeholder }) => (
                   <div key={key} className="flex items-center gap-3">

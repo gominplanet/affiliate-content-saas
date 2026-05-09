@@ -36,24 +36,52 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
     .from('integrations')
-    .select('wp_site_url, wp_username, wp_app_password')
+    .select('wordpress_url, wordpress_username, wordpress_app_password, wordpress_api_token')
     .eq('user_id', user.id)
     .single()
 
-  if (intRow?.wp_site_url && intRow?.wp_username && intRow?.wp_app_password) {
+  if (intRow?.wordpress_url && intRow?.wordpress_username && intRow?.wordpress_app_password) {
     try {
-      const wpRes = await fetch(`${intRow.wp_site_url}/wp-json/affiliateos/v1/customizations`, {
+      const creds = Buffer.from(
+        `${intRow.wordpress_username}:${intRow.wordpress_app_password.replace(/\s+/g, '')}`,
+      ).toString('base64')
+      const auth = intRow.wordpress_api_token
+        ? `Basic ${Buffer.from(`${intRow.wordpress_username}:${intRow.wordpress_api_token}`).toString('base64')}`
+        : `Basic ${creds}`
+
+      // Fetch existing profile data so we only override footer-related fields
+      let existing: Record<string, unknown> = {}
+      try {
+        const getRes = await fetch(
+          `${intRow.wordpress_url}/wp-json/affiliateos/v1/customizations`,
+          { headers: { Authorization: auth } },
+        )
+        if (getRes.ok) existing = await getRes.json()
+      } catch { /* start fresh */ }
+
+      // Map footer.socials → profile keys that the WP plugin understands
+      const socials = customizations?.footer?.socials ?? {}
+      const mergedProfile = {
+        ...(existing?.profile ?? {}),
+        ...(socials.youtube   ? { youtubeUrl:   socials.youtube   } : {}),
+        ...(socials.facebook  ? { facebookUrl:  socials.facebook  } : {}),
+        ...(socials.instagram ? { instagramUrl: socials.instagram } : {}),
+        ...(socials.tiktok    ? { tiktokUrl:    socials.tiktok    } : {}),
+        ...(socials.twitter   ? { twitterUrl:   socials.twitter   } : {}),
+        ...(socials.pinterest ? { pinterestUrl: socials.pinterest } : {}),
+        ...(socials.threads   ? { threadsUrl:   socials.threads   } : {}),
+        ...(socials.contact   ? { contactEmail: socials.contact   } : {}),
+        ...(customizations?.footer?.bio ? { authorBio: customizations.footer.bio } : {}),
+      }
+
+      const wpRes = await fetch(`${intRow.wordpress_url}/wp-json/affiliateos/v1/customizations`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${Buffer.from(`${intRow.wp_username}:${intRow.wp_app_password}`).toString('base64')}`,
-        },
-        body: JSON.stringify(customizations),
+        headers: { 'Content-Type': 'application/json', Authorization: auth },
+        body: JSON.stringify({ ...existing, ...customizations, profile: mergedProfile }),
       })
       if (!wpRes.ok) {
         const text = await wpRes.text()
         console.error('WP push failed:', text)
-        // Non-fatal — data is already saved in Supabase
       }
     } catch (e) {
       console.error('WP push error:', e)
