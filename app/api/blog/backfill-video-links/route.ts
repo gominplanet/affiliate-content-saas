@@ -183,7 +183,25 @@ export async function POST() {
           .maybeSingle()
         if (row?.id) { rowId = row.id; ytIdToRowId[ytId] = rowId }
       }
-      if (rowId) embedYtIdMap[p.id] = rowId
+      if (rowId) {
+        embedYtIdMap[p.id] = rowId
+      } else if (ytId) {
+        // Video not in youtube_videos table — create a minimal record so rewrite works
+        const { data: newVid } = await sb
+          .from('youtube_videos')
+          .insert({
+            user_id: user.id,
+            youtube_video_id: ytId,
+            title: p.title.rendered.replace(/<[^>]+>/g, ''),
+            published_at: p.date,
+          })
+          .select('id')
+          .single()
+        if (newVid?.id) {
+          ytIdToRowId[ytId] = newVid.id
+          embedYtIdMap[p.id] = newVid.id
+        }
+      }
     } catch { /* non-fatal */ }
   }
 
