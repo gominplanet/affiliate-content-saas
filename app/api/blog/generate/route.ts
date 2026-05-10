@@ -27,10 +27,21 @@ async function handleGenerate(request: Request) {
   const { videoId } = await request.json()
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
-  // ── Usage limit check ─────────────────────────────────────────────────────
-  const usage = await checkUsageLimit(supabase, user.id)
-  if (!usage.allowed) {
-    return NextResponse.json({ error: usage.reason, limitReached: true }, { status: 403 })
+  // ── Usage limit check (skip for rewrites — existing post detected) ─────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existingForLimit } = await (supabase as any)
+    .from('blog_posts')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('video_id', videoId)
+    .limit(1)
+    .maybeSingle()
+
+  if (!existingForLimit) {
+    const usage = await checkUsageLimit(supabase, user.id)
+    if (!usage.allowed) {
+      return NextResponse.json({ error: usage.reason, limitReached: true }, { status: 403 })
+    }
   }
 
   // ── 1. Fetch video ────────────────────────────────────────────────────────
