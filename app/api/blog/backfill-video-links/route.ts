@@ -87,12 +87,24 @@ export async function POST() {
   }
 
   // ── 4. Build YouTube ID → video row ID map ────────────────────────────────
+  // WordPress often appends size suffixes like -1024x576 or -scaled, so we
+  // extract the first 11-char segment rather than requiring an exact match.
+  function extractYtId(sourceUrl: string): string | null {
+    const filename = sourceUrl.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+    // Exact 11-char match
+    if (/^[A-Za-z0-9_-]{11}$/.test(filename)) return filename
+    // 11-char prefix followed by dash + size suffix (e.g. abc12345678-1024x576)
+    const m = /^([A-Za-z0-9_-]{11})-/.exec(filename)
+    if (m) return m[1]
+    return null
+  }
+
   const ytIdsFromThumbs = new Set<string>()
   for (const p of untracked) {
     const thumb = thumbMap[p.featured_media]
     if (!thumb) continue
-    const filename = thumb.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
-    if (/^[A-Za-z0-9_-]{11}$/.test(filename)) ytIdsFromThumbs.add(filename)
+    const ytId = extractYtId(thumb)
+    if (ytId) ytIdsFromThumbs.add(ytId)
   }
 
   const ytIdToRowId: Record<string, string> = {}
@@ -128,10 +140,10 @@ export async function POST() {
     for (const v of allVideos ?? []) {
       const vidNorm = normalize(v.title)
       // Count how many words from productPart appear in the video title
-      const words = productPart.split(' ').filter((w: string) => w.length > 3)
+      const words = productPart.split(' ').filter((w: string) => w.length > 2)
       const matches = words.filter((w: string) => vidNorm.includes(w)).length
       const score = matches / Math.max(words.length, 1)
-      if (score > bestScore && score >= 0.5) {
+      if (score > bestScore && score >= 0.4) {
         bestScore = score
         bestId = v.id
       }
@@ -145,8 +157,7 @@ export async function POST() {
 
   for (const p of untracked) {
     const thumb = thumbMap[p.featured_media]
-    const filename = thumb?.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
-    const ytVideoId = /^[A-Za-z0-9_-]{11}$/.test(filename) ? filename : null
+    const ytVideoId = thumb ? extractYtId(thumb) : null
 
     const videoId = (ytVideoId ? ytIdToRowId[ytVideoId] : null) ?? titleMatch(p.title.rendered)
 
