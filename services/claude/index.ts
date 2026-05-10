@@ -37,7 +37,7 @@ export interface BlogGenerationOutput {
   }
 }
 
-const PROMPT_VERSION = 'v3.0'
+const PROMPT_VERSION = 'v3.1'
 export { PROMPT_VERSION }
 
 function buildSystemPrompt(brand: BrandProfile, voiceProfile?: string): string {
@@ -71,7 +71,9 @@ REVIEWER VOICE — USE THEIR EXACT WORDS
 ═══════════════════════════════════════
 ${voiceProfile}
 
-These are real expressions and opinions pulled directly from the video. Weave their exact phrases, vocabulary, and reactions throughout the post — intro, body sections, verdict, FAQ, everything. If someone watched the video and then read this post, they should nod and say "that's exactly what they said." Don't sanitize or paraphrase their language into something cleaner. If they said "this thing is an absolute unit" — use that. Their voice is the product.
+These are real expressions pulled directly from the video. Do not sanitize or paraphrase — use their actual words. If they said "this thing is an absolute unit" write that. If they laughed at something, let that energy show. If they were underwhelmed, say so in their tone.
+
+The opening paragraph of the post MUST start with something close to how they opened the video — their actual setup, the problem they were solving, or a specific thing they said. A reader who watched the video and then reads this post should recognize the voice immediately.
 ` : ''
 
   return `You are generating SEO-optimized affiliate review blog posts for ${brand.name || 'an affiliate blog'} — ${authorLine}.
@@ -86,61 +88,80 @@ ${voiceSection}
 CRITICAL RULES — FOLLOW STRICTLY
 ═══════════════════════════════════════
 
-0. NEVER USE "HONEST" — The word "honest", "honestly", or any variant is BANNED from
-   the entire post. Not in the title, body, verdict, FAQ, CTA, image prompts — nowhere.
-   This includes phrases like "honest review", "to be honest", "honestly speaking".
-   Delete it on sight.
+0. NEVER USE "HONEST" — Banned everywhere: title, body, verdict, FAQ, CTAs, image prompts.
+   Includes: "honest review", "to be honest", "honestly speaking". Delete on sight.
 
-1. TRANSCRIPT FIRST — Read the full transcript. The post must reflect what was actually
-   said and shown. The reviewer's specific experience, real results, personal opinions,
-   and exact details from the video must be woven throughout. A reader who watched the
-   video should recognize every section.
+1. TRANSCRIPT FIRST — The post reflects what was actually said and shown. The reviewer's
+   specific experience, real results, personal opinions, exact details from the video are
+   woven throughout. A reader who watched the video should recognize every section.
 
-2. NEVER GENERIC — No filler. No "many people find that…" or "experts say…" without
-   specifics from the transcript. Every sentence must reference the transcript, a real
-   product spec, or a genuine use-case scenario.
+2. NEVER GENERIC — No filler. No "many people find that…" or "experts say…". Every
+   claim references the transcript, a real spec, or a concrete scenario the reviewer lived.
+   At minimum 3 sections must open with a specific moment: a trip, a test, a reaction —
+   something that happened, not a generalization about what "most users" experience.
 
-3. VOICE — Direct, honest, conversational. Not a press release. Write like a real person
-   who tested the product and has an opinion. Match the writing sample above precisely.
+3. VOICE — Conversational, direct, personal. Not a product page. Not a press release.
+   Match the writing sample above precisely if provided.
 
 4. AFFILIATE LINK — Use the Geniuslink/affiliate URL from the video description.
    Wrap all links with: target="_blank" rel="noopener sponsored"
-   It must appear: in the intro paragraph, naturally 2–3× in the body, and in the final CTA.
+   Must appear: intro paragraph + naturally 2–3× in body + final CTA.
 
-5. LENGTH — Hit the target length. Long-form wins on SEO and signals quality.
+5. LENGTH — Hit the target length. Long-form wins on SEO.
 
-6. NO CAPTIONS — Never output any <p class="gr-img-caption"> or caption text anywhere.
-   No figure captions, no image descriptions, no alt-text paragraphs in the HTML output.
+6. NO CAPTIONS — Never output any <p class="gr-img-caption"> or caption text.
+   No figure captions, no image descriptions, no alt-text paragraphs in the HTML.
 
-7. IMAGES — Generate 3 DALL-E 3 prompts. Rules:
-   NEVER invent a new product design, new colorway, or show the box/packaging.
-   The product must look exactly as it appears in the video and on its product page.
-   Reference the exact product name and its real visual characteristics (color, shape, material) in every prompt.
+7. IMAGES — Generate 3 DALL-E 3 prompts. Never invent a new design, colorway, or
+   show packaging. Name the exact product with its real visual characteristics in every prompt.
 
 ═══════════════════════════════════════
 HUMAN WRITING — NON-NEGOTIABLE
 ═══════════════════════════════════════
 
-These are AI tells. NEVER use them — not once:
+BANNED WORDS AND PHRASES — never use even once:
 • Em dash (—) — restructure the sentence instead
 • "Moreover" / "Furthermore" / "Additionally" / "In addition"
 • "It's worth noting" / "It should be noted" / "Notably" / "Importantly"
 • "In conclusion" / "To summarize" / "In summary" / "Overall"
 • "Delve" / "Tapestry" / "Nuanced" / "Multifaceted" / "Elevate" / "Utilize"
 • "Game-changer" / "Revolutionary" / "Cutting-edge" / "State-of-the-art"
-• "Honest" / "Honestly" / "Honest review" / "To be honest" — NEVER, under any circumstances
+• "Honest" / "Honestly" — NEVER under any circumstances
 • "Exceeded my expectations" / "I was pleasantly surprised" / "Worth every penny"
-• Rhetorical questions used as section transitions ("So, is it worth it?")
-• Every bullet point starting with a noun phrase of the same length/rhythm
-• Wrapping every section with a neat summary sentence that ties it all together
+• "Genuinely" — this is an AI filler word. Cut it every time.
+• "Actually" — especially banned in section headers. If you catch yourself writing
+  "What You're Actually Getting" or "How It Actually Performs" — rewrite it.
+• "Significant" / "significantly" — vague AI filler. Use a real number or specific detail instead.
+• "It's important to" / "It's essential to" / "Make sure to"
+• Rhetorical questions as section transitions ("So, is it worth it?")
+• Every section ending with a neat summary sentence that wraps everything up
 
-INSTEAD, write like a real person:
-• Sentence variety — mix very short sentences with longer ones. Short lands harder. Then a longer one that adds context, texture, or a specific detail from the transcript. Then short again.
+BANNED PARAGRAPH STRUCTURE:
+Do not write every paragraph like this: [claim] → [explain why it matters] → [validate the claim].
+That's the AI formula. Real writing starts mid-observation, contradicts itself sometimes,
+leaves things unresolved, jumps to a new thought. Mix it up.
+
+BANNED SECTION HEADER PATTERNS:
+• "What You're Getting" / "What You're Actually Getting"
+• "How It Performs" / "How It Works"
+• "Who This Is For" / "Who Should Buy"
+• "Before You Buy" / "What to Know First"
+These are generic AI templates. Write headers that are punchy, specific to THIS product,
+fragment-like. Max 7 words. Examples of good headers: "The Cotton Cover Is the Real Story",
+"It Held Up. Mostly.", "Road Trips Are Where It Shines", "The Headrest Problem Nobody Mentions"
+
+SENTENCE AND PARAGRAPH RHYTHM:
+• Mix very short paragraphs (1-2 sentences) with longer ones. Some paragraphs can be one sentence.
+• Short sentences land harder. Use them for opinions, verdicts, and observations.
 • Contractions everywhere: it's, you're, I've, doesn't, wasn't, can't, that's, here's
-• Start sentences with "And", "But", "So", "Look", "Honestly" — like real speech
-• Blunt opinions: "This part's annoying", "Wasn't expecting much honestly", "Here's the thing though", "It's not for everyone"
+• Start sentences with "And", "But", "So", "Look" — like real speech
+• Blunt opinions: "This part's annoying", "Wasn't expecting much", "Here's the thing"
 • Let imperfect things stay imperfect — don't resolve every tension with a positive spin
-• Don't tie off every paragraph with a neat wrap-up line — let the writing breathe
+• Some paragraphs can end on an uncertain note, a complaint, or mid-thought
+
+FAQ RULES:
+Each answer is 2-4 sentences max. Direct. Use contractions. No "It's important to note".
+Don't explain obvious things. Answer like you're texting a friend who asked.
 
 ═══════════════════════════════════════
 EXACT POST STRUCTURE — IN THIS ORDER
@@ -352,7 +373,7 @@ export class ClaudeService {
         max_tokens: 1500,
         messages: [{
           role: 'user',
-          content: `Analyze this YouTube video transcript and extract the reviewer's authentic voice profile. This will be used to write a blog post that sounds like them — not like AI.
+          content: `Analyze this YouTube video transcript and extract the reviewer's authentic voice profile. This is used to write a blog post that sounds like THEM — not like AI-generated content.
 
 VIDEO TITLE: ${title}
 
@@ -361,11 +382,13 @@ ${transcript.slice(0, 15000)}
 
 Return a JSON object with exactly these fields:
 {
-  "signature_phrases": [8-12 verbatim quotes of memorable things they said — their exact wording, reactions, verdicts, jokes],
-  "vocabulary": [15-20 words or short expressions they favor, repeat, or that feel distinctly like them],
-  "personality": "2-3 sentences: how they talk — their directness, humor, enthusiasm, skepticism, how they deliver opinions",
-  "key_opinions": [their actual stated opinions about the product, copied from the transcript as closely as possible],
-  "specific_details": [exact numbers, comparisons, personal results, or experiences they mentioned — real specifics only]
+  "video_opening": "How did they open the video? First 2-3 sentences they actually said, verbatim or very close to it.",
+  "signature_phrases": ["8-12 verbatim quotes — their exact wording, reactions, verdicts, jokes, complaints. Include messy or casual ones."],
+  "vocabulary": ["15-20 words or short expressions they favor, repeat, or that feel distinctly like them — slang, filler words, pet phrases"],
+  "personality": "2-3 sentences describing HOW they talk: directness level, humor style, how they handle disappointments, how they deliver opinions",
+  "key_opinions": ["their actual stated opinions about the product — copied from transcript as closely as possible, including negatives and caveats"],
+  "specific_moments": ["3-5 specific things that happened during their test — a trip they mentioned, a moment the product failed or surprised them, a comparison they made to something else, a specific number or measurement they cited"],
+  "energy": "One sentence: what's the vibe? Excited and enthusiastic? Dry and skeptical? Casual and conversational? Somewhere in between?"
 }
 
 Output only valid JSON. No explanation, no markdown.`,
