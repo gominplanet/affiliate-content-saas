@@ -459,6 +459,7 @@ export default function ContentPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkRewriting, setBulkRewriting] = useState(false)
   const [bulkRewriteProgress, setBulkRewriteProgress] = useState<{ done: number; total: number } | null>(null)
+  const [backfilling, setBackfilling] = useState(false)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
 
@@ -694,6 +695,25 @@ export default function ContentPage() {
     setFixCatResult(parts.join(' · '))
   }
 
+  async function backfillVideoLinks() {
+    setBackfilling(true)
+    setFixCatResult(null)
+    try {
+      const res = await fetch('/api/blog/backfill-video-links', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) { setFixCatResult(`Backfill failed: ${data.error}`); return }
+      if (data.linked === 0) {
+        setFixCatResult(data.message || 'All posts already have video links.')
+      } else {
+        setFixCatResult(`Linked ${data.linked} posts to videos (${data.skipped} couldn't be matched). Reload to see Rewrite buttons.`)
+        // Reload posts so videoIds populate
+        setPostsLoaded(false)
+        await loadWpPosts()
+      }
+    } catch { setFixCatResult('Backfill failed.') }
+    finally { setBackfilling(false) }
+  }
+
   function toggleSelect(id: number) {
     setSelectedPostIds(prev => {
       const next = new Set(prev)
@@ -817,6 +837,14 @@ export default function ContentPage() {
           {/* Bulk action toolbar */}
           {!postsLoading && allBlogPosts.length > 0 && (
             <div className="flex items-center gap-3 pb-1 flex-wrap">
+              <button
+                onClick={backfillVideoLinks}
+                disabled={backfilling}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#34c759] text-white rounded-lg hover:bg-[#2db34a] disabled:opacity-60 transition-colors"
+                title="Link old posts to their YouTube videos so Rewrite works"
+              >
+                {backfilling ? <><Loader2 size={11} className="animate-spin" /> Linking…</> : '⚡ Link missing videos'}
+              </button>
               <button
                 onClick={() => setSelectedPostIds(new Set(allBlogPosts.filter(p => !p.thumbnail).map(p => p.id)))}
                 className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
