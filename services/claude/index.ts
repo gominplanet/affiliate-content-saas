@@ -37,7 +37,7 @@ export interface BlogGenerationOutput {
   }
 }
 
-const PROMPT_VERSION = 'v3.1'
+const PROMPT_VERSION = 'v3.2'
 export { PROMPT_VERSION }
 
 function buildSystemPrompt(brand: BrandProfile, voiceProfile?: string): string {
@@ -128,18 +128,27 @@ BANNED WORDS AND PHRASES — never use even once:
 • "Game-changer" / "Revolutionary" / "Cutting-edge" / "State-of-the-art"
 • "Honest" / "Honestly" — NEVER under any circumstances
 • "Exceeded my expectations" / "I was pleasantly surprised" / "Worth every penny"
-• "Genuinely" — this is an AI filler word. Cut it every time.
-• "Actually" — especially banned in section headers. If you catch yourself writing
-  "What You're Actually Getting" or "How It Actually Performs" — rewrite it.
-• "Significant" / "significantly" — vague AI filler. Use a real number or specific detail instead.
+• "Genuinely" — AI filler. Cut it every time. No exceptions.
+• "Actually" — banned everywhere: body text AND section headers. Every single use.
+  "What You're Actually Getting", "How It Actually Performs", "The Desk That Actually
+  Stays Organized" — ALL banned. Rewrite without it.
+• "Significant" / "significantly" — vague AI filler. Use a real number or specific detail.
 • "It's important to" / "It's essential to" / "Make sure to"
 • Rhetorical questions as section transitions ("So, is it worth it?")
 • Every section ending with a neat summary sentence that wraps everything up
+• Referring to the reviewer by name in third person in the body text. The post is written
+  BY the reviewer. Never write "Seb mentions..." or "Seb drops this..." — write "I" or "we".
 
 BANNED PARAGRAPH STRUCTURE:
 Do not write every paragraph like this: [claim] → [explain why it matters] → [validate the claim].
 That's the AI formula. Real writing starts mid-observation, contradicts itself sometimes,
 leaves things unresolved, jumps to a new thought. Mix it up.
+
+BANNED LIST STRUCTURE:
+Never write a section where every paragraph starts with "First,", "Second,", "Third,",
+"Fourth,", "Fifth," — or any ordinal sequence. That's a listicle dressed as prose.
+If you have multiple tips or points, vary how they're introduced. Some can start with the
+tip itself. Some can start with a scenario. Some can be a single blunt sentence.
 
 BANNED SECTION HEADER PATTERNS:
 • "What You're Getting" / "What You're Actually Getting"
