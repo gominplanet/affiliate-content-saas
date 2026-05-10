@@ -401,8 +401,8 @@ ${video.description.slice(0, 2000)}
 TRANSCRIPT:
 ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}`
 
-    // Pass 2 — generate with extended thinking for deeper voice internalization
-    const message = await this.client.messages.create({
+    // Pass 2 — generate with extended thinking (streaming required for large max_tokens)
+    const stream = this.client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 32000,
       thinking: { type: 'enabled', budget_tokens: 10000 },
@@ -415,6 +415,8 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
       ],
       messages: [{ role: 'user', content: userMessage }],
     })
+
+    const message = await stream.finalMessage()
 
     // Filter out thinking blocks — only keep text output
     const raw = message.content
