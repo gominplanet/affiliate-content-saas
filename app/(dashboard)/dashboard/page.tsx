@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import Header from '@/components/layout/Header'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
-import { PlaySquare, CheckCircle, AlertTriangle, ArrowRight, Clock } from 'lucide-react'
+import { PlaySquare, ArrowRight, Clock } from 'lucide-react'
 import Link from 'next/link'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -12,18 +12,12 @@ export default async function DashboardPage() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: videos }, { data: failures }] = await Promise.all([
-    supabase.from('youtube_videos').select('id').eq('user_id', user!.id),
-    supabase.from('job_failures').select('id').eq('user_id', user!.id).eq('status', 'pending_retry'),
-  ])
+  const { data: videos } = await supabase.from('youtube_videos').select('id').eq('user_id', user!.id)
 
   const videoCount = videos?.length ?? 0
-  const failureCount = failures?.length ?? 0
 
   const stats = [
     { label: 'Videos Tracked', value: String(videoCount), icon: PlaySquare, color: 'text-[#0071e3]', bg: 'bg-[#0071e3]/8' },
-    { label: 'Published', value: '0', icon: CheckCircle, color: 'text-[#34c759]', bg: 'bg-[#34c759]/8' },
-    { label: 'Failures', value: String(failureCount), icon: AlertTriangle, color: 'text-[#ff3b30]', bg: 'bg-[#ff3b30]/8' },
   ]
 
   const { data: recentVideos } = await supabase
