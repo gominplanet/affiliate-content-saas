@@ -253,11 +253,20 @@ async function handleGenerate(request: Request) {
   // ── 10. Purge LiteSpeed cache so new post appears on homepage immediately ──
   try {
     const wpBase = wp.wordpress_url.replace(/\/$/, '')
-    const customizations = (integration as Record<string, unknown>).blog_customizations ?? {}
+    // GET existing WP customizations first, re-POST same data to trigger purge
+    // without ever overwriting stored WP data with an empty object.
+    let existing: unknown = {}
+    try {
+      const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`)
+      if (getRes.ok) existing = await getRes.json()
+    } catch { /* ignore */ }
+    const payload = (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing as object).length > 0)
+      ? existing
+      : ((integration as Record<string, unknown>).blog_customizations ?? {})
     await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(customizations),
+      body: JSON.stringify(payload),
     })
   } catch { /* non-fatal — post is published regardless */ }
 

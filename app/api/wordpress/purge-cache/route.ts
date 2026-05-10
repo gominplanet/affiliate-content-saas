@@ -17,11 +17,27 @@ export async function POST() {
     return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
   }
 
-  // Re-posting the current customizations triggers litespeed_purge_all in the PHP snippet
-  const res = await fetch(`${intRow.wordpress_url}/wp-json/affiliateos/v1/customizations`, {
+  const wpBase = intRow.wordpress_url.replace(/\/$/, '')
+
+  // Always GET current WP customizations first, then re-POST the same data.
+  // This triggers litespeed_purge_all without ever overwriting stored data with empty.
+  let existing: unknown = {}
+  try {
+    const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`)
+    if (getRes.ok) existing = await getRes.json()
+  } catch { /* start fresh */ }
+
+  // If WP has data, re-post it (purges cache, preserves data).
+  // If WP is empty but Supabase has data, post Supabase data (restores + purges).
+  // If both empty, post empty (purge only — no data to lose).
+  const payload = (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing).length > 0)
+    ? existing
+    : (intRow.blog_customizations ?? {})
+
+  const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(intRow.blog_customizations ?? {}),
+    body: JSON.stringify(payload),
   })
 
   if (!res.ok) {
