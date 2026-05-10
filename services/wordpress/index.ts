@@ -92,15 +92,25 @@ export class WordPressService {
     }
     const cookies = cookieParts.join('; ')
 
-    // Use dedicated nonce endpoint (reliable) instead of scraping WP admin HTML
+    // Try dedicated nonce endpoint first; fall back to scraping WP admin HTML
+    // (the custom endpoint only exists on sites that ran the full setup wizard)
+    let nonce = ''
     const nonceRes = await fetch(`${this.siteUrl}/wp-json/affiliateos/v1/nonce`, {
       headers: { Cookie: cookies },
     })
-    if (!nonceRes.ok) {
-      throw new Error(`Could not fetch REST nonce — affiliateos/v1/nonce returned ${nonceRes.status}`)
+    if (nonceRes.ok) {
+      const body = await nonceRes.json() as { nonce?: string }
+      nonce = body.nonce ?? ''
     }
-    const { nonce } = await nonceRes.json() as { nonce: string }
-    if (!nonce) throw new Error('REST nonce endpoint returned empty nonce')
+    if (!nonce) {
+      const adminRes = await fetch(`${this.siteUrl}/wp-admin/index.php`, {
+        headers: { Cookie: cookies },
+      })
+      const html = await adminRes.text()
+      const m = html.match(/createNonceMiddleware\("([^"]+)"\)/) || html.match(/"nonce"\s*:\s*"([^"]+)"/)
+      if (!m) throw new Error('Could not extract WP nonce. Make sure your credentials have admin access.')
+      nonce = m[1]
+    }
 
     this.nonceCache = { cookies, nonce, expiry: Date.now() + 20 * 60 * 1000 }
     return this.nonceCache
