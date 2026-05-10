@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation'
 import {
   ExternalLink, CheckCircle, ChevronRight, Loader2,
   Globe, Wrench, Sparkles, Link2, Rocket, Eye, EyeOff,
-  Download, Upload, X,
+  Download, Upload, X, ArrowLeft, Building2, Wand2,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 
+type Mode = 'existing' | 'new' | null
 type Step = 1 | 2 | 3 | 4 | 5
 
 const steps = [
@@ -30,7 +31,7 @@ const PRESET_COLORS = [
   { hex: '#ff2d55', label: 'Pink' },
 ]
 
-const STORAGE_KEY = 'affiliateos_setup_v2'
+const STORAGE_KEY = 'affiliateos_setup_v3'
 
 interface ImageData {
   base64: string
@@ -183,10 +184,187 @@ async function resizeImage(file: File, maxSize: number): Promise<ImageData> {
   })
 }
 
-// ─── Step 1: Hostinger ────────────────────────────────────────────────────────
-function Step1({ onNext }: { onNext: () => void }) {
+// ─── Mode picker ─────────────────────────────────────────────────────────────
+function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void }) {
   return (
     <div className="flex flex-col gap-6">
+      <div>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">How would you like to get started?</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
+          Choose the option that fits your situation. You can always start fresh later.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Option A — existing site */}
+        <button
+          onClick={() => onSelect('existing')}
+          className="group flex flex-col items-start gap-4 p-6 rounded-2xl border-2 border-gray-200 dark:border-white/10 hover:border-[#0071e3] bg-white dark:bg-[#1c1c1e] text-left transition-all hover:shadow-md"
+        >
+          <div className="w-12 h-12 rounded-xl bg-[#0071e3]/10 flex items-center justify-center group-hover:bg-[#0071e3]/20 transition-colors">
+            <Building2 size={22} className="text-[#0071e3]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">I already have a WordPress blog</p>
+            <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+              Connect your existing site. MVP Affiliate will only publish new posts — it won&apos;t touch your theme, design, or existing content.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0071e3] group-hover:gap-2.5 transition-all">
+            Connect my site <ChevronRight size={15} />
+          </span>
+        </button>
+
+        {/* Option B — build from scratch */}
+        <button
+          onClick={() => onSelect('new')}
+          className="group flex flex-col items-start gap-4 p-6 rounded-2xl border-2 border-gray-200 dark:border-white/10 hover:border-[#34c759] bg-white dark:bg-[#1c1c1e] text-left transition-all hover:shadow-md"
+        >
+          <div className="w-12 h-12 rounded-xl bg-[#34c759]/10 flex items-center justify-center group-hover:bg-[#34c759]/20 transition-colors">
+            <Wand2 size={22} className="text-[#34c759]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Build me a new blog from scratch</p>
+            <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+              Start fresh with Hostinger hosting. We&apos;ll set up WordPress, install your theme, create your home page, and configure everything automatically.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#34c759] group-hover:gap-2.5 transition-all">
+            Start the setup wizard <ChevronRight size={15} />
+          </span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Existing site connect flow ───────────────────────────────────────────────
+function ExistingConnect({
+  onBack,
+  onDone,
+}: {
+  onBack: () => void
+  onDone: (url: string) => void
+}) {
+  const [siteUrl, setSiteUrl] = useState('')
+  const [username, setUsername] = useState('')
+  const [appPassword, setAppPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const canSubmit = siteUrl.trim() && username.trim() && appPassword.trim() && !loading
+
+  async function handleConnect() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/wordpress/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl: siteUrl.trim(), username: username.trim(), appPassword: appPassword.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Connection failed')
+      onDone(data.siteUrl)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Connection failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#0071e3] hover:opacity-75 mb-4">
+          <ArrowLeft size={14} /> Back
+        </button>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your WordPress site</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
+          MVP Affiliate will only publish posts — it won&apos;t change your theme, design, or any existing content.
+        </p>
+      </div>
+
+      <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">You&apos;ll need a WordPress Application Password</p>
+        <ol className="flex flex-col gap-2">
+          {[
+            'Log in to your WordPress admin (yourdomain.com/wp-admin).',
+            'Go to Users → Profile, scroll down to "Application Passwords".',
+            'Enter a name like "MVP Affiliate" and click "Add New Application Password".',
+            'Copy the generated password (spaces are fine — paste it as-is).',
+          ].map((text, i) => (
+            <li key={i} className="flex items-start gap-2.5">
+              <span className="w-4 h-4 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <div>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress site URL</label>
+          <input
+            type="text"
+            value={siteUrl}
+            onChange={e => setSiteUrl(e.target.value)}
+            placeholder="yourdomain.com"
+            className="input-field"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress username</label>
+          <input
+            type="text"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            placeholder="admin"
+            className="input-field"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={appPassword}
+              onChange={e => setAppPassword(e.target.value)}
+              placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
+              className="input-field pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+            >
+              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Not your regular password — this is a separate Application Password created in your WordPress profile.</p>
+        </div>
+      </div>
+
+      {error && (
+        <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      )}
+
+      <button onClick={handleConnect} disabled={!canSubmit} className="btn-primary self-start">
+        {loading ? <><Loader2 size={15} className="animate-spin" /> Verifying…</> : <><Link2 size={15} /> Connect site</>}
+      </button>
+    </div>
+  )
+}
+
+// ─── Step 1: Hostinger ────────────────────────────────────────────────────────
+function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  return (
+    <div className="flex flex-col gap-6">
+      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#0071e3] hover:opacity-75 self-start">
+        <ArrowLeft size={14} /> Back
+      </button>
       <div>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Create your Hostinger account</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
@@ -649,6 +827,7 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
 
 // ─── Wizard shell ─────────────────────────────────────────────────────────────
 export default function SetupPage() {
+  const [mode, setMode] = useState<Mode>(null)
   const [step, setStep] = useState<Step>(1)
   const [wordpressUrl, setWordpressUrl] = useState('')
   const [accentColor, setAccentColor] = useState('#f5a623')
@@ -669,12 +848,13 @@ export default function SetupPage() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: intRow } = await (supabase as any)
             .from('integrations')
-            .select('wp_site_url')
+            .select('wordpress_url,wp_site_url')
             .eq('user_id', user.id)
             .single()
-          if (intRow?.wp_site_url) {
+          const connectedUrl = intRow?.wordpress_url || intRow?.wp_site_url
+          if (connectedUrl) {
             setSetupComplete(true)
-            setCompletedUrl(intRow.wp_site_url)
+            setCompletedUrl(connectedUrl)
             setHydrated(true)
             return
           }
@@ -685,6 +865,7 @@ export default function SetupPage() {
         const raw = localStorage.getItem(STORAGE_KEY)
         if (raw) {
           const d = JSON.parse(raw)
+          if (d.mode) setMode(d.mode as Mode)
           if (d.step && d.step < 5) setStep(d.step as Step)
           if (d.brandData) setBrandData(d.brandData)
           if (d.siteUrl) setSiteUrl(d.siteUrl)
@@ -704,14 +885,15 @@ export default function SetupPage() {
     if (!hydrated) return
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        step, brandData, siteUrl, username, accentColor, wordpressUrl,
+        mode, step, brandData, siteUrl, username, accentColor, wordpressUrl,
       }))
     } catch { /* ignore quota errors */ }
-  }, [step, brandData, siteUrl, username, accentColor, wordpressUrl, hydrated])
+  }, [mode, step, brandData, siteUrl, username, accentColor, wordpressUrl, hydrated])
 
   function handleReset() {
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
     setSetupComplete(false)
+    setMode(null)
     setStep(1)
     setBrandData(defaultBrand)
     setSiteUrl('')
@@ -722,6 +904,7 @@ export default function SetupPage() {
 
   if (!hydrated) return null
 
+  // ── Already connected ──────────────────────────────────────────────────────
   if (setupComplete) {
     return (
       <div className="max-w-2xl mx-auto">
@@ -733,13 +916,15 @@ export default function SetupPage() {
             <CheckCircle size={28} className="text-[#34c759]" />
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Setup completed</h2>
+            <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">WordPress connected</h2>
             <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">Your WordPress blog is connected and ready to publish content.</p>
           </div>
           <div className="flex gap-3 flex-wrap justify-center">
-            <a href={completedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-2">
-              Visit Blog <ExternalLink size={13} />
-            </a>
+            {completedUrl && (
+              <a href={completedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary flex items-center gap-2">
+                Visit Blog <ExternalLink size={13} />
+              </a>
+            )}
             <button onClick={handleReset} className="btn-secondary text-[#ff3b30] border-[#ff3b30]/30 hover:border-[#ff3b30]">
               Reset Setup
             </button>
@@ -749,6 +934,43 @@ export default function SetupPage() {
     )
   }
 
+  // ── Mode picker ────────────────────────────────────────────────────────────
+  if (mode === null) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Connect your affiliate blog to start publishing from YouTube.</p>
+        </div>
+        <div className="card p-7">
+          <ModePicker onSelect={setMode} />
+        </div>
+      </div>
+    )
+  }
+
+  // ── Existing site connect flow ─────────────────────────────────────────────
+  if (mode === 'existing') {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
+        </div>
+        <div className="card p-7">
+          <ExistingConnect
+            onBack={() => setMode(null)}
+            onDone={url => {
+              setSetupComplete(true)
+              setCompletedUrl(url)
+              try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // ── Full new-site wizard ───────────────────────────────────────────────────
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-6">
@@ -756,10 +978,17 @@ export default function SetupPage() {
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in minutes.</p>
       </div>
 
-      <StepIndicator current={step} />
+      <div className="flex items-center justify-between mb-2">
+        <StepIndicator current={step} />
+      </div>
+      <div className="mb-4">
+        <button onClick={() => { setMode(null); setStep(1) }} className="inline-flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
+          <ArrowLeft size={12} /> Change setup type
+        </button>
+      </div>
 
       <div className="card p-7">
-        {step === 1 && <Step1 onNext={() => setStep(2)} />}
+        {step === 1 && <Step1 onNext={() => setStep(2)} onBack={() => setMode(null)} />}
         {step === 2 && <Step2 onNext={() => setStep(3)} />}
         {step === 3 && (
           <Step3
