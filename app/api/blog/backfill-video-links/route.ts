@@ -151,7 +151,43 @@ export async function POST() {
     return bestId
   }
 
-  // ── 6. Insert blog_posts records for matched posts ────────────────────────
+  // ── 6. For still-unmatched posts, extract YouTube ID from post content ──────
+  // Every post we generate embeds the video: youtube.com/embed/{videoId}
+  // Fetch content only for posts that won't be matched by thumb or title.
+  const needsContentCheck = untracked.filter(p => {
+    const thumb = thumbMap[p.featured_media]
+    const ytVideoId = thumb ? extractYtId(thumb) : null
+    return !ytVideoId && !titleMatch(p.title.rendered)
+  })
+
+  const embedYtIdMap: Record<number, string> = {} // wpPostId → youtube_video row id
+  for (const p of needsContentCheck) {
+    try {
+      const res = await fetch(
+        `${base}/wp-json/wp/v2/posts/${p.id}?_fields=content`,
+        { headers },
+      )
+      if (!res.ok) continue
+      const { content } = await res.json() as { content: { rendered: string } }
+      const match = /youtube\.com\/embed\/([A-Za-z0-9_-]{11})/.exec(content?.rendered ?? '')
+      if (!match) continue
+      const ytId = match[1]
+      // Look up in already-fetched map first, then query if not found
+      let rowId = ytIdToRowId[ytId]
+      if (!rowId) {
+        const { data: row } = await sb
+          .from('youtube_videos')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('youtube_video_id', ytId)
+          .maybeSingle()
+        if (row?.id) { rowId = row.id; ytIdToRowId[ytId] = rowId }
+      }
+      if (rowId) embedYtIdMap[p.id] = rowId
+    } catch { /* non-fatal */ }
+  }
+
+  // ── 7. Insert blog_posts records for matched posts ────────────────────────
   let linked = 0
   let skipped = 0
 
@@ -159,7 +195,10 @@ export async function POST() {
     const thumb = thumbMap[p.featured_media]
     const ytVideoId = thumb ? extractYtId(thumb) : null
 
-    const videoId = (ytVideoId ? ytIdToRowId[ytVideoId] : null) ?? titleMatch(p.title.rendered)
+    const videoId = (ytVideoId ? ytIdToRowId[ytVideoId] : null)
+      ?? titleMatch(p.title.rendered)
+      ?? embedYtIdMap[p.id]
+      ?? null
 
     if (!videoId) { skipped++; continue }
 
