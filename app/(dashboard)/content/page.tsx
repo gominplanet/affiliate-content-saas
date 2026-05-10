@@ -545,13 +545,41 @@ export default function ContentPage() {
   async function loadWpPosts() {
     setPostsLoading(true)
     try {
-      const res = await fetch('/api/wordpress/posts')
+      // Fetch WP posts + Supabase video_id map in parallel
+      const [res, { data: { user } }] = await Promise.all([
+        fetch('/api/wordpress/posts'),
+        supabase.auth.getUser(),
+      ])
       const data = await res.json()
       if (!res.ok || data.error) {
         setFixCatResult(`Failed to load posts: ${data.error || res.status}`)
-      } else {
-        setAllBlogPosts(data.posts ?? [])
+        setPostsLoaded(true)
+        return
       }
+
+      // Build a complete wpPostId → videoId map directly from Supabase
+      // (the WP posts API fallback misses many posts due to thumbnail naming)
+      const wpPostIds = (data.posts ?? []).map((p: { id: number }) => p.id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: sbPosts } = await (supabase as any)
+        .from('blog_posts')
+        .select('wordpress_post_id,video_id')
+        .eq('user_id', user?.id)
+        .in('wordpress_post_id', wpPostIds)
+        .not('video_id', 'is', null)
+
+      const sbMap: Record<number, string> = {}
+      for (const p of (sbPosts ?? []) as { wordpress_post_id: number; video_id: string }[]) {
+        if (p.wordpress_post_id && p.video_id) sbMap[p.wordpress_post_id] = p.video_id
+      }
+
+      // Merge: prefer Supabase map, fall back to WP API result
+      const merged = (data.posts ?? []).map((p: { id: number; videoId: string | null }) => ({
+        ...p,
+        videoId: sbMap[p.id] ?? p.videoId ?? null,
+      }))
+
+      setAllBlogPosts(merged)
       setPostsLoaded(true)
     } catch (e) {
       setFixCatResult(`Failed to load posts: ${e instanceof Error ? e.message : String(e)}`)
@@ -623,6 +651,7 @@ export default function ContentPage() {
 
   async function bulkRewriteSelected() {
     const toRewrite = allBlogPosts.filter(p => selectedPostIds.has(p.id) && p.videoId)
+    const skipped = selectedPostIds.size - toRewrite.length
     if (toRewrite.length === 0) {
       setFixCatResult('No selected posts have a linked video — cannot rewrite.')
       return
@@ -631,6 +660,7 @@ export default function ContentPage() {
     setBulkRewriteProgress({ done: 0, total: toRewrite.length })
     let success = 0
     let failed = 0
+    let firstError = ''
     for (let i = 0; i < toRewrite.length; i++) {
       const post = toRewrite[i]
       setBulkRewriteProgress({ done: i, total: toRewrite.length })
@@ -640,7 +670,7 @@ export default function ContentPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ videoId: post.videoId }),
         })
-        const data = await res.json()
+        const data = await res.json().catch(() => ({}))
         if (res.ok) {
           setAllBlogPosts(prev => prev.map(p =>
             p.id === post.id ? { ...p, title: data.title, link: data.wordpressUrl ?? p.link } : p
@@ -648,15 +678,20 @@ export default function ContentPage() {
           success++
         } else {
           failed++
+          if (!firstError) firstError = data.error || `HTTP ${res.status}`
         }
-      } catch {
+      } catch (e) {
         failed++
+        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
       }
     }
     setBulkRewriteProgress(null)
     setBulkRewriting(false)
     setSelectedPostIds(new Set())
-    setFixCatResult(`Rewrite complete — ${success} succeeded${failed > 0 ? `, ${failed} failed` : ''}.`)
+    const parts = [`${success} rewritten`]
+    if (failed > 0) parts.push(`${failed} failed${firstError ? ` (${firstError})` : ''}`)
+    if (skipped > 0) parts.push(`${skipped} skipped (no video link)`)
+    setFixCatResult(parts.join(' · '))
   }
 
   function toggleSelect(id: number) {
