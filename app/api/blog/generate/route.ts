@@ -250,6 +250,17 @@ async function handleGenerate(request: Request) {
     savedPost = data
   }
 
+  // ── 10. Purge LiteSpeed cache so new post appears on homepage immediately ──
+  try {
+    const wpBase = wp.wordpress_url.replace(/\/$/, '')
+    const customizations = (integration as Record<string, unknown>).blog_customizations ?? {}
+    await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(customizations),
+    })
+  } catch { /* non-fatal — post is published regardless */ }
+
   return NextResponse.json({
     success: true,
     postId: savedPost?.id,

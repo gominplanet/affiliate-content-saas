@@ -6,7 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
   Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp,
-  Twitter, Mail, Upload, X, RefreshCw,
+  Twitter, Mail, Upload, X, RefreshCw, Sparkles, User, Image as ImageIcon,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ interface AdBlock {
   id: string
   imageUrl: string
   linkUrl: string
-  position: number // in-content only: after paragraph N
+  position: number
   enabled: boolean
 }
 
@@ -36,8 +36,14 @@ interface CustomLink {
   url: string
 }
 
-interface FooterData {
+interface AboutData {
   bio: string
+  headshotUrl: string
+  logoUrl: string
+  imageType: 'logo' | 'headshot'
+}
+
+interface FooterData {
   socials: SocialLinks
   links: CustomLink[]
 }
@@ -45,11 +51,12 @@ interface FooterData {
 interface BlogCustomizations {
   sidebar: AdBlock[]
   incontent: AdBlock[]
+  about: AboutData
   footer: FooterData
 }
 
+const emptyAbout: AboutData = { bio: '', headshotUrl: '', logoUrl: '', imageType: 'headshot' }
 const emptyFooter: FooterData = {
-  bio: '',
   socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
   links: [],
 }
@@ -57,6 +64,7 @@ const emptyFooter: FooterData = {
 const defaultCustomizations: BlogCustomizations = {
   sidebar: [],
   incontent: [],
+  about: emptyAbout,
   footer: emptyFooter,
 }
 
@@ -64,7 +72,6 @@ function newBlock(): AdBlock {
   return { id: crypto.randomUUID(), imageUrl: '', linkUrl: '', position: 2, enabled: true }
 }
 
-// Migrate legacy blocks that had type/html fields
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function migrateBlock(raw: any): AdBlock {
   return {
@@ -78,10 +85,10 @@ function migrateBlock(raw: any): AdBlock {
 
 // ── Image upload helper ───────────────────────────────────────────────────────
 
-async function uploadBannerImage(file: File, userId: string): Promise<string> {
+async function uploadImage(file: File, userId: string, folder: string): Promise<string> {
   const supabase = createBrowserClient()
   const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const path = `${userId}/${folder}/${Date.now()}.${ext}`
   const { error } = await supabase.storage.from('ad-banners').upload(path, file, {
     cacheControl: '31536000',
     upsert: false,
@@ -94,11 +101,7 @@ async function uploadBannerImage(file: File, userId: string): Promise<string> {
 // ── Banner Block Editor ───────────────────────────────────────────────────────
 
 function BannerBlockEditor({
-  block,
-  onChange,
-  onDelete,
-  showPosition,
-  userId,
+  block, onChange, onDelete, showPosition, userId,
 }: {
   block: AdBlock
   onChange: (b: AdBlock) => void
@@ -114,131 +117,72 @@ function BannerBlockEditor({
 
   async function handleFile(file: File) {
     if (!file.type.startsWith('image/')) { setUploadError('Please upload an image file.'); return }
-    setUploading(true)
-    setUploadError(null)
+    setUploading(true); setUploadError(null)
     try {
-      const url = await uploadBannerImage(file, userId)
+      const url = await uploadImage(file, userId, 'banners')
       onChange({ ...block, imageUrl: url })
     } catch (e) {
-      setUploadError(e instanceof Error ? e.message : 'Upload failed. Try pasting an image URL instead.')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  function onDrop(e: React.DragEvent) {
-    e.preventDefault()
-    setDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
+      setUploadError(e instanceof Error ? e.message : 'Upload failed.')
+    } finally { setUploading(false) }
   }
 
   return (
     <div className="border border-[var(--border-2)] rounded-xl overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-[var(--surface-2)]">
         <div className="flex items-center gap-3">
           <button onClick={() => onChange({ ...block, enabled: !block.enabled })} className="text-[var(--text-3)]">
-            {block.enabled
-              ? <ToggleRight size={20} className="text-[#0071e3]" />
-              : <ToggleLeft size={20} />}
+            {block.enabled ? <ToggleRight size={20} className="text-[#0071e3]" /> : <ToggleLeft size={20} />}
           </button>
           <span className="text-sm font-medium text-[var(--text)]">Affiliate Banner</span>
-          {!block.enabled && <span className="text-xs text-[var(--text-3)]">(disabled)</span>}
+          {!block.enabled && <span className="text-xs text-[var(--text-3)]">(disabled — won't show on site)</span>}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setOpen(o => !o)} className="text-[var(--text-3)] hover:text-[var(--text)]">
             {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
-          <button onClick={onDelete} className="text-[var(--text-3)] hover:text-[#ff3b30]">
-            <Trash2 size={15} />
-          </button>
+          <button onClick={onDelete} className="text-[var(--text-3)] hover:text-[#ff3b30]"><Trash2 size={15} /></button>
         </div>
       </div>
 
       {open && (
         <div className="p-4 flex flex-col gap-4">
-
-          {/* Image upload / preview */}
           {block.imageUrl ? (
             <div className="relative">
-              <img
-                src={block.imageUrl}
-                alt="Banner preview"
-                className="w-full rounded-lg border border-[var(--border-2)] object-cover max-h-40"
-              />
-              <button
-                onClick={() => onChange({ ...block, imageUrl: '' })}
-                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow"
-              >
+              <img src={block.imageUrl} alt="Banner preview" className="w-full rounded-lg border border-[var(--border-2)] object-cover max-h-40" />
+              <button onClick={() => onChange({ ...block, imageUrl: '' })}
+                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
                 <X size={12} />
               </button>
             </div>
           ) : (
             <div
-              className={`relative rounded-xl border-2 border-dashed transition-colors ${
-                dragging ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-[var(--border-2)] hover:border-[#0071e3]'
-              }`}
+              className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-[var(--border-2)] hover:border-[#0071e3]'}`}
               onDragOver={e => { e.preventDefault(); setDragging(true) }}
               onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
+              onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
             >
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="w-full flex flex-col items-center gap-2 py-8 text-[var(--text-3)] hover:text-[var(--text)] transition-colors"
-              >
-                {uploading
-                  ? <Loader2 size={22} className="animate-spin text-[#0071e3]" />
-                  : <Upload size={22} />
-                }
-                <span className="text-xs font-medium">
-                  {uploading ? 'Uploading…' : 'Click to upload or drag an image here'}
-                </span>
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="w-full flex flex-col items-center gap-2 py-8 text-[var(--text-3)] hover:text-[var(--text)] transition-colors">
+                {uploading ? <Loader2 size={22} className="animate-spin text-[#0071e3]" /> : <Upload size={22} />}
+                <span className="text-xs font-medium">{uploading ? 'Uploading…' : 'Click to upload or drag an image here'}</span>
                 <span className="text-[11px] text-[var(--text-3)]">PNG, JPG, GIF, WebP</span>
               </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
-              />
+              <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
             </div>
           )}
-
-          {uploadError && (
-            <p className="text-xs text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">
-              {uploadError}
-            </p>
-          )}
-
-          {/* Affiliate link */}
+          {uploadError && <p className="text-xs text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{uploadError}</p>}
           <div>
             <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Affiliate link</label>
-            <input
-              type="url"
-              value={block.linkUrl}
-              onChange={e => onChange({ ...block, linkUrl: e.target.value })}
-              placeholder="https://amzn.to/your-link"
-              className="input-field w-full"
-            />
-            <p className="text-[11px] text-[var(--text-3)] mt-1">Visitors who click the image will go to this URL.</p>
+            <input type="url" value={block.linkUrl} onChange={e => onChange({ ...block, linkUrl: e.target.value })}
+              placeholder="https://amzn.to/your-link" className="input-field w-full" />
+            <p className="text-[11px] text-[var(--text-3)] mt-1">Visitors who click the image go to this URL.</p>
           </div>
-
-          {/* Position (in-content only) */}
           {showPosition && (
             <div>
               <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Show after paragraph</label>
-              <select
-                value={block.position}
-                onChange={e => onChange({ ...block, position: Number(e.target.value) })}
-                className="input-field w-44"
-              >
-                {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
-                  <option key={n} value={n}>Paragraph {n}</option>
-                ))}
+              <select value={block.position} onChange={e => onChange({ ...block, position: Number(e.target.value) })} className="input-field w-44">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n}>Paragraph {n}</option>)}
               </select>
             </div>
           )}
@@ -274,6 +218,14 @@ export default function CustomizePage() {
   const [purged, setPurged] = useState(false)
   const [userId, setUserId] = useState('')
 
+  // About Me state
+  const [rewriting, setRewriting] = useState(false)
+  const [headshotUploading, setHeadshotUploading] = useState(false)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [aboutError, setAboutError] = useState<string | null>(null)
+  const headshotFileRef = useRef<HTMLInputElement>(null)
+  const logoFileRef = useRef<HTMLInputElement>(null)
+
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
@@ -297,11 +249,21 @@ export default function CustomizePage() {
         threads:   bc.footer?.socials?.threads   || profile.threadsUrl   || '',
         contact:   bc.footer?.socials?.contact   || profile.contactEmail || '',
       }
+      // Migrate: old imageUrl → headshotUrl or logoUrl depending on imageType
+      const oldImageUrl = bc.about?.imageUrl ?? ''
+      const oldImageType: 'headshot' | 'logo' = bc.about?.imageType ?? 'headshot'
+      const about: AboutData = {
+        bio:         bc.about?.bio         ?? bc.footer?.bio ?? '',
+        headshotUrl: bc.about?.headshotUrl ?? (oldImageType === 'headshot' ? oldImageUrl : ''),
+        logoUrl:     bc.about?.logoUrl     ?? (oldImageType === 'logo'     ? oldImageUrl : ''),
+        imageType:   oldImageType,
+      }
       setData({
         ...defaultCustomizations,
         ...bc,
         sidebar:   (bc.sidebar   ?? []).map(migrateBlock),
         incontent: (bc.incontent ?? []).map(migrateBlock),
+        about,
         footer: { ...emptyFooter, ...(bc.footer ?? {}), socials },
       })
     }
@@ -316,11 +278,8 @@ export default function CustomizePage() {
       const res = await fetch('/api/wordpress/purge-cache', { method: 'POST' })
       const json = await res.json()
       if (json.error) { alert(json.error); return }
-      setPurged(true)
-      setTimeout(() => setPurged(false), 3000)
-    } finally {
-      setPurging(false)
-    }
+      setPurged(true); setTimeout(() => setPurged(false), 3000)
+    } finally { setPurging(false) }
   }
 
   async function save() {
@@ -333,26 +292,72 @@ export default function CustomizePage() {
       })
       const json = await res.json()
       if (json.error) { alert(json.error); return }
-      setSaved(true)
-      setTimeout(() => setSaved(false), 3000)
-    } finally {
-      setSaving(false)
-    }
+      setSaved(true); setTimeout(() => setSaved(false), 3000)
+    } finally { setSaving(false) }
   }
 
-  // ── Sidebar helpers ──────────────────────────────────────────────────────────
+  function updateAbout(patch: Partial<AboutData>) {
+    setData(d => ({ ...d, about: { ...d.about, ...patch } }))
+  }
+
+  async function handleHeadshotImage(file: File) {
+    if (!file.type.startsWith('image/')) { setAboutError('Please upload an image file.'); return }
+    setHeadshotUploading(true); setAboutError(null)
+    try {
+      const url = await uploadImage(file, userId, 'about')
+      updateAbout({ headshotUrl: url })
+    } catch (e) {
+      setAboutError(e instanceof Error ? e.message : 'Upload failed.')
+    } finally { setHeadshotUploading(false) }
+  }
+
+  async function handleLogoImage(file: File) {
+    if (!file.type.startsWith('image/')) { setAboutError('Please upload an image file.'); return }
+    setLogoUploading(true); setAboutError(null)
+    try {
+      const url = await uploadImage(file, userId, 'about')
+      updateAbout({ logoUrl: url })
+    } catch (e) {
+      setAboutError(e instanceof Error ? e.message : 'Upload failed.')
+    } finally { setLogoUploading(false) }
+  }
+
+  async function rewriteBio() {
+    if (!data.about.bio.trim()) {
+      alert('Write a few notes about yourself first, then click Rewrite.')
+      return
+    }
+    setRewriting(true)
+    try {
+      const res = await fetch('/api/blog/rewrite-bio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: data.about.bio }),
+      })
+      if (!res.ok) {
+        let errMsg = 'Rewrite failed — please try again.'
+        try { errMsg = (await res.json()).error || errMsg } catch { /* HTML error page */ }
+        alert(errMsg)
+        return
+      }
+      const json = await res.json()
+      if (json.error) { alert(json.error); return }
+      updateAbout({ bio: json.bio })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Rewrite failed. Please try again.')
+    } finally { setRewriting(false) }
+  }
+
   function updateSidebar(blocks: AdBlock[]) { setData(d => ({ ...d, sidebar: blocks })) }
   function addSidebarBlock() { updateSidebar([...data.sidebar, newBlock()]) }
   function updateSidebarBlock(id: string, b: AdBlock) { updateSidebar(data.sidebar.map(x => x.id === id ? b : x)) }
   function deleteSidebarBlock(id: string) { updateSidebar(data.sidebar.filter(x => x.id !== id)) }
 
-  // ── In-content helpers ───────────────────────────────────────────────────────
   function updateIncontent(blocks: AdBlock[]) { setData(d => ({ ...d, incontent: blocks })) }
   function addIncontentBlock() { updateIncontent([...data.incontent, newBlock()]) }
   function updateIncontentBlock(id: string, b: AdBlock) { updateIncontent(data.incontent.map(x => x.id === id ? b : x)) }
   function deleteIncontentBlock(id: string) { updateIncontent(data.incontent.filter(x => x.id !== id)) }
 
-  // ── Footer helpers ───────────────────────────────────────────────────────────
   function updateFooter(patch: Partial<FooterData>) { setData(d => ({ ...d, footer: { ...d.footer, ...patch } })) }
   function updateSocial(key: keyof SocialLinks, val: string) {
     setData(d => ({ ...d, footer: { ...d.footer, socials: { ...d.footer.socials, [key]: val } } }))
@@ -370,7 +375,7 @@ export default function CustomizePage() {
   if (loading) {
     return (
       <>
-        <Header title="Customize Blog" subtitle="Manage your WordPress blog's sidebar, content, and footer." />
+        <Header title="Customize Blog" subtitle="Manage your WordPress blog's look and content." />
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-8">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
@@ -382,25 +387,17 @@ export default function CustomizePage() {
     <>
       <Header
         title="Customize Blog"
-        subtitle="Manage your WordPress blog's sidebar, content, and footer."
+        subtitle="Manage your WordPress blog's look and content."
         actions={
           <div className="flex items-center gap-2">
-            <button
-              onClick={purgeCache}
-              disabled={purging || saving}
-              className="btn-secondary flex items-center gap-2"
-              title="Clear LiteSpeed cache so your latest changes appear immediately on the blog"
-            >
+            <button onClick={purgeCache} disabled={purging || saving} className="btn-secondary flex items-center gap-2"
+              title="Clear cache so your latest changes appear immediately">
               {purging ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              {purged ? 'Cache cleared!' : purging ? 'Clearing…' : 'Clear Cache'}
+              {purged ? 'Cleared!' : purging ? 'Clearing…' : 'Clear Cache'}
             </button>
-            <button
-              onClick={save}
-              disabled={saving}
-              className="btn-primary flex items-center gap-2"
-            >
+            <button onClick={save} disabled={saving} className="btn-primary flex items-center gap-2">
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {saved ? 'Saved!' : saving ? 'Saving…' : 'Save & Push to WordPress'}
+              {saved ? 'Saved!' : saving ? 'Saving…' : 'Save & Push to Blog'}
             </button>
           </div>
         }
@@ -408,143 +405,211 @@ export default function CustomizePage() {
 
       <div className="flex flex-col gap-6 max-w-2xl">
 
-        {/* Sidebar */}
+        {/* About Me */}
+        <Section
+          title="About Me"
+          description="Shown below the social icons on your homepage. Introduce yourself to your readers."
+        >
+          <div className="flex flex-col gap-5">
+
+            {/* Profile images — headshot + logo, independently uploaded */}
+            <div className="flex flex-col gap-3">
+              <label className="text-xs font-medium text-[var(--text-2)]">Profile images</label>
+              <div className="grid grid-cols-2 gap-4">
+
+                {/* Headshot slot */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-[11px] font-medium text-[var(--text-3)] flex items-center gap-1"><User size={11} /> Headshot / photo</span>
+                  {data.about.headshotUrl ? (
+                    <div className="relative inline-block">
+                      <img src={data.about.headshotUrl} alt="Headshot" className="w-16 h-16 rounded-full object-cover border border-[var(--border-2)]" />
+                      <button onClick={() => updateAbout({ headshotUrl: '' })}
+                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => headshotFileRef.current?.click()} disabled={headshotUploading}
+                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
+                      {headshotUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                      {headshotUploading ? 'Uploading…' : 'Upload photo'}
+                    </button>
+                  )}
+                  <input ref={headshotFileRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleHeadshotImage(f); e.target.value = '' }} />
+                </div>
+
+                {/* Logo slot */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-[11px] font-medium text-[var(--text-3)] flex items-center gap-1"><ImageIcon size={11} /> Brand logo</span>
+                  {data.about.logoUrl ? (
+                    <div className="relative inline-block">
+                      <img src={data.about.logoUrl} alt="Logo" className="h-16 rounded-xl object-contain border border-[var(--border-2)] px-2 bg-white" />
+                      <button onClick={() => updateAbout({ logoUrl: '' })}
+                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => logoFileRef.current?.click()} disabled={logoUploading}
+                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
+                      {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                      {logoUploading ? 'Uploading…' : 'Upload logo'}
+                    </button>
+                  )}
+                  <input ref={logoFileRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoImage(f); e.target.value = '' }} />
+                </div>
+              </div>
+
+              {/* Which one shows on the homepage */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] text-[var(--text-3)]">Show on homepage:</span>
+                <div className="flex items-center gap-2">
+                  {(['headshot', 'logo'] as const).map(type => (
+                    <button key={type} onClick={() => updateAbout({ imageType: type })}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        data.about.imageType === type
+                          ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
+                          : 'border-[var(--border-2)] text-[var(--text-3)] hover:border-[#1d1d1f]'
+                      }`}>
+                      {type === 'headshot' ? <User size={11} /> : <ImageIcon size={11} />}
+                      {type === 'headshot' ? 'Headshot' : 'Brand logo'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {aboutError && <p className="text-xs text-[#ff3b30]">{aboutError}</p>}
+            </div>
+
+            {/* Bio */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-medium text-[var(--text-2)] flex items-center gap-1.5">
+                  <AlignLeft size={13} /> Bio
+                </label>
+                <button
+                  onClick={rewriteBio}
+                  disabled={rewriting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 disabled:opacity-50 transition-colors"
+                >
+                  {rewriting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                  {rewriting ? 'Rewriting…' : 'MVP Affiliate Rewrite Tool'}
+                </button>
+              </div>
+              <textarea
+                value={data.about.bio}
+                onChange={e => updateAbout({ bio: e.target.value })}
+                rows={5}
+                placeholder="Write a few things about yourself — where you're from, why you started reviewing products, what you love, who you help. Then hit the AI Rewrite button and it will turn your notes into a polished bio."
+                className="input-field w-full resize-y"
+              />
+              <p className="text-[11px] text-[var(--text-3)] mt-1.5">
+                Tip: jot down a few sentences about yourself and click <strong>MVP Affiliate Rewrite Tool</strong> — the AI knows your brand and will write a polished bio for you. Edit it as you like.
+              </p>
+            </div>
+
+          </div>
+        </Section>
+
+        {/* Social Links */}
+        <Section
+          title="Social Links"
+          description="Displayed in a row below your latest reviews on the homepage."
+        >
+          <div className="flex flex-col gap-2">
+            {(
+              [
+                { key: 'youtube',   label: 'YouTube',       icon: Youtube,   placeholder: 'https://youtube.com/@yourchannel' },
+                { key: 'instagram', label: 'Instagram',     icon: Instagram, placeholder: 'https://instagram.com/yourhandle' },
+                { key: 'tiktok',   label: 'TikTok',        icon: Link,      placeholder: 'https://tiktok.com/@yourhandle' },
+                { key: 'twitter',  label: 'X / Twitter',   icon: Twitter,   placeholder: 'https://x.com/yourhandle' },
+                { key: 'pinterest',label: 'Pinterest',      icon: Link,      placeholder: 'https://pinterest.com/yourprofile' },
+                { key: 'facebook', label: 'Facebook',       icon: Facebook,  placeholder: 'https://facebook.com/yourpage' },
+                { key: 'threads',  label: 'Threads',        icon: Link,      placeholder: 'https://threads.net/@yourhandle' },
+                { key: 'contact',  label: 'Contact email',  icon: Mail,      placeholder: 'hello@yourdomain.com' },
+              ] as const
+            ).map(({ key, label, icon: Icon, placeholder }) => (
+              <div key={key} className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center flex-shrink-0">
+                  <Icon size={15} className="text-[var(--text-3)]" />
+                </div>
+                <input
+                  type={key === 'contact' ? 'email' : 'url'}
+                  value={data.footer.socials[key]}
+                  onChange={e => updateSocial(key, e.target.value)}
+                  placeholder={placeholder}
+                  className="input-field flex-1 text-sm"
+                />
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {/* Sidebar banners */}
         <Section
           title="Sidebar Banners"
-          description="Clickable image banners shown in the right sidebar on every blog post. Great for featured products or affiliate offers."
+          description="Clickable image banners shown in the right sidebar on every blog post."
         >
           <div className="flex flex-col gap-3">
             {data.sidebar.map(block => (
               <BannerBlockEditor
-                key={block.id}
-                block={block}
+                key={block.id} block={block}
                 onChange={b => updateSidebarBlock(block.id, b)}
                 onDelete={() => deleteSidebarBlock(block.id)}
-                showPosition={false}
-                userId={userId}
+                showPosition={false} userId={userId}
               />
             ))}
-            <button
-              onClick={addSidebarBlock}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors"
-            >
+            <button onClick={addSidebarBlock}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
               <Plus size={15} /> Add sidebar banner
             </button>
           </div>
         </Section>
 
-        {/* In-content */}
+        {/* In-content banners */}
         <Section
           title="In-Content Banners"
-          description="Clickable image banners injected directly inside each blog post. Choose which paragraph they appear after."
+          description="Clickable image banners injected inside each blog post. Choose which paragraph they appear after."
         >
           <div className="flex flex-col gap-3">
             {data.incontent.map(block => (
               <BannerBlockEditor
-                key={block.id}
-                block={block}
+                key={block.id} block={block}
                 onChange={b => updateIncontentBlock(block.id, b)}
                 onDelete={() => deleteIncontentBlock(block.id)}
-                showPosition={true}
-                userId={userId}
+                showPosition={true} userId={userId}
               />
             ))}
-            <button
-              onClick={addIncontentBlock}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors"
-            >
+            <button onClick={addIncontentBlock}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
               <Plus size={15} /> Add in-content banner
             </button>
           </div>
         </Section>
 
-        {/* Footer */}
+        {/* Custom footer links */}
         <Section
-          title="Footer"
-          description="Shown in the footer of every page on your blog."
+          title="Custom Links"
+          description="Extra links shown in the page footer alongside your social icons."
         >
-          <div className="flex flex-col gap-5">
-
-            {/* Bio */}
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5 flex items-center gap-1.5">
-                <AlignLeft size={13} /> About / Bio
-              </label>
-              <textarea
-                value={data.footer.bio}
-                onChange={e => updateFooter({ bio: e.target.value })}
-                rows={4}
-                placeholder="Tell your readers who you are and what your blog is about…"
-                className="input-field w-full resize-y"
-              />
-            </div>
-
-            {/* Socials */}
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-2)] mb-3">Social Links</label>
-              <div className="flex flex-col gap-2">
-                {(
-                  [
-                    { key: 'youtube',   label: 'YouTube',      icon: Youtube,   placeholder: 'https://youtube.com/@yourchannel' },
-                    { key: 'instagram', label: 'Instagram',    icon: Instagram, placeholder: 'https://instagram.com/yourhandle' },
-                    { key: 'tiktok',    label: 'TikTok',       icon: Link,      placeholder: 'https://tiktok.com/@yourhandle' },
-                    { key: 'twitter',   label: 'X / Twitter',  icon: Twitter,   placeholder: 'https://x.com/yourhandle' },
-                    { key: 'pinterest', label: 'Pinterest',    icon: Link,      placeholder: 'https://pinterest.com/yourprofile' },
-                    { key: 'facebook',  label: 'Facebook',     icon: Facebook,  placeholder: 'https://facebook.com/yourpage' },
-                    { key: 'threads',   label: 'Threads',      icon: Link,      placeholder: 'https://threads.net/@yourhandle' },
-                    { key: 'contact',   label: 'Contact email', icon: Mail,     placeholder: 'hello@yourdomain.com' },
-                  ] as const
-                ).map(({ key, label, icon: Icon, placeholder }) => (
-                  <div key={key} className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center flex-shrink-0">
-                      <Icon size={15} className="text-[var(--text-3)]" />
-                    </div>
-                    <input
-                      type={key === 'contact' ? 'email' : 'url'}
-                      value={data.footer.socials[key]}
-                      onChange={e => updateSocial(key, e.target.value)}
-                      placeholder={placeholder}
-                      className="input-field flex-1 text-sm"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom links */}
-            <div>
-              <label className="block text-xs font-medium text-[var(--text-2)] mb-3">Custom Links</label>
-              <div className="flex flex-col gap-2">
-                {data.footer.links.map(link => (
-                  <div key={link.id} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={link.label}
-                      onChange={e => updateCustomLink(link.id, { label: e.target.value })}
-                      placeholder="Label"
-                      className="input-field w-32"
-                    />
-                    <input
-                      type="url"
-                      value={link.url}
-                      onChange={e => updateCustomLink(link.id, { url: e.target.value })}
-                      placeholder="https://…"
-                      className="input-field flex-1"
-                    />
-                    <button onClick={() => deleteCustomLink(link.id)} className="text-[var(--text-3)] hover:text-[#ff3b30]">
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  onClick={addCustomLink}
-                  className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors"
-                >
-                  <Plus size={15} /> Add link
+          <div className="flex flex-col gap-2">
+            {data.footer.links.map(link => (
+              <div key={link.id} className="flex items-center gap-2">
+                <input type="text" value={link.label} onChange={e => updateCustomLink(link.id, { label: e.target.value })}
+                  placeholder="Label" className="input-field w-32" />
+                <input type="url" value={link.url} onChange={e => updateCustomLink(link.id, { url: e.target.value })}
+                  placeholder="https://…" className="input-field flex-1" />
+                <button onClick={() => deleteCustomLink(link.id)} className="text-[var(--text-3)] hover:text-[#ff3b30]">
+                  <Trash2 size={15} />
                 </button>
               </div>
-            </div>
-
+            ))}
+            <button onClick={addCustomLink}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
+              <Plus size={15} /> Add link
+            </button>
           </div>
         </Section>
 
