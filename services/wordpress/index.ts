@@ -59,8 +59,6 @@ export class WordPressService {
     if (this.nonceCache && Date.now() < this.nonceCache.expiry) {
       return this.nonceCache
     }
-    // apiToken holds the real WP password when set by connect-and-setup.
-    // For gominreviews.com it holds an API token but we never reach this path there.
     const loginPassword = this.apiToken || this.password
     const loginBody = new URLSearchParams({
       log: this.username,
@@ -93,14 +91,18 @@ export class WordPressService {
       if (!seen.has(key)) { seen.add(key); cookieParts.push(kv) }
     }
     const cookies = cookieParts.join('; ')
-    const adminRes = await fetch(`${this.siteUrl}/wp-admin/index.php`, {
+
+    // Use dedicated nonce endpoint (reliable) instead of scraping WP admin HTML
+    const nonceRes = await fetch(`${this.siteUrl}/wp-json/affiliateos/v1/nonce`, {
       headers: { Cookie: cookies },
     })
-    const html = await adminRes.text()
-    let m = html.match(/createNonceMiddleware\("([^"]+)"\)/)
-    if (!m) m = html.match(/"nonce"\s*:\s*"([^"]+)"/)
-    if (!m) throw new Error('Could not extract REST API nonce from WP admin')
-    this.nonceCache = { cookies, nonce: m[1], expiry: Date.now() + 20 * 60 * 1000 }
+    if (!nonceRes.ok) {
+      throw new Error(`Could not fetch REST nonce — affiliateos/v1/nonce returned ${nonceRes.status}`)
+    }
+    const { nonce } = await nonceRes.json() as { nonce: string }
+    if (!nonce) throw new Error('REST nonce endpoint returned empty nonce')
+
+    this.nonceCache = { cookies, nonce, expiry: Date.now() + 20 * 60 * 1000 }
     return this.nonceCache
   }
 

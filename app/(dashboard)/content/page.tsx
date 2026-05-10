@@ -457,6 +457,8 @@ export default function ContentPage() {
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null)
   const [selectedPostIds, setSelectedPostIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkRewriting, setBulkRewriting] = useState(false)
+  const [bulkRewriteProgress, setBulkRewriteProgress] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
 
@@ -619,6 +621,44 @@ export default function ContentPage() {
     setBulkDeleting(false)
   }
 
+  async function bulkRewriteSelected() {
+    const toRewrite = allBlogPosts.filter(p => selectedPostIds.has(p.id) && p.videoId)
+    if (toRewrite.length === 0) {
+      setFixCatResult('No selected posts have a linked video — cannot rewrite.')
+      return
+    }
+    setBulkRewriting(true)
+    setBulkRewriteProgress({ done: 0, total: toRewrite.length })
+    let success = 0
+    let failed = 0
+    for (let i = 0; i < toRewrite.length; i++) {
+      const post = toRewrite[i]
+      setBulkRewriteProgress({ done: i, total: toRewrite.length })
+      try {
+        const res = await fetch('/api/blog/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: post.videoId }),
+        })
+        const data = await res.json()
+        if (res.ok) {
+          setAllBlogPosts(prev => prev.map(p =>
+            p.id === post.id ? { ...p, title: data.title, link: data.wordpressUrl ?? p.link } : p
+          ))
+          success++
+        } else {
+          failed++
+        }
+      } catch {
+        failed++
+      }
+    }
+    setBulkRewriteProgress(null)
+    setBulkRewriting(false)
+    setSelectedPostIds(new Set())
+    setFixCatResult(`Rewrite complete — ${success} succeeded${failed > 0 ? `, ${failed} failed` : ''}.`)
+  }
+
   function toggleSelect(id: number) {
     setSelectedPostIds(prev => {
       const next = new Set(prev)
@@ -763,8 +803,18 @@ export default function ContentPage() {
                     Clear ({selectedPostIds.size})
                   </button>
                   <button
+                    onClick={bulkRewriteSelected}
+                    disabled={bulkRewriting || bulkDeleting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0071e3] text-white rounded-lg hover:bg-[#0071e3]/90 disabled:opacity-60 transition-colors"
+                  >
+                    {bulkRewriting
+                      ? <><Loader2 size={11} className="animate-spin" /> Rewriting {bulkRewriteProgress?.done ?? 0}/{bulkRewriteProgress?.total ?? 0}…</>
+                      : <><RefreshCw size={11} /> Rewrite {selectedPostIds.size} selected</>
+                    }
+                  </button>
+                  <button
                     onClick={bulkDeleteSelected}
-                    disabled={bulkDeleting}
+                    disabled={bulkDeleting || bulkRewriting}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-60 transition-colors"
                   >
                     {bulkDeleting ? <><Loader2 size={11} className="animate-spin" /> Deleting…</> : `Delete ${selectedPostIds.size} selected`}

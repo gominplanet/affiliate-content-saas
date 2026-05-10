@@ -141,7 +141,7 @@ async function handleGenerate(request: Request) {
 
   let tagIds: number[] = []
   try {
-    tagIds = await wpService.resolveTagIds(generated.tags.slice(0, 8))
+    tagIds = await wpService.resolveTagIds(generated.tags.slice(0, 10))
   } catch (err) {
     console.error('Tag resolution failed:', err)
   }
@@ -222,8 +222,8 @@ async function handleGenerate(request: Request) {
     status: 'published',
     wordpress_post_id: wpPost.id,
     wordpress_url: wpPost.link,
-    ai_model: 'claude-sonnet-4-5',
-    generation_prompt_version: 'v2.0',
+    ai_model: 'claude-sonnet-4-6',
+    generation_prompt_version: 'v3.0',
     published_at: new Date().toISOString(),
     image_prompts: generated.imagePrompts,
   }

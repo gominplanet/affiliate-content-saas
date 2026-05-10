@@ -552,6 +552,9 @@ export default function CustomizePage() {
           title="Sidebar Banners"
           description="Clickable image banners shown in the right sidebar on every blog post."
         >
+          <p className="text-xs text-[var(--text-3)] bg-[var(--bg-2)] border border-[var(--border-1)] rounded-lg px-3 py-2">
+            💡 Upload square images at <strong>250×250px</strong> for best results. Larger images will be resized to fit.
+          </p>
           <div className="flex flex-col gap-3">
             {data.sidebar.map(block => (
               <BannerBlockEditor
