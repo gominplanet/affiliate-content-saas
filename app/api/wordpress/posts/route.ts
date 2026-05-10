@@ -65,46 +65,36 @@ export async function GET() {
       } catch { /* thumbnails are non-fatal */ }
     }
 
-    // ── 3. Build videoId map from blog_posts — three strategies ─────────────
-    const wpIds = rawPosts.map(p => p.id)
+    // ── 3. Build videoId map — fetch all blog_posts with video_id in one query ─
+    // Then match in-memory via: wordpress_post_id, wordpress_url slug, or stored slug.
+    // This avoids multi-query .in() issues and handles URL/slug normalization cleanly.
+    const { data: allDbPosts } = await supabase
+      .from('blog_posts')
+      .select('wordpress_post_id,slug,wordpress_url,video_id')
+      .eq('user_id', user.id)
+      .not('video_id', 'is', null)
+      .limit(2000)
 
-    // Extract slug from each post's URL (e.g. "open-ear-wireless-earbuds-running-review")
-    const slugFromLink = (link: string) =>
-      link.replace(/\/$/, '').split('/').pop() ?? ''
-    const rawSlugs = rawPosts.map(p => slugFromLink(p.link)).filter(Boolean)
-
-    // Strategy A: match by wordpress_post_id
-    // Strategy B: match by slug (catches old posts where wordpress_post_id was never stored)
-    const [{ data: byWpId }, { data: bySlug }] = await Promise.all([
-      supabase
-        .from('blog_posts')
-        .select('wordpress_post_id,slug,video_id')
-        .eq('user_id', user.id)
-        .in('wordpress_post_id', wpIds)
-        .not('video_id', 'is', null),
-      supabase
-        .from('blog_posts')
-        .select('wordpress_post_id,slug,video_id')
-        .eq('user_id', user.id)
-        .in('slug', rawSlugs)
-        .not('video_id', 'is', null),
-    ])
+    type DbPost = { wordpress_post_id: number | null; slug: string | null; wordpress_url: string | null; video_id: string }
+    const normalize = (url: string) => url.replace(/\/$/, '').toLowerCase()
 
     const wpToVideoId: Record<number, string> = {}
+    const urlToVideoId: Record<string, string> = {}
     const slugToVideoId: Record<string, string> = {}
 
-    for (const p of (byWpId ?? []) as { wordpress_post_id: number; video_id: string }[]) {
-      if (p.wordpress_post_id && p.video_id) wpToVideoId[p.wordpress_post_id] = p.video_id
-    }
-    for (const p of (bySlug ?? []) as { slug: string; video_id: string }[]) {
-      if (p.slug && p.video_id) slugToVideoId[p.slug] = p.video_id
+    for (const p of (allDbPosts ?? []) as DbPost[]) {
+      if (!p.video_id) continue
+      if (p.wordpress_post_id) wpToVideoId[p.wordpress_post_id] = p.video_id
+      if (p.wordpress_url) urlToVideoId[normalize(p.wordpress_url)] = p.video_id
+      if (p.slug) slugToVideoId[p.slug] = p.video_id
     }
 
     // ── 4. For still-unmapped posts, extract YouTube ID from thumbnail filename
     const ytVideoIds = new Set<string>()
     for (const p of rawPosts) {
-      const slug = slugFromLink(p.link)
-      if (wpToVideoId[p.id] || slugToVideoId[slug]) continue
+      const normUrl = normalize(p.link)
+      const urlSlug = normUrl.split('/').filter(Boolean).pop() ?? ''
+      if (wpToVideoId[p.id] || urlToVideoId[normUrl] || slugToVideoId[urlSlug]) continue
       const thumb = thumbMap[p.featured_media]
       if (!thumb) continue
       const filename = thumb.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
@@ -125,8 +115,9 @@ export async function GET() {
 
     // ── 5. Assemble final list ────────────────────────────────────────────────
     const posts = rawPosts.map(p => {
-      const slug = slugFromLink(p.link)
-      let videoId = wpToVideoId[p.id] ?? slugToVideoId[slug] ?? null
+      const normUrl = normalize(p.link)
+      const urlSlug = normUrl.split('/').filter(Boolean).pop() ?? ''
+      let videoId = wpToVideoId[p.id] ?? urlToVideoId[normUrl] ?? slugToVideoId[urlSlug] ?? null
       if (!videoId) {
         const thumb = thumbMap[p.featured_media]
         const filename = thumb?.split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
