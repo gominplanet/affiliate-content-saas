@@ -6,7 +6,7 @@ const features = [
   {
     icon: Youtube,
     title: 'YouTube → Blog Post',
-    desc: 'We pull your video transcript and generate a full SEO-optimized affiliate blog post — published directly to your WordPress site.',
+    desc: 'We pull your transcript, extract your voice, and generate a full SEO blog post that reads like you wrote it — then publish it directly to WordPress.',
   },
   {
     icon: Facebook,
@@ -38,7 +38,7 @@ const features = [
 const steps = [
   { n: '01', title: 'Connect your YouTube channel', desc: 'Link your channel in one click. We import all your videos instantly.' },
   { n: '02', title: 'Connect your platforms', desc: 'WordPress, Facebook, Pinterest, Threads — connect each platform once.' },
-  { n: '03', title: 'Pick a video. Hit generate.', desc: 'We write a full SEO blog post, publish it to WordPress, and prepare social content for every platform — in minutes.' },
+  { n: '03', title: 'Pick a video. Hit generate.', desc: 'Our AI reads your transcript, learns your voice, and writes a full SEO blog post that sounds like you wrote it — then publishes to WordPress and prepares social content for every platform, in minutes.' },
 ]
 
 const plans = [
