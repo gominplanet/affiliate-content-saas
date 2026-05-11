@@ -48,11 +48,19 @@ export async function POST(request: Request) {
 
     // ── 4. Create Geniuslink affiliate URL ─────────────────────────────────────
     let affiliateUrl = `https://www.amazon.com/dp/${asin}`
+    let geniuslinkUsed = false
+    let geniuslinkError: string | null = null
     if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
         affiliateUrl = await genius.createAsinLink(asin, product.title || videoTitle)
-      } catch { /* use plain Amazon URL as fallback */ }
+        geniuslinkUsed = true
+      } catch (err) {
+        geniuslinkError = err instanceof Error ? err.message : String(err)
+        console.error('Geniuslink error:', geniuslinkError)
+      }
+    } else {
+      geniuslinkError = 'Geniuslink credentials not configured in Site & Integrations'
     }
 
     // ── 5. Generate YouTube metadata with Claude ───────────────────────────────
@@ -120,6 +128,8 @@ Generate optimised YouTube metadata. Return ONLY valid JSON with these exact key
       ok: true,
       asin,
       affiliateUrl,
+      geniuslinkUsed,
+      geniuslinkError,
       product: {
         title: product.title,
         price: product.price,

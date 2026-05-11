@@ -45,6 +45,8 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
   const [generated, setGenerated] = useState<GeneratedMetadata | null>(null)
   const [product, setProduct] = useState<ProductInfo | null>(null)
   const [affiliateUrl, setAffiliateUrl] = useState<string | null>(null)
+  const [geniuslinkUsed, setGeniuslinkUsed] = useState<boolean | null>(null)
+  const [geniuslinkError, setGeniuslinkError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [applied, setApplied] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -80,6 +82,8 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
       setGenerated(data.generated)
       setProduct(data.product)
       setAffiliateUrl(data.affiliateUrl)
+      setGeniuslinkUsed(data.geniuslinkUsed ?? false)
+      setGeniuslinkError(data.geniuslinkError ?? null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate')
     } finally {
@@ -191,11 +195,19 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
                   {product.rating && <span>★ {product.rating}/5</span>}
                   {affiliateUrl && (
                     <span className="flex items-center gap-1 text-[#0071e3]">
-                      <Link2 size={9} /> {affiliateUrl}
+                      <Link2 size={9} />
+                      {geniuslinkUsed ? 'Geniuslink ✓' : 'Plain Amazon link'}
                     </span>
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Geniuslink warning */}
+          {geniuslinkUsed === false && geniuslinkError && (
+            <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/20 text-xs text-[#ff9500]">
+              ⚠️ Geniuslink not used — {geniuslinkError}. Go to <strong>Site &amp; Integrations</strong> to add your credentials.
             </div>
           )}
 
