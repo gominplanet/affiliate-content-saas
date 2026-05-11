@@ -54,13 +54,18 @@ export class GeniuslinkService {
       throw new Error(`Geniuslink non-JSON response: ${text.slice(0, 200)}`)
     }
 
+    // Geniuslink returns PascalCase: ShortUrlCode + Domain → https://{Domain}/{ShortUrlCode}
+    const shortCode = (data.ShortUrlCode ?? data.shortUrlCode ?? data.shortCode ?? data.short_code) as string | undefined
+    const domain = ((data.Domain ?? data.domain ?? 'geni.us') as string).replace(/^https?:\/\//, '')
+
+    if (shortCode) return `https://${domain}/${shortCode}`
+
+    // Fallback: any field that looks like a full URL
     const shortUrl = (
       data.shortUrl ?? data.short_url ?? data.shortlink ??
       data.url ?? data.link ?? data.href ??
-      data.shortCode ?? data.short_code ??
       (data.data as Record<string, unknown>)?.shortUrl ??
-      (data.data as Record<string, unknown>)?.url ??
-      (data.data as Record<string, unknown>)?.link
+      (data.data as Record<string, unknown>)?.url
     ) as string | undefined
 
     if (!shortUrl) {
