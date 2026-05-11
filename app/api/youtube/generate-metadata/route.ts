@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     // ── 1. Fetch brand profile ─────────────────────────────────────────────────
     const { data: brand } = await supabase
       .from('brand_profiles')
-      .select('name,author_name,niches,tone,affiliate_disclaimer')
+      .select('name,author_name,niches,tone,affiliate_disclaimer,website_url,contact_email')
       .eq('user_id', user.id)
       .single()
 
@@ -61,7 +61,13 @@ export async function POST(request: Request) {
     const authorName = (b?.author_name as string) || ''
     const niches = ((b?.niches as string[]) || []).join(', ') || 'consumer products'
     const tone = ((b?.tone as string[]) || []).join(', ') || 'conversational, friendly'
-    const disclaimer = (b?.affiliate_disclaimer as string) || 'This video contains affiliate links.'
+    const websiteUrl = (b?.website_url as string) || ''
+    const contactEmail = (b?.contact_email as string) || ''
+    const collabLine = websiteUrl
+      ? `Want Your Product Reviewed? Check OUR WEBSITE for collaborations: ${websiteUrl}`
+      : contactEmail
+        ? `Want Your Product Reviewed? Reach out: ${contactEmail}`
+        : ''
 
     const productContext = [
       product.title ? `Product: ${product.title}` : '',
@@ -91,14 +97,11 @@ Generate optimised YouTube metadata. Return ONLY valid JSON with these exact key
 
 {
   "title": "Compelling YouTube title under 100 chars — include product name, key benefit, and a hook. Do NOT include the ASIN.",
-  "description": "Full YouTube description (500-800 words). Structure: 1) Hook paragraph with what they'll learn, 2) Product overview, 3) Key features breakdown (use the bullet points), 4) Who it's for, 5) Final verdict. Include the affiliate link (${affiliateUrl}) naturally 2-3 times. End with the disclaimer. Write in ${tone} tone.",
-  "tags": ["array", "of", "20-30", "relevant", "tags", "mix of", "broad and", "specific"],
-  "pinnedComment": "A short punchy comment to pin (2-3 sentences). Include the affiliate link and a call to action.",
+  "description": "Use EXACTLY this structure (preserve the blank lines and formatting):\n\nCheck Today's Price and Availability on AMAZON here: ${affiliateUrl}\n\nAs Amazon Influencers, we earn commissions—at no cost to you—from qualifying purchases.\n\n[Generate 12-15 highly relevant hashtags starting with # separated by spaces — mix product-specific, niche, and broad tags]\n\nIf this helped, subscribe for more real reviews and drop your biggest question below—we reply to comments.\n${collabLine ? `\n${collabLine}\n` : '\n'}\n[Write 3-5 sentences about the product: what it does, key benefits, who it's for, the biggest benefit, and ideal use cases. Write in ${tone} tone. Do NOT use bullet points here — flowing sentences only.]\n\nQuick Verdict: [One punchy sentence summarising who should buy this and why.]\n\n\nANY QUESTIONS?",
+  "tags": ["array", "of", "20-30", "relevant", "tags", "no # symbol", "mix of broad and specific"],
+  "pinnedComment": "A short punchy comment to pin (2-3 sentences). Include the affiliate link (${affiliateUrl}) and a call to action.",
   "title_alternatives": ["3 alternative title options"]
-}
-
-Disclaimer to include at end of description:
-"${disclaimer}"`,
+}`,
       }],
     })
 
