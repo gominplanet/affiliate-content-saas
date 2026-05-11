@@ -46,6 +46,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    console.error('[update-metadata]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

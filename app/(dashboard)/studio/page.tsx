@@ -48,6 +48,7 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
   const [geniuslinkUsed, setGeniuslinkUsed] = useState<boolean | null>(null)
   const [geniuslinkError, setGeniuslinkError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [applyError, setApplyError] = useState<string | null>(null)
   const [applied, setApplied] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [editTitle, setEditTitle] = useState('')
@@ -94,6 +95,7 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
   async function applyToYouTube() {
     if (!generated) return
     setApplying(true)
+    setApplyError(null)
     try {
       const res = await fetch('/api/youtube/update-metadata', {
         method: 'POST',
@@ -106,10 +108,10 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
         }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Update failed')
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status} — update failed`)
       setApplied(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to apply')
+      setApplyError(err instanceof Error ? err.message : 'Failed to apply to YouTube')
     } finally {
       setApplying(false)
     }
@@ -302,21 +304,28 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-3 pt-1">
-                <button
-                  onClick={applyToYouTube}
-                  disabled={applying || applied}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-colors"
-                  style={{ background: applied ? '#34c759' : '#ff0000' }}
-                >
-                  {applying ? <><Loader2 size={14} className="animate-spin" /> Applying…</>
-                    : applied ? <><CheckCircle size={14} /> Applied to YouTube</>
-                    : <><Youtube size={14} /> Apply to YouTube</>}
-                </button>
-                <button onClick={generate} disabled={generating}
-                  className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
-                  <RefreshCw size={11} /> Regenerate
-                </button>
+              <div className="flex flex-col gap-2 pt-1">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={applyToYouTube}
+                    disabled={applying || applied}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-colors"
+                    style={{ background: applied ? '#34c759' : '#ff0000' }}
+                  >
+                    {applying ? <><Loader2 size={14} className="animate-spin" /> Applying…</>
+                      : applied ? <><CheckCircle size={14} /> Applied to YouTube</>
+                      : <><Youtube size={14} /> Apply to YouTube</>}
+                  </button>
+                  <button onClick={generate} disabled={generating}
+                    className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
+                    <RefreshCw size={11} /> Regenerate
+                  </button>
+                </div>
+                {applyError && (
+                  <p className="text-xs text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2 break-all">
+                    ❌ {applyError}
+                  </p>
+                )}
               </div>
             </div>
           )}
