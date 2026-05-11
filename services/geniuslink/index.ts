@@ -1,52 +1,48 @@
 const GENIUSLINK_API = 'https://api.geni.us'
 
 export class GeniuslinkService {
-  private auth: string
-
-  constructor(apiKey: string, apiSecret: string) {
-    this.auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
-  }
+  constructor(private apiKey: string, private apiSecret: string) {}
 
   async createAsinLink(asin: string, label: string): Promise<string> {
     const destination = `https://www.amazon.com/dp/${asin}`
 
-    // Try the standard endpoint — Geniuslink uses 'url' as the body key
+    const headers = {
+      'X-Api-Key': this.apiKey,
+      'X-Api-Secret': this.apiSecret,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    }
+
+    const body = JSON.stringify({ url: destination, label: label.slice(0, 100) })
+
     const res = await fetch(`${GENIUSLINK_API}/links`, {
       method: 'POST',
-      headers: {
-        Authorization: `Basic ${this.auth}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        url: destination,          // primary field name
-        destination,               // fallback field name some versions use
-        label: label.slice(0, 100),
-      }),
+      headers,
+      body,
     })
 
-    const body = await res.text()
+    const text = await res.text()
 
     if (!res.ok) {
-      // Include full body so we can see exactly what Geniuslink returned
-      throw new Error(`Geniuslink API error ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(`Geniuslink API error ${res.status}: ${text.slice(0, 300)}`)
     }
 
     let data: Record<string, unknown>
     try {
-      data = JSON.parse(body)
+      data = JSON.parse(text)
     } catch {
-      throw new Error(`Geniuslink non-JSON response (${res.status}): ${body.slice(0, 200)}`)
+      throw new Error(`Geniuslink non-JSON response: ${text.slice(0, 200)}`)
     }
 
-    // Try all known field names
     const shortUrl = (
-      data.shortUrl ?? data.short_url ?? data.shortlink ?? data.url ??
-      (data.data as Record<string, unknown>)?.shortUrl
+      data.shortUrl ?? data.short_url ?? data.shortlink ??
+      data.url ?? data.link ?? data.href ??
+      (data.data as Record<string, unknown>)?.shortUrl ??
+      (data.data as Record<string, unknown>)?.url
     ) as string | undefined
 
     if (!shortUrl) {
-      throw new Error(`Geniuslink: no short URL in response. Fields: ${Object.keys(data).join(', ')} | ${body.slice(0, 200)}`)
+      throw new Error(`Geniuslink: no URL in response. Keys: ${Object.keys(data).join(', ')} | ${text.slice(0, 300)}`)
     }
     return shortUrl
   }
