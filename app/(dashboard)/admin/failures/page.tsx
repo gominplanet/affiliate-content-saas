@@ -9,6 +9,7 @@ type FailureStatus = 'pending_retry' | 'retrying' | 'resolved' | 'dismissed'
 
 interface Failure {
   id: string
+  video_id: string
   job_type: JobType
   error_message: string
   error_code: string | null
@@ -40,7 +41,7 @@ const friendlyError: Record<string, string> = {
 }
 
 const friendlyFix: Record<string, string> = {
-  WP_AUTH_401:            'Go to Settings → Integrations and re-enter your WordPress password.',
+  WP_AUTH_401:            'Go to Blog Setup → Integrations and re-enter your WordPress password.',
   ANTHROPIC_RATE_LIMIT:   'No action needed — the job is queued and will retry automatically. If this keeps happening, consider upgrading your plan.',
   YOUTUBE_QUOTA_EXCEEDED: 'No action needed — YouTube resets daily limits overnight and the sync will resume automatically.',
   GEMINI_EMPTY_RESPONSE:  'Click Retry below. If it fails again, try editing the video title to be more specific.',
@@ -55,14 +56,28 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+async function markResolved(id: string) {
+  await fetch('/api/failures', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, status: 'resolved' }),
+  })
+}
+
 function FailureRow({
-  failure, onDismiss,
+  failure,
+  onDismiss,
+  onResolved,
 }: {
   failure: Failure
   onDismiss: (id: string) => void
+  onResolved: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const [dismissing, setDismissing] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
+
   const jt = jobTypeLabel[failure.job_type]
   const st = statusConfig[failure.status]
   const code = failure.error_code ?? ''
@@ -70,17 +85,42 @@ function FailureRow({
   const fix = friendlyFix[code]
   const isActive = failure.status === 'pending_retry' || failure.status === 'retrying'
   const videoTitle = failure.youtube_videos?.title ?? '—'
+  const canRetry = isActive && !!failure.video_id && (failure.job_type === 'blog_generation' || failure.job_type === 'wp_publish')
+
+  async function handleRetry(e: React.MouseEvent) {
+    e.stopPropagation()
+    setRetrying(true)
+    setRetryError(null)
+    try {
+      const res = await fetch('/api/blog/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId: failure.video_id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setRetryError(data.error || 'Retry failed')
+      } else {
+        await markResolved(failure.id)
+        onResolved(failure.id)
+      }
+    } catch {
+      setRetryError('Network error — check your connection')
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   async function handleDismiss(e: React.MouseEvent) {
     e.stopPropagation()
     setDismissing(true)
     try {
-      await fetch('/api/failures', {
+      const res = await fetch('/api/failures', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: failure.id, status: 'dismissed' }),
       })
-      onDismiss(failure.id)
+      if (res.ok) onDismiss(failure.id)
     } finally {
       setDismissing(false)
     }
@@ -89,7 +129,7 @@ function FailureRow({
   return (
     <>
       <tr
-        className="border-b border-gray-100 hover:bg-gray-50/60 cursor-pointer transition-colors"
+        className="border-b border-gray-100 dark:border-white/10 hover:bg-gray-50/60 dark:hover:bg-white/5 cursor-pointer transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <td className="py-3 px-4 w-8">
@@ -121,9 +161,14 @@ function FailureRow({
         </td>
         <td className="py-3 px-4">
           <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-            {isActive && (
-              <button className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#0071e3]/8 text-[#0071e3] hover:bg-[#0071e3]/15 transition-colors">
-                <RefreshCw size={11} /> Retry
+            {canRetry && (
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#0071e3]/8 text-[#0071e3] hover:bg-[#0071e3]/15 transition-colors disabled:opacity-50"
+              >
+                {retrying ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                {retrying ? 'Retrying…' : 'Retry'}
               </button>
             )}
             <button
@@ -150,6 +195,12 @@ function FailureRow({
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{fix}</p>
                 </>
               )}
+              {retryError && (
+                <p className="text-xs text-[#ff3b30] mt-1">{retryError}</p>
+              )}
+              {failure.error_code && (
+                <p className="text-[10px] font-mono text-[#86868b] dark:text-[#8e8e93] mt-2">Code: {failure.error_code}</p>
+              )}
             </div>
           </td>
         </tr>
@@ -161,6 +212,7 @@ function FailureRow({
 export default function FailuresPage() {
   const [failures, setFailures] = useState<Failure[]>([])
   const [loading, setLoading] = useState(true)
+  const [retryingAll, setRetryingAll] = useState(false)
   const [typeFilter, setTypeFilter] = useState<JobType | 'all'>('all')
 
   const load = useCallback(async () => {
@@ -180,6 +232,32 @@ export default function FailuresPage() {
     setFailures(f => f.filter(x => x.id !== id))
   }
 
+  function markOne(id: string) {
+    setFailures(f => f.map(x => x.id === id ? { ...x, status: 'resolved' as FailureStatus } : x))
+  }
+
+  async function retryAll() {
+    const retryable = failures.filter(f =>
+      (f.status === 'pending_retry') &&
+      f.video_id &&
+      (f.job_type === 'blog_generation' || f.job_type === 'wp_publish')
+    )
+    if (!retryable.length) return
+    setRetryingAll(true)
+    for (const f of retryable) {
+      try {
+        const res = await fetch('/api/blog/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: f.video_id }),
+        })
+        if (res.ok) await markResolved(f.id)
+      } catch { /* continue with next */ }
+    }
+    await load()
+    setRetryingAll(false)
+  }
+
   const filtered = failures.filter(f =>
     typeFilter === 'all' ? true : f.job_type === typeFilter,
   )
@@ -192,8 +270,13 @@ export default function FailuresPage() {
         subtitle={loading ? '' : open > 0 ? `${open} item${open !== 1 ? 's' : ''} need attention.` : 'Everything is running smoothly.'}
         actions={
           open > 0 && (
-            <button className="btn-primary flex items-center gap-2">
-              <RefreshCw size={14} /> Retry all
+            <button
+              onClick={retryAll}
+              disabled={retryingAll}
+              className="btn-primary flex items-center gap-2"
+            >
+              {retryingAll ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {retryingAll ? 'Retrying…' : 'Retry all'}
             </button>
           )
         }
@@ -207,7 +290,7 @@ export default function FailuresPage() {
             onClick={() => setTypeFilter(t)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
               typeFilter === t
-                ? 'bg-[#1d1d1f] text-white'
+                ? 'bg-[#1d1d1f] dark:bg-[#f5f5f7] text-white dark:text-[#1d1d1f]'
                 : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'
             }`}
           >
@@ -224,7 +307,7 @@ export default function FailuresPage() {
         ) : (
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-gray-100 bg-[#f5f5f7] dark:bg-[#000]/60">
+              <tr className="border-b border-gray-100 dark:border-white/10 bg-[#f5f5f7] dark:bg-[#000]/60">
                 <th className="py-2.5 px-4 w-8" />
                 <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Type</th>
                 <th className="py-2.5 px-4 text-xs font-semibold text-[#86868b]">Video</th>
@@ -236,7 +319,7 @@ export default function FailuresPage() {
             </thead>
             <tbody>
               {filtered.map(f => (
-                <FailureRow key={f.id} failure={f} onDismiss={dismiss} />
+                <FailureRow key={f.id} failure={f} onDismiss={dismiss} onResolved={markOne} />
               ))}
               {filtered.length === 0 && (
                 <tr>

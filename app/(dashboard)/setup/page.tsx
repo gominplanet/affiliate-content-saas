@@ -889,9 +889,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
 
   async function disconnectFacebook() {
     setFbDisconnecting(true)
-    await fetch('/api/auth/facebook/disconnect', { method: 'POST' })
-    setFacebook({ connected: false, pageName: '', pageId: '', pages: [] })
-    setFbDisconnecting(false)
+    try {
+      const res = await fetch('/api/auth/facebook/disconnect', { method: 'POST' })
+      if (res.ok) setFacebook({ connected: false, pageName: '', pageId: '', pages: [] })
+    } finally { setFbDisconnecting(false) }
   }
 
   async function selectFacebookPage(pageId: string) {
@@ -902,9 +903,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
 
   async function disconnectPinterest() {
     setPtDisconnecting(true)
-    await fetch('/api/auth/pinterest/disconnect', { method: 'POST' })
-    setPinterest({ connected: false, boardId: '', boardName: '', boards: [] })
-    setPtDisconnecting(false)
+    try {
+      const res = await fetch('/api/auth/pinterest/disconnect', { method: 'POST' })
+      if (res.ok) setPinterest({ connected: false, boardId: '', boardName: '', boards: [] })
+    } finally { setPtDisconnecting(false) }
   }
 
   async function selectPinterestBoard(boardId: string) {
@@ -919,9 +921,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
 
   async function disconnectThreads() {
     setThDisconnecting(true)
-    await fetch('/api/auth/threads/disconnect', { method: 'POST' })
-    setThreads({ connected: false, userId: '', username: '' })
-    setThDisconnecting(false)
+    try {
+      const res = await fetch('/api/auth/threads/disconnect', { method: 'POST' })
+      if (res.ok) setThreads({ connected: false, userId: '', username: '' })
+    } finally { setThDisconnecting(false) }
   }
 
   if (loading) return (
@@ -1081,11 +1084,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </button>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Connect your Pinterest account to pin blog posts directly from the content page.</p>
-            <button onClick={() => { window.location.href = '/api/auth/pinterest' }} className="flex items-center gap-2 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors self-start" style={{ background: '#E60023' }}>
-              <Pin size={14} /> Connect Pinterest
-            </button>
+          <div className="flex items-center gap-2">
+            <span className="badge bg-[#ff9500]/10 text-[#ff9500]">Coming soon</span>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Pinterest API approval in progress — available shortly.</p>
           </div>
         )}
       </div>
