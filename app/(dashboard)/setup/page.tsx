@@ -1205,6 +1205,13 @@ function SetupPageInner() {
         const raw = localStorage.getItem(STORAGE_KEY)
         if (raw) {
           const d = JSON.parse(raw)
+          // If localStorage says we're connected, trust it as a fallback
+          if (d.setupComplete && d.completedUrl) {
+            setSetupComplete(true)
+            setCompletedUrl(d.completedUrl)
+            setHydrated(true)
+            return
+          }
           if (d.mode) setMode(d.mode as Mode)
           if (d.step && d.step < 5) setStep(d.step as Step)
           if (d.brandData) setBrandData(d.brandData)
@@ -1223,13 +1230,26 @@ function SetupPageInner() {
   useEffect(() => {
     if (!hydrated) return
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, step, brandData, siteUrl, username, accentColor, wordpressUrl }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, step, brandData, siteUrl, username, accentColor, wordpressUrl, setupComplete, completedUrl }))
     } catch { /* ignore */ }
-  }, [mode, step, brandData, siteUrl, username, accentColor, wordpressUrl, hydrated])
+  }, [mode, step, brandData, siteUrl, username, accentColor, wordpressUrl, setupComplete, completedUrl, hydrated])
 
-  function handleReset() {
+  async function handleReset() {
+    // Clear Supabase wordpress_url so refresh doesn't re-detect as connected
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('integrations').update({
+          wordpress_url: null,
+          wordpress_username: null,
+          wordpress_app_password: null,
+          wordpress_api_token: null,
+        }).eq('user_id', user.id)
+      }
+    } catch { /* ignore */ }
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
-    setSetupComplete(false); setMode(null); setStep(1); setBrandData(defaultBrand)
+    setSetupComplete(false); setCompletedUrl(''); setMode(null); setStep(1); setBrandData(defaultBrand)
     setSiteUrl(''); setUsername(''); setAccentColor('#f5a623'); setWordpressUrl('')
   }
 
