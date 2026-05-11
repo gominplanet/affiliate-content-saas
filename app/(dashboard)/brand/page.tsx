@@ -360,7 +360,7 @@ export default function BrandPage() {
               maxLength={1000}
               value={data.author_bio}
               onChange={(e) => set('author_bio', e.target.value)}
-              placeholder="e.g. I'm Seb, a dad of 2 obsessed with finding products that actually work. Michelle and I started Gomin Reviews after getting burned by too many overhyped gadgets. We buy and test everything ourselves before recommending it."
+              placeholder="e.g. I'm a dad of 2 obsessed with finding products that actually work. My partner and I started this blog after getting burned by too many overhyped gadgets. We buy and test everything ourselves before recommending it."
               className="input-field resize-none leading-relaxed"
             />
             <WordCount text={data.author_bio} max={150} />
