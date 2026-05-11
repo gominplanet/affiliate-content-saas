@@ -1,13 +1,13 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import React, { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '@/components/layout/Header'
-import { User, Key, Bell, Eye, EyeOff, Save, Check, Loader2, Wifi, Facebook, Link2, LogOut, Pin, MessageCircle, CreditCard, Zap, CheckCircle, Upload } from 'lucide-react'
+import { Key, Bell, Eye, EyeOff, Save, Check, Loader2, Wifi, Facebook, Link2, LogOut, Pin, MessageCircle, CreditCard, Zap, CheckCircle } from 'lucide-react'
 import { TIERS, type Tier } from '@/lib/tier'
 import { createBrowserClient } from '@/lib/supabase/client'
 
-type Tab = 'profile' | 'integrations' | 'notifications' | 'billing'
+type Tab = 'integrations' | 'notifications' | 'billing'
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -352,19 +352,6 @@ function SettingsPage() {
   const [fixingThumbs, setFixingThumbs] = useState(false)
   const [fixThumbsResult, setFixThumbsResult] = useState<string | null>(null)
 
-  // Profile tab state
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [email, setEmail] = useState('')
-  const [authorName, setAuthorName] = useState('')
-  const [authorBio, setAuthorBio] = useState('')
-  const [logoUrl, setLogoUrl] = useState('')
-  const [headshotUrl, setHeadshotUrl] = useState('')
-  const [profileSaving, setProfileSaving] = useState(false)
-  const [profileSaved, setProfileSaved] = useState(false)
-  const [profileError, setProfileError] = useState<string | null>(null)
-  const logoInputRef = useRef<HTMLInputElement>(null)
-  const headshotInputRef = useRef<HTMLInputElement>(null)
 
   // Notifications state
   const [notifications, setNotifications] = useState({
@@ -424,13 +411,6 @@ function SettingsPage() {
     const res = await fetch('/api/profile')
     if (!res.ok) return
     const data = await res.json()
-    setFirstName(data.firstName ?? '')
-    setLastName(data.lastName ?? '')
-    setEmail(data.email ?? '')
-    setAuthorName(data.authorName ?? '')
-    setAuthorBio(data.authorBio ?? '')
-    setLogoUrl(data.logoUrl ?? '')
-    setHeadshotUrl(data.headshotUrl ?? '')
     setNotifications(data.notifications ?? notifications)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -579,57 +559,6 @@ function SettingsPage() {
     }
   }
 
-  async function uploadImage(file: File, bucket: string, path: string): Promise<string> {
-    const { data, error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true })
-    if (error) throw new Error(error.message)
-    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path)
-    return urlData.publicUrl
-  }
-
-  async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const url = await uploadImage(file, 'profile-assets', `${user!.id}/logo`)
-      setLogoUrl(url)
-    } catch (err) {
-      setProfileError(err instanceof Error ? err.message : 'Upload failed')
-    }
-  }
-
-  async function handleHeadshotChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const url = await uploadImage(file, 'profile-assets', `${user!.id}/headshot`)
-      setHeadshotUrl(url)
-    } catch (err) {
-      setProfileError(err instanceof Error ? err.message : 'Upload failed')
-    }
-  }
-
-  async function saveProfile() {
-    setProfileSaving(true)
-    setProfileError(null)
-    try {
-      const res = await fetch('/api/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName, lastName, authorName, authorBio, logoUrl, headshotUrl }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Save failed')
-      setProfileSaved(true)
-      setTimeout(() => setProfileSaved(false), 2500)
-    } catch (err) {
-      setProfileError(err instanceof Error ? err.message : 'Save failed')
-    } finally {
-      setProfileSaving(false)
-    }
-  }
-
   async function saveNotifications() {
     setNotifSaving(true)
     try {
@@ -675,9 +604,6 @@ function SettingsPage() {
       <Header title="Settings" subtitle="Manage your account, integrations and notifications." />
 
       <div className="flex items-center gap-1 bg-[#f5f5f7] dark:bg-[#000] p-1 rounded-xl w-fit mb-6">
-        <TabButton active={tab === 'profile'} onClick={() => setTab('profile')}>
-          <User size={14} /> Profile
-        </TabButton>
         <TabButton active={tab === 'integrations'} onClick={() => setTab('integrations')}>
           <Key size={14} /> Integrations
         </TabButton>
@@ -1011,127 +937,6 @@ function SettingsPage() {
               </button>
             </>
           )}
-        </div>
-      )}
-
-      {/* Profile tab */}
-      {tab === 'profile' && (
-        <div className="max-w-xl flex flex-col gap-5">
-          {/* Personal info */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Personal Information</h2>
-            <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">First name</label>
-                  <input
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="Jane"
-                    className="input-field"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Last name</label>
-                  <input
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Smith"
-                    className="input-field"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  readOnly
-                  className="input-field opacity-60 cursor-not-allowed"
-                />
-                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Email cannot be changed here</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Brand / Blog identity */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Blog Identity</h2>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4">Used on your WordPress blog&apos;s about page, footer, and author bylines.</p>
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Author / display name</label>
-                <input
-                  type="text"
-                  value={authorName}
-                  onChange={(e) => setAuthorName(e.target.value)}
-                  placeholder="Jane Smith"
-                  className="input-field"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Bio</label>
-                <textarea
-                  value={authorBio}
-                  onChange={(e) => setAuthorBio(e.target.value)}
-                  placeholder="I review tech gadgets and help people find the best deals online..."
-                  rows={3}
-                  className="input-field resize-none"
-                />
-              </div>
-              {/* Logo */}
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Brand logo</label>
-                <div className="flex items-center gap-3">
-                  {logoUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={logoUrl} alt="Logo" className="w-12 h-12 object-contain rounded-lg border border-gray-200 dark:border-white/10 bg-white" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => logoInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg hover:border-[#0071e3]/40 transition-colors text-[#1d1d1f] dark:text-[#f5f5f7]"
-                  >
-                    <Upload size={12} /> {logoUrl ? 'Replace logo' : 'Upload logo'}
-                  </button>
-                  <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
-                </div>
-              </div>
-              {/* Headshot */}
-              <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Your headshot / photo</label>
-                <div className="flex items-center gap-3">
-                  {headshotUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={headshotUrl} alt="Headshot" className="w-12 h-12 object-cover rounded-full border border-gray-200 dark:border-white/10" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => headshotInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg hover:border-[#0071e3]/40 transition-colors text-[#1d1d1f] dark:text-[#f5f5f7]"
-                  >
-                    <Upload size={12} /> {headshotUrl ? 'Replace photo' : 'Upload photo'}
-                  </button>
-                  <input ref={headshotInputRef} type="file" accept="image/*" className="hidden" onChange={handleHeadshotChange} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {profileError && (
-            <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{profileError}</p>
-          )}
-
-          <button onClick={saveProfile} disabled={profileSaving} className="btn-primary self-start">
-            {profileSaved
-              ? <><Check size={14} /> Saved!</>
-              : profileSaving
-              ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
-              : <><Save size={14} /> Save changes</>
-            }
-          </button>
         </div>
       )}
 
