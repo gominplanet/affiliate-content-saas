@@ -76,7 +76,6 @@ export async function POST(req: Request) {
         { ...existing, ...customizations, profile: mergedProfile },
       )
     } catch (e) {
-      console.error('WP push error:', e)
     }
   }
 

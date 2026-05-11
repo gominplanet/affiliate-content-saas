@@ -114,7 +114,6 @@ Return ONLY the post text, nothing else.`,
     return NextResponse.json({ ok: true, facebookPostId: result.id })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[facebook-post]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

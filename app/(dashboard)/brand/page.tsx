@@ -173,7 +173,7 @@ export default function BrandPage() {
         .single()
 
       if (intRow?.wordpress_url && intRow?.wordpress_username && intRow?.wordpress_app_password) {
-        const creds = Buffer.from(`${intRow.wordpress_username}:${intRow.wordpress_app_password}`).toString('base64')
+        const creds = btoa(`${intRow.wordpress_username}:${intRow.wordpress_app_password}`)
 
         // Update WP user display name
         await fetch(`${intRow.wordpress_url}/wp-json/wp/v2/users/me`, {

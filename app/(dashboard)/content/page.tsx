@@ -341,8 +341,8 @@ function VideoCard({
     if (!confirm('Delete this post from WordPress and remove it here?')) return
     setDeleting(true)
     try {
-      await fetch('/api/blog/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: post.postId }) })
-      onDelete(post.postId)
+      const res = await fetch('/api/blog/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: post.postId }) })
+      if (res.ok) onDelete(post.postId)
     } finally { setDeleting(false) }
   }
 
@@ -724,11 +724,14 @@ export default function ContentPage() {
 
   async function syncVideos() {
     setSyncing(true)
-    const res = await fetch('/api/youtube/sync', { method: 'POST' })
-    const data = await res.json().catch(() => ({}))
-    setNextPageToken(data.nextPageToken ?? null)
-    await load()
-    setSyncing(false)
+    try {
+      const res = await fetch('/api/youtube/sync', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      setNextPageToken(data.nextPageToken ?? null)
+      await load()
+    } catch { /* non-fatal */ } finally {
+      setSyncing(false)
+    }
   }
 
   async function fixCategories() {
@@ -753,15 +756,18 @@ export default function ContentPage() {
   async function loadMore() {
     if (!nextPageToken) return
     setLoadingMore(true)
-    const res = await fetch('/api/youtube/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pageToken: nextPageToken }),
-    })
-    const data = await res.json().catch(() => ({}))
-    setNextPageToken(data.nextPageToken ?? null)
-    await load()
-    setLoadingMore(false)
+    try {
+      const res = await fetch('/api/youtube/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageToken: nextPageToken }),
+      })
+      const data = await res.json().catch(() => ({}))
+      setNextPageToken(data.nextPageToken ?? null)
+      await load()
+    } catch { /* non-fatal */ } finally {
+      setLoadingMore(false)
+    }
   }
 
   function dismissVideo(videoId: string) {

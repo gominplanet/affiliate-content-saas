@@ -14,7 +14,6 @@ export async function POST(request: Request) {
     return await handleGenerate(request)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[/api/blog/generate] unhandled error:', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
@@ -154,7 +153,6 @@ async function handleGenerate(request: Request) {
   try {
     tagIds = await wpService.resolveTagIds(generated.tags.slice(0, 10))
   } catch (err) {
-    console.error('Tag resolution failed:', err)
   }
 
   // ── 7.1. Resolve category from brand niches ───────────────────────────────

@@ -136,7 +136,6 @@ export async function GET() {
     return NextResponse.json({ posts })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[wordpress/posts]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

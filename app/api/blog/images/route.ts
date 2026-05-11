@@ -10,7 +10,6 @@ export async function POST(request: Request) {
     return await handleImages(request)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[/api/blog/images] unhandled error:', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

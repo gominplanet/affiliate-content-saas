@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
 
   if (error || !code) {
-    return NextResponse.redirect(`${appUrl}/settings?threads_error=${error || 'no_code'}`)
+    return NextResponse.redirect(`${appUrl}/setup?threads_error=${error || 'no_code'}`)
   }
 
   const supabase = await createServerClient()
@@ -26,9 +26,8 @@ export async function GET(request: NextRequest) {
       { onConflict: 'user_id' },
     )
 
-    return NextResponse.redirect(`${appUrl}/settings?threads_connected=1`)
+    return NextResponse.redirect(`${appUrl}/setup?threads_connected=1`)
   } catch (err) {
-    console.error('Threads callback error:', err)
-    return NextResponse.redirect(`${appUrl}/settings?threads_error=callback_failed`)
+    return NextResponse.redirect(`${appUrl}/setup?threads_error=callback_failed`)
   }
 }

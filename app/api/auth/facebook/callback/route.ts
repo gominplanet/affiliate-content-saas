@@ -5,14 +5,14 @@ import { exchangeCodeForToken, getLongLivedToken, getPages } from '@/services/fa
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
   const redirectUri = `${appUrl}/api/auth/facebook/callback`
-  const settingsUrl = `${appUrl}/settings?tab=integrations`
+  const setupUrl = `${appUrl}/setup?tab=integrations`
 
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const error = searchParams.get('error')
 
   if (error || !code) {
-    return NextResponse.redirect(`${settingsUrl}&fb_error=access_denied`)
+    return NextResponse.redirect(`${setupUrl}&fb_error=access_denied`)
   }
 
   try {
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     // Fetch pages the user manages
     const pages = await getPages(longToken)
     if (pages.length === 0) {
-      return NextResponse.redirect(`${settingsUrl}&fb_error=no_pages&debug_token=${encodeURIComponent(longToken)}`)
+      return NextResponse.redirect(`${setupUrl}&fb_error=no_pages&debug_token=${encodeURIComponent(longToken)}`)
     }
 
     // Save the first page by default (user can switch in settings)
@@ -44,10 +44,9 @@ export async function GET(request: NextRequest) {
       { onConflict: 'user_id' },
     )
 
-    return NextResponse.redirect(`${settingsUrl}&fb_connected=1`)
+    return NextResponse.redirect(`${setupUrl}&fb_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
-    console.error('[facebook/callback]', msg)
-    return NextResponse.redirect(`${settingsUrl}&fb_error=${encodeURIComponent(msg)}`)
+    return NextResponse.redirect(`${setupUrl}&fb_error=${encodeURIComponent(msg)}`)
   }
 }

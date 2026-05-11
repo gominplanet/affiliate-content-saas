@@ -148,7 +148,6 @@ export async function POST() {
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[fix-thumbnails]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

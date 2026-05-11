@@ -1131,7 +1131,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
 
 // ─── Wizard shell ─────────────────────────────────────────────────────────────
 function SetupPageInner() {
-  const [tab, setTab] = useState<'wordpress' | 'integrations'>('wordpress')
+  const searchParams = useSearchParams()
+  const [tab, setTab] = useState<'wordpress' | 'integrations'>(
+    searchParams.get('tab') === 'integrations' ? 'integrations' : 'wordpress'
+  )
   const [mode, setMode] = useState<Mode>(null)
   const [step, setStep] = useState<Step>(1)
   const [wordpressUrl, setWordpressUrl] = useState('')

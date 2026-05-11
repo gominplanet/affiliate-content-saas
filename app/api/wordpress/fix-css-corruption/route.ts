@@ -76,7 +76,6 @@ export async function POST() {
           await wpService.updatePost(post.id, { content: cleaned } as never)
           fixed++
         } catch (err) {
-          console.error(`Failed to fix post ${post.id}:`, err)
         }
       }
 
@@ -93,7 +92,6 @@ export async function POST() {
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[fix-css-corruption]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

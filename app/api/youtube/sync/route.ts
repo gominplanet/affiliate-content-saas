@@ -11,10 +11,21 @@ export async function POST(request: Request) {
   }
 
   const apiKey = process.env.YOUTUBE_API_KEY
-  const channelId = process.env.YOUTUBE_CHANNEL_ID
+  if (!apiKey) {
+    return NextResponse.json({ error: 'YouTube API key not configured' }, { status: 400 })
+  }
 
-  if (!apiKey || !channelId) {
-    return NextResponse.json({ error: 'YouTube API key or Channel ID not configured' }, { status: 400 })
+  // Read per-user channel ID from integrations table
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: intRow } = await (supabase as any)
+    .from('integrations')
+    .select('youtube_channel_id')
+    .eq('user_id', user.id)
+    .single()
+
+  const channelId = intRow?.youtube_channel_id || process.env.YOUTUBE_CHANNEL_ID
+  if (!channelId) {
+    return NextResponse.json({ error: 'No YouTube channel ID configured. Add your channel ID in Blog Setup → Integrations.' }, { status: 400 })
   }
 
   let pageToken: string | undefined

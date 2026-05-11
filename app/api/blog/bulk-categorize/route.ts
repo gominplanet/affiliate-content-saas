@@ -135,7 +135,6 @@ ${titles}`,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[bulk-categorize]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

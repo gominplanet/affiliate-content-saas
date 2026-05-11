@@ -33,22 +33,28 @@ export default function BillingPage() {
 
   async function openPortal() {
     setPortalLoading(true)
-    const res = await fetch('/api/stripe/portal', { method: 'POST' })
-    const { url, error } = await res.json()
-    if (error) { alert(error); setPortalLoading(false); return }
-    window.location.href = url
+    try {
+      const res = await fetch('/api/stripe/portal', { method: 'POST' })
+      const { url, error } = await res.json()
+      if (error) { alert(error); return }
+      window.location.href = url
+    } catch { alert('Something went wrong. Please try again.') }
+    finally { setPortalLoading(false) }
   }
 
   async function upgrade(t: string) {
     setCheckoutLoading(t)
-    const res = await fetch('/api/stripe/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tier: t }),
-    })
-    const { url, error } = await res.json()
-    if (error) { alert(error); setCheckoutLoading(null); return }
-    window.location.href = url
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier: t }),
+      })
+      const { url, error } = await res.json()
+      if (error) { alert(error); return }
+      window.location.href = url
+    } catch { alert('Something went wrong. Please try again.') }
+    finally { setCheckoutLoading(null) }
   }
 
   const planDetails = [

@@ -585,7 +585,6 @@ export async function POST(request: Request) {
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[/api/wordpress/connect-and-setup]', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

@@ -59,7 +59,6 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
 
     return NextResponse.json({ ok: true, postId: result.id })
   } catch (err: unknown) {
-    console.error('threads-post error:', err)
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: msg }, { status: 500 })
   }

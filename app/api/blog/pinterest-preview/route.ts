@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
   // Claude fills in Pinterest description + image prompt variables in one call
   const claudeMsg = await anthropic.messages.create({
-    model: 'claude-opus-4-7',
+    model: 'claude-haiku-4-5',
     max_tokens: 1000,
     messages: [{
       role: 'user',
@@ -127,7 +127,6 @@ async function generatePinImage(prompt: string): Promise<{ data: string; mediaTy
     }
     return null
   } catch (err) {
-    console.error('Gemini image generation failed:', err)
     return null
   }
 }

@@ -87,7 +87,6 @@ export async function getPages(userToken: string): Promise<FacebookPage[]> {
 
   const res = await fetch(url.toString())
   const body = await res.json()
-  console.log('[facebook/getPages] raw response:', JSON.stringify(body))
   if (!res.ok) throw new Error(`Failed to fetch Facebook pages: ${JSON.stringify(body)}`)
   return (body.data ?? []) as FacebookPage[]
 }
