@@ -823,9 +823,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     if (thError) setThNotice({ ok: false, msg: `Threads error: ${thError}` })
     const liConnected = searchParams.get('linkedin_connected')
     const liError = searchParams.get('linkedin_error')
-    if (liConnected) setLiNotice({ ok: true, msg: 'LinkedIn connected!' })
+    if (liConnected) { setLiNotice({ ok: true, msg: 'LinkedIn connected!' }); load() }
     if (liError) setLiNotice({ ok: false, msg: liError === 'callback_failed' ? 'LinkedIn connection failed — please try again.' : `LinkedIn error: ${liError}` })
-  }, [searchParams])
+  }, [searchParams, load])
 
   useEffect(() => { load() }, [load])
 
