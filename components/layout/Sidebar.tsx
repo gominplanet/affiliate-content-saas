@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTheme } from 'next-themes'
@@ -34,11 +35,29 @@ const secondaryNav = [
   { href: '/admin/failures', label: 'Failures', icon: AlertTriangle, danger: true },
 ]
 
-export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUrl?: string | null }) {
+export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: string; wpSiteUrl?: string | null }) {
   const pathname = usePathname()
   const router = useRouter()
   const { theme, setTheme } = useTheme()
   const supabase = createBrowserClient()
+  const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
+
+  // Re-fetch on every route change so the link is always up to date
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(supabase as any)
+        .from('integrations')
+        .select('wordpress_url,wp_site_url')
+        .eq('user_id', user.id)
+        .single()
+        .then(({ data }: { data: Record<string, string> | null }) => {
+          if (data) setWpSiteUrl(data.wordpress_url || data.wp_site_url || null)
+        })
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
 
   async function handleLogout() {
     await supabase.auth.signOut()
