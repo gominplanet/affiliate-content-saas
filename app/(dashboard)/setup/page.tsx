@@ -769,6 +769,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [liNotice, setLiNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
+  const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
   const [youtubeOAuthConnected, setYoutubeOAuthConnected] = useState(false)
   const [ytOAuthNotice, setYtOAuthNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [wpTesting, setWpTesting] = useState(false)
@@ -806,6 +807,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
       setGeniuslinkKey(row.geniuslink_api_key ?? '')
       setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
+      setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
       setYoutubeOAuthConnected(!!row.youtube_oauth_access_token)
     }
     setLoading(false)
@@ -849,6 +851,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       wordpress_app_password: wpAppPassword || null,
       geniuslink_api_key: geniuslinkKey || null,
       geniuslink_api_secret: geniuslinkSecret || null,
+      amazon_associates_tag: amazonAssociatesTag || null,
     }, { onConflict: 'user_id' })
     setSaving(false)
     if (err) { setError(err.message) } else { setSaved(true); setTimeout(() => setSaved(false), 2500) }
@@ -1213,6 +1216,33 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
             Find your credentials at <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">app.geni.us/settings</a> → Integrate with our API
+          </p>
+        </div>
+      </div>
+
+      {/* Amazon Associates */}
+      <div className="card p-5 flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#ff9900]/10 flex items-center justify-center flex-shrink-0">
+            <span className="text-sm">🛒</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Amazon Associates</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Used as affiliate link fallback when Geniuslink isn't configured</p>
+          </div>
+          {amazonAssociatesTag && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Associates Tag</label>
+          <input
+            type="text"
+            value={amazonAssociatesTag}
+            onChange={e => setAmazonAssociatesTag(e.target.value)}
+            placeholder="e.g. yourtag-20"
+            className="input-field text-xs font-mono"
+          />
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+            Find it in <a href="https://affiliate-program.amazon.com/home/account/tag/manage" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Amazon Associates → Account → Manage Tracking IDs</a>
           </p>
         </div>
       </div>

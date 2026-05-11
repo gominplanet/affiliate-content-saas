@@ -196,7 +196,7 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
                   {affiliateUrl && (
                     <span className="flex items-center gap-1 text-[#0071e3]">
                       <Link2 size={9} />
-                      {geniuslinkUsed ? 'Geniuslink ✓' : 'Plain Amazon link'}
+                      {geniuslinkUsed ? 'Geniuslink ✓' : affiliateUrl?.includes('?tag=') ? 'Associates link ✓' : 'Plain Amazon link'}
                     </span>
                   )}
                 </div>

@@ -29,11 +29,11 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
       .single()
 
-    // ── 2. Fetch Geniuslink credentials ────────────────────────────────────────
+    // ── 2. Fetch credentials ───────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)
       .from('integrations')
-      .select('geniuslink_api_key,geniuslink_api_secret')
+      .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
       .eq('user_id', user.id)
       .single()
 
@@ -46,10 +46,11 @@ export async function POST(request: Request) {
       product = { asin, title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null }
     }
 
-    // ── 4. Create Geniuslink affiliate URL ─────────────────────────────────────
+    // ── 4. Build affiliate URL (Geniuslink → Associates tag → plain) ──────────
     let affiliateUrl = `https://www.amazon.com/dp/${asin}`
     let geniuslinkUsed = false
     let geniuslinkError: string | null = null
+
     if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
@@ -58,9 +59,16 @@ export async function POST(request: Request) {
       } catch (err) {
         geniuslinkError = err instanceof Error ? err.message : String(err)
         console.error('Geniuslink error:', geniuslinkError)
+        // Fall through to Associates tag
       }
-    } else {
-      geniuslinkError = 'Geniuslink credentials not configured in Site & Integrations'
+    }
+
+    // Fallback: Amazon Associates tracking tag
+    if (!geniuslinkUsed && intRow?.amazon_associates_tag) {
+      affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=${intRow.amazon_associates_tag}`
+      geniuslinkError = null // clear error — we have a valid affiliate link
+    } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
+      geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Site & Integrations'
     }
 
     // ── 5. Generate YouTube metadata with Claude ───────────────────────────────
