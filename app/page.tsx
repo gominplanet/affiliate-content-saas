@@ -353,6 +353,49 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* FAQ */}
+      <section className="py-16 sm:py-28 px-5 sm:px-6 bg-[#f5f5f7]">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-10 sm:mb-14">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">Questions</h2>
+            <p className="text-[#6e6e73] text-base sm:text-lg">Everything you need to know before getting started.</p>
+          </div>
+          <div className="flex flex-col gap-4">
+            {[
+              {
+                q: 'Do I need a WordPress site?',
+                a: 'Yes — MVP Affiliate publishes directly to a self-hosted WordPress site. If you don\'t have one yet, we recommend Hostinger. You can get a domain and hosting set up in about 5 minutes, and we walk you through connecting it in the app.',
+              },
+              {
+                q: 'Does it work with any YouTube channel?',
+                a: 'Yes. Just connect your channel in Blog Setup and we\'ll sync your videos instantly. It works with any public YouTube channel — product reviews, tutorials, vlogs, anything.',
+              },
+              {
+                q: 'What happens to my affiliate links?',
+                a: 'We detect your affiliate links directly from your video descriptions — Geniuslink, Amazon Associates, whatever you use. Every piece of content we generate has your links woven in naturally, not just dropped at the bottom.',
+              },
+              {
+                q: 'Will the content sound like me or like AI?',
+                a: 'Like you. Before writing anything, our AI reads your transcript and extracts your actual phrases, opinions, jokes, and way of talking. The post is written in your voice — a reader who watched your video should feel like it\'s you writing.',
+              },
+              {
+                q: 'Can I edit the content before it goes live?',
+                a: 'Yes. Every generated post is saved as a draft you can review, edit, or publish directly from the app. Nothing goes live without your say.',
+              },
+              {
+                q: 'Can I cancel anytime?',
+                a: 'Yes, cancel from your billing page at any time with no penalty. Your content and data stay accessible. No contracts, no hidden fees.',
+              },
+            ].map(({ q, a }) => (
+              <div key={q} className="bg-white rounded-2xl p-6 border border-gray-100">
+                <p className="text-sm font-semibold text-[#1d1d1f] mb-2">{q}</p>
+                <p className="text-sm text-[#6e6e73] leading-relaxed">{a}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Final CTA */}
       <section className="py-16 sm:py-28 px-5 sm:px-6 bg-[#f5f5f7]">
         <div className="max-w-3xl mx-auto text-center">

@@ -49,10 +49,10 @@ export async function POST(request: NextRequest) {
 
   if (event.type === 'customer.subscription.deleted') {
     const sub = event.data.object as { customer: string }
-    // Downgrade to starter when subscription cancelled
+    // Downgrade to free when subscription cancelled
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('integrations')
-      .update({ tier: 'starter', stripe_subscription_id: null })
+      .update({ tier: 'free', stripe_subscription_id: null })
       .eq('stripe_customer_id', sub.customer)
   }
 

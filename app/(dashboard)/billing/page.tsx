@@ -2,34 +2,78 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
-import { Zap, CheckCircle, Loader2 } from 'lucide-react'
+import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { TIERS, type Tier } from '@/lib/tier'
 
 export default function BillingPage() {
   const supabase = createBrowserClient()
   const [tier, setTier] = useState<Tier>('free')
+  const [postsUsed, setPostsUsed] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [upgraded, setUpgraded] = useState(false)
   const [portalLoading, setPortalLoading] = useState(false)
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase as any)
       .from('integrations')
       .select('tier')
       .eq('user_id', user.id)
       .single()
-    setTier((data?.tier as Tier) ?? 'free')
+
+    const userTier = (data?.tier as Tier) ?? 'free'
+    setTier(userTier)
+
+    // Count posts used — lifetime for free, current month for paid
+    const limits = TIERS[userTier]
+    if (limits.lifetimeMax !== null) {
+      const { count } = await supabase
+        .from('blog_posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+      setPostsUsed(count ?? 0)
+    } else if (limits.videosPerMonth !== null) {
+      const now = new Date()
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+      const { count } = await supabase
+        .from('blog_posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('published_at', monthStart)
+      setPostsUsed(count ?? 0)
+    }
+
     setLoading(false)
   }, [supabase])
 
   useEffect(() => { load() }, [load])
 
+  // Show upgrade success banner from Stripe redirect
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('upgraded=1')) {
+      setUpgraded(true)
+      window.history.replaceState({}, '', '/billing')
+    }
+  }, [])
+
   const currentTier = TIERS[tier]
   const isPaid = tier !== 'free' && tier !== 'admin'
+  const limit = currentTier.videosPerMonth ?? currentTier.lifetimeMax ?? null
+  const usagePct = limit ? Math.min((postsUsed / limit) * 100, 100) : 0
+  const usageLabel = currentTier.lifetimeMax
+    ? 'posts used (lifetime)'
+    : `posts used this month · resets the 1st`
+
+  const planDetails = [
+    { tier: 'starter' as Tier, limit: '25 posts / month', price: 19 },
+    { tier: 'growth' as Tier,  limit: '75 posts / month', price: 39 },
+    { tier: 'pro' as Tier,     limit: '250 posts / month', price: 79 },
+  ]
 
   async function openPortal() {
     setPortalLoading(true)
@@ -57,12 +101,6 @@ export default function BillingPage() {
     finally { setCheckoutLoading(null) }
   }
 
-  const planDetails = [
-    { tier: 'starter' as Tier, limit: '25 posts / month', price: 19 },
-    { tier: 'growth' as Tier,  limit: '75 posts / month', price: 39 },
-    { tier: 'pro' as Tier,     limit: '250 posts / month', price: 79 },
-  ]
-
   return (
     <>
       <Header title="Plan & Billing" subtitle="Manage your subscription and usage limits." />
@@ -74,7 +112,17 @@ export default function BillingPage() {
       ) : (
         <div className="max-w-xl flex flex-col gap-5">
 
-          {/* Current plan */}
+          {/* Upgrade success banner */}
+          {upgraded && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-[#34c759]/10 border border-[#34c759]/20">
+              <PartyPopper size={18} className="text-[#34c759] flex-shrink-0" />
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                You&apos;re on the <strong>{currentTier.label}</strong> plan. Welcome aboard!
+              </p>
+            </div>
+          )}
+
+          {/* Current plan + usage */}
           <div className="card p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Current Plan</h2>
@@ -89,22 +137,44 @@ export default function BillingPage() {
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-3">
+
+            <div className="flex items-center gap-3 mb-5">
               <div className="w-10 h-10 rounded-xl bg-[#0071e3]/10 flex items-center justify-center">
                 <Zap size={18} className="text-[#0071e3]" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{currentTier.label}</p>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-                  {'lifetimeMax' in currentTier && currentTier.lifetimeMax
-                    ? `${currentTier.lifetimeMax} posts total (free trial)`
-                    : currentTier.videosPerMonth
-                    ? `${currentTier.videosPerMonth} posts / month`
-                    : 'Unlimited'}
+                  {limit ? `${limit} posts / ${currentTier.lifetimeMax ? 'lifetime' : 'month'}` : 'Unlimited'}
                   {currentTier.price > 0 ? ` · $${currentTier.price}/month` : ''}
                 </p>
               </div>
             </div>
+
+            {/* Usage bar — only for capped tiers */}
+            {limit !== null && tier !== 'admin' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{postsUsed} of {limit} {usageLabel}</span>
+                  <span className={`text-xs font-semibold ${usagePct >= 90 ? 'text-[#ff3b30]' : usagePct >= 70 ? 'text-[#ff9500]' : 'text-[#34c759]'}`}>
+                    {Math.round(usagePct)}%
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      usagePct >= 90 ? 'bg-[#ff3b30]' : usagePct >= 70 ? 'bg-[#ff9500]' : 'bg-[#34c759]'
+                    }`}
+                    style={{ width: `${usagePct}%` }}
+                  />
+                </div>
+                {usagePct >= 90 && (
+                  <p className="text-xs text-[#ff3b30] mt-2">
+                    {usagePct >= 100 ? 'Limit reached — upgrade to keep publishing.' : 'Almost at your limit — consider upgrading.'}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Plans */}

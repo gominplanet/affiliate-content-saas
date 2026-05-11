@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import Header from '@/components/layout/Header'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
-import { PlaySquare, ArrowRight, Clock } from 'lucide-react'
+import { PlaySquare, ArrowRight, Clock, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -13,8 +13,13 @@ export default async function DashboardPage() {
   const { data: { user } } = await supabase.auth.getUser()
 
   const { data: videos } = await supabase.from('youtube_videos').select('id').eq('user_id', user!.id)
+  const { count: postCount } = await supabase
+    .from('blog_posts')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user!.id)
 
   const videoCount = videos?.length ?? 0
+  const isNewUser = (postCount ?? 0) === 0
 
   const stats = [
     { label: 'Videos Tracked', value: String(videoCount), icon: PlaySquare, color: 'text-[#0071e3]', bg: 'bg-[#0071e3]/8' },
@@ -38,6 +43,47 @@ export default async function DashboardPage() {
           </Link>
         }
       />
+
+      {/* Welcome card — shown until user generates their first post */}
+      {isNewUser && (
+        <div className="card p-6 mb-6 border border-[#0071e3]/20 bg-gradient-to-br from-[#f0f7ff] to-white dark:from-[#0071e3]/5 dark:to-transparent">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-[#0071e3] flex items-center justify-center flex-shrink-0">
+              <Sparkles size={18} className="text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Welcome — let&apos;s get your first post live</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-5">Three steps and you&apos;re publishing. Takes about 5 minutes.</p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Link href="/brand" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
+                  <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Set up your brand</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Name, niche, tone & writing sample</p>
+                  </div>
+                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
+                </Link>
+                <Link href="/setup" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
+                  <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Connect WordPress & YouTube</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Connect once, publish everywhere</p>
+                  </div>
+                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
+                </Link>
+                <Link href="/content" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
+                  <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pick a video &amp; generate</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Your first post in minutes</p>
+                  </div>
+                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SetupChecklist />
       <ChannelStats />
