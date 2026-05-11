@@ -73,53 +73,85 @@ Return ONLY the image prompt, nothing else. Max 150 words.`,
 
     const imagePrompt = (msg.content[0] as { type: string; text: string }).text.trim()
 
-    // ── 3. Generate with fal.ai REST API (more reliable than SDK in serverless) ─
-    // Try flux-schnell first, fall back to fast-sdxl
-    const models = [
-      'fal-ai/flux/schnell',
-      'fal-ai/flux-schnell',
-      'fal-ai/fast-sdxl',
-    ]
-
+    // ── 3. Generate image — try fal.ai first, then Replicate as fallback ────────
     let thumbnailUrl: string | null = null
     let lastError = ''
 
-    for (const model of models) {
+    // ── 3a. fal.ai ────────────────────────────────────────────────────────────
+    if (falKey) {
+      for (const model of ['fal-ai/flux/schnell', 'fal-ai/flux-schnell']) {
+        try {
+          const res = await fetch(`https://fal.run/${model}`, {
+            method: 'POST',
+            headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: imagePrompt,
+              image_size: 'landscape_16_9',
+              num_inference_steps: 4,
+              num_images: 1,
+              enable_safety_checker: false,
+            }),
+          })
+          const data = await res.json() as Record<string, unknown>
+          if (!res.ok) {
+            lastError = `fal.ai ${model} ${res.status}: ${JSON.stringify(data).slice(0, 150)}`
+            break // both fal models will fail the same way (balance/key issue)
+          }
+          const images = data.images as Array<{ url: string }> | undefined
+          thumbnailUrl = images?.[0]?.url ?? null
+          if (thumbnailUrl) break
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : String(err)
+        }
+      }
+    }
+
+    // ── 3b. Replicate fallback (REPLICATE_API_TOKEN env var) ─────────────────
+    if (!thumbnailUrl && process.env.REPLICATE_API_TOKEN) {
       try {
-        const res = await fetch(`https://fal.run/${model}`, {
+        // Start prediction
+        const startRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
           method: 'POST',
           headers: {
-            Authorization: `Key ${falKey}`,
+            Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}`,
             'Content-Type': 'application/json',
+            Prefer: 'wait=30',
           },
           body: JSON.stringify({
-            prompt: imagePrompt,
-            image_size: 'landscape_16_9',
-            num_inference_steps: 4,
-            num_images: 1,
-            enable_safety_checker: false,
+            input: {
+              prompt: imagePrompt,
+              aspect_ratio: '16:9',
+              num_outputs: 1,
+              output_format: 'jpg',
+              output_quality: 90,
+            },
           }),
         })
+        const pred = await startRes.json() as { output?: string[]; urls?: { get: string }; id?: string }
 
-        const data = await res.json() as Record<string, unknown>
-
-        if (!res.ok) {
-          lastError = `${model} → ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
-          console.error('[generate-thumbnail]', lastError)
-          continue
+        if (startRes.ok && pred.output?.[0]) {
+          thumbnailUrl = pred.output[0]
+        } else if (startRes.ok && pred.urls?.get) {
+          // Poll once more if not done yet
+          await new Promise(r => setTimeout(r, 4000))
+          const pollRes = await fetch(pred.urls.get, {
+            headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` },
+          })
+          const pollData = await pollRes.json() as { output?: string[] }
+          thumbnailUrl = pollData.output?.[0] ?? null
+        } else {
+          lastError = `Replicate ${startRes.status}: ${JSON.stringify(pred).slice(0, 150)}`
         }
-
-        const images = data.images as Array<{ url: string }> | undefined
-        thumbnailUrl = images?.[0]?.url ?? null
-        if (thumbnailUrl) break
       } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err)
-        continue
+        lastError = `Replicate error: ${err instanceof Error ? err.message : String(err)}`
       }
     }
 
     if (!thumbnailUrl) {
-      throw new Error(`All fal.ai models failed. Last error: ${lastError}`)
+      const hint = !process.env.REPLICATE_API_TOKEN
+        ? ' — top up fal.ai at fal.ai/dashboard/billing, or add REPLICATE_API_TOKEN to Vercel for a free fallback'
+        : ''
+      throw new Error(`Image generation failed: ${lastError}${hint}`)
     }
 
     return NextResponse.json({ ok: true, thumbnailUrl, prompt: imagePrompt })
