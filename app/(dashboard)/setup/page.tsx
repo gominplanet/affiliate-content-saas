@@ -242,28 +242,21 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
 function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url: string) => void }) {
   const [siteUrl, setSiteUrl] = useState('')
   const [username, setUsername] = useState('')
-  const [appPassword, setAppPassword] = useState('')
-  const [apiToken, setApiToken] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [showToken, setShowToken] = useState(false)
-  const [authMethod, setAuthMethod] = useState<'apppassword' | 'apitoken'>('apppassword')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canSubmit = siteUrl.trim() && username.trim() &&
-    (authMethod === 'apppassword' ? appPassword.trim() : apiToken.trim()) && !loading
+  const canSubmit = siteUrl.trim() && username.trim() && password.trim() && !loading
 
   async function handleConnect() {
     setLoading(true)
     setError(null)
     try {
-      const body = authMethod === 'apitoken'
-        ? { siteUrl: siteUrl.trim(), username: username.trim(), apiToken: apiToken.trim() }
-        : { siteUrl: siteUrl.trim(), username: username.trim(), appPassword: appPassword.trim() }
       const res = await fetch('/api/wordpress/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ siteUrl: siteUrl.trim(), username: username.trim(), password: password.trim() }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Connection failed')
@@ -283,94 +276,10 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
         </button>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your WordPress site</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          MVP Affiliate will only publish posts — it won&apos;t change your theme, design, or any existing content.
+          Enter the same username and password you use to log in to wp-admin. Works on all hosts including Hostinger.
         </p>
       </div>
 
-      {/* Auth method picker */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => setAuthMethod('apppassword')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-medium border-2 transition-all ${authMethod === 'apppassword' ? 'border-[#0071e3] bg-[#0071e3]/5 text-[#0071e3]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}
-        >
-          Application Password
-          <p className="text-[10px] font-normal mt-0.5 opacity-70">Most hosts</p>
-        </button>
-        <button
-          onClick={() => setAuthMethod('apitoken')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-medium border-2 transition-all ${authMethod === 'apitoken' ? 'border-[#ff9500] bg-[#ff9500]/5 text-[#ff9500]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}
-        >
-          API Token
-          <p className="text-[10px] font-normal mt-0.5 opacity-70">Hostinger · recommended</p>
-        </button>
-      </div>
-
-      {/* Instructions */}
-      {authMethod === 'apppassword' ? (
-        <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
-          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">How to get an Application Password</p>
-          <ol className="flex flex-col gap-2">
-            {[
-              'Log in to your WordPress admin (yourdomain.com/wp-admin).',
-              'Go to Users → Profile, scroll down to "Application Passwords".',
-              'Enter a name like "MVP Affiliate" and click "Add New Application Password".',
-              'Copy the generated password (spaces are fine — paste it as-is).',
-            ].map((text, i) => (
-              <li key={i} className="flex items-start gap-2.5">
-                <span className="w-4 h-4 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
-              </li>
-            ))}
-          </ol>
-          <p className="text-xs text-[#ff9500] mt-3 font-medium">⚠️ On Hostinger? Application Passwords are blocked. Use the API Token method instead.</p>
-        </div>
-      ) : (
-        <div className="bg-[#ff9500]/5 border border-[#ff9500]/20 rounded-xl p-5">
-          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">One-time setup — 2 minutes</p>
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-            Hostinger blocks Application Passwords. This method uses a secure token in your WordPress config instead — it&apos;s more reliable.
-          </p>
-          <ol className="flex flex-col gap-3">
-            {[
-              {
-                title: 'Open wp-config.php in Hostinger File Manager',
-                desc: 'hPanel → Files → File Manager → public_html → wp-config.php → Edit',
-              },
-              {
-                title: 'Add this line just before "/* That\'s all, stop editing */"',
-                desc: null,
-                code: "define('CONTENT_TOOL_TOKEN', 'mvp_make_up_a_strong_token_here');",
-              },
-              {
-                title: 'Create the mu-plugins folder and file',
-                desc: 'In File Manager: public_html/wp-content/ → New Folder → mu-plugins → open it → New File → content-tool-auth.php',
-              },
-              {
-                title: 'Paste this into content-tool-auth.php and save',
-                desc: null,
-                code: `<?php\nadd_filter('rest_authentication_errors', function($r) {\n  $t = $_SERVER['HTTP_X_CONTENT_TOOL_TOKEN'] ?? '';\n  if ($t && defined('CONTENT_TOOL_TOKEN') && hash_equals(CONTENT_TOOL_TOKEN, $t)) return true;\n  return $r;\n});`,
-              },
-              {
-                title: 'Copy your token and paste it in the field below',
-                desc: 'Use the same value you put in wp-config.php (e.g. mvp_make_up_a_strong_token_here)',
-              },
-            ].map(({ title, desc, code }, i) => (
-              <li key={i} className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-[#ff9500]/20 text-[#ff9500] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                <div>
-                  <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">{title}</p>
-                  {desc && <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{desc}</p>}
-                  {code && (
-                    <pre className="mt-1.5 text-[10px] bg-[#1d1d1f] dark:bg-black text-[#f5f5f7] rounded-lg p-2.5 overflow-x-auto whitespace-pre-wrap break-all">{code}</pre>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-
-      {/* Fields */}
       <div className="flex flex-col gap-4">
         <div>
           <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress site URL</label>
@@ -380,41 +289,22 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
           <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress username</label>
           <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="admin" className="input-field" />
         </div>
-        {authMethod === 'apppassword' ? (
-          <div>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={appPassword}
-                onChange={e => setAppPassword(e.target.value)}
-                placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
-                className="input-field pr-10"
-              />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
-                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Not your regular password — created in your WordPress profile under Application Passwords.</p>
+        <div>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress password</label>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Your wp-admin password"
+              className="input-field pr-10"
+            />
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
+              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
           </div>
-        ) : (
-          <div>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">API Token</label>
-            <div className="relative">
-              <input
-                type={showToken ? 'text' : 'password'}
-                value={apiToken}
-                onChange={e => setApiToken(e.target.value)}
-                placeholder="mvp_your_token_here"
-                className="input-field pr-10 font-mono text-xs"
-              />
-              <button type="button" onClick={() => setShowToken(!showToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
-                {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">The same token you defined as CONTENT_TOOL_TOKEN in wp-config.php.</p>
-          </div>
-        )}
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">The same password you use to log in to yourdomain.com/wp-admin.</p>
+        </div>
       </div>
 
       {error && (
@@ -1088,14 +978,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             <input type="text" value={wpUsername} onChange={e => setWpUsername(e.target.value)} placeholder="admin" className="input-field" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
+            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress Password</label>
             <div className="relative">
-              <input type={showWpPassword ? 'text' : 'password'} value={wpAppPassword} onChange={e => setWpAppPassword(e.target.value)} placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" className="input-field pr-10 font-mono text-xs" />
+              <input type={showWpPassword ? 'text' : 'password'} value={wpAppPassword} onChange={e => setWpAppPassword(e.target.value)} placeholder="Your wp-admin password" className="input-field pr-10" />
               <button type="button" onClick={() => setShowWpPassword(!showWpPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
                 {showWpPassword ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">WP Admin → Users → Profile → Application Passwords</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Same password you use to log in to wp-admin.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
