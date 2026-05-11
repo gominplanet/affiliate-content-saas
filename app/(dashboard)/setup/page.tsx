@@ -1131,6 +1131,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
 
 // ─── Wizard shell ─────────────────────────────────────────────────────────────
 function SetupPageInner() {
+  const [tab, setTab] = useState<'wordpress' | 'integrations'>('wordpress')
   const [mode, setMode] = useState<Mode>(null)
   const [step, setStep] = useState<Step>(1)
   const [wordpressUrl, setWordpressUrl] = useState('')
@@ -1194,15 +1195,49 @@ function SetupPageInner() {
 
   if (!hydrated) return null
 
-  // ── Already connected ──────────────────────────────────────────────────────
+  // ── Tab bar (always shown) ─────────────────────────────────────────────────
+  const TabBar = () => (
+    <div className="flex items-center gap-1 bg-[#f5f5f7] dark:bg-[#000] p-1 rounded-xl w-fit mb-6">
+      {([
+        { key: 'wordpress', label: 'WordPress' },
+        { key: 'integrations', label: 'Integrations' },
+      ] as const).map(({ key, label }) => (
+        <button
+          key={key}
+          onClick={() => setTab(key)}
+          className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+            tab === key
+              ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-apple-sm border border-gray-200/80 dark:border-white/10'
+              : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  // ── Integrations tab ───────────────────────────────────────────────────────
+  if (tab === 'integrations') {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
+        </div>
+        <TabBar />
+        <IntegrationsPanel onLoad={() => {}} />
+      </div>
+    )
+  }
+
+  // ── Already connected (WordPress tab) ─────────────────────────────────────
   if (setupComplete) {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
         </div>
-
-        {/* WordPress connected card */}
+        <TabBar />
         <div className="card p-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-10 h-10 rounded-full bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
@@ -1224,9 +1259,6 @@ function SetupPageInner() {
             </button>
           </div>
         </div>
-
-        {/* Integrations section */}
-        <IntegrationsPanel onLoad={() => {}} />
       </div>
     )
   }
@@ -1239,6 +1271,7 @@ function SetupPageInner() {
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
           <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Connect your affiliate blog to start publishing from YouTube.</p>
         </div>
+        <TabBar />
         <div className="card p-7">
           <ModePicker onSelect={setMode} />
         </div>
@@ -1253,6 +1286,7 @@ function SetupPageInner() {
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
         </div>
+        <TabBar />
         <div className="card p-7">
           <ExistingConnect
             onBack={() => setMode(null)}
@@ -1273,6 +1307,7 @@ function SetupPageInner() {
         <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in minutes.</p>
       </div>
+      <TabBar />
 
       <div className="flex items-center justify-between mb-2">
         <StepIndicator current={step} />
