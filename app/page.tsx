@@ -11,17 +11,17 @@ const features = [
   {
     icon: Facebook,
     title: 'Facebook Post',
-    desc: 'A compelling social caption with your affiliate link, auto-posted to your Facebook page the moment your blog goes live.',
+    desc: 'A compelling social caption with your affiliate link, ready to post to your Facebook page with one click.',
   },
   {
     icon: Globe,
     title: 'Pinterest Pin',
-    desc: 'A keyword-rich pin description and your YouTube thumbnail, pinned automatically to drive long-tail traffic back to your review.',
+    desc: 'A keyword-rich pin description and your YouTube thumbnail, ready to drive long-tail traffic back to your review.',
   },
   {
     icon: Zap,
     title: 'Threads Thread',
-    desc: 'Short-form content for Threads posted automatically — reaching a new audience without lifting a finger.',
+    desc: 'Short-form content for Threads generated alongside your blog post — one click to reach a whole new audience.',
   },
   {
     icon: BarChart3,
@@ -30,15 +30,15 @@ const features = [
   },
   {
     icon: CheckCircle,
-    title: 'Set It & Forget It',
-    desc: 'Connect once. We watch your YouTube channel and trigger everything automatically when you post a new video.',
+    title: 'One Click. Every Platform.',
+    desc: 'Pick a video, hit generate. We write the blog post, publish it to WordPress, and have your social content ready to go — all in one shot.',
   },
 ]
 
 const steps = [
   { n: '01', title: 'Connect your YouTube channel', desc: 'Link your channel in one click. We import all your videos instantly.' },
   { n: '02', title: 'Connect your platforms', desc: 'WordPress, Facebook, Pinterest, Threads — connect each platform once.' },
-  { n: '03', title: 'Upload a video, we do the rest', desc: 'Every new video triggers a full content rollout across all your connected platforms automatically.' },
+  { n: '03', title: 'Pick a video. Hit generate.', desc: 'We write a full SEO blog post, publish it to WordPress, and prepare social content for every platform — in minutes.' },
 ]
 
 const plans = [
