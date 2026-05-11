@@ -27,6 +27,12 @@ interface GeneratedMetadata {
   title_alternatives: string[]
 }
 
+interface AgentInsights {
+  targetBuyer: string
+  topBenefits: string[]
+  painPoints: string[]
+}
+
 interface ProductInfo {
   title: string | null
   price: string | null
@@ -44,6 +50,7 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [generated, setGenerated] = useState<GeneratedMetadata | null>(null)
+  const [agentInsights, setAgentInsights] = useState<AgentInsights | null>(null)
   const [product, setProduct] = useState<ProductInfo | null>(null)
   const [affiliateUrl, setAffiliateUrl] = useState<string | null>(null)
   const [geniuslinkUsed, setGeniuslinkUsed] = useState<boolean | null>(null)
@@ -87,6 +94,7 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Generation failed')
       setGenerated(data.generated)
+      setAgentInsights(data.agentInsights ?? null)
       setProduct(data.product)
       setAffiliateUrl(data.affiliateUrl)
       setGeniuslinkUsed(data.geniuslinkUsed ?? false)
@@ -184,9 +192,16 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
           <div className="flex items-center gap-2 flex-wrap">
             {video.detectedAsin ? (
               generating ? (
-                <div className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-                  <Loader2 size={12} className="animate-spin text-[#0071e3]" />
-                  Fetching product data & generating…
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 text-xs text-[#0071e3] font-medium">
+                    <Loader2 size={12} className="animate-spin" />
+                    Running AI agent swarm…
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {['🔬 Product Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Content Writer', '💬 Engagement Agent'].map(a => (
+                      <span key={a} className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] animate-pulse">{a}</span>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <button
@@ -233,6 +248,38 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
                     </span>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Agent Insights */}
+          {agentInsights && (agentInsights.topBenefits.length > 0 || agentInsights.painPoints.length > 0) && (
+            <div className="mx-5 mb-3 p-3 rounded-xl bg-[#0071e3]/5 border border-[#0071e3]/10">
+              <p className="text-[10px] font-semibold text-[#0071e3] mb-2 flex items-center gap-1">
+                <Sparkles size={10} /> Agent insights
+              </p>
+              {agentInsights.targetBuyer && (
+                <p className="text-[10px] text-[#6e6e73] dark:text-[#ebebf0] mb-2">
+                  <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Target buyer:</span> {agentInsights.targetBuyer}
+                </p>
+              )}
+              <div className="flex gap-4">
+                {agentInsights.topBenefits.length > 0 && (
+                  <div className="flex-1">
+                    <p className="text-[9px] font-semibold text-[#34c759] mb-1">✓ Top benefits</p>
+                    {agentInsights.topBenefits.map((b, i) => (
+                      <p key={i} className="text-[9px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">• {b}</p>
+                    ))}
+                  </div>
+                )}
+                {agentInsights.painPoints.length > 0 && (
+                  <div className="flex-1">
+                    <p className="text-[9px] font-semibold text-[#ff9500] mb-1">⚡ Pain points solved</p>
+                    {agentInsights.painPoints.map((p, i) => (
+                      <p key={i} className="text-[9px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">• {p}</p>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
