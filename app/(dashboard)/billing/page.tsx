@@ -58,9 +58,9 @@ export default function BillingPage() {
   }
 
   const planDetails = [
-    { tier: 'starter' as Tier, limit: 'Up to 4 videos / week', price: 25 },
-    { tier: 'growth' as Tier,  limit: 'Up to 1 video / day',   price: 40 },
-    { tier: 'pro' as Tier,     limit: 'Up to 5 videos / day',  price: 95 },
+    { tier: 'starter' as Tier, limit: '25 posts / month', price: 19 },
+    { tier: 'growth' as Tier,  limit: '75 posts / month', price: 39 },
+    { tier: 'pro' as Tier,     limit: '250 posts / month', price: 79 },
   ]
 
   return (
@@ -98,10 +98,8 @@ export default function BillingPage() {
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
                   {'lifetimeMax' in currentTier && currentTier.lifetimeMax
                     ? `${currentTier.lifetimeMax} posts total (free trial)`
-                    : currentTier.videosPerWeek
-                    ? `Up to ${currentTier.videosPerWeek} videos / week`
-                    : currentTier.videosPerDay
-                    ? `Up to ${currentTier.videosPerDay} video${currentTier.videosPerDay > 1 ? 's' : ''} / day`
+                    : currentTier.videosPerMonth
+                    ? `${currentTier.videosPerMonth} posts / month`
                     : 'Unlimited'}
                   {currentTier.price > 0 ? ` · $${currentTier.price}/month` : ''}
                 </p>

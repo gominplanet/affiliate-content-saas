@@ -43,25 +43,34 @@ const steps = [
 const plans = [
   {
     tier: 'Starter',
-    price: 25,
-    limit: '4 videos / week',
-    features: ['4 blog posts per week', 'AI-generated content', 'WordPress auto-publish', 'Facebook, Pinterest & Threads'],
+    price: 19,
+    limit: '25 posts / month',
+    features: ['25 blog posts per month', 'AI-generated content', 'WordPress auto-publish', 'Facebook, Pinterest & Threads'],
     highlight: false,
   },
   {
     tier: 'Growth',
-    price: 40,
-    limit: '1 video / day',
-    features: ['1 blog post per day', 'Everything in Starter', 'Priority support'],
+    price: 39,
+    limit: '75 posts / month',
+    features: ['75 blog posts per month', 'Everything in Starter', 'Priority support'],
     highlight: true,
   },
   {
     tier: 'Pro',
-    price: 95,
-    limit: '5 videos / day',
-    features: ['5 blog posts per day', 'Everything in Growth', 'Bulk content generation'],
+    price: 79,
+    limit: '250 posts / month',
+    features: ['250 blog posts per month', 'Everything in Growth', 'Bulk content generation'],
     highlight: false,
   },
+]
+
+const comparisonRows = [
+  { feature: 'Auto-pulls from YouTube',   us: true,  jasper: false, surfer: false, writesonic: false },
+  { feature: 'Publishes to WordPress',    us: true,  jasper: false, surfer: false, writesonic: false },
+  { feature: 'Affiliate links built in',  us: true,  jasper: false, surfer: false, writesonic: false },
+  { feature: 'Matches your voice',        us: true,  jasper: false, surfer: false, writesonic: false },
+  { feature: 'Social posts included',     us: true,  jasper: 'add-on', surfer: false, writesonic: 'add-on' },
+  { feature: 'Starting price',            us: '$19/mo', jasper: '$49/mo', surfer: '$89/mo', writesonic: '$16/mo' },
 ]
 
 export default function LandingPage() {
@@ -173,6 +182,95 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Comparison */}
+      <section className="py-28 px-6 bg-white">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-14">
+            <h2 className="text-4xl font-bold mb-4 text-[#1d1d1f]">How we compare</h2>
+            <p className="text-[#6e6e73] text-lg">Other tools make you do the work. We do it for you.</p>
+          </div>
+
+          {/* Mobile note */}
+          <div className="overflow-x-auto -mx-6 px-6">
+            <table className="w-full min-w-[600px]">
+              <thead>
+                <tr>
+                  <th className="text-left pb-4 text-sm font-semibold text-[#86868b] w-[38%]" />
+                  {/* MVP Affiliate highlighted header */}
+                  <th className="pb-0 w-[15.5%]">
+                    <div className="bg-[#0071e3] text-white text-xs font-bold px-3 py-2.5 rounded-t-xl mx-1 text-center leading-tight">
+                      MVP<br />Affiliate
+                    </div>
+                  </th>
+                  <th className="pb-4 text-center text-xs font-semibold text-[#86868b] w-[15.5%]">Jasper</th>
+                  <th className="pb-4 text-center text-xs font-semibold text-[#86868b] w-[15.5%]">Surfer</th>
+                  <th className="pb-4 text-center text-xs font-semibold text-[#86868b] w-[15.5%]">WriteSonic</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonRows.map((row, i) => {
+                  const isLast = i === comparisonRows.length - 1
+                  const isPrice = typeof row.us === 'string'
+                  return (
+                    <tr key={row.feature} className="border-t border-gray-100">
+                      <td className={`py-3.5 pr-4 text-sm font-medium text-[#1d1d1f] ${isPrice ? 'font-semibold' : ''}`}>
+                        {row.feature}
+                      </td>
+                      {/* MVP Affiliate column — highlighted */}
+                      <td className={`py-3.5 text-center mx-1 bg-[#0071e3]/5 border-x border-[#0071e3]/15 ${isLast ? 'rounded-b-xl border-b border-[#0071e3]/15' : ''}`}>
+                        {isPrice
+                          ? <span className="text-sm font-bold text-[#0071e3]">{row.us as string}</span>
+                          : row.us === true
+                          ? <span className="text-lg">✅</span>
+                          : <span className="text-lg">❌</span>
+                        }
+                      </td>
+                      {/* Jasper */}
+                      <td className="py-3.5 text-center">
+                        {isPrice
+                          ? <span className="text-sm text-[#6e6e73]">{row.jasper as string}</span>
+                          : row.jasper === true
+                          ? <span className="text-lg">✅</span>
+                          : row.jasper === 'add-on'
+                          ? <span className="text-xs text-[#ff9500] font-medium">Add-on</span>
+                          : <span className="text-lg">❌</span>
+                        }
+                      </td>
+                      {/* Surfer */}
+                      <td className="py-3.5 text-center">
+                        {isPrice
+                          ? <span className="text-sm text-[#6e6e73]">{row.surfer as string}</span>
+                          : row.surfer === true
+                          ? <span className="text-lg">✅</span>
+                          : row.surfer === 'add-on'
+                          ? <span className="text-xs text-[#ff9500] font-medium">Add-on</span>
+                          : <span className="text-lg">❌</span>
+                        }
+                      </td>
+                      {/* WriteSonic */}
+                      <td className="py-3.5 text-center">
+                        {isPrice
+                          ? <span className="text-sm text-[#6e6e73]">{row.writesonic as string}</span>
+                          : row.writesonic === true
+                          ? <span className="text-lg">✅</span>
+                          : row.writesonic === 'add-on'
+                          ? <span className="text-xs text-[#ff9500] font-medium">Add-on</span>
+                          : <span className="text-lg">❌</span>
+                        }
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-center mt-8 text-xs text-[#86868b]">
+            Competitor pricing as of 2025. They&apos;re general AI writers — great tools, wrong job for affiliate creators.
+          </p>
         </div>
       </section>
 

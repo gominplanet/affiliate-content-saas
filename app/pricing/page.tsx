@@ -8,11 +8,11 @@ const plans = [
   {
     tier: 'starter',
     label: 'Starter',
-    price: 25,
-    limit: '4 videos / week',
-    description: 'For creators building a consistent publishing rhythm.',
+    price: 19,
+    limit: '25 posts / month',
+    description: 'For creators publishing a few videos a week.',
     features: [
-      '4 blog posts per week',
+      '25 blog posts per month',
       'AI-generated content',
       'WordPress auto-publish',
       'Facebook, Pinterest & Threads posting',
@@ -23,11 +23,11 @@ const plans = [
   {
     tier: 'growth',
     label: 'Growth',
-    price: 40,
-    limit: '1 video / day',
-    description: 'For creators building a consistent publishing rhythm.',
+    price: 39,
+    limit: '75 posts / month',
+    description: 'For creators publishing daily or catching up on a backlog.',
     features: [
-      '1 blog post per day',
+      '75 blog posts per month',
       'Everything in Starter',
       'Priority support',
     ],
@@ -36,11 +36,11 @@ const plans = [
   {
     tier: 'pro',
     label: 'Pro',
-    price: 95,
-    limit: '5 videos / day',
+    price: 79,
+    limit: '250 posts / month',
     description: 'Maximum output for serious affiliate marketers.',
     features: [
-      '5 blog posts per day',
+      '250 blog posts per month',
       'Everything in Growth',
       'Bulk content generation',
     ],
