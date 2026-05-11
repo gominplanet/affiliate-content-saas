@@ -26,44 +26,31 @@ export async function GET() {
     Accept: 'application/json',
   }
 
-  const results: Record<string, unknown> = {}
+  // Use the real YouTube Links group ID from the user's account
+  const GROUP_ID = 352885
 
-  // Show raw body for every group endpoint
-  for (const path of [
-    '/v1/groups/list',
-    '/v1/groups/get-all-with-details',
-    '/v1/groups/add?GroupName=Default&Notes=Auto-created',
-  ]) {
-    const method = path.includes('add') ? 'GET' : 'GET'
-    try {
-      const res = await fetch(`https://api.geni.us${path}`, { method, headers })
-      const body = await res.text()
-      results[path] = { status: res.status, raw: body.slice(0, 600) }
-    } catch (err) {
-      results[path] = { error: err instanceof Error ? err.message : String(err) }
-    }
-  }
+  const params = new URLSearchParams({
+    url: 'https://www.amazon.com/dp/B08N5WRWNW',
+    groupId: String(GROUP_ID),
+    note: 'Test from MVP Affiliate',
+  })
 
-  // Also pull a link from the list to see if GroupId is on it
-  try {
-    const res = await fetch('https://api.geni.us/v1/links/list', { headers })
-    const body = await res.text()
-    results['/v1/links/list raw'] = body.slice(0, 800)
-  } catch (err) {
-    results['/v1/links/list raw'] = { error: err instanceof Error ? err.message : String(err) }
-  }
+  const res = await fetch(`https://api.geni.us/v3/shorturls?${params}`, {
+    method: 'POST',
+    headers,
+  })
 
-  // Try creating a link with no groupId at all, and with groupId=0
-  for (const extra of ['', '&groupId=0', '&groupId=1']) {
-    const params = `url=https://www.amazon.com/dp/B08N5WRWNW&note=Test${extra}`
-    try {
-      const res = await fetch(`https://api.geni.us/v3/shorturls?${params}`, { method: 'POST', headers })
-      const body = await res.text()
-      results[`POST /v3/shorturls${extra}`] = { status: res.status, body: body.slice(0, 400) }
-    } catch (err) {
-      results[`POST /v3/shorturls${extra}`] = { error: err instanceof Error ? err.message : String(err) }
-    }
-  }
+  const text = await res.text()
+  let parsed: unknown
+  try { parsed = JSON.parse(text) } catch { parsed = text }
 
-  return NextResponse.json(results)
+  // Also show what fields exist on the first item from links list (to find the short URL field name)
+  const listRes = await fetch('https://api.geni.us/v1/links/list?take=1', { headers })
+  const listText = await listRes.text()
+
+  return NextResponse.json({
+    'POST /v3/shorturls status': res.status,
+    'POST /v3/shorturls full response': parsed,
+    'GET /v1/links/list first item keys': Object.keys((JSON.parse(listText)?.Results?.[0] ?? {})),
+  })
 }
