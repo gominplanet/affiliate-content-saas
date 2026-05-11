@@ -767,6 +767,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [linkedin, setLinkedin] = useState({ connected: false, personName: '' })
   const [liDisconnecting, setLiDisconnecting] = useState(false)
   const [liNotice, setLiNotice] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [geniuslinkKey, setGeniuslinkKey] = useState('')
+  const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
+  const [youtubeOAuthConnected, setYoutubeOAuthConnected] = useState(false)
+  const [ytOAuthNotice, setYtOAuthNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [wpTesting, setWpTesting] = useState(false)
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [fixingCss, setFixingCss] = useState(false)
@@ -803,6 +807,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setPinterest({ connected: !!row.pinterest_access_token && !!row.pinterest_board_id, boardId: row.pinterest_board_id ?? '', boardName: row.pinterest_board_name ?? '', boards })
       setThreads({ connected: !!row.threads_access_token, userId: row.threads_user_id ?? '', username: row.threads_username ?? '' })
       setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
+      setGeniuslinkKey(row.geniuslink_api_key ?? '')
+      setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
+      setYoutubeOAuthConnected(!!row.youtube_oauth_access_token)
     }
     setLoading(false)
     onLoad()
@@ -825,6 +832,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const liError = searchParams.get('linkedin_error')
     if (liConnected) { setLiNotice({ ok: true, msg: 'LinkedIn connected!' }); load() }
     if (liError) setLiNotice({ ok: false, msg: liError === 'callback_failed' ? 'LinkedIn connection failed — please try again.' : `LinkedIn error: ${liError}` })
+    const ytConnected = searchParams.get('youtube_oauth_connected')
+    const ytError = searchParams.get('youtube_oauth_error')
+    if (ytConnected) { setYtOAuthNotice({ ok: true, msg: 'YouTube connected!' }); setYoutubeOAuthConnected(true); load() }
+    if (ytError) setYtOAuthNotice({ ok: false, msg: `YouTube error: ${ytError}` })
   }, [searchParams, load])
 
   useEffect(() => { load() }, [load])
@@ -840,6 +851,8 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       wordpress_username: wpUsername || null,
       wordpress_app_password: wpAppPassword || null,
       wordpress_api_token: wpApiToken || null,
+      geniuslink_api_key: geniuslinkKey || null,
+      geniuslink_api_secret: geniuslinkSecret || null,
     }, { onConflict: 'user_id' })
     setSaving(false)
     if (err) { setError(err.message) } else { setSaved(true); setTimeout(() => setSaved(false), 2500) }
@@ -1155,6 +1168,69 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </a>
           </div>
         )}
+      </div>
+
+      {/* YouTube OAuth — for YouTube Studio (draft video metadata) */}
+      <div className="card p-5 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#ff0000]/10">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="#ff0000"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube Studio</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Read draft videos and auto-generate metadata from ASINs</p>
+            </div>
+          </div>
+          {youtubeOAuthConnected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        {ytOAuthNotice && (
+          <p className={`text-xs ${ytOAuthNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ytOAuthNotice.msg}</p>
+        )}
+        {youtubeOAuthConnected ? (
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+            Your Google account is connected. Visit <a href="/studio" className="text-[#0071e3] hover:underline">YouTube Studio</a> to generate metadata for your draft videos.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Connect your Google account to read private/draft videos and push generated metadata back to YouTube automatically.</p>
+            <a
+              href="/api/auth/youtube"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-opacity hover:opacity-90"
+              style={{ backgroundColor: '#ff0000' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+              Connect YouTube
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* Geniuslink */}
+      <div className="card p-5 flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#0071e3]/10">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0071e3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-create smart affiliate links from ASINs in YouTube Studio</p>
+          </div>
+          {geniuslinkKey && geniuslinkSecret && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Key</label>
+            <input type="text" value={geniuslinkKey} onChange={e => setGeniuslinkKey(e.target.value)} placeholder="e.g. e353413c5f52..." className="input-field text-xs font-mono" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
+            <input type="password" value={geniuslinkSecret} onChange={e => setGeniuslinkSecret(e.target.value)} placeholder="Your Geniuslink API secret" className="input-field text-xs font-mono" />
+          </div>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+            Find your credentials at <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">app.geni.us/settings</a> → Integrate with our API
+          </p>
+        </div>
       </div>
 
       {error && <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{error}</p>}

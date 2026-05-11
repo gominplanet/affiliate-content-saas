@@ -18,6 +18,7 @@ import {
   ExternalLink,
   LogOut,
   Star,
+  Clapperboard,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -25,6 +26,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/content', label: 'Content', icon: PlaySquare },
+  { href: '/studio', label: 'YouTube Studio', icon: Clapperboard },
   { href: '/brand', label: 'Brand Profile', icon: Palette },
   { href: '/setup', label: 'Site & Integrations', icon: Wrench },
   { href: '/customize', label: 'Customize Blog', icon: Paintbrush },
