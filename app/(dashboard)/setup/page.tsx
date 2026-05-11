@@ -780,9 +780,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [wpUrl, setWpUrl] = useState('')
   const [wpUsername, setWpUsername] = useState('')
   const [wpAppPassword, setWpAppPassword] = useState('')
-  const [wpApiToken, setWpApiToken] = useState('')
   const [showWpPassword, setShowWpPassword] = useState(false)
-  const [showWpToken, setShowWpToken] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -800,7 +798,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setWpUrl(row.wordpress_url ?? '')
       setWpUsername(row.wordpress_username ?? '')
       setWpAppPassword(row.wordpress_app_password ?? '')
-      setWpApiToken(row.wordpress_api_token ?? '')
       const pages = JSON.parse(row.facebook_pages_json || '[]')
       setFacebook({ connected: !!row.facebook_page_id, pageName: row.facebook_page_name ?? '', pageId: row.facebook_page_id ?? '', pages })
       const boards = JSON.parse(row.pinterest_boards_json || '[]')
@@ -850,7 +847,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       wordpress_url: wpUrl || null,
       wordpress_username: wpUsername || null,
       wordpress_app_password: wpAppPassword || null,
-      wordpress_api_token: wpApiToken || null,
       geniuslink_api_key: geniuslinkKey || null,
       geniuslink_api_secret: geniuslinkSecret || null,
     }, { onConflict: 'user_id' })
@@ -861,7 +857,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   async function testWordPress() {
     setWpTesting(true); setWpTestResult(null)
     try {
-      const res = await fetch('/api/wordpress/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: wpUrl, username: wpUsername, password: wpAppPassword, apiToken: wpApiToken || undefined }) })
+      const res = await fetch('/api/wordpress/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: wpUrl, username: wpUsername, password: wpAppPassword }) })
       const data = await res.json()
       setWpTestResult({ ok: data.ok, message: data.message || data.error })
     } catch { setWpTestResult({ ok: false, message: 'Request failed — check your site URL' }) }
@@ -999,18 +995,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               </button>
             </div>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Same password you use to log in to wp-admin.</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
-              API Token <span className="text-xs font-normal text-[#86868b] dark:text-[#8e8e93]">— recommended for Hostinger</span>
-            </label>
-            <div className="relative">
-              <input type={showWpToken ? 'text' : 'password'} value={wpApiToken} onChange={e => setWpApiToken(e.target.value)} placeholder="ctt_k8mP2xQnR5vL9wJ3..." className="input-field pr-10 font-mono text-xs" />
-              <button type="button" onClick={() => setShowWpToken(!showWpToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
-                {showWpToken ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Set this in wp-config.php as CONTENT_TOOL_TOKEN and install the mu-plugin — bypasses host auth issues</p>
           </div>
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || !wpAppPassword} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors">
