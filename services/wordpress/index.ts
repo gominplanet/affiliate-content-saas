@@ -76,10 +76,25 @@ export class WordPressService {
       body: loginBody.toString(),
       redirect: 'manual',
     })
-    const rawCookies: string[] = []
-    loginRes.headers.forEach((val, key) => {
-      if (key.toLowerCase() === 'set-cookie') rawCookies.push(val)
-    })
+
+    // Use getSetCookie() if available (Node 18.14+) — forEach may merge multiple
+    // Set-Cookie headers into one string on some runtimes, losing cookies like
+    // wordpress_sec_* which are required for nonce validation.
+    let rawCookies: string[]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (loginRes.headers as any).getSetCookie === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      rawCookies = (loginRes.headers as any).getSetCookie()
+    } else {
+      rawCookies = []
+      loginRes.headers.forEach((val, key) => {
+        if (key.toLowerCase() === 'set-cookie') {
+          // val may be a comma-joined string of multiple cookies on some runtimes
+          rawCookies.push(...val.split(/,(?=\s*\w[^=,]*=)/))
+        }
+      })
+    }
+
     if (!rawCookies.some(c => c.includes('wordpress_logged_in_'))) {
       throw new Error('WordPress login failed — credentials may have changed')
     }
@@ -104,15 +119,24 @@ export class WordPressService {
     }
     if (!nonce) {
       const adminRes = await fetch(`${this.siteUrl}/wp-admin/index.php`, {
-        headers: { Cookie: cookies },
+        headers: {
+          Cookie: cookies,
+          // Mimic a real browser so caching proxies don't serve a stripped page
+          'User-Agent': 'Mozilla/5.0 (compatible; AffiliateOS/1.0)',
+          Referer: `${this.siteUrl}/wp-login.php`,
+        },
       })
       const html = await adminRes.text()
-      const m = html.match(/createNonceMiddleware\("([^"]+)"\)/) || html.match(/"nonce"\s*:\s*"([^"]+)"/)
+      // Priority order: Gutenberg nonce middleware > wpApiSettings object > generic "nonce" key
+      // The wp_rest nonce in wpApiSettings is always 10 alphanumeric chars
+      const m = html.match(/createNonceMiddleware\(\s*["']([^"']+)["']\s*\)/)
+        || html.match(/wpApiSettings\s*=\s*\{[^}]*?"nonce"\s*:\s*"([^"']{8,12})"/)
+        || html.match(/"nonce"\s*:\s*"([a-zA-Z0-9]{8,12})"/)
       if (!m) throw new Error('Could not extract WP nonce. Make sure your credentials have admin access.')
       nonce = m[1]
     }
 
-    this.nonceCache = { cookies, nonce, expiry: Date.now() + 20 * 60 * 1000 }
+    this.nonceCache = { cookies, nonce, expiry: Date.now() + 5 * 60 * 1000 }
     return this.nonceCache
   }
 
@@ -121,12 +145,28 @@ export class WordPressService {
     const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
 
     const buildHeaders = (nonce?: { cookies: string; nonce: string }): Record<string, string> => {
-      if (nonce) return { Cookie: nonce.cookies, 'X-WP-Nonce': nonce.nonce }
+      if (nonce) {
+        return {
+          Cookie: nonce.cookies,
+          'X-WP-Nonce': nonce.nonce,
+          // Referer makes the request look like it originates from the admin — some
+          // security plugins reject REST calls without a recognisable referer.
+          Referer: `${this.siteUrl}/wp-admin/`,
+          Origin: this.siteUrl,
+        }
+      }
       return { Authorization: this.authHeader }
     }
 
-    const run = (authHeaders: Record<string, string>) =>
-      fetch(`${this.baseUrl}${path}`, {
+    // When using nonce auth, also append _wpnonce as a query param — some hosts
+    // (e.g. LiteSpeed on Hostinger) strip the X-WP-Nonce header before PHP sees it.
+    const buildUrl = (nonce?: { nonce: string }) => {
+      const url = `${this.baseUrl}${path}`
+      return nonce ? `${url}${url.includes('?') ? '&' : '?'}_wpnonce=${nonce.nonce}` : url
+    }
+
+    const run = (authHeaders: Record<string, string>, nonce?: { cookies: string; nonce: string }) =>
+      fetch(buildUrl(nonce), {
         ...options,
         headers: { ...authHeaders, ...(options.headers as Record<string, string> || {}) },
       })
@@ -136,7 +176,18 @@ export class WordPressService {
     // On write 401/403, retry with login+nonce (server strips Authorization on POST)
     if ((res.status === 401 || res.status === 403) && isWrite) {
       const nonce = await this.loginAndGetNonce()
-      res = await run(buildHeaders(nonce))
+      res = await run(buildHeaders(nonce), nonce)
+
+      // If nonce was rejected, clear cache and try one more time with a completely
+      // fresh login — the nonce may have been stale or extracted incorrectly.
+      if (res.status === 403) {
+        const bodyText = await res.clone().text()
+        if (bodyText.includes('rest_cookie_invalid_nonce') || bodyText.includes('cookie_invalid')) {
+          this.nonceCache = null
+          const freshNonce = await this.loginAndGetNonce()
+          res = await run(buildHeaders(freshNonce), freshNonce)
+        }
+      }
     }
 
     if (!res.ok) {
@@ -218,19 +269,32 @@ export class WordPressService {
   ): Promise<WPMediaResponse> {
     const buildHeaders = (nonce?: { cookies: string; nonce: string }): Record<string, string> => ({
       ...(nonce
-        ? { Cookie: nonce.cookies, 'X-WP-Nonce': nonce.nonce }
+        ? { Cookie: nonce.cookies, 'X-WP-Nonce': nonce.nonce, Referer: `${this.siteUrl}/wp-admin/`, Origin: this.siteUrl }
         : { Authorization: this.authHeader }),
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${filename}"`,
     })
 
-    const run = (h: Record<string, string>) =>
-      fetch(`${this.baseUrl}/media`, { method: 'POST', headers: h, body: buffer as BodyInit })
+    const buildUrl = (nonce?: { nonce: string }) => {
+      const url = `${this.baseUrl}/media`
+      return nonce ? `${url}?_wpnonce=${nonce.nonce}` : url
+    }
+
+    const run = (h: Record<string, string>, nonce?: { nonce: string }) =>
+      fetch(buildUrl(nonce), { method: 'POST', headers: h, body: buffer as BodyInit })
 
     let res = await run(buildHeaders())
     if (res.status === 401 || res.status === 403) {
       const nonce = await this.loginAndGetNonce()
-      res = await run(buildHeaders(nonce))
+      res = await run(buildHeaders(nonce), nonce)
+      if (res.status === 403) {
+        const bodyText = await res.clone().text()
+        if (bodyText.includes('rest_cookie_invalid_nonce') || bodyText.includes('cookie_invalid')) {
+          this.nonceCache = null
+          const freshNonce = await this.loginAndGetNonce()
+          res = await run(buildHeaders(freshNonce), freshNonce)
+        }
+      }
     }
     if (!res.ok) {
       const body = await res.text()
