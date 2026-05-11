@@ -200,29 +200,47 @@ export class YouTubeOAuthService {
       total += addition
     }
 
+    const putHeaders = {
+      Authorization: `Bearer ${this.accessToken}`,
+      'Content-Type': 'application/json',
+    }
+
+    const baseSnippet = {
+      title: metadata.title.slice(0, 100),
+      description: metadata.description.slice(0, 5000),
+      categoryId,
+      ...(existingSnippet.defaultLanguage
+        ? { defaultLanguage: existingSnippet.defaultLanguage }
+        : {}),
+    }
+
+    // Attempt 1: with tags
     const res = await fetch(`${BASE}/videos?part=snippet`, {
       method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${this.accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        id: videoId,
-        snippet: {
-          title: metadata.title.slice(0, 100),
-          description: metadata.description.slice(0, 5000),
-          tags: finalTags,
-          categoryId,
-          ...(existingSnippet.defaultLanguage
-            ? { defaultLanguage: existingSnippet.defaultLanguage }
-            : {}),
-        },
-      }),
+      headers: putHeaders,
+      body: JSON.stringify({ id: videoId, snippet: { ...baseSnippet, tags: finalTags } }),
     })
-    if (!res.ok) {
-      const body = await res.text()
-      throw new Error(`YouTube update failed ${res.status}: ${body.slice(0, 500)}`)
+
+    if (res.ok) return
+
+    const body1 = await res.text()
+
+    // If tags caused the 400, retry without them so title+description still apply
+    if (res.status === 400 && body1.includes('invalidTags')) {
+      console.warn('[youtube] Tags rejected, retrying without tags. Tags were:', JSON.stringify(finalTags))
+      const res2 = await fetch(`${BASE}/videos?part=snippet`, {
+        method: 'PUT',
+        headers: putHeaders,
+        body: JSON.stringify({ id: videoId, snippet: baseSnippet }),
+      })
+      if (!res2.ok) {
+        const body2 = await res2.text()
+        throw new Error(`YouTube update failed ${res2.status}: ${body2.slice(0, 500)}`)
+      }
+      return
     }
+
+    throw new Error(`YouTube update failed ${res.status}: ${body1.slice(0, 500)}`)
   }
 }
 
