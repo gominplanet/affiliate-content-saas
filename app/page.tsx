@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { CheckCircle, Youtube, Facebook, ArrowRight, Zap, Globe, BarChart3 } from 'lucide-react'
 
 const features = [
@@ -79,13 +80,8 @@ export default function LandingPage() {
 
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 bg-white/90 backdrop-blur-md border-b border-gray-100">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#0071e3] flex items-center justify-center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-          <span className="font-bold text-base tracking-tight text-[#1d1d1f]">MVP Affiliate</span>
+        <div className="flex items-center">
+          <Image src="/mvp-affiliate-logo.png" alt="MVP Affiliate" width={48} height={48} className="rounded-xl" />
         </div>
         <div className="flex items-center gap-3">
           <Link href="/login" className="text-sm text-[#6e6e73] hover:text-[#1d1d1f] transition-colors px-4 py-2">
@@ -352,13 +348,8 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-gray-100 py-10 px-6 bg-white">
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-[#0071e3] flex items-center justify-center">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
-            <span className="font-bold text-sm text-[#1d1d1f]">MVP Affiliate</span>
+          <div className="flex items-center">
+            <Image src="/mvp-affiliate-logo.png" alt="MVP Affiliate" width={36} height={36} className="rounded-lg" />
           </div>
           <div className="flex items-center gap-6 text-sm text-[#86868b]">
             <Link href="/privacy" className="hover:text-[#1d1d1f] transition-colors">Privacy</Link>
