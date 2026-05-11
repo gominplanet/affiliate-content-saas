@@ -28,43 +28,36 @@ export async function GET() {
 
   const results: Record<string, unknown> = {}
 
-  // The correct endpoint: POST /v3/shorturls with query params
-  const params = new URLSearchParams({
-    url: 'https://www.amazon.com/dp/B08N5WRWNW',
-    note: 'Test link',
-  })
-
+  // Step 1: get groups
+  let groupId: number | null = null
   try {
-    const res = await fetch(`https://api.geni.us/v3/shorturls?${params.toString()}`, {
-      method: 'POST',
-      headers,
-    })
+    const res = await fetch('https://api.geni.us/v1/groups/list', { headers })
     const body = await res.text()
-    results['POST /v3/shorturls (query params)'] = { status: res.status, body: body.slice(0, 500) }
+    const parsed = JSON.parse(body)
+    const groups = parsed.Results ?? (Array.isArray(parsed) ? parsed : [])
+    groupId = groups[0]?.Id ?? null
+    results['GET /v1/groups/list'] = { status: res.status, groupId, groups: groups.slice(0, 3) }
   } catch (err) {
-    results['POST /v3/shorturls (query params)'] = { error: err instanceof Error ? err.message : String(err) }
+    results['GET /v1/groups/list'] = { error: err instanceof Error ? err.message : String(err) }
   }
 
-  // Also test GET /v1/links/list to confirm auth works
-  try {
-    const res = await fetch('https://api.geni.us/v1/links/list', { headers })
-    const body = await res.text()
-    results['GET /v1/links/list'] = { status: res.status, body: body.slice(0, 300) }
-  } catch (err) {
-    results['GET /v1/links/list'] = { error: err instanceof Error ? err.message : String(err) }
-  }
-
-  // Also test v2 endpoint
-  const v2Params = new URLSearchParams({ Url: 'https://www.amazon.com/dp/B08N5WRWNW' })
-  try {
-    const res = await fetch(`https://api.geni.us/v2/shorturl?${v2Params.toString()}`, {
-      method: 'POST',
-      headers,
+  // Step 2: create link with groupId
+  if (groupId) {
+    const params = new URLSearchParams({
+      url: 'https://www.amazon.com/dp/B08N5WRWNW',
+      groupId: String(groupId),
+      note: 'Test link from MVP Affiliate',
     })
-    const body = await res.text()
-    results['POST /v2/shorturl (query params)'] = { status: res.status, body: body.slice(0, 500) }
-  } catch (err) {
-    results['POST /v2/shorturl (query params)'] = { error: err instanceof Error ? err.message : String(err) }
+    try {
+      const res = await fetch(`https://api.geni.us/v3/shorturls?${params.toString()}`, {
+        method: 'POST',
+        headers,
+      })
+      const body = await res.text()
+      results['POST /v3/shorturls'] = { status: res.status, body: body.slice(0, 500) }
+    } catch (err) {
+      results['POST /v3/shorturls'] = { error: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   return NextResponse.json(results)
