@@ -38,7 +38,7 @@ const features = [
 const steps = [
   { n: '01', title: 'Connect your YouTube channel', desc: 'Link your channel in one click. We import all your videos instantly.' },
   { n: '02', title: 'Connect your platforms', desc: 'WordPress, Facebook, Pinterest, Threads — connect each platform once.' },
-  { n: '03', title: 'Upload a video, we do the rest', desc: 'Every new video triggers a full content rollout across all four platforms automatically.' },
+  { n: '03', title: 'Upload a video, we do the rest', desc: 'Every new video triggers a full content rollout across all your connected platforms automatically.' },
 ]
 
 const plans = [
@@ -103,11 +103,11 @@ export default function LandingPage() {
           </div>
           <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-5 sm:mb-6 text-[#1d1d1f]">
             One video.<br />
-            <span className="text-[#0071e3]">Four platforms.</span><br />
+            <span className="text-[#0071e3]">Every platform.</span><br />
             Zero writing.
           </h1>
           <p className="text-base sm:text-xl text-[#6e6e73] max-w-2xl mx-auto mb-8 sm:mb-10 leading-relaxed">
-            MVP Affiliate turns every YouTube review into an SEO blog post, Facebook post, Pinterest pin, and Threads thread — with your affiliate links built in. Automatically.
+            MVP Affiliate turns every YouTube review into SEO blog posts and social content across all your platforms — with your affiliate links built in. Automatically.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
             <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-8 py-4 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
