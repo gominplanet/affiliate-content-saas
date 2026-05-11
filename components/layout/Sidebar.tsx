@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   PlaySquare,
   Palette,
-  Settings,
   AlertTriangle,
   ChevronRight,
   Wrench,
@@ -31,7 +30,6 @@ const nav = [
 ]
 
 const secondaryNav = [
-  { href: '/settings', label: 'Settings', icon: Settings },
   { href: '/billing', label: 'Plan & Billing', icon: CreditCard },
   { href: '/admin/failures', label: 'Failures', icon: AlertTriangle, danger: true },
 ]
@@ -153,7 +151,7 @@ export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUr
 
         {/* User */}
         <Link
-          href="/settings"
+          href="/billing"
           className="flex items-center gap-2.5 px-2 py-2 rounded-lg transition-colors group hover:opacity-80"
           style={{ background: 'var(--surface-2)' }}
         >

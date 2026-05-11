@@ -27,7 +27,7 @@ function SetupGate({ checks }: { checks: ReadinessCheck }) {
         <div className="flex flex-col gap-3">
           <GateItem done={checks.brandReady} label="Brand profile" desc="Set your brand name, niche, tone, and writing sample" href="/brand" />
           <GateItem done={checks.wpReady} label="WordPress connected" desc="Connect your WordPress site in Setup" href="/setup" />
-          <GateItem done={checks.videosReady} label="YouTube videos synced" desc="Videos will sync automatically once your channel is linked" href="/settings" />
+          <GateItem done={checks.videosReady} label="YouTube videos synced" desc="Videos will sync automatically once your channel is linked" href="/setup" />
         </div>
       </div>
     </div>
