@@ -173,6 +173,24 @@ export class YouTubeOAuthService {
     const existingSnippet = existing.items?.[0]?.snippet ?? {}
     const categoryId = existingSnippet.categoryId || '22' // 22 = People & Blogs fallback
 
+    // Sanitize tags — YouTube rules:
+    // - Each tag max 100 chars
+    // - No < > characters
+    // - Total of all tags joined by commas max 500 chars
+    const sanitizedTags = metadata.tags
+      .map(t => t.replace(/[<>]/g, '').trim())
+      .filter(t => t.length > 0 && t.length <= 100)
+
+    // Trim to stay within 500 char total limit
+    const finalTags: string[] = []
+    let total = 0
+    for (const tag of sanitizedTags) {
+      const addition = (finalTags.length > 0 ? 1 : 0) + tag.length // comma separator
+      if (total + addition > 500) break
+      finalTags.push(tag)
+      total += addition
+    }
+
     const res = await fetch(`${BASE}/videos?part=snippet`, {
       method: 'PUT',
       headers: {
@@ -184,7 +202,7 @@ export class YouTubeOAuthService {
         snippet: {
           title: metadata.title.slice(0, 100),
           description: metadata.description.slice(0, 5000),
-          tags: metadata.tags.slice(0, 500),
+          tags: finalTags,
           categoryId,
           defaultLanguage: existingSnippet.defaultLanguage || 'en',
         },
@@ -192,7 +210,7 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
-      throw new Error(`YouTube update failed ${res.status}: ${body.slice(0, 300)}`)
+      throw new Error(`YouTube update failed ${res.status}: ${body.slice(0, 500)}`)
     }
   }
 }
