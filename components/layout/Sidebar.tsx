@@ -26,7 +26,7 @@ const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/content', label: 'Content', icon: PlaySquare },
   { href: '/brand', label: 'Brand Profile', icon: Palette },
-  { href: '/setup', label: 'Blog Setup', icon: Wrench },
+  { href: '/setup', label: 'Site & Integrations', icon: Wrench },
   { href: '/customize', label: 'Customize Blog', icon: Paintbrush },
 ]
 
