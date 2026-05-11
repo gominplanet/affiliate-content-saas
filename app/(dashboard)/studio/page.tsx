@@ -6,6 +6,7 @@ import Header from '@/components/layout/Header'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
+  Image, Download, Sparkles,
 } from 'lucide-react'
 
 interface DraftVideo {
@@ -54,6 +55,11 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
+  const [thumbnailPrompt, setThumbnailPrompt] = useState<string | null>(null)
+  const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
+  const [thumbnailError, setThumbnailError] = useState<string | null>(null)
+  const [thumbnailStyle, setThumbnailStyle] = useState<'review' | 'unboxing' | 'comparison' | 'lifestyle'>('review')
 
   useEffect(() => {
     if (generated) {
@@ -114,6 +120,31 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
       setApplyError(err instanceof Error ? err.message : 'Failed to apply to YouTube')
     } finally {
       setApplying(false)
+    }
+  }
+
+  async function generateThumbnail() {
+    setGeneratingThumbnail(true)
+    setThumbnailError(null)
+    try {
+      const res = await fetch('/api/youtube/generate-thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoTitle: editTitle || video.title,
+          productTitle: product?.title ?? undefined,
+          asin: video.detectedAsin ?? undefined,
+          style: thumbnailStyle,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Thumbnail generation failed')
+      setThumbnailUrl(data.thumbnailUrl)
+      setThumbnailPrompt(data.prompt)
+    } catch (err) {
+      setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
+    } finally {
+      setGeneratingThumbnail(false)
     }
   }
 
@@ -301,6 +332,76 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
                 <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-gray-50 dark:bg-white/5 leading-relaxed">
                   {generated.pinnedComment}
                 </div>
+              </div>
+
+              {/* Thumbnail Generator */}
+              <div className="border-t border-gray-100 dark:border-white/10 pt-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Image size={13} className="text-[#0071e3]" />
+                    <span className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">1280×720</span>
+                  </div>
+                </div>
+
+                {/* Style picker */}
+                <div className="flex gap-1.5 mb-3 flex-wrap">
+                  {(['review', 'unboxing', 'comparison', 'lifestyle'] as const).map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setThumbnailStyle(s)}
+                      className={`text-[10px] font-medium px-2.5 py-1 rounded-full border transition-colors capitalize ${
+                        thumbnailStyle === s
+                          ? 'bg-[#0071e3] border-[#0071e3] text-white'
+                          : 'bg-transparent border-gray-200 dark:border-white/20 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#0071e3] hover:text-[#0071e3]'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Generate button */}
+                <button
+                  onClick={generateThumbnail}
+                  disabled={generatingThumbnail}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90 mb-3"
+                  style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+                >
+                  {generatingThumbnail
+                    ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
+                    : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate Thumbnail' : 'Generate Thumbnail'}</>}
+                </button>
+
+                {thumbnailError && (
+                  <p className="text-xs text-[#ff3b30] mb-3">{thumbnailError}</p>
+                )}
+
+                {/* Result */}
+                {thumbnailUrl && (
+                  <div className="flex flex-col gap-2">
+                    <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+                      <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <a
+                        href={thumbnailUrl}
+                        download="thumbnail.jpg"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                        style={{ background: '#34c759' }}
+                      >
+                        <Download size={12} /> Download Thumbnail
+                      </a>
+                      {thumbnailPrompt && (
+                        <button onClick={() => copy(thumbnailPrompt, 'prompt')} className="text-[10px] text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors flex items-center gap-0.5">
+                          <Copy size={10} /> {copied === 'prompt' ? 'Copied!' : 'Copy prompt'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
