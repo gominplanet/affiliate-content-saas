@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeService } from '@/services/youtube'
-import { sendNewVideoEmail } from '@/lib/email'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -59,11 +58,6 @@ export async function POST(request: Request) {
       .upsert(rows, { onConflict: 'user_id,youtube_video_id' })
 
     if (error) throw error
-
-    // Send email notification for each new video (fire-and-forget)
-    for (const v of newVideos) {
-      sendNewVideoEmail(user.id, v.title, v.youtubeVideoId).catch(() => { /* non-fatal */ })
-    }
 
     return NextResponse.json({ synced: videos.length, newCount: newVideos.length, nextPageToken: nextPageToken ?? null })
   } catch (err: unknown) {
