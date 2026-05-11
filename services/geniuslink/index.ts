@@ -1,4 +1,4 @@
-const GENIUSLINK_API = 'https://api.geniuslink.com'
+const GENIUSLINK_API = 'https://api.geni.us'
 
 export class GeniuslinkService {
   private auth: string
@@ -7,10 +7,10 @@ export class GeniuslinkService {
     this.auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
   }
 
-  // Create a smart affiliate link for an Amazon ASIN
   async createAsinLink(asin: string, label: string): Promise<string> {
     const destination = `https://www.amazon.com/dp/${asin}`
 
+    // Try the standard endpoint — Geniuslink uses 'url' as the body key
     const res = await fetch(`${GENIUSLINK_API}/links`, {
       method: 'POST',
       headers: {
@@ -18,12 +18,17 @@ export class GeniuslinkService {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({ destination, label: label.slice(0, 100) }),
+      body: JSON.stringify({
+        url: destination,          // primary field name
+        destination,               // fallback field name some versions use
+        label: label.slice(0, 100),
+      }),
     })
 
     const body = await res.text()
 
     if (!res.ok) {
+      // Include full body so we can see exactly what Geniuslink returned
       throw new Error(`Geniuslink API error ${res.status}: ${body.slice(0, 300)}`)
     }
 
@@ -31,13 +36,17 @@ export class GeniuslinkService {
     try {
       data = JSON.parse(body)
     } catch {
-      throw new Error(`Geniuslink returned non-JSON response: ${body.slice(0, 200)}`)
+      throw new Error(`Geniuslink non-JSON response (${res.status}): ${body.slice(0, 200)}`)
     }
 
-    // Try common field names for the short URL
-    const shortUrl = (data.shortUrl || data.shortlink || data.url || data.short_url) as string | undefined
+    // Try all known field names
+    const shortUrl = (
+      data.shortUrl ?? data.short_url ?? data.shortlink ?? data.url ??
+      (data.data as Record<string, unknown>)?.shortUrl
+    ) as string | undefined
+
     if (!shortUrl) {
-      throw new Error(`Geniuslink response missing short URL. Keys: ${Object.keys(data).join(', ')}`)
+      throw new Error(`Geniuslink: no short URL in response. Fields: ${Object.keys(data).join(', ')} | ${body.slice(0, 200)}`)
     }
     return shortUrl
   }
