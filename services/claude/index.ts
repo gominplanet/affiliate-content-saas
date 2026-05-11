@@ -396,7 +396,7 @@ export class ClaudeService {
   private async extractVoiceProfile(transcript: string, title: string): Promise<string> {
     try {
       const message = await this.client.messages.create({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1500,
         messages: [{
           role: 'user',
@@ -453,7 +453,7 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
 
     // Pass 2 — generate with extended thinking (streaming required for large max_tokens)
     const stream = this.client.messages.stream({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-6',
       max_tokens: 32000,
       thinking: { type: 'enabled', budget_tokens: 10000 },
       system: [
@@ -519,7 +519,7 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
   async checkConnection(): Promise<boolean> {
     try {
       await this.client.messages.create({
-        model: 'claude-3-5-haiku-20241022',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 10,
         messages: [{ role: 'user', content: 'ping' }],
       })

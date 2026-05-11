@@ -37,7 +37,7 @@ async function productAnalystAgent(
   niches: string,
 ): Promise<{ targetBuyer: string; topBenefits: string[]; painPoints: string[]; keywords: string[] }> {
   const raw = await runAgent(anthropic, {
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-haiku-4-5-20251001',
     maxTokens: 800,
     system: 'You are a product research specialist. Analyse Amazon products for YouTube content. Return ONLY valid JSON.',
     user: `Analyse this product for a YouTube review in the "${niches}" niche.
@@ -67,7 +67,7 @@ async function titleStrategistAgent(
   productAnalysis: { targetBuyer: string; topBenefits: string[]; painPoints: string[] },
 ): Promise<{ best: string; alternatives: string[] }> {
   const raw = await runAgent(anthropic, {
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-sonnet-4-6',
     maxTokens: 600,
     system: 'You are a viral YouTube title strategist. You write titles that dominate search and maximise click-through rate. Return ONLY valid JSON.',
     user: `Write 5 viral YouTube title options for this product review.
@@ -104,7 +104,7 @@ async function seoResearcherAgent(
   productKeywords: string[],
 ): Promise<{ tags: string[]; hashtags: string }> {
   const raw = await runAgent(anthropic, {
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-haiku-4-5-20251001',
     maxTokens: 900,
     system: 'You are a YouTube SEO expert. You research high-traffic keywords and trending hashtags. Return ONLY valid JSON.',
     user: `Generate maximum-reach YouTube tags and hashtags for this product review.
@@ -137,7 +137,7 @@ async function contentWriterAgent(
   niches: string,
 ): Promise<{ productDescription: string }> {
   const raw = await runAgent(anthropic, {
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-haiku-4-5-20251001',
     maxTokens: 600,
     system: 'You are a YouTube content writer who optimises descriptions for AI answer engines (ChatGPT, Gemini, Perplexity). Return ONLY valid JSON.',
     user: `Write a product description optimised for YouTube, Google, and AI search engines.
@@ -173,7 +173,7 @@ async function engagementAgent(
   tone: string,
 ): Promise<{ pinnedComment: string }> {
   const raw = await runAgent(anthropic, {
-    model: 'claude-3-5-haiku-20241022',
+    model: 'claude-haiku-4-5-20251001',
     maxTokens: 400,
     system: 'You are a YouTube engagement specialist who writes high-converting pinned comments. Return ONLY valid JSON.',
     user: `Write a pinned comment for this YouTube video that drives clicks and engagement.
