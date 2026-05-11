@@ -4,6 +4,7 @@ import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit } from '@/lib/tier'
+import { sendBlogPublishedEmail, sendJobFailureEmail } from '@/lib/email'
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
 // Images are generated separately via /api/blog/images
@@ -132,6 +133,7 @@ async function handleGenerate(request: Request) {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Claude generation failed'
     await logFailure(supabase, user.id, videoId, 'blog_generation', msg)
+    sendJobFailureEmail(user.id, v.title as string, msg).catch(() => { /* non-fatal */ })
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 
@@ -192,6 +194,7 @@ async function handleGenerate(request: Request) {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'WordPress publish failed'
     await logFailure(supabase, user.id, videoId, 'wp_publish', msg)
+    sendJobFailureEmail(user.id, v.title as string, msg).catch(() => { /* non-fatal */ })
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 
@@ -280,6 +283,14 @@ async function handleGenerate(request: Request) {
       body: JSON.stringify(payload),
     })
   } catch { /* non-fatal — post is published regardless */ }
+
+  // Fire-and-forget — don't let email failure block the response
+  sendBlogPublishedEmail(
+    user.id,
+    generated.title,
+    wpPost.link,
+    (v as Record<string, unknown>).title as string,
+  ).catch(() => { /* non-fatal */ })
 
   return NextResponse.json({
     success: true,

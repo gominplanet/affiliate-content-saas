@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeService } from '@/services/youtube'
+import { sendNewVideoEmail } from '@/lib/email'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -43,13 +44,28 @@ export async function POST(request: Request) {
       view_count: v.viewCount,
     }))
 
+    // Detect truly new videos (not already in DB) before upsert
+    const incomingIds = videos.map(v => v.youtubeVideoId)
+    const { data: existing } = await supabase
+      .from('youtube_videos')
+      .select('youtube_video_id')
+      .eq('user_id', user.id)
+      .in('youtube_video_id', incomingIds)
+    const existingIds = new Set((existing ?? []).map((r: { youtube_video_id: string }) => r.youtube_video_id))
+    const newVideos = videos.filter(v => !existingIds.has(v.youtubeVideoId))
+
     const { error } = await supabase
       .from('youtube_videos')
       .upsert(rows, { onConflict: 'user_id,youtube_video_id' })
 
     if (error) throw error
 
-    return NextResponse.json({ synced: videos.length, nextPageToken: nextPageToken ?? null })
+    // Send email notification for each new video (fire-and-forget)
+    for (const v of newVideos) {
+      sendNewVideoEmail(user.id, v.title, v.youtubeVideoId).catch(() => { /* non-fatal */ })
+    }
+
+    return NextResponse.json({ synced: videos.length, newCount: newVideos.length, nextPageToken: nextPageToken ?? null })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: message }, { status: 500 })
