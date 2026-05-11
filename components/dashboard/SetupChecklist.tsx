@@ -1,7 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle, Circle, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
+
+const STORAGE_KEY = 'mvp_setup_checklist_v1'
 
 interface Step {
   id: string
@@ -42,6 +44,28 @@ const steps: Step[] = [
 export default function SetupChecklist() {
   const [completed, setCompleted] = useState<Record<string, boolean>>({})
   const [collapsed, setCollapsed] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        setCompleted(parsed.completed ?? {})
+        setCollapsed(parsed.collapsed ?? false)
+      }
+    } catch { /* ignore */ }
+    setHydrated(true)
+  }, [])
+
+  // Persist to localStorage whenever state changes
+  useEffect(() => {
+    if (!hydrated) return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed, collapsed }))
+    } catch { /* ignore */ }
+  }, [completed, collapsed, hydrated])
 
   function toggle(id: string) {
     setCompleted((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -51,7 +75,9 @@ export default function SetupChecklist() {
   const doneCount = allRequired.filter((s) => completed[s.id]).length
   const allDone = doneCount === allRequired.length
 
-  if (allDone && collapsed) return null
+  // Hide on first render to avoid hydration flash, then hide permanently once all done
+  if (!hydrated) return null
+  if (allDone) return null
 
   return (
     <div className={`card mb-6 overflow-hidden border ${allDone ? 'border-[#34c759]/30' : 'border-[#0071e3]/20'}`}>
