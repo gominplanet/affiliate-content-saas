@@ -173,23 +173,31 @@ export class YouTubeOAuthService {
     const existingSnippet = existing.items?.[0]?.snippet ?? {}
     const categoryId = existingSnippet.categoryId || '22' // 22 = People & Blogs fallback
 
-    // Sanitize tags — YouTube rules:
+    // Sanitize tags — YouTube API rules:
     // - Each tag max 100 chars
-    // - No < > characters
-    // - Total of all tags joined by commas max 500 chars
+    // - No <>, ", commas, or other special chars
+    // - Total characters across all tags (joined by commas) max 500 chars
     const sanitizedTags = metadata.tags
-      .map(t => t.replace(/[<>]/g, '').trim())
+      // Split on commas in case Claude returned comma-separated strings
+      .flatMap(t => t.split(','))
+      // Strip all characters YouTube rejects: <>"#@[]{}|\\^~`
+      .map(t => t.replace(/[<>"#@[\]{}|\\^~`]/g, '').trim())
+      // Remove any remaining non-printable or control characters
+      .map(t => t.replace(/[^\x20-\x7EÀ-ɏ]/g, '').trim())
       .filter(t => t.length > 0 && t.length <= 100)
 
     // Trim to stay within 500 char total limit
+    // YouTube counts the comma separators between tags
     const finalTags: string[] = []
     let total = 0
     for (const tag of sanitizedTags) {
-      const addition = (finalTags.length > 0 ? 1 : 0) + tag.length // comma separator
+      const addition = (finalTags.length > 0 ? 1 : 0) + tag.length // +1 for comma separator
       if (total + addition > 500) break
       finalTags.push(tag)
       total += addition
     }
+
+    console.log('[youtube] Sending tags:', JSON.stringify(finalTags), 'total chars:', total)
 
     const res = await fetch(`${BASE}/videos?part=snippet`, {
       method: 'PUT',
@@ -204,7 +212,9 @@ export class YouTubeOAuthService {
           description: metadata.description.slice(0, 5000),
           tags: finalTags,
           categoryId,
-          defaultLanguage: existingSnippet.defaultLanguage || 'en',
+          ...(existingSnippet.defaultLanguage
+            ? { defaultLanguage: existingSnippet.defaultLanguage }
+            : {}),
         },
       }),
     })

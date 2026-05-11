@@ -152,7 +152,7 @@ Return ONLY valid JSON:
   "productDescription": "3-4 sentences optimised for YouTube, Google and AI search engines.",
   "pinnedComment": "Punchy pinned comment 2-3 sentences. Include ${affiliateUrl} and a CTA.",
   "title_alternatives": ["3 alternative viral title options"],
-  "tags": ["20-30 tags without # symbol — mix of exact-match search terms, broad keywords, and long-tail phrases people search on YouTube"]
+  "tags": ["20-30 tags without # symbol — plain words/phrases only, NO special characters like quotes or brackets, mix of exact-match search terms and long-tail phrases"]
 }`,
       }],
     })
