@@ -163,8 +163,16 @@ export class YouTubeOAuthService {
   // Update a video's title, description, and tags
   async updateVideoMetadata(
     videoId: string,
-    metadata: { title: string; description: string; tags: string[]; categoryId?: string },
+    metadata: { title: string; description: string; tags: string[] },
   ): Promise<void> {
+    // First fetch the existing snippet to preserve categoryId and other required fields
+    const existing = await this.get<any>('/videos', {
+      part: 'snippet',
+      id: videoId,
+    })
+    const existingSnippet = existing.items?.[0]?.snippet ?? {}
+    const categoryId = existingSnippet.categoryId || '22' // 22 = People & Blogs fallback
+
     const res = await fetch(`${BASE}/videos?part=snippet`, {
       method: 'PUT',
       headers: {
@@ -177,7 +185,8 @@ export class YouTubeOAuthService {
           title: metadata.title.slice(0, 100),
           description: metadata.description.slice(0, 5000),
           tags: metadata.tags.slice(0, 500),
-          categoryId: metadata.categoryId || '26', // 26 = Howto & Style
+          categoryId,
+          defaultLanguage: existingSnippet.defaultLanguage || 'en',
         },
       }),
     })

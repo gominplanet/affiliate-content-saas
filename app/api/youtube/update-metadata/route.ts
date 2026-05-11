@@ -22,7 +22,24 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
       .single()
 
-    const token = await getValidYouTubeToken(intRow as Record<string, unknown>)
+    const intData = intRow as Record<string, unknown>
+    const expiry = intData.youtube_oauth_token_expiry as number | null
+    const needsRefresh = expiry && Date.now() > expiry - 120_000
+
+    const token = await getValidYouTubeToken(intData)
+
+    // Persist refreshed token so it stays valid for future calls
+    if (needsRefresh) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('integrations')
+        .update({
+          youtube_oauth_access_token: token,
+          youtube_oauth_token_expiry: Date.now() + 3600 * 1000,
+        })
+        .eq('user_id', user.id)
+    }
+
     const yt = createYouTubeOAuthService(token)
     await yt.updateVideoMetadata(videoId, { title, description, tags })
 
