@@ -12,6 +12,9 @@ export interface BrandProfile {
   cta_style: string
   affiliate_disclaimer: string | null
   writing_sample: string | null
+  author_bio: string | null
+  target_audience: string | null
+  words_to_avoid: string | null
 }
 
 export interface VideoInput {
@@ -51,6 +54,18 @@ function buildSystemPrompt(brand: BrandProfile, voiceProfile?: string): string {
     ? `\nWRITING VOICE SAMPLE — match this style exactly:\n"""\n${brand.writing_sample.slice(0, 1500)}\n"""`
     : ''
 
+  const authorBioLine = brand.author_bio
+    ? `\nABOUT THE AUTHOR: ${brand.author_bio.trim()}`
+    : ''
+
+  const audienceLine = brand.target_audience
+    ? `\nTARGET READER: ${brand.target_audience.trim()}`
+    : ''
+
+  const avoidLine = brand.words_to_avoid?.trim()
+    ? `\nWORDS/PHRASES TO NEVER USE (banned — delete on sight):\n${brand.words_to_avoid.trim().split('\n').filter(Boolean).map(w => `- ${w.trim()}`).join('\n')}`
+    : ''
+
   const niches = brand.niches?.length ? brand.niches.join(', ') : 'general consumer products'
   const tones = brand.tone?.length ? brand.tone.join(', ') : 'conversational, honest'
 
@@ -78,11 +93,14 @@ The opening paragraph of the post MUST start with something close to how they op
 
   return `You are generating SEO-optimized affiliate review blog posts for ${brand.name || 'an affiliate blog'} — ${authorLine}.
 ${contextLine}
+${authorBioLine}
+${audienceLine}
 
 Brand niche: ${niches}
 Brand voice: ${tones}
 Target post length: ${targetLength}
 ${writingGuidance}
+${avoidLine}
 ${voiceSection}
 ═══════════════════════════════════════
 CRITICAL RULES — FOLLOW STRICTLY

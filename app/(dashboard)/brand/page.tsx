@@ -101,6 +101,9 @@ interface BrandData {
   primary_color: string
   secondary_color: string
   writing_sample: string
+  author_bio: string
+  target_audience: string
+  words_to_avoid: string
 }
 
 const DEFAULT: BrandData = {
@@ -116,6 +119,9 @@ const DEFAULT: BrandData = {
   primary_color: '#0071e3',
   secondary_color: '#34c759',
   writing_sample: '',
+  author_bio: '',
+  target_audience: '',
+  words_to_avoid: '',
 }
 
 export default function BrandPage() {
@@ -147,6 +153,9 @@ export default function BrandPage() {
         primary_color: row.primary_color ?? '#0071e3',
         secondary_color: row.secondary_color ?? '#34c759',
         writing_sample: row.writing_sample ?? '',
+        author_bio: row.author_bio ?? '',
+        target_audience: row.target_audience ?? '',
+        words_to_avoid: row.words_to_avoid ?? '',
       })
     }
     setLoading(false)
@@ -338,6 +347,56 @@ export default function BrandPage() {
               className="input-field resize-none leading-relaxed"
             />
             <WordCount text={data.writing_sample} max={1000} />
+          </div>
+
+          {/* About you */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">About You</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              Who are you and why do you run this blog? The AI uses this to add authentic, first-person context to posts — the kind of detail that makes readers trust you.
+            </p>
+            <textarea
+              rows={5}
+              maxLength={1000}
+              value={data.author_bio}
+              onChange={(e) => set('author_bio', e.target.value)}
+              placeholder="e.g. I'm Seb, a dad of 2 obsessed with finding products that actually work. Michelle and I started Gomin Reviews after getting burned by too many overhyped gadgets. We buy and test everything ourselves before recommending it."
+              className="input-field resize-none leading-relaxed"
+            />
+            <WordCount text={data.author_bio} max={150} />
+          </div>
+
+          {/* Target audience */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your Target Reader</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              Describe your ideal reader. The AI will write directly to them — their goals, frustrations, and buying mindset.
+            </p>
+            <textarea
+              rows={4}
+              maxLength={600}
+              value={data.target_audience}
+              onChange={(e) => set('target_audience', e.target.value)}
+              placeholder="e.g. Everyday shoppers who want real, no-nonsense product opinions before spending money. They're busy, skeptical of influencer hype, and just want to know if something is actually worth it."
+              className="input-field resize-none leading-relaxed"
+            />
+            <WordCount text={data.target_audience} max={100} />
+          </div>
+
+          {/* Words to avoid */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Words &amp; Phrases to Avoid</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              List words, phrases, or clichés you never want in your content. One per line. The AI will avoid these in every post it generates.
+            </p>
+            <textarea
+              rows={5}
+              maxLength={600}
+              value={data.words_to_avoid}
+              onChange={(e) => set('words_to_avoid', e.target.value)}
+              placeholder={"e.g.\nhonest\ngame-changer\nleverage\nseamlessly\nit's worth noting"}
+              className="input-field resize-none leading-relaxed font-mono text-xs"
+            />
           </div>
         </div>
 

@@ -119,6 +119,9 @@ async function handleGenerate(request: Request) {
         cta_style: (brand as Record<string, unknown>).cta_style as string || 'soft_recommendation',
         affiliate_disclaimer: (brand as Record<string, unknown>).affiliate_disclaimer as string | null,
         writing_sample: (brand as Record<string, unknown>).writing_sample as string | null,
+        author_bio: (brand as Record<string, unknown>).author_bio as string | null,
+        target_audience: (brand as Record<string, unknown>).target_audience as string | null,
+        words_to_avoid: (brand as Record<string, unknown>).words_to_avoid as string | null,
       },
       {
         videoId: v.youtube_video_id as string,
