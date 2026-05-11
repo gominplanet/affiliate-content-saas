@@ -1,7 +1,7 @@
 import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
 
-const FROM = 'MVP Affiliate <notifications@mvpaffiliate.co>'
+const FROM = 'MVP Affiliate <notifications@mvpaffiliate.io>'
 
 function getResend() {
   const key = process.env.RESEND_API_KEY
@@ -50,12 +50,12 @@ export async function sendNewVideoEmail(userId: string, videoTitle: string, vide
         <p style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#888;margin:0 0 24px">MVP Affiliate</p>
         <h1 style="font-size:22px;font-weight:700;color:#111;margin:0 0 8px">New video detected</h1>
         <p style="font-size:16px;color:#444;margin:0 0 24px">${videoTitle}</p>
-        <a href="https://app.mvpaffiliate.co/content" style="display:inline-block;background:#111;color:#fff;font-size:13px;font-weight:700;padding:12px 20px;border-radius:4px;text-decoration:none">
+        <a href="https://mvpaffiliate.io/content" style="display:inline-block;background:#111;color:#fff;font-size:13px;font-weight:700;padding:12px 20px;border-radius:4px;text-decoration:none">
           Generate blog post →
         </a>
         <p style="font-size:12px;color:#999;margin:32px 0 0">
           You're receiving this because you have new video notifications enabled.
-          <a href="https://app.mvpaffiliate.co/settings" style="color:#999">Manage preferences</a>
+          <a href="https://mvpaffiliate.io/settings" style="color:#999">Manage preferences</a>
         </p>
       </div>
     `,
@@ -88,7 +88,7 @@ export async function sendBlogPublishedEmail(
           View post →
         </a>
         <p style="font-size:12px;color:#999;margin:32px 0 0">
-          <a href="https://app.mvpaffiliate.co/settings" style="color:#999">Manage preferences</a>
+          <a href="https://mvpaffiliate.io/settings" style="color:#999">Manage preferences</a>
         </p>
       </div>
     `,
@@ -112,11 +112,11 @@ export async function sendJobFailureEmail(userId: string, videoTitle: string, er
         <h1 style="font-size:22px;font-weight:700;color:#111;margin:0 0 8px">Generation failed</h1>
         <p style="font-size:15px;color:#444;margin:0 0 4px">${videoTitle}</p>
         <p style="font-size:13px;color:#e53e3e;background:#fff5f5;border:1px solid #fed7d7;border-radius:4px;padding:12px;margin:0 0 24px;font-family:monospace">${error.slice(0, 300)}</p>
-        <a href="https://app.mvpaffiliate.co/content" style="display:inline-block;background:#111;color:#fff;font-size:13px;font-weight:700;padding:12px 20px;border-radius:4px;text-decoration:none">
+        <a href="https://mvpaffiliate.io/content" style="display:inline-block;background:#111;color:#fff;font-size:13px;font-weight:700;padding:12px 20px;border-radius:4px;text-decoration:none">
           Try again →
         </a>
         <p style="font-size:12px;color:#999;margin:32px 0 0">
-          <a href="https://app.mvpaffiliate.co/settings" style="color:#999">Manage preferences</a>
+          <a href="https://mvpaffiliate.io/settings" style="color:#999">Manage preferences</a>
         </p>
       </div>
     `,
@@ -159,11 +159,11 @@ export async function sendWeeklyDigest(
         <p style="font-size:13px;font-weight:700;color:#111;margin:0 0 12px">Published this week</p>
         <ul style="padding:0 0 0 20px;margin:0 0 32px">${titleList}</ul>
         ` : ''}
-        <a href="https://app.mvpaffiliate.co/content" style="display:inline-block;background:#111;color:#fff;font-size:13px;font-weight:700;padding:12px 20px;border-radius:4px;text-decoration:none">
+        <a href="https://mvpaffiliate.io/content" style="display:inline-block;background:#111;color:#fff;font-size:13px;font-weight:700;padding:12px 20px;border-radius:4px;text-decoration:none">
           Go to Content →
         </a>
         <p style="font-size:12px;color:#999;margin:32px 0 0">
-          <a href="https://app.mvpaffiliate.co/settings" style="color:#999">Manage preferences</a>
+          <a href="https://mvpaffiliate.io/settings" style="color:#999">Manage preferences</a>
         </p>
       </div>
     `,
