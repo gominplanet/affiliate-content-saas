@@ -17,6 +17,7 @@ import {
   Paintbrush,
   ExternalLink,
   LogOut,
+  Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -85,6 +86,32 @@ export default function Sidebar({ email, wpSiteUrl }: { email?: string; wpSiteUr
           <ExternalLink size={16} className="flex-shrink-0" style={wpSiteUrl ? { color: '#0071e3' } : {}} />
           <span style={wpSiteUrl ? { color: '#0071e3', fontWeight: 500 } : {}}>Visit Blog</span>
         </a>
+
+        {/* Recommended Tools */}
+        <div className="mt-4 mb-2 pt-4" style={{ borderTop: '1px solid var(--border-2)' }}>
+          <p className="section-label px-2 mb-2 flex items-center gap-1.5">
+            <Star size={10} className="text-[#ff9500]" /> Recommended Tools
+          </p>
+          {[
+            { label: 'VidIQ', href: 'https://geni.us/I8Hz' },
+            { label: 'Levanta', href: 'https://geni.us/GCad5Q' },
+            { label: 'PartnerBoost', href: 'https://geni.us/Z0q3hY' },
+            { label: 'Archer Affiliate', href: 'https://geni.us/khuHTe' },
+            { label: 'Geniuslink', href: 'https://geni.us/Y70p9R' },
+            { label: 'Oink', href: 'https://geni.us/2y5sBo' },
+          ].map(({ label, href }) => (
+            <a
+              key={label}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nav-item"
+            >
+              <ExternalLink size={13} className="flex-shrink-0 opacity-50" />
+              {label}
+            </a>
+          ))}
+        </div>
 
         <div className="mt-4 mb-2 pt-4" style={{ borderTop: '1px solid var(--border-2)' }}>
           <p className="section-label px-2 mb-2">System</p>
