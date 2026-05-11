@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
   // Claude fills in Pinterest description + image prompt variables in one call
   const claudeMsg = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
+    model: 'claude-3-5-haiku-20241022',
     max_tokens: 1000,
     messages: [{
       role: 'user',

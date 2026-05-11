@@ -67,7 +67,7 @@ async function titleStrategistAgent(
   productAnalysis: { targetBuyer: string; topBenefits: string[]; painPoints: string[] },
 ): Promise<{ best: string; alternatives: string[] }> {
   const raw = await runAgent(anthropic, {
-    model: 'claude-sonnet-4-6',
+    model: 'claude-3-5-sonnet-20241022',
     maxTokens: 600,
     system: 'You are a viral YouTube title strategist. You write titles that dominate search and maximise click-through rate. Return ONLY valid JSON.',
     user: `Write 5 viral YouTube title options for this product review.

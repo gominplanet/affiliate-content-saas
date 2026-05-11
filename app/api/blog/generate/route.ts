@@ -234,7 +234,7 @@ async function handleGenerate(request: Request) {
     status: 'published',
     wordpress_post_id: wpPost.id,
     wordpress_url: wpPost.link,
-    ai_model: 'claude-sonnet-4-6',
+    ai_model: 'claude-3-5-sonnet-20241022',
     generation_prompt_version: 'v3.0',
     published_at: new Date().toISOString(),
     image_prompts: generated.imagePrompts,

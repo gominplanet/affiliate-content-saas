@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     const titles = needsCat.map((p, i) => `${i + 1}. ${p.title.rendered.replace(/<[^>]+>/g, '')}`).join('\n')
 
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 2048,
       messages: [{
         role: 'user',
