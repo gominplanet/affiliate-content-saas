@@ -460,6 +460,9 @@ export default function ContentPage() {
   const [bulkRewriting, setBulkRewriting] = useState(false)
   const [bulkRewriteProgress, setBulkRewriteProgress] = useState<{ done: number; total: number } | null>(null)
   const [backfilling, setBackfilling] = useState(false)
+  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set())
+  const [bulkGenerating, setBulkGenerating] = useState(false)
+  const [bulkGenerateProgress, setBulkGenerateProgress] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
 
@@ -693,6 +696,50 @@ export default function ContentPage() {
     if (failed > 0) parts.push(`${failed} failed${firstError ? ` (${firstError})` : ''}`)
     if (skipped > 0) parts.push(`${skipped} skipped (no video link)`)
     setFixCatResult(parts.join(' · '))
+  }
+
+  function toggleVideoSelect(id: string) {
+    setSelectedVideoIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  async function bulkGenerateSelected() {
+    const toGenerate = visibleVideos.filter(v =>
+      selectedVideoIds.has(v.id as string) && !posts[v.id as string]
+    )
+    if (!toGenerate.length) return
+    setBulkGenerating(true)
+    setBulkGenerateProgress({ done: 0, total: toGenerate.length })
+    let success = 0; let failed = 0; let firstError = ''
+    for (let i = 0; i < toGenerate.length; i++) {
+      const video = toGenerate[i]
+      setBulkGenerateProgress({ done: i, total: toGenerate.length })
+      try {
+        const res = await fetch('/api/blog/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: video.id }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) {
+          setPosts(prev => ({ ...prev, [video.id as string]: { url: data.wordpressUrl ?? '', title: data.title ?? '', postId: data.postId } }))
+          success++
+        } else {
+          failed++
+          if (!firstError) firstError = data.error || `HTTP ${res.status}`
+        }
+      } catch (e) {
+        failed++
+        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
+      }
+    }
+    setBulkGenerateProgress(null)
+    setBulkGenerating(false)
+    setSelectedVideoIds(new Set())
+    if (failed > 0) setFixCatResult(`${success} generated · ${failed} failed${firstError ? ` (${firstError})` : ''}`)
   }
 
   async function backfillVideoLinks() {
@@ -965,34 +1012,80 @@ export default function ContentPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-6 mb-2">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div className="flex items-center gap-2 text-sm">
               <Sparkles size={14} className="text-[#0071e3]" />
               <span className="text-[#6e6e73] dark:text-[#ebebf0]">{generatedCount} of {visibleVideos.length} videos published as blog posts</span>
             </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {selectedVideoIds.size === 0 && visibleVideos.some(v => !posts[v.id as string]) && (
+                <button
+                  onClick={() => setSelectedVideoIds(new Set(visibleVideos.filter(v => !posts[v.id as string]).map(v => v.id as string)))}
+                  className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
+                >
+                  Select all ungenerated
+                </button>
+              )}
+              {selectedVideoIds.size > 0 && (
+                <>
+                  <button
+                    onClick={() => setSelectedVideoIds(new Set())}
+                    className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
+                  >
+                    Clear ({selectedVideoIds.size})
+                  </button>
+                  <button
+                    onClick={bulkGenerateSelected}
+                    disabled={bulkGenerating}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0071e3] text-white rounded-lg hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                  >
+                    {bulkGenerating
+                      ? <><Loader2 size={11} className="animate-spin" /> Generating {bulkGenerateProgress?.done ?? 0}/{bulkGenerateProgress?.total ?? 0}…</>
+                      : <><Sparkles size={11} /> Generate {selectedVideoIds.size} selected</>
+                    }
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-          {visibleVideos.map((video) => (
-            <VideoCard
-              key={video.id as string}
-              video={video}
-              post={posts[video.id as string] || null}
-              wpSiteUrl={wpSiteUrl}
-              fbConnected={fbConnected}
-              pinterestConnected={pinterestConnected}
-              threadsConnected={threadsConnected}
-              onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
-              onDismiss={() => dismissVideo(video.id as string)}
-              onDelete={(postId) => {
-                setPosts((prev) => {
-                  const next = { ...prev }
-                  const vid = video.id as string
-                  if (next[vid]?.postId === postId) delete next[vid]
-                  return next
-                })
-              }}
-              onPinPreview={setPinPreview}
-            />
-          ))}
+          {visibleVideos.map((video) => {
+            const isGenerated = !!posts[video.id as string]
+            const isSelected = selectedVideoIds.has(video.id as string)
+            return (
+              <div key={video.id as string} className="flex items-start gap-2">
+                {!isGenerated && (
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleVideoSelect(video.id as string)}
+                    className="mt-5 flex-shrink-0 w-4 h-4 rounded accent-[#0071e3] cursor-pointer"
+                  />
+                )}
+                {isGenerated && <div className="w-4 mt-5 flex-shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <VideoCard
+                    video={video}
+                    post={posts[video.id as string] || null}
+                    wpSiteUrl={wpSiteUrl}
+                    fbConnected={fbConnected}
+                    pinterestConnected={pinterestConnected}
+                    threadsConnected={threadsConnected}
+                    onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
+                    onDismiss={() => dismissVideo(video.id as string)}
+                    onDelete={(postId) => {
+                      setPosts((prev) => {
+                        const next = { ...prev }
+                        const vid = video.id as string
+                        if (next[vid]?.postId === postId) delete next[vid]
+                        return next
+                      })
+                    }}
+                    onPinPreview={setPinPreview}
+                  />
+                </div>
+              </div>
+            )
+          })}
           {nextPageToken && (
             <button onClick={loadMore} disabled={loadingMore} className="btn-secondary text-sm self-center mt-2">
               {loadingMore ? <><Loader2 size={14} className="animate-spin" /> Loading…</> : <><RefreshCw size={14} /> Load more videos</>}

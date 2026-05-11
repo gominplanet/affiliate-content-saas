@@ -10,6 +10,7 @@ export default function BillingPage() {
   const supabase = createBrowserClient()
   const [tier, setTier] = useState<Tier>('free')
   const [postsUsed, setPostsUsed] = useState(0)
+  const [socialCounts, setSocialCounts] = useState({ facebook: 0, threads: 0, pinterest: 0 })
   const [loading, setLoading] = useState(true)
   const [upgraded, setUpgraded] = useState(false)
   const [portalLoading, setPortalLoading] = useState(false)
@@ -31,6 +32,9 @@ export default function BillingPage() {
 
     // Count posts used — lifetime for free, current month for paid
     const limits = TIERS[userTier]
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+
     if (limits.lifetimeMax !== null) {
       const { count } = await supabase
         .from('blog_posts')
@@ -38,8 +42,6 @@ export default function BillingPage() {
         .eq('user_id', user.id)
       setPostsUsed(count ?? 0)
     } else if (limits.videosPerMonth !== null) {
-      const now = new Date()
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
       const { count } = await supabase
         .from('blog_posts')
         .select('id', { count: 'exact', head: true })
@@ -47,6 +49,14 @@ export default function BillingPage() {
         .gte('published_at', monthStart)
       setPostsUsed(count ?? 0)
     }
+
+    // Social post counts this month
+    const [fbRes, thRes, pinRes] = await Promise.all([
+      supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('facebook_post_id', 'is', null).gte('published_at', monthStart),
+      supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('threads_post_id', 'is', null).gte('published_at', monthStart),
+      supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('pinterest_pin_id', 'is', null).gte('published_at', monthStart),
+    ])
+    setSocialCounts({ facebook: fbRes.count ?? 0, threads: thRes.count ?? 0, pinterest: pinRes.count ?? 0 })
 
     setLoading(false)
   }, [supabase])
@@ -172,6 +182,30 @@ export default function BillingPage() {
                   <p className="text-xs text-[#ff3b30] mt-2">
                     {usagePct >= 100 ? 'Limit reached — upgrade to keep publishing.' : 'Almost at your limit — consider upgrading.'}
                   </p>
+                )}
+
+                {/* Social breakdown */}
+                {(socialCounts.facebook > 0 || socialCounts.threads > 0 || socialCounts.pinterest > 0) && (
+                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 dark:border-white/10">
+                    {socialCounts.facebook > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-[#1877f2]" />
+                        <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{socialCounts.facebook} Facebook</span>
+                      </div>
+                    )}
+                    {socialCounts.threads > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-[#1d1d1f] dark:bg-white" />
+                        <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{socialCounts.threads} Threads</span>
+                      </div>
+                    )}
+                    {socialCounts.pinterest > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-[#e60023]" />
+                        <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{socialCounts.pinterest} Pinterest</span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}

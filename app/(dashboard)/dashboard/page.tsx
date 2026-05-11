@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import Header from '@/components/layout/Header'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
-import { PlaySquare, ArrowRight, Clock, Sparkles } from 'lucide-react'
+import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers } from 'lucide-react'
 import Link from 'next/link'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -12,17 +12,34 @@ export default async function DashboardPage() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { data: videos } = await supabase.from('youtube_videos').select('id').eq('user_id', user!.id)
-  const { count: postCount } = await supabase
-    .from('blog_posts')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', user!.id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const [
+    { data: videos },
+    { count: postCount },
+    { data: integration },
+  ] = await Promise.all([
+    supabase.from('youtube_videos').select('id').eq('user_id', user!.id),
+    supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
+    sb.from('integrations').select('wordpress_url,facebook_page_id,pinterest_access_token,threads_access_token').eq('user_id', user!.id).single(),
+  ])
 
   const videoCount = videos?.length ?? 0
-  const isNewUser = (postCount ?? 0) === 0
+  const publishedCount = postCount ?? 0
+  const isNewUser = publishedCount === 0
+
+  const int = integration as Record<string, unknown> | null
+  const platformsConnected = [
+    !!(int?.wordpress_url),
+    !!(int?.facebook_page_id),
+    !!(int?.pinterest_access_token),
+    !!(int?.threads_access_token),
+  ].filter(Boolean).length
 
   const stats = [
-    { label: 'Videos Tracked', value: String(videoCount), icon: PlaySquare, color: 'text-[#0071e3]', bg: 'bg-[#0071e3]/8' },
+    { label: 'Videos Tracked',     value: String(videoCount),      icon: PlaySquare, color: 'text-[#0071e3]',  bg: 'bg-[#0071e3]/8' },
+    { label: 'Posts Published',     value: String(publishedCount),  icon: FileText,   color: 'text-[#34c759]',  bg: 'bg-[#34c759]/8' },
+    { label: 'Platforms Connected', value: `${platformsConnected}/4`, icon: Layers,  color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
   ]
 
   const { data: recentVideos } = await supabase
@@ -89,7 +106,7 @@ export default async function DashboardPage() {
       <ChannelStats />
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-3 gap-4 mb-8">
         {stats.map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className="stat-card">
             <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center mb-3`}>
