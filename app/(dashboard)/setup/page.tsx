@@ -1278,24 +1278,30 @@ function SetupPageInner() {
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Setup</h1>
         </div>
         <TabBar />
-        <div className="card p-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
-              <CheckCircle size={22} className="text-[#34c759]" />
+        <div className="card p-6">
+          <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+            <div className="w-9 h-9 rounded-full bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
+              <CheckCircle size={18} className="text-[#34c759]" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">WordPress connected</p>
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Your blog is connected and ready to publish.</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] truncate mt-0.5">{completedUrl || 'Your blog is ready to publish.'}</p>
             </div>
+            <span className="flex items-center gap-1 text-xs font-medium text-[#34c759] flex-shrink-0">
+              <Check size={12} /> Active
+            </span>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-3">
             {completedUrl && (
               <a href={completedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs">
-                Visit Blog <ExternalLink size={11} />
+                Visit blog <ExternalLink size={11} />
               </a>
             )}
-            <button onClick={handleReset} className="btn-secondary text-xs text-[#ff3b30] border-[#ff3b30]/30 hover:border-[#ff3b30]">
-              Reset
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors"
+            >
+              <LogOut size={12} /> Disconnect & connect a different site
             </button>
           </div>
         </div>
