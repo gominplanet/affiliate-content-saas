@@ -25,60 +25,98 @@ export async function POST(request: Request) {
       style?: 'review' | 'unboxing' | 'comparison' | 'lifestyle'
     }
 
-    // ── 1. Fetch brand profile ─────────────────────────────────────────────────
+    // ── 1. Fetch brand profile (includes headshot) ─────────────────────────────
     const { data: brand } = await supabase
       .from('brand_profiles')
-      .select('niches')
+      .select('niches,author_name,headshot_url')
       .eq('user_id', user.id)
       .single()
 
     const b = brand as Record<string, unknown> | null
     const niches = ((b?.niches as string[]) || []).join(', ') || 'consumer products'
+    const authorName = (b?.author_name as string) || ''
+    const headshotUrl = (b?.headshot_url as string) || ''
+
+    const hasHeadshot = !!headshotUrl
 
     // ── 2. Claude writes the image prompt ─────────────────────────────────────
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const styleGuide = {
-      review: 'bold dramatic product close-up shot, studio lighting with rim light, vibrant contrasting background (red, orange, or yellow), professional product photography',
-      unboxing: 'product emerging from open box with packaging, excitement and discovery feel, clean white or gradient background, dramatic lighting',
-      comparison: 'two products side by side with a glowing VS divider, clean minimal background, equal dramatic lighting on both',
-      lifestyle: 'product in a real-world aspirational setting, natural lifestyle photography, warm cinematic lighting',
+      review: 'bold dramatic product close-up, studio lighting, vivid contrasting background (red, orange, or yellow)',
+      unboxing: 'product emerging from open box, excitement and discovery, clean background, dramatic lighting',
+      comparison: 'two products side by side with a glowing VS divider, clean minimal background',
+      lifestyle: 'product in an aspirational real-world setting, warm cinematic lighting',
     }[style ?? 'review']
+
+    const faceInstruction = hasHeadshot
+      ? `- A PERSON (${authorName || 'the presenter'}) is prominently featured showing a genuine reaction — surprised, excited, or pointing directly at the product
+- The person takes up roughly 40% of the frame on one side; the product takes up the other 60%
+- Facial expression is expressive and high-energy, mouth slightly open, eyes wide
+- The person's clothing is casual and relatable`
+      : `- NO people, NO faces — product is the sole hero`
 
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 300,
       messages: [{
         role: 'user',
-        content: `Write a detailed image generation prompt for a YouTube thumbnail.
+        content: `Write an image generation prompt for a YouTube thumbnail.
 
 Product: ${productTitle || asin || videoTitle}
-Video: "${videoTitle}"
+Video title: "${videoTitle}"
 Niche: ${niches}
 Style: ${styleGuide}
 
-Requirements:
-- Photorealistic product photography, 4K ultra detailed
-- NO text, NO words, NO letters in the image
-- NO people, NO faces
-- The product is the clear hero/focal point
-- Bright saturated colors that pop on YouTube
-- ${styleGuide}
-- Cinematic depth of field
-- Clean professional composition
+Compose the thumbnail so it:
+${faceInstruction}
+- Has bright, saturated colors that pop on YouTube (reds, yellows, oranges)
+- Is photorealistic, ultra detailed, 4K quality
+- Has NO text, NO words, NO letters anywhere
+- Uses cinematic depth of field
+- Has clean professional composition
 
-Return ONLY the image prompt, nothing else. Max 150 words.`,
+Return ONLY the image prompt. Max 150 words.`,
       }],
     })
 
     const imagePrompt = (msg.content[0] as { type: string; text: string }).text.trim()
 
-    // ── 3. Generate image — try fal.ai first, then Replicate as fallback ────────
+    // ── 3. Generate image ─────────────────────────────────────────────────────
     let thumbnailUrl: string | null = null
     let lastError = ''
+    let modelUsed = ''
 
-    // ── 3a. fal.ai ────────────────────────────────────────────────────────────
-    if (falKey) {
+    // ── 3a. If headshot exists → use PuLID (face-consistent generation) ───────
+    if (hasHeadshot) {
+      try {
+        const res = await fetch('https://fal.run/fal-ai/pulid', {
+          method: 'POST',
+          headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: imagePrompt,
+            reference_images: [{ image_url: headshotUrl }],
+            image_size: 'landscape_16_9',
+            num_inference_steps: 20,
+            num_images: 1,
+          }),
+        })
+        const data = await res.json() as Record<string, unknown>
+        if (res.ok) {
+          const images = data.images as Array<{ url: string }> | undefined
+          thumbnailUrl = images?.[0]?.url ?? null
+          if (thumbnailUrl) modelUsed = 'pulid'
+        } else {
+          lastError = `PuLID ${res.status}: ${JSON.stringify(data).slice(0, 150)}`
+          console.warn('[generate-thumbnail] PuLID failed, falling back:', lastError)
+        }
+      } catch (err) {
+        lastError = `PuLID error: ${err instanceof Error ? err.message : String(err)}`
+      }
+    }
+
+    // ── 3b. Flux Schnell — no headshot, or PuLID failed ────────────────────────
+    if (!thumbnailUrl) {
       for (const model of ['fal-ai/flux/schnell', 'fal-ai/flux-schnell']) {
         try {
           const res = await fetch(`https://fal.run/${model}`, {
@@ -94,22 +132,21 @@ Return ONLY the image prompt, nothing else. Max 150 words.`,
           })
           const data = await res.json() as Record<string, unknown>
           if (!res.ok) {
-            lastError = `fal.ai ${model} ${res.status}: ${JSON.stringify(data).slice(0, 150)}`
-            break // both fal models will fail the same way (balance/key issue)
+            lastError = `${model} ${res.status}: ${JSON.stringify(data).slice(0, 150)}`
+            break
           }
           const images = data.images as Array<{ url: string }> | undefined
           thumbnailUrl = images?.[0]?.url ?? null
-          if (thumbnailUrl) break
+          if (thumbnailUrl) { modelUsed = model; break }
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err)
         }
       }
     }
 
-    // ── 3b. Replicate fallback (REPLICATE_API_TOKEN env var) ─────────────────
+    // ── 3c. Replicate fallback ─────────────────────────────────────────────────
     if (!thumbnailUrl && process.env.REPLICATE_API_TOKEN) {
       try {
-        // Start prediction
         const startRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
           method: 'POST',
           headers: {
@@ -118,43 +155,40 @@ Return ONLY the image prompt, nothing else. Max 150 words.`,
             Prefer: 'wait=30',
           },
           body: JSON.stringify({
-            input: {
-              prompt: imagePrompt,
-              aspect_ratio: '16:9',
-              num_outputs: 1,
-              output_format: 'jpg',
-              output_quality: 90,
-            },
+            input: { prompt: imagePrompt, aspect_ratio: '16:9', num_outputs: 1, output_format: 'jpg' },
           }),
         })
-        const pred = await startRes.json() as { output?: string[]; urls?: { get: string }; id?: string }
-
+        const pred = await startRes.json() as { output?: string[]; urls?: { get: string } }
         if (startRes.ok && pred.output?.[0]) {
           thumbnailUrl = pred.output[0]
+          modelUsed = 'replicate/flux-schnell'
         } else if (startRes.ok && pred.urls?.get) {
-          // Poll once more if not done yet
           await new Promise(r => setTimeout(r, 4000))
           const pollRes = await fetch(pred.urls.get, {
             headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` },
           })
           const pollData = await pollRes.json() as { output?: string[] }
           thumbnailUrl = pollData.output?.[0] ?? null
+          if (thumbnailUrl) modelUsed = 'replicate/flux-schnell'
         } else {
           lastError = `Replicate ${startRes.status}: ${JSON.stringify(pred).slice(0, 150)}`
         }
       } catch (err) {
-        lastError = `Replicate error: ${err instanceof Error ? err.message : String(err)}`
+        lastError = `Replicate: ${err instanceof Error ? err.message : String(err)}`
       }
     }
 
     if (!thumbnailUrl) {
-      const hint = !process.env.REPLICATE_API_TOKEN
-        ? ' — top up fal.ai at fal.ai/dashboard/billing, or add REPLICATE_API_TOKEN to Vercel for a free fallback'
-        : ''
-      throw new Error(`Image generation failed: ${lastError}${hint}`)
+      throw new Error(`Image generation failed: ${lastError}`)
     }
 
-    return NextResponse.json({ ok: true, thumbnailUrl, prompt: imagePrompt })
+    return NextResponse.json({
+      ok: true,
+      thumbnailUrl,
+      prompt: imagePrompt,
+      modelUsed,
+      headshotUsed: hasHeadshot && modelUsed === 'pulid',
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[generate-thumbnail]', msg)

@@ -64,6 +64,8 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
   const [copied, setCopied] = useState<string | null>(null)
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
   const [thumbnailPrompt, setThumbnailPrompt] = useState<string | null>(null)
+  const [thumbnailModel, setThumbnailModel] = useState<string | null>(null)
+  const [headshotUsed, setHeadshotUsed] = useState(false)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
   const [thumbnailStyle, setThumbnailStyle] = useState<'review' | 'unboxing' | 'comparison' | 'lifestyle'>('review')
@@ -149,6 +151,8 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
       if (!res.ok) throw new Error(data.error || 'Thumbnail generation failed')
       setThumbnailUrl(data.thumbnailUrl)
       setThumbnailPrompt(data.prompt)
+      setThumbnailModel(data.modelUsed ?? null)
+      setHeadshotUsed(data.headshotUsed ?? false)
     } catch (err) {
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
     } finally {
@@ -430,7 +434,7 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
                     <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                       <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <a
                         href={thumbnailUrl}
                         download="thumbnail.jpg"
@@ -441,6 +445,11 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
                       >
                         <Download size={12} /> Download Thumbnail
                       </a>
+                      {headshotUsed && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#af52de]/10 text-[#af52de] font-medium">
+                          👤 Your face included
+                        </span>
+                      )}
                       {thumbnailPrompt && (
                         <button onClick={() => copy(thumbnailPrompt, 'prompt')} className="text-[10px] text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors flex items-center gap-0.5">
                           <Copy size={10} /> {copied === 'prompt' ? 'Copied!' : 'Copy prompt'}

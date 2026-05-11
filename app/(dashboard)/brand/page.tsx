@@ -108,6 +108,7 @@ interface BrandData {
   target_audience: string
   words_to_avoid: string
   gear_sections: GearSection[]
+  headshot_url: string
 }
 
 const DEFAULT: BrandData = {
@@ -127,6 +128,7 @@ const DEFAULT: BrandData = {
   target_audience: '',
   words_to_avoid: '',
   gear_sections: [],
+  headshot_url: '',
 }
 
 export default function BrandPage() {
@@ -162,6 +164,7 @@ export default function BrandPage() {
         target_audience: row.target_audience ?? '',
         words_to_avoid: row.words_to_avoid ?? '',
         gear_sections: row.gear_sections ?? [],
+        headshot_url: row.headshot_url ?? '',
       })
     }
     setLoading(false)
@@ -353,6 +356,29 @@ export default function BrandPage() {
               className="input-field resize-none leading-relaxed"
             />
             <WordCount text={data.writing_sample} max={1000} />
+          </div>
+
+          {/* Headshot */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your Headshot</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              Used by the AI Thumbnail Generator to place your face in generated thumbnails.
+              Paste a direct image URL (JPG/PNG) — a clear front-facing photo works best.
+            </p>
+            <div className="flex items-start gap-4">
+              {data.headshot_url && (
+                <div className="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-[#0071e3]/30">
+                  <img src={data.headshot_url} alt="Headshot preview" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                </div>
+              )}
+              <input
+                type="url"
+                value={data.headshot_url}
+                onChange={(e) => set('headshot_url', e.target.value)}
+                placeholder="https://example.com/your-photo.jpg"
+                className="input-field flex-1"
+              />
+            </div>
           </div>
 
           {/* About you */}
