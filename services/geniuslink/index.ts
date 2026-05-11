@@ -1,4 +1,4 @@
-const GENIUSLINK_API = 'https://api.geni.us'
+const GENIUSLINK_API = 'https://api.geniuslink.com'
 
 export class GeniuslinkService {
   private auth: string
@@ -16,18 +16,29 @@ export class GeniuslinkService {
       headers: {
         Authorization: `Basic ${this.auth}`,
         'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
       body: JSON.stringify({ destination, label: label.slice(0, 100) }),
     })
 
+    const body = await res.text()
+
     if (!res.ok) {
-      const body = await res.text()
-      throw new Error(`Geniuslink API error ${res.status}: ${body.slice(0, 200)}`)
+      throw new Error(`Geniuslink API error ${res.status}: ${body.slice(0, 300)}`)
     }
 
-    const data = await res.json() as { shortUrl?: string; url?: string; shortlink?: string }
-    const shortUrl = data.shortUrl || data.url || data.shortlink
-    if (!shortUrl) throw new Error('Geniuslink returned no short URL')
+    let data: Record<string, unknown>
+    try {
+      data = JSON.parse(body)
+    } catch {
+      throw new Error(`Geniuslink returned non-JSON response: ${body.slice(0, 200)}`)
+    }
+
+    // Try common field names for the short URL
+    const shortUrl = (data.shortUrl || data.shortlink || data.url || data.short_url) as string | undefined
+    if (!shortUrl) {
+      throw new Error(`Geniuslink response missing short URL. Keys: ${Object.keys(data).join(', ')}`)
+    }
     return shortUrl
   }
 }
