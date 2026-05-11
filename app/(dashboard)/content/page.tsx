@@ -292,6 +292,75 @@ function VideoCard({
   const [liPosting, setLiPosting] = useState(false)
   const [liPosted, setLiPosted] = useState(!!post?.linkedInPostId)
 
+  // ── Publish All ───────────────────────────────────────────────────────────
+  const [publishingAll, setPublishingAll] = useState(false)
+  const [publishAllStep, setPublishAllStep] = useState('')
+  const [publishAllError, setPublishAllError] = useState<string | null>(null)
+
+  async function handlePublishAll() {
+    setPublishingAll(true)
+    setPublishAllError(null)
+
+    let currentPostId = post?.postId
+
+    // Step 1: Generate blog post if it doesn't exist yet
+    if (!currentPostId) {
+      setPublishAllStep('Generating blog post…')
+      try {
+        const res = await fetch('/api/blog/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: id }),
+        })
+        const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        if (!res.ok) {
+          if (data.limitReached) { window.location.href = '/pricing'; return }
+          throw new Error(data.error || 'Blog generation failed')
+        }
+        currentPostId = data.postId as string
+        onGenerated(id, data.wordpressUrl as string, data.title as string, data.postId as string)
+      } catch (err) {
+        setPublishAllError(err instanceof Error ? err.message : 'Blog generation failed')
+        setPublishingAll(false)
+        return
+      }
+    }
+
+    // Step 2: Fire all connected & unposted social platforms in parallel
+    setPublishAllStep('Publishing to social media…')
+    const tasks: Promise<void>[] = []
+
+    if (fbConnected && !fbPosted) {
+      tasks.push(
+        fetch('/api/blog/facebook-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
+          .then(r => { if (r.ok) setFbPosted(true) })
+          .catch(() => { /* non-fatal */ }),
+      )
+    }
+    if (linkedInConnected && !liPosted) {
+      tasks.push(
+        fetch('/api/blog/linkedin-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
+          .then(r => { if (r.ok) setLiPosted(true) })
+          .catch(() => { /* non-fatal */ }),
+      )
+    }
+    if (threadsConnected && !thPosted) {
+      tasks.push(
+        fetch('/api/blog/threads-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
+          .then(r => { if (r.ok) setThPosted(true) })
+          .catch(() => { /* non-fatal */ }),
+      )
+    }
+
+    await Promise.allSettled(tasks)
+    setPublishingAll(false)
+    setPublishAllStep('')
+  }
+
+  const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected].filter(Boolean).length
+  const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted)
+  const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost)
+
   async function handleLinkedInPost() {
     if (!post?.postId) return
     setLiPosting(true)
@@ -381,7 +450,34 @@ function VideoCard({
           {views != null && <span>{views.toLocaleString()} views</span>}
           <span>{new Date(publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-col gap-2">
+          {/* Publish All — shown when ≥1 social platform is connected and unpublished */}
+          {showPublishAll && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {publishingAll ? (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#0071e3] to-[#5856d6] text-white opacity-80">
+                  <Loader2 size={12} className="animate-spin" />
+                  {publishAllStep || 'Working…'}
+                </div>
+              ) : (
+                <button
+                  onClick={handlePublishAll}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+                  title={post ? 'Post to all connected platforms that haven\'t been posted yet' : 'Generate blog post and publish to all connected platforms'}
+                >
+                  <Sparkles size={12} />
+                  {post ? 'Publish to all' : 'Generate + publish all'}
+                </button>
+              )}
+              {publishAllError && (
+                <span className="text-xs text-[#ff3b30] line-clamp-1">{publishAllError}</span>
+              )}
+            </div>
+          )}
+
+          {/* Individual platform buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
           <GenerateButton videoId={id} existingPost={post} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
           {post ? (
             <>
@@ -448,7 +544,8 @@ function VideoCard({
               <X size={11} /> Ignore
             </button>
           )}
-        </div>
+          </div>{/* end individual buttons */}
+        </div>{/* end flex-col wrapper */}
       </div>
     </div>
   )
