@@ -6,7 +6,7 @@ import {
   ExternalLink, CheckCircle, ChevronRight, Loader2,
   Globe, Wrench, Sparkles, Link2, Rocket, Eye, EyeOff,
   Download, Upload, X, ArrowLeft, Building2, Wand2,
-  Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save,
+  Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Suspense } from 'react'
@@ -781,6 +781,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [threads, setThreads] = useState({ connected: false, userId: '', username: '' })
   const [thDisconnecting, setThDisconnecting] = useState(false)
   const [thNotice, setThNotice] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [linkedin, setLinkedin] = useState({ connected: false, personName: '' })
+  const [liDisconnecting, setLiDisconnecting] = useState(false)
+  const [liNotice, setLiNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [wpTesting, setWpTesting] = useState(false)
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [fixingCss, setFixingCss] = useState(false)
@@ -816,6 +819,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       const boards = JSON.parse(row.pinterest_boards_json || '[]')
       setPinterest({ connected: !!row.pinterest_access_token && !!row.pinterest_board_id, boardId: row.pinterest_board_id ?? '', boardName: row.pinterest_board_name ?? '', boards })
       setThreads({ connected: !!row.threads_access_token, userId: row.threads_user_id ?? '', username: row.threads_username ?? '' })
+      setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
     }
     setLoading(false)
     onLoad()
@@ -834,6 +838,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const thError = searchParams.get('threads_error')
     if (thConnected) setThNotice({ ok: true, msg: 'Threads connected!' })
     if (thError) setThNotice({ ok: false, msg: `Threads error: ${thError}` })
+    const liConnected = searchParams.get('linkedin_connected')
+    const liError = searchParams.get('linkedin_error')
+    if (liConnected) setLiNotice({ ok: true, msg: 'LinkedIn connected!' })
+    if (liError) setLiNotice({ ok: false, msg: liError === 'callback_failed' ? 'LinkedIn connection failed — please try again.' : `LinkedIn error: ${liError}` })
   }, [searchParams])
 
   useEffect(() => { load() }, [load])
@@ -925,6 +933,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       const res = await fetch('/api/auth/threads/disconnect', { method: 'POST' })
       if (res.ok) setThreads({ connected: false, userId: '', username: '' })
     } finally { setThDisconnecting(false) }
+  }
+
+  async function disconnectLinkedIn() {
+    setLiDisconnecting(true)
+    try {
+      const res = await fetch('/api/auth/linkedin/disconnect', { method: 'POST' })
+      if (res.ok) setLinkedin({ connected: false, personName: '' })
+    } finally { setLiDisconnecting(false) }
   }
 
   if (loading) return (
@@ -1117,6 +1133,43 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           <div className="flex flex-col gap-3">
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Connect your Threads account to post blog summaries directly from the content page.</p>
             <ManualThreadsToken onConnected={(username) => setThreads({ connected: true, userId: '', username })} />
+          </div>
+        )}
+      </div>
+
+      {/* LinkedIn */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#e8f0fb' }}>
+            <Linkedin size={16} style={{ color: '#0A66C2' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">LinkedIn</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Share blog posts as LinkedIn articles with your network</p>
+          </div>
+          {linkedin.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        {liNotice && <p className={`text-xs mb-3 ${liNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{liNotice.msg}</p>}
+        {linkedin.connected ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
+              {linkedin.personName || 'LinkedIn account connected'}
+            </p>
+            <button onClick={disconnectLinkedIn} disabled={liDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {liDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Connect your LinkedIn profile to share blog posts directly from the content page.</p>
+            <a
+              href="/api/auth/linkedin"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
+              style={{ backgroundColor: '#0A66C2' }}
+            >
+              <Linkedin size={14} /> Connect LinkedIn
+            </a>
           </div>
         )}
       </div>
