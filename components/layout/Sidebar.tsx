@@ -44,6 +44,16 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
 
   // Re-fetch on every route change so the link is always up to date
   useEffect(() => {
+    // 1. Check localStorage immediately (instant, no network round-trip)
+    try {
+      const raw = localStorage.getItem('affiliateos_setup_v3')
+      if (raw) {
+        const d = JSON.parse(raw)
+        if (d.completedUrl) setWpSiteUrl(d.completedUrl)
+      }
+    } catch { /* ignore */ }
+
+    // 2. Also fetch from Supabase so we pick up changes from other sessions
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,9 +61,10 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         .from('integrations')
         .select('wordpress_url,wp_site_url')
         .eq('user_id', user.id)
-        .single()
+        .maybeSingle()
         .then(({ data }: { data: Record<string, string> | null }) => {
-          if (data) setWpSiteUrl(data.wordpress_url || data.wp_site_url || null)
+          const url = data?.wordpress_url || data?.wp_site_url || null
+          if (url) setWpSiteUrl(url)
         })
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
