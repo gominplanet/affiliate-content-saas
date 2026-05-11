@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '@/components/layout/Header'
-import { Key, Bell, Eye, EyeOff, Save, Check, Loader2, Wifi, Facebook, Link2, LogOut, Pin, MessageCircle, CreditCard, Zap, CheckCircle } from 'lucide-react'
+import { Key, Eye, EyeOff, Save, Check, Loader2, Wifi, Facebook, Link2, LogOut, Pin, MessageCircle, CreditCard, Zap, CheckCircle } from 'lucide-react'
 import { TIERS, type Tier } from '@/lib/tier'
 import { createBrowserClient } from '@/lib/supabase/client'
 
-type Tab = 'integrations' | 'notifications' | 'billing'
+type Tab = 'integrations' | 'billing'
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -353,15 +353,6 @@ function SettingsPage() {
   const [fixThumbsResult, setFixThumbsResult] = useState<string | null>(null)
 
 
-  // Notifications state
-  const [notifications, setNotifications] = useState({
-    new_video: true,
-    post_published: true,
-    job_failures: true,
-    weekly_digest: false,
-  })
-  const [notifSaving, setNotifSaving] = useState(false)
-  const [notifSaved, setNotifSaved] = useState(false)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -402,7 +393,6 @@ function SettingsPage() {
         username: row.threads_username ?? '',
       })
       setTier((row.tier as Tier) ?? 'free')
-      if (row.notification_preferences) setNotifications(row.notification_preferences)
     }
     setLoading(false)
   }, [supabase])
@@ -411,7 +401,6 @@ function SettingsPage() {
     const res = await fetch('/api/profile')
     if (!res.ok) return
     const data = await res.json()
-    setNotifications(data.notifications ?? notifications)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -559,20 +548,6 @@ function SettingsPage() {
     }
   }
 
-  async function saveNotifications() {
-    setNotifSaving(true)
-    try {
-      await fetch('/api/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notifications }),
-      })
-      setNotifSaved(true)
-      setTimeout(() => setNotifSaved(false), 2500)
-    } finally {
-      setNotifSaving(false)
-    }
-  }
 
   async function saveIntegrations() {
     setSaving(true)
@@ -601,15 +576,13 @@ function SettingsPage() {
 
   return (
     <>
-      <Header title="Settings" subtitle="Manage your account, integrations and notifications." />
+      <Header title="Settings" subtitle="Manage your account and integrations." />
 
       <div className="flex items-center gap-1 bg-[#f5f5f7] dark:bg-[#000] p-1 rounded-xl w-fit mb-6">
         <TabButton active={tab === 'integrations'} onClick={() => setTab('integrations')}>
           <Key size={14} /> Integrations
         </TabButton>
-        <TabButton active={tab === 'notifications'} onClick={() => setTab('notifications')}>
-          <Bell size={14} /> Notifications
-        </TabButton>
+
         <TabButton active={tab === 'billing'} onClick={() => setTab('billing')}>
           <CreditCard size={14} /> Billing
         </TabButton>
@@ -940,46 +913,6 @@ function SettingsPage() {
         </div>
       )}
 
-      {/* Notifications tab */}
-      {tab === 'notifications' && (
-        <div className="max-w-xl flex flex-col gap-5">
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Email Notifications</h2>
-            <Toggle
-              label="New video detected"
-              description="Get notified when a new YouTube video is found."
-              checked={notifications.new_video}
-              onChange={(v) => setNotifications((n) => ({ ...n, new_video: v }))}
-            />
-            <Toggle
-              label="Blog post published"
-              description="Confirmation when a post is published to WordPress."
-              checked={notifications.post_published}
-              onChange={(v) => setNotifications((n) => ({ ...n, post_published: v }))}
-            />
-            <Toggle
-              label="Job failures"
-              description="Immediate alert when a generation or publishing job fails."
-              checked={notifications.job_failures}
-              onChange={(v) => setNotifications((n) => ({ ...n, job_failures: v }))}
-            />
-            <Toggle
-              label="Weekly digest"
-              description="Weekly summary of your content pipeline."
-              checked={notifications.weekly_digest}
-              onChange={(v) => setNotifications((n) => ({ ...n, weekly_digest: v }))}
-            />
-          </div>
-          <button onClick={saveNotifications} disabled={notifSaving} className="btn-primary self-start">
-            {notifSaved
-              ? <><Check size={14} /> Saved!</>
-              : notifSaving
-              ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
-              : <><Save size={14} /> Save preferences</>
-            }
-          </button>
-        </div>
-      )}
 
       {/* Billing tab */}
       {tab === 'billing' && (
