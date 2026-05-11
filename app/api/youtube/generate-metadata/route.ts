@@ -6,6 +6,9 @@ import Anthropic from '@anthropic-ai/sdk'
 
 export const maxDuration = 60
 
+interface GearItem { name: string; url: string }
+interface GearSection { title: string; items: GearItem[] }
+
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
@@ -25,7 +28,7 @@ export async function POST(request: Request) {
     // ── 1. Fetch brand profile ─────────────────────────────────────────────────
     const { data: brand } = await supabase
       .from('brand_profiles')
-      .select('name,author_name,niches,tone,affiliate_disclaimer,website_url,contact_email')
+      .select('name,author_name,niches,tone,website_url,contact_email,gear_sections')
       .eq('user_id', user.id)
       .single()
 
@@ -42,7 +45,6 @@ export async function POST(request: Request) {
     try {
       product = await fetchAmazonProduct(asin)
     } catch {
-      // Fall back to generating without product data
       product = { asin, title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null }
     }
 
@@ -59,19 +61,17 @@ export async function POST(request: Request) {
       } catch (err) {
         geniuslinkError = err instanceof Error ? err.message : String(err)
         console.error('Geniuslink error:', geniuslinkError)
-        // Fall through to Associates tag
       }
     }
 
-    // Fallback: Amazon Associates tracking tag
     if (!geniuslinkUsed && intRow?.amazon_associates_tag) {
       affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=${intRow.amazon_associates_tag}`
-      geniuslinkError = null // clear error — we have a valid affiliate link
+      geniuslinkError = null
     } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
       geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Site & Integrations'
     }
 
-    // ── 5. Generate YouTube metadata with Claude ───────────────────────────────
+    // ── 5. Build brand context ────────────────────────────────────────────────
     const b = brand as Record<string, unknown> | null
     const brandName = (b?.name as string) || 'our channel'
     const authorName = (b?.author_name as string) || ''
@@ -79,44 +79,80 @@ export async function POST(request: Request) {
     const tone = ((b?.tone as string[]) || []).join(', ') || 'conversational, friendly'
     const websiteUrl = (b?.website_url as string) || ''
     const contactEmail = (b?.contact_email as string) || ''
+    const gearSections = ((b?.gear_sections as GearSection[]) || []).filter(s => s.title && s.items.length > 0)
+
+    // Collaboration line
     const collabLine = websiteUrl
-      ? `Want Your Product Reviewed? Check OUR WEBSITE for collaborations: ${websiteUrl}`
+      ? `Let's Work Together! Check my WEBSITE for collaborations: ${websiteUrl}`
       : contactEmail
-        ? `Want Your Product Reviewed? Reach out: ${contactEmail}`
+        ? `Let's Work Together! Email me for collaborations: ${contactEmail}`
         : ''
+
+    // Gear sections block
+    const gearBlock = gearSections.map(section => {
+      const itemLines = section.items
+        .filter(i => i.name && i.url)
+        .map(i => `${i.name}: ${i.url}`)
+        .join('\n')
+      return `${section.title}: (Amazon affiliate links)\n${itemLines}`
+    }).join('\n\n')
 
     const productContext = [
       product.title ? `Product: ${product.title}` : '',
       product.price ? `Price: ${product.price}` : '',
       product.rating ? `Rating: ${product.rating}/5` : '',
-      product.bullets.length ? `Features:\n${product.bullets.map(b => `- ${b}`).join('\n')}` : '',
+      product.bullets.length ? `Features:\n${product.bullets.map((b: string) => `- ${b}`).join('\n')}` : '',
       product.description ? `Description: ${product.description}` : '',
     ].filter(Boolean).join('\n')
 
+    // ── 6. Generate with Claude ───────────────────────────────────────────────
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
+      max_tokens: 2500,
       messages: [{
         role: 'user',
-        content: `You are writing YouTube metadata for ${brandName}${authorName ? ` (${authorName})` : ''}.
-Brand niche: ${niches}
-Brand tone: ${tone}
+        content: `You are an expert YouTube SEO strategist and viral content creator for ${brandName}${authorName ? ` (${authorName})` : ''}.
 
-Amazon product (ASIN: ${asin}):
+BRAND INFO:
+- Niche: ${niches}
+- Tone: ${tone}
+
+PRODUCT DATA (ASIN: ${asin}):
 ${productContext}
 
-Original video title: "${videoTitle}"
-${videoDescription ? `Original description snippet: "${videoDescription.slice(0, 300)}"` : ''}
+ORIGINAL VIDEO TITLE: "${videoTitle}"
+${videoDescription ? `ORIGINAL DESCRIPTION SNIPPET: "${videoDescription.slice(0, 300)}"` : ''}
 
-Generate optimised YouTube metadata. Return ONLY valid JSON with these exact keys:
+YOUR MISSION: Generate maximum-reach YouTube metadata that dominates search on YouTube, Google, and AI answer engines (ChatGPT, Gemini, Perplexity). Think like a viral content strategist:
 
+TITLE STRATEGY:
+- Lead with the strongest hook word (Review, Honest Review, Worth It?, Before You Buy, Best, Worst, etc.)
+- Include the exact product name people search for
+- Add a compelling benefit or emotional trigger
+- Under 100 characters
+- DO NOT include the ASIN
+
+HASHTAG STRATEGY:
+- Think: what are people actually typing into YouTube search for this product?
+- Mix: brand-specific + product type + use case + trending broad tags
+- Include #ad #affiliate #productreview + 15-18 niche-specific ones
+- Total: 18-22 hashtags
+
+PRODUCT DESCRIPTION STRATEGY:
+- Write 3-4 sentences optimised for AI answer engines
+- Answer: What is it? Who is it for? What's the #1 benefit? Is it worth buying?
+- Use natural language with keywords people search for
+- Tone: ${tone}
+
+Return ONLY valid JSON:
 {
-  "title": "Compelling YouTube title under 100 chars — include product name, key benefit, and a hook. Do NOT include the ASIN.",
-  "description": "Use EXACTLY this structure (preserve the blank lines and formatting):\n\nCheck Today's Price and Availability on AMAZON here: ${affiliateUrl}\n\nAs Amazon Influencers, we earn commissions—at no cost to you—from qualifying purchases.\n\n[Generate 12-15 highly relevant hashtags starting with # separated by spaces — mix product-specific, niche, and broad tags]\n\nIf this helped, subscribe for more real reviews and drop your biggest question below—we reply to comments.\n${collabLine ? `\n${collabLine}\n` : '\n'}\n[Write 3-5 sentences about the product: what it does, key benefits, who it's for, the biggest benefit, and ideal use cases. Write in ${tone} tone. Do NOT use bullet points here — flowing sentences only.]\n\nQuick Verdict: [One punchy sentence summarising who should buy this and why.]",
-  "tags": ["array", "of", "20-30", "relevant", "tags", "no # symbol", "mix of broad and specific"],
-  "pinnedComment": "A short punchy comment to pin (2-3 sentences). Include the affiliate link (${affiliateUrl}) and a call to action.",
-  "title_alternatives": ["3 alternative title options"]
+  "title": "Viral SEO-optimised title under 100 chars",
+  "hashtags": "#tag1 #tag2 #tag3 ... (space-separated, 18-22 tags)",
+  "productDescription": "3-4 sentences optimised for YouTube, Google and AI search engines.",
+  "pinnedComment": "Punchy pinned comment 2-3 sentences. Include ${affiliateUrl} and a CTA.",
+  "title_alternatives": ["3 alternative viral title options"],
+  "tags": ["20-30 tags without # symbol — mix of exact-match search terms, broad keywords, and long-tail phrases people search on YouTube"]
 }`,
       }],
     })
@@ -124,13 +160,43 @@ Generate optimised YouTube metadata. Return ONLY valid JSON with these exact key
     const raw = (msg.content[0] as { type: string; text: string }).text.trim()
     const jsonMatch = raw.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error('Claude returned invalid JSON')
-    const generated = JSON.parse(jsonMatch[0]) as {
+    const claude = JSON.parse(jsonMatch[0]) as {
       title: string
-      description: string
-      tags: string[]
+      hashtags: string
+      productDescription: string
       pinnedComment: string
       title_alternatives: string[]
+      tags: string[]
     }
+
+    // ── 7. Assemble final description from template ───────────────────────────
+    const descParts = [
+      `Check Today's Price and Availability on AMAZON here: ${affiliateUrl}`,
+      `(affiliate link)`,
+      `----------`,
+      `Disclosure: As an Amazon Associate and Influencer I earn commissions, at no cost to you, made out of qualifying purchases.`,
+      claude.hashtags,
+      `----------`,
+      `Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)`,
+    ]
+
+    if (collabLine) {
+      descParts.push(`----------`, collabLine)
+    }
+
+    descParts.push(
+      `----------`,
+      `Product ASIN: ${asin}`,
+      `----------`,
+      `Product Description:`,
+      claude.productDescription,
+    )
+
+    if (gearBlock) {
+      descParts.push(`----------`, gearBlock)
+    }
+
+    const description = descParts.join('\n')
 
     return NextResponse.json({
       ok: true,
@@ -144,7 +210,13 @@ Generate optimised YouTube metadata. Return ONLY valid JSON with these exact key
         rating: product.rating,
         imageUrl: product.imageUrl,
       },
-      generated,
+      generated: {
+        title: claude.title,
+        description,
+        tags: claude.tags,
+        pinnedComment: claude.pinnedComment,
+        title_alternatives: claude.title_alternatives,
+      },
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

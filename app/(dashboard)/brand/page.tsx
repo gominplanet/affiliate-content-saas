@@ -2,8 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Header from '@/components/layout/Header'
-import { Save, Check } from 'lucide-react'
+import { Save, Check, Plus, Trash2, GripVertical } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+
+interface GearItem { name: string; url: string }
+interface GearSection { title: string; items: GearItem[] }
 
 // ─── Amazon-style niches ──────────────────────────────────────────────────────
 const NICHES = [
@@ -104,6 +107,7 @@ interface BrandData {
   author_bio: string
   target_audience: string
   words_to_avoid: string
+  gear_sections: GearSection[]
 }
 
 const DEFAULT: BrandData = {
@@ -122,6 +126,7 @@ const DEFAULT: BrandData = {
   author_bio: '',
   target_audience: '',
   words_to_avoid: '',
+  gear_sections: [],
 }
 
 export default function BrandPage() {
@@ -156,6 +161,7 @@ export default function BrandPage() {
         author_bio: row.author_bio ?? '',
         target_audience: row.target_audience ?? '',
         words_to_avoid: row.words_to_avoid ?? '',
+        gear_sections: row.gear_sections ?? [],
       })
     }
     setLoading(false)
@@ -397,6 +403,103 @@ export default function BrandPage() {
               placeholder={"e.g.\nhonest\ngame-changer\nleverage\nseamlessly\nit's worth noting"}
               className="input-field resize-none leading-relaxed font-mono text-xs"
             />
+          </div>
+
+          {/* YouTube gear sections */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube Description Sections</h2>
+              <button
+                type="button"
+                onClick={() => set('gear_sections', [...data.gear_sections, { title: '', items: [{ name: '', url: '' }] }])}
+                className="flex items-center gap-1 text-xs text-[#0071e3] hover:underline"
+              >
+                <Plus size={12} /> Add section
+              </button>
+            </div>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              These sections appear at the bottom of every YouTube description — great for your gear, editing setup, or any recurring affiliate links.
+            </p>
+            {data.gear_sections.length === 0 && (
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] italic">No sections yet. Click "Add section" to create one.</p>
+            )}
+            <div className="flex flex-col gap-5">
+              {data.gear_sections.map((section, si) => (
+                <div key={si} className="border border-gray-200 dark:border-white/10 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <GripVertical size={14} className="text-[#86868b] dark:text-[#8e8e93] flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={section.title}
+                      onChange={e => {
+                        const updated = [...data.gear_sections]
+                        updated[si] = { ...updated[si], title: e.target.value }
+                        set('gear_sections', updated)
+                      }}
+                      placeholder="e.g. WHAT I USE TO RECORD MY VIDEOS"
+                      className="input-field text-xs font-semibold flex-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => set('gear_sections', data.gear_sections.filter((_, i) => i !== si))}
+                      className="text-[#ff3b30] hover:opacity-70 flex-shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-2 pl-5">
+                    {section.items.map((item, ii) => (
+                      <div key={ii} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={e => {
+                            const updated = [...data.gear_sections]
+                            updated[si].items[ii] = { ...updated[si].items[ii], name: e.target.value }
+                            set('gear_sections', updated)
+                          }}
+                          placeholder="Product name"
+                          className="input-field text-xs flex-1"
+                        />
+                        <input
+                          type="url"
+                          value={item.url}
+                          onChange={e => {
+                            const updated = [...data.gear_sections]
+                            updated[si].items[ii] = { ...updated[si].items[ii], url: e.target.value }
+                            set('gear_sections', updated)
+                          }}
+                          placeholder="https://amzn.to/..."
+                          className="input-field text-xs flex-1 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = [...data.gear_sections]
+                            updated[si].items = updated[si].items.filter((_, i) => i !== ii)
+                            set('gear_sections', updated)
+                          }}
+                          className="text-[#86868b] hover:text-[#ff3b30] flex-shrink-0"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = [...data.gear_sections]
+                        updated[si].items.push({ name: '', url: '' })
+                        set('gear_sections', updated)
+                      }}
+                      className="flex items-center gap-1 text-xs text-[#0071e3] hover:underline self-start mt-1"
+                    >
+                      <Plus size={11} /> Add item
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
