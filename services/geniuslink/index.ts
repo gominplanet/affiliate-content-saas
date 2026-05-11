@@ -11,7 +11,7 @@ export class GeniuslinkService {
     }
   }
 
-  // Fetch the first available group ID — required for creating links
+  // Fetch the best group ID for YouTube links — required for creating links
   private async getDefaultGroupId(): Promise<number> {
     const res = await fetch(`${GENIUSLINK_API}/v1/groups/list`, {
       headers: this.authHeaders,
@@ -19,11 +19,13 @@ export class GeniuslinkService {
     const text = await res.text()
     if (!res.ok) throw new Error(`Geniuslink groups error ${res.status}: ${text.slice(0, 200)}`)
 
-    const data = JSON.parse(text) as { Results?: Array<{ Id: number; GroupName: string }> }
-    const groups = data.Results ?? (Array.isArray(data) ? data : [])
+    const data = JSON.parse(text) as { Groups?: Array<{ Id: number; Name: string }> }
+    const groups = data.Groups ?? []
     if (!groups.length) throw new Error('Geniuslink: no groups found on this account')
 
-    return groups[0].Id
+    // Prefer a YouTube-specific group if one exists, otherwise use the first group
+    const youtubeGroup = groups.find(g => /youtube/i.test(g.Name))
+    return (youtubeGroup ?? groups[0]).Id
   }
 
   async createAsinLink(asin: string, label: string): Promise<string> {
