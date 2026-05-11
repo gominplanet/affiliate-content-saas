@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       : `- NO people, NO faces — product is the sole hero`
 
     const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5',
+      model: 'claude-3-5-haiku-20241022',
       max_tokens: 300,
       messages: [{
         role: 'user',
