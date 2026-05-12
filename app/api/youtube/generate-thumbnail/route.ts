@@ -83,12 +83,14 @@ export async function POST(request: Request) {
     // Person composition is handled separately — PuLID receives a person-prefix prepended
     // to the product prompt. This way if PuLID fails and Flux takes over, no random
     // people are invented by the model.
-    const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 500,
-      messages: [{
-        role: 'user',
-        content: `You are a world-class YouTube thumbnail art director. Create a Flux image generation prompt for a stunning, high-CTR YouTube thumbnail focused entirely on the product.
+    // Run both Claude calls in parallel to save ~3-5s
+    const [msg, hookMsg] = await Promise.all([
+      anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: `You are a world-class YouTube thumbnail art director. Create a Flux image generation prompt for a stunning, high-CTR YouTube thumbnail focused entirely on the product.
 
 ━━ PRODUCT CONTEXT ━━
 ${productContext || videoTitle}
@@ -113,24 +115,22 @@ NO people or faces — product drama only. The product is the sole hero of the f
 - The image should look like a $5,000 professional photoshoot
 
 Write ONLY the image generation prompt. Be hyper-specific: name exact colours, lighting positions, surface textures, background details, atmosphere, and camera lens. 150-220 words.`,
-      }],
-    })
-
-    const productOnlyPrompt = (msg.content[0] as { type: string; text: string }).text.trim()
-
-    // Generate a SHORT punchy overlay hook (2-5 words, all caps) in parallel
-    // Examples from top YouTubers: "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!"
-    const hookMsg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 30,
-      messages: [{
-        role: 'user',
-        content: `Write a 2-5 word ALL-CAPS YouTube thumbnail hook for this product review. Make it punchy and emotional — like "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!", "WE LOVE IT!", "PAPER TOWEL KILLER?". NEVER use the word HONEST. Return ONLY the hook text, no quotes, no punctuation at the end unless it's ? or !.
+        }],
+      }),
+      anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 30,
+        messages: [{
+          role: 'user',
+          content: `Write a 2-5 word ALL-CAPS YouTube thumbnail hook for this product review. Make it punchy and emotional — like "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!", "WE LOVE IT!", "PAPER TOWEL KILLER?". NEVER use the word HONEST. Return ONLY the hook text, no quotes, no punctuation at the end unless it's ? or !.
 
 Product: ${productContext.split('\n')[0]}
 Video title: "${videoTitle}"`,
-      }],
-    })
+        }],
+      }),
+    ])
+
+    const productOnlyPrompt = (msg.content[0] as { type: string; text: string }).text.trim()
     const overlayHook = (hookMsg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
 
     // For PuLID: prepend composition instruction. Flux fallback uses product-only prompt.
@@ -174,13 +174,13 @@ Video title: "${videoTitle}"`,
             prompt: pulidPrompt,
             reference_images: [{ image_url: cleanHeadshotUrl }],
             image_size: 'landscape_16_9',
-            num_inference_steps: 20,
+            num_inference_steps: 4,
             guidance_scale: 1.2,
             id_scale: 0.8,
             mode: 'fidelity',
             num_images: 1,
           }),
-        }, 35_000)
+        }, 25_000)
         const data = await falJson(res)
         console.log('[generate-thumbnail] PuLID response:', res.status, JSON.stringify(data).slice(0, 300))
         if (res.ok) {
