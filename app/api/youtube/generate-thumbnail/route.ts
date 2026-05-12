@@ -28,6 +28,7 @@ export async function POST(request: Request) {
       productRating,
       asin,
       style,
+      includePerson = true,
     } = await request.json() as {
       videoTitle: string
       videoDescription?: string
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
       productRating?: string
       asin?: string
       style?: 'review' | 'unboxing' | 'comparison' | 'lifestyle'
+      includePerson?: boolean
     }
 
     // ── 1. Fetch brand profile ─────────────────────────────────────────────────
@@ -51,7 +53,7 @@ export async function POST(request: Request) {
     const niches = ((b?.niches as string[]) || []).join(', ') || 'consumer products'
     const authorName = (b?.author_name as string) || 'the host'
     const headshotUrl = (b?.headshot_url as string) || ''
-    const hasHeadshot = !!headshotUrl
+    const hasHeadshot = !!headshotUrl && includePerson
 
     // ── 2. Build rich product + video context ──────────────────────────────────
     const productContext = [
