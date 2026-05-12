@@ -131,6 +131,12 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
     let lastError = ''
     let modelUsed = ''
 
+    // Safe JSON parse for fal.ai / Replicate — they occasionally return plain text on errors
+    async function falJson(res: globalThis.Response): Promise<Record<string, unknown>> {
+      const text = await res.text()
+      try { return JSON.parse(text) as Record<string, unknown> } catch { return { _raw: text } }
+    }
+
     // ── 4a. PuLID when headshot available (face-consistent generation) ─────────
     if (hasHeadshot) {
       try {
@@ -145,7 +151,7 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
             num_images: 1,
           }),
         })
-        const data = await res.json() as Record<string, unknown>
+        const data = await falJson(res)
         if (res.ok) {
           thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
           if (thumbnailUrl) modelUsed = 'pulid'
@@ -175,7 +181,7 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
               enable_safety_checker: false,
             }),
           })
-          const data = await res.json() as Record<string, unknown>
+          const data = await falJson(res)
           if (!res.ok) {
             lastError = `${model} ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
             continue

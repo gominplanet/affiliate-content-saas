@@ -82,6 +82,17 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
     }
   }, [generated])
 
+  // Safe JSON parse — if server returns plain text / HTML on error, show that instead
+  async function safeJson(res: Response): Promise<Record<string, unknown>> {
+    const text = await res.text()
+    try {
+      return JSON.parse(text) as Record<string, unknown>
+    } catch {
+      // Surface the raw server message so the user sees something meaningful
+      throw new Error(text.slice(0, 300) || `HTTP ${res.status}`)
+    }
+  }
+
   async function generate() {
     setGenerating(true)
     setError(null)
@@ -97,14 +108,14 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
           videoDescription: video.description,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Generation failed')
-      setGenerated(data.generated)
-      setAgentInsights(data.agentInsights ?? null)
-      setProduct({ ...data.product, bullets: data.productBullets, description: data.productDescription })
-      setAffiliateUrl(data.affiliateUrl)
-      setGeniuslinkUsed(data.geniuslinkUsed ?? false)
-      setGeniuslinkError(data.geniuslinkError ?? null)
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error((data.error as string) || 'Generation failed')
+      setGenerated(data.generated as GeneratedMetadata)
+      setAgentInsights((data.agentInsights ?? null) as AgentInsights | null)
+      setProduct({ ...(data.product as ProductInfo), bullets: data.productBullets as string[], description: data.productDescription as string })
+      setAffiliateUrl(data.affiliateUrl as string)
+      setGeniuslinkUsed((data.geniuslinkUsed ?? false) as boolean)
+      setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate')
     } finally {
@@ -127,8 +138,8 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
           tags: generated.tags,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status} — update failed`)
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — update failed`)
       setApplied(true)
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'Failed to apply to YouTube')
@@ -157,10 +168,10 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
           includePerson,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Thumbnail generation failed')
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
 
-      let finalUrl: string = data.thumbnailUrl
+      let finalUrl: string = data.thumbnailUrl as string
       if (includeText) {
         try {
           finalUrl = await addTextOverlay(data.thumbnailUrl, editTitle || video.title)
@@ -171,9 +182,9 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       }
 
       setThumbnailUrl(finalUrl)
-      setThumbnailPrompt(data.prompt)
-      setThumbnailModel(data.modelUsed ?? null)
-      setHeadshotUsed(data.headshotUsed ?? false)
+      setThumbnailPrompt((data.prompt as string) ?? null)
+      setThumbnailModel((data.modelUsed as string) ?? null)
+      setHeadshotUsed((data.headshotUsed as boolean) ?? false)
     } catch (err) {
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
     } finally {
