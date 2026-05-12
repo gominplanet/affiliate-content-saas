@@ -172,11 +172,12 @@ Video title: "${videoTitle}"`,
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: pulidPrompt,
-            id_image: cleanHeadshotUrl,   // plain URL string (not object)
+            reference_images: [{ image_url: cleanHeadshotUrl }],
             image_size: 'landscape_16_9',
-            num_steps: 20,
-            start_step: 0,
+            num_inference_steps: 20,
             guidance_scale: 1.2,
+            id_scale: 0.8,
+            mode: 'fidelity',
             num_images: 1,
           }),
         }, 35_000)
