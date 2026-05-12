@@ -118,10 +118,23 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
 
     const productOnlyPrompt = (msg.content[0] as { type: string; text: string }).text.trim()
 
-    // For PuLID: prepend a tight composition instruction so the face-swap model
-    // knows exactly where to place the reference face. Flux fallback uses the
-    // product-only prompt — no people, no surprises.
-    const pulidPrompt = `YouTube thumbnail split composition: ${authorName || 'a person'} in the LEFT THIRD of frame with a wide open-mouth shocked/excited expression, eyebrows raised high, pointing at the product. Product occupies the RIGHT 65% of frame. ${productOnlyPrompt}`
+    // Generate a SHORT punchy overlay hook (2-5 words, all caps) in parallel
+    // Examples from top YouTubers: "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!"
+    const hookMsg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 30,
+      messages: [{
+        role: 'user',
+        content: `Write a 2-5 word ALL-CAPS YouTube thumbnail hook for this product review. Make it punchy and emotional — like "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!", "WE LOVE IT!", "PAPER TOWEL KILLER?". NEVER use the word HONEST. Return ONLY the hook text, no quotes, no punctuation at the end unless it's ? or !.
+
+Product: ${productContext.split('\n')[0]}
+Video title: "${videoTitle}"`,
+      }],
+    })
+    const overlayHook = (hookMsg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
+
+    // For PuLID: prepend composition instruction. Flux fallback uses product-only prompt.
+    const pulidPrompt = `YouTube thumbnail reaction shot: person in LEFT THIRD of frame, wide open-mouth shocked expression, eyebrows raised, pointing right. Product fills RIGHT 65% of frame. ${productOnlyPrompt}`
 
     const imagePrompt = productOnlyPrompt // used for Flux fallbacks
 
@@ -156,12 +169,14 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: pulidPrompt,
-            reference_images: [{ image_url: headshotUrl }],
+            id_image: { url: headshotUrl },   // correct PuLID param (not reference_images)
             image_size: 'landscape_16_9',
-            num_inference_steps: 12,   // was 20 — faster, still good quality
+            num_steps: 20,
+            start_step: 0,
+            guidance_scale: 1.2,
             num_images: 1,
           }),
-        }, 22_000)
+        }, 28_000)
         const data = await falJson(res)
         if (res.ok) {
           thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
@@ -245,6 +260,7 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
       ok: true,
       thumbnailUrl,
       prompt: imagePrompt,
+      overlayHook,
       modelUsed,
       headshotUsed: hasHeadshot && modelUsed === 'pulid',
     })

@@ -67,6 +67,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
   const [thumbnailPrompt, setThumbnailPrompt] = useState<string | null>(null)
   const [thumbnailModel, setThumbnailModel] = useState<string | null>(null)
+  const [thumbnailHook, setThumbnailHook] = useState<string | null>(null)
   const [headshotUsed, setHeadshotUsed] = useState(false)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
@@ -171,17 +172,18 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       const data = await safeJson(res)
       if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
 
+      const hook = (data.overlayHook as string) || ''
       let finalUrl: string = data.thumbnailUrl as string
       if (includeText) {
         try {
-          finalUrl = await addTextOverlay(data.thumbnailUrl as string, editTitle || video.title)
+          finalUrl = await addTextOverlay(data.thumbnailUrl as string, hook || editTitle || video.title)
         } catch (overlayErr) {
           console.warn('[text-overlay]', overlayErr)
-          // Fall back to plain image — don't block the user
         }
       }
 
       setThumbnailUrl(finalUrl)
+      setThumbnailHook(hook)
       setThumbnailPrompt((data.prompt as string) ?? null)
       setThumbnailModel((data.modelUsed as string) ?? null)
       setHeadshotUsed((data.headshotUsed as boolean) ?? false)
@@ -193,7 +195,9 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
   }
 
   // ── Client-side text overlay via canvas ─────────────────────────────────────
-  function addTextOverlay(rawUrl: string, title: string): Promise<string> {
+  // Renders like real YouTube thumbnails: large all-caps hook, upper-left position,
+  // white fill + thick black stroke, with a subtle darkened band behind the text.
+  function addTextOverlay(rawUrl: string, hookText: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const canvas = document.createElement('canvas')
       canvas.width = 1280
@@ -201,80 +205,63 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       const ctx = canvas.getContext('2d')
       if (!ctx) { reject(new Error('Canvas not supported')); return }
 
-      // Clean up the title for the overlay:
-      // 1. Remove banned/redundant hook prefixes before the colon
-      // 2. Strip the word "honest" (banned per brand guidelines)
-      // 3. Cap at 55 chars so it never gets truncated mid-word
-      function cleanTitle(raw: string): string {
-        let t = raw
-          .replace(/\bhonest\b/gi, '')           // banned word
-          .replace(/\s{2,}/g, ' ')
-          .trim()
-        // If there's a colon, drop everything before it (e.g. "Worth It?: ..." → "...")
-        // unless what's after the colon is very short
-        const colonIdx = t.indexOf(':')
-        if (colonIdx > 0 && colonIdx < t.length - 10) {
-          t = t.slice(colonIdx + 1).trim()
-        }
-        // Hard cap: keep whole words up to 55 chars
-        if (t.length > 55) {
-          const words = t.split(' ')
-          let out = ''
-          for (const w of words) {
-            if ((out + ' ' + w).trim().length > 55) break
-            out = (out + ' ' + w).trim()
-          }
-          t = out
-        }
-        return t
-      }
+      // Make sure it's all-caps, no "honest", clean spacing
+      const text = hookText
+        .replace(/\bhonest\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+        .toUpperCase()
 
-      const displayTitle = cleanTitle(title)
+      // Split into lines by word-wrap (max width 580px = left half of frame)
+      // so text stays in the left ~45% and doesn't overlap the product
+      function wrapText(c: CanvasRenderingContext2D, t: string, font: string, maxW: number, maxLines: number): string[] {
+        c.font = font
+        const words = t.split(' ')
+        const lines: string[] = []
+        let cur = ''
+        for (const w of words) {
+          const test = cur ? `${cur} ${w}` : w
+          if (c.measureText(test).width > maxW && cur) {
+            lines.push(cur)
+            cur = w
+            if (lines.length >= maxLines - 1) { lines.push(cur); return lines }
+          } else { cur = test }
+        }
+        if (cur) lines.push(cur)
+        return lines
+      }
 
       const img = new window.Image()
       img.crossOrigin = 'anonymous'
       img.onload = () => {
         ctx.drawImage(img, 0, 0, 1280, 720)
 
-        // Dark gradient at bottom for text legibility
-        const grad = ctx.createLinearGradient(0, 420, 0, 720)
-        grad.addColorStop(0, 'rgba(0,0,0,0)')
-        grad.addColorStop(1, 'rgba(0,0,0,0.88)')
-        ctx.fillStyle = grad
-        ctx.fillRect(0, 0, 1280, 720)
+        const fontSize = 110
+        const font = `bold ${fontSize}px Impact, "Arial Black", Arial, sans-serif`
+        const lines = wrapText(ctx, text, font, 540, 3)
+        const lineH = fontSize * 1.08
+        const totalH = lines.length * lineH
+        const padX = 48
+        const padY = 36
+        const startY = padY + fontSize  // top-left anchor
 
-        // Word-wrap to max 2 lines
-        const fontSize = 82
-        ctx.font = `bold ${fontSize}px Impact, "Arial Black", Arial, sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'bottom'
+        // Semi-transparent dark band behind text for readability
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'
+        ctx.fillRect(padX - 12, padY - 10, 566, totalH + 20)
 
-        const maxWidth = 1180
-        const words = displayTitle.split(' ')
-        const lines: string[] = []
-        let current = ''
-        for (const word of words) {
-          const test = current ? `${current} ${word}` : word
-          if (ctx.measureText(test).width > maxWidth && current) {
-            lines.push(current)
-            current = word
-            if (lines.length >= 2) break
-          } else {
-            current = test
-          }
-        }
-        if (current && lines.length < 2) lines.push(current)
-
-        const lineH = fontSize * 1.15
-        const startY = 720 - 28 - (lines.length - 1) * lineH
+        ctx.font = font
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'top'
 
         lines.forEach((line, i) => {
-          const y = startY + i * lineH
-          ctx.lineWidth = 9
-          ctx.strokeStyle = 'rgba(0,0,0,0.95)'
-          ctx.strokeText(line, 640, y)
+          const y = startY - fontSize + i * lineH
+          // Thick black stroke
+          ctx.lineWidth = 10
+          ctx.strokeStyle = '#000000'
+          ctx.strokeText(line, padX, y)
+          // White fill
           ctx.fillStyle = '#FFFFFF'
-          ctx.fillText(line, 640, y)
+          ctx.fillText(line, padX, y)
         })
 
         resolve(canvas.toDataURL('image/jpeg', 0.93))
