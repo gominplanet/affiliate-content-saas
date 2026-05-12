@@ -534,11 +534,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                 {/* Options toggles */}
                 <div className="flex flex-col gap-2.5 mb-4">
                   {/* With Image toggle */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">With image</span>
-                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Add your face using headshot from Brand Profile</span>
-                    </div>
+                  <div className="flex items-center gap-3 w-fit">
                     <button
                       onClick={() => setIncludePerson(p => !p)}
                       className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
@@ -549,14 +545,14 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                         includePerson ? 'translate-x-4' : 'translate-x-0'
                       }`} />
                     </button>
+                    <div className="flex flex-col cursor-pointer" onClick={() => setIncludePerson(p => !p)}>
+                      <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">With image</span>
+                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Add your face using headshot from Brand Profile</span>
+                    </div>
                   </div>
 
                   {/* With Text toggle */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">With text</span>
-                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">AI adds a short viral hook to spark curiosity</span>
-                    </div>
+                  <div className="flex items-center gap-3 w-fit">
                     <button
                       onClick={() => setIncludeText(t => !t)}
                       className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
@@ -567,6 +563,10 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                         includeText ? 'translate-x-4' : 'translate-x-0'
                       }`} />
                     </button>
+                    <div className="flex flex-col cursor-pointer" onClick={() => setIncludeText(t => !t)}>
+                      <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">With text</span>
+                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">AI adds a short viral hook to spark curiosity</span>
+                    </div>
                   </div>
                 </div>
 
