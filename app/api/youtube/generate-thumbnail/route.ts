@@ -4,18 +4,100 @@ import Anthropic from '@anthropic-ai/sdk'
 
 export const maxDuration = 60
 
+// ── Google Generative Language helpers ───────────────────────────────────────
+const GOOGLE_BASE = 'https://generativelanguage.googleapis.com/v1beta'
+
+async function imagen4(prompt: string, geminiKey: string): Promise<string | null> {
+  // Imagen 4 — text-to-image, 16:9, returns base64
+  const res = await fetch(
+    `${GOOGLE_BASE}/models/imagen-4.0-generate-001:predict?key=${geminiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: { sampleCount: 1, aspectRatio: '16:9', imageSize: '1K' },
+      }),
+    }
+  )
+  const data = await res.json() as {
+    predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>
+    error?: { message: string }
+  }
+  if (!res.ok || data.error) {
+    console.warn('[imagen4] error:', data.error?.message ?? res.status)
+    return null
+  }
+  const b64 = data.predictions?.[0]?.bytesBase64Encoded
+  if (!b64) return null
+  return `data:image/png;base64,${b64}`
+}
+
+async function geminiEditImage(
+  prompt: string,
+  imageUrl: string,
+  geminiKey: string
+): Promise<string | null> {
+  // Fetch the headshot and convert to base64 inline_data
+  let imageBase64 = ''
+  let mimeType = 'image/jpeg'
+  try {
+    const imgRes = await fetch(imageUrl)
+    if (!imgRes.ok) throw new Error(`Headshot fetch failed: ${imgRes.status}`)
+    const ct = imgRes.headers.get('content-type') ?? 'image/jpeg'
+    mimeType = ct.split(';')[0].trim()
+    const buf = await imgRes.arrayBuffer()
+    imageBase64 = Buffer.from(buf).toString('base64')
+  } catch (err) {
+    console.warn('[geminiEditImage] could not fetch headshot:', err)
+    return null
+  }
+
+  // Gemini 2.5 Flash Image — multimodal edit, returns base64
+  const res = await fetch(
+    `${GOOGLE_BASE}/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+          ],
+        }],
+        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+      }),
+    }
+  )
+  const data = await res.json() as {
+    candidates?: Array<{
+      content?: { parts?: Array<{ inline_data?: { mime_type: string; data: string } }> }
+    }>
+    error?: { message: string }
+  }
+  if (!res.ok || data.error) {
+    console.warn('[geminiEditImage] error:', data.error?.message ?? res.status, JSON.stringify(data).slice(0, 300))
+    return null
+  }
+  const parts = data.candidates?.[0]?.content?.parts ?? []
+  const imgPart = parts.find(p => p.inline_data?.data)
+  if (!imgPart?.inline_data) return null
+  return `data:${imgPart.inline_data.mime_type};base64,${imgPart.inline_data.data}`
+}
+
+// ── Main route ────────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    const geminiKey = process.env.GOOGLE_GEMINI_API_KEY
     const falKey = process.env.FAL_KEY
-    if (!falKey) {
-      return NextResponse.json(
-        { error: 'FAL_KEY not configured — add your fal.ai API key in Vercel environment variables' },
-        { status: 500 }
-      )
+
+    if (!geminiKey && !falKey) {
+      return NextResponse.json({ error: 'No image generation API key configured' }, { status: 500 })
     }
 
     const {
@@ -42,7 +124,7 @@ export async function POST(request: Request) {
       includePerson?: boolean
     }
 
-    // ── 1. Fetch brand profile ─────────────────────────────────────────────────
+    // ── 1. Brand profile ───────────────────────────────────────────────────────
     const { data: brand } = await supabase
       .from('brand_profiles')
       .select('niches,author_name,headshot_url,tone')
@@ -54,25 +136,27 @@ export async function POST(request: Request) {
     const headshotUrl = (b?.headshot_url as string) || ''
     const hasHeadshot = !!headshotUrl && includePerson
 
-    // ── 2. Build product + video context ──────────────────────────────────────
+    // ── 2. Product context ─────────────────────────────────────────────────────
     const productContext = [
       productTitle ? `Product name: ${productTitle}` : `ASIN: ${asin}`,
       productPrice ? `Price: ${productPrice}` : '',
       productRating ? `Rating: ${productRating}/5` : '',
-      productBullets?.length ? `Key features:\n${productBullets.slice(0, 5).map(b => `  - ${b}`).join('\n')}` : '',
+      productBullets?.length
+        ? `Key features:\n${productBullets.slice(0, 5).map(b => `  - ${b}`).join('\n')}`
+        : '',
       productDescription ? `Product description: ${productDescription}` : '',
     ].filter(Boolean).join('\n')
 
     const videoContext = videoDescription ? videoDescription.slice(0, 400) : ''
 
-    // ── 3. Claude generates prompt + hook in parallel (~8s) ───────────────────
+    // ── 3. Claude: product prompt + hook in parallel ───────────────────────────
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const styleInstructions = {
-      review: 'dramatic studio hero shot — product front and centre on a dark gradient or textured background, strong rim lighting, lens flare, volumetric light rays, deep dramatic shadows, bokeh reflections on the surface below',
-      unboxing: 'product dramatically emerging from premium open packaging, tissue paper and packaging elements mid-air, light wood or white marble surface, warm overhead lighting creating excitement and anticipation',
-      comparison: 'split-screen showdown composition — two competing products facing off, cool blue lighting on the left, warm orange on the right, glowing neon divider in the centre, cinematic depth',
-      lifestyle: 'product in a beautiful real-world scene, golden hour sunlight, rich environmental storytelling, foreground elements slightly blurred, aspirational and cinematic',
+      review:     'dramatic studio hero shot — product centred on a dark gradient background, strong rim lighting, lens flare, volumetric light rays, deep shadows, bokeh reflections',
+      unboxing:   'product dramatically emerging from open premium packaging, tissue paper mid-air, warm overhead lighting, light wood surface, excitement and anticipation',
+      comparison: 'split-screen showdown — two competing products facing off, cool blue left / warm orange right, glowing neon divider, cinematic depth',
+      lifestyle:  'product in a beautiful real-world scene, golden hour sunlight, rich environmental storytelling, foreground slightly blurred, aspirational and cinematic',
     }[style ?? 'review']
 
     const [msg, hookMsg] = await Promise.all([
@@ -81,31 +165,29 @@ export async function POST(request: Request) {
         max_tokens: 500,
         messages: [{
           role: 'user',
-          content: `You are a world-class YouTube thumbnail art director. Create a Flux image generation prompt for a stunning, high-CTR YouTube thumbnail focused entirely on the product.
+          content: `You are a world-class YouTube thumbnail art director. Write an image generation prompt for a stunning, high-CTR YouTube thumbnail focused on the product.
 
-━━ PRODUCT CONTEXT ━━
+━━ PRODUCT ━━
 ${productContext || videoTitle}
 
-━━ VIDEO CONTEXT ━━
+━━ VIDEO ━━
 Title: "${videoTitle}"
-${videoContext ? `Description excerpt: "${videoContext}"` : ''}
+${videoContext ? `Description: "${videoContext}"` : ''}
 Niche: ${niches}
 
-━━ VISUAL STYLE ━━
+━━ STYLE ━━
 ${styleInstructions}
 
-━━ COMPOSITION ━━
-NO people or faces — product drama only. The product is the sole hero of the frame, occupying 60-70% of the image width, centred or slightly right of centre.
+━━ RULES ━━
+- NO people, NO faces
+- Product is sole hero, 60-70% of frame width, centred or slightly right
+- Photorealistic commercial photography, 4K, ultra-detailed
+- Rich saturated colours that pop on mobile
+- Dramatic lighting: key + rim + fill — no flat lighting
+- NO text, words, letters, or numbers anywhere
+- Razor-sharp subject, creamy bokeh background
 
-━━ TECHNICAL REQUIREMENTS ━━
-- Photorealistic commercial photography quality, 4K, ultra-detailed
-- Rich, saturated colours that pop on mobile screens (avoid desaturated/muted tones)
-- Dramatic lighting: strong key light, rim light, fill light — NOT flat lighting
-- NO text, NO words, NO letters, NO numbers anywhere in the image
-- Professional depth of field: razor-sharp subject, creamy bokeh background
-- The image should look like a $5,000 professional photoshoot
-
-Write ONLY the image generation prompt. Be hyper-specific: name exact colours, lighting positions, surface textures, background details, atmosphere, and camera lens. 150-220 words.`,
+Write ONLY the prompt. Hyper-specific: exact colours, lighting positions, surface textures, background details. 150-200 words.`,
         }],
       }),
       anthropic.messages.create({
@@ -113,162 +195,96 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
         max_tokens: 30,
         messages: [{
           role: 'user',
-          content: `Write a 2-4 word ALL-CAPS YouTube thumbnail hook for this product review. It MUST be a complete, self-contained phrase — never end with a preposition or leave it hanging. Make it punchy and emotional — like "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!", "WE LOVE IT!", "LIFE CHANGING?", "ACTUALLY WORKS?". NEVER use the word HONEST. Return ONLY the hook text, no quotes, no punctuation at the end unless it's ? or !.
+          content: `Write a 2-4 word ALL-CAPS YouTube thumbnail hook. Complete self-contained phrase — never end with a preposition. Examples: "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!", "ACTUALLY WORKS?", "LIFE CHANGING?". NEVER use the word HONEST. Return ONLY the hook, no quotes, end with ? or ! only.
 
 Product: ${productContext.split('\n')[0]}
-Video title: "${videoTitle}"`,
+Video: "${videoTitle}"`,
         }],
       }),
     ])
 
-    const productOnlyPrompt = (msg.content[0] as { type: string; text: string }).text.trim()
+    const productPrompt = (msg.content[0] as { type: string; text: string }).text.trim()
     const overlayHook = (hookMsg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
-    const imagePrompt = productOnlyPrompt
+    const productLine = productContext.split('\n')[0].replace('Product name: ', '').replace('ASIN: ', '')
 
-    // ── 4a. Flux Kontext via fal.ai QUEUE (image editing — starts from headshot) ──
-    // Fundamentally different from PuLID: instead of face-conditioning a new image,
-    // Kontext *edits* the actual headshot into the thumbnail scene. Much better composition.
-    if (hasHeadshot) {
-      const cleanHeadshotUrl = headshotUrl.split('?')[0]
-      console.log('[generate-thumbnail] Submitting Flux Kontext to queue, headshot:', cleanHeadshotUrl)
-
-      // Extract a short product description for the editing prompt
-      const productLine = productContext.split('\n')[0].replace('Product name: ', '').replace('ASIN: ', '')
-
-      // Kontext editing prompt: tell it exactly what to do to the headshot
-      const kontextPrompt = `Transform this headshot photo into a professional YouTube thumbnail (16:9 landscape).
-Keep the person's face, hair and appearance identical.
-Reframe to show them from the waist up on the LEFT third of the image, with a wide surprised excited expression, mouth slightly open, eyebrows raised, looking toward the right side of the frame.
-On the RIGHT two-thirds of the frame: ${productLine} shown large, dramatic, photorealistic commercial photography style, strong studio rim lighting, deep rich colours, sharp detail, dark gradient background.
-The overall look should be high-contrast, punchy, and eye-catching — like a top YouTube affiliate review thumbnail. No text anywhere.`
-
-      try {
-        const submitRes = await fetch('https://queue.fal.run/fal-ai/flux-kontext', {
-          method: 'POST',
-          headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image_url: cleanHeadshotUrl,
-            prompt: kontextPrompt,
-            num_inference_steps: 30,
-            guidance_scale: 2.5,
-            num_images: 1,
-            output_format: 'jpeg',
-            resolution_mode: '16:9',
-          }),
-        })
-
-        const submitData = await submitRes.json() as { request_id?: string; error?: string }
-        console.log('[generate-thumbnail] Kontext queue submit:', submitRes.status, JSON.stringify(submitData).slice(0, 300))
-
-        if (submitRes.ok && submitData.request_id) {
-          return NextResponse.json({
-            ok: true,
-            usesQueue: true,
-            requestId: submitData.request_id,
-            queueModel: 'fal-ai/flux-kontext',
-            prompt: imagePrompt,
-            overlayHook,
-            headshotUsed: true,
-          })
-        }
-
-        // Queue submit failed — fall through to Flux
-        console.warn('[generate-thumbnail] Kontext queue submit failed:', submitData.error)
-      } catch (err) {
-        console.warn('[generate-thumbnail] Kontext queue error:', err)
-      }
-    }
-
-    // ── 4b. Flux Dev → Schnell (synchronous, fast enough) ────────────────────
+    // ── 4. Generate image ──────────────────────────────────────────────────────
     let thumbnailUrl: string | null = null
-    let lastError = ''
     let modelUsed = ''
+    let headshotUsed = false
 
-    async function falJson(res: globalThis.Response): Promise<Record<string, unknown>> {
-      const text = await res.text()
-      try { return JSON.parse(text) as Record<string, unknown> } catch { return { _raw: text } }
+    // ── 4a. Person + product via Gemini multimodal edit ───────────────────────
+    if (hasHeadshot && geminiKey) {
+      const cleanHeadshotUrl = headshotUrl.split('?')[0]
+      console.log('[thumbnail] Trying Gemini multimodal edit, headshot:', cleanHeadshotUrl)
+
+      const editPrompt = `Transform this headshot photo into a professional YouTube thumbnail (16:9 landscape format).
+
+KEEP the person's face, hair, skin tone and appearance IDENTICAL — do not alter their look at all.
+
+COMPOSITION:
+- Person occupies the LEFT 35% of the frame, shown from waist up
+- Expression: wide surprised/excited look, mouth open, eyebrows raised, looking right
+- RIGHT 65% of the frame: ${productLine} — large, prominent, dramatic product shot
+- Dark gradient background behind the product
+- Strong studio rim lighting on both person and product
+- High contrast, punchy colours that pop on mobile screens
+- No text, no words, no letters anywhere in the image
+
+The final result should look like a top-performing YouTube affiliate review thumbnail.`
+
+      thumbnailUrl = await geminiEditImage(editPrompt, cleanHeadshotUrl, geminiKey)
+      if (thumbnailUrl) { modelUsed = 'gemini-2.5-flash'; headshotUsed = true }
+      else console.warn('[thumbnail] Gemini edit failed, falling through')
     }
 
-    async function timedFetch(url: string, init: RequestInit, ms: number): Promise<globalThis.Response> {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), ms)
-      try {
-        return await fetch(url, { ...init, signal: ctrl.signal })
-      } finally {
-        clearTimeout(timer)
-      }
+    // ── 4b. Product-only via Imagen 4 ─────────────────────────────────────────
+    if (!thumbnailUrl && geminiKey) {
+      console.log('[thumbnail] Trying Imagen 4')
+      thumbnailUrl = await imagen4(productPrompt, geminiKey)
+      if (thumbnailUrl) modelUsed = 'imagen-4'
+      else console.warn('[thumbnail] Imagen 4 failed, falling through')
     }
 
-    for (const model of ['fal-ai/flux/dev', 'fal-ai/flux/schnell']) {
+    // ── 4c. Flux Schnell fallback (fal.ai) ────────────────────────────────────
+    if (!thumbnailUrl && falKey) {
+      console.log('[thumbnail] Falling back to Flux Schnell')
       try {
-        const isSchnell = model.includes('schnell')
-        const res = await timedFetch(`https://fal.run/${model}`, {
+        const ctrl = new AbortController()
+        const timer = setTimeout(() => ctrl.abort(), 15_000)
+        const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
           method: 'POST',
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: imagePrompt,
+            prompt: productPrompt,
             image_size: 'landscape_16_9',
-            num_inference_steps: isSchnell ? 4 : 18,
-            guidance_scale: isSchnell ? undefined : 3.5,
+            num_inference_steps: 4,
             num_images: 1,
             enable_safety_checker: false,
           }),
-        }, isSchnell ? 12_000 : 18_000)
-        const data = await falJson(res)
-        if (!res.ok) {
-          lastError = `${model} ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
-          continue
-        }
-        thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
-        if (thumbnailUrl) { modelUsed = model; break }
+          signal: ctrl.signal,
+        })
+        clearTimeout(timer)
+        const text = await res.text()
+        const data = JSON.parse(text) as { images?: Array<{ url: string }> }
+        thumbnailUrl = data.images?.[0]?.url ?? null
+        if (thumbnailUrl) modelUsed = 'flux-schnell'
       } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err)
-      }
-    }
-
-    // ── 4c. Replicate fallback ────────────────────────────────────────────────
-    if (!thumbnailUrl && process.env.REPLICATE_API_TOKEN) {
-      try {
-        const startRes = await timedFetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}`,
-            'Content-Type': 'application/json',
-            Prefer: 'wait=15',
-          },
-          body: JSON.stringify({
-            input: {
-              prompt: imagePrompt,
-              aspect_ratio: '16:9',
-              num_outputs: 1,
-              output_format: 'jpg',
-              output_quality: 90,
-              guidance: 3.5,
-              num_inference_steps: 20,
-            },
-          }),
-        }, 16_000)
-        const pred = await falJson(startRes) as { output?: string[] }
-        thumbnailUrl = pred.output?.[0] ?? null
-        if (thumbnailUrl) modelUsed = 'replicate/flux-dev'
-      } catch (err) {
-        lastError = `Replicate: ${err instanceof Error ? err.message : String(err)}`
+        console.warn('[thumbnail] Flux Schnell failed:', err)
       }
     }
 
     if (!thumbnailUrl) {
-      throw new Error(`Image generation failed: ${lastError}`)
+      throw new Error('All image generation methods failed. Check API keys and try again.')
     }
 
     return NextResponse.json({
       ok: true,
       usesQueue: false,
       thumbnailUrl,
-      prompt: imagePrompt,
+      prompt: productPrompt,
       overlayHook,
       modelUsed,
-      headshotUsed: false,
-      pulidError: hasHeadshot ? 'PuLID queue submit failed, used Flux fallback' : null,
+      headshotUsed,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

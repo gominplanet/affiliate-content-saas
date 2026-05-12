@@ -178,63 +178,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
 
       const hook = (data.overlayHook as string) || ''
 
-      // ── Queue path (PuLID with headshot) ────────────────────────────────────
-      if (data.usesQueue && data.requestId) {
-        const requestId = data.requestId as string
-        const queueModel = (data.queueModel as string) ?? 'fal-ai/pulid'
-        setThumbnailPhase('queued')
-
-        // Poll until COMPLETED or FAILED (up to ~3 minutes)
-        const maxAttempts = 60
-        let attempt = 0
-        let thumbnailFromQueue: string | null = null
-        let failedError: string | null = null
-
-        while (attempt < maxAttempts) {
-          await new Promise(r => setTimeout(r, 3000))
-          setThumbnailPhase('polling')
-          attempt++
-
-          try {
-            const pollRes = await fetch(
-              `/api/youtube/thumbnail-status?requestId=${encodeURIComponent(requestId)}&model=${encodeURIComponent(queueModel)}`
-            )
-            const pollData = await pollRes.json() as { status: string; thumbnailUrl?: string; error?: string }
-
-            if (pollData.status === 'COMPLETED' && pollData.thumbnailUrl) {
-              thumbnailFromQueue = pollData.thumbnailUrl
-              break
-            }
-            if (pollData.status === 'FAILED') {
-              failedError = pollData.error ?? 'Image generation failed'
-              break  // exit loop immediately, don't keep polling
-            }
-            // IN_QUEUE or IN_PROGRESS — keep polling
-          } catch (pollErr) {
-            // Transient network error — keep trying
-            console.warn('[thumbnail-poll] attempt', attempt, pollErr)
-          }
-        }
-
-        if (failedError) throw new Error(`Face generation failed: ${failedError}`)
-        if (!thumbnailFromQueue) throw new Error('Face thumbnail timed out — try again')
-
-        let finalUrl = thumbnailFromQueue
-        if (includeText) {
-          try { finalUrl = await addTextOverlay(thumbnailFromQueue, hook || editTitle || video.title) }
-          catch (overlayErr) { console.warn('[text-overlay]', overlayErr) }
-        }
-
-        setThumbnailUrl(finalUrl)
-        setThumbnailHook(hook)
-        setThumbnailPrompt((data.prompt as string) ?? null)
-        setThumbnailModel('flux-kontext')
-        setHeadshotUsed(true)
-        setPulidError(null)
-        return
-      }
-
-      // ── Direct path (Flux, no queue) ─────────────────────────────────────────
+      // ── Direct path — Gemini/Imagen return synchronously ─────────────────────
       let finalUrl: string = data.thumbnailUrl as string
       if (includeText) {
         try {
@@ -629,12 +573,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                   style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
                 >
                   {generatingThumbnail
-                    ? <><Loader2 size={12} className="animate-spin" /> {
-                        thumbnailPhase === 'prompting' ? 'Writing prompt…' :
-                        thumbnailPhase === 'queued'    ? 'Queued…' :
-                        thumbnailPhase === 'polling'   ? 'Generating face…' :
-                        'Generating…'
-                      }</>
+                    ? <><Loader2 size={12} className="animate-spin" /> {thumbnailPhase === 'prompting' ? 'Writing prompt…' : 'Generating…'}</>
                     : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate Thumbnail' : 'Generate Thumbnail'}</>}
                 </button>
 
@@ -676,9 +615,9 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                           👤 Your face included
                         </span>
                       )}
-                      {includePerson && !headshotUsed && pulidError && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff3b30]/10 text-[#ff3b30] font-medium" title={pulidError}>
-                          ⚠️ Face failed: {pulidError.slice(0, 60)}
+                      {includePerson && !headshotUsed && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500] font-medium">
+                          ℹ️ Product-only (face gen unavailable)
                         </span>
                       )}
                       {includeText && thumbnailUrl.startsWith('data:') && (
