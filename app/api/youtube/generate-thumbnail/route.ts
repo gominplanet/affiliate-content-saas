@@ -195,7 +195,17 @@ Write ONLY the prompt. Hyper-specific: exact colours, lighting positions, surfac
         max_tokens: 30,
         messages: [{
           role: 'user',
-          content: `Write a 2-4 word ALL-CAPS YouTube thumbnail hook. Complete self-contained phrase — never end with a preposition. Examples: "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!", "ACTUALLY WORKS?", "LIFE CHANGING?". NEVER use the word HONEST. Return ONLY the hook, no quotes, end with ? or ! only.
+          content: `Write a 2-3 word ALL-CAPS YouTube thumbnail hook. Rules:
+- 2-3 words MAX — short enough to read in 0.5 seconds
+- Spark pure curiosity or mild shock — make the viewer NEED to click
+- Complete phrase, never ends with a preposition
+- No hype words like AMAZING, INCREDIBLE, INSANE
+- NEVER use the word HONEST
+- End with ? or !
+
+Great examples: "WORTH IT?", "DON'T BUY!", "I WAS WRONG", "ACTUALLY WORKS?", "CHANGED MY MIND", "BIG MISTAKE?", "LIFE CHANGER?", "MUST HAVE?"
+
+Return ONLY the hook text, no quotes, no explanation.
 
 Product: ${productContext.split('\n')[0]}
 Video: "${videoTitle}"`,

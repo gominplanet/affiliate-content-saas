@@ -532,29 +532,42 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                 </div>
 
                 {/* Options toggles */}
-                <div className="flex gap-2 mb-3 flex-wrap">
-                  <button
-                    onClick={() => setIncludePerson(p => !p)}
-                    title={includePerson ? 'Click to generate product-only (no person)' : 'Click to include your headshot from Brand Profile'}
-                    className={`flex items-center gap-1.5 text-[10px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
-                      includePerson
-                        ? 'bg-[#af52de]/10 border-[#af52de]/40 text-[#af52de]'
-                        : 'bg-transparent border-gray-200 dark:border-white/20 text-[#86868b] dark:text-[#8e8e93] hover:border-[#af52de] hover:text-[#af52de]'
-                    }`}
-                  >
-                    👤 {includePerson ? 'With me' : 'No person'}
-                  </button>
-                  <button
-                    onClick={() => setIncludeText(t => !t)}
-                    title={includeText ? 'Click to remove title text overlay' : 'Click to add bold title text over the thumbnail'}
-                    className={`flex items-center gap-1.5 text-[10px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
-                      includeText
-                        ? 'bg-[#ff9500]/10 border-[#ff9500]/40 text-[#ff9500]'
-                        : 'bg-transparent border-gray-200 dark:border-white/20 text-[#86868b] dark:text-[#8e8e93] hover:border-[#ff9500] hover:text-[#ff9500]'
-                    }`}
-                  >
-                    📝 {includeText ? 'Title text on' : 'No text'}
-                  </button>
+                <div className="flex flex-col gap-2.5 mb-4">
+                  {/* With Image toggle */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">With image</span>
+                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Add your face using headshot from Brand Profile</span>
+                    </div>
+                    <button
+                      onClick={() => setIncludePerson(p => !p)}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        includePerson ? 'bg-[#af52de]' : 'bg-gray-200 dark:bg-white/20'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ease-in-out ${
+                        includePerson ? 'translate-x-4' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+
+                  {/* With Text toggle */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">With text</span>
+                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">AI adds a short viral hook to spark curiosity</span>
+                    </div>
+                    <button
+                      onClick={() => setIncludeText(t => !t)}
+                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        includeText ? 'bg-[#ff9500]' : 'bg-gray-200 dark:bg-white/20'
+                      }`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ease-in-out ${
+                        includeText ? 'translate-x-4' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Headshot missing warning */}
