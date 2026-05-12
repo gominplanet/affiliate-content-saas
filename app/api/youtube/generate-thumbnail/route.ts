@@ -161,33 +161,40 @@ Video title: "${videoTitle}"`,
     }
 
     // ── 4a. PuLID when headshot available (face-consistent generation) ─────────
-    // Hard cap at 22s so a hanging PuLID never eats the whole budget
+    let pulidError = ''
     if (hasHeadshot) {
+      // Strip query params (e.g. ?t=timestamp) — some APIs reject URLs with unknown params
+      const cleanHeadshotUrl = headshotUrl.split('?')[0]
+      console.log('[generate-thumbnail] Trying PuLID with headshot:', cleanHeadshotUrl)
       try {
         const res = await timedFetch('https://fal.run/fal-ai/pulid', {
           method: 'POST',
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: pulidPrompt,
-            id_image: { url: headshotUrl },   // correct PuLID param (not reference_images)
+            id_image: cleanHeadshotUrl,   // plain URL string (not object)
             image_size: 'landscape_16_9',
             num_steps: 20,
             start_step: 0,
             guidance_scale: 1.2,
             num_images: 1,
           }),
-        }, 28_000)
+        }, 35_000)
         const data = await falJson(res)
+        console.log('[generate-thumbnail] PuLID response:', res.status, JSON.stringify(data).slice(0, 300))
         if (res.ok) {
           thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
           if (thumbnailUrl) modelUsed = 'pulid'
+          else pulidError = 'PuLID returned no image URL'
         } else {
-          lastError = `PuLID ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
-          console.warn('[generate-thumbnail] PuLID failed, falling back to Flux:', lastError)
+          pulidError = `PuLID ${res.status}: ${JSON.stringify(data).slice(0, 300)}`
+          lastError = pulidError
+          console.warn('[generate-thumbnail] PuLID failed:', pulidError)
         }
       } catch (err) {
-        lastError = `PuLID: ${err instanceof Error ? err.message : String(err)}`
-        console.warn('[generate-thumbnail] PuLID error:', lastError)
+        pulidError = `PuLID: ${err instanceof Error ? err.message : String(err)}`
+        lastError = pulidError
+        console.warn('[generate-thumbnail] PuLID error:', pulidError)
       }
     }
 
@@ -263,6 +270,7 @@ Video title: "${videoTitle}"`,
       overlayHook,
       modelUsed,
       headshotUsed: hasHeadshot && modelUsed === 'pulid',
+      pulidError: pulidError || null,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

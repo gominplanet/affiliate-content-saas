@@ -69,6 +69,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
   const [thumbnailModel, setThumbnailModel] = useState<string | null>(null)
   const [thumbnailHook, setThumbnailHook] = useState<string | null>(null)
   const [headshotUsed, setHeadshotUsed] = useState(false)
+  const [pulidError, setPulidError] = useState<string | null>(null)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
   const [thumbnailStyle, setThumbnailStyle] = useState<'review' | 'unboxing' | 'comparison' | 'lifestyle'>('review')
@@ -187,6 +188,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       setThumbnailPrompt((data.prompt as string) ?? null)
       setThumbnailModel((data.modelUsed as string) ?? null)
       setHeadshotUsed((data.headshotUsed as boolean) ?? false)
+      setPulidError((data.pulidError as string) ?? null)
     } catch (err) {
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
     } finally {
@@ -605,6 +607,11 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                       {headshotUsed && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#af52de]/10 text-[#af52de] font-medium">
                           👤 Your face included
+                        </span>
+                      )}
+                      {includePerson && !headshotUsed && pulidError && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff3b30]/10 text-[#ff3b30] font-medium" title={pulidError}>
+                          ⚠️ Face failed: {pulidError.slice(0, 60)}
                         </span>
                       )}
                       {includeText && thumbnailUrl.startsWith('data:') && (
