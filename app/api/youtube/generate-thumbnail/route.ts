@@ -18,76 +18,118 @@ export async function POST(request: Request) {
       )
     }
 
-    const { videoTitle, productTitle, asin, style } = await request.json() as {
+    const {
+      videoTitle,
+      videoDescription,
+      productTitle,
+      productDescription,
+      productBullets,
+      productPrice,
+      productRating,
+      asin,
+      style,
+    } = await request.json() as {
       videoTitle: string
+      videoDescription?: string
       productTitle?: string
+      productDescription?: string
+      productBullets?: string[]
+      productPrice?: string
+      productRating?: string
       asin?: string
       style?: 'review' | 'unboxing' | 'comparison' | 'lifestyle'
     }
 
-    // ── 1. Fetch brand profile (includes headshot) ─────────────────────────────
+    // ── 1. Fetch brand profile ─────────────────────────────────────────────────
     const { data: brand } = await supabase
       .from('brand_profiles')
-      .select('niches,author_name,headshot_url')
+      .select('niches,author_name,headshot_url,tone')
       .eq('user_id', user.id)
       .single()
 
     const b = brand as Record<string, unknown> | null
     const niches = ((b?.niches as string[]) || []).join(', ') || 'consumer products'
-    const authorName = (b?.author_name as string) || ''
+    const authorName = (b?.author_name as string) || 'the host'
     const headshotUrl = (b?.headshot_url as string) || ''
-
     const hasHeadshot = !!headshotUrl
 
-    // ── 2. Claude writes the image prompt ─────────────────────────────────────
+    // ── 2. Build rich product + video context ──────────────────────────────────
+    const productContext = [
+      productTitle ? `Product name: ${productTitle}` : `ASIN: ${asin}`,
+      productPrice ? `Price: ${productPrice}` : '',
+      productRating ? `Rating: ${productRating}/5` : '',
+      productBullets?.length ? `Key features:\n${productBullets.slice(0, 5).map(b => `  - ${b}`).join('\n')}` : '',
+      productDescription ? `Product description: ${productDescription}` : '',
+    ].filter(Boolean).join('\n')
+
+    const videoContext = videoDescription
+      ? videoDescription.slice(0, 400)
+      : ''
+
+    // ── 3. Claude Sonnet writes the image generation prompt ───────────────────
+    // Use Sonnet here — this is the creative bottleneck, quality matters
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-    const styleGuide = {
-      review: 'bold dramatic product close-up, studio lighting, vivid contrasting background (red, orange, or yellow)',
-      unboxing: 'product emerging from open box, excitement and discovery, clean background, dramatic lighting',
-      comparison: 'two products side by side with a glowing VS divider, clean minimal background',
-      lifestyle: 'product in an aspirational real-world setting, warm cinematic lighting',
+    const styleInstructions = {
+      review: 'dramatic studio hero shot — product front and centre on a dark gradient or textured background, strong rim lighting, lens flare, volumetric light rays, deep dramatic shadows, bokeh reflections on the surface below',
+      unboxing: 'product dramatically emerging from premium open packaging, tissue paper and packaging elements mid-air, light wood or white marble surface, warm overhead lighting creating excitement and anticipation',
+      comparison: 'split-screen showdown composition — two competing products facing off, cool blue lighting on the left, warm orange on the right, glowing neon divider in the centre, cinematic depth',
+      lifestyle: 'product in a beautiful real-world scene, golden hour sunlight, rich environmental storytelling, foreground elements slightly blurred, aspirational and cinematic',
     }[style ?? 'review']
 
-    const faceInstruction = hasHeadshot
-      ? `- A PERSON (${authorName || 'the presenter'}) is prominently featured showing a genuine reaction — surprised, excited, or pointing directly at the product
-- The person takes up roughly 40% of the frame on one side; the product takes up the other 60%
-- Facial expression is expressive and high-energy, mouth slightly open, eyes wide
-- The person's clothing is casual and relatable`
-      : `- NO people, NO faces — product is the sole hero`
+    const headshotInstruction = hasHeadshot
+      ? `
+IMPORTANT — PERSON IN FRAME: ${authorName} must appear in the LEFT THIRD of the image.
+- Big open-mouth reaction: shocked, excited, or amazed expression
+- Eyebrows raised high, eyes wide open, finger pointing at the product OR hand on cheek
+- Casual relatable clothing, natural skin tones
+- Person fills roughly 35-40% of the total frame width
+- Product occupies the RIGHT 60-65% of the frame, dramatically lit
+- Classic YouTube split thumbnail composition
+- The person's face must be clear, well-lit, and front-facing`
+      : `NO people or faces — product drama only`
 
     const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
+      model: 'claude-sonnet-4-6',
+      max_tokens: 500,
       messages: [{
         role: 'user',
-        content: `Write an image generation prompt for a YouTube thumbnail.
+        content: `You are a world-class YouTube thumbnail art director. Create a Flux image generation prompt that will produce a stunning, high-CTR YouTube thumbnail.
 
-Product: ${productTitle || asin || videoTitle}
-Video title: "${videoTitle}"
+━━ PRODUCT CONTEXT ━━
+${productContext || videoTitle}
+
+━━ VIDEO CONTEXT ━━
+Title: "${videoTitle}"
+${videoContext ? `Description excerpt: "${videoContext}"` : ''}
 Niche: ${niches}
-Style: ${styleGuide}
 
-Compose the thumbnail so it:
-${faceInstruction}
-- Has bright, saturated colors that pop on YouTube (reds, yellows, oranges)
-- Is photorealistic, ultra detailed, 4K quality
-- Has NO text, NO words, NO letters anywhere
-- Uses cinematic depth of field
-- Has clean professional composition
+━━ VISUAL STYLE ━━
+${styleInstructions}
 
-Return ONLY the image prompt. Max 150 words.`,
+━━ COMPOSITION ━━
+${headshotInstruction}
+
+━━ TECHNICAL REQUIREMENTS ━━
+- Photorealistic commercial photography quality, 4K, ultra-detailed
+- Rich, saturated colours that pop on mobile screens (avoid desaturated/muted tones)
+- Dramatic lighting: strong key light, rim light, fill light — NOT flat lighting
+- NO text, NO words, NO letters, NO numbers anywhere in the image
+- Professional depth of field: razor-sharp subject, creamy bokeh background
+- The image should look like a $5,000 professional photoshoot
+
+Write ONLY the image generation prompt. Be hyper-specific: name exact colours, lighting positions, surface textures, background details, atmosphere, and camera lens. 150-220 words.`,
       }],
     })
 
     const imagePrompt = (msg.content[0] as { type: string; text: string }).text.trim()
 
-    // ── 3. Generate image ─────────────────────────────────────────────────────
+    // ── 4. Generate image ─────────────────────────────────────────────────────
     let thumbnailUrl: string | null = null
     let lastError = ''
     let modelUsed = ''
 
-    // ── 3a. If headshot exists → use PuLID (face-consistent generation) ───────
+    // ── 4a. PuLID when headshot available (face-consistent generation) ─────────
     if (hasHeadshot) {
       try {
         const res = await fetch('https://fal.run/fal-ai/pulid', {
@@ -103,40 +145,40 @@ Return ONLY the image prompt. Max 150 words.`,
         })
         const data = await res.json() as Record<string, unknown>
         if (res.ok) {
-          const images = data.images as Array<{ url: string }> | undefined
-          thumbnailUrl = images?.[0]?.url ?? null
+          thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
           if (thumbnailUrl) modelUsed = 'pulid'
         } else {
-          lastError = `PuLID ${res.status}: ${JSON.stringify(data).slice(0, 150)}`
-          console.warn('[generate-thumbnail] PuLID failed, falling back:', lastError)
+          lastError = `PuLID ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
+          console.warn('[generate-thumbnail] PuLID failed, falling back to Flux:', lastError)
         }
       } catch (err) {
-        lastError = `PuLID error: ${err instanceof Error ? err.message : String(err)}`
+        lastError = `PuLID: ${err instanceof Error ? err.message : String(err)}`
       }
     }
 
-    // ── 3b. Flux Schnell — no headshot, or PuLID failed ────────────────────────
+    // ── 4b. Flux Dev (higher quality than Schnell) ─────────────────────────────
     if (!thumbnailUrl) {
-      for (const model of ['fal-ai/flux/schnell', 'fal-ai/flux-schnell']) {
+      for (const model of ['fal-ai/flux/dev', 'fal-ai/flux/schnell']) {
         try {
+          const isSchnell = model.includes('schnell')
           const res = await fetch(`https://fal.run/${model}`, {
             method: 'POST',
             headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               prompt: imagePrompt,
               image_size: 'landscape_16_9',
-              num_inference_steps: 4,
+              num_inference_steps: isSchnell ? 4 : 28,
+              guidance_scale: isSchnell ? undefined : 3.5,
               num_images: 1,
               enable_safety_checker: false,
             }),
           })
           const data = await res.json() as Record<string, unknown>
           if (!res.ok) {
-            lastError = `${model} ${res.status}: ${JSON.stringify(data).slice(0, 150)}`
-            break
+            lastError = `${model} ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
+            continue
           }
-          const images = data.images as Array<{ url: string }> | undefined
-          thumbnailUrl = images?.[0]?.url ?? null
+          thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
           if (thumbnailUrl) { modelUsed = model; break }
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err)
@@ -144,34 +186,37 @@ Return ONLY the image prompt. Max 150 words.`,
       }
     }
 
-    // ── 3c. Replicate fallback ─────────────────────────────────────────────────
+    // ── 4c. Replicate fallback ─────────────────────────────────────────────────
     if (!thumbnailUrl && process.env.REPLICATE_API_TOKEN) {
       try {
-        const startRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
+        const startRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}`,
             'Content-Type': 'application/json',
-            Prefer: 'wait=30',
+            Prefer: 'wait=60',
           },
           body: JSON.stringify({
-            input: { prompt: imagePrompt, aspect_ratio: '16:9', num_outputs: 1, output_format: 'jpg' },
+            input: {
+              prompt: imagePrompt,
+              aspect_ratio: '16:9',
+              num_outputs: 1,
+              output_format: 'jpg',
+              output_quality: 95,
+              guidance: 3.5,
+              num_inference_steps: 28,
+            },
           }),
         })
         const pred = await startRes.json() as { output?: string[]; urls?: { get: string } }
-        if (startRes.ok && pred.output?.[0]) {
-          thumbnailUrl = pred.output[0]
-          modelUsed = 'replicate/flux-schnell'
-        } else if (startRes.ok && pred.urls?.get) {
-          await new Promise(r => setTimeout(r, 4000))
-          const pollRes = await fetch(pred.urls.get, {
-            headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` },
-          })
-          const pollData = await pollRes.json() as { output?: string[] }
+        thumbnailUrl = pred.output?.[0] ?? null
+        if (thumbnailUrl) modelUsed = 'replicate/flux-dev'
+        else if (pred.urls?.get) {
+          await new Promise(r => setTimeout(r, 6000))
+          const poll = await fetch(pred.urls.get, { headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` } })
+          const pollData = await poll.json() as { output?: string[] }
           thumbnailUrl = pollData.output?.[0] ?? null
-          if (thumbnailUrl) modelUsed = 'replicate/flux-schnell'
-        } else {
-          lastError = `Replicate ${startRes.status}: ${JSON.stringify(pred).slice(0, 150)}`
+          if (thumbnailUrl) modelUsed = 'replicate/flux-dev'
         }
       } catch (err) {
         lastError = `Replicate: ${err instanceof Error ? err.message : String(err)}`

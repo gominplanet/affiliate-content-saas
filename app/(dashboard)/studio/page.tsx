@@ -38,6 +38,8 @@ interface ProductInfo {
   price: string | null
   rating: string | null
   imageUrl: string | null
+  bullets?: string[]
+  description?: string
 }
 
 const STATUS_ICON = {
@@ -97,7 +99,7 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
       if (!res.ok) throw new Error(data.error || 'Generation failed')
       setGenerated(data.generated)
       setAgentInsights(data.agentInsights ?? null)
-      setProduct(data.product)
+      setProduct({ ...data.product, bullets: data.productBullets, description: data.productDescription })
       setAffiliateUrl(data.affiliateUrl)
       setGeniuslinkUsed(data.geniuslinkUsed ?? false)
       setGeniuslinkError(data.geniuslinkError ?? null)
@@ -142,7 +144,12 @@ function VideoStudioCard({ video }: { video: DraftVideo }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoTitle: editTitle || video.title,
+          videoDescription: video.description || undefined,
           productTitle: product?.title ?? undefined,
+          productDescription: product?.description ?? undefined,
+          productBullets: product?.bullets ?? undefined,
+          productPrice: product?.price ?? undefined,
+          productRating: product?.rating ?? undefined,
           asin: video.detectedAsin ?? undefined,
           style: thumbnailStyle,
         }),

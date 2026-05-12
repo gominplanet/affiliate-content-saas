@@ -345,6 +345,8 @@ export async function POST(request: Request) {
         rating: product.rating,
         imageUrl: product.imageUrl,
       },
+      productBullets: product.bullets,
+      productDescription: contentResult.productDescription,
       generated: {
         title: titleResult.best,
         description,
