@@ -297,18 +297,18 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       img.onload = () => {
         ctx.drawImage(img, 0, 0, 1280, 720)
 
-        const fontSize = 110
+        const fontSize = 88
         const font = `bold ${fontSize}px Impact, "Arial Black", Arial, sans-serif`
-        const lines = wrapText(ctx, text, font, 540, 3)
-        const lineH = fontSize * 1.08
+        const lines = wrapText(ctx, text, font, 520, 4)
+        const lineH = fontSize * 1.1
         const totalH = lines.length * lineH
-        const padX = 48
-        const padY = 36
+        const padX = 44
+        const padY = 32
         const startY = padY + fontSize  // top-left anchor
 
         // Semi-transparent dark band behind text for readability
         ctx.fillStyle = 'rgba(0,0,0,0.45)'
-        ctx.fillRect(padX - 12, padY - 10, 566, totalH + 20)
+        ctx.fillRect(padX - 12, padY - 10, 544, totalH + 20)
 
         ctx.font = font
         ctx.textAlign = 'left'

@@ -113,7 +113,7 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
         max_tokens: 30,
         messages: [{
           role: 'user',
-          content: `Write a 2-5 word ALL-CAPS YouTube thumbnail hook for this product review. Make it punchy and emotional — like "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!", "WE LOVE IT!", "PAPER TOWEL KILLER?". NEVER use the word HONEST. Return ONLY the hook text, no quotes, no punctuation at the end unless it's ? or !.
+          content: `Write a 2-4 word ALL-CAPS YouTube thumbnail hook for this product review. It MUST be a complete, self-contained phrase — never end with a preposition or leave it hanging. Make it punchy and emotional — like "WORTH IT?", "DON'T BUY!", "GAME CHANGER?", "BEST ONE YET!", "WE LOVE IT!", "LIFE CHANGING?", "ACTUALLY WORKS?". NEVER use the word HONEST. Return ONLY the hook text, no quotes, no punctuation at the end unless it's ? or !.
 
 Product: ${productContext.split('\n')[0]}
 Video title: "${videoTitle}"`,
@@ -125,32 +125,30 @@ Video title: "${videoTitle}"`,
     const overlayHook = (hookMsg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
     const imagePrompt = productOnlyPrompt
 
-    // ── 4a. PuLID via fal.ai QUEUE (async — no Vercel timeout risk) ───────────
+    // ── 4a. flux-pulid via fal.ai QUEUE (async — no Vercel timeout risk) ────────
     // queue.fal.run returns a request_id immediately; the client polls /thumbnail-status
     if (hasHeadshot) {
       const cleanHeadshotUrl = headshotUrl.split('?')[0]
-      console.log('[generate-thumbnail] Submitting PuLID to queue, headshot:', cleanHeadshotUrl)
+      console.log('[generate-thumbnail] Submitting flux-pulid to queue, headshot:', cleanHeadshotUrl)
 
-      const pulidPrompt = `YouTube thumbnail reaction shot: person in LEFT THIRD of frame, wide open-mouth shocked expression, eyebrows raised, pointing right at the product. Product fills RIGHT 65% of frame. ${productOnlyPrompt}`
+      // Composition: person occupies left 35%, product right 55%, small gap between
+      const pulidPrompt = `YouTube thumbnail, split composition: on the LEFT side (35% of frame) a woman with a surprised, excited expression looking toward the right, shoulders visible, natural lighting matching the background. On the RIGHT side (55% of frame) the product shown large and prominent. Clean separation between person and product. ${productOnlyPrompt}`
 
       try {
-        const submitRes = await fetch('https://queue.fal.run/fal-ai/pulid', {
+        const submitRes = await fetch('https://queue.fal.run/fal-ai/flux-pulid', {
           method: 'POST',
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: pulidPrompt,
-            reference_images: [{ image_url: cleanHeadshotUrl }],
+            reference_image_url: cleanHeadshotUrl,
             image_size: 'landscape_16_9',
-            num_inference_steps: 4,
-            guidance_scale: 1.2,
-            id_scale: 0.8,
-            mode: 'fidelity',
+            num_inference_steps: 20,
             num_images: 1,
           }),
         })
 
         const submitData = await submitRes.json() as { request_id?: string; error?: string }
-        console.log('[generate-thumbnail] PuLID queue submit:', submitRes.status, JSON.stringify(submitData).slice(0, 200))
+        console.log('[generate-thumbnail] flux-pulid queue submit:', submitRes.status, JSON.stringify(submitData).slice(0, 200))
 
         if (submitRes.ok && submitData.request_id) {
           // Return early — client will poll /api/youtube/thumbnail-status
@@ -158,7 +156,7 @@ Video title: "${videoTitle}"`,
             ok: true,
             usesQueue: true,
             requestId: submitData.request_id,
-            queueModel: 'fal-ai/pulid',
+            queueModel: 'fal-ai/flux-pulid',
             prompt: imagePrompt,
             overlayHook,
             headshotUsed: true,
@@ -166,7 +164,7 @@ Video title: "${videoTitle}"`,
         }
 
         // Queue submit failed — fall through to Flux
-        console.warn('[generate-thumbnail] PuLID queue submit failed:', submitData.error)
+        console.warn('[generate-thumbnail] flux-pulid queue submit failed:', submitData.error)
       } catch (err) {
         console.warn('[generate-thumbnail] PuLID queue error:', err)
       }
