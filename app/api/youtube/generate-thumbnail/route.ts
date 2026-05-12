@@ -153,7 +153,7 @@ The overall look should be high-contrast, punchy, and eye-catching — like a to
             guidance_scale: 2.5,
             num_images: 1,
             output_format: 'jpeg',
-            resolution_mode: 'landscape_16_9',
+            resolution_mode: '16:9',
           }),
         })
 

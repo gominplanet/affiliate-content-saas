@@ -188,6 +188,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
         const maxAttempts = 60
         let attempt = 0
         let thumbnailFromQueue: string | null = null
+        let failedError: string | null = null
 
         while (attempt < maxAttempts) {
           await new Promise(r => setTimeout(r, 3000))
@@ -205,15 +206,17 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
               break
             }
             if (pollData.status === 'FAILED') {
-              throw new Error(pollData.error ?? 'PuLID generation failed')
+              failedError = pollData.error ?? 'Image generation failed'
+              break  // exit loop immediately, don't keep polling
             }
             // IN_QUEUE or IN_PROGRESS — keep polling
           } catch (pollErr) {
-            // Network hiccup — keep trying
+            // Transient network error — keep trying
             console.warn('[thumbnail-poll] attempt', attempt, pollErr)
           }
         }
 
+        if (failedError) throw new Error(`Face generation failed: ${failedError}`)
         if (!thumbnailFromQueue) throw new Error('Face thumbnail timed out — try again')
 
         let finalUrl = thumbnailFromQueue
