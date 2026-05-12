@@ -125,38 +125,47 @@ Video title: "${videoTitle}"`,
     const overlayHook = (hookMsg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
     const imagePrompt = productOnlyPrompt
 
-    // ── 4a. flux-pulid via fal.ai QUEUE (async — no Vercel timeout risk) ────────
-    // queue.fal.run returns a request_id immediately; the client polls /thumbnail-status
+    // ── 4a. Flux Kontext via fal.ai QUEUE (image editing — starts from headshot) ──
+    // Fundamentally different from PuLID: instead of face-conditioning a new image,
+    // Kontext *edits* the actual headshot into the thumbnail scene. Much better composition.
     if (hasHeadshot) {
       const cleanHeadshotUrl = headshotUrl.split('?')[0]
-      console.log('[generate-thumbnail] Submitting flux-pulid to queue, headshot:', cleanHeadshotUrl)
+      console.log('[generate-thumbnail] Submitting Flux Kontext to queue, headshot:', cleanHeadshotUrl)
 
-      // Composition: person occupies left 35%, product right 55%, small gap between
-      const pulidPrompt = `YouTube thumbnail, split composition: on the LEFT side (35% of frame) a woman with a surprised, excited expression looking toward the right, shoulders visible, natural lighting matching the background. On the RIGHT side (55% of frame) the product shown large and prominent. Clean separation between person and product. ${productOnlyPrompt}`
+      // Extract a short product description for the editing prompt
+      const productLine = productContext.split('\n')[0].replace('Product name: ', '').replace('ASIN: ', '')
+
+      // Kontext editing prompt: tell it exactly what to do to the headshot
+      const kontextPrompt = `Transform this headshot photo into a professional YouTube thumbnail (16:9 landscape).
+Keep the person's face, hair and appearance identical.
+Reframe to show them from the waist up on the LEFT third of the image, with a wide surprised excited expression, mouth slightly open, eyebrows raised, looking toward the right side of the frame.
+On the RIGHT two-thirds of the frame: ${productLine} shown large, dramatic, photorealistic commercial photography style, strong studio rim lighting, deep rich colours, sharp detail, dark gradient background.
+The overall look should be high-contrast, punchy, and eye-catching — like a top YouTube affiliate review thumbnail. No text anywhere.`
 
       try {
-        const submitRes = await fetch('https://queue.fal.run/fal-ai/flux-pulid', {
+        const submitRes = await fetch('https://queue.fal.run/fal-ai/flux-kontext', {
           method: 'POST',
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: pulidPrompt,
-            reference_image_url: cleanHeadshotUrl,
-            image_size: 'landscape_16_9',
-            num_inference_steps: 20,
+            image_url: cleanHeadshotUrl,
+            prompt: kontextPrompt,
+            num_inference_steps: 30,
+            guidance_scale: 2.5,
             num_images: 1,
+            output_format: 'jpeg',
+            resolution_mode: 'landscape_16_9',
           }),
         })
 
         const submitData = await submitRes.json() as { request_id?: string; error?: string }
-        console.log('[generate-thumbnail] flux-pulid queue submit:', submitRes.status, JSON.stringify(submitData).slice(0, 200))
+        console.log('[generate-thumbnail] Kontext queue submit:', submitRes.status, JSON.stringify(submitData).slice(0, 300))
 
         if (submitRes.ok && submitData.request_id) {
-          // Return early — client will poll /api/youtube/thumbnail-status
           return NextResponse.json({
             ok: true,
             usesQueue: true,
             requestId: submitData.request_id,
-            queueModel: 'fal-ai/flux-pulid',
+            queueModel: 'fal-ai/flux-kontext',
             prompt: imagePrompt,
             overlayHook,
             headshotUsed: true,
@@ -164,9 +173,9 @@ Video title: "${videoTitle}"`,
         }
 
         // Queue submit failed — fall through to Flux
-        console.warn('[generate-thumbnail] flux-pulid queue submit failed:', submitData.error)
+        console.warn('[generate-thumbnail] Kontext queue submit failed:', submitData.error)
       } catch (err) {
-        console.warn('[generate-thumbnail] PuLID queue error:', err)
+        console.warn('[generate-thumbnail] Kontext queue error:', err)
       }
     }
 

@@ -225,7 +225,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
         setThumbnailUrl(finalUrl)
         setThumbnailHook(hook)
         setThumbnailPrompt((data.prompt as string) ?? null)
-        setThumbnailModel('pulid')
+        setThumbnailModel('flux-kontext')
         setHeadshotUsed(true)
         setPulidError(null)
         return
