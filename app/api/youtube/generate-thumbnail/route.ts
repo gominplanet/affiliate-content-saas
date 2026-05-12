@@ -38,7 +38,7 @@ async function geminiEditImage(
   imageUrl: string,
   geminiKey: string
 ): Promise<string | null> {
-  // Fetch the headshot and convert to base64 inline_data
+  // Fetch the headshot and convert to base64
   let imageBase64 = ''
   let mimeType = 'image/jpeg'
   try {
@@ -53,9 +53,9 @@ async function geminiEditImage(
     return null
   }
 
-  // Gemini 2.5 Flash Image — multimodal edit, returns base64
+  // gemini-2.5-flash-image — multimodal edit (camelCase keys in REST response)
   const res = await fetch(
-    `${GOOGLE_BASE}/models/gemini-2.5-flash-preview-05-20:generateContent?key=${geminiKey}`,
+    `${GOOGLE_BASE}/models/gemini-2.5-flash-image:generateContent?key=${geminiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -63,16 +63,16 @@ async function geminiEditImage(
         contents: [{
           parts: [
             { text: prompt },
-            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+            { inlineData: { mimeType, data: imageBase64 } },
           ],
         }],
-        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+        generationConfig: { responseModalities: ['IMAGE'] },
       }),
     }
   )
   const data = await res.json() as {
     candidates?: Array<{
-      content?: { parts?: Array<{ inline_data?: { mime_type: string; data: string } }> }
+      content?: { parts?: Array<{ inlineData?: { mimeType: string; data: string } }> }
     }>
     error?: { message: string }
   }
@@ -81,9 +81,9 @@ async function geminiEditImage(
     return null
   }
   const parts = data.candidates?.[0]?.content?.parts ?? []
-  const imgPart = parts.find(p => p.inline_data?.data)
-  if (!imgPart?.inline_data) return null
-  return `data:${imgPart.inline_data.mime_type};base64,${imgPart.inline_data.data}`
+  const imgPart = parts.find(p => p.inlineData?.data)
+  if (!imgPart?.inlineData) return null
+  return `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`
 }
 
 // ── Main route ────────────────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ COMPOSITION:
 The final result should look like a top-performing YouTube affiliate review thumbnail.`
 
       thumbnailUrl = await geminiEditImage(editPrompt, cleanHeadshotUrl, geminiKey)
-      if (thumbnailUrl) { modelUsed = 'gemini-2.5-flash'; headshotUsed = true }
+      if (thumbnailUrl) { modelUsed = 'gemini-2.5-flash-image'; headshotUsed = true }
       else console.warn('[thumbnail] Gemini edit failed, falling through')
     }
 
