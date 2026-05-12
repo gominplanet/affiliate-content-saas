@@ -131,26 +131,38 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
     let lastError = ''
     let modelUsed = ''
 
-    // Safe JSON parse for fal.ai / Replicate — they occasionally return plain text on errors
+    // Safe JSON parse — fal.ai occasionally returns plain text on errors
     async function falJson(res: globalThis.Response): Promise<Record<string, unknown>> {
       const text = await res.text()
       try { return JSON.parse(text) as Record<string, unknown> } catch { return { _raw: text } }
     }
 
+    // Timed fetch — aborts after `ms` milliseconds so we never hang past the Vercel limit
+    async function timedFetch(url: string, init: RequestInit, ms: number): Promise<globalThis.Response> {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), ms)
+      try {
+        return await fetch(url, { ...init, signal: ctrl.signal })
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
     // ── 4a. PuLID when headshot available (face-consistent generation) ─────────
+    // Hard cap at 22s so a hanging PuLID never eats the whole budget
     if (hasHeadshot) {
       try {
-        const res = await fetch('https://fal.run/fal-ai/pulid', {
+        const res = await timedFetch('https://fal.run/fal-ai/pulid', {
           method: 'POST',
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: imagePrompt,
             reference_images: [{ image_url: headshotUrl }],
             image_size: 'landscape_16_9',
-            num_inference_steps: 20,
+            num_inference_steps: 12,   // was 20 — faster, still good quality
             num_images: 1,
           }),
-        })
+        }, 22_000)
         const data = await falJson(res)
         if (res.ok) {
           thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
@@ -161,26 +173,28 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
         }
       } catch (err) {
         lastError = `PuLID: ${err instanceof Error ? err.message : String(err)}`
+        console.warn('[generate-thumbnail] PuLID error:', lastError)
       }
     }
 
-    // ── 4b. Flux Dev (higher quality than Schnell) ─────────────────────────────
+    // ── 4b. Flux Dev → Schnell fallback ───────────────────────────────────────
+    // Flux Dev capped at 18s; Schnell at 12s — total image budget ≤ 22+18 = 40s
     if (!thumbnailUrl) {
       for (const model of ['fal-ai/flux/dev', 'fal-ai/flux/schnell']) {
         try {
           const isSchnell = model.includes('schnell')
-          const res = await fetch(`https://fal.run/${model}`, {
+          const res = await timedFetch(`https://fal.run/${model}`, {
             method: 'POST',
             headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               prompt: imagePrompt,
               image_size: 'landscape_16_9',
-              num_inference_steps: isSchnell ? 4 : 28,
+              num_inference_steps: isSchnell ? 4 : 18,   // Dev: 18 steps (was 28)
               guidance_scale: isSchnell ? undefined : 3.5,
               num_images: 1,
               enable_safety_checker: false,
             }),
-          })
+          }, isSchnell ? 12_000 : 18_000)
           const data = await falJson(res)
           if (!res.ok) {
             lastError = `${model} ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
@@ -194,15 +208,15 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
       }
     }
 
-    // ── 4c. Replicate fallback ─────────────────────────────────────────────────
+    // ── 4c. Replicate fallback (capped at 15s total) ──────────────────────────
     if (!thumbnailUrl && process.env.REPLICATE_API_TOKEN) {
       try {
-        const startRes = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
+        const startRes = await timedFetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}`,
             'Content-Type': 'application/json',
-            Prefer: 'wait=60',
+            Prefer: 'wait=15',
           },
           body: JSON.stringify({
             input: {
@@ -210,22 +224,15 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
               aspect_ratio: '16:9',
               num_outputs: 1,
               output_format: 'jpg',
-              output_quality: 95,
+              output_quality: 90,
               guidance: 3.5,
-              num_inference_steps: 28,
+              num_inference_steps: 20,
             },
           }),
-        })
-        const pred = await startRes.json() as { output?: string[]; urls?: { get: string } }
+        }, 16_000)
+        const pred = await falJson(startRes) as { output?: string[]; urls?: { get: string } }
         thumbnailUrl = pred.output?.[0] ?? null
         if (thumbnailUrl) modelUsed = 'replicate/flux-dev'
-        else if (pred.urls?.get) {
-          await new Promise(r => setTimeout(r, 6000))
-          const poll = await fetch(pred.urls.get, { headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` } })
-          const pollData = await poll.json() as { output?: string[] }
-          thumbnailUrl = pollData.output?.[0] ?? null
-          if (thumbnailUrl) modelUsed = 'replicate/flux-dev'
-        }
       } catch (err) {
         lastError = `Replicate: ${err instanceof Error ? err.message : String(err)}`
       }
