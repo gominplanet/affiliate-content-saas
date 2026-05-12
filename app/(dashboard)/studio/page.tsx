@@ -244,30 +244,35 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       img.onload = () => {
         ctx.drawImage(img, 0, 0, 1280, 720)
 
-        const fontSize = 88
-        const font = `bold ${fontSize}px Impact, "Arial Black", Arial, sans-serif`
-        const lines = wrapText(ctx, text, font, 520, 4)
-        const lineH = fontSize * 1.1
+        const fontSize = 96
+        const font = `900 ${fontSize}px Impact, "Arial Black", Arial, sans-serif`
+        const lines = wrapText(ctx, text, font, 500, 3)
+        const lineH = fontSize * 1.15
         const totalH = lines.length * lineH
-        const padX = 44
-        const padY = 32
-        const startY = padY + fontSize  // top-left anchor
+        const padX = 40
+        const padY = 28
 
-        // Semi-transparent dark band behind text for readability
-        ctx.fillStyle = 'rgba(0,0,0,0.45)'
-        ctx.fillRect(padX - 12, padY - 10, 544, totalH + 20)
+        // Solid dark pill behind text — always readable regardless of image brightness
+        const bandW = 520
+        const bandH = totalH + 28
+        const radius = 14
+        ctx.fillStyle = 'rgba(0,0,0,0.72)'
+        ctx.beginPath()
+        ctx.roundRect(padX - 16, padY - 10, bandW, bandH, radius)
+        ctx.fill()
 
         ctx.font = font
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
 
         lines.forEach((line, i) => {
-          const y = startY - fontSize + i * lineH
-          // Thick black stroke
-          ctx.lineWidth = 10
+          const y = padY + 4 + i * lineH
+          // Thick black outline for extra pop
+          ctx.lineWidth = 12
           ctx.strokeStyle = '#000000'
+          ctx.lineJoin = 'round'
           ctx.strokeText(line, padX, y)
-          // White fill
+          // Bright white fill
           ctx.fillStyle = '#FFFFFF'
           ctx.fillText(line, padX, y)
         })

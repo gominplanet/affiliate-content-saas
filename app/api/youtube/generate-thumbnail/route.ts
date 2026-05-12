@@ -221,30 +221,35 @@ Video: "${videoTitle}"`,
     let thumbnailUrl: string | null = null
     let modelUsed = ''
     let headshotUsed = false
+    let usedPrompt = productPrompt // what we show in "Copy prompt"
 
     // ── 4a. Person + product via Gemini multimodal edit ───────────────────────
     if (hasHeadshot && geminiKey) {
       const cleanHeadshotUrl = headshotUrl.split('?')[0]
       console.log('[thumbnail] Trying Gemini multimodal edit, headshot:', cleanHeadshotUrl)
 
-      const editPrompt = `Transform this headshot photo into a professional YouTube thumbnail (16:9 landscape format).
+      const editPrompt = `You are creating a YouTube thumbnail from this photo.
 
-KEEP the person's face, hair, skin tone and appearance IDENTICAL — do not alter their look at all.
+STEP 1 — Find the person's FACE in this image. Focus on their face, eyes, and expression.
 
-COMPOSITION:
-- Person occupies the LEFT 35% of the frame, shown from waist up
-- Expression: wide surprised/excited look, mouth open, eyebrows raised, looking right
-- RIGHT 65% of the frame: ${productLine} — large, prominent, dramatic product shot
-- Dark gradient background behind the product
-- Strong studio rim lighting on both person and product
-- High contrast, punchy colours that pop on mobile screens
-- No text, no words, no letters anywhere in the image
+STEP 2 — Generate a new 16:9 landscape YouTube thumbnail with this exact layout:
+LEFT THIRD (0–35% of width): The person from this photo, shown from shoulders up, FACING THE CAMERA, with a wide open-mouth surprised/excited expression, eyebrows raised high, eyes wide open. Preserve their face, hair colour, skin tone and features exactly.
+RIGHT TWO-THIRDS (35–100% of width): ${productLine} — large, dramatic, photorealistic commercial product shot with strong studio rim lighting against a dark gradient background.
 
-The final result should look like a top-performing YouTube affiliate review thumbnail.`
+STEP 3 — Final polish:
+- High contrast, vivid colours that pop on a phone screen
+- Clean hard edge between the person and product sides
+- No text, no words, no numbers anywhere in the image
+- Professional YouTube thumbnail quality — looks like a top affiliate channel`
 
       thumbnailUrl = await geminiEditImage(editPrompt, cleanHeadshotUrl, geminiKey)
-      if (thumbnailUrl) { modelUsed = 'gemini-2.5-flash-image'; headshotUsed = true }
-      else console.warn('[thumbnail] Gemini edit failed, falling through')
+      if (thumbnailUrl) {
+        modelUsed = 'gemini-2.5-flash-image'
+        headshotUsed = true
+        usedPrompt = editPrompt
+      } else {
+        console.warn('[thumbnail] Gemini edit failed, falling through')
+      }
     }
 
     // ── 4b. Product-only via Imagen 4 ─────────────────────────────────────────
@@ -291,7 +296,7 @@ The final result should look like a top-performing YouTube affiliate review thum
       ok: true,
       usesQueue: false,
       thumbnailUrl,
-      prompt: productPrompt,
+      prompt: usedPrompt,
       overlayHook,
       modelUsed,
       headshotUsed,
