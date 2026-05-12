@@ -80,7 +80,8 @@ PAIN POINTS: ${productAnalysis.painPoints.join(', ')}
 TONE: ${tone}
 
 TITLE RULES:
-- Lead with a power hook: "Honest Review", "Worth It?", "Before You Buy", "I Tested", "Don't Buy Until..."
+- Lead with a power hook — choose from: "Worth It?", "Before You Buy", "I Tested", "Don't Buy Until...", "Is It Worth It?", "Real Talk:", "Watch This First", "We Tried It"
+- NEVER use the word "honest" anywhere in the title
 - Include the exact product name people search for
 - Add an emotional trigger or specific benefit
 - Under 100 characters

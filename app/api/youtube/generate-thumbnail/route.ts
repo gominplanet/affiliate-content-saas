@@ -79,24 +79,16 @@ export async function POST(request: Request) {
       lifestyle: 'product in a beautiful real-world scene, golden hour sunlight, rich environmental storytelling, foreground elements slightly blurred, aspirational and cinematic',
     }[style ?? 'review']
 
-    const headshotInstruction = hasHeadshot
-      ? `
-IMPORTANT — PERSON IN FRAME: ${authorName} must appear in the LEFT THIRD of the image.
-- Big open-mouth reaction: shocked, excited, or amazed expression
-- Eyebrows raised high, eyes wide open, finger pointing at the product OR hand on cheek
-- Casual relatable clothing, natural skin tones
-- Person fills roughly 35-40% of the total frame width
-- Product occupies the RIGHT 60-65% of the frame, dramatically lit
-- Classic YouTube split thumbnail composition
-- The person's face must be clear, well-lit, and front-facing`
-      : `NO people or faces — product drama only`
-
+    // Always generate a PRODUCT-ONLY prompt from Claude.
+    // Person composition is handled separately — PuLID receives a person-prefix prepended
+    // to the product prompt. This way if PuLID fails and Flux takes over, no random
+    // people are invented by the model.
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 500,
       messages: [{
         role: 'user',
-        content: `You are a world-class YouTube thumbnail art director. Create a Flux image generation prompt that will produce a stunning, high-CTR YouTube thumbnail.
+        content: `You are a world-class YouTube thumbnail art director. Create a Flux image generation prompt for a stunning, high-CTR YouTube thumbnail focused entirely on the product.
 
 ━━ PRODUCT CONTEXT ━━
 ${productContext || videoTitle}
@@ -110,7 +102,7 @@ Niche: ${niches}
 ${styleInstructions}
 
 ━━ COMPOSITION ━━
-${headshotInstruction}
+NO people or faces — product drama only. The product is the sole hero of the frame, occupying 60-70% of the image width, centred or slightly right of centre.
 
 ━━ TECHNICAL REQUIREMENTS ━━
 - Photorealistic commercial photography quality, 4K, ultra-detailed
@@ -124,7 +116,14 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
       }],
     })
 
-    const imagePrompt = (msg.content[0] as { type: string; text: string }).text.trim()
+    const productOnlyPrompt = (msg.content[0] as { type: string; text: string }).text.trim()
+
+    // For PuLID: prepend a tight composition instruction so the face-swap model
+    // knows exactly where to place the reference face. Flux fallback uses the
+    // product-only prompt — no people, no surprises.
+    const pulidPrompt = `YouTube thumbnail split composition: ${authorName || 'a person'} in the LEFT THIRD of frame with a wide open-mouth shocked/excited expression, eyebrows raised high, pointing at the product. Product occupies the RIGHT 65% of frame. ${productOnlyPrompt}`
+
+    const imagePrompt = productOnlyPrompt // used for Flux fallbacks
 
     // ── 4. Generate image ─────────────────────────────────────────────────────
     let thumbnailUrl: string | null = null
@@ -156,7 +155,7 @@ Write ONLY the image generation prompt. Be hyper-specific: name exact colours, l
           method: 'POST',
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: imagePrompt,
+            prompt: pulidPrompt,
             reference_images: [{ image_url: headshotUrl }],
             image_size: 'landscape_16_9',
             num_inference_steps: 12,   // was 20 — faster, still good quality

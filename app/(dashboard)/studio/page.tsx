@@ -174,7 +174,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       let finalUrl: string = data.thumbnailUrl as string
       if (includeText) {
         try {
-          finalUrl = await addTextOverlay(data.thumbnailUrl, editTitle || video.title)
+          finalUrl = await addTextOverlay(data.thumbnailUrl as string, editTitle || video.title)
         } catch (overlayErr) {
           console.warn('[text-overlay]', overlayErr)
           // Fall back to plain image — don't block the user
@@ -201,26 +201,56 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       const ctx = canvas.getContext('2d')
       if (!ctx) { reject(new Error('Canvas not supported')); return }
 
+      // Clean up the title for the overlay:
+      // 1. Remove banned/redundant hook prefixes before the colon
+      // 2. Strip the word "honest" (banned per brand guidelines)
+      // 3. Cap at 55 chars so it never gets truncated mid-word
+      function cleanTitle(raw: string): string {
+        let t = raw
+          .replace(/\bhonest\b/gi, '')           // banned word
+          .replace(/\s{2,}/g, ' ')
+          .trim()
+        // If there's a colon, drop everything before it (e.g. "Worth It?: ..." → "...")
+        // unless what's after the colon is very short
+        const colonIdx = t.indexOf(':')
+        if (colonIdx > 0 && colonIdx < t.length - 10) {
+          t = t.slice(colonIdx + 1).trim()
+        }
+        // Hard cap: keep whole words up to 55 chars
+        if (t.length > 55) {
+          const words = t.split(' ')
+          let out = ''
+          for (const w of words) {
+            if ((out + ' ' + w).trim().length > 55) break
+            out = (out + ' ' + w).trim()
+          }
+          t = out
+        }
+        return t
+      }
+
+      const displayTitle = cleanTitle(title)
+
       const img = new window.Image()
       img.crossOrigin = 'anonymous'
       img.onload = () => {
         ctx.drawImage(img, 0, 0, 1280, 720)
 
         // Dark gradient at bottom for text legibility
-        const grad = ctx.createLinearGradient(0, 380, 0, 720)
+        const grad = ctx.createLinearGradient(0, 420, 0, 720)
         grad.addColorStop(0, 'rgba(0,0,0,0)')
-        grad.addColorStop(1, 'rgba(0,0,0,0.82)')
+        grad.addColorStop(1, 'rgba(0,0,0,0.88)')
         ctx.fillStyle = grad
         ctx.fillRect(0, 0, 1280, 720)
 
-        // Word-wrap text to max 2 lines
-        const fontSize = 78
+        // Word-wrap to max 2 lines
+        const fontSize = 82
         ctx.font = `bold ${fontSize}px Impact, "Arial Black", Arial, sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'bottom'
 
-        const maxWidth = 1160
-        const words = title.split(' ')
+        const maxWidth = 1180
+        const words = displayTitle.split(' ')
         const lines: string[] = []
         let current = ''
         for (const word of words) {
@@ -236,25 +266,20 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
         if (current && lines.length < 2) lines.push(current)
 
         const lineH = fontSize * 1.15
-        const totalH = lines.length * lineH
         const startY = 720 - 28 - (lines.length - 1) * lineH
 
         lines.forEach((line, i) => {
           const y = startY + i * lineH
-          // Thick black stroke for contrast
-          ctx.lineWidth = 8
+          ctx.lineWidth = 9
           ctx.strokeStyle = 'rgba(0,0,0,0.95)'
           ctx.strokeText(line, 640, y)
-          // White fill
           ctx.fillStyle = '#FFFFFF'
           ctx.fillText(line, 640, y)
         })
 
-        void totalH // suppress unused warning
         resolve(canvas.toDataURL('image/jpeg', 0.93))
       }
       img.onerror = () => reject(new Error('Failed to load image for overlay'))
-      // Route through our proxy so canvas stays untainted (cross-origin CORS)
       img.src = `/api/proxy-image?url=${encodeURIComponent(rawUrl)}`
     })
   }
