@@ -51,11 +51,10 @@ export async function POST(request: Request) {
 
     const b = brand as Record<string, unknown> | null
     const niches = ((b?.niches as string[]) || []).join(', ') || 'consumer products'
-    const authorName = (b?.author_name as string) || 'the host'
     const headshotUrl = (b?.headshot_url as string) || ''
     const hasHeadshot = !!headshotUrl && includePerson
 
-    // ── 2. Build rich product + video context ──────────────────────────────────
+    // ── 2. Build product + video context ──────────────────────────────────────
     const productContext = [
       productTitle ? `Product name: ${productTitle}` : `ASIN: ${asin}`,
       productPrice ? `Price: ${productPrice}` : '',
@@ -64,12 +63,9 @@ export async function POST(request: Request) {
       productDescription ? `Product description: ${productDescription}` : '',
     ].filter(Boolean).join('\n')
 
-    const videoContext = videoDescription
-      ? videoDescription.slice(0, 400)
-      : ''
+    const videoContext = videoDescription ? videoDescription.slice(0, 400) : ''
 
-    // ── 3. Claude Sonnet writes the image generation prompt ───────────────────
-    // Use Sonnet here — this is the creative bottleneck, quality matters
+    // ── 3. Claude generates prompt + hook in parallel (~8s) ───────────────────
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
     const styleInstructions = {
@@ -79,11 +75,6 @@ export async function POST(request: Request) {
       lifestyle: 'product in a beautiful real-world scene, golden hour sunlight, rich environmental storytelling, foreground elements slightly blurred, aspirational and cinematic',
     }[style ?? 'review']
 
-    // Always generate a PRODUCT-ONLY prompt from Claude.
-    // Person composition is handled separately — PuLID receives a person-prefix prepended
-    // to the product prompt. This way if PuLID fails and Flux takes over, no random
-    // people are invented by the model.
-    // Run both Claude calls in parallel to save ~3-5s
     const [msg, hookMsg] = await Promise.all([
       anthropic.messages.create({
         model: 'claude-sonnet-4-6',
@@ -132,42 +123,18 @@ Video title: "${videoTitle}"`,
 
     const productOnlyPrompt = (msg.content[0] as { type: string; text: string }).text.trim()
     const overlayHook = (hookMsg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
+    const imagePrompt = productOnlyPrompt
 
-    // For PuLID: prepend composition instruction. Flux fallback uses product-only prompt.
-    const pulidPrompt = `YouTube thumbnail reaction shot: person in LEFT THIRD of frame, wide open-mouth shocked expression, eyebrows raised, pointing right. Product fills RIGHT 65% of frame. ${productOnlyPrompt}`
-
-    const imagePrompt = productOnlyPrompt // used for Flux fallbacks
-
-    // ── 4. Generate image ─────────────────────────────────────────────────────
-    let thumbnailUrl: string | null = null
-    let lastError = ''
-    let modelUsed = ''
-
-    // Safe JSON parse — fal.ai occasionally returns plain text on errors
-    async function falJson(res: globalThis.Response): Promise<Record<string, unknown>> {
-      const text = await res.text()
-      try { return JSON.parse(text) as Record<string, unknown> } catch { return { _raw: text } }
-    }
-
-    // Timed fetch — aborts after `ms` milliseconds so we never hang past the Vercel limit
-    async function timedFetch(url: string, init: RequestInit, ms: number): Promise<globalThis.Response> {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), ms)
-      try {
-        return await fetch(url, { ...init, signal: ctrl.signal })
-      } finally {
-        clearTimeout(timer)
-      }
-    }
-
-    // ── 4a. PuLID when headshot available (face-consistent generation) ─────────
-    let pulidError = ''
+    // ── 4a. PuLID via fal.ai QUEUE (async — no Vercel timeout risk) ───────────
+    // queue.fal.run returns a request_id immediately; the client polls /thumbnail-status
     if (hasHeadshot) {
-      // Strip query params (e.g. ?t=timestamp) — some APIs reject URLs with unknown params
       const cleanHeadshotUrl = headshotUrl.split('?')[0]
-      console.log('[generate-thumbnail] Trying PuLID with headshot:', cleanHeadshotUrl)
+      console.log('[generate-thumbnail] Submitting PuLID to queue, headshot:', cleanHeadshotUrl)
+
+      const pulidPrompt = `YouTube thumbnail reaction shot: person in LEFT THIRD of frame, wide open-mouth shocked expression, eyebrows raised, pointing right at the product. Product fills RIGHT 65% of frame. ${productOnlyPrompt}`
+
       try {
-        const res = await timedFetch('https://fal.run/fal-ai/pulid', {
+        const submitRes = await fetch('https://queue.fal.run/fal-ai/pulid', {
           method: 'POST',
           headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -180,57 +147,79 @@ Video title: "${videoTitle}"`,
             mode: 'fidelity',
             num_images: 1,
           }),
-        }, 25_000)
-        const data = await falJson(res)
-        console.log('[generate-thumbnail] PuLID response:', res.status, JSON.stringify(data).slice(0, 300))
-        if (res.ok) {
-          thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
-          if (thumbnailUrl) modelUsed = 'pulid'
-          else pulidError = 'PuLID returned no image URL'
-        } else {
-          pulidError = `PuLID ${res.status}: ${JSON.stringify(data).slice(0, 300)}`
-          lastError = pulidError
-          console.warn('[generate-thumbnail] PuLID failed:', pulidError)
+        })
+
+        const submitData = await submitRes.json() as { request_id?: string; error?: string }
+        console.log('[generate-thumbnail] PuLID queue submit:', submitRes.status, JSON.stringify(submitData).slice(0, 200))
+
+        if (submitRes.ok && submitData.request_id) {
+          // Return early — client will poll /api/youtube/thumbnail-status
+          return NextResponse.json({
+            ok: true,
+            usesQueue: true,
+            requestId: submitData.request_id,
+            queueModel: 'fal-ai/pulid',
+            prompt: imagePrompt,
+            overlayHook,
+            headshotUsed: true,
+          })
         }
+
+        // Queue submit failed — fall through to Flux
+        console.warn('[generate-thumbnail] PuLID queue submit failed:', submitData.error)
       } catch (err) {
-        pulidError = `PuLID: ${err instanceof Error ? err.message : String(err)}`
-        lastError = pulidError
-        console.warn('[generate-thumbnail] PuLID error:', pulidError)
+        console.warn('[generate-thumbnail] PuLID queue error:', err)
       }
     }
 
-    // ── 4b. Flux Dev → Schnell fallback ───────────────────────────────────────
-    // Flux Dev capped at 18s; Schnell at 12s — total image budget ≤ 22+18 = 40s
-    if (!thumbnailUrl) {
-      for (const model of ['fal-ai/flux/dev', 'fal-ai/flux/schnell']) {
-        try {
-          const isSchnell = model.includes('schnell')
-          const res = await timedFetch(`https://fal.run/${model}`, {
-            method: 'POST',
-            headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              prompt: imagePrompt,
-              image_size: 'landscape_16_9',
-              num_inference_steps: isSchnell ? 4 : 18,   // Dev: 18 steps (was 28)
-              guidance_scale: isSchnell ? undefined : 3.5,
-              num_images: 1,
-              enable_safety_checker: false,
-            }),
-          }, isSchnell ? 12_000 : 18_000)
-          const data = await falJson(res)
-          if (!res.ok) {
-            lastError = `${model} ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
-            continue
-          }
-          thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
-          if (thumbnailUrl) { modelUsed = model; break }
-        } catch (err) {
-          lastError = err instanceof Error ? err.message : String(err)
+    // ── 4b. Flux Dev → Schnell (synchronous, fast enough) ────────────────────
+    let thumbnailUrl: string | null = null
+    let lastError = ''
+    let modelUsed = ''
+
+    async function falJson(res: globalThis.Response): Promise<Record<string, unknown>> {
+      const text = await res.text()
+      try { return JSON.parse(text) as Record<string, unknown> } catch { return { _raw: text } }
+    }
+
+    async function timedFetch(url: string, init: RequestInit, ms: number): Promise<globalThis.Response> {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), ms)
+      try {
+        return await fetch(url, { ...init, signal: ctrl.signal })
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
+    for (const model of ['fal-ai/flux/dev', 'fal-ai/flux/schnell']) {
+      try {
+        const isSchnell = model.includes('schnell')
+        const res = await timedFetch(`https://fal.run/${model}`, {
+          method: 'POST',
+          headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: imagePrompt,
+            image_size: 'landscape_16_9',
+            num_inference_steps: isSchnell ? 4 : 18,
+            guidance_scale: isSchnell ? undefined : 3.5,
+            num_images: 1,
+            enable_safety_checker: false,
+          }),
+        }, isSchnell ? 12_000 : 18_000)
+        const data = await falJson(res)
+        if (!res.ok) {
+          lastError = `${model} ${res.status}: ${JSON.stringify(data).slice(0, 200)}`
+          continue
         }
+        thumbnailUrl = (data.images as Array<{ url: string }>)?.[0]?.url ?? null
+        if (thumbnailUrl) { modelUsed = model; break }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err)
       }
     }
 
-    // ── 4c. Replicate fallback (capped at 15s total) ──────────────────────────
+    // ── 4c. Replicate fallback ────────────────────────────────────────────────
     if (!thumbnailUrl && process.env.REPLICATE_API_TOKEN) {
       try {
         const startRes = await timedFetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
@@ -252,7 +241,7 @@ Video title: "${videoTitle}"`,
             },
           }),
         }, 16_000)
-        const pred = await falJson(startRes) as { output?: string[]; urls?: { get: string } }
+        const pred = await falJson(startRes) as { output?: string[] }
         thumbnailUrl = pred.output?.[0] ?? null
         if (thumbnailUrl) modelUsed = 'replicate/flux-dev'
       } catch (err) {
@@ -266,12 +255,13 @@ Video title: "${videoTitle}"`,
 
     return NextResponse.json({
       ok: true,
+      usesQueue: false,
       thumbnailUrl,
       prompt: imagePrompt,
       overlayHook,
       modelUsed,
-      headshotUsed: hasHeadshot && modelUsed === 'pulid',
-      pulidError: pulidError || null,
+      headshotUsed: false,
+      pulidError: hasHeadshot ? 'PuLID queue submit failed, used Flux fallback' : null,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

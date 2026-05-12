@@ -71,6 +71,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
   const [headshotUsed, setHeadshotUsed] = useState(false)
   const [pulidError, setPulidError] = useState<string | null>(null)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
+  const [thumbnailPhase, setThumbnailPhase] = useState<'idle' | 'prompting' | 'queued' | 'polling'>('idle')
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
   const [thumbnailStyle, setThumbnailStyle] = useState<'review' | 'unboxing' | 'comparison' | 'lifestyle'>('review')
   const [includePerson, setIncludePerson] = useState(true)
@@ -152,7 +153,9 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
 
   async function generateThumbnail() {
     setGeneratingThumbnail(true)
+    setThumbnailPhase('prompting')
     setThumbnailError(null)
+    setPulidError(null)
     try {
       const res = await fetch('/api/youtube/generate-thumbnail', {
         method: 'POST',
@@ -174,6 +177,61 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
 
       const hook = (data.overlayHook as string) || ''
+
+      // ── Queue path (PuLID with headshot) ────────────────────────────────────
+      if (data.usesQueue && data.requestId) {
+        const requestId = data.requestId as string
+        const queueModel = (data.queueModel as string) ?? 'fal-ai/pulid'
+        setThumbnailPhase('queued')
+
+        // Poll until COMPLETED or FAILED (up to ~3 minutes)
+        const maxAttempts = 60
+        let attempt = 0
+        let thumbnailFromQueue: string | null = null
+
+        while (attempt < maxAttempts) {
+          await new Promise(r => setTimeout(r, 3000))
+          setThumbnailPhase('polling')
+          attempt++
+
+          try {
+            const pollRes = await fetch(
+              `/api/youtube/thumbnail-status?requestId=${encodeURIComponent(requestId)}&model=${encodeURIComponent(queueModel)}`
+            )
+            const pollData = await pollRes.json() as { status: string; thumbnailUrl?: string; error?: string }
+
+            if (pollData.status === 'COMPLETED' && pollData.thumbnailUrl) {
+              thumbnailFromQueue = pollData.thumbnailUrl
+              break
+            }
+            if (pollData.status === 'FAILED') {
+              throw new Error(pollData.error ?? 'PuLID generation failed')
+            }
+            // IN_QUEUE or IN_PROGRESS — keep polling
+          } catch (pollErr) {
+            // Network hiccup — keep trying
+            console.warn('[thumbnail-poll] attempt', attempt, pollErr)
+          }
+        }
+
+        if (!thumbnailFromQueue) throw new Error('Face thumbnail timed out — try again')
+
+        let finalUrl = thumbnailFromQueue
+        if (includeText) {
+          try { finalUrl = await addTextOverlay(thumbnailFromQueue, hook || editTitle || video.title) }
+          catch (overlayErr) { console.warn('[text-overlay]', overlayErr) }
+        }
+
+        setThumbnailUrl(finalUrl)
+        setThumbnailHook(hook)
+        setThumbnailPrompt((data.prompt as string) ?? null)
+        setThumbnailModel('pulid')
+        setHeadshotUsed(true)
+        setPulidError(null)
+        return
+      }
+
+      // ── Direct path (Flux, no queue) ─────────────────────────────────────────
       let finalUrl: string = data.thumbnailUrl as string
       if (includeText) {
         try {
@@ -193,6 +251,7 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
     } finally {
       setGeneratingThumbnail(false)
+      setThumbnailPhase('idle')
     }
   }
 
@@ -567,7 +626,12 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                   style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
                 >
                   {generatingThumbnail
-                    ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
+                    ? <><Loader2 size={12} className="animate-spin" /> {
+                        thumbnailPhase === 'prompting' ? 'Writing prompt…' :
+                        thumbnailPhase === 'queued'    ? 'Queued…' :
+                        thumbnailPhase === 'polling'   ? 'Generating face…' :
+                        'Generating…'
+                      }</>
                     : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate Thumbnail' : 'Generate Thumbnail'}</>}
                 </button>
 
