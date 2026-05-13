@@ -382,8 +382,14 @@ add_action('wp_footer', function () {
 
 add_action('kadence_before_footer', function () { do_action('mvp_affiliate_render_footer'); });
 
-// ─── 13. Force front page template (lets us control homepage) ─────────────────
-add_filter('frontpage_template', function ($t) { return get_page_template(); });
+// ─── 13. Force front page template — only when no MVP Affiliate Theme is active.
+// When the theme is active it owns the homepage layout via front-page.php and we
+// must NOT redirect WP to page.php (which would loop the_content() over every
+// post and stack full articles on the homepage).
+add_filter('frontpage_template', function ($t) {
+    if (mvp_affiliate_theme_active()) return $t;
+    return get_page_template();
+});
 
 // ─── 13b. Inject accent color as CSS overrides ────────────────────────────────
 // Maps profile.primaryColor / profile.accentColor onto Kadence's global palette
