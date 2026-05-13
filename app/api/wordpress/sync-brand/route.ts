@@ -57,6 +57,7 @@ export async function POST(request: Request) {
 
     // Update site title + tagline via WP Settings API so they flow through
     // the theme natively (header, footer, browser tab, RSS, etc.)
+    let frontPageId: number | undefined
     if (brandName || tagline) {
       const settingsBody: Record<string, string> = {}
       if (brandName) settingsBody.title       = brandName
@@ -67,6 +68,12 @@ export async function POST(request: Request) {
         body: JSON.stringify(settingsBody),
       }).catch((e) => ({ ok: false, status: 0, text: () => Promise.resolve(String(e)) } as Response))
       debug.settingsUpdate = { ok: settingsRes.ok, status: settingsRes.status }
+      if (settingsRes.ok) {
+        try {
+          const settingsJson = await settingsRes.json() as { page_on_front?: number }
+          frontPageId = settingsJson.page_on_front
+        } catch { /* ignore */ }
+      }
       if (!settingsRes.ok) {
         const body = await settingsRes.text()
         debug.settingsUpdateBody = body.slice(0, 300)
@@ -119,6 +126,43 @@ export async function POST(request: Request) {
         msg = `WordPress returned ${postRes.status}: ${text.slice(0, 200)}`
       }
       return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
+    }
+
+    // Update the home page (page_on_front) so the hero title/content reflects
+    // the new brand name. Users never touch wp-admin to edit the home page.
+    if (brandName && frontPageId) {
+      try {
+        // Fetch the current page content
+        const pageRes = await fetch(`${wpBase}/wp-json/wp/v2/pages/${frontPageId}?context=edit`, {
+          headers: { Authorization: authHeader },
+        })
+        if (pageRes.ok) {
+          const page = await pageRes.json() as { title?: { raw?: string }; content?: { raw?: string } }
+          const oldTitle = page.title?.raw ?? ''
+          const oldContent = page.content?.raw ?? ''
+          // Replace previous brand name occurrences in title + content with new one.
+          // We always update the page title; for content, we do a best-effort
+          // replacement of the previous brand name we sent (existingProfile.brandName).
+          const previousBrand = (existingProfile.brandName as string) || oldTitle
+          let newContent = oldContent
+          if (previousBrand && previousBrand !== brandName) {
+            // Replace all occurrences of previousBrand in content with brandName
+            const escaped = previousBrand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            newContent = oldContent.replace(new RegExp(escaped, 'g'), brandName)
+          }
+          const updateRes = await fetch(`${wpBase}/wp-json/wp/v2/pages/${frontPageId}`, {
+            method: 'POST',
+            headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: brandName,
+              ...(newContent !== oldContent ? { content: newContent } : {}),
+            }),
+          })
+          debug.homePageUpdate = { id: frontPageId, ok: updateRes.ok, status: updateRes.status }
+        }
+      } catch (e) {
+        debug.homePageError = e instanceof Error ? e.message : String(e)
+      }
     }
 
     // Refresh the AffiliateOS Code Snippet to the latest version so logo banner,
