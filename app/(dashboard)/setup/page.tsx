@@ -279,23 +279,20 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
 
 // ─── Existing site connect ────────────────────────────────────────────────────
 function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url: string) => void }) {
-  const [siteUrl, setSiteUrl] = useState('')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+  const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canSubmit = siteUrl.trim() && username.trim() && password.trim() && !loading
+  const canSubmit = token.trim().length > 20 && !loading
 
   async function handleConnect() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/wordpress/connect', {
+      const res = await fetch('/api/wordpress/connect-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteUrl: siteUrl.trim(), username: username.trim(), password: password.trim() }),
+        body: JSON.stringify({ token: token.trim() }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Connection failed')
@@ -315,54 +312,36 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
         </button>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your existing WordPress site</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Enter the same username and password you use to log in to wp-admin.
+          Install the MVP Affiliate plugin, generate a connection token, and paste it here.
         </p>
-        {/* Safety guarantee */}
-        <div className="rounded-xl border border-[#34c759]/30 bg-[#34c759]/5 px-4 py-3 flex gap-3 mb-2">
-          <Check size={15} className="text-[#34c759] flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your existing site is safe</p>
-            <ul className="flex flex-col gap-1">
-              {[
-                'We only ever create new posts — nothing else is touched',
-                'Your theme, design, and existing content stay exactly as they are',
-                'No plugins are installed, no settings are changed',
-                'You review and approve every post before it goes live',
-              ].map(line => (
-                <li key={line} className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex items-start gap-1.5">
-                  <span className="text-[#34c759] mt-0.5">·</span> {line}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
       </div>
 
-      <div className="flex flex-col gap-4">
-        <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress site URL</label>
-          <input type="text" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="yourdomain.com" className="input-field" />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress username</label>
-          <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="admin" className="input-field" />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress password</label>
-          <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Your wp-admin password"
-              className="input-field pr-10"
-            />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
-              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-          </div>
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">The same password you use to log in to yourdomain.com/wp-admin.</p>
-        </div>
+      {/* Step 1 — install plugin */}
+      <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4">
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Step 1 — Install the MVP Affiliate plugin</p>
+        <a href="/mvp-affiliate.zip" download="mvp-affiliate.zip" className="btn-primary text-sm self-start inline-flex mb-3">
+          <Download size={14} /> Download plugin
+        </a>
+        <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside">
+          <li>In your wp-admin: Plugins → Add New Plugin → Upload Plugin</li>
+          <li>Choose the ZIP, click Install Now, then Activate Plugin</li>
+          <li>Click the new <strong>MVP Affiliate</strong> menu item in the sidebar</li>
+          <li>Click <strong>Install Kadence theme</strong>, then <strong>Generate Connection Token</strong></li>
+          <li>Copy the token and paste it below</li>
+        </ol>
+      </div>
+
+      {/* Step 2 — paste token */}
+      <div>
+        <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Step 2 — Paste your Connection Token</label>
+        <textarea
+          value={token}
+          onChange={e => setToken(e.target.value)}
+          placeholder="eyJ1cmwiOiJodHRwczovL... (paste full token here)"
+          rows={4}
+          className="input-field font-mono text-xs resize-y"
+        />
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Contains your site URL, username, and a secure Application Password — no passwords typed in.</p>
       </div>
 
       {error && (
