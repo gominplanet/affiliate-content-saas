@@ -25,11 +25,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, step: 'reach', error: `Could not reach your WordPress site. Check the URL.` })
     }
 
-    // ── Step 2: Try Basic auth first ──────────────────────────────────────────
+    // ── Step 2: Basic Auth with Application Password (the only supported path) ──
     const encoded = Buffer.from(`${username}:${cleanPassword}`).toString('base64')
-    const basicHeaders = { Authorization: `Basic ${encoded}` }
-
-    const basicRes = await fetch(`${baseUrl}/users/me`, { headers: basicHeaders })
+    const basicRes = await fetch(`${baseUrl}/users/me`, {
+      headers: { Authorization: `Basic ${encoded}` },
+    })
 
     if (basicRes.ok) {
       const me = await basicRes.json()
@@ -37,81 +37,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, username: me.name, message: `✓ Connected as "${me.name}"` })
     }
 
-    // ── Step 3: Basic auth failed — try cookie/nonce login (works on Hostinger) ──
-    try {
-      const loginBody = new URLSearchParams({
-        log: username,
-        pwd: cleanPassword,
-        'wp-submit': 'Log In',
-        redirect_to: '/wp-admin/',
-        testcookie: '1',
+    if (basicRes.status === 401 || basicRes.status === 403) {
+      return NextResponse.json({
+        ok: false, step: 'auth',
+        error: 'Wrong username or Application Password. Make sure you generated an Application Password in wp-admin → Users → Profile → Application Passwords — your regular login password will not work here.',
       })
-
-      const loginRes = await fetch(`${siteUrl}/wp-login.php`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Cookie: 'wordpress_test_cookie=WP+Cookie+check',
-        },
-        body: loginBody.toString(),
-        redirect: 'manual',
-      })
-
-      // Extract cookies
-      let rawCookies: string[] = []
-      if (typeof (loginRes.headers as Record<string, unknown>).getSetCookie === 'function') {
-        rawCookies = (loginRes.headers as Record<string, unknown> & { getSetCookie: () => string[] }).getSetCookie()
-      } else {
-        loginRes.headers.forEach((val, key) => {
-          if (key.toLowerCase() === 'set-cookie') rawCookies.push(...val.split(/,(?=\s*\w[^=,]*=)/))
-        })
-      }
-
-      const authCookies = rawCookies
-        .map(c => c.split(';')[0].trim())
-        .filter(c => c.startsWith('wordpress_') || c.startsWith('wp-settings'))
-        .join('; ')
-
-      if (!authCookies) {
-        return NextResponse.json({
-          ok: false, step: 'auth',
-          error: 'Login failed — wrong username or password. Make sure you\'re using your wp-admin login credentials.',
-        })
-      }
-
-      // Get a nonce from wp-admin
-      const adminRes = await fetch(`${siteUrl}/wp-admin/`, {
-        headers: { Cookie: authCookies },
-        redirect: 'follow',
-      })
-      const html = await adminRes.text()
-      const nonceMatch = html.match(/"nonce"\s*:\s*"([a-zA-Z0-9]{8,12})"/)
-        || html.match(/wpApiSettings\s*=\s*\{[^}]*?"nonce"\s*:\s*"([^"]{8,12})"/)
-      const nonce = nonceMatch?.[1]
-
-      const cookieHeaders: Record<string, string> = { Cookie: authCookies }
-      if (nonce) cookieHeaders['X-WP-Nonce'] = nonce
-
-      const meRes = await fetch(`${baseUrl}/users/me${nonce ? `?_wpnonce=${nonce}` : ''}`, {
-        headers: cookieHeaders,
-      })
-
-      if (!meRes.ok) {
-        const body = await meRes.text()
-        return NextResponse.json({
-          ok: false, step: 'auth',
-          error: `Authentication failed (${meRes.status}). ${body.slice(0, 150)}`,
-        })
-      }
-
-      const me = await meRes.json()
-      injectCss(url, username, password) // fire-and-forget
-      return NextResponse.json({ ok: true, username: me.name, message: `✓ Connected as "${me.name}"` })
-
-    } catch (cookieErr) {
-      const msg = cookieErr instanceof Error ? cookieErr.message : String(cookieErr)
-      return NextResponse.json({ ok: false, step: 'auth', error: `Authentication failed: ${msg}` })
     }
+
+    const body = await basicRes.text()
+    return NextResponse.json({
+      ok: false, step: 'auth',
+      error: `WordPress returned ${basicRes.status}: ${body.slice(0, 150)}`,
+    })
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

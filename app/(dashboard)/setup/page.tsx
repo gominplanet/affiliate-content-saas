@@ -1145,8 +1145,30 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          We use the WordPress REST API to publish posts, push sidebars, update social links, and more. You&apos;ll need an <strong>Application Password</strong> — NOT your wp-admin login password. Generate one in <strong>wp-admin → Users → Profile → Application Passwords</strong>, then paste it below.
+          We connect to your WordPress site over the REST API using an <strong>Application Password</strong> — a one-time token you generate in wp-admin. This is more reliable than your login password and works on hosts (like Hostinger) that block automated logins.
         </p>
+
+        {/* How to get an Application Password — always visible, one-time setup */}
+        <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4 mb-4">
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">How to get your Application Password (one time, ~30 seconds):</p>
+          <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside">
+            <li>Log into your wp-admin dashboard in another tab</li>
+            <li>Go to <strong>Users → Profile</strong> (or click your name top-right)</li>
+            <li>Scroll to <strong>Application Passwords</strong> near the bottom</li>
+            <li>Type <strong>AffiliateOS</strong> as the name and click <strong>Add New Application Password</strong></li>
+            <li>Copy the password (looks like <code className="bg-white dark:bg-black/30 px-1 rounded font-mono">xxxx xxxx xxxx xxxx xxxx xxxx</code>) and paste it below</li>
+          </ol>
+          {wpUrl && (
+            <a
+              href={`${wpUrl.replace(/\/$/, '')}/wp-admin/profile.php#application-passwords-section`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-[#0071e3] hover:underline mt-2"
+            >
+              <ExternalLink size={11} /> Open Application Passwords page
+            </a>
+          )}
+        </div>
+
         <div className="flex flex-col gap-4">
           <div>
             <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress Site URL</label>
@@ -1159,18 +1181,12 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           <div>
             <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
             <div className="relative">
-              <input type={showWpPassword ? 'text' : 'password'} value={wpAppPassword} onChange={e => setWpAppPassword(e.target.value)} placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" className="input-field pr-10 font-mono text-xs" />
+              <input type={showWpPassword ? 'text' : 'password'} value={wpAppPassword} onChange={e => setWpAppPassword(e.target.value)} placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" className="input-field pr-10 font-mono text-sm" />
               <button type="button" onClick={() => setShowWpPassword(!showWpPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
                 {showWpPassword ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">
-              NOT your wp-admin login password. {wpUrl ? (
-                <a href={`${wpUrl.replace(/\/$/, '')}/wp-admin/profile.php#application-passwords-section`} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Open Application Passwords →</a>
-              ) : (
-                <span>Generate one in wp-admin → Users → Profile → Application Passwords.</span>
-              )}
-            </p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Spaces are OK — paste exactly as WordPress shows it.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || !wpAppPassword} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors">
