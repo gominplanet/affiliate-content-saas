@@ -466,20 +466,22 @@ function Step2({ onNext }: { onNext: () => void }) {
       </div>
 
       <div className="flex flex-col gap-3">
-        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Part 2 — Install the Kadence theme</p>
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Part 2 — Install the MVP Affiliate plugin</p>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-          This is the theme that powers your blog layout. Download the ZIP below, then upload it to WordPress.
+          One plugin handles everything: blog layout, banners, social bar, footer, and the connection back to this dashboard. Download it, upload to WordPress, activate. ~60 seconds total.
         </p>
         <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] flex flex-col gap-3">
-          <a href="/api/wordpress/theme" download="kadence-affiliate-child.zip" className="btn-primary text-sm self-start inline-flex">
-            <Download size={14} /> Download theme ZIP
+          <a href="/mvp-affiliate.zip" download="mvp-affiliate.zip" className="btn-primary text-sm self-start inline-flex">
+            <Download size={14} /> Download MVP Affiliate plugin
           </a>
           <ol className="flex flex-col gap-2">
             {[
-              'In your WordPress admin, go to Appearance → Themes.',
-              'Click "Add New Theme" → "Upload Theme".',
+              'In your WordPress admin, go to Plugins → Add New Plugin → Upload Plugin.',
               'Choose the ZIP file you just downloaded and click Install Now.',
-              'Click "Activate" once it finishes.',
+              'Click Activate Plugin once it finishes.',
+              'You\'ll see a new "MVP Affiliate" menu appear in the sidebar — open it.',
+              'Click Install Kadence theme, then click Generate Connection Token.',
+              'Copy the token — you\'ll paste it in the Launch step.',
             ].map((text, i) => (
               <li key={i} className="flex items-start gap-2.5">
                 <span className="w-4 h-4 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
@@ -493,32 +495,7 @@ function Step2({ onNext }: { onNext: () => void }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Part 3 — Install the Code Snippets plugin</p>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-          Code Snippets is a free WordPress plugin that lets the tool install custom features on your blog automatically — things like your social links in the footer and your customization settings. Without it, the Launch step can&apos;t fully configure your site.
-        </p>
-        <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] flex flex-col gap-3">
-          <a href="https://wordpress.org/plugins/code-snippets/" target="_blank" rel="noopener noreferrer" className="btn-secondary text-sm self-start inline-flex">
-            View on WordPress.org <ExternalLink size={13} />
-          </a>
-          <ol className="flex flex-col gap-2">
-            {[
-              'In wp-admin, go to Plugins → Add New Plugin.',
-              'Search for "Code Snippets" (by Code Snippets Pro).',
-              'Click "Install Now", then "Activate".',
-              'You\'ll see a new "Snippets" menu in the sidebar — that\'s it, nothing else to configure.',
-            ].map((text, i) => (
-              <li key={i} className="flex items-start gap-2.5">
-                <span className="w-4 h-4 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </div>
-
-      <button onClick={onNext} className="btn-primary self-start">Theme &amp; plugins installed <ChevronRight size={15} /></button>
+      <button onClick={onNext} className="btn-primary self-start">Plugin installed, token ready <ChevronRight size={15} /></button>
     </div>
   )
 }
@@ -590,32 +567,43 @@ function Step4({
   accentColor: string; setAccentColor: (v: string) => void
   onNext: (url: string) => void
 }) {
-  const [appPassword, setAppPassword] = useState('')
-  const [showAppPassword, setShowAppPassword] = useState(false)
+  const [token, setToken] = useState('')
   const [customHex, setCustomHex] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingStep, setLoadingStep] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [errorHint, setErrorHint] = useState<string | null>(null)
 
   const activeColor = customHex.match(/^#[0-9a-fA-F]{6}$/) ? customHex : accentColor
-  const canSubmit = siteUrl.trim() && username.trim() && appPassword.trim() && !loading
+  const canSubmit = token.trim().length > 20 && !loading
 
   async function handleLaunch() {
-    let url = siteUrl.trim()
-    if (!url.startsWith('http')) url = `https://${url}`
-    url = url.replace(/\/wp-admin\/?.*$/, '').replace(/\/$/, '')
-    setLoading(true); setError(null); setErrorHint(null); setLoadingStep('Connecting to WordPress…')
+    setLoading(true); setError(null); setLoadingStep('Verifying connection token…')
     try {
+      // Step 1 — exchange token for stored credentials
+      const connectRes = await fetch('/api/wordpress/connect-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token.trim() }),
+      })
+      const connectData = await connectRes.json()
+      if (!connectRes.ok) throw new Error(connectData.error || 'Token verification failed')
+      const connectedUrl = connectData.siteUrl as string
+      const connectedUsername = connectData.username as string
+      setSiteUrl(connectedUrl)
+      setUsername(connectedUsername)
+
+      // Step 2 — kick off the full site setup (brand customizations, social links, etc.)
+      setLoadingStep('Setting up your site…')
       const res = await fetch('/api/wordpress/connect-and-setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          siteUrl: url, username: username.trim(),
-          // App password is the only supported auth path now.
-          // We send it as both `password` and `appPassword` for backward compat with the server route.
-          password: appPassword.trim(),
-          appPassword: appPassword.trim(),
+          siteUrl: connectedUrl,
+          username: connectedUsername,
+          // Credentials are already stored, but the route still expects them on the
+          // request body. We don't have access to the raw password here, so we ask
+          // the route to read them from the integrations table by passing token: true.
+          fromToken: true,
           accentColor: activeColor,
           logoBase64: brandData.logo?.base64, logoMime: brandData.logo?.mime, logoFilename: brandData.logo?.filename,
           headshotBase64: brandData.headshot?.base64, headshotMime: brandData.headshot?.mime, headshotFilename: brandData.headshot?.filename,
@@ -625,17 +613,13 @@ function Step4({
           pinterestUrl: brandData.pinterestUrl || undefined, facebookUrl: brandData.facebookUrl || undefined,
         }),
       })
-      setLoadingStep('Setting up your site…')
       const raw = await res.text()
       let data: Record<string, string> = {}
       try { data = JSON.parse(raw) } catch { throw new Error(`Server returned unexpected response: ${raw.slice(0, 300)}`) }
-      if (!res.ok) {
-        if (data.hint) setErrorHint(data.hint as unknown as string)
-        throw new Error(data.error || 'Setup failed')
-      }
-      onNext(url)
+      if (!res.ok) throw new Error(data.error || 'Setup failed')
+      onNext(connectedUrl)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Setup failed. Check your credentials.')
+      setError(err instanceof Error ? err.message : 'Setup failed. Check your connection token.')
     } finally {
       setLoading(false); setLoadingStep('')
     }
@@ -653,8 +637,8 @@ function Step4({
         <ul className="flex flex-col gap-2">
           {[
             'WordPress is installed and you can log in to wp-admin',
-            'The Kadence theme is installed and activated (from Step 2)',
-            'The Code Snippets plugin is installed and activated (from Step 2)',
+            'The MVP Affiliate plugin is installed and activated (from Step 2)',
+            'You\'ve installed Kadence + generated your Connection Token from the MVP Affiliate menu',
             'Your domain is live — not just "DNS propagating" (can take up to 24h after signup)',
           ].map((item, i) => (
             <li key={i} className="flex items-start gap-2">
@@ -666,58 +650,26 @@ function Step4({
       </div>
 
       <div className="flex flex-col gap-4">
-        <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress site URL</label>
-          <input type="text" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="yourdomain.com" className="input-field" />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress username</label>
-          <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="admin" className="input-field" />
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Same username you use to log in to wp-admin.</p>
-        </div>
-
-        {/* Application Password — the one and only auth path */}
         <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4">
           <div className="flex items-center gap-2 mb-2">
             <Lock size={14} className="text-[#0071e3] flex-shrink-0" />
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Generate an Application Password</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Paste your Connection Token</p>
           </div>
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-            WordPress recommends a one-time secure token (called an <strong>Application Password</strong>) instead of using your real login password. It takes ~30 seconds:
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+            Get your token from <strong>wp-admin → MVP Affiliate → Generate Connection Token</strong>. The token contains your site URL, username, and a secure Application Password — paste it below and we&apos;ll handle the rest.
           </p>
-          <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1.5 list-decimal list-inside mb-3">
-            <li>Log into your wp-admin dashboard in a new tab</li>
-            <li>Click your username (top-right) → <strong>Edit Profile</strong></li>
-            <li>Scroll down to <strong>Application Passwords</strong></li>
-            <li>Type <strong>AffiliateOS</strong> as the name → click <strong>Add New Application Password</strong></li>
-            <li>Copy the password WordPress shows (looks like <code className="bg-white dark:bg-black/30 px-1 rounded font-mono text-[10px]">xxxx xxxx xxxx xxxx xxxx xxxx</code>) and paste it below</li>
-          </ol>
-          {siteUrl && (
-            <a
-              href={`${siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`}/wp-admin/profile.php#application-passwords-section`}
-              target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:underline"
-            >
-              <ExternalLink size={11} /> Open the Application Passwords page on your site
-            </a>
-          )}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
-          <div className="relative">
-            <input
-              type={showAppPassword ? 'text' : 'password'}
-              value={appPassword}
-              onChange={e => setAppPassword(e.target.value)}
-              placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
-              className="input-field pr-10 font-mono text-sm"
-            />
-            <button type="button" onClick={() => setShowAppPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93]">
-              {showAppPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-          </div>
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Paste exactly as WordPress shows it — spaces are fine. NOT your regular wp-admin login password.</p>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Connection Token</label>
+          <textarea
+            value={token}
+            onChange={e => setToken(e.target.value)}
+            placeholder="eyJ1cmwiOiJodHRwczovL... (paste full token here)"
+            rows={4}
+            className="input-field font-mono text-xs resize-y"
+          />
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">A long base64 string. Don&apos;t worry about line breaks — paste it however WordPress copied it.</p>
         </div>
       </div>
 
@@ -737,40 +689,8 @@ function Step4({
         </div>
       </div>
 
-      {error && errorHint !== 'auth_header_stripped' && (
+      {error && (
         <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{error}</p>
-      )}
-
-      {errorHint === 'auth_header_stripped' && (
-        <div className="rounded-xl border border-[#ff9500]/40 bg-[#ff9500]/5 p-4">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">⚠️ Your host is stripping the Authorization header</p>
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
-            WordPress received the request but says &ldquo;not logged in&rdquo; — that means your hosting (common on Hostinger and some shared Apache setups) is stripping the auth header before it reaches WordPress. Pick one of these one-time fixes, then click Launch again:
-          </p>
-          <div className="bg-white dark:bg-black/30 rounded-lg p-3 mb-3 border border-[#ff9500]/20">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Option A — Install a Code Snippet (easiest)</p>
-            <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside mb-2">
-              <li>In wp-admin, go to <strong>Snippets → Add New</strong></li>
-              <li>Title it <strong>Fix REST Auth Header</strong></li>
-              <li>Paste the code below and click <strong>Save Changes and Activate</strong></li>
-            </ol>
-            <pre className="text-[10px] bg-gray-50 dark:bg-white/5 rounded p-2 overflow-x-auto font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">{`if (!isset($_SERVER['HTTP_AUTHORIZATION']) && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
-    $_SERVER['HTTP_AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
-}`}</pre>
-          </div>
-          <div className="bg-white dark:bg-black/30 rounded-lg p-3 border border-[#ff9500]/20">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Option B — Edit .htaccess (most reliable)</p>
-            <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside mb-2">
-              <li>Open Hostinger hPanel → <strong>File Manager</strong> → your site&apos;s <code className="bg-gray-50 dark:bg-white/5 px-1 rounded font-mono">public_html</code></li>
-              <li>Edit <code className="bg-gray-50 dark:bg-white/5 px-1 rounded font-mono">.htaccess</code> and add this above <code className="bg-gray-50 dark:bg-white/5 px-1 rounded font-mono"># BEGIN WordPress</code>:</li>
-            </ol>
-            <pre className="text-[10px] bg-gray-50 dark:bg-white/5 rounded p-2 overflow-x-auto font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">{`<IfModule mod_rewrite.c>
-RewriteEngine On
-RewriteCond %{HTTP:Authorization} .
-RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-</IfModule>`}</pre>
-          </div>
-        </div>
       )}
 
       <div className="flex items-center gap-3">

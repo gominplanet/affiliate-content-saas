@@ -150,28 +150,48 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const {
-      siteUrl: rawUrl, username, password, appPassword: rawAppPassword, accentColor = '#f5a623',
+      siteUrl: rawUrl, username, password, appPassword: rawAppPassword,
+      fromToken,
+      accentColor = '#f5a623',
       logoBase64, logoMime, logoFilename,
       headshotBase64, headshotMime, headshotFilename,
       aboutText, contactEmail,
       youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl,
     } = body
 
-    // Application Password is now the only supported auth path.
-    // Older clients sent the wp-admin password as `password`; newer clients send
-    // the Application Password as either `password` or `appPassword` (or both).
-    const appPwInput = (rawAppPassword || password || '').trim()
-    if (!rawUrl || !username || !appPwInput) {
+    // Token-based flow: credentials were already verified + stored by /connect-token.
+    // Pull them out of the integrations table.
+    let resolvedUrl: string | undefined = rawUrl
+    let resolvedUsername: string | undefined = username
+    let resolvedAppPw: string | undefined = (rawAppPassword || password || '').trim()
+
+    if (fromToken) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: intRow } = await (supabase as any)
+        .from('integrations')
+        .select('wordpress_url, wordpress_username, wordpress_app_password')
+        .eq('user_id', user.id)
+        .single()
+      if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
+        return NextResponse.json({ error: 'No stored WordPress connection. Connect via token first.' }, { status: 400 })
+      }
+      resolvedUrl = intRow.wordpress_url
+      resolvedUsername = intRow.wordpress_username
+      resolvedAppPw = intRow.wordpress_app_password
+    }
+
+    const appPwInput = (resolvedAppPw || '').trim()
+    if (!resolvedUrl || !resolvedUsername || !appPwInput) {
       return NextResponse.json({ error: 'siteUrl, username, and Application Password are required' }, { status: 400 })
     }
 
-    let siteUrl = rawUrl.trim()
+    let siteUrl = resolvedUrl.trim()
     if (!siteUrl.startsWith('http')) siteUrl = `https://${siteUrl}`
     siteUrl = siteUrl.replace(/\/wp-admin\/?.*$/, '').replace(/\/$/, '')
 
     // ── 1. Authenticate via Basic Auth + Application Password ─────────────────
     const appPwClean = appPwInput.replace(/\s+/g, '')
-    const encoded = Buffer.from(`${username}:${appPwClean}`).toString('base64')
+    const encoded = Buffer.from(`${resolvedUsername}:${appPwClean}`).toString('base64')
     const basicHeader = `Basic ${encoded}`
     const testRes = await fetch(`${siteUrl}/wp-json/wp/v2/users/me`, {
       headers: { Authorization: basicHeader },
@@ -431,9 +451,7 @@ export async function POST(request: Request) {
     // We use our own affiliateos/v1/customizations endpoint rather than /settings
     // because WordPress only exposes whitelisted options via the REST settings API.
     try {
-      const authHeader = password
-        ? { Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}` }
-        : {}
+      const authHeader = { Authorization: `Basic ${Buffer.from(`${resolvedUsername}:${appPwClean}`).toString('base64')}` }
       await fetch(`${siteUrl}/wp-json/affiliateos/v1/customizations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
@@ -461,7 +479,7 @@ export async function POST(request: Request) {
       {
         user_id: user.id,
         wordpress_url: siteUrl,
-        wordpress_username: username,
+        wordpress_username: resolvedUsername,
         wordpress_app_password: appPassword,
         // wordpress_api_token historically held the wp-admin password for cookie-auth fallbacks.
         // We no longer use cookie auth — Application Password covers everything — so store the
