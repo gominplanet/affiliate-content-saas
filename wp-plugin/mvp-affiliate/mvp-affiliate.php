@@ -212,7 +212,7 @@ $mvp_affiliate_logo_banner = function () {
     ?>
     <div class="mvpaffiliate-logo-banner" style="background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;">
       <a href="<?php echo esc_url(home_url('/')); ?>" style="display:inline-block;line-height:0;">
-        <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr(get_bloginfo('name')); ?>" style="height:50px;width:auto;max-width:100%;object-fit:contain;" />
+        <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr(get_bloginfo('name')); ?>" style="height:80px;width:auto;max-width:100%;object-fit:contain;" />
       </a>
     </div>
     <?php
@@ -241,7 +241,7 @@ add_action('wp_footer', function () use ($mvp_affiliate_logo_banner) {
       var div = document.createElement('div');
       div.className = 'mvpaffiliate-logo-banner';
       div.style.cssText = 'background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;';
-      div.innerHTML = '<a href="<?php echo $home; ?>" style="display:inline-block;line-height:0;"><img src="<?php echo $logo_js; ?>" alt="<?php echo $name; ?>" style="height:50px;width:auto;max-width:100%;object-fit:contain;" /></a>';
+      div.innerHTML = '<a href="<?php echo $home; ?>" style="display:inline-block;line-height:0;"><img src="<?php echo $logo_js; ?>" alt="<?php echo $name; ?>" style="height:80px;width:auto;max-width:100%;object-fit:contain;" /></a>';
       document.body.insertBefore(div, document.body.firstChild);
     })();
     </script>

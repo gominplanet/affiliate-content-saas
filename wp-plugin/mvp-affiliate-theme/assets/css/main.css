@@ -106,13 +106,22 @@ p { margin: 0 0 1em; }
 /* ─── Logo banner ────────────────────────────────────────────────────────── */
 .mvp-logobanner {
   width: 100%;
-  padding: 14px 20px;
+  padding: 18px 20px;
   text-align: center;
   position: relative;
   z-index: 50;
 }
 .mvp-logobanner-link { display: inline-block; line-height: 0; }
-.mvp-logobanner-img { height: 56px; width: auto; max-width: 100%; object-fit: contain; }
+.mvp-logobanner-img {
+  height: 80px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+@media (max-width: 640px) {
+  .mvp-logobanner { padding: 14px 16px; }
+  .mvp-logobanner-img { height: 60px; }
+}
 
 /* ─── Main header ────────────────────────────────────────────────────────── */
 .mvp-header {
