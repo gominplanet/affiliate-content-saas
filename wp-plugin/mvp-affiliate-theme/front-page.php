@@ -68,14 +68,14 @@ $tagline = get_bloginfo('description');
 
   <!-- Latest reviews grid (more posts, excluding the 4 above) -->
   <?php
-  $more = new WP_Query([
+  $more_q = new WP_Query([
       'post_type'           => 'post',
       'post_status'         => 'publish',
       'posts_per_page'      => 9,
       'offset'              => 4,
       'ignore_sticky_posts' => 1,
   ]);
-  if ($more->have_posts()):
+  if ($more_q->have_posts()):
   ?>
   <section class="mvp-section">
     <div class="mvp-container">
@@ -84,7 +84,7 @@ $tagline = get_bloginfo('description');
         <a href="<?php echo esc_url(home_url('/?s=&post_type=post')); ?>" class="mvp-section-link">All reviews →</a>
       </header>
       <div class="mvp-grid mvp-grid-3">
-        <?php while ($more->have_posts()): $more->the_post(); ?>
+        <?php while ($more_q->have_posts()): $more_q->the_post(); ?>
         <article class="mvp-card">
           <a href="<?php the_permalink(); ?>" class="mvp-card-link">
             <?php if (has_post_thumbnail()): ?>
