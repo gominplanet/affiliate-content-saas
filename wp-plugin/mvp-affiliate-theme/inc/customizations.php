@@ -47,37 +47,56 @@ if (!function_exists('mvp_affiliate_pick_of_day_config')) {
     function mvp_affiliate_pick_of_day_config(): array {
         $d = mvp_affiliate_data();
         $config = is_array($d['pickOfDay'] ?? null) ? $d['pickOfDay'] : [];
-        return array_merge([
+        $merged = array_merge([
             'enabled'        => true,
             'label'          => 'Our Pick of the Day',
             'showOnSidebar'  => true,
             'showOnHomepage' => false,
+            'rotation'       => '24h',
             'pinnedPostId'   => '',
         ], $config);
+        // Normalize rotation value
+        if (!in_array($merged['rotation'], ['12h', '24h', 'pinned'], true)) {
+            $merged['rotation'] = '24h';
+        }
+        return $merged;
     }
 }
 
 /**
  * Returns the post chosen as today's pick, or null.
- * - If pinnedPostId is set → that post (if published).
- * - Else → deterministic random pick seeded by today's date,
- *   cached as a 24h transient so all visitors see the same pick.
+ * Behavior depends on $config['rotation']:
+ *   'pinned' → the post in pinnedPostId (or null if unset/invalid).
+ *   '12h'    → rotates twice a day (midnight + noon, server time).
+ *   '24h'    → rotates once a day at midnight (server time).
+ * Picks are deterministic per rotation window + cached as a transient.
  */
 if (!function_exists('mvp_affiliate_pick_of_day')) {
     function mvp_affiliate_pick_of_day(): ?WP_Post {
         $config = mvp_affiliate_pick_of_day_config();
         if (empty($config['enabled'])) return null;
 
-        // Pinned post override
-        $pinned = intval($config['pinnedPostId'] ?? 0);
-        if ($pinned > 0) {
+        // Pinned mode
+        if ($config['rotation'] === 'pinned') {
+            $pinned = intval($config['pinnedPostId'] ?? 0);
+            if ($pinned <= 0) return null;
             $post = get_post($pinned);
             return ($post && $post->post_status === 'publish' && $post->post_type === 'post')
                 ? $post
                 : null;
         }
 
-        $cache_key = 'mvp_pick_of_day_' . wp_date('Ymd');
+        // Rotation seed + cache key + TTL
+        if ($config['rotation'] === '12h') {
+            $half  = (intval(wp_date('G')) < 12) ? 'am' : 'pm';
+            $seed  = wp_date('Ymd') . $half;
+            $ttl   = 12 * HOUR_IN_SECONDS;
+        } else {
+            $seed  = wp_date('Ymd');
+            $ttl   = DAY_IN_SECONDS;
+        }
+
+        $cache_key = 'mvp_pick_of_day_' . $seed;
         $cached = get_transient($cache_key);
         if ($cached !== false) {
             $post = ($cached === '0') ? null : get_post(intval($cached));
@@ -91,14 +110,14 @@ if (!function_exists('mvp_affiliate_pick_of_day')) {
             'post_type'   => 'post',
         ]);
         if (empty($all)) {
-            set_transient($cache_key, '0', DAY_IN_SECONDS);
+            set_transient($cache_key, '0', $ttl);
             return null;
         }
 
-        mt_srand(intval(wp_date('Ymd')));
+        mt_srand(crc32($seed));
         $idx = mt_rand(0, count($all) - 1);
         $post_id = $all[$idx];
-        set_transient($cache_key, (string)$post_id, DAY_IN_SECONDS);
+        set_transient($cache_key, (string)$post_id, $ttl);
         return get_post($post_id);
     }
 }

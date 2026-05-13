@@ -55,7 +55,8 @@ interface PickOfDayConfig {
   label: string
   showOnSidebar: boolean
   showOnHomepage: boolean
-  pinnedPostId: string  // empty string = rotate randomly
+  rotation: '12h' | '24h' | 'pinned'
+  pinnedPostId: string  // only used when rotation === 'pinned'
 }
 
 interface BlogCustomizations {
@@ -76,6 +77,7 @@ const defaultPickOfDay: PickOfDayConfig = {
   label: 'Our Pick of the Day',
   showOnSidebar: true,
   showOnHomepage: false,
+  rotation: '24h',
   pinnedPostId: '',
 }
 
@@ -709,18 +711,46 @@ export default function CustomizePage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">
-                    Pin a specific post <span className="text-[var(--text-3)] font-normal">(optional — leave blank to rotate randomly every 24h)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={data.pickOfDay.pinnedPostId}
-                    onChange={e => updatePickOfDay({ pinnedPostId: e.target.value.replace(/\D/g, '') })}
-                    placeholder="e.g. 42"
-                    className="input-field text-sm w-40 font-mono"
-                  />
-                  <p className="text-[11px] text-[var(--text-3)] mt-1">Enter a WordPress post ID to always feature that post instead of rotating. Find the ID in wp-admin → Posts (hover over a post, the URL has <code className="font-mono">post=42</code>).</p>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Rotation</label>
+                  <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit">
+                    {([
+                      { key: '12h',    label: 'Every 12 hours' },
+                      { key: '24h',    label: 'Every 24 hours' },
+                      { key: 'pinned', label: 'Pin a specific post' },
+                    ] as const).map(opt => {
+                      const active = data.pickOfDay.rotation === opt.key
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => updatePickOfDay({ rotation: opt.key })}
+                          className={`px-4 py-1.5 text-xs font-medium transition-colors ${active ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">
+                    {data.pickOfDay.rotation === '12h' && 'A new pick at midnight and noon (server time). Same pick for every visitor in each window.'}
+                    {data.pickOfDay.rotation === '24h' && 'A new pick at midnight (server time). Same pick all day for every visitor.'}
+                    {data.pickOfDay.rotation === 'pinned' && 'Locked to the post you choose below — no rotation.'}
+                  </p>
                 </div>
+
+                {data.pickOfDay.rotation === 'pinned' && (
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Post ID to pin</label>
+                    <input
+                      type="text"
+                      value={data.pickOfDay.pinnedPostId}
+                      onChange={e => updatePickOfDay({ pinnedPostId: e.target.value.replace(/\D/g, '') })}
+                      placeholder="e.g. 42"
+                      className="input-field text-sm w-40 font-mono"
+                    />
+                    <p className="text-[11px] text-[var(--text-3)] mt-1">Find the ID in wp-admin → Posts (hover over a post — the URL has <code className="font-mono">post=42</code>).</p>
+                  </div>
+                )}
               </>
             )}
           </div>
