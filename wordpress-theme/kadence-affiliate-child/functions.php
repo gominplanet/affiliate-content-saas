@@ -47,19 +47,19 @@ function affiliateos_get_data() {
 
 function affiliateos_render_block($block) {
     if (empty($block['enabled'])) return;
-    if (($block['type'] ?? '') === 'image') {
+    if (($block['type'] ?? 'image') === 'image') {
         $img  = esc_url($block['imageUrl'] ?? '');
         $link = esc_url($block['linkUrl'] ?? '');
         if (!$img) return;
-        echo '<div class="affiliateos-block affiliateos-image-block" style="margin:12px 0;">';
+        echo '<div class="affiliateos-block affiliateos-image-block" style="margin:12px 0;width:350px;max-width:100%;">';
         if ($link) echo '<a href="' . $link . '" target="_blank" rel="nofollow noopener">';
-        echo '<img src="' . $img . '" alt="" style="max-width:100%;height:auto;display:block;" />';
+        echo '<img src="' . $img . '" alt="" style="width:100%;height:auto;display:block;" />';
         if ($link) echo '</a>';
         echo '</div>';
     } else {
         $html = $block['html'] ?? '';
         if (!$html) return;
-        echo '<div class="affiliateos-block affiliateos-html-block" style="margin:12px 0;">';
+        echo '<div class="affiliateos-block affiliateos-html-block" style="margin:12px 0;width:350px;max-width:100%;">';
         echo $html; // intentional — admin-controlled content stored via authenticated API
         echo '</div>';
     }

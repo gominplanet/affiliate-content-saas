@@ -11,7 +11,7 @@ export class GeniuslinkService {
     }
   }
 
-  // Fetch the best group ID for YouTube links — required for creating links
+  // Fetch the YouTube Links group ID (or first enabled group as fallback)
   private async getDefaultGroupId(): Promise<number> {
     const res = await fetch(`${GENIUSLINK_API}/v1/groups/list`, {
       headers: this.authHeaders,
@@ -19,18 +19,17 @@ export class GeniuslinkService {
     const text = await res.text()
     if (!res.ok) throw new Error(`Geniuslink groups error ${res.status}: ${text.slice(0, 200)}`)
 
-    const data = JSON.parse(text) as { Groups?: Array<{ Id: number; Name: string }> }
-    const groups = data.Groups ?? []
-    if (!groups.length) throw new Error('Geniuslink: no groups found on this account')
+    const data = JSON.parse(text) as { Groups?: Array<{ Id: number; Name: string; Enabled: number }> }
+    const groups = (data.Groups ?? []).filter(g => g.Enabled === 1)
+    if (!groups.length) throw new Error('Geniuslink: no enabled groups found on this account')
 
-    // Prefer a YouTube-specific group if one exists, otherwise use the first group
+    // Prefer the YouTube Links group, otherwise use the first enabled group
     const youtubeGroup = groups.find(g => /youtube/i.test(g.Name))
     return (youtubeGroup ?? groups[0]).Id
   }
 
   async createAsinLink(asin: string, label: string): Promise<string> {
     const destination = `https://www.amazon.com/dp/${asin}`
-
     const groupId = await this.getDefaultGroupId()
 
     const params = new URLSearchParams({
@@ -54,27 +53,27 @@ export class GeniuslinkService {
       throw new Error(`Geniuslink non-JSON response: ${text.slice(0, 200)}`)
     }
 
-    // Geniuslink returns PascalCase: ShortUrlCode + Domain → https://{Domain}/{ShortUrlCode}
-    const shortCode = (data.ShortUrlCode ?? data.shortUrlCode ?? data.shortCode ?? data.short_code) as string | undefined
-    const domain = ((data.Domain ?? data.domain ?? 'geni.us') as string).replace(/^https?:\/\//, '')
-
-    if (shortCode) return `https://${domain}/${shortCode}`
-
-    // Fallback: any field that looks like a full URL
-    const shortUrl = (
-      data.shortUrl ?? data.short_url ?? data.shortlink ??
-      data.url ?? data.link ?? data.href ??
-      (data.data as Record<string, unknown>)?.shortUrl ??
-      (data.data as Record<string, unknown>)?.url
-    ) as string | undefined
-
-    if (!shortUrl) {
-      throw new Error(
-        `Geniuslink: no URL in response. Keys: ${Object.keys(data).join(', ')} | ${text.slice(0, 300)}`
-      )
+    // Response: { "shortUrl": { "code": "y2ClyW", "domain": "geni.us", ... } }
+    if (data.shortUrl && typeof data.shortUrl === 'object') {
+      const su = data.shortUrl as Record<string, unknown>
+      const code = (su.code ?? su.baseCode) as string | undefined
+      const domain = ((su.domain ?? su.baseDomain ?? 'geni.us') as string).replace(/^https?:\/\//, '')
+      if (code) return `https://${domain}/${code}`
     }
 
-    return shortUrl
+    // Fallback: shortUrl might be a plain string in some API versions
+    if (typeof data.shortUrl === 'string' && data.shortUrl.startsWith('http')) {
+      return data.shortUrl
+    }
+
+    // Legacy fallback: ShortUrlCode + Domain at top level
+    const shortCode = (data.ShortUrlCode ?? data.shortUrlCode) as string | undefined
+    const domain = ((data.Domain ?? data.domain ?? 'geni.us') as string).replace(/^https?:\/\//, '')
+    if (shortCode) return `https://${domain}/${shortCode}`
+
+    throw new Error(
+      `Geniuslink: could not parse URL from response. Keys: ${Object.keys(data).join(', ')} | ${text.slice(0, 300)}`
+    )
   }
 }
 

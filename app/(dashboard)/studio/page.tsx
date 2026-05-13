@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles,
+  Image, Download, Sparkles, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 interface DraftVideo {
@@ -48,7 +48,9 @@ const STATUS_ICON = {
   public: <Globe size={11} className="text-[#34c759]" />,
 }
 
-function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadshot: boolean }) {
+function VideoStudioCard({ video }: {
+  video: DraftVideo
+}) {
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [generated, setGenerated] = useState<GeneratedMetadata | null>(null)
@@ -68,14 +70,10 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
   const [thumbnailPrompt, setThumbnailPrompt] = useState<string | null>(null)
   const [thumbnailModel, setThumbnailModel] = useState<string | null>(null)
   const [thumbnailHook, setThumbnailHook] = useState<string | null>(null)
-  const [headshotUsed, setHeadshotUsed] = useState(false)
-  const [pulidError, setPulidError] = useState<string | null>(null)
+  const [sceneAnalysis, setSceneAnalysis] = useState<string | null>(null)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
-  const [thumbnailPhase, setThumbnailPhase] = useState<'idle' | 'prompting' | 'queued' | 'polling'>('idle')
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
-  const [thumbnailStyle, setThumbnailStyle] = useState<'review' | 'unboxing' | 'comparison' | 'lifestyle'>('review')
-  const [includePerson, setIncludePerson] = useState(true)
-  const [includeText, setIncludeText] = useState(false)
+  const [instantLoading, setInstantLoading] = useState(false)
 
   useEffect(() => {
     if (generated) {
@@ -101,6 +99,8 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
     setError(null)
     setGenerated(null)
     setApplied(false)
+    setThumbnailUrl(null)
+    setThumbnailError(null)
     try {
       const res = await fetch('/api/youtube/generate-metadata', {
         method: 'POST',
@@ -113,12 +113,27 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       })
       const data = await safeJson(res)
       if (!res.ok) throw new Error((data.error as string) || 'Generation failed')
-      setGenerated(data.generated as GeneratedMetadata)
+
+      const generatedMeta = data.generated as GeneratedMetadata
+      const productData = data.product as ProductInfo
+      const productBullets = data.productBullets as string[]
+      const productDescription = data.productDescription as string
+
+      setGenerated(generatedMeta)
       setAgentInsights((data.agentInsights ?? null) as AgentInsights | null)
-      setProduct({ ...(data.product as ProductInfo), bullets: data.productBullets as string[], description: data.productDescription as string })
+      setProduct({ ...productData, bullets: productBullets, description: productDescription })
       setAffiliateUrl(data.affiliateUrl as string)
       setGeniuslinkUsed((data.geniuslinkUsed ?? false) as boolean)
       setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
+
+      // ── Auto-generate thumbnail immediately after metadata ─────────────────
+      // Fire-and-forget — pass product text data directly, no re-fetch needed
+      generateThumbnailWithData({
+        productTitle: productData?.title ?? undefined,
+        productDescription: productDescription ?? undefined,
+        productBullets: productBullets ?? undefined,
+        title: generatedMeta.title,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate')
     } finally {
@@ -139,11 +154,17 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
           title: editTitle,
           description: editDesc,
           tags: generated.tags,
+          // Include generated thumbnail so it gets pushed to YouTube too
+          thumbnailDataUri: thumbnailUrl ?? undefined,
         }),
       })
       const data = await safeJson(res)
       if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — update failed`)
       setApplied(true)
+      // Warn if thumbnail uploaded but YouTube rejected it (e.g. unverified account)
+      if (data.thumbnailWarning) {
+        setApplyError(`Metadata applied ✓ — thumbnail not uploaded: ${data.thumbnailWarning}`)
+      }
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'Failed to apply to YouTube')
     } finally {
@@ -151,61 +172,168 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
     }
   }
 
+  // ── Shared thumbnail result handler ─────────────────────────────────────────
+  async function applyThumbnailResult(data: Record<string, unknown>) {
+    const hook = (data.overlayHook as string) || ''
+    const rawUrl = data.thumbnailUrl as string
+
+    // Flux returns a clean image — apply canvas text overlay on top
+    let finalUrl = rawUrl
+    if (hook) {
+      try {
+        finalUrl = await addTextOverlay(rawUrl, hook)
+      } catch (overlayErr) {
+        console.warn('[thumbnail-overlay]', overlayErr)
+        // Fall back to raw image without text
+      }
+    }
+
+    setThumbnailUrl(finalUrl)
+    setThumbnailHook(hook)
+    setThumbnailPrompt((data.prompt as string) ?? null)
+    setThumbnailModel((data.modelUsed as string) ?? null)
+    setSceneAnalysis((data.channelStyle as string) ?? null)
+  }
+
   async function generateThumbnail() {
     setGeneratingThumbnail(true)
-    setThumbnailPhase('prompting')
     setThumbnailError(null)
-    setPulidError(null)
     try {
       const res = await fetch('/api/youtube/generate-thumbnail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoTitle: editTitle || video.title,
-          videoDescription: video.description || undefined,
+          asin: video.detectedAsin ?? undefined,
           productTitle: product?.title ?? undefined,
           productDescription: product?.description ?? undefined,
           productBullets: product?.bullets ?? undefined,
-          productPrice: product?.price ?? undefined,
-          productRating: product?.rating ?? undefined,
-          asin: video.detectedAsin ?? undefined,
-          style: thumbnailStyle,
-          includePerson,
+          style: 'lifestyle',
         }),
       })
       const data = await safeJson(res)
       if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
-
-      const hook = (data.overlayHook as string) || ''
-
-      // ── Direct path — Gemini/Imagen return synchronously ─────────────────────
-      let finalUrl: string = data.thumbnailUrl as string
-      if (includeText) {
-        try {
-          finalUrl = await addTextOverlay(data.thumbnailUrl as string, hook || editTitle || video.title)
-        } catch (overlayErr) {
-          console.warn('[text-overlay]', overlayErr)
-        }
-      }
-
-      setThumbnailUrl(finalUrl)
-      setThumbnailHook(hook)
-      setThumbnailPrompt((data.prompt as string) ?? null)
-      setThumbnailModel((data.modelUsed as string) ?? null)
-      setHeadshotUsed((data.headshotUsed as boolean) ?? false)
-      setPulidError((data.pulidError as string) ?? null)
+      await applyThumbnailResult(data)
     } catch (err) {
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
     } finally {
       setGeneratingThumbnail(false)
-      setThumbnailPhase('idle')
     }
   }
 
-  // ── Client-side text overlay via canvas ─────────────────────────────────────
-  // Renders like real YouTube thumbnails: large all-caps hook, upper-left position,
-  // white fill + thick black stroke, with a subtle darkened band behind the text.
-  function addTextOverlay(rawUrl: string, hookText: string): Promise<string> {
+  // ── Auto-thumbnail: called right after metadata is generated ─────────────
+  // Accepts product data directly so we don't rely on React state being updated
+  async function generateThumbnailWithData(overrides: {
+    productTitle?: string
+    productDescription?: string
+    productBullets?: string[]
+    title?: string
+  }) {
+    setGeneratingThumbnail(true)
+    setThumbnailError(null)
+    try {
+      const res = await fetch('/api/youtube/generate-thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoTitle: overrides.title || video.title,
+          asin: video.detectedAsin ?? undefined,
+          productTitle: overrides.productTitle ?? undefined,
+          productDescription: overrides.productDescription ?? undefined,
+          productBullets: overrides.productBullets ?? undefined,
+          style: 'lifestyle',
+        }),
+      })
+      const data = await safeJson(res)
+      if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
+      await applyThumbnailResult(data)
+    } catch (err) {
+      setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
+    } finally {
+      setGeneratingThumbnail(false)
+    }
+  }
+
+  // ── Thumbnail text-overlay styles ────────────────────────────────────────────
+  // 4 visually distinct presets. One is picked randomly per generation so each
+  // thumbnail looks different. Fonts are loaded from Google Fonts on demand.
+  const OVERLAY_STYLES = [
+    {
+      // Classic YouTube: yellow + white Impact, bottom-left, dark gradient
+      id: 'impact-classic',
+      fontName: null as string | null,          // system font — no load needed
+      fontStack: 'Impact, "Arial Black", sans-serif',
+      weight: '900',
+      colors: ['#FFE034', '#FFFFFF'],
+      outlineColor: '#000',
+      outlineW: 14,
+      shadowAlpha: 0.8,
+      maxPx: 112,
+      position: 'bottom-left' as const,
+      gradient: true,
+    },
+    {
+      // Bebas Neue: all-white modern condensed, bottom-left, subtle gradient
+      id: 'bebas-white',
+      fontName: 'Bebas Neue',
+      fontStack: '"Bebas Neue", Impact, sans-serif',
+      weight: '400',
+      colors: ['#FFFFFF', '#FFFFFF'],
+      outlineColor: '#000',
+      outlineW: 10,
+      shadowAlpha: 0.9,
+      maxPx: 124,
+      position: 'bottom-left' as const,
+      gradient: true,
+    },
+    {
+      // Bangers: orange + white, energetic, top-left
+      id: 'bangers-orange',
+      fontName: 'Bangers',
+      fontStack: '"Bangers", Impact, sans-serif',
+      weight: '400',
+      colors: ['#FF6B00', '#FFFFFF'],
+      outlineColor: '#000',
+      outlineW: 13,
+      shadowAlpha: 0.85,
+      maxPx: 118,
+      position: 'top-left' as const,
+      gradient: false,
+    },
+    {
+      // Oswald: red + white, bold & authoritative, bottom-left
+      id: 'oswald-red',
+      fontName: 'Oswald',
+      fontStack: '"Oswald", Impact, sans-serif',
+      weight: '700',
+      colors: ['#FF3B30', '#FFFFFF'],
+      outlineColor: '#000',
+      outlineW: 12,
+      shadowAlpha: 0.8,
+      maxPx: 108,
+      position: 'bottom-left' as const,
+      gradient: true,
+    },
+  ]
+
+  // Cache so the same font isn't loaded twice across re-renders
+  const loadedFontsRef = React.useRef(new Set<string>())
+
+  async function loadOverlayFont(fontName: string | null): Promise<void> {
+    if (!fontName || loadedFontsRef.current.has(fontName)) return
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700&display=swap`
+    document.head.appendChild(link)
+    await document.fonts.ready
+    loadedFontsRef.current.add(fontName)
+  }
+
+  // ── addTextOverlay — picks a random style, loads the font, draws the canvas ──
+  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number): Promise<string> {
+    const style = OVERLAY_STYLES[styleIndex ?? Math.floor(Math.random() * OVERLAY_STYLES.length)]
+    await loadOverlayFont(style.fontName)
+
     return new Promise((resolve, reject) => {
       const canvas = document.createElement('canvas')
       canvas.width = 1280
@@ -213,30 +341,14 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       const ctx = canvas.getContext('2d')
       if (!ctx) { reject(new Error('Canvas not supported')); return }
 
-      // Make sure it's all-caps, no "honest", clean spacing
-      const text = hookText
-        .replace(/\bhonest\b/gi, '')
-        .replace(/\s{2,}/g, ' ')
-        .trim()
-        .toUpperCase()
-
-      // Split into lines by word-wrap (max width 580px = left half of frame)
-      // so text stays in the left ~45% and doesn't overlap the product
-      function wrapText(c: CanvasRenderingContext2D, t: string, font: string, maxW: number, maxLines: number): string[] {
-        c.font = font
-        const words = t.split(' ')
-        const lines: string[] = []
-        let cur = ''
-        for (const w of words) {
-          const test = cur ? `${cur} ${w}` : w
-          if (c.measureText(test).width > maxW && cur) {
-            lines.push(cur)
-            cur = w
-            if (lines.length >= maxLines - 1) { lines.push(cur); return lines }
-          } else { cur = test }
-        }
-        if (cur) lines.push(cur)
-        return lines
+      const text = hookText.replace(/\bhonest\b/gi, '').replace(/\s{2,}/g, ' ').trim().toUpperCase()
+      const words = text.split(' ')
+      let lines: string[]
+      if (words.length === 1) {
+        lines = [words[0]]
+      } else {
+        const split = Math.ceil(words.length / 2)
+        lines = [words.slice(0, split).join(' '), words.slice(split).join(' ')].filter(Boolean)
       }
 
       const img = new window.Image()
@@ -244,44 +356,118 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
       img.onload = () => {
         ctx.drawImage(img, 0, 0, 1280, 720)
 
-        const fontSize = 96
-        const font = `900 ${fontSize}px Impact, "Arial Black", Arial, sans-serif`
-        const lines = wrapText(ctx, text, font, 500, 3)
-        const lineH = fontSize * 1.15
+        const MARGIN_X = 48
+        const MARGIN_EDGE = 52   // bottom or top margin
+        const ZONE_W = 680       // max text width (left ~53% of frame)
+        const { outlineW: OUTLINE, colors: LINE_COLORS, outlineColor, shadowAlpha, maxPx } = style
+
+        const makeFont = (s: number) => `${style.weight} ${s}px ${style.fontStack}`
+        let fs = maxPx
+        ctx.font = makeFont(fs)
+        while (fs > 48) {
+          const maxW = Math.max(...lines.map(l => ctx.measureText(l).width))
+          if (maxW <= ZONE_W - OUTLINE * 2) break
+          fs -= 4
+          ctx.font = makeFont(fs)
+        }
+
+        const lineH = fs * 1.18
         const totalH = lines.length * lineH
-        const padX = 40
-        const padY = 28
 
-        // Solid dark pill behind text — always readable regardless of image brightness
-        const bandW = 520
-        const bandH = totalH + 28
-        const radius = 14
-        ctx.fillStyle = 'rgba(0,0,0,0.72)'
-        ctx.beginPath()
-        ctx.roundRect(padX - 16, padY - 10, bandW, bandH, radius)
-        ctx.fill()
+        // Position anchor
+        const startY = style.position === 'top-left'
+          ? MARGIN_EDGE
+          : 720 - MARGIN_EDGE - totalH
 
-        ctx.font = font
+        // Background gradient (bottom styles only)
+        if (style.gradient) {
+          const gradH = totalH + MARGIN_EDGE + 20
+          const gradY = style.position === 'top-left' ? 0 : 720 - gradH
+          const grad = ctx.createLinearGradient(0, gradY, 0, gradY + gradH)
+          if (style.position === 'top-left') {
+            grad.addColorStop(0, `rgba(0,0,0,0.6)`)
+            grad.addColorStop(1, 'rgba(0,0,0,0)')
+          } else {
+            grad.addColorStop(0, 'rgba(0,0,0,0)')
+            grad.addColorStop(1, `rgba(0,0,0,0.65)`)
+          }
+          ctx.fillStyle = grad
+          ctx.fillRect(0, gradY, 1280, gradH)
+        }
+
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
+        ctx.lineJoin = 'round'
 
         lines.forEach((line, i) => {
-          const y = padY + 4 + i * lineH
-          // Thick black outline for extra pop
-          ctx.lineWidth = 12
-          ctx.strokeStyle = '#000000'
-          ctx.lineJoin = 'round'
-          ctx.strokeText(line, padX, y)
-          // Bright white fill
-          ctx.fillStyle = '#FFFFFF'
-          ctx.fillText(line, padX, y)
+          const x = MARGIN_X
+          const y = startY + i * lineH
+
+          ctx.font = makeFont(fs)
+          ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
+          ctx.shadowBlur = 10
+          ctx.shadowOffsetX = 4
+          ctx.shadowOffsetY = 4
+
+          ctx.lineWidth = OUTLINE
+          ctx.strokeStyle = outlineColor
+          ctx.strokeText(line, x, y)
+
+          ctx.shadowBlur = 0
+          ctx.shadowOffsetX = 0
+          ctx.shadowOffsetY = 0
+          ctx.fillStyle = LINE_COLORS[i] ?? LINE_COLORS[LINE_COLORS.length - 1]
+          ctx.fillText(line, x, y)
         })
 
-        resolve(canvas.toDataURL('image/jpeg', 0.93))
+        resolve(canvas.toDataURL('image/jpeg', 0.95))
       }
       img.onerror = () => reject(new Error('Failed to load image for overlay'))
-      img.src = `/api/proxy-image?url=${encodeURIComponent(rawUrl)}`
+      img.src = rawUrl.startsWith('data:') ? rawUrl : `/api/proxy-image?url=${encodeURIComponent(rawUrl)}`
     })
+  }
+
+  // ── ⚡ Instant thumbnail — real video frame + AI hook, no generation wait ────
+  async function quickThumbnail() {
+    if (!video.thumbnailUrl) return
+    setInstantLoading(true)
+    setThumbnailError(null)
+    try {
+      let hook = thumbnailHook  // reuse cached hook if available
+
+      if (!hook) {
+        // Fast hook-only call — skips all image generation
+        const res = await fetch('/api/youtube/generate-thumbnail', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            quickMode: true,
+            videoTitle: editTitle || video.title,
+            productTitle: product?.title ?? undefined,
+            asin: video.detectedAsin ?? undefined,
+          }),
+        })
+        const data = await res.json() as Record<string, unknown>
+        if (!res.ok) throw new Error((data.error as string) || 'Hook generation failed')
+        hook = (data.overlayHook as string) || ''
+        setThumbnailHook(hook)
+      }
+
+      let finalUrl: string = video.thumbnailUrl
+      try {
+        finalUrl = await addTextOverlay(video.thumbnailUrl, hook)
+      } catch (overlayErr) {
+        console.warn('[instant-overlay]', overlayErr)
+        // Fall back to raw YouTube thumbnail — hook still saved for display
+      }
+      setThumbnailUrl(finalUrl)
+      setSceneAnalysis(null)
+      setThumbnailModel('instant')
+    } catch (err) {
+      setThumbnailError(err instanceof Error ? err.message : 'Instant thumbnail failed')
+    } finally {
+      setInstantLoading(false)
+    }
   }
 
   function copy(text: string, key: string) {
@@ -519,81 +705,33 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                   </div>
                 </div>
 
-                {/* Style picker */}
-                <div className="flex gap-1.5 mb-3 flex-wrap">
-                  {(['review', 'unboxing', 'comparison', 'lifestyle'] as const).map(s => (
+                {/* Generate buttons */}
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <button
+                    onClick={generateThumbnail}
+                    disabled={generatingThumbnail || instantLoading}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+                  >
+                    {generatingThumbnail
+                      ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
+                      : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate' : 'Generate Thumbnail'}</>}
+                  </button>
+
+                  {video.thumbnailUrl && (
                     <button
-                      key={s}
-                      onClick={() => setThumbnailStyle(s)}
-                      className={`text-[10px] font-medium px-2.5 py-1 rounded-full border transition-colors capitalize ${
-                        thumbnailStyle === s
-                          ? 'bg-[#0071e3] border-[#0071e3] text-white'
-                          : 'bg-transparent border-gray-200 dark:border-white/20 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#0071e3] hover:text-[#0071e3]'
-                      }`}
+                      onClick={quickThumbnail}
+                      disabled={generatingThumbnail || instantLoading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-60 transition-opacity hover:opacity-80 border"
+                      style={{ background: '#1c1c1e', borderColor: '#3a3a3c', color: '#f5f5f7' }}
+                      title="Uses your real video frame + AI hook. No generation wait."
                     >
-                      {s}
+                      {instantLoading
+                        ? <><Loader2 size={12} className="animate-spin" /> Generating hook…</>
+                        : <>⚡ Instant</>}
                     </button>
-                  ))}
+                  )}
                 </div>
-
-                {/* Options toggles */}
-                <div className="flex flex-col gap-2.5 mb-4">
-                  {/* With Image toggle */}
-                  <div className="flex items-center gap-3 w-fit">
-                    <button
-                      onClick={() => setIncludePerson(p => !p)}
-                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        includePerson ? 'bg-[#af52de]' : 'bg-gray-200 dark:bg-white/20'
-                      }`}
-                    >
-                      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ease-in-out ${
-                        includePerson ? 'translate-x-4' : 'translate-x-0'
-                      }`} />
-                    </button>
-                    <div className="flex flex-col cursor-pointer" onClick={() => setIncludePerson(p => !p)}>
-                      <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">With image</span>
-                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Add your face using headshot from Brand Profile</span>
-                    </div>
-                  </div>
-
-                  {/* With Text toggle */}
-                  <div className="flex items-center gap-3 w-fit">
-                    <button
-                      onClick={() => setIncludeText(t => !t)}
-                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        includeText ? 'bg-[#ff9500]' : 'bg-gray-200 dark:bg-white/20'
-                      }`}
-                    >
-                      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ease-in-out ${
-                        includeText ? 'translate-x-4' : 'translate-x-0'
-                      }`} />
-                    </button>
-                    <div className="flex flex-col cursor-pointer" onClick={() => setIncludeText(t => !t)}>
-                      <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">With text</span>
-                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">AI adds a short viral hook to spark curiosity</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Headshot missing warning */}
-                {includePerson && !hasHeadshot && (
-                  <div className="mb-3 px-3 py-2 rounded-lg bg-[#af52de]/8 border border-[#af52de]/20 text-[10px] text-[#af52de] flex items-center gap-1.5">
-                    <span>⚠️</span>
-                    <span>No headshot saved — <a href="/brand" className="underline font-semibold">add yours in Brand Profile</a> to place your face in thumbnails.</span>
-                  </div>
-                )}
-
-                {/* Generate button */}
-                <button
-                  onClick={generateThumbnail}
-                  disabled={generatingThumbnail}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90 mb-3"
-                  style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
-                >
-                  {generatingThumbnail
-                    ? <><Loader2 size={12} className="animate-spin" /> {thumbnailPhase === 'prompting' ? 'Writing prompt…' : 'Generating…'}</>
-                    : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate Thumbnail' : 'Generate Thumbnail'}</>}
-                </button>
 
                 {thumbnailError && (
                   <p className="text-xs text-[#ff3b30] mb-3">{thumbnailError}</p>
@@ -605,6 +743,13 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                     <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                       <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
                     </div>
+                    {sceneAnalysis && (
+                      <div className="px-3 py-2 rounded-lg bg-[#5856d6]/5 border border-[#5856d6]/15">
+                        <p className="text-[9px] font-semibold text-[#5856d6] flex items-center gap-1">
+                          🎬 {sceneAnalysis}
+                        </p>
+                      </div>
+                    )}
                     <div className="flex items-center gap-3 flex-wrap">
                       {thumbnailUrl.startsWith('data:') ? (
                         // Canvas data URL — use a regular <a> with href
@@ -628,19 +773,9 @@ function VideoStudioCard({ video, hasHeadshot }: { video: DraftVideo; hasHeadsho
                           <Download size={12} /> Download Thumbnail
                         </a>
                       )}
-                      {headshotUsed && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#af52de]/10 text-[#af52de] font-medium">
-                          👤 Your face included
-                        </span>
-                      )}
-                      {includePerson && !headshotUsed && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500] font-medium">
-                          ℹ️ Product-only (face gen unavailable)
-                        </span>
-                      )}
-                      {includeText && thumbnailUrl.startsWith('data:') && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500] font-medium">
-                          📝 Title overlay added
+                      {thumbnailModel === 'instant' && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
+                          ⚡ Instant — your real frame
                         </span>
                       )}
                       {thumbnailPrompt && (
@@ -691,36 +826,27 @@ export default function StudioPage() {
   const [loading, setLoading] = useState(true)
   const [needsAuth, setNeedsAuth] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'asin'>('asin')
   const [hasGeniuslink, setHasGeniuslink] = useState(false)
-  const [hasHeadshot, setHasHeadshot] = useState(false)
+  // Pagination
+  const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
+  const [pageHistory, setPageHistory] = useState<string[]>([]) // stack of previous page tokens
+  const [currentPage, setCurrentPage] = useState(1)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (pageToken?: string) => {
     setLoading(true)
     setError(null)
 
-    // Check Geniuslink connection + headshot URL
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const [intResult, brandResult] = await Promise.all([
+    if (!pageToken) {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase as any)
-          .from('integrations')
-          .select('geniuslink_api_key')
-          .eq('user_id', user.id)
-          .single(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase as any)
-          .from('brand_profiles')
-          .select('headshot_url')
-          .eq('user_id', user.id)
-          .single(),
-      ])
-      setHasGeniuslink(!!intResult.data?.geniuslink_api_key)
-      setHasHeadshot(!!(brandResult.data?.headshot_url as string))
+        const intResult = await (supabase as any).from('integrations').select('geniuslink_api_key').eq('user_id', user.id).single()
+        setHasGeniuslink(!!intResult.data?.geniuslink_api_key)
+      }
     }
 
-    const res = await fetch('/api/youtube/drafts')
+    const url = pageToken ? `/api/youtube/drafts?pageToken=${encodeURIComponent(pageToken)}` : '/api/youtube/drafts'
+    const res = await fetch(url)
     const data = await res.json()
     if (res.status === 401 && data.needsAuth) {
       setNeedsAuth(true)
@@ -728,17 +854,35 @@ export default function StudioPage() {
       setError(data.error || 'Failed to load videos')
     } else {
       setDrafts(data.drafts || [])
+      setNextPageToken(data.nextPageToken)
     }
     setLoading(false)
   }, [supabase])
 
+  const goNext = useCallback(() => {
+    if (!nextPageToken) return
+    setPageHistory(h => [...h, nextPageToken])
+    setCurrentPage(p => p + 1)
+    load(nextPageToken)
+  }, [nextPageToken, load])
+
+  const goPrev = useCallback(() => {
+    const history = [...pageHistory]
+    history.pop()
+    const prevToken = history[history.length - 1]
+    setPageHistory(history)
+    setCurrentPage(p => p - 1)
+    load(prevToken)
+  }, [pageHistory, load])
+
+  const refresh = useCallback(() => {
+    setPageHistory([])
+    setCurrentPage(1)
+    setNextPageToken(undefined)
+    load()
+  }, [load])
+
   useEffect(() => { load() }, [load])
-
-  const filtered = filter === 'asin'
-    ? drafts.filter(d => d.detectedAsin)
-    : drafts
-
-  const asinCount = drafts.filter(d => d.detectedAsin).length
 
   if (loading) {
     return (
@@ -793,54 +937,48 @@ export default function StudioPage() {
 
       {!needsAuth && !error && (
         <>
-          {/* Filter tabs */}
-          <div className="flex items-center gap-3 mb-5">
-            <div className="flex items-center gap-1 bg-[#f5f5f7] dark:bg-[#000] p-1 rounded-xl">
-              {([
-                { key: 'asin', label: `With ASIN (${asinCount})` },
-                { key: 'all', label: `All videos (${drafts.length})` },
-              ] as const).map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                    filter === key
-                      ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm'
-                      : 'text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <button onClick={load} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors ml-auto">
+          <div className="flex items-center justify-between mb-5">
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Page {currentPage} · {drafts.length} video{drafts.length !== 1 ? 's' : ''}</p>
+            <button onClick={refresh} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
               <RefreshCw size={11} /> Refresh
             </button>
           </div>
 
-          {filtered.length === 0 ? (
+          {drafts.length === 0 ? (
             <div className="card p-8 text-center">
               <Youtube size={28} className="mx-auto text-[#86868b] dark:text-[#8e8e93] mb-3" />
-              {filter === 'asin' ? (
-                <>
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No videos with ASINs found</p>
-                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
-                    Add an Amazon ASIN to a private/draft video title (e.g. &ldquo;B08N5WRWNW Review — Hydro Flask&rdquo;) and it will appear here.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No videos found</p>
-                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Make sure your YouTube channel is connected and you have videos.</p>
-                </>
-              )}
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No ASIN videos found</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Add an Amazon ASIN (e.g. B08N5WRWNW) to your video titles on YouTube to have them appear here.</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-4">
-              {filtered.map(video => (
-                <VideoStudioCard key={video.youtubeVideoId} video={video} hasHeadshot={hasHeadshot} />
-              ))}
-            </div>
+            <>
+              <div className="flex flex-col gap-4">
+                {drafts.map(video => (
+                  <VideoStudioCard key={video.youtubeVideoId} video={video} />
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {(currentPage > 1 || nextPageToken) && (
+                <div className="flex items-center justify-between mt-6">
+                  <button
+                    onClick={goPrev}
+                    disabled={currentPage <= 1 || loading}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[#f5f5f7] dark:hover:bg-[#1c1c1e] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft size={15} /> Previous
+                  </button>
+                  <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">Page {currentPage}</span>
+                  <button
+                    onClick={goNext}
+                    disabled={!nextPageToken || loading}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[#f5f5f7] dark:hover:bg-[#1c1c1e] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next <ChevronRight size={15} />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </>
       )}

@@ -3,23 +3,46 @@ import { createServerClient } from '@/lib/supabase/server'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '@/lib/anthropic'
 
-export const maxDuration = 60
+export const maxDuration = 120
 
 interface GearItem { name: string; url: string }
 interface GearSection { title: string; items: GearItem[] }
+
+// ── Retry wrapper for Anthropic 529 overloaded errors ────────────────────────
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
+  let delay = 3000
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const status = (err as Record<string, unknown>)?.status as number | undefined
+      const msg = err instanceof Error ? err.message : String(err)
+      const isOverloaded = status === 529 || msg.includes('529') || msg.toLowerCase().includes('overloaded')
+      if (!isOverloaded || attempt === maxAttempts) {
+        if (isOverloaded) throw new Error('Claude AI is temporarily overloaded — please try again in a moment.')
+        throw err
+      }
+      console.warn(`[anthropic-retry] 529 overloaded, attempt ${attempt}/${maxAttempts}, waiting ${delay}ms`)
+      await new Promise(r => setTimeout(r, delay))
+      delay = Math.min(delay * 1.5, 15000)
+    }
+  }
+  throw new Error('Claude AI is temporarily overloaded — please try again in a moment.')
+}
 
 // ── Agent runner helper ───────────────────────────────────────────────────────
 async function runAgent(
   anthropic: Anthropic,
   opts: { model: string; system: string; user: string; maxTokens?: number }
 ): Promise<string> {
-  const msg = await anthropic.messages.create({
+  const msg = await withRetry(() => anthropic.messages.create({
     model: opts.model,
     max_tokens: opts.maxTokens ?? 1000,
     system: opts.system,
     messages: [{ role: 'user', content: opts.user }],
-  })
+  }))
   return (msg.content[0] as { type: string; text: string }).text.trim()
 }
 
@@ -281,7 +304,7 @@ export async function POST(request: Request) {
     ].filter(Boolean).join('\n')
 
     // ── SWARM PHASE 1: Product Analyst + SEO Researcher run in parallel ────────
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const anthropic = createAnthropicClient()
 
     const [productAnalysis, seoData] = await Promise.all([
       productAnalystAgent(anthropic, productContext, videoTitle, niches),
@@ -298,6 +321,12 @@ export async function POST(request: Request) {
       contentWriterAgent(anthropic, productAnalysis, titleResult.best, tone, niches),
       engagementAgent(anthropic, titleResult.best, productAnalysis, affiliateUrl, tone),
     ])
+
+    // ── Guarantee the affiliate URL is verbatim in the pinned comment ─────────
+    // The AI sometimes writes "link in description" or truncates the URL — fix that.
+    if (engagementResult.pinnedComment && !engagementResult.pinnedComment.includes(affiliateUrl)) {
+      engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n' + affiliateUrl
+    }
 
     // ── Assemble description ──────────────────────────────────────────────────
     const collabLine = websiteUrl

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createGeniuslinkService } from '@/services/geniuslink'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -17,40 +18,14 @@ export async function GET() {
     return NextResponse.json({ error: 'No Geniuslink credentials saved' })
   }
 
-  const apiKey = intRow.geniuslink_api_key as string
-  const apiSecret = intRow.geniuslink_api_secret as string
-
-  const headers = {
-    'X-Api-Key': apiKey,
-    'X-Api-Secret': apiSecret,
-    Accept: 'application/json',
+  try {
+    const genius = createGeniuslinkService(
+      intRow.geniuslink_api_key as string,
+      intRow.geniuslink_api_secret as string,
+    )
+    const shortUrl = await genius.createAsinLink('B08N5WRWNW', 'Test — Hydro Flask')
+    return NextResponse.json({ ok: true, shortUrl })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }
-
-  // Use the real YouTube Links group ID from the user's account
-  const GROUP_ID = 352885
-
-  const params = new URLSearchParams({
-    url: 'https://www.amazon.com/dp/B08N5WRWNW',
-    groupId: String(GROUP_ID),
-    note: 'Test from MVP Affiliate',
-  })
-
-  const res = await fetch(`https://api.geni.us/v3/shorturls?${params}`, {
-    method: 'POST',
-    headers,
-  })
-
-  const text = await res.text()
-  let parsed: unknown
-  try { parsed = JSON.parse(text) } catch { parsed = text }
-
-  // Also show what fields exist on the first item from links list (to find the short URL field name)
-  const listRes = await fetch('https://api.geni.us/v1/links/list?take=1', { headers })
-  const listText = await listRes.text()
-
-  return NextResponse.json({
-    'POST /v3/shorturls status': res.status,
-    'POST /v3/shorturls full response': parsed,
-    'GET /v1/links/list first item keys': Object.keys((JSON.parse(listText)?.Results?.[0] ?? {})),
-  })
 }

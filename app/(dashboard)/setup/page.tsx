@@ -951,6 +951,19 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Connect your YouTube channel and social platforms.</p>
       </div>
 
+      {/* Security notice */}
+      <div className="rounded-xl border border-[#34c759]/30 bg-[#34c759]/5 px-4 py-3.5 flex gap-3">
+        <div className="mt-0.5 flex-shrink-0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#34c759" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your credentials are safe</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+            Every API key, password, and access token you enter here is encrypted and stored securely in our database — <strong>nothing is ever saved in your browser or locally on your device</strong>. Credentials are only used server-side to make authenticated API calls on your behalf (posting to your blog, pushing metadata to YouTube, creating affiliate links, etc.). We never share, log, or expose them. You can disconnect any integration or delete your account at any time.
+          </p>
+        </div>
+      </div>
+
       {/* YouTube */}
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
@@ -959,13 +972,15 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Paste your channel ID to sync videos</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Sync your public video library for blog post generation</p>
           </div>
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Your Channel ID lets the tool pull your public video list so you can turn any video into a blog post. Find it at <a href="https://www.youtube.com/account_advanced" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">youtube.com/account_advanced</a> — it starts with <code className="bg-[var(--surface-2)] px-1 rounded">UC</code>.
+        </p>
         <div>
           <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Channel ID</label>
           <input type="text" value={youtubeChannelId} onChange={e => setYoutubeChannelId(e.target.value)} placeholder="UCxxxxxxxxxxxxxxx" className="input-field font-mono text-xs" />
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Found in your YouTube Studio → Settings → Channel → Advanced</p>
         </div>
       </div>
 
@@ -977,9 +992,12 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">WordPress</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Update credentials if needed</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Publish blog posts and push customizations to your site</p>
           </div>
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Enter the same URL, username, and password you use to log in to <strong>yourdomain.com/wp-admin</strong>. These credentials are used server-side via the WordPress REST API to publish posts, push sidebars, update social links, and more — nothing is stored in your browser.
+        </p>
         <div className="flex flex-col gap-4">
           <div>
             <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress Site URL</label>
@@ -1028,6 +1046,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           {facebook.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Click <strong>Connect Facebook</strong> and you'll be redirected to Facebook to grant permission. We only request access to post on your page's behalf — we never read your personal messages or profile data. Once connected, new blog posts can be shared to your page in one click.
+        </p>
         {fbNotice && <p className={`text-xs mb-3 ${fbNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{fbNotice.msg}</p>}
         {facebook.connected ? (
           <div className="flex flex-col gap-3">
@@ -1063,6 +1084,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           {pinterest.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Connect via OAuth and we'll import your boards automatically. After connecting, choose which board new pins should be saved to. We only request permission to create pins — we never read your private boards or personal data.
+        </p>
         {ptNotice && <p className={`text-xs mb-3 ${ptNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ptNotice.msg}</p>}
         {pinterest.connected ? (
           <div className="flex flex-col gap-3">
@@ -1102,6 +1126,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           {threads.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Threads uses a User Access Token from Meta's developer portal. Go to <strong>developers.facebook.com → My Apps → your app → Threads API → Settings → User Token Generator</strong>, generate a token for your account, and paste it below. The token is stored securely and used only to post on your behalf.
+        </p>
         {thNotice && <p className={`text-xs mb-3 ${thNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{thNotice.msg}</p>}
         {threads.connected ? (
           <div className="flex flex-col gap-3">
@@ -1114,7 +1141,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Connect your Threads account to post blog summaries directly from the content page.</p>
             <ManualThreadsToken onConnected={(username) => setThreads({ connected: true, userId: '', username })} />
           </div>
         )}
@@ -1132,6 +1158,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           {linkedin.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Click <strong>Connect LinkedIn</strong> and you'll be redirected to LinkedIn to authorise the connection. We only request permission to post on your profile — we never access your inbox, connections, or any other account data.
+        </p>
         {liNotice && <p className={`text-xs mb-3 ${liNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{liNotice.msg}</p>}
         {linkedin.connected ? (
           <div className="flex flex-col gap-3">
@@ -1145,7 +1174,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Connect your LinkedIn profile to share blog posts directly from the content page.</p>
             <a
               href="/api/auth/linkedin"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
@@ -1171,6 +1199,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           {youtubeOAuthConnected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+          Click <strong>Connect YouTube</strong> and sign in with the Google account that owns your channel. This grants read access to your private and draft videos so the YouTube Studio tool can show them here, and write access to push generated titles, descriptions, and tags back to YouTube — saving you from copy-pasting manually.
+        </p>
         {ytOAuthNotice && (
           <p className={`text-xs ${ytOAuthNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ytOAuthNotice.msg}</p>
         )}
@@ -1180,7 +1211,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Connect your Google account to read private/draft videos and push generated metadata back to YouTube automatically.</p>
             <a
               href="/api/auth/youtube"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-opacity hover:opacity-90"
@@ -1205,6 +1235,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           {geniuslinkKey && geniuslinkSecret && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+          Geniuslink turns a plain Amazon product link into a geo-targeted short link (e.g. <code className="bg-[var(--surface-2)] px-1 rounded">geni.us/abc123</code>) that routes shoppers to their local Amazon store. To connect, log in to your Geniuslink account, go to <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">app.geni.us/settings → Integrate with our API</a>, and copy your <strong>API Key</strong> and <strong>API Secret</strong>.
+        </p>
         <div className="flex flex-col gap-3">
           <div>
             <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Key</label>
@@ -1214,9 +1247,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
             <input type="password" value={geniuslinkSecret} onChange={e => setGeniuslinkSecret(e.target.value)} placeholder="Your Geniuslink API secret" className="input-field text-xs font-mono" />
           </div>
-          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-            Find your credentials at <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">app.geni.us/settings</a> → Integrate with our API
-          </p>
         </div>
       </div>
 
@@ -1232,6 +1262,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           {amazonAssociatesTag && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+          If you're not using Geniuslink, your Amazon Associates tracking tag is used as the fallback — it's appended to product URLs so you still earn commissions. Find your tag in <a href="https://affiliate-program.amazon.com/home/account/tag/manage" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Amazon Associates → Account → Manage Tracking IDs</a>. It looks like <code className="bg-[var(--surface-2)] px-1 rounded">yourbrand-20</code>.
+        </p>
         <div>
           <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Associates Tag</label>
           <input
@@ -1241,9 +1274,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             placeholder="e.g. yourtag-20"
             className="input-field text-xs font-mono"
           />
-          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
-            Find it in <a href="https://affiliate-program.amazon.com/home/account/tag/manage" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Amazon Associates → Account → Manage Tracking IDs</a>
-          </p>
         </div>
       </div>
 

@@ -6,15 +6,17 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
   Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp,
-  Twitter, Mail, Upload, X, RefreshCw, Sparkles, User, Image as ImageIcon,
+  Twitter, Mail, Upload, X, RefreshCw, Sparkles, Image as ImageIcon,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface AdBlock {
   id: string
+  type: 'image' | 'html'
   imageUrl: string
   linkUrl: string
+  html: string
   position: number
   enabled: boolean
 }
@@ -38,9 +40,7 @@ interface CustomLink {
 
 interface AboutData {
   bio: string
-  headshotUrl: string
   logoUrl: string
-  imageType: 'logo' | 'headshot'
 }
 
 interface FooterData {
@@ -55,7 +55,7 @@ interface BlogCustomizations {
   footer: FooterData
 }
 
-const emptyAbout: AboutData = { bio: '', headshotUrl: '', logoUrl: '', imageType: 'headshot' }
+const emptyAbout: AboutData = { bio: '', logoUrl: '' }
 const emptyFooter: FooterData = {
   socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
   links: [],
@@ -69,15 +69,17 @@ const defaultCustomizations: BlogCustomizations = {
 }
 
 function newBlock(): AdBlock {
-  return { id: crypto.randomUUID(), imageUrl: '', linkUrl: '', position: 2, enabled: true }
+  return { id: crypto.randomUUID(), type: 'image', imageUrl: '', linkUrl: '', html: '', position: 2, enabled: true }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function migrateBlock(raw: any): AdBlock {
   return {
     id: raw.id ?? crypto.randomUUID(),
+    type: raw.type === 'html' ? 'html' : 'image',
     imageUrl: raw.imageUrl ?? '',
     linkUrl: raw.linkUrl ?? '',
+    html: raw.html ?? '',
     position: raw.position ?? 2,
     enabled: raw.enabled ?? true,
   }
@@ -126,8 +128,11 @@ function BannerBlockEditor({
     } finally { setUploading(false) }
   }
 
+  const isHtml = block.type === 'html'
+
   return (
     <div className="border border-[var(--border-2)] rounded-xl overflow-hidden">
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-[var(--surface-2)]">
         <div className="flex items-center gap-3">
           <button onClick={() => onChange({ ...block, enabled: !block.enabled })} className="text-[var(--text-3)]">
@@ -146,38 +151,79 @@ function BannerBlockEditor({
 
       {open && (
         <div className="p-4 flex flex-col gap-4">
-          {block.imageUrl ? (
-            <div className="relative">
-              <img src={block.imageUrl} alt="Banner preview" className="w-full rounded-lg border border-[var(--border-2)] object-cover max-h-40" />
-              <button onClick={() => onChange({ ...block, imageUrl: '' })}
-                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
-                <X size={12} />
-              </button>
-            </div>
-          ) : (
-            <div
-              className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-[var(--border-2)] hover:border-[#0071e3]'}`}
-              onDragOver={e => { e.preventDefault(); setDragging(true) }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+
+          {/* Type tabs */}
+          <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit">
+            <button
+              onClick={() => onChange({ ...block, type: 'image' })}
+              className={`px-4 py-1.5 text-xs font-medium transition-colors ${!isHtml ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
             >
-              <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
-                className="w-full flex flex-col items-center gap-2 py-8 text-[var(--text-3)] hover:text-[var(--text)] transition-colors">
-                {uploading ? <Loader2 size={22} className="animate-spin text-[#0071e3]" /> : <Upload size={22} />}
-                <span className="text-xs font-medium">{uploading ? 'Uploading…' : 'Click to upload or drag an image here'}</span>
-                <span className="text-[11px] text-[var(--text-3)]">PNG, JPG, GIF, WebP</span>
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
+              Image
+            </button>
+            <button
+              onClick={() => onChange({ ...block, type: 'html' })}
+              className={`px-4 py-1.5 text-xs font-medium transition-colors ${isHtml ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
+            >
+              HTML Code
+            </button>
+          </div>
+
+          {/* Image mode */}
+          {!isHtml && (
+            <>
+              {block.imageUrl ? (
+                <div className="relative">
+                  <img src={block.imageUrl} alt="Banner preview" className="rounded-lg border border-[var(--border-2)] object-contain" style={{ width: 350, height: 'auto' }} />
+                  <button onClick={() => onChange({ ...block, imageUrl: '' })}
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-[var(--border-2)] hover:border-[#0071e3]'}`}
+                  onDragOver={e => { e.preventDefault(); setDragging(true) }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+                >
+                  <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+                    className="w-full flex flex-col items-center gap-2 py-8 text-[var(--text-3)] hover:text-[var(--text)] transition-colors">
+                    {uploading ? <Loader2 size={22} className="animate-spin text-[#0071e3]" /> : <Upload size={22} />}
+                    <span className="text-xs font-medium">{uploading ? 'Uploading…' : 'Click to upload or drag an image here'}</span>
+                    <span className="text-[11px] text-[var(--text-3)]">PNG, JPG, GIF, WebP · displayed at 350px wide</span>
+                  </button>
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
+                </div>
+              )}
+              {uploadError && <p className="text-xs text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{uploadError}</p>}
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Affiliate link</label>
+                <input type="url" value={block.linkUrl} onChange={e => onChange({ ...block, linkUrl: e.target.value })}
+                  placeholder="https://amzn.to/your-link" className="input-field w-full" />
+                <p className="text-[11px] text-[var(--text-3)] mt-1">Visitors who click the image go to this URL.</p>
+              </div>
+            </>
+          )}
+
+          {/* HTML mode */}
+          {isHtml && (
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Embed code</label>
+              <textarea
+                value={block.html}
+                onChange={e => onChange({ ...block, html: e.target.value })}
+                rows={6}
+                placeholder={'Paste your affiliate HTML here — Impact, ShareASale, CJ, custom iframes, etc.\n\nExample:\n<a href="https://…"><img src="https://…" /></a>'}
+                className="input-field w-full font-mono text-xs resize-y"
+              />
+              <p className="text-[11px] text-[var(--text-3)] mt-1.5">
+                The HTML is output as-is on your site. Displayed at 350px wide — height follows the content.
+              </p>
             </div>
           )}
-          {uploadError && <p className="text-xs text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{uploadError}</p>}
-          <div>
-            <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Affiliate link</label>
-            <input type="url" value={block.linkUrl} onChange={e => onChange({ ...block, linkUrl: e.target.value })}
-              placeholder="https://amzn.to/your-link" className="input-field w-full" />
-            <p className="text-[11px] text-[var(--text-3)] mt-1">Visitors who click the image go to this URL.</p>
-          </div>
+
+          {/* Position (in-content only) */}
           {showPosition && (
             <div>
               <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Show after paragraph</label>
@@ -220,10 +266,8 @@ export default function CustomizePage() {
 
   // About Me state
   const [rewriting, setRewriting] = useState(false)
-  const [headshotUploading, setHeadshotUploading] = useState(false)
   const [logoUploading, setLogoUploading] = useState(false)
   const [aboutError, setAboutError] = useState<string | null>(null)
-  const headshotFileRef = useRef<HTMLInputElement>(null)
   const logoFileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
@@ -249,14 +293,9 @@ export default function CustomizePage() {
         threads:   bc.footer?.socials?.threads   || profile.threadsUrl   || '',
         contact:   bc.footer?.socials?.contact   || profile.contactEmail || '',
       }
-      // Migrate: old imageUrl → headshotUrl or logoUrl depending on imageType
-      const oldImageUrl = bc.about?.imageUrl ?? ''
-      const oldImageType: 'headshot' | 'logo' = bc.about?.imageType ?? 'headshot'
       const about: AboutData = {
-        bio:         bc.about?.bio         ?? bc.footer?.bio ?? '',
-        headshotUrl: bc.about?.headshotUrl ?? (oldImageType === 'headshot' ? oldImageUrl : ''),
-        logoUrl:     bc.about?.logoUrl     ?? (oldImageType === 'logo'     ? oldImageUrl : ''),
-        imageType:   oldImageType,
+        bio:     bc.about?.bio ?? bc.footer?.bio ?? '',
+        logoUrl: bc.about?.logoUrl ?? bc.about?.imageUrl ?? '',
       }
       setData({
         ...defaultCustomizations,
@@ -298,17 +337,6 @@ export default function CustomizePage() {
 
   function updateAbout(patch: Partial<AboutData>) {
     setData(d => ({ ...d, about: { ...d.about, ...patch } }))
-  }
-
-  async function handleHeadshotImage(file: File) {
-    if (!file.type.startsWith('image/')) { setAboutError('Please upload an image file.'); return }
-    setHeadshotUploading(true); setAboutError(null)
-    try {
-      const url = await uploadImage(file, userId, 'about')
-      updateAbout({ headshotUrl: url })
-    } catch (e) {
-      setAboutError(e instanceof Error ? e.message : 'Upload failed.')
-    } finally { setHeadshotUploading(false) }
   }
 
   async function handleLogoImage(file: File) {
@@ -412,74 +440,26 @@ export default function CustomizePage() {
         >
           <div className="flex flex-col gap-5">
 
-            {/* Profile images — headshot + logo, independently uploaded */}
-            <div className="flex flex-col gap-3">
-              <label className="text-xs font-medium text-[var(--text-2)]">Profile images</label>
-              <div className="grid grid-cols-2 gap-4">
-
-                {/* Headshot slot */}
-                <div className="flex flex-col gap-2">
-                  <span className="text-[11px] font-medium text-[var(--text-3)] flex items-center gap-1"><User size={11} /> Headshot / photo</span>
-                  {data.about.headshotUrl ? (
-                    <div className="relative inline-block">
-                      <img src={data.about.headshotUrl} alt="Headshot" className="w-16 h-16 rounded-full object-cover border border-[var(--border-2)]" />
-                      <button onClick={() => updateAbout({ headshotUrl: '' })}
-                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => headshotFileRef.current?.click()} disabled={headshotUploading}
-                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
-                      {headshotUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                      {headshotUploading ? 'Uploading…' : 'Upload photo'}
-                    </button>
-                  )}
-                  <input ref={headshotFileRef} type="file" accept="image/*" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleHeadshotImage(f); e.target.value = '' }} />
+            {/* Brand logo */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-medium text-[var(--text-2)] flex items-center gap-1.5"><ImageIcon size={13} /> Brand logo</label>
+              {data.about.logoUrl ? (
+                <div className="relative inline-block">
+                  <img src={data.about.logoUrl} alt="Logo" className="h-16 rounded-xl object-contain border border-[var(--border-2)] px-2 bg-white" />
+                  <button onClick={() => updateAbout({ logoUrl: '' })}
+                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
+                    <X size={10} />
+                  </button>
                 </div>
-
-                {/* Logo slot */}
-                <div className="flex flex-col gap-2">
-                  <span className="text-[11px] font-medium text-[var(--text-3)] flex items-center gap-1"><ImageIcon size={11} /> Brand logo</span>
-                  {data.about.logoUrl ? (
-                    <div className="relative inline-block">
-                      <img src={data.about.logoUrl} alt="Logo" className="h-16 rounded-xl object-contain border border-[var(--border-2)] px-2 bg-white" />
-                      <button onClick={() => updateAbout({ logoUrl: '' })}
-                        className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => logoFileRef.current?.click()} disabled={logoUploading}
-                      className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
-                      {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                      {logoUploading ? 'Uploading…' : 'Upload logo'}
-                    </button>
-                  )}
-                  <input ref={logoFileRef} type="file" accept="image/*" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoImage(f); e.target.value = '' }} />
-                </div>
-              </div>
-
-              {/* Which one shows on the homepage */}
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[11px] text-[var(--text-3)]">Show on homepage:</span>
-                <div className="flex items-center gap-2">
-                  {(['headshot', 'logo'] as const).map(type => (
-                    <button key={type} onClick={() => updateAbout({ imageType: type })}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                        data.about.imageType === type
-                          ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
-                          : 'border-[var(--border-2)] text-[var(--text-3)] hover:border-[#1d1d1f]'
-                      }`}>
-                      {type === 'headshot' ? <User size={11} /> : <ImageIcon size={11} />}
-                      {type === 'headshot' ? 'Headshot' : 'Brand logo'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
+              ) : (
+                <button type="button" onClick={() => logoFileRef.current?.click()} disabled={logoUploading}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors w-fit">
+                  {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                  {logoUploading ? 'Uploading…' : 'Upload logo'}
+                </button>
+              )}
+              <input ref={logoFileRef} type="file" accept="image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoImage(f); e.target.value = '' }} />
               {aboutError && <p className="text-xs text-[#ff3b30]">{aboutError}</p>}
             </div>
 
@@ -550,11 +530,8 @@ export default function CustomizePage() {
         {/* Sidebar banners */}
         <Section
           title="Sidebar Banners"
-          description="Clickable image banners shown in the right sidebar on every blog post."
+          description="Affiliate banners shown in the right sidebar on every blog post. Use an image upload or paste HTML from Impact, ShareASale, CJ, etc."
         >
-          <p className="text-xs text-[var(--text-3)] bg-[var(--bg-2)] border border-[var(--border-1)] rounded-lg px-3 py-2">
-            💡 Upload square images at <strong>250×250px</strong> for best results. Larger images will be resized to fit.
-          </p>
           <div className="flex flex-col gap-3">
             {data.sidebar.map(block => (
               <BannerBlockEditor
@@ -574,7 +551,7 @@ export default function CustomizePage() {
         {/* In-content banners */}
         <Section
           title="In-Content Banners"
-          description="Clickable image banners injected inside each blog post. Choose which paragraph they appear after."
+          description="Affiliate banners injected inside each blog post. Use an image upload or paste HTML embed code. Choose which paragraph they appear after."
         >
           <div className="flex flex-col gap-3">
             {data.incontent.map(block => (

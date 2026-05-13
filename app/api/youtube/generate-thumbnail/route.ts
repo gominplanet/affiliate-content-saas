@@ -1,89 +1,157 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '@/lib/anthropic'
+import { fetchAmazonProduct } from '@/services/amazon'
+import { fal } from '@fal-ai/client'
+import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 
-export const maxDuration = 60
+export const maxDuration = 120
 
-// ── Google Generative Language helpers ───────────────────────────────────────
-const GOOGLE_BASE = 'https://generativelanguage.googleapis.com/v1beta'
-
-async function imagen4(prompt: string, geminiKey: string): Promise<string | null> {
-  // Imagen 4 — text-to-image, 16:9, returns base64
-  const res = await fetch(
-    `${GOOGLE_BASE}/models/imagen-4.0-generate-001:predict?key=${geminiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        instances: [{ prompt }],
-        parameters: { sampleCount: 1, aspectRatio: '16:9', imageSize: '1K' },
-      }),
+// ── Retry wrapper for Anthropic overloaded (529) errors ──────────────────────
+async function withAnthropicRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
+  let delay = 3000
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const status = (err as Record<string, unknown>)?.status as number | undefined
+      const msg = err instanceof Error ? err.message : String(err)
+      const isOverloaded = status === 529 || msg.includes('529') || msg.toLowerCase().includes('overloaded')
+      if (!isOverloaded || attempt === maxAttempts) {
+        if (isOverloaded) throw new Error('Claude AI is temporarily overloaded — please try again in a moment.')
+        throw err
+      }
+      console.warn(`[anthropic-retry] 529 overloaded, attempt ${attempt}/${maxAttempts}, waiting ${delay}ms`)
+      await new Promise(r => setTimeout(r, delay))
+      delay = Math.min(delay * 1.5, 15000)
     }
-  )
-  const data = await res.json() as {
-    predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>
-    error?: { message: string }
   }
-  if (!res.ok || data.error) {
-    console.warn('[imagen4] error:', data.error?.message ?? res.status)
-    return null
-  }
-  const b64 = data.predictions?.[0]?.bytesBase64Encoded
-  if (!b64) return null
-  return `data:image/png;base64,${b64}`
+  throw new Error('Claude AI is temporarily overloaded — please try again in a moment.')
 }
 
-async function geminiEditImage(
-  prompt: string,
-  imageUrl: string,
-  geminiKey: string
-): Promise<string | null> {
-  // Fetch the headshot and convert to base64
-  let imageBase64 = ''
-  let mimeType = 'image/jpeg'
+// ── Fetch recent channel thumbnail URLs via YouTube OAuth ─────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchChannelThumbnails(supabase: any, userId: string): Promise<string[]> {
   try {
-    const imgRes = await fetch(imageUrl)
-    if (!imgRes.ok) throw new Error(`Headshot fetch failed: ${imgRes.status}`)
-    const ct = imgRes.headers.get('content-type') ?? 'image/jpeg'
-    mimeType = ct.split(';')[0].trim()
-    const buf = await imgRes.arrayBuffer()
-    imageBase64 = Buffer.from(buf).toString('base64')
-  } catch (err) {
-    console.warn('[geminiEditImage] could not fetch headshot:', err)
-    return null
-  }
+    const { data: intRow } = await supabase
+      .from('integrations')
+      .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
+      .eq('user_id', userId)
+      .single()
+    if (!intRow?.youtube_oauth_access_token) return []
 
-  // gemini-2.5-flash-image — multimodal edit (camelCase keys in REST response)
-  const res = await fetch(
-    `${GOOGLE_BASE}/models/gemini-2.5-flash-image:generateContent?key=${geminiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inlineData: { mimeType, data: imageBase64 } },
-          ],
-        }],
-        generationConfig: { responseModalities: ['IMAGE'] },
-      }),
-    }
-  )
-  const data = await res.json() as {
-    candidates?: Array<{
-      content?: { parts?: Array<{ inlineData?: { mimeType: string; data: string } }> }
-    }>
-    error?: { message: string }
+    const token = await getValidYouTubeToken(intRow as Record<string, unknown>)
+    const yt = createYouTubeOAuthService(token)
+    const { videos } = await yt.getDraftVideos(25)
+
+    // Prefer published thumbnails (these were "approved" by the creator)
+    const published = videos.filter(v => v.status === 'public' && v.thumbnailUrl).map(v => v.thumbnailUrl)
+    const all = videos.filter(v => v.thumbnailUrl).map(v => v.thumbnailUrl)
+    const urls = (published.length >= 4 ? published : all).slice(0, 8)
+    return urls
+  } catch {
+    return []  // non-fatal — skip style analysis if YouTube not connected or fails
   }
-  if (!res.ok || data.error) {
-    console.warn('[geminiEditImage] error:', data.error?.message ?? res.status, JSON.stringify(data).slice(0, 300))
-    return null
+}
+
+// ── Analyse channel thumbnails with Claude vision ─────────────────────────────
+async function analyzeChannelStyle(thumbnailUrls: string[]): Promise<string | null> {
+  if (thumbnailUrls.length < 2) return null
+  try {
+    const anthropic = createAnthropicClient()
+    const imageBlocks = thumbnailUrls.map(url => ({
+      type: 'image' as const,
+      source: { type: 'url' as const, url },
+    }))
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 180,
+      messages: [{
+        role: 'user',
+        content: [
+          ...imageBlocks,
+          {
+            type: 'text',
+            text: `Analyse these YouTube channel thumbnails and describe the visual style in 2 concise sentences:
+1. Background style — is it dark/bright, solid colour/blurred indoor setting, minimalist/busy?
+2. Composition & energy — where is the person placed, how large is the face, what is the emotional energy (intense/calm/excited)?
+Ignore any text overlays. Focus only on consistent patterns across thumbnails. Be specific and brief.`,
+          },
+        ],
+      }],
+    }))
+    return (msg.content[0] as { type: string; text: string }).text.trim()
+  } catch {
+    return null  // non-fatal
   }
-  const parts = data.candidates?.[0]?.content?.parts ?? []
-  const imgPart = parts.find(p => p.inlineData?.data)
-  if (!imgPart?.inlineData) return null
-  return `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`
+}
+
+// ── Claude: Product scene prompt (product-only, style-aware, story-driven) ────
+const STYLE_SCENES: Record<string, string> = {
+  review:     'Product IN USE on a real surface in a home or workspace — books, tools, or related objects in the background create context. Natural room light, lived-in environment, not a studio.',
+  unboxing:   'Product next to or emerging from its open box on a wooden table, tissue paper scattered, warm indoor light as if someone just received a delivery.',
+  comparison: 'Product placed prominently on one side of frame, strong dramatic side-lighting, background hints at a decision or test scenario (whiteboard, notes, competitor products blurred).',
+  lifestyle:  'Product actively in use in its natural environment — outdoors, in the kitchen, at the gym, on a trail. Show the product doing its job. Golden-hour or natural ambient light. People or hands interacting are acceptable if they add story but NO faces.',
+  hero:       'Product in a dramatic cinematic environment — weather, movement, epic scale. Dark dramatic background, strong rim lighting, product looks like the hero of an action movie.',
+}
+
+async function generateProductPrompt(opts: {
+  videoTitle: string
+  productTitle: string
+  productDescription: string
+  productBullets: string[]
+  style: string
+  channelStyle?: string | null
+}): Promise<string> {
+  const sceneDirection = STYLE_SCENES[opts.style] ?? STYLE_SCENES.review
+  const anthropic = createAnthropicClient()
+  const msg = await withAnthropicRetry(() => anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: `You are a YouTube thumbnail art director. Write a Flux image generation prompt for a product shot with an active, story-driven scene. NO faces. The product must look exactly as described — use every visual detail from the product data below.
+
+PRODUCT DATA:
+TITLE: "${opts.videoTitle}"
+PRODUCT NAME: ${opts.productTitle || 'Unknown product'}
+${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
+${opts.productBullets.length ? `FEATURES: ${opts.productBullets.slice(0, 4).join(' · ')}` : ''}
+
+SCENE STYLE: ${sceneDirection}
+${opts.channelStyle ? `CHANNEL AESTHETIC (match this): ${opts.channelStyle}` : ''}
+
+YOUR TASK:
+1. PRODUCT APPEARANCE — extract exact visual details from the data above: colour, shape, size, material, any text/branding on it. Describe it precisely so the AI renders the RIGHT product.
+2. SCENE — pick one specific, active real-world setting that tells a story for this product. Not a studio. Not a white background. A real place with depth, context, and atmosphere.
+3. COMPOSITION — product CENTRE-RIGHT, large and sharp. LEFT third is empty negative space for text overlay. Background blurred but recognisable.
+4. LIGHTING — dramatic and cinematic. Makes the product look desirable.
+5. End with: "16:9, photorealistic, 8K, shallow depth of field, no faces, no text overlays"
+6. Under 90 words total.
+
+Return ONLY the prompt.`,
+    }],
+  }))
+  return (msg.content[0] as { type: string; text: string }).text.trim()
+}
+
+// ── Claude Haiku: punchy hook text ────────────────────────────────────────────
+async function generateHook(videoTitle: string): Promise<string> {
+  const anthropic = createAnthropicClient()
+  const msg = await withAnthropicRetry(() => anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 30,
+    messages: [{
+      role: 'user',
+      content: `Write a 2-3 word ALL-CAPS YouTube thumbnail hook.
+- 2-3 words MAX, complete phrase, no preposition at end
+- No hype words: AMAZING, INCREDIBLE, INSANE. NEVER use HONEST.
+- End with ? or !
+Examples: "WORTH IT?", "DON'T BUY!", "ACTUALLY WORKS?", "BIG MISTAKE?", "MUST HAVE?"
+Return ONLY the hook text. Video: "${videoTitle}"`,
+    }],
+  }))
+  return (msg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
 }
 
 // ── Main route ────────────────────────────────────────────────────────────────
@@ -93,217 +161,147 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const geminiKey = process.env.GOOGLE_GEMINI_API_KEY
     const falKey = process.env.FAL_KEY
-
-    if (!geminiKey && !falKey) {
-      return NextResponse.json({ error: 'No image generation API key configured' }, { status: 500 })
-    }
+    if (!falKey) return NextResponse.json({ error: 'FAL_KEY is not configured' }, { status: 500 })
 
     const {
+      quickMode = false,
       videoTitle,
-      videoDescription,
-      productTitle,
-      productDescription,
-      productBullets,
-      productPrice,
-      productRating,
       asin,
-      style,
-      includePerson = true,
+      productTitle: providedProductTitle,
+      productDescription: providedProductDescription,
+      productBullets: providedProductBullets,
+      style = 'review',
     } = await request.json() as {
+      quickMode?: boolean
       videoTitle: string
-      videoDescription?: string
+      asin?: string
       productTitle?: string
       productDescription?: string
       productBullets?: string[]
-      productPrice?: string
-      productRating?: string
-      asin?: string
-      style?: 'review' | 'unboxing' | 'comparison' | 'lifestyle'
-      includePerson?: boolean
+      style?: string
     }
 
-    // ── 1. Brand profile ───────────────────────────────────────────────────────
-    const { data: brand } = await supabase
-      .from('brand_profiles')
-      .select('niches,author_name,headshot_url,tone')
-      .eq('user_id', user.id)
-      .single()
-
-    const b = brand as Record<string, unknown> | null
-    const niches = ((b?.niches as string[]) || []).join(', ') || 'consumer products'
-    const headshotUrl = (b?.headshot_url as string) || ''
-    const hasHeadshot = !!headshotUrl && includePerson
-
-    // ── 2. Product context ─────────────────────────────────────────────────────
-    const productContext = [
-      productTitle ? `Product name: ${productTitle}` : `ASIN: ${asin}`,
-      productPrice ? `Price: ${productPrice}` : '',
-      productRating ? `Rating: ${productRating}/5` : '',
-      productBullets?.length
-        ? `Key features:\n${productBullets.slice(0, 5).map(b => `  - ${b}`).join('\n')}`
-        : '',
-      productDescription ? `Product description: ${productDescription}` : '',
-    ].filter(Boolean).join('\n')
-
-    const videoContext = videoDescription ? videoDescription.slice(0, 400) : ''
-
-    // ── 3. Claude: product prompt + hook in parallel ───────────────────────────
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-    const styleInstructions = {
-      review:     'dramatic studio hero shot — product centred on a dark gradient background, strong rim lighting, lens flare, volumetric light rays, deep shadows, bokeh reflections',
-      unboxing:   'product dramatically emerging from open premium packaging, tissue paper mid-air, warm overhead lighting, light wood surface, excitement and anticipation',
-      comparison: 'split-screen showdown — two competing products facing off, cool blue left / warm orange right, glowing neon divider, cinematic depth',
-      lifestyle:  'product in a beautiful real-world scene, golden hour sunlight, rich environmental storytelling, foreground slightly blurred, aspirational and cinematic',
-    }[style ?? 'review']
-
-    const [msg, hookMsg] = await Promise.all([
-      anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 500,
-        messages: [{
-          role: 'user',
-          content: `You are a world-class YouTube thumbnail art director. Write an image generation prompt for a stunning, high-CTR YouTube thumbnail focused on the product.
-
-━━ PRODUCT ━━
-${productContext || videoTitle}
-
-━━ VIDEO ━━
-Title: "${videoTitle}"
-${videoContext ? `Description: "${videoContext}"` : ''}
-Niche: ${niches}
-
-━━ STYLE ━━
-${styleInstructions}
-
-━━ RULES ━━
-- NO people, NO faces
-- Product is sole hero, 60-70% of frame width, centred or slightly right
-- Photorealistic commercial photography, 4K, ultra-detailed
-- Rich saturated colours that pop on mobile
-- Dramatic lighting: key + rim + fill — no flat lighting
-- NO text, words, letters, or numbers anywhere
-- Razor-sharp subject, creamy bokeh background
-
-Write ONLY the prompt. Hyper-specific: exact colours, lighting positions, surface textures, background details. 150-200 words.`,
-        }],
-      }),
-      anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 30,
-        messages: [{
-          role: 'user',
-          content: `Write a 2-3 word ALL-CAPS YouTube thumbnail hook. Rules:
-- 2-3 words MAX — short enough to read in 0.5 seconds
-- Spark pure curiosity or mild shock — make the viewer NEED to click
-- Complete phrase, never ends with a preposition
-- No hype words like AMAZING, INCREDIBLE, INSANE
-- NEVER use the word HONEST
-- End with ? or !
-
-Great examples: "WORTH IT?", "DON'T BUY!", "I WAS WRONG", "ACTUALLY WORKS?", "CHANGED MY MIND", "BIG MISTAKE?", "LIFE CHANGER?", "MUST HAVE?"
-
-Return ONLY the hook text, no quotes, no explanation.
-
-Product: ${productContext.split('\n')[0]}
-Video: "${videoTitle}"`,
-        }],
-      }),
-    ])
-
-    const productPrompt = (msg.content[0] as { type: string; text: string }).text.trim()
-    const overlayHook = (hookMsg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
-    const productLine = productContext.split('\n')[0].replace('Product name: ', '').replace('ASIN: ', '')
-
-    // ── 4. Generate image ──────────────────────────────────────────────────────
-    let thumbnailUrl: string | null = null
-    let modelUsed = ''
-    let headshotUsed = false
-    let usedPrompt = productPrompt // what we show in "Copy prompt"
-
-    // ── 4a. Person + product via Gemini multimodal edit ───────────────────────
-    if (hasHeadshot && geminiKey) {
-      const cleanHeadshotUrl = headshotUrl.split('?')[0]
-      console.log('[thumbnail] Trying Gemini multimodal edit, headshot:', cleanHeadshotUrl)
-
-      const editPrompt = `You are creating a YouTube thumbnail from this photo.
-
-STEP 1 — Find the person's FACE in this image. Focus on their face, eyes, and expression.
-
-STEP 2 — Generate a new 16:9 landscape YouTube thumbnail with this exact layout:
-LEFT THIRD (0–35% of width): The person from this photo, shown from shoulders up, FACING THE CAMERA, with a wide open-mouth surprised/excited expression, eyebrows raised high, eyes wide open. Preserve their face, hair colour, skin tone and features exactly.
-RIGHT TWO-THIRDS (35–100% of width): ${productLine} — large, dramatic, photorealistic commercial product shot with strong studio rim lighting against a dark gradient background.
-
-STEP 3 — Final polish:
-- High contrast, vivid colours that pop on a phone screen
-- Clean hard edge between the person and product sides
-- No text, no words, no numbers anywhere in the image
-- Professional YouTube thumbnail quality — looks like a top affiliate channel`
-
-      thumbnailUrl = await geminiEditImage(editPrompt, cleanHeadshotUrl, geminiKey)
-      if (thumbnailUrl) {
-        modelUsed = 'gemini-2.5-flash-image'
-        headshotUsed = true
-        usedPrompt = editPrompt
-      } else {
-        console.warn('[thumbnail] Gemini edit failed, falling through')
-      }
+    // ── Quick mode: hook text only ─────────────────────────────────────────────
+    if (quickMode) {
+      const overlayHook = await generateHook(videoTitle)
+      return NextResponse.json({ ok: true, overlayHook, quickMode: true })
     }
 
-    // ── 4b. Product-only via Imagen 4 ─────────────────────────────────────────
-    if (!thumbnailUrl && geminiKey) {
-      console.log('[thumbnail] Trying Imagen 4')
-      thumbnailUrl = await imagen4(productPrompt, geminiKey)
-      if (thumbnailUrl) modelUsed = 'imagen-4'
-      else console.warn('[thumbnail] Imagen 4 failed, falling through')
-    }
+    // ── Resolve product data + fetch real product image from Amazon ────────────
+    let productImageUrl: string | null = null
+    let productTitle = providedProductTitle ?? ''
+    let productDescription = providedProductDescription ?? ''
+    let productBullets = providedProductBullets ?? []
 
-    // ── 4c. Flux Schnell fallback (fal.ai) ────────────────────────────────────
-    if (!thumbnailUrl && falKey) {
-      console.log('[thumbnail] Falling back to Flux Schnell')
+    if (asin) {
       try {
-        const ctrl = new AbortController()
-        const timer = setTimeout(() => ctrl.abort(), 15_000)
-        const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
-          method: 'POST',
-          headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: productPrompt,
-            image_size: 'landscape_16_9',
-            num_inference_steps: 4,
+        const p = await fetchAmazonProduct(asin)
+        productImageUrl = p.imageUrl
+        if (!productTitle) productTitle = p.title
+        if (!productDescription) productDescription = p.description
+        if (!productBullets.length) productBullets = p.bullets
+      } catch { /* fall through */ }
+    }
+
+    // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
+    fal.config({ credentials: falKey })
+
+    const channelThumbnailUrls = await fetchChannelThumbnails(supabase, user.id)
+    const channelStyle = await analyzeChannelStyle(channelThumbnailUrls)
+    console.log('[generate-thumbnail] Channel style:', channelStyle ?? 'none')
+
+    // ── Generate scene prompt + hook in parallel ──────────────────────────────
+    const [productPrompt, overlayHook] = await Promise.all([
+      generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
+      generateHook(videoTitle),
+    ])
+    console.log('[generate-thumbnail] Scene prompt:', productPrompt)
+
+    // ── PATH A: Kontext — use real product image as visual reference ──────────
+    // Start from the actual Amazon product photo and transform the scene around it.
+    // This guarantees the product looks exactly right without relying on text descriptions.
+    if (productImageUrl) {
+      try {
+        // fal.ai cannot reach Supabase/Amazon URLs directly — re-host first
+        const imgRes = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        if (!imgRes.ok) throw new Error(`Cannot fetch product image (${imgRes.status})`)
+        const imgBlob = await imgRes.blob()
+        const falImageUrl = await fal.storage.upload(imgBlob)
+        console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
+
+        // Kontext: preserve the product, replace background with scene
+        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${productPrompt}. The product should sit naturally in the scene with realistic shadows and lighting. No white background. No people. No text.`
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
+          input: {
+            image_url: falImageUrl,
+            prompt: kontextInstruction,
+            aspect_ratio: '16:9',
             num_images: 1,
-            enable_safety_checker: false,
-          }),
-          signal: ctrl.signal,
+            output_format: 'jpeg',
+            guidance_scale: 5,
+          },
+          pollInterval: 3000,
         })
-        clearTimeout(timer)
-        const text = await res.text()
-        const data = JSON.parse(text) as { images?: Array<{ url: string }> }
-        thumbnailUrl = data.images?.[0]?.url ?? null
-        if (thumbnailUrl) modelUsed = 'flux-schnell'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const kontextImages = (kontextResult.data as any)?.images as Array<{ url: string }> | undefined
+        const kontextUrl = kontextImages?.[0]?.url
+        if (kontextUrl) {
+          console.log('[generate-thumbnail] Kontext result:', kontextUrl)
+          return NextResponse.json({
+            ok: true,
+            thumbnailUrl: kontextUrl,
+            overlayHook,
+            prompt: kontextInstruction,
+            channelStyle: channelStyle ?? null,
+            modelUsed: `kontext-${style}`,
+            headshotUsed: false,
+          })
+        }
       } catch (err) {
-        console.warn('[thumbnail] Flux Schnell failed:', err)
+        console.warn('[generate-thumbnail] Kontext path failed, falling back to Flux Pro:', err)
       }
     }
 
-    if (!thumbnailUrl) {
-      throw new Error('All image generation methods failed. Check API keys and try again.')
-    }
+    // ── PATH B: Flux Pro fallback — no product image available ────────────────
+    console.log('[generate-thumbnail] Using Flux Pro fallback (no product image)')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+      input: {
+        prompt: productPrompt,
+        image_size: 'landscape_16_9',
+        num_inference_steps: 28,
+        guidance_scale: 3.5,
+        num_images: 1,
+        output_format: 'jpeg',
+        safety_tolerance: '2',
+      },
+      pollInterval: 3000,
+    })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const images = (result.data as any)?.images as Array<{ url: string }> | undefined
+    const thumbnailUrl = images?.[0]?.url
+    if (!thumbnailUrl) throw new Error('Flux Pro did not return an image. Please try again.')
 
     return NextResponse.json({
       ok: true,
-      usesQueue: false,
       thumbnailUrl,
-      prompt: usedPrompt,
       overlayHook,
-      modelUsed,
-      headshotUsed,
+      prompt: productPrompt,
+      channelStyle: channelStyle ?? null,
+      modelUsed: `flux-pro-${style}`,
+      headshotUsed: false,
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    console.error('[generate-thumbnail]', msg)
+    // fal.ai ApiError has a .body property with the full validation detail
+    const falBody = (err as Record<string, unknown>)?.body
+    const msg = falBody
+      ? JSON.stringify(falBody)
+      : (err instanceof Error ? err.message : String(err))
+    console.error('[generate-thumbnail] error:', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

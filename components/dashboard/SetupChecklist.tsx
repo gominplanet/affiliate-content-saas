@@ -24,14 +24,6 @@ const steps: Step[] = [
     done: false,
   },
   {
-    id: 'vidiq',
-    label: 'Create your VidIQ account',
-    description: 'Connect your YouTube channel for keyword research, analytics and transcripts.',
-    href: 'https://geni.us/I8Hz',
-    required: true,
-    done: false,
-  },
-  {
     id: 'geniuslink',
     label: 'Create a Geniuslink account',
     description: 'Recommended. Smart affiliate links that work globally and track every click.',

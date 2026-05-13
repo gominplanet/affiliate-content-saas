@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeOAuthService, getValidYouTubeToken } from '@/services/youtube'
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -36,11 +36,28 @@ export async function GET() {
         .eq('user_id', user.id)
     }
 
+    const { searchParams } = new URL(request.url)
+    const pageToken = searchParams.get('pageToken') || undefined
+
     const yt = createYouTubeOAuthService(token)
-    const drafts = await yt.getDraftVideos(50)
-    return NextResponse.json({ drafts })
+
+    // Fetch one page of 50, filter for ASIN videos, return with cursor for next page
+    const ASIN_RE = /\b([A-Z0-9]{10})\b/
+    const result = await yt.getDraftVideos(50, pageToken)
+    const asinVideos = result.videos.filter(v => v.detectedAsin || ASIN_RE.test(v.title))
+
+    return NextResponse.json({ drafts: asinVideos, nextPageToken: result.nextPageToken })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    // Token refresh failed or token rejected by Google → ask user to reconnect
+    const isAuthError =
+      msg.includes('Failed to refresh YouTube token') ||
+      msg.includes('YouTube OAuth not connected') ||
+      msg.includes('YouTube token expired') ||
+      msg.includes('401')
+    if (isAuthError) {
+      return NextResponse.json({ error: 'YouTube session expired', needsAuth: true }, { status: 401 })
+    }
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
