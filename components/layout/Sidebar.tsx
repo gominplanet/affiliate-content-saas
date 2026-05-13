@@ -141,12 +141,12 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
           <span style={wpSiteUrl ? { color: '#0071e3', fontWeight: 500 } : {}}>Visit Blog</span>
         </a>
 
-        {/* Purge cache — prominent global action when WordPress is connected */}
-        {wpSiteUrl && (
+        {/* Purge cache — prominent global action, always visible */}
+        {(
           <button
             onClick={purgeCache}
-            disabled={purging}
-            className="mt-3 flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+            disabled={purging || !wpSiteUrl}
+            className="mt-3 flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               background: purged
                 ? 'linear-gradient(135deg, #34c759 0%, #30b450 100%)'
@@ -155,7 +155,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
                 ? '0 2px 8px rgba(52,199,89,0.3)'
                 : '0 2px 8px rgba(255,149,0,0.3)',
             }}
-            title="Clear LiteSpeed cache so your latest changes appear on the live blog"
+            title={wpSiteUrl ? 'Clear LiteSpeed cache so your latest changes appear on the live blog' : 'Connect WordPress first'}
           >
             {purging
               ? <><Loader2 size={14} className="animate-spin" /> Clearing cache…</>
