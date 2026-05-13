@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { ThreadsService } from '@/services/threads'
-import Anthropic from '@anthropic-ai/sdk'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { createAnthropicClient } from '@/lib/anthropic'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -30,6 +28,7 @@ export async function POST(request: NextRequest) {
     if (!ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing — try reconnecting Threads in Settings' }, { status: 400 })
 
     // Claude generates the thread text
+    const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 300,

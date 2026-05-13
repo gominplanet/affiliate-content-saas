@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '@/lib/anthropic'
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
   let bio: string
   try {
-    const anthropic = new Anthropic()
+    const anthropic = createAnthropicClient()
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 400,

@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   if (!url) return NextResponse.json({ error: 'Missing url param' }, { status: 400 })
 
   // Only proxy known image CDNs — prevent open-proxy abuse
-  const allowed = ['fal.media', 'cdn.fal.ai', 'storage.googleapis.com', 'replicate.delivery', 'pbxt.replicate.delivery']
+  const allowed = ['fal.media', 'cdn.fal.ai', 'storage.googleapis.com', 'replicate.delivery', 'pbxt.replicate.delivery', 'i.ytimg.com', 'img.youtube.com']
   let hostname: string
   try {
     hostname = new URL(url).hostname

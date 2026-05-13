@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '@/lib/anthropic'
 import { GoogleGenAI } from '@google/genai'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-const genai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY })
 
 const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you. #ad #affiliate #amazonfinds'
 
@@ -30,6 +27,8 @@ export async function POST(request: NextRequest) {
   if (!ig?.pinterest_board_id) return NextResponse.json({ error: 'No Pinterest board selected' }, { status: 400 })
 
   // Claude fills in Pinterest description + image prompt variables in one call
+  const anthropic = createAnthropicClient()
+  const genai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY ?? '' })
   const claudeMsg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1000,
@@ -112,21 +111,29 @@ Final quality: 8K resolution, cinematic post-processing, professional advertisin
 }
 
 async function generatePinImage(prompt: string): Promise<{ data: string; mediaType: string } | null> {
-  try {
-    const response = await genai.models.generateContent({
-      model: 'gemini-2.0-flash-preview-image-generation',
-      contents: prompt,
-      config: { responseModalities: ['IMAGE'] },
-    })
-    const parts = response.candidates?.[0]?.content?.parts
-    if (!parts) return null
-    for (const part of parts) {
-      if (part.inlineData?.data) {
-        return { data: part.inlineData.data, mediaType: part.inlineData.mimeType || 'image/png' }
+  let delay = 8000
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const response = await genai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: prompt,
+        config: { responseModalities: ['IMAGE'] },
+      })
+      const parts = response.candidates?.[0]?.content?.parts
+      if (!parts) return null
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          return { data: part.inlineData.data, mediaType: part.inlineData.mimeType || 'image/png' }
+        }
       }
+      return null
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const isOverloaded = msg.includes('503') || msg.toLowerCase().includes('unavailable') || msg.toLowerCase().includes('high demand')
+      if (!isOverloaded || attempt === 4) return null
+      await new Promise(r => setTimeout(r, delay))
+      delay = Math.min(delay * 2, 30000)
     }
-    return null
-  } catch (err) {
-    return null
   }
+  return null
 }

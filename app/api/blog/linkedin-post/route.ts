@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createLinkedInService } from '@/services/linkedin'
-import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '@/lib/anthropic'
 
 export const maxDuration = 60
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 4. Generate LinkedIn post with Claude ─────────────────────────────────
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const anthropic = createAnthropicClient()
     const plainContent = (post.content as string ?? '')
       .replace(/<[^>]+>/g, '')
       .slice(0, 1500)

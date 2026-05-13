@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
-import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '@/lib/anthropic'
 
 export const maxDuration = 300
 
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     }
 
     // ── Ask Claude to classify all titles at once ─────────────────────────────
-    const client = new Anthropic()
+    const client = createAnthropicClient()
     const titles = needsCat.map((p, i) => `${i + 1}. ${p.title.rendered.replace(/<[^>]+>/g, '')}`).join('\n')
 
     const response = await client.messages.create({

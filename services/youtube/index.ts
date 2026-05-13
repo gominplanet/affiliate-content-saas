@@ -118,8 +118,11 @@ export class YouTubeOAuthService {
     return res.json() as Promise<T>
   }
 
-  // List all videos for the authenticated user (includes private/draft)
-  async getDraftVideos(maxResults = 50): Promise<DraftVideo[]> {
+  // List videos for the authenticated user (includes private/draft), with pagination
+  async getDraftVideos(
+    maxResults = 25,
+    pageToken?: string,
+  ): Promise<{ videos: DraftVideo[]; nextPageToken?: string }> {
     // Get the authenticated user's channel
     const channelData = await this.get<any>('/channels', {
       part: 'contentDetails',
@@ -128,15 +131,17 @@ export class YouTubeOAuthService {
     const uploadsPlaylistId = channelData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads
     if (!uploadsPlaylistId) throw new Error('No uploads playlist found')
 
-    // List all videos (includes private)
-    const playlistData = await this.get<any>('/playlistItems', {
+    // List videos (includes private), one page at a time
+    const params: Record<string, string> = {
       part: 'snippet,status',
       playlistId: uploadsPlaylistId,
       maxResults: String(Math.min(maxResults, 50)),
-    })
+    }
+    if (pageToken) params.pageToken = pageToken
+    const playlistData = await this.get<any>('/playlistItems', params)
 
     const items = playlistData.items ?? []
-    if (items.length === 0) return []
+    if (items.length === 0) return { videos: [], nextPageToken: undefined }
 
     // Get full video details including status
     const videoIds = items.map((i: any) => i.snippet.resourceId.videoId).join(',')
@@ -146,7 +151,7 @@ export class YouTubeOAuthService {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (videosData.items ?? []).map((v: any) => {
+    const videos = (videosData.items ?? []).map((v: any) => {
       const asinMatch = v.snippet.title.match(/\b([A-Z0-9]{10})\b/)
       return {
         youtubeVideoId: v.id,
@@ -158,6 +163,8 @@ export class YouTubeOAuthService {
         detectedAsin: asinMatch ? asinMatch[1] : null,
       }
     })
+
+    return { videos, nextPageToken: playlistData.nextPageToken }
   }
 
   // Update a video's title, description, and tags
@@ -241,6 +248,30 @@ export class YouTubeOAuthService {
     }
 
     throw new Error(`YouTube update failed ${res.status}: ${body1.slice(0, 500)}`)
+  }
+
+  // Upload a custom thumbnail to YouTube for a video.
+  // imageBuffer: raw image bytes; mimeType: 'image/jpeg' or 'image/png'
+  async uploadThumbnail(videoId: string, imageBuffer: Buffer, mimeType: string): Promise<void> {
+    const res = await fetch(
+      `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          'Content-Type': mimeType,
+          'Content-Length': String(imageBuffer.length),
+        },
+        body: imageBuffer.buffer.slice(
+          imageBuffer.byteOffset,
+          imageBuffer.byteOffset + imageBuffer.byteLength,
+        ) as ArrayBuffer,
+      },
+    )
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`YouTube thumbnail upload failed ${res.status}: ${body.slice(0, 300)}`)
+    }
   }
 }
 

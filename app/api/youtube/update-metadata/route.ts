@@ -8,11 +8,12 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { videoId, title, description, tags } = await request.json() as {
+    const { videoId, title, description, tags, thumbnailDataUri } = await request.json() as {
       videoId: string
       title: string
       description: string
       tags: string[]
+      thumbnailDataUri?: string
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,9 +42,29 @@ export async function POST(request: Request) {
     }
 
     const yt = createYouTubeOAuthService(token)
-    await yt.updateVideoMetadata(videoId, { title, description, tags })
 
-    return NextResponse.json({ ok: true })
+    // Run metadata update + thumbnail upload in parallel when thumbnail provided
+    const tasks: Promise<void>[] = [
+      yt.updateVideoMetadata(videoId, { title, description, tags }),
+    ]
+
+    if (thumbnailDataUri) {
+      // data:[mimeType];base64,[data]
+      const match = thumbnailDataUri.match(/^data:([^;]+);base64,(.+)$/)
+      if (match) {
+        const mimeType = match[1]  // e.g. 'image/jpeg'
+        const imageBuffer = Buffer.from(match[2], 'base64')
+        tasks.push(yt.uploadThumbnail(videoId, imageBuffer, mimeType))
+      }
+    }
+
+    const results = await Promise.allSettled(tasks)
+    const thumbResult = results[1]
+    const thumbWarning = thumbResult?.status === 'rejected'
+      ? (thumbResult.reason instanceof Error ? thumbResult.reason.message : 'Thumbnail upload failed')
+      : null
+
+    return NextResponse.json({ ok: true, ...(thumbWarning ? { thumbnailWarning: thumbWarning } : {}) })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[update-metadata]', msg)

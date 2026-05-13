@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createFacebookService } from '@/services/facebook'
-import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '@/lib/anthropic'
 
 export const maxDuration = 60
 
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 5. Generate 300-word Facebook review with Claude ──────────────────────
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    const anthropic = createAnthropicClient()
     const blogText = `Title: ${post.title}\n\nExcerpt: ${post.excerpt || ''}\n\nContent (first 1500 chars):\n${(post.content as string).replace(/<[^>]+>/g, '').slice(0, 1500)}`
 
     const msg = await anthropic.messages.create({
