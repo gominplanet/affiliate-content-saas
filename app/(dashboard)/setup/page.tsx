@@ -1145,7 +1145,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Enter the same URL, username, and password you use to log in to <strong>yourdomain.com/wp-admin</strong>. These credentials are used server-side via the WordPress REST API to publish posts, push sidebars, update social links, and more — nothing is stored in your browser.
+          We use the WordPress REST API to publish posts, push sidebars, update social links, and more. You&apos;ll need an <strong>Application Password</strong> — NOT your wp-admin login password. Generate one in <strong>wp-admin → Users → Profile → Application Passwords</strong>, then paste it below.
         </p>
         <div className="flex flex-col gap-4">
           <div>
@@ -1157,14 +1157,20 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             <input type="text" value={wpUsername} onChange={e => setWpUsername(e.target.value)} placeholder="admin" className="input-field" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress Password</label>
+            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
             <div className="relative">
-              <input type={showWpPassword ? 'text' : 'password'} value={wpAppPassword} onChange={e => setWpAppPassword(e.target.value)} placeholder="Your wp-admin password" className="input-field pr-10" />
+              <input type={showWpPassword ? 'text' : 'password'} value={wpAppPassword} onChange={e => setWpAppPassword(e.target.value)} placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" className="input-field pr-10 font-mono text-xs" />
               <button type="button" onClick={() => setShowWpPassword(!showWpPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
                 {showWpPassword ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Same password you use to log in to wp-admin.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">
+              NOT your wp-admin login password. {wpUrl ? (
+                <a href={`${wpUrl.replace(/\/$/, '')}/wp-admin/profile.php#application-passwords-section`} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Open Application Passwords →</a>
+              ) : (
+                <span>Generate one in wp-admin → Users → Profile → Application Passwords.</span>
+              )}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || !wpAppPassword} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors">
