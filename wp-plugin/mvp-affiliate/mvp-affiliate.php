@@ -160,6 +160,7 @@ add_action('pre_get_posts', function (WP_Query $query) {
 
 // ─── 9. "You might also like" ─────────────────────────────────────────────────
 add_action('kadence_after_main_content', function () {
+    if (mvp_affiliate_theme_active()) return;
     if (!is_singular('post') && !is_home() && !is_front_page() && !is_archive()) return;
     $exclude = is_singular('post') ? [get_the_ID()] : [];
     $random = new WP_Query([
@@ -187,9 +188,20 @@ add_action('kadence_after_main_content', function () {
     <?php
 });
 
+// ─── Helper: is the MVP Affiliate theme active? ──────────────────────────────
+// When the theme is active, it handles all rendering (logo banner, footer,
+// social bar). The plugin's own renderers below skip themselves to avoid
+// duplicate output.
+if (!function_exists('mvp_affiliate_theme_active')) {
+    function mvp_affiliate_theme_active(): bool {
+        return apply_filters('mvp_affiliate_theme_active', false);
+    }
+}
+
 // ─── 10. Logo header banner ───────────────────────────────────────────────────
 // Renders on multiple hooks to survive themes/page templates that skip some hooks.
 $mvp_affiliate_logo_banner = function () {
+    if (mvp_affiliate_theme_active()) return;
     static $rendered = false;
     if ($rendered) return;
     $about = mvp_affiliate_get_data()['about'] ?? [];
@@ -214,6 +226,7 @@ add_action('generate_before_header',  $mvp_affiliate_logo_banner, 5);
 // Fallback: inject the banner via JS at <body> open if no hook fired by wp_footer.
 // This guarantees the banner appears even on themes that don't call wp_body_open.
 add_action('wp_footer', function () use ($mvp_affiliate_logo_banner) {
+    if (mvp_affiliate_theme_active()) return;
     $about = mvp_affiliate_get_data()['about'] ?? [];
     $logo_url = $about['logoUrl'] ?? '';
     if (!$logo_url) return;
@@ -237,6 +250,7 @@ add_action('wp_footer', function () use ($mvp_affiliate_logo_banner) {
 
 // ─── 11. Top social bar ───────────────────────────────────────────────────────
 add_action('kadence_before_header', function () {
+    if (mvp_affiliate_theme_active()) return;
     $profile = mvp_affiliate_get_data()['profile'] ?? [];
     $defs = [
         'youtubeUrl'   => 'YouTube',
@@ -266,6 +280,7 @@ add_action('kadence_before_header', function () {
 
 // ─── 12. Footer (bio + socials + custom links) ────────────────────────────────
 add_action('wp_footer', function () {
+    if (mvp_affiliate_theme_active()) return;
     $data    = mvp_affiliate_get_data();
     $footer  = $data['footer'] ?? [];
     $profile = $data['profile'] ?? [];
@@ -362,6 +377,7 @@ add_filter('frontpage_template', function ($t) { return get_page_template(); });
 // Maps profile.primaryColor / profile.accentColor onto Kadence's global palette
 // and common link/button selectors, so the brand color is reflected everywhere.
 add_action('wp_head', function () {
+    if (mvp_affiliate_theme_active()) return;
     $profile = mvp_affiliate_get_data()['profile'] ?? [];
     $primary = trim($profile['primaryColor'] ?? ($profile['accentColor'] ?? ''));
     if (!$primary) return;
@@ -419,18 +435,23 @@ function mvp_affiliate_admin_page() {
     $site_url = home_url();
     $token = null;
     $token_error = null;
-    $theme_installed = wp_get_theme()->get_stylesheet() === 'kadence' || wp_get_theme()->get_template() === 'kadence';
+    $active_stylesheet = wp_get_theme()->get_stylesheet();
+    $theme_installed   = $active_stylesheet === 'mvp-affiliate-theme'
+        || $active_stylesheet === 'mvp-affiliate'
+        || wp_get_theme('mvp-affiliate-theme')->exists();
+    $theme_active = $active_stylesheet === 'mvp-affiliate-theme' || $active_stylesheet === 'mvp-affiliate';
     $theme_status_msg = null;
 
     // Handle theme install action
     if (!empty($_POST['mvp_affiliate_action']) && $_POST['mvp_affiliate_action'] === 'install_theme'
         && check_admin_referer('mvp_affiliate_install_theme')) {
-        $result = mvp_affiliate_install_kadence();
+        $result = mvp_affiliate_install_theme();
         if (is_wp_error($result)) {
             $theme_status_msg = ['error', $result->get_error_message()];
         } else {
-            $theme_status_msg = ['success', 'Kadence theme installed and activated.'];
+            $theme_status_msg = ['success', 'MVP Affiliate theme installed and activated.'];
             $theme_installed = true;
+            $theme_active    = true;
         }
     }
 
@@ -470,16 +491,17 @@ function mvp_affiliate_admin_page() {
 
       <!-- Theme step -->
       <div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;margin-top:20px;">
-        <h2 style="font-size:16px;margin:0 0 4px;">Step 1 — Set up Kadence theme</h2>
-        <p style="margin:0 0 12px;color:#6e6e73;">MVP Affiliate is designed to work with the free Kadence theme. We'll install and activate it for you.</p>
-        <?php if ($theme_installed): ?>
-          <p style="color:#1d8348;margin:0;"><span class="dashicons dashicons-yes-alt" style="color:#1d8348;"></span> Kadence is installed and active.</p>
+        <h2 style="font-size:16px;margin:0 0 4px;">Step 1 — Install the MVP Affiliate theme</h2>
+        <p style="margin:0 0 12px;color:#6e6e73;">Editorial layout, hero card on the homepage, clean review-post pages, automatic brand colors. Built specifically for affiliate review sites.</p>
+        <?php if ($theme_active): ?>
+          <p style="color:#1d8348;margin:0;"><span class="dashicons dashicons-yes-alt" style="color:#1d8348;"></span> MVP Affiliate theme is active.</p>
         <?php else: ?>
           <form method="post" style="margin:0;">
             <?php wp_nonce_field('mvp_affiliate_install_theme'); ?>
             <input type="hidden" name="mvp_affiliate_action" value="install_theme" />
-            <button type="submit" class="button button-primary">Install Kadence theme</button>
+            <button type="submit" class="button button-primary">Install &amp; activate MVP Affiliate theme</button>
           </form>
+          <p style="margin:10px 0 0;color:#86868b;font-size:12px;">This downloads the theme from MVP Affiliate, installs it, and activates it. Your existing posts and pages stay exactly as they are.</p>
         <?php endif; ?>
       </div>
 
@@ -512,14 +534,14 @@ function mvp_affiliate_admin_page() {
     <?php
 }
 
-// ─── 16. Kadence installer helper ─────────────────────────────────────────────
-function mvp_affiliate_install_kadence() {
-    if (wp_get_theme('kadence')->exists()) {
-        switch_theme('kadence');
+// ─── 16. MVP Affiliate theme installer ────────────────────────────────────────
+// Downloads the theme zip from MVP Affiliate's CDN and installs/activates it.
+// The theme slug after install is 'mvp-affiliate-theme'.
+function mvp_affiliate_install_theme() {
+    $existing = wp_get_theme('mvp-affiliate-theme');
+    if ($existing->exists()) {
+        switch_theme('mvp-affiliate-theme');
         return true;
-    }
-    if (!function_exists('themes_api')) {
-        require_once ABSPATH . 'wp-admin/includes/theme.php';
     }
     if (!class_exists('Theme_Upgrader')) {
         require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
@@ -527,13 +549,13 @@ function mvp_affiliate_install_kadence() {
     if (!class_exists('Automatic_Upgrader_Skin')) {
         require_once ABSPATH . 'wp-admin/includes/class-automatic-upgrader-skin.php';
     }
-    $api = themes_api('theme_information', ['slug' => 'kadence', 'fields' => ['sections' => false]]);
-    if (is_wp_error($api)) return $api;
+    // The zip is hosted alongside the plugin zip on MVP Affiliate.
+    $zip_url = 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip';
     $upgrader = new Theme_Upgrader(new Automatic_Upgrader_Skin());
-    $result = $upgrader->install($api->download_link);
+    $result = $upgrader->install($zip_url);
     if (is_wp_error($result)) return $result;
-    if (!$result) return new WP_Error('install_failed', 'Theme installation failed.');
-    switch_theme('kadence');
+    if (!$result) return new WP_Error('install_failed', 'Theme installation failed. The download URL may be unreachable.');
+    switch_theme('mvp-affiliate-theme');
     return true;
 }
 

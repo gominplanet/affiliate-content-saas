@@ -326,7 +326,7 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
           <li>In your wp-admin: Plugins → Add New Plugin → Upload Plugin</li>
           <li>Choose the ZIP, click Install Now, then Activate Plugin</li>
           <li>Click the new <strong>MVP Affiliate</strong> menu item in the sidebar</li>
-          <li>Click <strong>Install Kadence theme</strong>, then <strong>Generate Connection Token</strong></li>
+          <li>Click <strong>Install &amp; activate MVP Affiliate theme</strong>, then <strong>Generate Connection Token</strong></li>
           <li>Copy the token and paste it below</li>
         </ol>
       </div>
@@ -459,7 +459,7 @@ function Step2({ onNext }: { onNext: () => void }) {
               'Choose the ZIP file you just downloaded and click Install Now.',
               'Click Activate Plugin once it finishes.',
               'You\'ll see a new "MVP Affiliate" menu appear in the sidebar — open it.',
-              'Click Install Kadence theme, then click Generate Connection Token.',
+              'Click Install & activate MVP Affiliate theme, then click Generate Connection Token.',
               'Copy the token — you\'ll paste it in the Launch step.',
             ].map((text, i) => (
               <li key={i} className="flex items-start gap-2.5">

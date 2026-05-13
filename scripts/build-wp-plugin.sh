@@ -1,29 +1,31 @@
 #!/usr/bin/env bash
-# Builds the MVP Affiliate WordPress plugin zip and places it in public/.
+# Builds the MVP Affiliate WordPress plugin AND theme zips into public/.
 #
-# Run this whenever wp-plugin/mvp-affiliate/* changes:
+# Run this whenever wp-plugin/* changes:
 #   bash scripts/build-wp-plugin.sh
 #
-# The zip is then served as a static download from /mvp-affiliate.zip.
+# Outputs:
+#   public/mvp-affiliate.zip        (plugin)
+#   public/mvp-affiliate-theme.zip  (theme)
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="$ROOT/wp-plugin/mvp-affiliate"
-OUT="$ROOT/public/mvp-affiliate.zip"
+WP="$ROOT/wp-plugin"
 
-if [ ! -d "$SRC" ]; then
-  echo "Plugin source not found: $SRC" >&2
-  exit 1
-fi
+build_zip() {
+  local SRC="$1"
+  local OUT="$2"
+  if [ ! -d "$SRC" ]; then
+    echo "Source not found: $SRC" >&2
+    return 1
+  fi
+  rm -f "$OUT"
+  cd "$(dirname "$SRC")"
+  zip -qr "$OUT" "$(basename "$SRC")" -x "*.DS_Store" -x "__MACOSX*"
+  echo "Built: $OUT"
+  ls -lh "$OUT"
+}
 
-# Strip any old build
-rm -f "$OUT"
-
-# Zip from the parent of the plugin folder so the archive contains
-# `mvp-affiliate/mvp-affiliate.php` (WordPress requires the top-level folder).
-cd "$(dirname "$SRC")"
-zip -qr "$OUT" "$(basename "$SRC")" -x "*.DS_Store"
-
-echo "Built: $OUT"
-ls -lh "$OUT"
+build_zip "$WP/mvp-affiliate"       "$ROOT/public/mvp-affiliate.zip"
+build_zip "$WP/mvp-affiliate-theme" "$ROOT/public/mvp-affiliate-theme.zip"
