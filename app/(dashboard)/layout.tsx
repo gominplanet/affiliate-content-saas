@@ -11,11 +11,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
     .from('integrations')
-    .select('wp_site_url,wordpress_url')
+    .select('wordpress_url')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
-  const wpSiteUrl = intRow?.wordpress_url || intRow?.wp_site_url || null
+  const wpSiteUrl = intRow?.wordpress_url || null
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>

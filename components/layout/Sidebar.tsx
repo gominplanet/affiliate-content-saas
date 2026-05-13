@@ -97,11 +97,11 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(supabase as any)
         .from('integrations')
-        .select('wordpress_url,wp_site_url')
+        .select('wordpress_url')
         .eq('user_id', user.id)
         .maybeSingle()
         .then(({ data }: { data: Record<string, string> | null }) => {
-          const url = data?.wordpress_url || data?.wp_site_url || null
+          const url = data?.wordpress_url || null
           if (url) setWpSiteUrl(url)
         })
     })
