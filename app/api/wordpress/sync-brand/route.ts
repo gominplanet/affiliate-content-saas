@@ -46,6 +46,19 @@ export async function POST(request: Request) {
       }).catch(() => {})
     }
 
+    // Update site title + tagline via WP Settings API so they flow through
+    // the theme natively (header, footer, browser tab, RSS, etc.)
+    if (brandName || tagline) {
+      const settingsBody: Record<string, string> = {}
+      if (brandName) settingsBody.title       = brandName
+      if (tagline)   settingsBody.description = tagline
+      await fetch(`${wpBase}/wp-json/wp/v2/settings`, {
+        method: 'POST',
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingsBody),
+      }).catch(() => {})
+    }
+
     // Merge into existing customizations
     let existing: Record<string, unknown> = {}
     try {
