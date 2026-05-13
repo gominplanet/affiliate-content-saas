@@ -283,9 +283,31 @@ export default function BrandPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
 
+    // Normalize URL fields: auto-prepend https:// when the user typed just
+    // "youtube.com/@channel" without a protocol. Email field left as-is.
+    const normalizeUrl = (val: string): string => {
+      const trimmed = (val || '').trim()
+      if (!trimmed) return ''
+      if (/^https?:\/\//i.test(trimmed)) return trimmed
+      return `https://${trimmed}`
+    }
+    const normalized: BrandData = {
+      ...data,
+      website_url:         normalizeUrl(data.website_url),
+      youtube_channel_url: normalizeUrl(data.youtube_channel_url),
+      instagram_url:       normalizeUrl(data.instagram_url),
+      tiktok_url:          normalizeUrl(data.tiktok_url),
+      twitter_url:         normalizeUrl(data.twitter_url),
+      pinterest_url:       normalizeUrl(data.pinterest_url),
+      facebook_url:        normalizeUrl(data.facebook_url),
+      threads_url:         normalizeUrl(data.threads_url),
+    }
+    // Update local state so the user sees their normalized URLs after save
+    setData(normalized)
+
     // ── 1. Save to Supabase ─────────────────────────────────────────────────
     const { error: dbError } = await supabase.from('brand_profiles').upsert(
-      { ...data, user_id: user.id },
+      { ...normalized, user_id: user.id },
       { onConflict: 'user_id' },
     )
     if (dbError) {
@@ -302,22 +324,22 @@ export default function BrandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          authorName:     data.author_name,
-          brandName:      data.name,
-          tagline:        data.tagline,
-          authorBio:      data.author_bio,
-          primaryColor:   data.primary_color,
-          secondaryColor: data.secondary_color,
-          fontTheme:      data.font_theme,
-          logoUrl:        data.logo_url,
-          youtubeUrl:     data.youtube_channel_url,
-          instagramUrl:   data.instagram_url,
-          tiktokUrl:      data.tiktok_url,
-          twitterUrl:     data.twitter_url,
-          pinterestUrl:   data.pinterest_url,
-          facebookUrl:    data.facebook_url,
-          threadsUrl:     data.threads_url,
-          contactEmail:   data.contact_email,
+          authorName:     normalized.author_name,
+          brandName:      normalized.name,
+          tagline:        normalized.tagline,
+          authorBio:      normalized.author_bio,
+          primaryColor:   normalized.primary_color,
+          secondaryColor: normalized.secondary_color,
+          fontTheme:      normalized.font_theme,
+          logoUrl:        normalized.logo_url,
+          youtubeUrl:     normalized.youtube_channel_url,
+          instagramUrl:   normalized.instagram_url,
+          tiktokUrl:      normalized.tiktok_url,
+          twitterUrl:     normalized.twitter_url,
+          pinterestUrl:   normalized.pinterest_url,
+          facebookUrl:    normalized.facebook_url,
+          threadsUrl:     normalized.threads_url,
+          contactEmail:   normalized.contact_email,
         }),
       })
       const json = await res.json().catch(() => ({}))
@@ -548,19 +570,19 @@ export default function BrandPage() {
             </p>
             <div className="grid grid-cols-1 gap-3">
               {[
-                { key: 'youtube_channel_url' as const, label: 'YouTube',   placeholder: 'https://youtube.com/@yourchannel' },
-                { key: 'instagram_url' as const,        label: 'Instagram', placeholder: 'https://instagram.com/yourhandle' },
-                { key: 'tiktok_url' as const,           label: 'TikTok',    placeholder: 'https://tiktok.com/@yourhandle' },
-                { key: 'twitter_url' as const,          label: 'X / Twitter', placeholder: 'https://x.com/yourhandle' },
-                { key: 'pinterest_url' as const,        label: 'Pinterest', placeholder: 'https://pinterest.com/yourprofile' },
-                { key: 'facebook_url' as const,         label: 'Facebook',  placeholder: 'https://facebook.com/yourpage' },
-                { key: 'threads_url' as const,          label: 'Threads',   placeholder: 'https://threads.net/@yourhandle' },
+                { key: 'youtube_channel_url' as const, label: 'YouTube',   placeholder: 'youtube.com/@yourchannel' },
+                { key: 'instagram_url' as const,        label: 'Instagram', placeholder: 'instagram.com/yourhandle' },
+                { key: 'tiktok_url' as const,           label: 'TikTok',    placeholder: 'tiktok.com/@yourhandle' },
+                { key: 'twitter_url' as const,          label: 'X / Twitter', placeholder: 'x.com/yourhandle' },
+                { key: 'pinterest_url' as const,        label: 'Pinterest', placeholder: 'pinterest.com/yourprofile' },
+                { key: 'facebook_url' as const,         label: 'Facebook',  placeholder: 'facebook.com/yourpage' },
+                { key: 'threads_url' as const,          label: 'Threads',   placeholder: 'threads.net/@yourhandle' },
                 { key: 'contact_email' as const,        label: 'Contact email', placeholder: 'hello@yourdomain.com' },
               ].map(({ key, label, placeholder }) => (
                 <div key={key}>
                   <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">{label}</label>
                   <input
-                    type={key === 'contact_email' ? 'email' : 'url'}
+                    type={key === 'contact_email' ? 'email' : 'text'}
                     value={data[key]}
                     onChange={(e) => set(key, e.target.value)}
                     placeholder={placeholder}
