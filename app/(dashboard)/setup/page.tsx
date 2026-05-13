@@ -837,14 +837,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [wpUrl, setWpUrl] = useState('')
   const [wpUsername, setWpUsername] = useState('')
   const [wpAppPassword, setWpAppPassword] = useState('')
-  const [showWpPassword, setShowWpPassword] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [pluginStatus, setPluginStatus] = useState<'idle' | 'checking' | 'active' | 'not_installed' | 'no_wp'>('idle')
-  const [pluginInstalling, setPluginInstalling] = useState(false)
-  const [pluginResult, setPluginResult] = useState<{ ok: boolean; message: string; installUrl?: string } | null>(null)
+  const [reconnectToken, setReconnectToken] = useState('')
+  const [reconnecting, setReconnecting] = useState(false)
+  const [reconnectResult, setReconnectResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [showReconnect, setShowReconnect] = useState(false)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -902,12 +902,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     setSaving(true); setError(null)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    // WordPress credentials are managed via the token flow now; don't overwrite them here.
     const { error: err } = await supabase.from('integrations').upsert({
       user_id: user.id,
       youtube_channel_id: youtubeChannelId || null,
-      wordpress_url: wpUrl || null,
-      wordpress_username: wpUsername || null,
-      wordpress_app_password: wpAppPassword || null,
       geniuslink_api_key: geniuslinkKey || null,
       geniuslink_api_secret: geniuslinkSecret || null,
       amazon_associates_tag: amazonAssociatesTag || null,
@@ -924,6 +922,30 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setWpTestResult({ ok: data.ok, message: data.message || data.error })
     } catch { setWpTestResult({ ok: false, message: 'Request failed — check your site URL' }) }
     finally { setWpTesting(false) }
+  }
+
+  async function reconnectWithToken() {
+    setReconnecting(true); setReconnectResult(null)
+    try {
+      const res = await fetch('/api/wordpress/connect-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: reconnectToken.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setReconnectResult({ ok: false, message: data.error || 'Failed to verify token' })
+      } else {
+        setReconnectResult({ ok: true, message: `Connected to ${data.siteUrl} as ${data.username}` })
+        setReconnectToken('')
+        setShowReconnect(false)
+        await load()
+      }
+    } catch (e) {
+      setReconnectResult({ ok: false, message: e instanceof Error ? e.message : 'Request failed' })
+    } finally {
+      setReconnecting(false)
+    }
   }
 
   async function fixCssCorruption() {
@@ -947,32 +969,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       else setFixThumbsResult(`Fixed ${data.fixed} thumbnail${data.fixed !== 1 ? 's' : ''} (${data.skipped} already good, ${data.failed} failed).`)
     } catch { setFixThumbsResult('Request failed.') }
     finally { setFixingThumbs(false) }
-  }
-
-  async function checkPlugin() {
-    setPluginStatus('checking'); setPluginResult(null)
-    try {
-      const res = await fetch('/api/wordpress/install-plugin')
-      const data = await res.json()
-      setPluginStatus(data.status ?? 'not_installed')
-    } catch { setPluginStatus('not_installed') }
-  }
-
-  async function installPlugin() {
-    setPluginInstalling(true); setPluginResult(null)
-    try {
-      const res = await fetch('/api/wordpress/install-plugin', { method: 'POST' })
-      const data = await res.json()
-      if (data.ok) {
-        setPluginStatus('active')
-        setPluginResult({ ok: true, message: data.message })
-      } else if (data.error === 'code_snippets_missing') {
-        setPluginResult({ ok: false, message: data.message, installUrl: data.installUrl })
-      } else {
-        setPluginResult({ ok: false, message: data.error || 'Installation failed.' })
-      }
-    } catch { setPluginResult({ ok: false, message: 'Request failed — check your connection.' }) }
-    finally { setPluginInstalling(false) }
   }
 
   async function disconnectFacebook() {
@@ -1069,145 +1065,85 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         </div>
       </div>
 
-      {/* WordPress credentials */}
+      {/* WordPress connection — Application Password is managed inside the MVP Affiliate plugin */}
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="#21759B"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
           </div>
-          <div>
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">WordPress</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Publish blog posts and push customizations to your site</p>
-          </div>
-        </div>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          We connect to your WordPress site over the REST API using an <strong>Application Password</strong> — a one-time token you generate in wp-admin. This is more reliable than your login password and works on hosts (like Hostinger) that block automated logins.
-        </p>
-
-        {/* How to get an Application Password — always visible, one-time setup */}
-        <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4 mb-4">
-          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">How to get your Application Password (one time, ~30 seconds):</p>
-          <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside">
-            <li>Log into your wp-admin dashboard in another tab</li>
-            <li>Go to <strong>Users → Profile</strong> (or click your name top-right)</li>
-            <li>Scroll to <strong>Application Passwords</strong> near the bottom</li>
-            <li>Type <strong>AffiliateOS</strong> as the name and click <strong>Add New Application Password</strong></li>
-            <li>Copy the password (looks like <code className="bg-white dark:bg-black/30 px-1 rounded font-mono">xxxx xxxx xxxx xxxx xxxx xxxx</code>) and paste it below</li>
-          </ol>
-          {wpUrl && (
-            <a
-              href={`${wpUrl.replace(/\/$/, '')}/wp-admin/profile.php#application-passwords-section`}
-              target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-[#0071e3] hover:underline mt-2"
-            >
-              <ExternalLink size={11} /> Open Application Passwords page
-            </a>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <div>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress Site URL</label>
-            <input type="url" value={wpUrl} onChange={e => setWpUrl(e.target.value)} placeholder="https://yourdomain.com" className="input-field" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress Username</label>
-            <input type="text" value={wpUsername} onChange={e => setWpUsername(e.target.value)} placeholder="admin" className="input-field" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
-            <div className="relative">
-              <input type={showWpPassword ? 'text' : 'password'} value={wpAppPassword} onChange={e => setWpAppPassword(e.target.value)} placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" className="input-field pr-10 font-mono text-sm" />
-              <button type="button" onClick={() => setShowWpPassword(!showWpPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
-                {showWpPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Spaces are OK — paste exactly as WordPress shows it.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || !wpAppPassword} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors">
-              {wpTesting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />} Test connection
-            </button>
-            <button type="button" onClick={fixCssCorruption} disabled={fixingCss || !wpUrl} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#ff3b30]/40 disabled:opacity-40 transition-colors">
-              {fixingCss ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Fix corrupted posts
-            </button>
-            <button type="button" onClick={fixThumbnails} disabled={fixingThumbs || !wpUrl} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#ff9500]/40 disabled:opacity-40 transition-colors">
-              {fixingThumbs ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Fix thumbnails
-            </button>
-            {wpTestResult && <span className={`text-xs font-medium ${wpTestResult.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{wpTestResult.message}</span>}
-            {fixCssResult && <span className={`text-xs font-medium ${fixCssResult.startsWith('Error') ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>{fixCssResult}</span>}
-            {fixThumbsResult && <span className={`text-xs font-medium ${fixThumbsResult.startsWith('Error') ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>{fixThumbsResult}</span>}
-          </div>
-        </div>
-      </div>
-
-      {/* WordPress Site Plugin */}
-      <div className="card p-6">
-        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
-          <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="#7c3aed"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-          </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">WordPress Site Plugin</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Enables banners, social bar, footer, and logo header on your blog</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">WordPress</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] truncate">{wpUrl || 'Not connected'}</p>
           </div>
-          {pluginStatus === 'active' && (
-            <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Active</span>
+          {wpUrl && wpAppPassword && (
+            <span className="flex items-center gap-1 text-xs font-medium text-[#34c759] flex-shrink-0"><Check size={12} /> Connected</span>
           )}
         </div>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          All the features you configure in <strong>Customize Blog</strong> — sidebar banners, in-content banners, logo header, social bar, and footer — require a small snippet of code installed on your WordPress site. Click <strong>Check Status</strong> to see if it&apos;s already installed, then <strong>Install / Update</strong> to push it in one click. You never need to touch WordPress manually.
-        </p>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          This uses the free <strong>Code Snippets</strong> plugin to safely inject the code. If it&apos;s not installed yet, we&apos;ll give you a direct link to install it — it only takes 30 seconds.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={checkPlugin}
-            disabled={pluginStatus === 'checking' || !wpUrl}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors"
-          >
-            {pluginStatus === 'checking' ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
-            Check status
-          </button>
-          <button
-            type="button"
-            onClick={installPlugin}
-            disabled={pluginInstalling || !wpUrl || !wpUsername || !wpAppPassword}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#7c3aed] text-white rounded-lg hover:bg-[#6d28d9] disabled:opacity-40 transition-colors"
-          >
-            {pluginInstalling ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-            {pluginStatus === 'active' ? 'Update code' : 'Install plugin code'}
-          </button>
-        </div>
-        {/* Status messages */}
-        {pluginStatus === 'active' && !pluginResult && (
-          <p className="text-xs text-[#34c759] mt-3 font-medium">✓ AffiliateOS is active on your site — all features are enabled.</p>
+
+        {wpUrl && wpAppPassword ? (
+          <>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              Connected as <strong>{wpUsername}</strong>. Use the buttons below to verify the connection or run maintenance. To change credentials, paste a new Connection Token from your wp-admin → MVP Affiliate → Generate Connection Token.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || !wpAppPassword} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors">
+                {wpTesting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />} Test connection
+              </button>
+              <button type="button" onClick={fixCssCorruption} disabled={fixingCss || !wpUrl} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#ff3b30]/40 disabled:opacity-40 transition-colors">
+                {fixingCss ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Fix corrupted posts
+              </button>
+              <button type="button" onClick={fixThumbnails} disabled={fixingThumbs || !wpUrl} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#ff9500]/40 disabled:opacity-40 transition-colors">
+                {fixingThumbs ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Fix thumbnails
+              </button>
+              <button type="button" onClick={() => setShowReconnect(v => !v)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] hover:border-[#86868b]/40 transition-colors">
+                <Save size={12} /> {showReconnect ? 'Cancel' : 'Update credentials'}
+              </button>
+              {wpTestResult && <span className={`text-xs font-medium ${wpTestResult.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{wpTestResult.message}</span>}
+              {fixCssResult && <span className={`text-xs font-medium ${fixCssResult.startsWith('Error') ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>{fixCssResult}</span>}
+              {fixThumbsResult && <span className={`text-xs font-medium ${fixThumbsResult.startsWith('Error') ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>{fixThumbsResult}</span>}
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+            No WordPress site connected yet. Install the MVP Affiliate plugin on your site, generate a Connection Token, and paste it below.
+          </p>
         )}
-        {pluginStatus === 'not_installed' && !pluginResult && (
-          <p className="text-xs text-[#ff9500] mt-3 font-medium">Not installed yet. Click &quot;Install plugin code&quot; to set up in one click.</p>
-        )}
-        {pluginResult && (
-          <div className={`mt-3 rounded-lg px-3 py-2.5 text-xs ${pluginResult.ok ? 'bg-[#34c759]/10 text-[#1a7a3a]' : 'bg-[#ff3b30]/8 text-[#cc2200]'}`}>
-            {pluginResult.ok ? (
-              <p>{pluginResult.message}</p>
-            ) : pluginResult.installUrl ? (
-              <div className="flex flex-col gap-1.5">
-                <p className="font-medium">Code Snippets plugin not found on your site.</p>
-                <p>Install it first (it&apos;s free and takes 30 seconds), then click &quot;Install plugin code&quot; again.</p>
-                <a
-                  href={pluginResult.installUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 font-medium text-[#0071e3] hover:underline"
-                >
-                  <ExternalLink size={11} /> Open Code Snippets installer in WordPress
-                </a>
-              </div>
-            ) : (
-              <p>{pluginResult.message}</p>
-            )}
+
+        {/* Reconnect / first-connect token field */}
+        {(showReconnect || !wpUrl || !wpAppPassword) && (
+          <div className="mt-4 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4">
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Paste a Connection Token</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+              In your wp-admin → <strong>MVP Affiliate</strong> menu → click <strong>Generate Connection Token</strong> → copy → paste below.
+              {wpUrl && (
+                <>
+                  {' '}
+                  <a href={`${wpUrl.replace(/\/$/, '')}/wp-admin/admin.php?page=mvp-affiliate`} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Open MVP Affiliate page →</a>
+                </>
+              )}
+            </p>
+            <textarea
+              value={reconnectToken}
+              onChange={e => setReconnectToken(e.target.value)}
+              placeholder="eyJ1cmwiOiJodHRwczovL... (paste full token here)"
+              rows={3}
+              className="input-field font-mono text-xs resize-y mb-2"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={reconnectWithToken}
+                disabled={reconnecting || reconnectToken.trim().length < 20}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#0071e3] text-white rounded-lg hover:bg-[#0066cc] disabled:opacity-40 transition-colors"
+              >
+                {reconnecting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
+                Connect with token
+              </button>
+              {reconnectResult && (
+                <span className={`text-xs font-medium ${reconnectResult.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{reconnectResult.message}</span>
+              )}
+            </div>
           </div>
         )}
       </div>
