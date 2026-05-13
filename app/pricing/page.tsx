@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { CheckCircle, Zap } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 type Plan = {
   tier: 'free' | 'starter' | 'growth' | 'pro'
@@ -95,22 +96,28 @@ export default function PricingPage() {
       router.push('/signup?next=/dashboard')
       return
     }
+
     setLoading(tier)
     try {
+      // Check auth client-side first. If we just POST to /api/stripe/checkout
+      // while logged out, middleware redirects to /login (307) and fetch
+      // silently follows the redirect, leaving the user staring at a
+      // do-nothing button. So we bounce them to signup ourselves.
+      const supabase = createBrowserClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push(`/signup?next=/pricing&tier=${tier}`)
+        return
+      }
+
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier }),
       })
-      if (res.status === 401) {
-        // Not logged in — bounce to signup, preserving the tier so we can
-        // resume checkout after they create an account.
-        router.push(`/signup?next=/pricing&tier=${tier}`)
-        return
-      }
       const { url, error } = await res.json()
       if (error) { alert(error); return }
-      router.push(url)
+      if (url) window.location.href = url
     } finally {
       setLoading(null)
     }
