@@ -7,34 +7,28 @@ import { wpLogin, getNonce } from '@/lib/wordpress-login'
 
 export const maxDuration = 60
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── Auth context — supports both cookie+nonce and Basic Auth (Application Passwords) ──
 
-function buildCookieHeader(rawSetCookie: string[]): string {
-  const seen = new Set<string>()
-  const parts: string[] = []
-  for (const raw of rawSetCookie) {
-    const kv = raw.split(';')[0].trim()
-    const key = kv.split('=')[0]
-    if (!seen.has(key)) {
-      seen.add(key)
-      parts.push(kv)
-    }
-  }
-  return parts.join('; ')
+type AuthCtx =
+  | { mode: 'basic'; header: string }
+  | { mode: 'cookie'; cookies: string; nonce: string }
+
+function authHeaders(auth: AuthCtx, extra: Record<string, string> = {}): Record<string, string> {
+  if (auth.mode === 'basic') return { Authorization: auth.header, ...extra }
+  return { Cookie: auth.cookies, 'X-WP-Nonce': auth.nonce, ...extra }
 }
 
-function wpFetch(siteUrl: string, cookies: string, nonce: string) {
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function wpFetch(siteUrl: string, auth: AuthCtx) {
   return async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const isWrite = options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE'
     const res = await fetch(`${siteUrl}/wp-json/wp/v2${path}`, {
       ...options,
-      headers: {
-        Cookie: cookies,
-        'X-WP-Nonce': nonce,
-        ...(options.method === 'POST' || options.method === 'PATCH'
-          ? { 'Content-Type': 'application/json' }
-          : {}),
+      headers: authHeaders(auth, {
+        ...(isWrite ? { 'Content-Type': 'application/json' } : {}),
         ...(options.headers as Record<string, string> || {}),
-      },
+      }),
     })
     if (!res.ok) {
       const body = await res.text()
@@ -44,19 +38,14 @@ function wpFetch(siteUrl: string, cookies: string, nonce: string) {
   }
 }
 
-// Install or update a Code Snippets plugin snippet (nonce-authenticated)
+// Install or update a Code Snippets plugin snippet
 async function ensureCodeSnippet(
   siteUrl: string,
-  cookies: string,
-  nonce: string,
+  auth: AuthCtx,
   name: string,
   code: string,
 ): Promise<void> {
-  const headers = {
-    Cookie: cookies,
-    'X-WP-Nonce': nonce,
-    'Content-Type': 'application/json',
-  }
+  const headers = authHeaders(auth, { 'Content-Type': 'application/json' })
   // List existing snippets to find a match by name
   const listRes = await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets`, { headers })
   if (!listRes.ok) throw new Error(`Code Snippets list ${listRes.status}`)
@@ -67,15 +56,11 @@ async function ensureCodeSnippet(
   const payload = { name, code, active: true, scope: 'global' }
   if (existing) {
     await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets/${existing.id}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
+      method: 'POST', headers, body: JSON.stringify(payload),
     })
   } else {
     await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
+      method: 'POST', headers, body: JSON.stringify(payload),
     })
   }
 }
@@ -133,8 +118,7 @@ const LITESPEED_FIX_PHP = `if (!get_option('aff_ls_cache_patched')) {
 
 async function wpMediaUpload(
   siteUrl: string,
-  cookies: string,
-  nonce: string,
+  auth: AuthCtx,
   base64: string,
   mime: string,
   filename: string,
@@ -142,12 +126,10 @@ async function wpMediaUpload(
   const buffer = Buffer.from(base64, 'base64')
   const res = await fetch(`${siteUrl}/wp-json/wp/v2/media`, {
     method: 'POST',
-    headers: {
-      Cookie: cookies,
-      'X-WP-Nonce': nonce,
+    headers: authHeaders(auth, {
       'Content-Type': mime,
       'Content-Disposition': `attachment; filename="${filename}"`,
-    },
+    }),
     body: buffer as BodyInit,
   })
   if (!res.ok) {
@@ -167,7 +149,7 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const {
-      siteUrl: rawUrl, username, password, accentColor = '#f5a623',
+      siteUrl: rawUrl, username, password, appPassword: rawAppPassword, accentColor = '#f5a623',
       logoBase64, logoMime, logoFilename,
       headshotBase64, headshotMime, headshotFilename,
       aboutText, contactEmail,
@@ -182,32 +164,58 @@ export async function POST(request: Request) {
     if (!siteUrl.startsWith('http')) siteUrl = `https://${siteUrl}`
     siteUrl = siteUrl.replace(/\/wp-admin\/?.*$/, '').replace(/\/$/, '')
 
-    // ── 1. Login ──────────────────────────────────────────────────────────────
-    const loginResult = await wpLogin(siteUrl, username, password)
-    if (!loginResult.ok) {
-      const msg = loginResult.reason === 'unreachable'
-        ? 'Could not reach your WordPress site. Check the URL.'
-        : 'Login failed. Check your WordPress username and password.'
-      return NextResponse.json({ error: msg }, { status: 400 })
-    }
-    const cookies = loginResult.cookies
+    // ── 1. Authenticate ───────────────────────────────────────────────────────
+    // Prefer Application Password (Basic Auth) if provided — works on hosts
+    // like Hostinger that block automated wp-login.php requests.
+    // Fall back to cookie auth with the wp-admin password.
+    let auth: AuthCtx
 
-    // ── 2. Get nonce ──────────────────────────────────────────────────────────
-    const nonce = await getNonce(siteUrl, cookies)
-    const req = wpFetch(siteUrl, cookies, nonce)
+    if (rawAppPassword) {
+      const appPw = rawAppPassword.trim().replace(/\s+/g, ' ') // keep spaces for display, encode below
+      const encoded = Buffer.from(`${username}:${appPw.replace(/\s+/g, '')}`).toString('base64')
+      const basicHeader = `Basic ${encoded}`
+      // Verify it works
+      const testRes = await fetch(`${siteUrl}/wp-json/wp/v2/users/me`, {
+        headers: { Authorization: basicHeader },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (!testRes.ok) {
+        const errBody = await testRes.text()
+        return NextResponse.json({
+          error: `Application Password authentication failed (${testRes.status}). Make sure you copied it correctly from wp-admin → Users → Profile → Application Passwords. ${errBody.slice(0, 120)}`,
+        }, { status: 400 })
+      }
+      auth = { mode: 'basic', header: basicHeader }
+    } else {
+      // Cookie auth
+      const loginResult = await wpLogin(siteUrl, username, password)
+      if (!loginResult.ok) {
+        return NextResponse.json({
+          error: loginResult.reason === 'unreachable'
+            ? 'Could not reach your WordPress site. Check the URL.'
+            : 'Login failed. If you\'re on Hostinger, use an Application Password instead (see the "Having trouble?" section below the password field).',
+          hint: 'use_app_password',
+        }, { status: 400 })
+      }
+      const nonce = await getNonce(siteUrl, loginResult.cookies)
+      auth = { mode: 'cookie', cookies: loginResult.cookies, nonce }
+    }
+
+    // ── 2. Build the REST client ──────────────────────────────────────────────
+    const req = wpFetch(siteUrl, auth)
 
     // ── 3. Get current user ───────────────────────────────────────────────────
     const me = await req<{ name: string; roles?: string[] }>('/users/me')
 
     // ── 3c. Install AffiliateOS PHP snippets via Code Snippets plugin ─────────
     try {
-      await ensureCodeSnippet(siteUrl, cookies, nonce, 'AffiliateOS Core', AFFILIATEOS_CORE_PHP)
+      await ensureCodeSnippet(siteUrl, auth, 'AffiliateOS Core', AFFILIATEOS_CORE_PHP)
     } catch { /* Code Snippets plugin may not be installed — step 16 will still try the endpoint */ }
     try {
-      await ensureCodeSnippet(siteUrl, cookies, nonce, 'Force Front Page Template', FORCE_FRONT_PAGE_PHP)
+      await ensureCodeSnippet(siteUrl, auth, 'Force Front Page Template', FORCE_FRONT_PAGE_PHP)
     } catch { /* non-fatal */ }
     try {
-      await ensureCodeSnippet(siteUrl, cookies, nonce, 'Disable LiteSpeed REST Cache', LITESPEED_FIX_PHP)
+      await ensureCodeSnippet(siteUrl, auth, 'Disable LiteSpeed REST Cache', LITESPEED_FIX_PHP)
     } catch { /* non-fatal — site may not have LiteSpeed installed */ }
 
     // ── 3b. Delete default WordPress content ─────────────────────────────────
@@ -227,16 +235,20 @@ export async function POST(request: Request) {
       ])
     } catch { /* non-fatal */ }
 
-    // ── 4. Generate Application Password ─────────────────────────────────────
-    let appPassword = ''
-    try {
-      const appPwRes = await req<{ password: string }>('/users/me/application-passwords', {
-        method: 'POST',
-        body: JSON.stringify({ name: 'AffiliateOS' }),
-      })
-      appPassword = appPwRes.password.replace(/\s+/g, '')
-    } catch {
-      appPassword = password
+    // ── 4. Generate Application Password (skip if we already have one) ─────────
+    // If user provided an Application Password, use that going forward.
+    // Otherwise try to generate one via the REST API (needs cookie auth).
+    let appPassword = rawAppPassword ? rawAppPassword.trim().replace(/\s+/g, '') : ''
+    if (!appPassword) {
+      try {
+        const appPwRes = await req<{ password: string }>('/users/me/application-passwords', {
+          method: 'POST',
+          body: JSON.stringify({ name: 'AffiliateOS' }),
+        })
+        appPassword = appPwRes.password.replace(/\s+/g, '')
+      } catch {
+        appPassword = password
+      }
     }
 
     // ── 5. Load brand profile ─────────────────────────────────────────────────
@@ -269,7 +281,7 @@ export async function POST(request: Request) {
     let logoMediaId: number | undefined
     if (logoBase64 && logoMime && logoFilename) {
       try {
-        const media = await wpMediaUpload(siteUrl, cookies, nonce, logoBase64, logoMime, logoFilename)
+        const media = await wpMediaUpload(siteUrl, auth,logoBase64, logoMime, logoFilename)
         logoMediaId = media.id
         await req('/settings', {
           method: 'POST',
@@ -282,7 +294,7 @@ export async function POST(request: Request) {
     let headshotUrl: string | undefined
     if (headshotBase64 && headshotMime && headshotFilename) {
       try {
-        const media = await wpMediaUpload(siteUrl, cookies, nonce, headshotBase64, headshotMime, headshotFilename)
+        const media = await wpMediaUpload(siteUrl, auth,headshotBase64, headshotMime, headshotFilename)
         headshotUrl = media.source_url
       } catch { /* non-fatal */ }
     }
