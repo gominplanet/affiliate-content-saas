@@ -105,17 +105,24 @@ if (!function_exists('mvp_affiliate_social_svg')) {
 }
 
 /**
- * Render a single ad block (image or HTML). Returns string; doesn't echo.
+ * Render a single ad block (image or HTML) with optional label eyebrow.
+ * Returns string; doesn't echo.
  */
 if (!function_exists('mvp_affiliate_render_block')) {
     function mvp_affiliate_render_block(array $block): string {
         if (empty($block['enabled'])) return '';
-        $type = $block['type'] ?? 'image';
+        $type  = $block['type'] ?? 'image';
+        $label = trim((string)($block['label'] ?? ''));
+
+        $label_html = $label !== ''
+            ? '<p class="mvp-ad-block-label">' . esc_html($label) . '</p>'
+            : '';
+
         if ($type === 'image') {
             $img  = esc_url($block['imageUrl'] ?? '');
             $link = esc_url($block['linkUrl'] ?? '');
             if (!$img) return '';
-            $out = '<div class="mvp-ad-block mvp-ad-image">';
+            $out = '<div class="mvp-ad-block mvp-ad-image">' . $label_html;
             if ($link) $out .= '<a href="' . $link . '" target="_blank" rel="nofollow noopener">';
             $out .= '<img src="' . $img . '" alt="" loading="lazy" />';
             if ($link) $out .= '</a>';
@@ -124,6 +131,6 @@ if (!function_exists('mvp_affiliate_render_block')) {
         }
         $html = $block['html'] ?? '';
         if (!$html) return '';
-        return '<div class="mvp-ad-block mvp-ad-html">' . $html . '</div>';
+        return '<div class="mvp-ad-block mvp-ad-html">' . $label_html . $html . '</div>';
     }
 }

@@ -19,6 +19,7 @@ interface AdBlock {
   html: string
   position: number
   enabled: boolean
+  label: string
 }
 
 interface SocialLinks {
@@ -70,7 +71,7 @@ const defaultCustomizations: BlogCustomizations = {
 }
 
 function newBlock(): AdBlock {
-  return { id: crypto.randomUUID(), type: 'image', imageUrl: '', linkUrl: '', html: '', position: 2, enabled: true }
+  return { id: crypto.randomUUID(), type: 'image', imageUrl: '', linkUrl: '', html: '', position: 2, enabled: true, label: '' }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,6 +84,7 @@ function migrateBlock(raw: any): AdBlock {
     html: raw.html ?? '',
     position: raw.position ?? 2,
     enabled: raw.enabled ?? true,
+    label: raw.label ?? '',
   }
 }
 
@@ -152,6 +154,34 @@ function BannerBlockEditor({
 
       {open && (
         <div className="p-4 flex flex-col gap-4">
+
+          {/* Label (eyebrow shown above the block) */}
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Label <span className="text-[var(--text-3)] font-normal">(optional)</span></label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={block.label}
+                onChange={e => onChange({ ...block, label: e.target.value })}
+                placeholder="e.g. Sponsored, Our Pick, Advertisement"
+                maxLength={30}
+                className="input-field flex-1 text-sm"
+              />
+              <div className="flex gap-1">
+                {['Sponsored', 'Our Pick', 'Advertisement'].map(preset => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => onChange({ ...block, label: preset })}
+                    className="px-2 py-1 text-[10px] rounded-md border border-[var(--border-2)] text-[var(--text-3)] hover:text-[#0071e3] hover:border-[#0071e3]/40 transition-colors whitespace-nowrap"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[11px] text-[var(--text-3)] mt-1">Shown as a small uppercase eyebrow above the banner. Leave blank for a clean look.</p>
+          </div>
 
           {/* Type tabs */}
           <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit">
