@@ -27,5 +27,9 @@ build_zip() {
   ls -lh "$OUT"
 }
 
-build_zip "$WP/mvp-affiliate"       "$ROOT/public/mvp-affiliate.zip"
-build_zip "$WP/mvp-affiliate-theme" "$ROOT/public/mvp-affiliate-theme.zip"
+build_zip "$WP/mvpaffiliate-platform" "$ROOT/public/mvpaffiliate-platform.zip"
+build_zip "$WP/mvp-affiliate-theme"   "$ROOT/public/mvp-affiliate-theme.zip"
+
+# Keep the old filename as a copy so existing setup wizards still find it,
+# pointing to the same updated content.
+cp "$ROOT/public/mvpaffiliate-platform.zip" "$ROOT/public/mvp-affiliate.zip"

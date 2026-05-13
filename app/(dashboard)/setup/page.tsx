@@ -319,7 +319,7 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
       {/* Step 1 — install plugin */}
       <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4">
         <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Step 1 — Install the MVP Affiliate plugin</p>
-        <a href="/mvp-affiliate.zip" download="mvp-affiliate.zip" className="btn-primary text-sm self-start inline-flex mb-3">
+        <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm self-start inline-flex mb-3">
           <Download size={14} /> Download plugin
         </a>
         <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside">
@@ -450,7 +450,7 @@ function Step2({ onNext }: { onNext: () => void }) {
           One plugin handles everything: blog layout, banners, social bar, footer, and the connection back to this dashboard. Download it, upload to WordPress, activate. ~60 seconds total.
         </p>
         <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] flex flex-col gap-3">
-          <a href="/mvp-affiliate.zip" download="mvp-affiliate.zip" className="btn-primary text-sm self-start inline-flex">
+          <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm self-start inline-flex">
             <Download size={14} /> Download MVP Affiliate plugin
           </a>
           <ol className="flex flex-col gap-2">

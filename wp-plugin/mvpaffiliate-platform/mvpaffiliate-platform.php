@@ -1,13 +1,13 @@
 <?php
 /**
- * Plugin Name: MVP Affiliate
+ * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
- * Description: Connects this WordPress site to MVP Affiliate. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.0
+ * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
+ * Version: 1.0.1
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
- * Text Domain: mvp-affiliate
+ * Text Domain: mvpaffiliate-platform
  * Requires at least: 5.6
  * Requires PHP: 7.4
  */
