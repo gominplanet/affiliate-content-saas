@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LET'S TECH YOUR LIFE — Theme Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<style>
+:root {
+  --mvp-primary:        #0071e3;
+  --mvp-secondary:      #34c759;
+  --mvp-text:           #1a1a1a;
+  --mvp-text-muted:     #5d5d65;
+  --mvp-text-dim:       #8a8a93;
+  --mvp-bg:             #ffffff;
+  --mvp-bg-soft:        #f7f7f8;
+  --mvp-border:         #e5e5ea;
+  --mvp-border-strong:  #d1d1d6;
+  --mvp-radius:         10px;
+  --mvp-radius-sm:      6px;
+  --mvp-shadow:         0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04);
+  --mvp-shadow-hover:   0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08);
+  --mvp-font-serif:     "Charter", "Georgia", "Cambria", "Times New Roman", serif;
+  --mvp-font-sans:      -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mvp-container:      1200px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--mvp-font-sans);
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--mvp-text);
+  background: var(--mvp-bg);
+  -webkit-font-smoothing: antialiased;
+}
+img, svg { max-width: 100%; height: auto; vertical-align: middle; }
+a { color: var(--mvp-primary); text-decoration: none; transition: opacity .15s ease; }
+a:hover { opacity: 0.75; }
+h1, h2, h3, h4 {
+  font-family: var(--mvp-font-serif);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--mvp-text);
+  margin: 0 0 0.5em;
+  letter-spacing: -0.01em;
+}
+p { margin: 0 0 1em; }
+
+/* Preview banner */
+.preview-banner {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  background: #1a1a1a;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  font-family: var(--mvp-font-sans);
+}
+.preview-banner-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  background: #34c759;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Container */
+.mvp-container { max-width: var(--mvp-container); margin: 0 auto; padding: 0 24px; }
+@media (max-width: 640px) { .mvp-container { padding: 0 16px; } }
+
+/* Utility bar */
+.mvp-utilitybar { background: #111; color: #fff; font-size: 13px; }
+.mvp-utilitybar-inner { display: flex; justify-content: flex-end; align-items: center; padding: 6px 24px; }
+.mvp-utilitybar-socials { display: flex; gap: 4px; }
+.mvp-utilitybar-social {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  color: rgba(255,255,255,0.7); border-radius: 6px;
+}
+.mvp-utilitybar-social:hover { color: #fff; background: rgba(255,255,255,0.1); opacity: 1; }
+
+/* Logo banner */
+.mvp-logobanner { width: 100%; padding: 14px 20px; text-align: center; background: #000; }
+.mvp-logobanner-img { height: 56px; width: auto; max-width: 100%; object-fit: contain; }
+
+/* Main header */
+.mvp-header {
+  position: sticky; top: 0; z-index: 40;
+  background: rgba(255,255,255,0.98);
+  border-bottom: 1px solid var(--mvp-border);
+  backdrop-filter: saturate(180%) blur(10px);
+}
+.mvp-header-inner { display: flex; align-items: center; gap: 24px; padding: 16px 24px; }
+.mvp-header-brand { display: flex; flex-direction: column; gap: 2px; color: var(--mvp-text); }
+.mvp-header-brand:hover { opacity: 1; }
+.mvp-header-title { font-family: var(--mvp-font-serif); font-size: 22px; font-weight: 800; letter-spacing: -0.015em; }
+.mvp-header-tagline { font-size: 11px; color: var(--mvp-text-muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.mvp-header-nav { flex: 1; display: flex; justify-content: center; }
+.mvp-nav-menu { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; flex-wrap: wrap; }
+.mvp-nav-menu a {
+  display: inline-block; padding: 8px 14px;
+  color: var(--mvp-text); font-size: 14px; font-weight: 500;
+  border-radius: var(--mvp-radius-sm);
+}
+.mvp-nav-menu a:hover { background: var(--mvp-bg-soft); opacity: 1; color: var(--mvp-primary); }
+.mvp-header-icon { background: transparent; border: 0; padding: 8px; color: var(--mvp-text); border-radius: var(--mvp-radius-sm); cursor: pointer; }
+.mvp-header-icon:hover { background: var(--mvp-bg-soft); }
+@media (max-width: 900px) {
+  .mvp-header-nav { display: none; }
+}
+
+/* Hero */
+.mvp-hero {
+  padding: 56px 0 32px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--mvp-bg-soft) 0%, var(--mvp-bg) 100%);
+  border-bottom: 1px solid var(--mvp-border);
+}
+.mvp-hero-title { font-size: clamp(36px, 6vw, 56px); margin: 0 0 0.3em; }
+.mvp-hero-tagline { font-size: clamp(16px, 2vw, 19px); color: var(--mvp-text-muted); max-width: 640px; margin: 0 auto; }
+
+/* Sections */
+.mvp-section { padding: 56px 0; }
+.mvp-section-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin-bottom: 28px;
+  border-bottom: 2px solid var(--mvp-text); padding-bottom: 12px;
+}
+.mvp-section-title { font-size: 28px; margin: 0; }
+.mvp-section-link { font-family: var(--mvp-font-sans); font-size: 14px; font-weight: 600; color: var(--mvp-primary); }
+
+/* Featured grid */
+.mvp-featured-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 24px; }
+.mvp-featured-grid .mvp-card-hero { grid-row: span 3; }
+@media (max-width: 900px) {
+  .mvp-featured-grid { grid-template-columns: 1fr; }
+  .mvp-featured-grid .mvp-card-hero { grid-row: auto; }
+}
+
+/* Card grids */
+.mvp-grid { display: grid; gap: 24px; }
+.mvp-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mvp-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .mvp-grid-3, .mvp-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .mvp-grid-3, .mvp-grid-4 { grid-template-columns: 1fr; } }
+
+/* Card */
+.mvp-card { background: #fff; border-radius: var(--mvp-radius); overflow: hidden; transition: transform .15s ease, box-shadow .15s ease; }
+.mvp-card:hover { transform: translateY(-2px); box-shadow: var(--mvp-shadow-hover); }
+.mvp-card-link { color: var(--mvp-text); display: block; }
+.mvp-card-link:hover { opacity: 1; }
+.mvp-card-image { aspect-ratio: 16/9; overflow: hidden; background: var(--mvp-bg-soft); }
+.mvp-card-image img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s ease; }
+.mvp-card:hover .mvp-card-image img { transform: scale(1.03); }
+.mvp-card-body { padding: 16px 0; }
+.mvp-card-title { font-size: 19px; line-height: 1.25; margin: 8px 0; }
+.mvp-card-hero .mvp-card-title { font-size: 32px; line-height: 1.15; }
+.mvp-card-excerpt { color: var(--mvp-text-muted); font-size: 15px; margin: 0 0 12px; }
+.mvp-card-meta { font-size: 13px; color: var(--mvp-text-dim); }
+.mvp-card:hover .mvp-card-title { color: var(--mvp-primary); }
+.mvp-category-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mvp-primary); }
+.mvp-byline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mvp-text-dim); }
+
+/* Category cards */
+.mvp-section-categories { background: var(--mvp-bg-soft); }
+.mvp-category-card {
+  display: block; background: #fff; padding: 28px;
+  border-radius: var(--mvp-radius); border: 1px solid var(--mvp-border);
+  color: var(--mvp-text);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.mvp-category-card:hover { border-color: var(--mvp-primary); transform: translateY(-2px); opacity: 1; }
+.mvp-category-card-title { font-size: 22px; margin: 0 0 6px; }
+.mvp-category-card-count { font-size: 14px; color: var(--mvp-primary); margin: 0; font-weight: 600; }
+
+/* Single post */
+.mvp-single { padding: 32px 0 56px; }
+.mvp-single-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 48px; align-items: start; }
+@media (max-width: 1000px) { .mvp-single-layout { grid-template-columns: 1fr; gap: 32px; } }
+.mvp-single-title { font-size: clamp(28px, 4.5vw, 44px); line-height: 1.15; margin: 8px 0 12px; }
+.mvp-single-dek { font-size: 19px; color: var(--mvp-text-muted); line-height: 1.5; margin: 0 0 20px; }
+.mvp-single-featured { margin: 0 0 28px; }
+.mvp-single-featured img { width: 100%; border-radius: var(--mvp-radius); display: block; }
+.mvp-single-body { font-size: 18px; line-height: 1.7; }
+.mvp-single-body p { margin: 0 0 1.2em; }
+.mvp-single-body h2 { font-size: 28px; margin: 1.6em 0 0.5em; padding-bottom: 8px; border-bottom: 1px solid var(--mvp-border); }
+.mvp-single-body blockquote {
+  border-left: 3px solid var(--mvp-primary);
+  margin: 24px 0; padding: 4px 0 4px 20px;
+  font-family: var(--mvp-font-serif); font-size: 22px; font-style: italic;
+  color: var(--mvp-text-muted);
+}
+.mvp-ourpick {
+  background: var(--mvp-bg-soft);
+  border: 2px solid var(--mvp-primary);
+  border-radius: var(--mvp-radius);
+  padding: 24px; margin: 32px 0;
+  display: grid; grid-template-columns: 140px 1fr; gap: 20px; align-items: center;
+}
+.mvp-ourpick img { width: 100%; border-radius: 8px; }
+.mvp-ourpick-label { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mvp-primary); margin-bottom: 6px; }
+.mvp-ourpick-name { font-family: var(--mvp-font-serif); font-size: 22px; font-weight: 700; margin: 0 0 8px; }
+.mvp-button { display: inline-flex; align-items: center; padding: 10px 18px; background: var(--mvp-primary); color: #fff; border-radius: 999px; font-weight: 600; font-size: 14px; }
+
+.mvp-single-sidebar .widget { margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--mvp-border); }
+.mvp-widget-title { font-size: 14px; font-family: var(--mvp-font-sans); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 14px; }
+.mvp-ad-block { margin: 16px 0; border-radius: var(--mvp-radius); overflow: hidden; }
+.mvp-ad-block img { width: 100%; display: block; }
+
+/* Footer */
+.mvp-footer { margin-top: 80px; background: #111; color: #fff; font-size: 14px; }
+.mvp-footer-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 48px; padding: 56px 24px 32px; }
+@media (max-width: 900px) { .mvp-footer-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 540px) { .mvp-footer-grid { grid-template-columns: 1fr; } }
+.mvp-footer-heading { font-family: var(--mvp-font-sans); font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.5); margin: 0 0 14px; }
+.mvp-footer-headshot { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; margin-bottom: 12px; border: 2px solid rgba(255,255,255,0.15); }
+.mvp-footer-author-name { font-family: var(--mvp-font-serif); font-size: 18px; font-weight: 700; margin: 0 0 6px; }
+.mvp-footer-author-bio { color: rgba(255,255,255,0.7); line-height: 1.55; margin: 0; font-size: 13.5px; }
+.mvp-footer-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.mvp-footer-list a { color: rgba(255,255,255,0.75); }
+.mvp-footer-socials { display: flex; flex-wrap: wrap; gap: 8px; }
+.mvp-footer-social { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.1); color: #fff; }
+.mvp-footer-social:hover { background: var(--mvp-primary); opacity: 1; }
+.mvp-footer-disclaimer { background: rgba(0,0,0,0.3); padding: 16px 0; font-size: 12px; color: rgba(255,255,255,0.6); text-align: center; }
+.mvp-footer-disclaimer p { margin: 0; }
+.mvp-footer-bottom { padding: 20px 0; border-top: 1px solid rgba(255,255,255,0.08); }
+.mvp-footer-bottom-inner { display: flex; justify-content: space-between; align-items: center; }
+.mvp-footer-copyright { margin: 0; font-size: 12px; color: rgba(255,255,255,0.5); }
+
+/* Preview-only section divider */
+.preview-divider {
+  text-align: center; padding: 48px 0;
+  background: var(--mvp-bg-soft);
+  border-top: 1px dashed var(--mvp-border);
+  border-bottom: 1px dashed var(--mvp-border);
+}
+.preview-divider-label {
+  display: inline-block; padding: 8px 18px;
+  background: #1a1a1a; color: #fff;
+  border-radius: 999px; font-size: 12px;
+  font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+</style>
+</head>
+<body>
+
+<div class="preview-banner"><span class="preview-banner-dot"></span>Theme Preview · LET'S TECH YOUR LIFE</div>
+
+<!-- ── Utility bar (socials) ──────────────────────────────────────────── -->
+<div class="mvp-utilitybar">
+  <div class="mvp-utilitybar-inner">
+    <div class="mvp-utilitybar-socials">
+      <a href="#" class="mvp-utilitybar-social" title="YouTube"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1C4.5 20.5 12 20.5 12 20.5s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.8 15.5V8.5l6.3 3.5-6.3 3.5z"/></svg></a>
+      <a href="#" class="mvp-utilitybar-social" title="Instagram"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2.2c3.2 0 3.6 0 4.9.1 3.3.1 4.8 1.7 4.9 4.9.1 1.3.1 1.6.1 4.8 0 3.2 0 3.6-.1 4.8-.1 3.2-1.7 4.8-4.9 4.9-1.3.1-1.6.1-4.9.1-3.2 0-3.6 0-4.8-.1-3.3-.1-4.8-1.7-4.9-4.9C2.2 15.6 2.2 15.2 2.2 12c0-3.2 0-3.6.1-4.8C2.4 3.9 4 2.3 7.2 2.3c1.2-.1 1.6-.1 4.8-.1zM12 0C8.7 0 8.3 0 7.1.1 2.7.3.3 2.7.1 7.1.0 8.3 0 8.7 0 12c0 3.3 0 3.7.1 4.9.2 4.4 2.6 6.8 7 7C8.3 24 8.7 24 12 24c3.3 0 3.7 0 4.9-.1 4.4-.2 6.8-2.6 7-7 .1-1.2.1-1.6.1-4.9 0-3.3 0-3.7-.1-4.9C23.7 2.7 21.3.3 16.9.1 15.7 0 15.3 0 12 0zm0 5.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 12 5.8zm0 10.2a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.4-11.8a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z"/></svg></a>
+      <a href="#" class="mvp-utilitybar-social" title="X"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M18.3 1.5h3.5L14.3 10l8.8 11.5H16l-5.2-6.8-6 6.8H1.3l8-9.2L1 1.5h7l4.7 6.2 5.6-6.2zm-1.2 18.5h1.9L7 3.4H5L17.1 20z"/></svg></a>
+    </div>
+  </div>
+</div>
+
+<!-- ── Logo banner (placeholder logo) ──────────────────────────────────── -->
+<div class="mvp-logobanner">
+  <a href="#" style="display:inline-block;line-height:0;">
+    <span style="display:inline-flex;align-items:center;gap:12px;height:56px;color:#fff;font-family:var(--mvp-font-serif);font-size:24px;font-weight:800;letter-spacing:0.04em;">
+      <span style="display:inline-flex;width:42px;height:42px;border-radius:8px;background:linear-gradient(135deg,#0071e3,#5856d6);align-items:center;justify-content:center;font-size:22px;">⚡</span>
+      MVP
+    </span>
+  </a>
+</div>
+
+<!-- ── Main header ─────────────────────────────────────────────────────── -->
+<header class="mvp-header">
+  <div class="mvp-header-inner">
+    <a href="#" class="mvp-header-brand">
+      <span class="mvp-header-title">LET'S TECH YOUR LIFE</span>
+      <span class="mvp-header-tagline">Honest tech reviews for everyday people</span>
+    </a>
+    <nav class="mvp-header-nav">
+      <ul class="mvp-nav-menu">
+        <li><a href="#">Home</a></li>
+        <li><a href="#">Reviews</a></li>
+        <li><a href="#">Best of 2026</a></li>
+        <li><a href="#">Gear Guides</a></li>
+        <li><a href="#">About</a></li>
+      </ul>
+    </nav>
+    <button class="mvp-header-icon" title="Search">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-3.5-3.5"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Hero ───────────────────────────────────────────────────────── -->
+  <section class="mvp-hero">
+    <div class="mvp-container">
+      <h1 class="mvp-hero-title">LET'S TECH YOUR LIFE</h1>
+      <p class="mvp-hero-tagline">Honest reviews of the gadgets, gear, and tools we actually use every day.</p>
+    </div>
+  </section>
+
+  <!-- ── Featured grid ──────────────────────────────────────────────── -->
+  <section class="mvp-section">
+    <div class="mvp-container">
+      <div class="mvp-featured-grid">
+        <article class="mvp-card mvp-card-hero">
+          <a href="#" class="mvp-card-link">
+            <div class="mvp-card-image"><img src="https://picsum.photos/seed/hero/1200/675" alt="" /></div>
+            <div class="mvp-card-body">
+              <span class="mvp-category-badge">Headphones</span>
+              <h2 class="mvp-card-title">Sony WH-1000XM6 Review: Still the Noise-Canceling King</h2>
+              <p class="mvp-card-excerpt">After six weeks of daily commuting and three transatlantic flights, we have thoughts on whether Sony's latest flagship is worth the upgrade.</p>
+              <div class="mvp-card-meta">
+                <div class="mvp-byline"><span>By Paul Boom</span> · <time>May 12, 2026</time></div>
+              </div>
+            </div>
+          </a>
+        </article>
+
+        <article class="mvp-card mvp-card-secondary">
+          <a href="#" class="mvp-card-link">
+            <div class="mvp-card-image"><img src="https://picsum.photos/seed/laptop/640/360" alt="" /></div>
+            <div class="mvp-card-body">
+              <span class="mvp-category-badge">Laptops</span>
+              <h2 class="mvp-card-title">The M5 MacBook Air Is Almost Too Good for Its Price</h2>
+              <div class="mvp-card-meta"><div class="mvp-byline"><span>Paul Boom</span> · <time>May 10</time></div></div>
+            </div>
+          </a>
+        </article>
+
+        <article class="mvp-card mvp-card-secondary">
+          <a href="#" class="mvp-card-link">
+            <div class="mvp-card-image"><img src="https://picsum.photos/seed/camera/640/360" alt="" /></div>
+            <div class="mvp-card-body">
+              <span class="mvp-category-badge">Cameras</span>
+              <h2 class="mvp-card-title">Fujifilm X-T5 vs Sony α6700: We Spent a Month With Both</h2>
+              <div class="mvp-card-meta"><div class="mvp-byline"><span>Paul Boom</span> · <time>May 8</time></div></div>
+            </div>
+          </a>
+        </article>
+
+        <article class="mvp-card mvp-card-secondary">
+          <a href="#" class="mvp-card-link">
+            <div class="mvp-card-image"><img src="https://picsum.photos/seed/desk/640/360" alt="" /></div>
+            <div class="mvp-card-body">
+              <span class="mvp-category-badge">Home Office</span>
+              <h2 class="mvp-card-title">Best Standing Desk Under $400: We Tested Eight</h2>
+              <div class="mvp-card-meta"><div class="mvp-byline"><span>Paul Boom</span> · <time>May 5</time></div></div>
+            </div>
+          </a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Latest reviews grid ────────────────────────────────────────── -->
+  <section class="mvp-section">
+    <div class="mvp-container">
+      <header class="mvp-section-header">
+        <h2 class="mvp-section-title">Latest Reviews</h2>
+        <a href="#" class="mvp-section-link">All reviews →</a>
+      </header>
+      <div class="mvp-grid mvp-grid-3">
+        <article class="mvp-card"><a href="#" class="mvp-card-link">
+          <div class="mvp-card-image"><img src="https://picsum.photos/seed/keyboard/640/360" alt="" /></div>
+          <div class="mvp-card-body"><span class="mvp-category-badge">Accessories</span><h3 class="mvp-card-title">Keychron Q1 Pro: The Mechanical Keyboard That Won Over Our Office</h3><div class="mvp-card-meta"><div class="mvp-byline">May 2</div></div></div>
+        </a></article>
+        <article class="mvp-card"><a href="#" class="mvp-card-link">
+          <div class="mvp-card-image"><img src="https://picsum.photos/seed/monitor/640/360" alt="" /></div>
+          <div class="mvp-card-body"><span class="mvp-category-badge">Monitors</span><h3 class="mvp-card-title">Best 4K Monitors for Mac Users in 2026</h3><div class="mvp-card-meta"><div class="mvp-byline">Apr 29</div></div></div>
+        </a></article>
+        <article class="mvp-card"><a href="#" class="mvp-card-link">
+          <div class="mvp-card-image"><img src="https://picsum.photos/seed/watch/640/360" alt="" /></div>
+          <div class="mvp-card-body"><span class="mvp-category-badge">Wearables</span><h3 class="mvp-card-title">Apple Watch Series 11 vs Garmin Fenix 8: A Runner's Take</h3><div class="mvp-card-meta"><div class="mvp-byline">Apr 26</div></div></div>
+        </a></article>
+        <article class="mvp-card"><a href="#" class="mvp-card-link">
+          <div class="mvp-card-image"><img src="https://picsum.photos/seed/speaker/640/360" alt="" /></div>
+          <div class="mvp-card-body"><span class="mvp-category-badge">Audio</span><h3 class="mvp-card-title">Sonos Era 100 Long-Term Review: Six Months Later</h3><div class="mvp-card-meta"><div class="mvp-byline">Apr 22</div></div></div>
+        </a></article>
+        <article class="mvp-card"><a href="#" class="mvp-card-link">
+          <div class="mvp-card-image"><img src="https://picsum.photos/seed/phone/640/360" alt="" /></div>
+          <div class="mvp-card-body"><span class="mvp-category-badge">Phones</span><h3 class="mvp-card-title">iPhone 17 Pro Max: Worth the $1,299?</h3><div class="mvp-card-meta"><div class="mvp-byline">Apr 18</div></div></div>
+        </a></article>
+        <article class="mvp-card"><a href="#" class="mvp-card-link">
+          <div class="mvp-card-image"><img src="https://picsum.photos/seed/charger/640/360" alt="" /></div>
+          <div class="mvp-card-body"><span class="mvp-category-badge">Charging</span><h3 class="mvp-card-title">The Best USB-C Chargers for Everything in Your Bag</h3><div class="mvp-card-meta"><div class="mvp-byline">Apr 15</div></div></div>
+        </a></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Categories ─────────────────────────────────────────────────── -->
+  <section class="mvp-section mvp-section-categories">
+    <div class="mvp-container">
+      <header class="mvp-section-header">
+        <h2 class="mvp-section-title">Browse by Category</h2>
+      </header>
+      <div class="mvp-grid mvp-grid-3">
+        <a href="#" class="mvp-category-card">
+          <h3 class="mvp-category-card-title">Headphones</h3>
+          <p class="mvp-category-card-count">18 reviews →</p>
+        </a>
+        <a href="#" class="mvp-category-card">
+          <h3 class="mvp-category-card-title">Laptops</h3>
+          <p class="mvp-category-card-count">14 reviews →</p>
+        </a>
+        <a href="#" class="mvp-category-card">
+          <h3 class="mvp-category-card-title">Home Office</h3>
+          <p class="mvp-category-card-count">9 reviews →</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Preview divider ────────────────────────────────────────────── -->
+  <div class="preview-divider">
+    <span class="preview-divider-label">↓ Below: single review post layout ↓</span>
+  </div>
+
+  <!-- ── Single post preview ────────────────────────────────────────── -->
+  <article class="mvp-single">
+    <div class="mvp-container mvp-single-layout">
+      <div>
+        <header style="margin-bottom:24px;">
+          <span class="mvp-category-badge">Headphones</span>
+          <h1 class="mvp-single-title">Sony WH-1000XM6 Review: Still the Noise-Canceling King</h1>
+          <p class="mvp-single-dek">After six weeks of daily commuting and three transatlantic flights, here's whether Sony's latest flagship is worth the upgrade.</p>
+          <div class="mvp-byline"><span>By Paul Boom</span> · <time>May 12, 2026</time></div>
+        </header>
+
+        <figure class="mvp-single-featured">
+          <img src="https://picsum.photos/seed/post-hero/1200/675" alt="" />
+        </figure>
+
+        <div class="mvp-single-body">
+          <p>Sony's WH-1000X line has been the default recommendation for premium wireless headphones for the better part of a decade. The XM6 doesn't reinvent the formula — it sharpens it. New drivers, a more refined headband, and noise canceling that genuinely surprised us on a noisy 7-hour flight.</p>
+
+          <div class="mvp-ourpick">
+            <img src="https://picsum.photos/seed/pick/280/280" alt="" />
+            <div>
+              <span class="mvp-ourpick-label">Our Pick</span>
+              <h3 class="mvp-ourpick-name">Sony WH-1000XM6</h3>
+              <p style="margin:0 0 12px;color:var(--mvp-text-muted);font-size:14px;">Best overall noise-canceling headphones in 2026. Comfortable for all-day wear, best-in-class ANC, 32-hour battery.</p>
+              <a href="#" class="mvp-button">$399 on Amazon →</a>
+            </div>
+          </div>
+
+          <h2>What's new vs the XM5</h2>
+          <p>The headband is the most noticeable change in the hand — Sony shaved 12 grams off the previous model and the clamping force is gentler. After eight hours of wear during a transatlantic flight, we didn't have the temple soreness that the XM5 sometimes produced.</p>
+
+          <blockquote>"The noise canceling on a 737 was good enough that I forgot I was on a plane. That doesn't happen with most headphones."</blockquote>
+
+          <p>Audio quality is the area where Sony was already class-leading and the XM6 nudges it forward without changing the signature. Bass is tight, midrange is more open than before, and the treble has lost a hint of the sibilance that some critics flagged on the XM5.</p>
+
+          <h2>Battery life and quick charge</h2>
+          <p>Sony rates the XM6 at 32 hours with ANC on, and our testing put it at around 29 — close enough. The bigger win is the quick charge: 10 minutes on USB-PD nets you about 5 hours of playback, which we can confirm.</p>
+        </div>
+      </div>
+
+      <aside class="mvp-single-sidebar">
+        <section class="widget">
+          <h3 class="mvp-widget-title">Top Reviews</h3>
+          <ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px;">
+            <li><a href="#" style="display:flex;gap:12px;align-items:flex-start;color:var(--mvp-text);text-decoration:none;"><img src="https://picsum.photos/seed/t1/120/68" style="width:80px;border-radius:6px;flex-shrink:0;" /><span style="font-size:14px;line-height:1.3;font-weight:500;">M5 MacBook Air vs M3 Pro: Which Should You Buy?</span></a></li>
+            <li><a href="#" style="display:flex;gap:12px;align-items:flex-start;color:var(--mvp-text);text-decoration:none;"><img src="https://picsum.photos/seed/t2/120/68" style="width:80px;border-radius:6px;flex-shrink:0;" /><span style="font-size:14px;line-height:1.3;font-weight:500;">Best USB-C Cables That Actually Last</span></a></li>
+            <li><a href="#" style="display:flex;gap:12px;align-items:flex-start;color:var(--mvp-text);text-decoration:none;"><img src="https://picsum.photos/seed/t3/120/68" style="width:80px;border-radius:6px;flex-shrink:0;" /><span style="font-size:14px;line-height:1.3;font-weight:500;">The Most-Used Apps on Our Phones in 2026</span></a></li>
+          </ul>
+        </section>
+        <section class="widget">
+          <h3 class="mvp-widget-title">Sponsored</h3>
+          <div class="mvp-ad-block"><img src="https://picsum.photos/seed/ad/350/450" alt="" /></div>
+        </section>
+      </aside>
+    </div>
+  </article>
+
+</main>
+
+<!-- ── Footer ─────────────────────────────────────────────────────────── -->
+<footer class="mvp-footer">
+  <div class="mvp-footer-grid">
+    <div>
+      <h3 class="mvp-footer-heading">About</h3>
+      <img src="https://i.pravatar.cc/120?u=paul" class="mvp-footer-headshot" alt="Paul Boom" />
+      <p class="mvp-footer-author-name">Paul Boom</p>
+      <p class="mvp-footer-author-bio">I've spent the last decade obsessing over consumer tech, testing everything from $20 cables to $4,000 cameras. Every review here is based on real-world use — no rushed unboxings.</p>
+    </div>
+    <div>
+      <h3 class="mvp-footer-heading">Categories</h3>
+      <ul class="mvp-footer-list">
+        <li><a href="#">Headphones</a></li>
+        <li><a href="#">Laptops</a></li>
+        <li><a href="#">Cameras</a></li>
+        <li><a href="#">Home Office</a></li>
+        <li><a href="#">Wearables</a></li>
+        <li><a href="#">Audio</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="mvp-footer-heading">Follow</h3>
+      <div class="mvp-footer-socials">
+        <a href="#" class="mvp-footer-social" title="YouTube"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1C4.5 20.5 12 20.5 12 20.5s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.8 15.5V8.5l6.3 3.5-6.3 3.5z"/></svg></a>
+        <a href="#" class="mvp-footer-social" title="Instagram"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2.2c3.2 0 3.6 0 4.9.1 3.3.1 4.8 1.7 4.9 4.9.1 1.3.1 1.6.1 4.8 0 3.2 0 3.6-.1 4.8-.1 3.2-1.7 4.8-4.9 4.9-1.3.1-1.6.1-4.9.1-3.2 0-3.6 0-4.8-.1-3.3-.1-4.8-1.7-4.9-4.9C2.2 15.6 2.2 15.2 2.2 12c0-3.2 0-3.6.1-4.8C2.4 3.9 4 2.3 7.2 2.3c1.2-.1 1.6-.1 4.8-.1zM12 0C8.7 0 8.3 0 7.1.1 2.7.3.3 2.7.1 7.1.0 8.3 0 8.7 0 12c0 3.3 0 3.7.1 4.9.2 4.4 2.6 6.8 7 7C8.3 24 8.7 24 12 24c3.3 0 3.7 0 4.9-.1 4.4-.2 6.8-2.6 7-7 .1-1.2.1-1.6.1-4.9 0-3.3 0-3.7-.1-4.9C23.7 2.7 21.3.3 16.9.1 15.7 0 15.3 0 12 0zm0 5.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 12 5.8zm0 10.2a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.4-11.8a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z"/></svg></a>
+        <a href="#" class="mvp-footer-social" title="X"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M18.3 1.5h3.5L14.3 10l8.8 11.5H16l-5.2-6.8-6 6.8H1.3l8-9.2L1 1.5h7l4.7 6.2 5.6-6.2zm-1.2 18.5h1.9L7 3.4H5L17.1 20z"/></svg></a>
+      </div>
+    </div>
+    <div>
+      <h3 class="mvp-footer-heading">Links</h3>
+      <ul class="mvp-footer-list">
+        <li><a href="#">About</a></li>
+        <li><a href="#">Contact</a></li>
+        <li><a href="#">Privacy Policy</a></li>
+        <li><a href="#">Affiliate Disclosure</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="mvp-footer-disclaimer">
+    <div class="mvp-container">
+      <p>This site contains affiliate links. We may earn a commission on purchases made through links on this site, at no extra cost to you.</p>
+    </div>
+  </div>
+  <div class="mvp-footer-bottom">
+    <div class="mvp-container mvp-footer-bottom-inner">
+      <p class="mvp-footer-copyright">© 2026 LET'S TECH YOUR LIFE. All rights reserved.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
