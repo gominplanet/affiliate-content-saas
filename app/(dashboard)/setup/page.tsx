@@ -6,7 +6,7 @@ import {
   ExternalLink, CheckCircle, ChevronRight, Loader2,
   Globe, Wrench, Sparkles, Link2, Rocket, Eye, EyeOff,
   Download, Upload, X, ArrowLeft, Building2, Wand2,
-  Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin,
+  Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin, Lock,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Suspense } from 'react'
@@ -590,21 +590,15 @@ function Step4({
   accentColor: string; setAccentColor: (v: string) => void
   onNext: (url: string) => void
 }) {
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
   const [appPassword, setAppPassword] = useState('')
   const [showAppPassword, setShowAppPassword] = useState(false)
-  const [showAppPasswordSection, setShowAppPasswordSection] = useState(false)
   const [customHex, setCustomHex] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingStep, setLoadingStep] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const activeColor = customHex.match(/^#[0-9a-fA-F]{6}$/) ? customHex : accentColor
-  const canSubmit = siteUrl.trim() && username.trim() && password.trim() && !loading
-
-  // Auto-open App Password section when error hints at it
-  const showAppPwHint = (error || '').includes('Application Password') || (error || '').includes('Hostinger')
+  const canSubmit = siteUrl.trim() && username.trim() && appPassword.trim() && !loading
 
   async function handleLaunch() {
     let url = siteUrl.trim()
@@ -616,8 +610,11 @@ function Step4({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          siteUrl: url, username: username.trim(), password: password.trim(),
-          appPassword: appPassword.trim() || undefined,
+          siteUrl: url, username: username.trim(),
+          // App password is the only supported auth path now.
+          // We send it as both `password` and `appPassword` for backward compat with the server route.
+          password: appPassword.trim(),
+          appPassword: appPassword.trim(),
           accentColor: activeColor,
           logoBase64: brandData.logo?.base64, logoMime: brandData.logo?.mime, logoFilename: brandData.logo?.filename,
           headshotBase64: brandData.headshot?.base64, headshotMime: brandData.headshot?.mime, headshotFilename: brandData.headshot?.filename,
@@ -672,70 +669,51 @@ function Step4({
         <div>
           <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress username</label>
           <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="admin" className="input-field" />
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Same username you use to log in to wp-admin.</p>
         </div>
+
+        {/* Application Password — the one and only auth path */}
+        <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Lock size={14} className="text-[#0071e3] flex-shrink-0" />
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Generate an Application Password</p>
+          </div>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
+            WordPress recommends a one-time secure token (called an <strong>Application Password</strong>) instead of using your real login password. It takes ~30 seconds:
+          </p>
+          <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1.5 list-decimal list-inside mb-3">
+            <li>Log into your wp-admin dashboard in a new tab</li>
+            <li>Click your username (top-right) → <strong>Edit Profile</strong></li>
+            <li>Scroll down to <strong>Application Passwords</strong></li>
+            <li>Type <strong>AffiliateOS</strong> as the name → click <strong>Add New Application Password</strong></li>
+            <li>Copy the password WordPress shows (looks like <code className="bg-white dark:bg-black/30 px-1 rounded font-mono text-[10px]">xxxx xxxx xxxx xxxx xxxx xxxx</code>) and paste it below</li>
+          </ol>
+          {siteUrl && (
+            <a
+              href={`${siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`}/wp-admin/profile.php#application-passwords-section`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:underline"
+            >
+              <ExternalLink size={11} /> Open the Application Passwords page on your site
+            </a>
+          )}
+        </div>
+
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">WordPress password</label>
+          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
           <div className="relative">
-            <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Your wp-admin login password" className="input-field pr-10" />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+            <input
+              type={showAppPassword ? 'text' : 'password'}
+              value={appPassword}
+              onChange={e => setAppPassword(e.target.value)}
+              placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
+              className="input-field pr-10 font-mono text-sm"
+            />
+            <button type="button" onClick={() => setShowAppPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93]">
+              {showAppPassword ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
           </div>
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">The password you use to log in to wp-admin.</p>
-        </div>
-
-        {/* Application Password (Hostinger / WAF bypass) */}
-        <div className={`rounded-xl border transition-colors ${showAppPasswordSection || showAppPwHint ? 'border-[#ff9500]/40 bg-[#ff9500]/5' : 'border-gray-200 dark:border-white/10'}`}>
-          <button
-            type="button"
-            onClick={() => setShowAppPasswordSection(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-left"
-          >
-            <span className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {showAppPwHint ? '⚠️ Login blocked — use an Application Password' : 'Having trouble connecting? (Hostinger users)'}
-            </span>
-            <ChevronRight size={14} className={`text-[#86868b] dark:text-[#8e8e93] transition-transform ${showAppPasswordSection || showAppPwHint ? 'rotate-90' : ''}`} />
-          </button>
-
-          {(showAppPasswordSection || showAppPwHint) && (
-            <div className="px-4 pb-4 flex flex-col gap-3 border-t border-[#ff9500]/20">
-              <div className="pt-3">
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-2">
-                  Some hosts (like Hostinger) block automated wp-admin logins from external servers. The fix is a <strong>WordPress Application Password</strong> — a separate token that bypasses this restriction.
-                </p>
-                <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside">
-                  <li>Open a new tab and log into your wp-admin dashboard</li>
-                  <li>Go to <strong>Users → Profile</strong> (or click your name top-right)</li>
-                  <li>Scroll to <strong>Application Passwords</strong> at the bottom</li>
-                  <li>Type <strong>AffiliateOS</strong> in the name field and click <strong>Add New</strong></li>
-                  <li>Copy the generated password and paste it below</li>
-                </ol>
-                <a
-                  href={siteUrl ? `${siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`}/wp-admin/profile.php#application-passwords-section` : '#'}
-                  target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-[#0071e3] hover:underline mt-2"
-                >
-                  <ExternalLink size={11} /> Open wp-admin profile page
-                </a>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Application Password</label>
-                <div className="relative">
-                  <input
-                    type={showAppPassword ? 'text' : 'password'}
-                    value={appPassword}
-                    onChange={e => setAppPassword(e.target.value)}
-                    placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
-                    className="input-field pr-10 font-mono text-sm"
-                  />
-                  <button type="button" onClick={() => setShowAppPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#86868b] dark:text-[#8e8e93]">
-                    {showAppPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
-                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Spaces are OK — WordPress formats it that way.</p>
-              </div>
-            </div>
-          )}
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Paste exactly as WordPress shows it — spaces are fine. NOT your regular wp-admin login password.</p>
         </div>
       </div>
 

@@ -157,50 +157,33 @@ export async function POST(request: Request) {
       youtubeUrl, instagramUrl, tiktokUrl, twitterUrl, pinterestUrl, facebookUrl,
     } = body
 
-    if (!rawUrl || !username || !password) {
-      return NextResponse.json({ error: 'siteUrl, username, and password are required' }, { status: 400 })
+    // Application Password is now the only supported auth path.
+    // Older clients sent the wp-admin password as `password`; newer clients send
+    // the Application Password as either `password` or `appPassword` (or both).
+    const appPwInput = (rawAppPassword || password || '').trim()
+    if (!rawUrl || !username || !appPwInput) {
+      return NextResponse.json({ error: 'siteUrl, username, and Application Password are required' }, { status: 400 })
     }
 
     let siteUrl = rawUrl.trim()
     if (!siteUrl.startsWith('http')) siteUrl = `https://${siteUrl}`
     siteUrl = siteUrl.replace(/\/wp-admin\/?.*$/, '').replace(/\/$/, '')
 
-    // ── 1. Authenticate ───────────────────────────────────────────────────────
-    // Prefer Application Password (Basic Auth) if provided — works on hosts
-    // like Hostinger that block automated wp-login.php requests.
-    // Fall back to cookie auth with the wp-admin password.
-    let auth: AuthCtx
-
-    if (rawAppPassword) {
-      const appPw = rawAppPassword.trim().replace(/\s+/g, ' ') // keep spaces for display, encode below
-      const encoded = Buffer.from(`${username}:${appPw.replace(/\s+/g, '')}`).toString('base64')
-      const basicHeader = `Basic ${encoded}`
-      // Verify it works
-      const testRes = await fetch(`${siteUrl}/wp-json/wp/v2/users/me`, {
-        headers: { Authorization: basicHeader },
-        signal: AbortSignal.timeout(10000),
-      })
-      if (!testRes.ok) {
-        const errBody = await testRes.text()
-        return NextResponse.json({
-          error: `Application Password authentication failed (${testRes.status}). Make sure you copied it correctly from wp-admin → Users → Profile → Application Passwords. ${errBody.slice(0, 120)}`,
-        }, { status: 400 })
-      }
-      auth = { mode: 'basic', header: basicHeader }
-    } else {
-      // Cookie auth
-      const loginResult = await wpLogin(siteUrl, username, password)
-      if (!loginResult.ok) {
-        return NextResponse.json({
-          error: loginResult.reason === 'unreachable'
-            ? 'Could not reach your WordPress site. Check the URL.'
-            : 'Login failed. If you\'re on Hostinger, use an Application Password instead (see the "Having trouble?" section below the password field).',
-          hint: 'use_app_password',
-        }, { status: 400 })
-      }
-      const nonce = await getNonce(siteUrl, loginResult.cookies)
-      auth = { mode: 'cookie', cookies: loginResult.cookies, nonce }
+    // ── 1. Authenticate via Basic Auth + Application Password ─────────────────
+    const appPwClean = appPwInput.replace(/\s+/g, '')
+    const encoded = Buffer.from(`${username}:${appPwClean}`).toString('base64')
+    const basicHeader = `Basic ${encoded}`
+    const testRes = await fetch(`${siteUrl}/wp-json/wp/v2/users/me`, {
+      headers: { Authorization: basicHeader },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!testRes.ok) {
+      const errBody = await testRes.text()
+      return NextResponse.json({
+        error: `Authentication failed (${testRes.status}). Generate an Application Password in wp-admin → Users → Profile → Application Passwords and paste it exactly as WordPress shows it. ${errBody.slice(0, 120)}`,
+      }, { status: 400 })
     }
+    const auth: AuthCtx = { mode: 'basic', header: basicHeader }
 
     // ── 2. Build the REST client ──────────────────────────────────────────────
     const req = wpFetch(siteUrl, auth)
@@ -236,21 +219,8 @@ export async function POST(request: Request) {
       ])
     } catch { /* non-fatal */ }
 
-    // ── 4. Generate Application Password (skip if we already have one) ─────────
-    // If user provided an Application Password, use that going forward.
-    // Otherwise try to generate one via the REST API (needs cookie auth).
-    let appPassword = rawAppPassword ? rawAppPassword.trim().replace(/\s+/g, '') : ''
-    if (!appPassword) {
-      try {
-        const appPwRes = await req<{ password: string }>('/users/me/application-passwords', {
-          method: 'POST',
-          body: JSON.stringify({ name: 'AffiliateOS' }),
-        })
-        appPassword = appPwRes.password.replace(/\s+/g, '')
-      } catch {
-        appPassword = password
-      }
-    }
+    // ── 4. The Application Password we just authenticated with is what we store ─
+    const appPassword = appPwClean
 
     // ── 5. Load brand profile ─────────────────────────────────────────────────
     const { data: brand } = await supabase
@@ -485,7 +455,10 @@ export async function POST(request: Request) {
         wordpress_url: siteUrl,
         wordpress_username: username,
         wordpress_app_password: appPassword,
-        wordpress_api_token: password,
+        // wordpress_api_token historically held the wp-admin password for cookie-auth fallbacks.
+        // We no longer use cookie auth — Application Password covers everything — so store the
+        // same value here for backward compatibility with any code that still reads it.
+        wordpress_api_token: appPassword,
         setup_status: 'site_ready',
       },
       { onConflict: 'user_id' },
