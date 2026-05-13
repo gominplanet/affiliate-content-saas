@@ -41,7 +41,7 @@ export default function BillingPage() {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
       setPostsUsed(count ?? 0)
-    } else if (limits.videosPerMonth !== null) {
+    } else if (limits.postsPerMonth !== null) {
       const { count } = await supabase
         .from('blog_posts')
         .select('id', { count: 'exact', head: true })
@@ -73,16 +73,16 @@ export default function BillingPage() {
 
   const currentTier = TIERS[tier]
   const isPaid = tier !== 'free' && tier !== 'admin'
-  const limit = currentTier.videosPerMonth ?? currentTier.lifetimeMax ?? null
+  const limit = currentTier.postsPerMonth ?? currentTier.lifetimeMax ?? null
   const usagePct = limit ? Math.min((postsUsed / limit) * 100, 100) : 0
   const usageLabel = currentTier.lifetimeMax
     ? 'posts used (lifetime)'
     : `posts used this month · resets the 1st`
 
   const planDetails = [
-    { tier: 'starter' as Tier, limit: '25 posts / month', price: 19 },
-    { tier: 'growth' as Tier,  limit: '75 posts / month', price: 39 },
-    { tier: 'pro' as Tier,     limit: '250 posts / month', price: 79 },
+    { tier: 'starter' as Tier, limit: '30 posts / month',  price: 49,  regularPrice: 99 },
+    { tier: 'growth' as Tier,  limit: '60 posts / month',  price: 99,  regularPrice: 199 },
+    { tier: 'pro' as Tier,     limit: '150 posts / month', price: 199, regularPrice: 299 },
   ]
 
   async function openPortal() {
@@ -222,7 +222,11 @@ export default function BillingPage() {
                   <div key={plan.tier} className="flex items-center justify-between p-4 rounded-xl border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors">
                     <div>
                       <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{TIERS[plan.tier].label}</p>
-                      <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{plan.limit} · ${plan.price}/month</p>
+                      <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+                        {plan.limit} ·{' '}
+                        <span className="line-through text-[#86868b]">${plan.regularPrice}</span>{' '}
+                        <span className="text-[#34c759] font-semibold">${plan.price}/month</span>
+                      </p>
                     </div>
                     <button
                       onClick={() => upgrade(plan.tier)}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createLinkedInService } from '@/services/linkedin'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
 
 export const maxDuration = 60
 
@@ -10,6 +11,21 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // LinkedIn posting is a Pro-only feature. Check tier before doing any work.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tierRow } = await (supabase as any)
+      .from('integrations')
+      .select('tier')
+      .eq('user_id', user.id)
+      .single()
+    const tier = (tierRow?.tier as Tier) ?? 'free'
+    if (!tierAllowsSocial(tier, 'linkedin')) {
+      return NextResponse.json(
+        { error: 'LinkedIn posting is a Pro-only feature. Upgrade your plan to publish to LinkedIn.' },
+        { status: 403 },
+      )
+    }
 
     const { postId } = await request.json()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })

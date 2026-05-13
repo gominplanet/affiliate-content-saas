@@ -1,12 +1,67 @@
 export type Tier = 'free' | 'starter' | 'growth' | 'pro' | 'admin'
 
 export const TIERS = {
-  free:    { label: 'Free',    price: 0,  videosPerMonth: null, videosPerDay: null, videosPerWeek: null, lifetimeMax: 5 },
-  starter: { label: 'Starter', price: 19, videosPerMonth: 25,   videosPerDay: null, videosPerWeek: null, lifetimeMax: null },
-  growth:  { label: 'Growth',  price: 39, videosPerMonth: 75,   videosPerDay: null, videosPerWeek: null, lifetimeMax: null },
-  pro:     { label: 'Pro',     price: 79, videosPerMonth: 250,  videosPerDay: null, videosPerWeek: null, lifetimeMax: null },
-  admin:   { label: 'Admin',   price: 0,  videosPerMonth: null, videosPerDay: null, videosPerWeek: null, lifetimeMax: null },
+  free:    {
+    label: 'Free',
+    price: 0,
+    regularPrice: 0,
+    postsPerMonth: null as number | null,
+    lifetimeMax: 5 as number | null,
+    sites: 1,
+    socials: ['facebook', 'pinterest', 'threads'] as readonly string[],
+    priorityQueue: false,
+    prioritySupport: false,
+  },
+  starter: {
+    label: 'Starter',
+    price: 49,
+    regularPrice: 99,
+    postsPerMonth: 30,
+    lifetimeMax: null as number | null,
+    sites: 1,
+    socials: ['facebook', 'pinterest', 'threads'] as readonly string[],
+    priorityQueue: false,
+    prioritySupport: false,
+  },
+  growth:  {
+    label: 'Growth',
+    price: 99,
+    regularPrice: 199,
+    postsPerMonth: 60,
+    lifetimeMax: null as number | null,
+    sites: 1,
+    socials: ['facebook', 'pinterest', 'threads'] as readonly string[],
+    priorityQueue: true,
+    prioritySupport: false,
+  },
+  pro:     {
+    label: 'Pro',
+    price: 199,
+    regularPrice: 299,
+    postsPerMonth: 150,
+    lifetimeMax: null as number | null,
+    sites: 1,
+    socials: ['facebook', 'pinterest', 'threads', 'linkedin'] as readonly string[],
+    priorityQueue: true,
+    prioritySupport: true,
+  },
+  admin:   {
+    label: 'Admin',
+    price: 0,
+    regularPrice: 0,
+    postsPerMonth: null as number | null,
+    lifetimeMax: null as number | null,
+    sites: 999,
+    socials: ['facebook', 'pinterest', 'threads', 'linkedin'] as readonly string[],
+    priorityQueue: true,
+    prioritySupport: true,
+  },
 } as const
+
+/** Whether a given tier can publish to a specific social platform. */
+export function tierAllowsSocial(tier: Tier, social: 'facebook' | 'pinterest' | 'threads' | 'linkedin'): boolean {
+  return TIERS[tier].socials.includes(social)
+}
 
 // Returns { allowed: true } or { allowed: false, reason, tier }
 export async function checkUsageLimit(
@@ -46,7 +101,7 @@ export async function checkUsageLimit(
 
   const now = new Date()
 
-  if (limits.videosPerMonth !== null) {
+  if (limits.postsPerMonth !== null) {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { count } = await (supabase as any)
@@ -55,10 +110,10 @@ export async function checkUsageLimit(
       .eq('user_id', userId)
       .gte('published_at', monthStart)
 
-    if ((count ?? 0) >= limits.videosPerMonth) {
+    if ((count ?? 0) >= limits.postsPerMonth) {
       return {
         allowed: false,
-        reason: `You've reached your ${limits.videosPerMonth} posts/month limit on the ${limits.label} plan. Resets on the 1st.`,
+        reason: `You've reached your ${limits.postsPerMonth} posts/month limit on the ${limits.label} plan. Resets on the 1st.`,
         tier,
       }
     }
