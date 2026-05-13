@@ -844,6 +844,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [pluginStatus, setPluginStatus] = useState<'idle' | 'checking' | 'active' | 'not_installed' | 'no_wp'>('idle')
+  const [pluginInstalling, setPluginInstalling] = useState(false)
+  const [pluginResult, setPluginResult] = useState<{ ok: boolean; message: string; installUrl?: string } | null>(null)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -946,6 +949,32 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       else setFixThumbsResult(`Fixed ${data.fixed} thumbnail${data.fixed !== 1 ? 's' : ''} (${data.skipped} already good, ${data.failed} failed).`)
     } catch { setFixThumbsResult('Request failed.') }
     finally { setFixingThumbs(false) }
+  }
+
+  async function checkPlugin() {
+    setPluginStatus('checking'); setPluginResult(null)
+    try {
+      const res = await fetch('/api/wordpress/install-plugin')
+      const data = await res.json()
+      setPluginStatus(data.status ?? 'not_installed')
+    } catch { setPluginStatus('not_installed') }
+  }
+
+  async function installPlugin() {
+    setPluginInstalling(true); setPluginResult(null)
+    try {
+      const res = await fetch('/api/wordpress/install-plugin', { method: 'POST' })
+      const data = await res.json()
+      if (data.ok) {
+        setPluginStatus('active')
+        setPluginResult({ ok: true, message: data.message })
+      } else if (data.error === 'code_snippets_missing') {
+        setPluginResult({ ok: false, message: data.message, installUrl: data.installUrl })
+      } else {
+        setPluginResult({ ok: false, message: data.error || 'Installation failed.' })
+      }
+    } catch { setPluginResult({ ok: false, message: 'Request failed — check your connection.' }) }
+    finally { setPluginInstalling(false) }
   }
 
   async function disconnectFacebook() {
@@ -1090,6 +1119,77 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             {fixThumbsResult && <span className={`text-xs font-medium ${fixThumbsResult.startsWith('Error') ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>{fixThumbsResult}</span>}
           </div>
         </div>
+      </div>
+
+      {/* WordPress Site Plugin */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#7c3aed"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">WordPress Site Plugin</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Enables banners, social bar, footer, and logo header on your blog</p>
+          </div>
+          {pluginStatus === 'active' && (
+            <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Active</span>
+          )}
+        </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          All the features you configure in <strong>Customize Blog</strong> — sidebar banners, in-content banners, logo header, social bar, and footer — require a small snippet of code installed on your WordPress site. Click <strong>Check Status</strong> to see if it&apos;s already installed, then <strong>Install / Update</strong> to push it in one click. You never need to touch WordPress manually.
+        </p>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          This uses the free <strong>Code Snippets</strong> plugin to safely inject the code. If it&apos;s not installed yet, we&apos;ll give you a direct link to install it — it only takes 30 seconds.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={checkPlugin}
+            disabled={pluginStatus === 'checking' || !wpUrl}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors"
+          >
+            {pluginStatus === 'checking' ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
+            Check status
+          </button>
+          <button
+            type="button"
+            onClick={installPlugin}
+            disabled={pluginInstalling || !wpUrl || !wpUsername || !wpAppPassword}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#7c3aed] text-white rounded-lg hover:bg-[#6d28d9] disabled:opacity-40 transition-colors"
+          >
+            {pluginInstalling ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+            {pluginStatus === 'active' ? 'Update code' : 'Install plugin code'}
+          </button>
+        </div>
+        {/* Status messages */}
+        {pluginStatus === 'active' && !pluginResult && (
+          <p className="text-xs text-[#34c759] mt-3 font-medium">✓ AffiliateOS is active on your site — all features are enabled.</p>
+        )}
+        {pluginStatus === 'not_installed' && !pluginResult && (
+          <p className="text-xs text-[#ff9500] mt-3 font-medium">Not installed yet. Click &quot;Install plugin code&quot; to set up in one click.</p>
+        )}
+        {pluginResult && (
+          <div className={`mt-3 rounded-lg px-3 py-2.5 text-xs ${pluginResult.ok ? 'bg-[#34c759]/10 text-[#1a7a3a]' : 'bg-[#ff3b30]/8 text-[#cc2200]'}`}>
+            {pluginResult.ok ? (
+              <p>{pluginResult.message}</p>
+            ) : pluginResult.installUrl ? (
+              <div className="flex flex-col gap-1.5">
+                <p className="font-medium">Code Snippets plugin not found on your site.</p>
+                <p>Install it first (it&apos;s free and takes 30 seconds), then click &quot;Install plugin code&quot; again.</p>
+                <a
+                  href={pluginResult.installUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-[#0071e3] hover:underline"
+                >
+                  <ExternalLink size={11} /> Open Code Snippets installer in WordPress
+                </a>
+              </div>
+            ) : (
+              <p>{pluginResult.message}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Facebook */}
