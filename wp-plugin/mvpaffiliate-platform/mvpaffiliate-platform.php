@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -26,31 +26,34 @@ if (!isset($_SERVER['HTTP_AUTHORIZATION']) && isset($_SERVER['REDIRECT_HTTP_AUTH
 
 // ─── 2. Activation: patch .htaccess for hosts where PHP-level fix isn't enough ─
 register_activation_hook(__FILE__, 'mvp_affiliate_activate');
-function mvp_affiliate_activate() {
-    $htaccess = ABSPATH . '.htaccess';
-    if (file_exists($htaccess) && is_writable($htaccess)) {
-        $content = file_get_contents($htaccess);
-        if (strpos($content, 'MVP Affiliate — forward Authorization') === false) {
-            $fix = "# MVP Affiliate — forward Authorization header to PHP\n"
-                . "<IfModule mod_rewrite.c>\n"
-                . "RewriteEngine On\n"
-                . "RewriteCond %{HTTP:Authorization} .\n"
-                . "RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]\n"
-                . "</IfModule>\n\n";
-            file_put_contents($htaccess, $fix . $content);
+if (!function_exists('mvp_affiliate_activate')) {
+    function mvp_affiliate_activate() {
+        $htaccess = ABSPATH . '.htaccess';
+        if (file_exists($htaccess) && is_writable($htaccess)) {
+            $content = file_get_contents($htaccess);
+            if (strpos($content, 'MVP Affiliate — forward Authorization') === false) {
+                $fix = "# MVP Affiliate — forward Authorization header to PHP\n"
+                    . "<IfModule mod_rewrite.c>\n"
+                    . "RewriteEngine On\n"
+                    . "RewriteCond %{HTTP:Authorization} .\n"
+                    . "RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]\n"
+                    . "</IfModule>\n\n";
+                file_put_contents($htaccess, $fix . $content);
+            }
         }
-    }
-    // Mark the install timestamp so the admin page knows we're freshly activated
-    if (!get_option('mvp_affiliate_installed_at')) {
-        update_option('mvp_affiliate_installed_at', time());
+        if (!get_option('mvp_affiliate_installed_at')) {
+            update_option('mvp_affiliate_installed_at', time());
+        }
     }
 }
 
 // ─── 3. Data accessor ─────────────────────────────────────────────────────────
-function mvp_affiliate_get_data() {
-    static $cache = null;
-    if ($cache === null) $cache = get_option('affiliateos_customizations', []);
-    return $cache;
+if (!function_exists('mvp_affiliate_get_data')) {
+    function mvp_affiliate_get_data() {
+        static $cache = null;
+        if ($cache === null) $cache = get_option('affiliateos_customizations', []);
+        return $cache;
+    }
 }
 
 // ─── 4. REST endpoints ────────────────────────────────────────────────────────
@@ -69,36 +72,45 @@ add_action('rest_api_init', function () {
     ]);
 });
 
-function mvp_affiliate_rest_get_customizations() {
-    return new WP_REST_Response(get_option('affiliateos_customizations', []), 200);
+if (!function_exists('mvp_affiliate_rest_get_customizations')) {
+    function mvp_affiliate_rest_get_customizations() {
+        return new WP_REST_Response(get_option('affiliateos_customizations', []), 200);
+    }
 }
 
-function mvp_affiliate_rest_save_customizations(WP_REST_Request $request) {
-    $data = $request->get_json_params();
-    update_option('affiliateos_customizations', $data);
-    do_action('litespeed_purge_all');
-    if (function_exists('wp_cache_flush')) wp_cache_flush();
-    return new WP_REST_Response(['saved' => true], 200);
+if (!function_exists('mvp_affiliate_rest_save_customizations')) {
+    function mvp_affiliate_rest_save_customizations(WP_REST_Request $request) {
+        $data = $request->get_json_params();
+        update_option('affiliateos_customizations', $data);
+        do_action('litespeed_purge_all');
+        if (function_exists('wp_cache_flush')) wp_cache_flush();
+        return new WP_REST_Response(['saved' => true], 200);
+    }
 }
 
 // ─── 5. Block renderer (shared by sidebar + in-content) ───────────────────────
-function mvp_affiliate_render_block($block) {
-    if (empty($block['enabled'])) return;
-    if (($block['type'] ?? 'image') === 'image') {
-        $img  = esc_url($block['imageUrl'] ?? '');
-        $link = esc_url($block['linkUrl'] ?? '');
-        if (!$img) return;
-        echo '<div class="affiliateos-block affiliateos-image-block" style="margin:12px 0;width:350px;max-width:100%;">';
-        if ($link) echo '<a href="' . $link . '" target="_blank" rel="nofollow noopener">';
-        echo '<img src="' . $img . '" alt="" style="width:100%;height:auto;display:block;" />';
-        if ($link) echo '</a>';
-        echo '</div>';
-    } else {
-        $html = $block['html'] ?? '';
-        if (!$html) return;
-        echo '<div class="affiliateos-block affiliateos-html-block" style="margin:12px 0;width:350px;max-width:100%;">';
-        echo $html;
-        echo '</div>';
+// Guarded — the MVP Affiliate theme defines a string-returning version of this
+// with the same name. Without the guard, activating the plugin while the theme
+// is active triggers a "Cannot redeclare" fatal error.
+if (!function_exists('mvp_affiliate_render_block')) {
+    function mvp_affiliate_render_block($block) {
+        if (empty($block['enabled'])) return;
+        if (($block['type'] ?? 'image') === 'image') {
+            $img  = esc_url($block['imageUrl'] ?? '');
+            $link = esc_url($block['linkUrl'] ?? '');
+            if (!$img) return;
+            echo '<div class="affiliateos-block affiliateos-image-block" style="margin:12px 0;width:350px;max-width:100%;">';
+            if ($link) echo '<a href="' . $link . '" target="_blank" rel="nofollow noopener">';
+            echo '<img src="' . $img . '" alt="" style="width:100%;height:auto;display:block;" />';
+            if ($link) echo '</a>';
+            echo '</div>';
+        } else {
+            $html = $block['html'] ?? '';
+            if (!$html) return;
+            echo '<div class="affiliateos-block affiliateos-html-block" style="margin:12px 0;width:350px;max-width:100%;">';
+            echo $html;
+            echo '</div>';
+        }
     }
 }
 
@@ -428,6 +440,7 @@ add_action('admin_menu', function () {
     );
 });
 
+if (!function_exists('mvp_affiliate_admin_page')) {
 function mvp_affiliate_admin_page() {
     if (!current_user_can('manage_options')) return;
 
@@ -533,30 +546,30 @@ function mvp_affiliate_admin_page() {
     </div>
     <?php
 }
+} // end if (!function_exists('mvp_affiliate_admin_page'))
 
 // ─── 16. MVP Affiliate theme installer ────────────────────────────────────────
-// Downloads the theme zip from MVP Affiliate's CDN and installs/activates it.
-// The theme slug after install is 'mvp-affiliate-theme'.
-function mvp_affiliate_install_theme() {
-    $existing = wp_get_theme('mvp-affiliate-theme');
-    if ($existing->exists()) {
+if (!function_exists('mvp_affiliate_install_theme')) {
+    function mvp_affiliate_install_theme() {
+        $existing = wp_get_theme('mvp-affiliate-theme');
+        if ($existing->exists()) {
+            switch_theme('mvp-affiliate-theme');
+            return true;
+        }
+        if (!class_exists('Theme_Upgrader')) {
+            require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        }
+        if (!class_exists('Automatic_Upgrader_Skin')) {
+            require_once ABSPATH . 'wp-admin/includes/class-automatic-upgrader-skin.php';
+        }
+        $zip_url = 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip';
+        $upgrader = new Theme_Upgrader(new Automatic_Upgrader_Skin());
+        $result = $upgrader->install($zip_url);
+        if (is_wp_error($result)) return $result;
+        if (!$result) return new WP_Error('install_failed', 'Theme installation failed. The download URL may be unreachable.');
         switch_theme('mvp-affiliate-theme');
         return true;
     }
-    if (!class_exists('Theme_Upgrader')) {
-        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-    }
-    if (!class_exists('Automatic_Upgrader_Skin')) {
-        require_once ABSPATH . 'wp-admin/includes/class-automatic-upgrader-skin.php';
-    }
-    // The zip is hosted alongside the plugin zip on MVP Affiliate.
-    $zip_url = 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip';
-    $upgrader = new Theme_Upgrader(new Automatic_Upgrader_Skin());
-    $result = $upgrader->install($zip_url);
-    if (is_wp_error($result)) return $result;
-    if (!$result) return new WP_Error('install_failed', 'Theme installation failed. The download URL may be unreachable.');
-    switch_theme('mvp-affiliate-theme');
-    return true;
 }
 
 // ─── 17. Add settings link on Plugins page ────────────────────────────────────
