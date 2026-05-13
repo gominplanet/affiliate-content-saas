@@ -4,7 +4,6 @@ import { generateHomePage } from '@/lib/wordpress-home-template'
 import { generateAboutPage } from '@/lib/wordpress-about-template'
 import { generatePrivacyPolicy } from '@/lib/wordpress-privacy-template'
 import { wpLogin, getNonce } from '@/lib/wordpress-login'
-import { AFFILIATEOS_FULL_PHP, AFFILIATEOS_SNIPPET_NAME } from '@/lib/wordpress-plugin'
 
 export const maxDuration = 60
 
@@ -39,83 +38,9 @@ function wpFetch(siteUrl: string, auth: AuthCtx) {
   }
 }
 
-// Install or update a Code Snippets plugin snippet
-async function ensureCodeSnippet(
-  siteUrl: string,
-  auth: AuthCtx,
-  name: string,
-  code: string,
-): Promise<void> {
-  const headers = authHeaders(auth, { 'Content-Type': 'application/json' })
-  // List existing snippets to find a match by name
-  const listRes = await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets`, { headers })
-  if (!listRes.ok) throw new Error(`Code Snippets list ${listRes.status}`)
-  const list = await listRes.json() as { snippets?: { id: number; name: string }[] }
-  const snippets = list.snippets ?? (Array.isArray(list) ? list as { id: number; name: string }[] : [])
-  const existing = snippets.find((s) => s.name === name)
-
-  const payload = { name, code, active: true, scope: 'global' }
-  if (existing) {
-    await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets/${existing.id}`, {
-      method: 'POST', headers, body: JSON.stringify(payload),
-    })
-  } else {
-    await fetch(`${siteUrl}/wp-json/code-snippets/v1/snippets`, {
-      method: 'POST', headers, body: JSON.stringify(payload),
-    })
-  }
-}
-
-const AFFILIATEOS_CORE_PHP = `add_action('rest_api_init', function () {
-    register_rest_route('affiliateos/v1', '/customizations', [
-        [
-            'methods'             => 'GET',
-            'callback'            => 'affiliateos_get_customizations',
-            'permission_callback' => '__return_true',
-        ],
-        [
-            'methods'             => 'POST',
-            'callback'            => 'affiliateos_save_customizations',
-            'permission_callback' => '__return_true',
-        ],
-    ]);
-});
-
-function affiliateos_save_customizations(WP_REST_Request \$request): WP_REST_Response {
-    \$data = \$request->get_json_params();
-    update_option('affiliateos_customizations', \$data);
-    // Purge page cache so changes appear immediately
-    do_action('litespeed_purge_all');
-    if (function_exists('wp_cache_flush')) wp_cache_flush();
-    return new WP_REST_Response(['saved' => true], 200);
-}
-
-function affiliateos_get_customizations(): WP_REST_Response {
-    \$data = get_option('affiliateos_customizations', []);
-    return new WP_REST_Response(\$data, 200);
-}`
-
-const FORCE_FRONT_PAGE_PHP = `add_filter('frontpage_template', function (\$template) {
-    return get_page_template();
-});`
-
-// Runs once on first activation to disable LiteSpeed Cache's REST API caching,
-// which otherwise serves stale customization data to the homepage JS.
-const LITESPEED_FIX_PHP = `if (!get_option('aff_ls_cache_patched')) {
-    // Newer LiteSpeed (per-key options)
-    update_option('litespeed.conf.cache-rest', 0);
-    // Older LiteSpeed (single array option)
-    \$conf = get_option('litespeed.conf', []);
-    if (is_array(\$conf)) {
-        \$conf['cache-rest'] = 0;
-        update_option('litespeed.conf', \$conf);
-    }
-    // Purge any already-cached REST responses
-    if (class_exists('LiteSpeed\\\\Purge')) {
-        do_action('litespeed_purge_all');
-    }
-    update_option('aff_ls_cache_patched', 1);
-}`
+// Legacy Code Snippets helpers + inline PHP blobs removed — the MVP Affiliate
+// Plugin + Theme handle everything that these snippets used to do (REST
+// endpoints, front-page template, LiteSpeed REST cache fix).
 
 async function wpMediaUpload(
   siteUrl: string,
@@ -219,16 +144,9 @@ export async function POST(request: Request) {
     // ── 3. Get current user ───────────────────────────────────────────────────
     const me = await req<{ name: string; roles?: string[] }>('/users/me')
 
-    // ── 3c. Install AffiliateOS PHP snippets via Code Snippets plugin ─────────
-    try {
-      await ensureCodeSnippet(siteUrl, auth, AFFILIATEOS_SNIPPET_NAME, AFFILIATEOS_FULL_PHP)
-    } catch { /* Code Snippets plugin may not be installed — step 16 will still try the endpoint */ }
-    try {
-      await ensureCodeSnippet(siteUrl, auth, 'Force Front Page Template', FORCE_FRONT_PAGE_PHP)
-    } catch { /* non-fatal */ }
-    try {
-      await ensureCodeSnippet(siteUrl, auth, 'Disable LiteSpeed REST Cache', LITESPEED_FIX_PHP)
-    } catch { /* non-fatal — site may not have LiteSpeed installed */ }
+    // Legacy Code Snippets installation removed — users now install the
+    // MVP Affiliate Plugin + Theme directly in wp-admin. See the setup
+    // wizard for the new flow.
 
     // ── 3b. Delete default WordPress content ─────────────────────────────────
     try {

@@ -62,21 +62,8 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         alert(json.error || 'Cache purge failed.')
         return
       }
-      // If the snippet refresh part failed but the purge succeeded, surface it.
-      // A 404 from snippets/v1 just means the Code Snippets plugin isn't installed,
-      // which is the expected/correct state when the MVP Affiliate Theme is active
-      // (the theme handles everything that the legacy snippet used to). So we only
-      // alert when there's a genuine error.
-      const debug = (json.debug as Record<string, unknown>) || {}
-      const snippetsListStatus = debug.snippetsListStatus as number | undefined
-      const snippetsMissing = snippetsListStatus === 404
-      if (debug.snippetError || (snippetsListStatus && !snippetsMissing)) {
-        alert(
-          `Cache purged, BUT the snippet refresh didn't fully succeed.\n\n` +
-          `Debug:\n${JSON.stringify(debug, null, 2)}\n\n` +
-          `This is why the logo banner / colors may not be appearing. Send this output to support.`
-        )
-      }
+      // Legacy Code Snippets error surface removed — the new theme-based
+      // architecture doesn't depend on Code Snippets.
       setPurged(true)
       setTimeout(() => setPurged(false), 2500)
     } catch (e) {

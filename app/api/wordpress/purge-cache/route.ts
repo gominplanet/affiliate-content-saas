@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { AFFILIATEOS_FULL_PHP, AFFILIATEOS_SNIPPET_NAME } from '@/lib/wordpress-plugin'
 
 export async function POST() {
   const supabase = await createServerClient()
@@ -56,71 +55,10 @@ export async function POST() {
     return NextResponse.json({ error: `WordPress returned ${res.status}: ${text.slice(0, 100)}` }, { status: 500 })
   }
 
-  // Force-refresh the AffiliateOS Code Snippet to the latest version (logo banner
-  // multi-hook fallback, accent color injection, etc.). Non-fatal — if anything
-  // here fails, the purge still succeeded.
+  // Legacy Code Snippets refresh removed — the MVP Affiliate Plugin + Theme
+  // architecture owns all rendering. Purging the WP page cache via the POST
+  // above (which triggers litespeed_purge_all) is sufficient.
   const debug: Record<string, unknown> = {}
-  if (authHeader) {
-    try {
-      const snippetsRes = await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets?per_page=100`, {
-        headers: { Authorization: authHeader },
-      })
-      if (snippetsRes.ok) {
-        const list = await snippetsRes.json() as { snippets?: { id: number; name: string }[] } | { id: number; name: string }[]
-        const snippets = Array.isArray(list) ? list : (list.snippets ?? [])
-        const existingSnip = snippets.find(s =>
-          s.name === AFFILIATEOS_SNIPPET_NAME ||
-          s.name === 'AffiliateOS' ||
-          s.name === 'AffiliateOS Core'
-        )
-        const snippetPayload = {
-          name: AFFILIATEOS_SNIPPET_NAME,
-          code: AFFILIATEOS_FULL_PHP,
-          active: true,
-          scope: 'global',
-        }
-        if (existingSnip) {
-          // Deactivate first to force Code Snippets to drop any cached parse
-          await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets/${existingSnip.id}/deactivate`, {
-            method: 'POST',
-            headers: { Authorization: authHeader },
-          }).catch(() => {})
-
-          // Update with new code
-          const upRes = await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets/${existingSnip.id}`, {
-            method: 'POST',
-            headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
-            body: JSON.stringify(snippetPayload),
-          })
-          debug.snippetUpdateStatus = upRes.status
-          if (!upRes.ok) {
-            debug.snippetUpdateBody = (await upRes.text()).slice(0, 300)
-          }
-
-          // Reactivate so the new code starts running immediately
-          const actRes = await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets/${existingSnip.id}/activate`, {
-            method: 'POST',
-            headers: { Authorization: authHeader },
-          })
-          debug.snippetActivateStatus = actRes.status
-          debug.snippetUpdated = existingSnip.id
-          debug.snippetCodeLength = AFFILIATEOS_FULL_PHP.length
-        } else {
-          // No snippet found — create one
-          const createRes = await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets`, {
-            method: 'POST',
-            headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
-            body: JSON.stringify(snippetPayload),
-          })
-          debug.snippetCreated = createRes.ok
-        }
-      } else {
-        debug.snippetsListStatus = snippetsRes.status
-      }
-    } catch (e) {
-      debug.snippetError = e instanceof Error ? e.message : String(e)
-    }
-  }
 
   return NextResponse.json({ ok: true, debug })
 }
