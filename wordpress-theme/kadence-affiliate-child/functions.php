@@ -163,6 +163,24 @@ add_action('kadence_after_main_content', function () {
     <?php
 });
 
+// ── Logo header banner — full-width bar at the very top of every page ─────────
+add_action('kadence_before_header', function () {
+    $data     = affiliateos_get_data();
+    $about    = $data['about'] ?? [];
+    $logo_url = $about['logoUrl'] ?? '';
+    if (!$logo_url) return;
+
+    $bg       = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
+    $logo_url = esc_url($logo_url);
+    ?>
+    <div class="affiliateos-logo-banner" style="background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;">
+      <a href="<?php echo esc_url(home_url('/')); ?>" style="display:inline-block;line-height:0;">
+        <img src="<?php echo $logo_url; ?>" alt="<?php echo esc_attr(get_bloginfo('name')); ?>" style="height:50px;width:auto;max-width:100%;object-fit:contain;" />
+      </a>
+    </div>
+    <?php
+}, 5); // priority 5 = before the social bar (priority 10)
+
 // ── Top social bar — slim strip above header ──────────────────────────────────
 add_action('kadence_before_header', function () {
     $data    = affiliateos_get_data();

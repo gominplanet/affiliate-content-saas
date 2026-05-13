@@ -41,6 +41,7 @@ interface CustomLink {
 interface AboutData {
   bio: string
   logoUrl: string
+  headerBg: 'black' | 'white'
 }
 
 interface FooterData {
@@ -55,7 +56,7 @@ interface BlogCustomizations {
   footer: FooterData
 }
 
-const emptyAbout: AboutData = { bio: '', logoUrl: '' }
+const emptyAbout: AboutData = { bio: '', logoUrl: '', headerBg: 'black' }
 const emptyFooter: FooterData = {
   socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
   links: [],
@@ -294,8 +295,9 @@ export default function CustomizePage() {
         contact:   bc.footer?.socials?.contact   || profile.contactEmail || '',
       }
       const about: AboutData = {
-        bio:     bc.about?.bio ?? bc.footer?.bio ?? '',
-        logoUrl: bc.about?.logoUrl ?? bc.about?.imageUrl ?? '',
+        bio:      bc.about?.bio ?? bc.footer?.bio ?? '',
+        logoUrl:  bc.about?.logoUrl ?? bc.about?.imageUrl ?? '',
+        headerBg: bc.about?.headerBg === 'white' ? 'white' : 'black',
       }
       setData({
         ...defaultCustomizations,
@@ -440,9 +442,14 @@ export default function CustomizePage() {
         >
           <div className="flex flex-col gap-5">
 
-            {/* Brand logo */}
-            <div className="flex flex-col gap-2">
+            {/* Brand logo + header banner */}
+            <div className="flex flex-col gap-3">
               <label className="text-xs font-medium text-[var(--text-2)] flex items-center gap-1.5"><ImageIcon size={13} /> Brand logo</label>
+              <p className="text-[11px] text-[var(--text-3)] -mt-1">
+                Once uploaded, your logo appears as a full-width banner at the top of every page on your blog.
+              </p>
+
+              {/* Upload / preview */}
               {data.about.logoUrl ? (
                 <div className="relative inline-block">
                   <img src={data.about.logoUrl} alt="Logo" className="h-16 rounded-xl object-contain border border-[var(--border-2)] px-2 bg-white" />
@@ -461,6 +468,32 @@ export default function CustomizePage() {
               <input ref={logoFileRef} type="file" accept="image/*" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoImage(f); e.target.value = '' }} />
               {aboutError && <p className="text-xs text-[#ff3b30]">{aboutError}</p>}
+
+              {/* Banner background colour toggle */}
+              {data.about.logoUrl && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-medium text-[var(--text-2)]">Banner background</label>
+                  <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit">
+                    {(['black', 'white'] as const).map(bg => (
+                      <button
+                        key={bg}
+                        onClick={() => updateAbout({ headerBg: bg })}
+                        className={`px-4 py-1.5 text-xs font-medium transition-colors capitalize ${data.about.headerBg === bg ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
+                      >
+                        {bg}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Live preview */}
+                  <div
+                    className="rounded-lg overflow-hidden border border-[var(--border-2)] flex items-center justify-center py-3 px-6"
+                    style={{ background: data.about.headerBg === 'white' ? '#ffffff' : '#000000' }}
+                  >
+                    <img src={data.about.logoUrl} alt="Banner preview" className="h-10 object-contain" />
+                  </div>
+                  <p className="text-[11px] text-[var(--text-3)]">Preview of how the banner will look on your site.</p>
+                </div>
+              )}
             </div>
 
             {/* Bio */}
