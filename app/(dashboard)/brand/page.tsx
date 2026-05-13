@@ -150,6 +150,8 @@ export default function BrandPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [wpPushNote, setWpPushNote] = useState<string | null>(null)
   const [logoUploading, setLogoUploading] = useState(false)
 
   const load = useCallback(async () => {
@@ -188,53 +190,47 @@ export default function BrandPage() {
 
   async function save() {
     setSaving(true)
+    setSaveError(null)
+    setWpPushNote(null)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    await supabase.from('brand_profiles').upsert(
+    if (!user) { setSaving(false); return }
+
+    // ── 1. Save to Supabase ─────────────────────────────────────────────────
+    const { error: dbError } = await supabase.from('brand_profiles').upsert(
       { ...data, user_id: user.id },
       { onConflict: 'user_id' },
     )
+    if (dbError) {
+      setSaving(false)
+      setSaveError(`Save failed: ${dbError.message}`)
+      return
+    }
 
-    // Sync to WordPress if connected
+    // ── 2. Sync to WordPress (route through our server so the same Application
+    //      Password used for everything else is reused — no btoa in the browser
+    //      and the route already handles auth-header edge cases). ────────────
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: intRow } = await (supabase as any)
-        .from('integrations')
-        .select('wordpress_url, wordpress_username, wordpress_app_password')
-        .eq('user_id', user.id)
-        .single()
-
-      if (intRow?.wordpress_url && intRow?.wordpress_username && intRow?.wordpress_app_password) {
-        const creds = btoa(`${intRow.wordpress_username}:${intRow.wordpress_app_password}`)
-
-        // Update WP user display name
-        await fetch(`${intRow.wordpress_url}/wp-json/wp/v2/users/me`, {
-          method: 'POST',
-          headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: data.author_name || data.name, nickname: data.author_name || data.name }),
-        }).catch(() => {})
-
-        // Sync brand profile to WordPress customizations
-        const existingRes = await fetch(`${intRow.wordpress_url}/wp-json/affiliateos/v1/customizations`, {
-          headers: { 'Authorization': `Basic ${creds}` },
-        }).catch(() => null)
-        const existing = existingRes?.ok ? await existingRes.json().catch(() => ({})) : {}
-
-        await fetch(`${intRow.wordpress_url}/wp-json/affiliateos/v1/customizations`, {
-          method: 'POST',
-          headers: { 'Authorization': `Basic ${creds}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...existing,
-            profile: {
-              ...(existing?.profile ?? {}),
-              brandName: data.name,
-              tagline: data.tagline,
-              authorName: data.author_name,
-            },
-          }),
-        }).catch(() => {})
+      const res = await fetch('/api/wordpress/sync-brand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          authorName: data.author_name,
+          brandName:  data.name,
+          tagline:    data.tagline,
+          authorBio:  data.author_bio,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setWpPushNote(json.error || 'Saved here, but the push to WordPress failed.')
+      } else if (json.wordpress === 'not_connected') {
+        // No WP connection — silent. The dashboard save still succeeded.
+      } else if (json.wordpress === 'failed') {
+        setWpPushNote(json.wordpressError || 'Saved here, but the push to WordPress failed.')
       }
-    } catch { /* non-fatal */ }
+    } catch (e) {
+      setWpPushNote(e instanceof Error ? e.message : 'WordPress push failed.')
+    }
 
     setSaving(false)
     setSaved(true)
@@ -302,6 +298,19 @@ export default function BrandPage() {
           </button>
         }
       />
+
+      {saveError && (
+        <div className="mb-4 rounded-xl border border-[#ff3b30]/30 bg-[#ff3b30]/5 px-4 py-3">
+          <p className="text-xs font-semibold text-[#ff3b30] mb-0.5">Save failed</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{saveError}</p>
+        </div>
+      )}
+      {wpPushNote && (
+        <div className="mb-4 rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3">
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Saved here, but the WordPress push failed</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{wpPushNote}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 gap-6">
         {/* Left — identity */}

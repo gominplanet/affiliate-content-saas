@@ -1,0 +1,94 @@
+/**
+ * Push Brand Profile changes (author name, brand name, tagline, bio) to the
+ * connected WordPress site.
+ *
+ * Reads stored Application Password from `integrations`, sends Basic Auth,
+ * merges into the existing affiliateos/v1/customizations payload.
+ */
+
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+
+export async function POST(request: Request) {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { authorName, brandName, tagline, authorBio } = await request.json() as {
+    authorName?: string
+    brandName?: string
+    tagline?: string
+    authorBio?: string
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: intRow } = await (supabase as any)
+    .from('integrations')
+    .select('wordpress_url, wordpress_username, wordpress_app_password')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
+    return NextResponse.json({ ok: true, wordpress: 'not_connected' })
+  }
+
+  const wpBase = intRow.wordpress_url.replace(/\/$/, '')
+  const cleanPw = intRow.wordpress_app_password.replace(/\s+/g, '')
+  const authHeader = `Basic ${Buffer.from(`${intRow.wordpress_username}:${cleanPw}`).toString('base64')}`
+
+  try {
+    // Update WP user display name (best-effort; non-fatal if it fails)
+    if (authorName) {
+      await fetch(`${wpBase}/wp-json/wp/v2/users/me`, {
+        method: 'POST',
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: authorName, nickname: authorName }),
+      }).catch(() => {})
+    }
+
+    // Merge into existing customizations
+    let existing: Record<string, unknown> = {}
+    try {
+      const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+        headers: { Authorization: authHeader },
+      })
+      if (getRes.ok) existing = await getRes.json() as Record<string, unknown>
+    } catch { /* start fresh */ }
+
+    const existingProfile = (existing.profile as Record<string, unknown>) ?? {}
+    const merged = {
+      ...existing,
+      profile: {
+        ...existingProfile,
+        ...(brandName  ? { brandName }  : {}),
+        ...(tagline    ? { tagline }    : {}),
+        ...(authorName ? { authorName } : {}),
+        ...(authorBio  ? { authorBio }  : {}),
+      },
+    }
+
+    const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      method: 'POST',
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify(merged),
+    })
+
+    if (!postRes.ok) {
+      const text = await postRes.text()
+      let msg: string
+      if (postRes.status === 401 || postRes.status === 403) {
+        msg = 'WordPress rejected the Application Password. Reconnect WordPress in Site & Integrations.'
+      } else if (postRes.status === 404) {
+        msg = 'MVP Affiliate plugin not responding. Make sure it\'s activated in wp-admin → Plugins.'
+      } else {
+        msg = `WordPress returned ${postRes.status}: ${text.slice(0, 200)}`
+      }
+      return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
+    }
+
+    return NextResponse.json({ ok: true, wordpress: 'pushed' })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
+  }
+}
