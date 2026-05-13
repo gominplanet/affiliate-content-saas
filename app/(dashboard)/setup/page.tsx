@@ -596,6 +596,7 @@ function Step4({
   const [loading, setLoading] = useState(false)
   const [loadingStep, setLoadingStep] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [errorHint, setErrorHint] = useState<string | null>(null)
 
   const activeColor = customHex.match(/^#[0-9a-fA-F]{6}$/) ? customHex : accentColor
   const canSubmit = siteUrl.trim() && username.trim() && appPassword.trim() && !loading
@@ -604,7 +605,7 @@ function Step4({
     let url = siteUrl.trim()
     if (!url.startsWith('http')) url = `https://${url}`
     url = url.replace(/\/wp-admin\/?.*$/, '').replace(/\/$/, '')
-    setLoading(true); setError(null); setLoadingStep('Connecting to WordPress…')
+    setLoading(true); setError(null); setErrorHint(null); setLoadingStep('Connecting to WordPress…')
     try {
       const res = await fetch('/api/wordpress/connect-and-setup', {
         method: 'POST',
@@ -628,7 +629,10 @@ function Step4({
       const raw = await res.text()
       let data: Record<string, string> = {}
       try { data = JSON.parse(raw) } catch { throw new Error(`Server returned unexpected response: ${raw.slice(0, 300)}`) }
-      if (!res.ok) throw new Error(data.error || 'Setup failed')
+      if (!res.ok) {
+        if (data.hint) setErrorHint(data.hint as unknown as string)
+        throw new Error(data.error || 'Setup failed')
+      }
       onNext(url)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Setup failed. Check your credentials.')
@@ -733,7 +737,41 @@ function Step4({
         </div>
       </div>
 
-      {error && <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{error}</p>}
+      {error && errorHint !== 'auth_header_stripped' && (
+        <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{error}</p>
+      )}
+
+      {errorHint === 'auth_header_stripped' && (
+        <div className="rounded-xl border border-[#ff9500]/40 bg-[#ff9500]/5 p-4">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">⚠️ Your host is stripping the Authorization header</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+            WordPress received the request but says &ldquo;not logged in&rdquo; — that means your hosting (common on Hostinger and some shared Apache setups) is stripping the auth header before it reaches WordPress. Pick one of these one-time fixes, then click Launch again:
+          </p>
+          <div className="bg-white dark:bg-black/30 rounded-lg p-3 mb-3 border border-[#ff9500]/20">
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Option A — Install a Code Snippet (easiest)</p>
+            <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside mb-2">
+              <li>In wp-admin, go to <strong>Snippets → Add New</strong></li>
+              <li>Title it <strong>Fix REST Auth Header</strong></li>
+              <li>Paste the code below and click <strong>Save Changes and Activate</strong></li>
+            </ol>
+            <pre className="text-[10px] bg-gray-50 dark:bg-white/5 rounded p-2 overflow-x-auto font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">{`if (!isset($_SERVER['HTTP_AUTHORIZATION']) && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+    $_SERVER['HTTP_AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+}`}</pre>
+          </div>
+          <div className="bg-white dark:bg-black/30 rounded-lg p-3 border border-[#ff9500]/20">
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Option B — Edit .htaccess (most reliable)</p>
+            <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside mb-2">
+              <li>Open Hostinger hPanel → <strong>File Manager</strong> → your site&apos;s <code className="bg-gray-50 dark:bg-white/5 px-1 rounded font-mono">public_html</code></li>
+              <li>Edit <code className="bg-gray-50 dark:bg-white/5 px-1 rounded font-mono">.htaccess</code> and add this above <code className="bg-gray-50 dark:bg-white/5 px-1 rounded font-mono"># BEGIN WordPress</code>:</li>
+            </ol>
+            <pre className="text-[10px] bg-gray-50 dark:bg-white/5 rounded p-2 overflow-x-auto font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">{`<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>`}</pre>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <button onClick={handleLaunch} disabled={!canSubmit} className="btn-primary">

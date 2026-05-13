@@ -179,6 +179,14 @@ export async function POST(request: Request) {
     })
     if (!testRes.ok) {
       const errBody = await testRes.text()
+      // rest_not_logged_in specifically means the Authorization header was stripped
+      // by the host before WordPress could read it — common on Hostinger / some Apache setups.
+      if (errBody.includes('rest_not_logged_in')) {
+        return NextResponse.json({
+          error: 'Your hosting strips the Authorization header before WordPress sees it (common on Hostinger).',
+          hint: 'auth_header_stripped',
+        }, { status: 400 })
+      }
       return NextResponse.json({
         error: `Authentication failed (${testRes.status}). Generate an Application Password in wp-admin → Users → Profile → Application Passwords and paste it exactly as WordPress shows it. ${errBody.slice(0, 120)}`,
       }, { status: 400 })
