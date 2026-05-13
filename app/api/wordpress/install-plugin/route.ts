@@ -255,7 +255,7 @@ add_action('wp_footer', function () {
     \$data    = affiliateos_get_data();
     \$footer  = \$data['footer'] ?? [];
     \$profile = \$data['profile'] ?? [];
-    \$bio          = trim(\$footer['bio'] ?? (\$profile['authorBio'] ?? ''));
+    \$bio          = trim(\$footer['bio'] ?? (\$profile['authorBio'] ?? (\$data['about']['bio'] ?? '')));
     \$socials      = \$footer['socials'] ?? [];
     if (empty(\$socials['youtube'])   && !empty(\$profile['youtubeUrl']))   \$socials['youtube']   = \$profile['youtubeUrl'];
     if (empty(\$socials['facebook'])  && !empty(\$profile['facebookUrl']))  \$socials['facebook']  = \$profile['facebookUrl'];

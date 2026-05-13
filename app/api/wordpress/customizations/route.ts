@@ -58,6 +58,9 @@ export async function POST(req: Request) {
 
       // Map footer.socials → profile keys the WP plugin expects
       const socials = customizations?.footer?.socials ?? {}
+      // Bio lives in `about.bio` on the frontend form (AboutData interface).
+      // The PHP plugin reads `footer.bio` OR `profile.authorBio`, so we write both.
+      const bio = customizations?.about?.bio || customizations?.footer?.bio || ''
       const mergedProfile = {
         ...(existing?.profile ?? {}),
         ...(socials.youtube   ? { youtubeUrl:   socials.youtube   } : {}),
@@ -68,12 +71,18 @@ export async function POST(req: Request) {
         ...(socials.pinterest ? { pinterestUrl: socials.pinterest } : {}),
         ...(socials.threads   ? { threadsUrl:   socials.threads   } : {}),
         ...(socials.contact   ? { contactEmail: socials.contact   } : {}),
-        ...(customizations?.footer?.bio ? { authorBio: customizations.footer.bio } : {}),
+        ...(bio ? { authorBio: bio } : {}),
+      }
+
+      // Also write bio into footer.bio so the PHP plugin's first-choice key is set
+      const mergedFooter = {
+        ...(customizations?.footer ?? {}),
+        ...(bio ? { bio } : {}),
       }
 
       await wpService.postCustomEndpoint(
         '/wp-json/affiliateos/v1/customizations',
-        { ...existing, ...customizations, profile: mergedProfile },
+        { ...existing, ...customizations, footer: mergedFooter, profile: mergedProfile },
       )
       return NextResponse.json({ ok: true, wordpress: 'pushed' })
     } catch (e) {
