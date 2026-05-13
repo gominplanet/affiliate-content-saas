@@ -123,6 +123,15 @@ interface BrandData {
   gear_sections: GearSection[]
   logo_url: string
   font_theme: string
+  // Social URLs — moved here from Customize Blog (single source of truth)
+  youtube_channel_url: string
+  instagram_url: string
+  tiktok_url: string
+  twitter_url: string
+  pinterest_url: string
+  facebook_url: string
+  threads_url: string
+  contact_email: string
 }
 
 // Curated font pairings shown to users. Theme renders these via Google Fonts.
@@ -183,6 +192,14 @@ const DEFAULT: BrandData = {
   gear_sections: [],
   logo_url: '',
   font_theme: 'editorial',
+  youtube_channel_url: '',
+  instagram_url: '',
+  tiktok_url: '',
+  twitter_url: '',
+  pinterest_url: '',
+  facebook_url: '',
+  threads_url: '',
+  contact_email: '',
 }
 
 export default function BrandPage() {
@@ -244,6 +261,14 @@ export default function BrandPage() {
         gear_sections: row.gear_sections ?? [],
         logo_url: row.logo_url ?? '',
         font_theme: row.font_theme ?? 'editorial',
+        youtube_channel_url: row.youtube_channel_url ?? '',
+        instagram_url: row.instagram_url ?? '',
+        tiktok_url: row.tiktok_url ?? '',
+        twitter_url: row.twitter_url ?? '',
+        pinterest_url: row.pinterest_url ?? '',
+        facebook_url: row.facebook_url ?? '',
+        threads_url: row.threads_url ?? '',
+        contact_email: row.contact_email ?? '',
       })
     }
     setLoading(false)
@@ -284,6 +309,15 @@ export default function BrandPage() {
           primaryColor:   data.primary_color,
           secondaryColor: data.secondary_color,
           fontTheme:      data.font_theme,
+          logoUrl:        data.logo_url,
+          youtubeUrl:     data.youtube_channel_url,
+          instagramUrl:   data.instagram_url,
+          tiktokUrl:      data.tiktok_url,
+          twitterUrl:     data.twitter_url,
+          pinterestUrl:   data.pinterest_url,
+          facebookUrl:    data.facebook_url,
+          threadsUrl:     data.threads_url,
+          contactEmail:   data.contact_email,
         }),
       })
       const json = await res.json().catch(() => ({}))
@@ -504,6 +538,37 @@ export default function BrandPage() {
               className="input-field resize-none leading-relaxed"
             />
             <WordCount text={data.author_bio} max={150} />
+          </div>
+
+          {/* Social links */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Social Links</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              Appear in the top utility bar and footer of your blog. Leave any blank that you don&apos;t use.
+            </p>
+            <div className="grid grid-cols-1 gap-3">
+              {[
+                { key: 'youtube_channel_url' as const, label: 'YouTube',   placeholder: 'https://youtube.com/@yourchannel' },
+                { key: 'instagram_url' as const,        label: 'Instagram', placeholder: 'https://instagram.com/yourhandle' },
+                { key: 'tiktok_url' as const,           label: 'TikTok',    placeholder: 'https://tiktok.com/@yourhandle' },
+                { key: 'twitter_url' as const,          label: 'X / Twitter', placeholder: 'https://x.com/yourhandle' },
+                { key: 'pinterest_url' as const,        label: 'Pinterest', placeholder: 'https://pinterest.com/yourprofile' },
+                { key: 'facebook_url' as const,         label: 'Facebook',  placeholder: 'https://facebook.com/yourpage' },
+                { key: 'threads_url' as const,          label: 'Threads',   placeholder: 'https://threads.net/@yourhandle' },
+                { key: 'contact_email' as const,        label: 'Contact email', placeholder: 'hello@yourdomain.com' },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">{label}</label>
+                  <input
+                    type={key === 'contact_email' ? 'email' : 'url'}
+                    value={data[key]}
+                    onChange={(e) => set(key, e.target.value)}
+                    placeholder={placeholder}
+                    className="input-field text-sm"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Target audience */}

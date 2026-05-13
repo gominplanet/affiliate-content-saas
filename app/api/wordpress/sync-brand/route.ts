@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { authorName, brandName, tagline, authorBio, primaryColor, secondaryColor, fontTheme } = await request.json() as {
+  const body = await request.json() as {
     authorName?: string
     brandName?: string
     tagline?: string
@@ -23,7 +23,22 @@ export async function POST(request: Request) {
     primaryColor?: string
     secondaryColor?: string
     fontTheme?: string
+    logoUrl?: string
+    youtubeUrl?: string
+    instagramUrl?: string
+    tiktokUrl?: string
+    twitterUrl?: string
+    pinterestUrl?: string
+    facebookUrl?: string
+    threadsUrl?: string
+    contactEmail?: string
   }
+  const {
+    authorName, brandName, tagline, authorBio,
+    primaryColor, secondaryColor, fontTheme, logoUrl,
+    youtubeUrl, instagramUrl, tiktokUrl, twitterUrl,
+    pinterestUrl, facebookUrl, threadsUrl, contactEmail,
+  } = body
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
@@ -96,6 +111,7 @@ export async function POST(request: Request) {
     } catch { /* start fresh */ }
 
     const existingProfile = (existing.profile as Record<string, unknown>) ?? {}
+    const existingAbout   = (existing.about   as Record<string, unknown>) ?? {}
     const merged = {
       ...existing,
       profile: {
@@ -108,6 +124,20 @@ export async function POST(request: Request) {
         ...(primaryColor   ? { primaryColor:   primaryColor   } : {}),
         ...(secondaryColor ? { secondaryColor: secondaryColor } : {}),
         ...(fontTheme      ? { fontTheme:      fontTheme      } : {}),
+        // Social URLs — moved from blog_customizations.footer.socials to brand profile
+        ...(youtubeUrl     ? { youtubeUrl }   : {}),
+        ...(instagramUrl   ? { instagramUrl } : {}),
+        ...(tiktokUrl      ? { tiktokUrl }    : {}),
+        ...(twitterUrl     ? { twitterUrl }   : {}),
+        ...(pinterestUrl   ? { pinterestUrl } : {}),
+        ...(facebookUrl    ? { facebookUrl }  : {}),
+        ...(threadsUrl     ? { threadsUrl }   : {}),
+        ...(contactEmail   ? { contactEmail } : {}),
+      },
+      // Logo URL goes into about.logoUrl so the theme renders the logo banner
+      about: {
+        ...existingAbout,
+        ...(logoUrl ? { logoUrl } : {}),
       },
     }
 

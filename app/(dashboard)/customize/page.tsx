@@ -5,8 +5,8 @@ import Header from '@/components/layout/Header'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
-  Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp,
-  Twitter, Mail, Upload, X, RefreshCw, Sparkles, Image as ImageIcon, AlertCircle,
+  ChevronDown, ChevronUp,
+  Upload, X, RefreshCw, Sparkles, AlertCircle,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -315,11 +315,7 @@ export default function CustomizePage() {
   const [purged, setPurged] = useState(false)
   const [userId, setUserId] = useState('')
 
-  // About Me state
-  const [rewriting, setRewriting] = useState(false)
-  const [logoUploading, setLogoUploading] = useState(false)
-  const [aboutError, setAboutError] = useState<string | null>(null)
-  const logoFileRef = useRef<HTMLInputElement>(null)
+  // (Logo upload / bio / socials editing was removed — those are managed in Brand Profile now.)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -399,43 +395,6 @@ export default function CustomizePage() {
     setData(d => ({ ...d, about: { ...d.about, ...patch } }))
   }
 
-  async function handleLogoImage(file: File) {
-    if (!file.type.startsWith('image/')) { setAboutError('Please upload an image file.'); return }
-    setLogoUploading(true); setAboutError(null)
-    try {
-      const url = await uploadImage(file, userId, 'about')
-      updateAbout({ logoUrl: url })
-    } catch (e) {
-      setAboutError(e instanceof Error ? e.message : 'Upload failed.')
-    } finally { setLogoUploading(false) }
-  }
-
-  async function rewriteBio() {
-    if (!data.about.bio.trim()) {
-      alert('Write a few notes about yourself first, then click Rewrite.')
-      return
-    }
-    setRewriting(true)
-    try {
-      const res = await fetch('/api/blog/rewrite-bio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: data.about.bio }),
-      })
-      if (!res.ok) {
-        let errMsg = 'Rewrite failed — please try again.'
-        try { errMsg = (await res.json()).error || errMsg } catch { /* HTML error page */ }
-        alert(errMsg)
-        return
-      }
-      const json = await res.json()
-      if (json.error) { alert(json.error); return }
-      updateAbout({ bio: json.bio })
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Rewrite failed. Please try again.')
-    } finally { setRewriting(false) }
-  }
-
   function updateSidebar(blocks: AdBlock[]) { setData(d => ({ ...d, sidebar: blocks })) }
   function addSidebarBlock() { updateSidebar([...data.sidebar, newBlock()]) }
   function updateSidebarBlock(id: string, b: AdBlock) { updateSidebar(data.sidebar.map(x => x.id === id ? b : x)) }
@@ -451,9 +410,6 @@ export default function CustomizePage() {
   }
 
   function updateFooter(patch: Partial<FooterData>) { setData(d => ({ ...d, footer: { ...d.footer, ...patch } })) }
-  function updateSocial(key: keyof SocialLinks, val: string) {
-    setData(d => ({ ...d, footer: { ...d.footer, socials: { ...d.footer.socials, [key]: val } } }))
-  }
   function addCustomLink() {
     updateFooter({ links: [...data.footer.links, { id: crypto.randomUUID(), label: '', url: '' }] })
   }
@@ -508,129 +464,48 @@ export default function CustomizePage() {
 
       <div className="flex flex-col gap-6 max-w-2xl">
 
-        {/* About Me */}
-        <Section
-          title="About Me"
-          description="Shown below the social icons on your homepage. Introduce yourself to your readers."
-        >
-          <div className="flex flex-col gap-5">
+        {/* Cross-link banner */}
+        <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 px-4 py-3 flex items-start gap-3">
+          <Sparkles size={16} className="text-[#0071e3] flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Brand stuff lives in Brand Profile</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+              Your logo, bio, social links, brand name, tagline, fonts, and colors are managed in <a href="/brand" className="text-[#0071e3] hover:underline font-medium">Brand Profile</a>. This page is for blog-specific layout: how the logo banner looks, sidebar/in-content ads, Pick of the Day, and custom footer links.
+            </p>
+          </div>
+        </div>
 
-            {/* Brand logo + header banner */}
+        {/* Logo banner background (display choice for the logo from Brand Profile) */}
+        <Section
+          title="Logo Banner"
+          description="The logo from your Brand Profile appears as a full-width strip at the top of every page. Pick the background color."
+        >
+          {data.about.logoUrl ? (
             <div className="flex flex-col gap-3">
-              <label className="text-xs font-medium text-[var(--text-2)] flex items-center gap-1.5"><ImageIcon size={13} /> Brand logo</label>
-              <p className="text-[11px] text-[var(--text-3)] -mt-1">
-                Once uploaded, your logo appears as a full-width banner at the top of every page on your blog.
-              </p>
-
-              {/* Upload / preview */}
-              {data.about.logoUrl ? (
-                <div className="relative inline-block">
-                  <img src={data.about.logoUrl} alt="Logo" className="h-16 rounded-xl object-contain border border-[var(--border-2)] px-2 bg-white" />
-                  <button onClick={() => updateAbout({ logoUrl: '' })}
-                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#ff3b30] text-white flex items-center justify-center shadow">
-                    <X size={10} />
-                  </button>
-                </div>
-              ) : (
-                <button type="button" onClick={() => logoFileRef.current?.click()} disabled={logoUploading}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors w-fit">
-                  {logoUploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                  {logoUploading ? 'Uploading…' : 'Upload logo'}
-                </button>
-              )}
-              <input ref={logoFileRef} type="file" accept="image/*" className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleLogoImage(f); e.target.value = '' }} />
-              {aboutError && <p className="text-xs text-[#ff3b30]">{aboutError}</p>}
-
-              {/* Banner background colour toggle */}
-              {data.about.logoUrl && (
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-medium text-[var(--text-2)]">Banner background</label>
-                  <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit">
-                    {(['black', 'white'] as const).map(bg => (
-                      <button
-                        key={bg}
-                        onClick={() => updateAbout({ headerBg: bg })}
-                        className={`px-4 py-1.5 text-xs font-medium transition-colors capitalize ${data.about.headerBg === bg ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
-                      >
-                        {bg}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Live preview */}
-                  <div
-                    className="rounded-lg overflow-hidden border border-[var(--border-2)] flex items-center justify-center py-3 px-6"
-                    style={{ background: data.about.headerBg === 'white' ? '#ffffff' : '#000000' }}
+              <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit">
+                {(['black', 'white'] as const).map(bg => (
+                  <button
+                    key={bg}
+                    onClick={() => updateAbout({ headerBg: bg })}
+                    className={`px-4 py-1.5 text-xs font-medium transition-colors capitalize ${data.about.headerBg === bg ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
                   >
-                    <img src={data.about.logoUrl} alt="Banner preview" className="h-10 object-contain" />
-                  </div>
-                  <p className="text-[11px] text-[var(--text-3)]">Preview of how the banner will look on your site.</p>
-                </div>
-              )}
-            </div>
-
-            {/* Bio */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-[var(--text-2)] flex items-center gap-1.5">
-                  <AlignLeft size={13} /> Bio
-                </label>
-                <button
-                  onClick={rewriteBio}
-                  disabled={rewriting}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 disabled:opacity-50 transition-colors"
-                >
-                  {rewriting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                  {rewriting ? 'Rewriting…' : 'MVP Affiliate Rewrite Tool'}
-                </button>
+                    {bg}
+                  </button>
+                ))}
               </div>
-              <textarea
-                value={data.about.bio}
-                onChange={e => updateAbout({ bio: e.target.value })}
-                rows={5}
-                placeholder="Write a few things about yourself — where you're from, why you started reviewing products, what you love, who you help. Then hit the AI Rewrite button and it will turn your notes into a polished bio."
-                className="input-field w-full resize-y"
-              />
-              <p className="text-[11px] text-[var(--text-3)] mt-1.5">
-                Tip: jot down a few sentences about yourself and click <strong>MVP Affiliate Rewrite Tool</strong> — the AI knows your brand and will write a polished bio for you. Edit it as you like.
-              </p>
-            </div>
-
-          </div>
-        </Section>
-
-        {/* Social Links */}
-        <Section
-          title="Social Links"
-          description="Displayed in a row below your latest reviews on the homepage."
-        >
-          <div className="flex flex-col gap-2">
-            {(
-              [
-                { key: 'youtube',   label: 'YouTube',       icon: Youtube,   placeholder: 'https://youtube.com/@yourchannel' },
-                { key: 'instagram', label: 'Instagram',     icon: Instagram, placeholder: 'https://instagram.com/yourhandle' },
-                { key: 'tiktok',   label: 'TikTok',        icon: Link,      placeholder: 'https://tiktok.com/@yourhandle' },
-                { key: 'twitter',  label: 'X / Twitter',   icon: Twitter,   placeholder: 'https://x.com/yourhandle' },
-                { key: 'pinterest',label: 'Pinterest',      icon: Link,      placeholder: 'https://pinterest.com/yourprofile' },
-                { key: 'facebook', label: 'Facebook',       icon: Facebook,  placeholder: 'https://facebook.com/yourpage' },
-                { key: 'threads',  label: 'Threads',        icon: Link,      placeholder: 'https://threads.net/@yourhandle' },
-                { key: 'contact',  label: 'Contact email',  icon: Mail,      placeholder: 'hello@yourdomain.com' },
-              ] as const
-            ).map(({ key, label, icon: Icon, placeholder }) => (
-              <div key={key} className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[var(--surface-2)] flex items-center justify-center flex-shrink-0">
-                  <Icon size={15} className="text-[var(--text-3)]" />
-                </div>
-                <input
-                  type={key === 'contact' ? 'email' : 'url'}
-                  value={data.footer.socials[key]}
-                  onChange={e => updateSocial(key, e.target.value)}
-                  placeholder={placeholder}
-                  className="input-field flex-1 text-sm"
-                />
+              <div
+                className="rounded-lg overflow-hidden border border-[var(--border-2)] flex items-center justify-center py-3 px-6"
+                style={{ background: data.about.headerBg === 'white' ? '#ffffff' : '#000000' }}
+              >
+                <img src={data.about.logoUrl} alt="Banner preview" className="h-10 object-contain" />
               </div>
-            ))}
-          </div>
+              <p className="text-[11px] text-[var(--text-3)]">Preview of how the banner will look on your site.</p>
+            </div>
+          ) : (
+            <p className="text-xs text-[var(--text-3)]">
+              Upload your logo in <a href="/brand" className="text-[#0071e3] hover:underline font-medium">Brand Profile</a> first, then come back here to choose the background color.
+            </p>
+          )}
         </Section>
 
         {/* Pick of the Day */}
