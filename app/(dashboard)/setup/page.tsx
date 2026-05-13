@@ -194,10 +194,12 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
       <div>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">How would you like to get started?</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Choose the option that fits your situation. You can always start fresh later.
+          Pick the path that matches your situation — they work very differently.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+        {/* Path A — existing site */}
         <button
           onClick={() => onSelect('existing')}
           className="group flex flex-col items-start gap-4 p-6 rounded-2xl border-2 border-gray-200 dark:border-white/10 hover:border-[#0071e3] bg-white dark:bg-[#1c1c1e] text-left transition-all hover:shadow-md"
@@ -206,16 +208,30 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
             <Building2 size={22} className="text-[#0071e3]" />
           </div>
           <div className="flex-1">
-            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">I already have a WordPress blog</p>
-            <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-              Connect your existing site. MVP Affiliate will only publish new posts — it won&apos;t touch your theme, design, or existing content.
+            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">I already have a WordPress blog</p>
+            <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
+              Connect your site and start publishing AI-generated posts directly to your existing blog.
             </p>
+            <div className="flex flex-col gap-1.5 mb-3">
+              {[
+                'Only publishes new posts you approve',
+                'Never touches your theme or design',
+                'Never modifies existing content',
+                'Never installs plugins or changes settings',
+              ].map(item => (
+                <div key={item} className="flex items-start gap-2">
+                  <Check size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" />
+                  <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{item}</span>
+                </div>
+              ))}
+            </div>
           </div>
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0071e3] group-hover:gap-2.5 transition-all">
-            Connect my site <ChevronRight size={15} />
+            Connect my existing site <ChevronRight size={15} />
           </span>
         </button>
 
+        {/* Path B — new site from scratch */}
         <button
           onClick={() => onSelect('new')}
           className="group flex flex-col items-start gap-4 p-6 rounded-2xl border-2 border-gray-200 dark:border-white/10 hover:border-[#34c759] bg-white dark:bg-[#1c1c1e] text-left transition-all hover:shadow-md"
@@ -224,15 +240,38 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
             <Wand2 size={22} className="text-[#34c759]" />
           </div>
           <div className="flex-1">
-            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Build me a new blog from scratch</p>
-            <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-              Start fresh with Hostinger hosting. We&apos;ll set up WordPress, install your theme, create your home page, and configure everything automatically.
+            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Build me a new blog from scratch</p>
+            <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
+              Start with a blank slate on Hostinger. We configure everything automatically.
+            </p>
+            <div className="flex flex-col gap-1.5 mb-1">
+              {[
+                'Installs & configures WordPress + theme',
+                'Creates your Home, About & Privacy pages',
+                'Sets up navigation, logo, and branding',
+                'Configures your affiliate sidebar & footer',
+              ].map(item => (
+                <div key={item} className="flex items-start gap-2">
+                  <Wand2 size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" />
+                  <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{item}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-[#ff9500] mt-2.5 flex items-center gap-1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Only use this on a brand-new empty WordPress install.
             </p>
           </div>
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#34c759] group-hover:gap-2.5 transition-all">
             Start the setup wizard <ChevronRight size={15} />
           </span>
         </button>
+
+      </div>
+
+      {/* Bottom clarification */}
+      <div className="rounded-xl bg-[var(--surface-2)] border border-[var(--border-1)] px-4 py-3 text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+        <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not sure which to pick?</strong> If you already have posts, subscribers, or a design you care about — choose <strong>existing site</strong>. The setup wizard is only for blank new installs and will overwrite default WordPress content.
       </div>
     </div>
   )
@@ -274,10 +313,29 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
         <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#0071e3] hover:opacity-75 mb-4">
           <ArrowLeft size={14} /> Back
         </button>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your WordPress site</h2>
-        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Enter the same username and password you use to log in to wp-admin. Works on all hosts including Hostinger.
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your existing WordPress site</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Enter the same username and password you use to log in to wp-admin.
         </p>
+        {/* Safety guarantee */}
+        <div className="rounded-xl border border-[#34c759]/30 bg-[#34c759]/5 px-4 py-3 flex gap-3 mb-2">
+          <Check size={15} className="text-[#34c759] flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your existing site is safe</p>
+            <ul className="flex flex-col gap-1">
+              {[
+                'We only ever create new posts — nothing else is touched',
+                'Your theme, design, and existing content stay exactly as they are',
+                'No plugins are installed, no settings are changed',
+                'You review and approve every post before it goes live',
+              ].map(line => (
+                <li key={line} className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex items-start gap-1.5">
+                  <span className="text-[#34c759] mt-0.5">·</span> {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4">
