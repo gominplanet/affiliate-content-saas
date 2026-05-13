@@ -122,7 +122,47 @@ interface BrandData {
   words_to_avoid: string
   gear_sections: GearSection[]
   logo_url: string
+  font_theme: string
 }
+
+// Curated font pairings shown to users. Theme renders these via Google Fonts.
+const FONT_THEMES = [
+  {
+    key: 'editorial',
+    name: 'Editorial',
+    description: 'Wirecutter-style. Serif headlines, sans body.',
+    heading: '"Charter", Georgia, serif',
+    body: '-apple-system, "Inter", sans-serif',
+  },
+  {
+    key: 'modern',
+    name: 'Modern',
+    description: 'Clean tech blog. Inter everywhere.',
+    heading: '"Inter", -apple-system, sans-serif',
+    body: '"Inter", -apple-system, sans-serif',
+  },
+  {
+    key: 'classic',
+    name: 'Classic Magazine',
+    description: 'Elegant editorial. Playfair Display + Lora.',
+    heading: '"Playfair Display", Georgia, serif',
+    body: '"Lora", Georgia, serif',
+  },
+  {
+    key: 'bold',
+    name: 'Bold Startup',
+    description: 'Geometric and confident. Space Grotesk + DM Sans.',
+    heading: '"Space Grotesk", -apple-system, sans-serif',
+    body: '"DM Sans", -apple-system, sans-serif',
+  },
+  {
+    key: 'minimal',
+    name: 'Minimal',
+    description: 'System fonts only. Fastest load, no Google Fonts.',
+    heading: '-apple-system, "Helvetica Neue", Arial, sans-serif',
+    body: '-apple-system, "Helvetica Neue", Arial, sans-serif',
+  },
+] as const
 
 const DEFAULT: BrandData = {
   name: '',
@@ -142,6 +182,7 @@ const DEFAULT: BrandData = {
   words_to_avoid: '',
   gear_sections: [],
   logo_url: '',
+  font_theme: 'editorial',
 }
 
 export default function BrandPage() {
@@ -202,6 +243,7 @@ export default function BrandPage() {
         words_to_avoid: row.words_to_avoid ?? '',
         gear_sections: row.gear_sections ?? [],
         logo_url: row.logo_url ?? '',
+        font_theme: row.font_theme ?? 'editorial',
       })
     }
     setLoading(false)
@@ -241,6 +283,7 @@ export default function BrandPage() {
           authorBio:      data.author_bio,
           primaryColor:   data.primary_color,
           secondaryColor: data.secondary_color,
+          fontTheme:      data.font_theme,
         }),
       })
       const json = await res.json().catch(() => ({}))
@@ -711,6 +754,45 @@ export default function BrandPage() {
                 value={data.secondary_color}
                 onChange={(c) => set('secondary_color', c)}
               />
+            </div>
+          </div>
+
+          {/* Fonts */}
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Typography</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Pick a font pairing for your blog. Applied site-wide.</p>
+            <div className="flex flex-col gap-2">
+              {FONT_THEMES.map(theme => {
+                const active = data.font_theme === theme.key
+                return (
+                  <button
+                    key={theme.key}
+                    type="button"
+                    onClick={() => set('font_theme', theme.key)}
+                    className={`text-left p-3 rounded-xl border transition-colors ${
+                      active
+                        ? 'border-[#0071e3] bg-[#0071e3]/5'
+                        : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span
+                        className="text-base font-bold text-[#1d1d1f] dark:text-[#f5f5f7]"
+                        style={{ fontFamily: theme.heading }}
+                      >
+                        {theme.name}
+                      </span>
+                      {active && <Check size={14} className="text-[#0071e3] flex-shrink-0" />}
+                    </div>
+                    <p
+                      className="text-xs text-[#6e6e73] dark:text-[#ebebf0] m-0"
+                      style={{ fontFamily: theme.body }}
+                    >
+                      {theme.description}
+                    </p>
+                  </button>
+                )
+              })}
             </div>
           </div>
         </div>

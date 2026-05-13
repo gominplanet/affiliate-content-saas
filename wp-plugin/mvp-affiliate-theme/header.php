@@ -12,16 +12,22 @@
 
 <?php
 $about    = mvp_affiliate_about();
+$profile  = mvp_affiliate_profile();
 $logo_url = $about['logoUrl'] ?? '';
 $bg       = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
 $brand    = get_bloginfo('name');
 $socials  = mvp_affiliate_socials();
+$disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
+if ($disclaimer === '') {
+    $disclaimer = 'This site contains affiliate links. We may earn a commission on purchases made through links on this site, at no extra cost to you.';
+}
 ?>
 
-<!-- Utility bar: socials only -->
-<?php if (!empty($socials)): ?>
+<!-- Utility bar: disclaimer + socials -->
 <div class="mvp-utilitybar">
   <div class="mvp-container mvp-utilitybar-inner">
+    <p class="mvp-utilitybar-disclaimer"><?php echo esc_html($disclaimer); ?></p>
+    <?php if (!empty($socials)): ?>
     <div class="mvp-utilitybar-socials">
       <?php foreach ($socials as $key => $url):
         $svg = mvp_affiliate_social_svg($key);
@@ -34,9 +40,9 @@ $socials  = mvp_affiliate_socials();
       </a>
       <?php endforeach; ?>
     </div>
+    <?php endif; ?>
   </div>
 </div>
-<?php endif; ?>
 
 <!-- Logo banner -->
 <?php if ($logo_url): ?>

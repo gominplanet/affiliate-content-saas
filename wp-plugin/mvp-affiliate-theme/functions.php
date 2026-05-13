@@ -50,6 +50,39 @@ add_action('widgets_init', function () {
     ]);
 });
 
+// ── Font theme map ──────────────────────────────────────────────────────────
+// Keys must match the FONT_THEMES list in the dashboard's BrandPage.
+function mvp_affiliate_font_theme_config(string $key): array {
+    $map = [
+        'editorial' => [
+            'google' => '',
+            'heading' => '"Charter", "Georgia", "Cambria", "Times New Roman", serif',
+            'body'    => '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        ],
+        'modern' => [
+            'google' => 'family=Inter:wght@400;500;600;700;800',
+            'heading' => '"Inter", -apple-system, BlinkMacSystemFont, sans-serif',
+            'body'    => '"Inter", -apple-system, BlinkMacSystemFont, sans-serif',
+        ],
+        'classic' => [
+            'google' => 'family=Playfair+Display:wght@700;800&family=Lora:wght@400;500',
+            'heading' => '"Playfair Display", Georgia, serif',
+            'body'    => '"Lora", Georgia, "Times New Roman", serif',
+        ],
+        'bold' => [
+            'google' => 'family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;700',
+            'heading' => '"Space Grotesk", -apple-system, BlinkMacSystemFont, sans-serif',
+            'body'    => '"DM Sans", -apple-system, BlinkMacSystemFont, sans-serif',
+        ],
+        'minimal' => [
+            'google' => '',
+            'heading' => '-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif',
+            'body'    => '-apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif',
+        ],
+    ];
+    return $map[$key] ?? $map['editorial'];
+}
+
 // ── Asset loading ───────────────────────────────────────────────────────────
 add_action('wp_enqueue_scripts', function () {
     wp_enqueue_style(
@@ -66,15 +99,31 @@ add_action('wp_enqueue_scripts', function () {
         true
     );
 
-    // Inject brand CSS variables based on saved customizations
+    // Brand colors + font theme from saved customizations
     $data    = mvp_affiliate_data();
     $profile = $data['profile'] ?? [];
-    $primary = trim($profile['primaryColor'] ?? ($profile['accentColor'] ?? '#0071e3'));
-    $secondary = trim($profile['secondaryColor'] ?? '#34c759');
+    $primary    = trim($profile['primaryColor'] ?? ($profile['accentColor'] ?? '#0071e3'));
+    $secondary  = trim($profile['secondaryColor'] ?? '#34c759');
+    $font_theme = trim($profile['fontTheme'] ?? 'editorial');
+    $fonts = mvp_affiliate_font_theme_config($font_theme);
+
+    // Google Fonts (if needed) — load BEFORE main.css so font-family is available
+    if (!empty($fonts['google'])) {
+        wp_enqueue_style(
+            'mvp-affiliate-fonts',
+            'https://fonts.googleapis.com/css2?' . $fonts['google'] . '&display=swap',
+            [],
+            null
+        );
+    }
+
+    // Inline CSS variable overrides
     $css = sprintf(
-        ':root {--mvp-primary:%s;--mvp-secondary:%s;}',
+        ':root {--mvp-primary:%s;--mvp-secondary:%s;--mvp-font-serif:%s;--mvp-font-sans:%s;}',
         esc_html($primary),
-        esc_html($secondary)
+        esc_html($secondary),
+        $fonts['heading'],
+        $fonts['body']
     );
     wp_add_inline_style('mvp-affiliate-main', $css);
 });

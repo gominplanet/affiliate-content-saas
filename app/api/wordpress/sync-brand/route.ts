@@ -15,13 +15,14 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { authorName, brandName, tagline, authorBio, primaryColor, secondaryColor } = await request.json() as {
+  const { authorName, brandName, tagline, authorBio, primaryColor, secondaryColor, fontTheme } = await request.json() as {
     authorName?: string
     brandName?: string
     tagline?: string
     authorBio?: string
     primaryColor?: string
     secondaryColor?: string
+    fontTheme?: string
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,6 +107,7 @@ export async function POST(request: Request) {
         ...(primaryColor   ? { accentColor:    primaryColor   } : {}),
         ...(primaryColor   ? { primaryColor:   primaryColor   } : {}),
         ...(secondaryColor ? { secondaryColor: secondaryColor } : {}),
+        ...(fontTheme      ? { fontTheme:      fontTheme      } : {}),
       },
     }
 

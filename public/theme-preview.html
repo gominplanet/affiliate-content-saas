@@ -83,14 +83,16 @@ p { margin: 0 0 1em; }
 
 /* Utility bar */
 .mvp-utilitybar { background: #111; color: #fff; font-size: 13px; }
-.mvp-utilitybar-inner { display: flex; justify-content: flex-end; align-items: center; padding: 6px 24px; }
-.mvp-utilitybar-socials { display: flex; gap: 4px; }
+.mvp-utilitybar-inner { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 6px 24px; }
+.mvp-utilitybar-disclaimer { margin: 0; font-size: 11.5px; color: rgba(255,255,255,0.65); line-height: 1.4; flex: 1; min-width: 0; }
+.mvp-utilitybar-socials { display: flex; gap: 4px; flex-shrink: 0; }
 .mvp-utilitybar-social {
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px;
   color: rgba(255,255,255,0.7); border-radius: 6px;
 }
 .mvp-utilitybar-social:hover { color: #fff; background: rgba(255,255,255,0.1); opacity: 1; }
+@media (max-width: 640px) { .mvp-utilitybar-disclaimer { font-size: 10.5px; } }
 
 /* Logo banner */
 .mvp-logobanner { width: 100%; padding: 14px 20px; text-align: center; background: #000; }
@@ -260,9 +262,10 @@ p { margin: 0 0 1em; }
 
 <div class="preview-banner"><span class="preview-banner-dot"></span>Theme Preview · LET'S TECH YOUR LIFE</div>
 
-<!-- ── Utility bar (socials) ──────────────────────────────────────────── -->
+<!-- ── Utility bar (disclaimer + socials) ─────────────────────────────── -->
 <div class="mvp-utilitybar">
   <div class="mvp-utilitybar-inner">
+    <p class="mvp-utilitybar-disclaimer">This site contains affiliate links. We may earn a commission on purchases made through links on this site, at no extra cost to you.</p>
     <div class="mvp-utilitybar-socials">
       <a href="#" class="mvp-utilitybar-social" title="YouTube"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1C4.5 20.5 12 20.5 12 20.5s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1C24 15.9 24 12 24 12s0-3.9-.5-5.8zM9.8 15.5V8.5l6.3 3.5-6.3 3.5z"/></svg></a>
       <a href="#" class="mvp-utilitybar-social" title="Instagram"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2.2c3.2 0 3.6 0 4.9.1 3.3.1 4.8 1.7 4.9 4.9.1 1.3.1 1.6.1 4.8 0 3.2 0 3.6-.1 4.8-.1 3.2-1.7 4.8-4.9 4.9-1.3.1-1.6.1-4.9.1-3.2 0-3.6 0-4.8-.1-3.3-.1-4.8-1.7-4.9-4.9C2.2 15.6 2.2 15.2 2.2 12c0-3.2 0-3.6.1-4.8C2.4 3.9 4 2.3 7.2 2.3c1.2-.1 1.6-.1 4.8-.1zM12 0C8.7 0 8.3 0 7.1.1 2.7.3.3 2.7.1 7.1.0 8.3 0 8.7 0 12c0 3.3 0 3.7.1 4.9.2 4.4 2.6 6.8 7 7C8.3 24 8.7 24 12 24c3.3 0 3.7 0 4.9-.1 4.4-.2 6.8-2.6 7-7 .1-1.2.1-1.6.1-4.9 0-3.3 0-3.7-.1-4.9C23.7 2.7 21.3.3 16.9.1 15.7 0 15.3 0 12 0zm0 5.8a6.2 6.2 0 1 0 0 12.4A6.2 6.2 0 0 0 12 5.8zm0 10.2a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.4-11.8a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z"/></svg></a>
