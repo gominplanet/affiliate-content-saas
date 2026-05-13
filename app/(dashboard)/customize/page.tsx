@@ -6,7 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
   Youtube, Facebook, Instagram, Link, AlignLeft, ChevronDown, ChevronUp,
-  Twitter, Mail, Upload, X, RefreshCw, Sparkles, Image as ImageIcon,
+  Twitter, Mail, Upload, X, RefreshCw, Sparkles, Image as ImageIcon, AlertCircle,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -261,6 +261,7 @@ export default function CustomizePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [wpPushError, setWpPushError] = useState<string | null>(null)
   const [purging, setPurging] = useState(false)
   const [purged, setPurged] = useState(false)
   const [userId, setUserId] = useState('')
@@ -325,6 +326,7 @@ export default function CustomizePage() {
 
   async function save() {
     setSaving(true)
+    setWpPushError(null)
     try {
       const res = await fetch('/api/wordpress/customizations', {
         method: 'POST',
@@ -333,6 +335,9 @@ export default function CustomizePage() {
       })
       const json = await res.json()
       if (json.error) { alert(json.error); return }
+      if (json.wordpress === 'failed') {
+        setWpPushError(json.wordpressError || 'WordPress push failed — check your credentials in Site & Integrations.')
+      }
       setSaved(true); setTimeout(() => setSaved(false), 3000)
     } finally { setSaving(false) }
   }
@@ -432,6 +437,17 @@ export default function CustomizePage() {
           </div>
         }
       />
+
+      {wpPushError && (
+        <div className="max-w-2xl mb-2 rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3 flex items-start gap-3">
+          <AlertCircle size={15} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Saved to dashboard, but WordPress push failed</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{wpPushError}</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1">Check your WordPress credentials in <a href="/setup?tab=integrations" className="text-[#0071e3] hover:underline">Site & Integrations</a>, then save again.</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-6 max-w-2xl">
 

@@ -75,9 +75,14 @@ export async function POST(req: Request) {
         '/wp-json/affiliateos/v1/customizations',
         { ...existing, ...customizations, profile: mergedProfile },
       )
+      return NextResponse.json({ ok: true, wordpress: 'pushed' })
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[customizations] WordPress push failed:', msg)
+      // Supabase save succeeded — return ok but surface the WP error so the UI can show it
+      return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
     }
   }
 
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, wordpress: 'not_connected' })
 }
