@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { wpLogin, getNonce } from '@/lib/wordpress-login'
+import { AFFILIATEOS_FULL_PHP, AFFILIATEOS_SNIPPET_NAME } from '@/lib/wordpress-plugin'
 
 async function ensureCodeSnippet(
   siteUrl: string,
@@ -27,10 +28,9 @@ async function ensureCodeSnippet(
   }
 }
 
-// ── The full AffiliateOS PHP — everything needed for an existing WordPress site ─
-// This covers: REST endpoint, sidebar/in-content banners, logo header banner,
-// top social bar, footer, and "You Might Also Like" section.
-const AFFILIATEOS_FULL_PHP = `
+// Inline PHP removed — now imported from @/lib/wordpress-plugin
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _INLINE_PHP_REMOVED = `
 // ─── AffiliateOS — auto-installed by AffiliateOS dashboard ───────────────────
 // Do not edit manually — use the AffiliateOS dashboard to manage settings.
 
@@ -422,7 +422,7 @@ export async function POST() {
     const nonce = await getNonce(siteUrl, cookies)
 
     // 3. Push the Code Snippet
-    await ensureCodeSnippet(siteUrl, cookies, nonce, 'AffiliateOS', AFFILIATEOS_FULL_PHP)
+    await ensureCodeSnippet(siteUrl, cookies, nonce, AFFILIATEOS_SNIPPET_NAME, AFFILIATEOS_FULL_PHP)
 
     return NextResponse.json({ ok: true, message: 'AffiliateOS installed successfully! Your site now supports banners, social bar, footer, and logo header.' })
   } catch (err: unknown) {

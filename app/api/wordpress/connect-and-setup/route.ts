@@ -4,6 +4,7 @@ import { generateHomePage } from '@/lib/wordpress-home-template'
 import { generateAboutPage } from '@/lib/wordpress-about-template'
 import { generatePrivacyPolicy } from '@/lib/wordpress-privacy-template'
 import { wpLogin, getNonce } from '@/lib/wordpress-login'
+import { AFFILIATEOS_FULL_PHP, AFFILIATEOS_SNIPPET_NAME } from '@/lib/wordpress-plugin'
 
 export const maxDuration = 60
 
@@ -209,7 +210,7 @@ export async function POST(request: Request) {
 
     // ── 3c. Install AffiliateOS PHP snippets via Code Snippets plugin ─────────
     try {
-      await ensureCodeSnippet(siteUrl, auth, 'AffiliateOS Core', AFFILIATEOS_CORE_PHP)
+      await ensureCodeSnippet(siteUrl, auth, AFFILIATEOS_SNIPPET_NAME, AFFILIATEOS_FULL_PHP)
     } catch { /* Code Snippets plugin may not be installed — step 16 will still try the endpoint */ }
     try {
       await ensureCodeSnippet(siteUrl, auth, 'Force Front Page Template', FORCE_FRONT_PAGE_PHP)
