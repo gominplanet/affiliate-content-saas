@@ -238,7 +238,16 @@ add_action('wp_footer', function () {
     $data    = mvp_affiliate_get_data();
     $footer  = $data['footer'] ?? [];
     $profile = $data['profile'] ?? [];
-    $bio          = trim($footer['bio'] ?? ($profile['authorBio'] ?? ($data['about']['bio'] ?? '')));
+    // Fallback chain that falls through on empty strings (?? doesn't).
+    $bio = '';
+    foreach ([
+        $footer['bio']            ?? '',
+        $profile['authorBio']     ?? '',
+        $data['about']['bio']     ?? '',
+    ] as $candidate) {
+        $candidate = trim((string)$candidate);
+        if ($candidate !== '') { $bio = $candidate; break; }
+    }
     $socials      = $footer['socials'] ?? [];
     if (empty($socials['youtube'])   && !empty($profile['youtubeUrl']))   $socials['youtube']   = $profile['youtubeUrl'];
     if (empty($socials['facebook'])  && !empty($profile['facebookUrl']))  $socials['facebook']  = $profile['facebookUrl'];

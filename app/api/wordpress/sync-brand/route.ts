@@ -36,14 +36,20 @@ export async function POST(request: Request) {
   const cleanPw = intRow.wordpress_app_password.replace(/\s+/g, '')
   const authHeader = `Basic ${Buffer.from(`${intRow.wordpress_username}:${cleanPw}`).toString('base64')}`
 
+  const debug: Record<string, unknown> = {}
+
   try {
-    // Update WP user display name (best-effort; non-fatal if it fails)
+    // Update WP user display name
     if (authorName) {
-      await fetch(`${wpBase}/wp-json/wp/v2/users/me`, {
+      const userRes = await fetch(`${wpBase}/wp-json/wp/v2/users/me`, {
         method: 'POST',
         headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: authorName, nickname: authorName }),
-      }).catch(() => {})
+      }).catch((e) => ({ ok: false, status: 0, text: () => Promise.resolve(String(e)) } as Response))
+      debug.userUpdate = { ok: userRes.ok, status: userRes.status }
+      if (!userRes.ok) {
+        debug.userUpdateBody = (await userRes.text()).slice(0, 200)
+      }
     }
 
     // Update site title + tagline via WP Settings API so they flow through
@@ -52,11 +58,21 @@ export async function POST(request: Request) {
       const settingsBody: Record<string, string> = {}
       if (brandName) settingsBody.title       = brandName
       if (tagline)   settingsBody.description = tagline
-      await fetch(`${wpBase}/wp-json/wp/v2/settings`, {
+      const settingsRes = await fetch(`${wpBase}/wp-json/wp/v2/settings`, {
         method: 'POST',
         headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify(settingsBody),
-      }).catch(() => {})
+      }).catch((e) => ({ ok: false, status: 0, text: () => Promise.resolve(String(e)) } as Response))
+      debug.settingsUpdate = { ok: settingsRes.ok, status: settingsRes.status }
+      if (!settingsRes.ok) {
+        const body = await settingsRes.text()
+        debug.settingsUpdateBody = body.slice(0, 300)
+        return NextResponse.json({
+          ok: true, wordpress: 'failed',
+          wordpressError: `WordPress rejected the site title/tagline update (${settingsRes.status}). Make sure your user has admin rights. ${body.slice(0, 150)}`,
+          debug,
+        })
+      }
     }
 
     // Merge into existing customizations
@@ -99,9 +115,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
     }
 
-    return NextResponse.json({ ok: true, wordpress: 'pushed' })
+    return NextResponse.json({ ok: true, wordpress: 'pushed', debug })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
+    return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg, debug })
   }
 }
