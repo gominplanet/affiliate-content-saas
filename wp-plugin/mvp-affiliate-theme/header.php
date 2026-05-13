@@ -73,13 +73,16 @@ if ($disclaimer === '') {
               'depth'          => 2,
           ]);
       } else {
-          // Fallback: list categories
+          // Fallback: list categories (wrap in <ul> so they render as a row,
+          // not as bare <li>s collapsed onto one line)
+          echo '<ul class="mvp-nav-menu">';
           wp_list_categories([
               'title_li' => '',
               'orderby'  => 'count',
               'order'    => 'DESC',
               'number'   => 5,
           ]);
+          echo '</ul>';
       }
       ?>
     </nav>
