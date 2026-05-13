@@ -80,12 +80,31 @@ export async function POST() {
           scope: 'global',
         }
         if (existingSnip) {
-          await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets/${existingSnip.id}`, {
+          // Deactivate first to force Code Snippets to drop any cached parse
+          await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets/${existingSnip.id}/deactivate`, {
+            method: 'POST',
+            headers: { Authorization: authHeader },
+          }).catch(() => {})
+
+          // Update with new code
+          const upRes = await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets/${existingSnip.id}`, {
             method: 'POST',
             headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
             body: JSON.stringify(snippetPayload),
           })
+          debug.snippetUpdateStatus = upRes.status
+          if (!upRes.ok) {
+            debug.snippetUpdateBody = (await upRes.text()).slice(0, 300)
+          }
+
+          // Reactivate so the new code starts running immediately
+          const actRes = await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets/${existingSnip.id}/activate`, {
+            method: 'POST',
+            headers: { Authorization: authHeader },
+          })
+          debug.snippetActivateStatus = actRes.status
           debug.snippetUpdated = existingSnip.id
+          debug.snippetCodeLength = AFFILIATEOS_FULL_PHP.length
         } else {
           // No snippet found — create one
           const createRes = await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets`, {

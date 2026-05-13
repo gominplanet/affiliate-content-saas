@@ -55,9 +55,21 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
     try {
       const res = await fetch('/api/wordpress/purge-cache', { method: 'POST' })
       const json = await res.json().catch(() => ({}))
+      // Always log the full response so we can inspect what the snippet refresh did
+      // eslint-disable-next-line no-console
+      console.log('[Purge Site Cache] response:', json)
       if (!res.ok) {
         alert(json.error || 'Cache purge failed.')
         return
+      }
+      // If the snippet refresh part failed but the purge succeeded, surface it.
+      const debug = (json.debug as Record<string, unknown>) || {}
+      if (debug.snippetError || debug.snippetsListStatus) {
+        alert(
+          `Cache purged, BUT the snippet refresh didn't fully succeed.\n\n` +
+          `Debug:\n${JSON.stringify(debug, null, 2)}\n\n` +
+          `This is why the logo banner / colors may not be appearing. Send this output to support.`
+        )
       }
       setPurged(true)
       setTimeout(() => setPurged(false), 2500)
