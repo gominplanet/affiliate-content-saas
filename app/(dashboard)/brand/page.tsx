@@ -250,6 +250,9 @@ export default function BrandPage() {
         // No WP connection — silent. The dashboard save still succeeded.
       } else if (json.wordpress === 'failed') {
         setWpPushNote(json.wordpressError || 'Saved here, but the push to WordPress failed.')
+      } else if (json.wordpress === 'pushed') {
+        // Auto-purge cache so the brand changes appear immediately on the live site.
+        fetch('/api/wordpress/purge-cache', { method: 'POST' }).catch(() => {})
       }
     } catch (e) {
       setWpPushNote(e instanceof Error ? e.message : 'WordPress push failed.')

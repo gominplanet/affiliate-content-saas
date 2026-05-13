@@ -19,6 +19,9 @@ import {
   LogOut,
   Star,
   Clapperboard,
+  Zap,
+  Check,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -43,6 +46,27 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const { theme, setTheme } = useTheme()
   const supabase = createBrowserClient()
   const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
+  const [purging, setPurging] = useState(false)
+  const [purged, setPurged] = useState(false)
+
+  async function purgeCache() {
+    setPurging(true)
+    setPurged(false)
+    try {
+      const res = await fetch('/api/wordpress/purge-cache', { method: 'POST' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(json.error || 'Cache purge failed.')
+        return
+      }
+      setPurged(true)
+      setTimeout(() => setPurged(false), 2500)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Cache purge failed.')
+    } finally {
+      setPurging(false)
+    }
+  }
 
   // Re-fetch on every route change so the link is always up to date
   useEffect(() => {
@@ -116,6 +140,31 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
           <ExternalLink size={16} className="flex-shrink-0" style={wpSiteUrl ? { color: '#0071e3' } : {}} />
           <span style={wpSiteUrl ? { color: '#0071e3', fontWeight: 500 } : {}}>Visit Blog</span>
         </a>
+
+        {/* Purge cache — prominent global action when WordPress is connected */}
+        {wpSiteUrl && (
+          <button
+            onClick={purgeCache}
+            disabled={purging}
+            className="mt-3 flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+            style={{
+              background: purged
+                ? 'linear-gradient(135deg, #34c759 0%, #30b450 100%)'
+                : 'linear-gradient(135deg, #ff9500 0%, #ff6b00 100%)',
+              boxShadow: purged
+                ? '0 2px 8px rgba(52,199,89,0.3)'
+                : '0 2px 8px rgba(255,149,0,0.3)',
+            }}
+            title="Clear LiteSpeed cache so your latest changes appear on the live blog"
+          >
+            {purging
+              ? <><Loader2 size={14} className="animate-spin" /> Clearing cache…</>
+              : purged
+              ? <><Check size={14} /> Cache cleared!</>
+              : <><Zap size={14} /> Purge Site Cache</>
+            }
+          </button>
+        )}
 
         {/* Recommended Tools */}
         <div className="mt-4 mb-2 pt-4" style={{ borderTop: '1px solid var(--border-2)' }}>

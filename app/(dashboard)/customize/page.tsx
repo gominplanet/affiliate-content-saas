@@ -337,6 +337,9 @@ export default function CustomizePage() {
       if (json.error) { alert(json.error); return }
       if (json.wordpress === 'failed') {
         setWpPushError(json.wordpressError || 'WordPress push failed — check your credentials in Site & Integrations.')
+      } else {
+        // Auto-purge cache so changes appear immediately on the live blog.
+        fetch('/api/wordpress/purge-cache', { method: 'POST' }).catch(() => {})
       }
       setSaved(true); setTimeout(() => setSaved(false), 3000)
     } finally { setSaving(false) }
