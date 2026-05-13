@@ -188,21 +188,52 @@ add_action('kadence_after_main_content', function () {
 });
 
 // ─── 10. Logo header banner ───────────────────────────────────────────────────
+// Renders on multiple hooks to survive themes/page templates that skip some hooks.
 $mvp_affiliate_logo_banner = function () {
+    static $rendered = false;
+    if ($rendered) return;
     $about = mvp_affiliate_get_data()['about'] ?? [];
     $logo_url = $about['logoUrl'] ?? '';
     if (!$logo_url) return;
+    $rendered = true;
     $bg = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
     ?>
-    <div class="mvpaffiliate-logo-banner" style="background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;">
+    <div class="mvpaffiliate-logo-banner" style="background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;">
       <a href="<?php echo esc_url(home_url('/')); ?>" style="display:inline-block;line-height:0;">
         <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr(get_bloginfo('name')); ?>" style="height:50px;width:auto;max-width:100%;object-fit:contain;" />
       </a>
     </div>
     <?php
 };
-add_action('wp_body_open', $mvp_affiliate_logo_banner, 5);
-add_action('kadence_before_header', $mvp_affiliate_logo_banner, 5);
+add_action('wp_body_open',            $mvp_affiliate_logo_banner, 5);
+add_action('kadence_before_header',   $mvp_affiliate_logo_banner, 5);
+add_action('get_header',              $mvp_affiliate_logo_banner, 5);
+add_action('astra_header_before',     $mvp_affiliate_logo_banner, 5);
+add_action('generate_before_header',  $mvp_affiliate_logo_banner, 5);
+
+// Fallback: inject the banner via JS at <body> open if no hook fired by wp_footer.
+// This guarantees the banner appears even on themes that don't call wp_body_open.
+add_action('wp_footer', function () use ($mvp_affiliate_logo_banner) {
+    $about = mvp_affiliate_get_data()['about'] ?? [];
+    $logo_url = $about['logoUrl'] ?? '';
+    if (!$logo_url) return;
+    $bg = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
+    $name = esc_js(get_bloginfo('name'));
+    $home = esc_js(home_url('/'));
+    $logo_js = esc_js($logo_url);
+    ?>
+    <script>
+    (function(){
+      if (document.querySelector('.mvpaffiliate-logo-banner')) return;
+      var div = document.createElement('div');
+      div.className = 'mvpaffiliate-logo-banner';
+      div.style.cssText = 'background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;';
+      div.innerHTML = '<a href="<?php echo $home; ?>" style="display:inline-block;line-height:0;"><img src="<?php echo $logo_js; ?>" alt="<?php echo $name; ?>" style="height:50px;width:auto;max-width:100%;object-fit:contain;" /></a>';
+      document.body.insertBefore(div, document.body.firstChild);
+    })();
+    </script>
+    <?php
+}, 1);
 
 // ─── 11. Top social bar ───────────────────────────────────────────────────────
 add_action('kadence_before_header', function () {
@@ -326,6 +357,34 @@ add_action('kadence_before_footer', function () { do_action('mvp_affiliate_rende
 
 // ─── 13. Force front page template (lets us control homepage) ─────────────────
 add_filter('frontpage_template', function ($t) { return get_page_template(); });
+
+// ─── 13b. Inject accent color as CSS overrides ────────────────────────────────
+// Maps profile.primaryColor / profile.accentColor onto Kadence's global palette
+// and common link/button selectors, so the brand color is reflected everywhere.
+add_action('wp_head', function () {
+    $profile = mvp_affiliate_get_data()['profile'] ?? [];
+    $primary = trim($profile['primaryColor'] ?? ($profile['accentColor'] ?? ''));
+    if (!$primary) return;
+    $secondary = trim($profile['secondaryColor'] ?? $primary);
+    ?>
+    <style id="mvp-affiliate-colors">
+      :root {
+        --global-palette1: <?php echo esc_attr($primary); ?>;
+        --global-palette-highlight: <?php echo esc_attr($primary); ?>;
+        --global-palette-highlight-alt: <?php echo esc_attr($secondary); ?>;
+        --mvp-affiliate-primary: <?php echo esc_attr($primary); ?>;
+        --mvp-affiliate-secondary: <?php echo esc_attr($secondary); ?>;
+      }
+      a, .entry-title a, .site-title a { color: <?php echo esc_attr($primary); ?>; }
+      .wp-block-button__link, .button, button.btn-primary,
+      .single-post .tagcloud a, .term-badge,
+      a.kadence-tag, .post-categories a {
+        background-color: <?php echo esc_attr($primary); ?> !important;
+        border-color: <?php echo esc_attr($primary); ?> !important;
+      }
+    </style>
+    <?php
+}, 100);
 
 // ─── 14. LiteSpeed REST cache fix (one-time, on activation) ───────────────────
 add_action('admin_init', function () {

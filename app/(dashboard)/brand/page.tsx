@@ -214,10 +214,12 @@ export default function BrandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          authorName: data.author_name,
-          brandName:  data.name,
-          tagline:    data.tagline,
-          authorBio:  data.author_bio,
+          authorName:     data.author_name,
+          brandName:      data.name,
+          tagline:        data.tagline,
+          authorBio:      data.author_bio,
+          primaryColor:   data.primary_color,
+          secondaryColor: data.secondary_color,
         }),
       })
       const json = await res.json().catch(() => ({}))

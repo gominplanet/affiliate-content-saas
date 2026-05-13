@@ -8,17 +8,20 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { AFFILIATEOS_FULL_PHP, AFFILIATEOS_SNIPPET_NAME } from '@/lib/wordpress-plugin'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { authorName, brandName, tagline, authorBio } = await request.json() as {
+  const { authorName, brandName, tagline, authorBio, primaryColor, secondaryColor } = await request.json() as {
     authorName?: string
     brandName?: string
     tagline?: string
     authorBio?: string
+    primaryColor?: string
+    secondaryColor?: string
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,10 +92,13 @@ export async function POST(request: Request) {
       ...existing,
       profile: {
         ...existingProfile,
-        ...(brandName  ? { brandName }  : {}),
-        ...(tagline    ? { tagline }    : {}),
-        ...(authorName ? { authorName } : {}),
-        ...(authorBio  ? { authorBio }  : {}),
+        ...(brandName      ? { brandName }                : {}),
+        ...(tagline        ? { tagline }                  : {}),
+        ...(authorName     ? { authorName }               : {}),
+        ...(authorBio      ? { authorBio }                : {}),
+        ...(primaryColor   ? { accentColor:    primaryColor   } : {}),
+        ...(primaryColor   ? { primaryColor:   primaryColor   } : {}),
+        ...(secondaryColor ? { secondaryColor: secondaryColor } : {}),
       },
     }
 
@@ -113,6 +119,40 @@ export async function POST(request: Request) {
         msg = `WordPress returned ${postRes.status}: ${text.slice(0, 200)}`
       }
       return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
+    }
+
+    // Refresh the AffiliateOS Code Snippet to the latest version so logo banner,
+    // color injection, and other rendering fixes propagate without re-running setup.
+    // Non-fatal — if Code Snippets isn't installed or this fails, we still saved the data.
+    try {
+      const snippetsRes = await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets?per_page=100`, {
+        headers: { Authorization: authHeader },
+      })
+      if (snippetsRes.ok) {
+        const list = await snippetsRes.json() as { snippets?: { id: number; name: string }[] } | { id: number; name: string }[]
+        const snippets = Array.isArray(list) ? list : (list.snippets ?? [])
+        // Match either the new canonical name OR the legacy 'AffiliateOS Core' name
+        const existing = snippets.find(s =>
+          s.name === AFFILIATEOS_SNIPPET_NAME ||
+          s.name === 'AffiliateOS' ||
+          s.name === 'AffiliateOS Core'
+        )
+        if (existing) {
+          await fetch(`${wpBase}/wp-json/code-snippets/v1/snippets/${existing.id}`, {
+            method: 'POST',
+            headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: AFFILIATEOS_SNIPPET_NAME,
+              code: AFFILIATEOS_FULL_PHP,
+              active: true,
+              scope: 'global',
+            }),
+          })
+          debug.snippetRefreshed = true
+        }
+      }
+    } catch (e) {
+      debug.snippetRefreshError = e instanceof Error ? e.message : String(e)
     }
 
     return NextResponse.json({ ok: true, wordpress: 'pushed', debug })

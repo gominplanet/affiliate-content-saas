@@ -164,37 +164,77 @@ add_action('kadence_after_main_content', function () {
     <?php
 });
 
-// Logo header banner — full-width bar at the very top of every page
-add_action('wp_body_open', function () {
+// Logo header banner — rendered via multiple hooks + JS fallback so it
+// always appears, even on page templates that skip wp_body_open.
+$affiliateos_logo_banner = function () {
+    static $rendered = false;
+    if ($rendered) return;
     $data     = affiliateos_get_data();
     $about    = $data['about'] ?? [];
     $logo_url = $about['logoUrl'] ?? '';
     if (!$logo_url) return;
+    $rendered = true;
     $bg = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
     ?>
-    <div class="affiliateos-logo-banner" style="background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;">
+    <div class="affiliateos-logo-banner" style="background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;">
       <a href="<?php echo esc_url(home_url('/')); ?>" style="display:inline-block;line-height:0;">
         <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr(get_bloginfo('name')); ?>" style="height:50px;width:auto;max-width:100%;object-fit:contain;" />
       </a>
     </div>
     <?php
-}, 5);
+};
+add_action('wp_body_open',           $affiliateos_logo_banner, 5);
+add_action('kadence_before_header',  $affiliateos_logo_banner, 5);
+add_action('get_header',             $affiliateos_logo_banner, 5);
+add_action('astra_header_before',    $affiliateos_logo_banner, 5);
+add_action('generate_before_header', $affiliateos_logo_banner, 5);
 
-// Also hook into kadence_before_header for Kadence theme support
-add_action('kadence_before_header', function () {
-    $data     = affiliateos_get_data();
-    $about    = $data['about'] ?? [];
+// JS fallback — injects the banner client-side if no PHP hook fired.
+add_action('wp_footer', function () {
+    $about    = affiliateos_get_data()['about'] ?? [];
     $logo_url = $about['logoUrl'] ?? '';
     if (!$logo_url) return;
-    $bg = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
+    $bg   = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
+    $name = esc_js(get_bloginfo('name'));
+    $home = esc_js(home_url('/'));
+    $logo = esc_js($logo_url);
     ?>
-    <div class="affiliateos-logo-banner" style="background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;">
-      <a href="<?php echo esc_url(home_url('/')); ?>" style="display:inline-block;line-height:0;">
-        <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr(get_bloginfo('name')); ?>" style="height:50px;width:auto;max-width:100%;object-fit:contain;" />
-      </a>
-    </div>
+    <script>
+    (function(){
+      if (document.querySelector('.affiliateos-logo-banner')) return;
+      var d = document.createElement('div');
+      d.className = 'affiliateos-logo-banner';
+      d.style.cssText = 'background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;';
+      d.innerHTML = '<a href="<?php echo $home; ?>" style="display:inline-block;line-height:0;"><img src="<?php echo $logo; ?>" alt="<?php echo $name; ?>" style="height:50px;width:auto;max-width:100%;object-fit:contain;" /></a>';
+      document.body.insertBefore(d, document.body.firstChild);
+    })();
+    </script>
     <?php
-}, 5);
+}, 1);
+
+// Inject brand colors as CSS overrides
+add_action('wp_head', function () {
+    $profile = affiliateos_get_data()['profile'] ?? [];
+    $primary = trim($profile['primaryColor'] ?? ($profile['accentColor'] ?? ''));
+    if (!$primary) return;
+    $secondary = trim($profile['secondaryColor'] ?? $primary);
+    ?>
+    <style id="affiliateos-colors">
+      :root {
+        --global-palette1: <?php echo esc_attr($primary); ?>;
+        --global-palette-highlight: <?php echo esc_attr($primary); ?>;
+        --global-palette-highlight-alt: <?php echo esc_attr($secondary); ?>;
+      }
+      a, .entry-title a, .site-title a { color: <?php echo esc_attr($primary); ?>; }
+      .wp-block-button__link, .button, .btn-primary,
+      .single-post .tagcloud a, .term-badge,
+      a.kadence-tag, .post-categories a {
+        background-color: <?php echo esc_attr($primary); ?> !important;
+        border-color: <?php echo esc_attr($primary); ?> !important;
+      }
+    </style>
+    <?php
+}, 100);
 
 // Top social bar — slim strip above header (Kadence)
 add_action('kadence_before_header', function () {
