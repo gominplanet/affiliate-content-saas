@@ -9,7 +9,7 @@ export async function POST() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
     .from('integrations')
-    .select('wordpress_url, blog_customizations')
+    .select('wordpress_url, wordpress_username, wordpress_app_password, blog_customizations')
     .eq('user_id', user.id)
     .single()
 
@@ -19,11 +19,18 @@ export async function POST() {
 
   const wpBase = intRow.wordpress_url.replace(/\/$/, '')
 
+  // Build auth header if credentials are available
+  const authHeader = (intRow.wordpress_username && intRow.wordpress_app_password)
+    ? `Basic ${Buffer.from(`${intRow.wordpress_username}:${intRow.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
+    : undefined
+
   // Always GET current WP customizations first, then re-POST the same data.
   // This triggers litespeed_purge_all without ever overwriting stored data with empty.
   let existing: unknown = {}
   try {
-    const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`)
+    const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      headers: authHeader ? { Authorization: authHeader } : {},
+    })
     if (getRes.ok) existing = await getRes.json()
   } catch { /* start fresh */ }
 
@@ -36,7 +43,10 @@ export async function POST() {
 
   const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(authHeader ? { Authorization: authHeader } : {}),
+    },
     body: JSON.stringify(payload),
   })
 
