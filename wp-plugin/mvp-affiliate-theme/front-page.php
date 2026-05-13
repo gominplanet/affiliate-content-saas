@@ -56,6 +56,16 @@ $tagline = get_bloginfo('description');
   </section>
   <?php endif; ?>
 
+  <!-- Pick of the Day (homepage section) -->
+  <?php $pick_html = mvp_affiliate_render_pick_of_day('homepage'); ?>
+  <?php if ($pick_html): ?>
+  <section class="mvp-section mvp-section-pick">
+    <div class="mvp-container">
+      <?php echo $pick_html; ?>
+    </div>
+  </section>
+  <?php endif; ?>
+
   <!-- Latest reviews grid (more posts, excluding the 4 above) -->
   <?php
   $more = new WP_Query([

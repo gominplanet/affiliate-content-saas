@@ -48,12 +48,15 @@ get_header();
 
     <aside class="mvp-single-sidebar">
       <?php
-      // 1. Render dynamic sidebar widgets (registered in functions.php)
+      // 1. Pick of the Day (top of sidebar)
+      echo mvp_affiliate_render_pick_of_day('sidebar');
+
+      // 2. Render dynamic sidebar widgets (registered in functions.php)
       if (is_active_sidebar('sidebar-1')) {
           dynamic_sidebar('sidebar-1');
       }
 
-      // 2. Render MVP Affiliate sidebar ad blocks
+      // 3. Render MVP Affiliate sidebar ad blocks
       $blocks = mvp_affiliate_sidebar_blocks();
       foreach ($blocks as $block) {
           echo mvp_affiliate_render_block($block);

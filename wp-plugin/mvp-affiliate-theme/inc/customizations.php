@@ -41,6 +41,110 @@ if (!function_exists('mvp_affiliate_incontent_blocks')) {
 }
 
 /**
+ * Pick of the Day config + helpers.
+ */
+if (!function_exists('mvp_affiliate_pick_of_day_config')) {
+    function mvp_affiliate_pick_of_day_config(): array {
+        $d = mvp_affiliate_data();
+        $config = is_array($d['pickOfDay'] ?? null) ? $d['pickOfDay'] : [];
+        return array_merge([
+            'enabled'        => true,
+            'label'          => 'Our Pick of the Day',
+            'showOnSidebar'  => true,
+            'showOnHomepage' => false,
+            'pinnedPostId'   => '',
+        ], $config);
+    }
+}
+
+/**
+ * Returns the post chosen as today's pick, or null.
+ * - If pinnedPostId is set → that post (if published).
+ * - Else → deterministic random pick seeded by today's date,
+ *   cached as a 24h transient so all visitors see the same pick.
+ */
+if (!function_exists('mvp_affiliate_pick_of_day')) {
+    function mvp_affiliate_pick_of_day(): ?WP_Post {
+        $config = mvp_affiliate_pick_of_day_config();
+        if (empty($config['enabled'])) return null;
+
+        // Pinned post override
+        $pinned = intval($config['pinnedPostId'] ?? 0);
+        if ($pinned > 0) {
+            $post = get_post($pinned);
+            return ($post && $post->post_status === 'publish' && $post->post_type === 'post')
+                ? $post
+                : null;
+        }
+
+        $cache_key = 'mvp_pick_of_day_' . wp_date('Ymd');
+        $cached = get_transient($cache_key);
+        if ($cached !== false) {
+            $post = ($cached === '0') ? null : get_post(intval($cached));
+            return ($post && $post->post_status === 'publish') ? $post : null;
+        }
+
+        $all = get_posts([
+            'numberposts' => -1,
+            'fields'      => 'ids',
+            'post_status' => 'publish',
+            'post_type'   => 'post',
+        ]);
+        if (empty($all)) {
+            set_transient($cache_key, '0', DAY_IN_SECONDS);
+            return null;
+        }
+
+        mt_srand(intval(wp_date('Ymd')));
+        $idx = mt_rand(0, count($all) - 1);
+        $post_id = $all[$idx];
+        set_transient($cache_key, (string)$post_id, DAY_IN_SECONDS);
+        return get_post($post_id);
+    }
+}
+
+/**
+ * Render the Pick of the Day card.
+ * $variant: 'sidebar' | 'homepage'
+ */
+if (!function_exists('mvp_affiliate_render_pick_of_day')) {
+    function mvp_affiliate_render_pick_of_day(string $variant = 'sidebar'): string {
+        $config = mvp_affiliate_pick_of_day_config();
+        if (empty($config['enabled'])) return '';
+        if ($variant === 'sidebar' && empty($config['showOnSidebar'])) return '';
+        if ($variant === 'homepage' && empty($config['showOnHomepage'])) return '';
+
+        $post = mvp_affiliate_pick_of_day();
+        if (!$post) return '';
+
+        // Don't show on the post page that IS the pick
+        if (is_singular('post') && get_the_ID() === $post->ID) return '';
+
+        $title = get_the_title($post);
+        $link  = get_permalink($post);
+        $thumb = get_the_post_thumbnail($post, 'mvp-card', ['loading' => 'lazy']);
+        $excerpt = wp_trim_words(get_the_excerpt($post), 24);
+        $label = esc_html($config['label']);
+
+        $class = $variant === 'homepage' ? 'mvp-pick-homepage' : 'mvp-pick-sidebar';
+        $out = '<aside class="mvp-pick ' . $class . '">';
+        $out .= '<p class="mvp-pick-label">' . $label . '</p>';
+        $out .= '<a href="' . esc_url($link) . '" class="mvp-pick-link">';
+        if ($thumb) $out .= '<div class="mvp-pick-image">' . $thumb . '</div>';
+        $out .= '<div class="mvp-pick-body">';
+        $out .= '<h3 class="mvp-pick-title">' . esc_html($title) . '</h3>';
+        if ($variant === 'homepage' && $excerpt) {
+            $out .= '<p class="mvp-pick-excerpt">' . esc_html($excerpt) . '</p>';
+        }
+        $out .= '<span class="mvp-pick-cta">Read review →</span>';
+        $out .= '</div>';
+        $out .= '</a>';
+        $out .= '</aside>';
+        return $out;
+    }
+}
+
+/**
  * Effective bio — falls through empty strings (?? doesn't).
  */
 if (!function_exists('mvp_affiliate_bio')) {

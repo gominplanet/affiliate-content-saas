@@ -480,6 +480,94 @@ p { margin: 0 0 1em; }
   margin: 0 0 14px;
 }
 
+/* ─── Pick of the Day ────────────────────────────────────────────────────── */
+.mvp-pick {
+  margin-bottom: 32px;
+  padding: 18px;
+  border: 1px solid var(--mvp-border);
+  border-radius: var(--mvp-radius);
+  background: linear-gradient(180deg, var(--mvp-bg-soft) 0%, var(--mvp-bg) 100%);
+}
+.mvp-pick-label {
+  margin: 0 0 10px;
+  font-family: var(--mvp-font-sans);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mvp-primary);
+}
+.mvp-pick-link { display: block; color: var(--mvp-text); }
+.mvp-pick-link:hover { opacity: 1; }
+.mvp-pick-image {
+  aspect-ratio: 16/9;
+  overflow: hidden;
+  border-radius: var(--mvp-radius-sm);
+  margin-bottom: 12px;
+}
+.mvp-pick-image img { width: 100%; height: 100%; object-fit: cover; transition: transform .35s ease; }
+.mvp-pick-link:hover .mvp-pick-image img { transform: scale(1.03); }
+.mvp-pick-title {
+  font-size: 18px;
+  line-height: 1.25;
+  margin: 0 0 6px;
+}
+.mvp-pick-link:hover .mvp-pick-title { color: var(--mvp-primary); }
+.mvp-pick-excerpt {
+  font-size: 14px;
+  color: var(--mvp-text-muted);
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+.mvp-pick-cta {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mvp-primary);
+}
+
+/* Homepage variant: wider and prouder */
+.mvp-pick-homepage {
+  padding: 32px;
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 32px;
+  align-items: center;
+  border: 2px solid var(--mvp-primary);
+  background: var(--mvp-bg-soft);
+}
+.mvp-pick-homepage .mvp-pick-label {
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+.mvp-pick-homepage .mvp-pick-link {
+  display: contents;
+}
+.mvp-pick-homepage .mvp-pick-image {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  margin: 0;
+  aspect-ratio: 16/10;
+}
+.mvp-pick-homepage .mvp-pick-title {
+  font-size: clamp(24px, 3.2vw, 36px);
+  line-height: 1.15;
+  grid-column: 1;
+}
+.mvp-pick-homepage .mvp-pick-excerpt {
+  font-size: 16px;
+  grid-column: 1;
+}
+.mvp-pick-homepage .mvp-pick-cta {
+  grid-column: 1;
+  font-size: 15px;
+}
+@media (max-width: 800px) {
+  .mvp-pick-homepage { grid-template-columns: 1fr; padding: 20px; }
+  .mvp-pick-homepage .mvp-pick-image { grid-column: 1; grid-row: 2; }
+  .mvp-pick-homepage .mvp-pick-title { grid-row: 1; }
+}
+
 /* ─── Ad blocks ──────────────────────────────────────────────────────────── */
 .mvp-ad-block {
   margin: 24px 0;

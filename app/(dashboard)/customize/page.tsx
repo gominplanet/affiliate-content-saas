@@ -50,11 +50,20 @@ interface FooterData {
   links: CustomLink[]
 }
 
+interface PickOfDayConfig {
+  enabled: boolean
+  label: string
+  showOnSidebar: boolean
+  showOnHomepage: boolean
+  pinnedPostId: string  // empty string = rotate randomly
+}
+
 interface BlogCustomizations {
   sidebar: AdBlock[]
   incontent: AdBlock[]
   about: AboutData
   footer: FooterData
+  pickOfDay: PickOfDayConfig
 }
 
 const emptyAbout: AboutData = { bio: '', logoUrl: '', headerBg: 'black' }
@@ -62,12 +71,20 @@ const emptyFooter: FooterData = {
   socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
   links: [],
 }
+const defaultPickOfDay: PickOfDayConfig = {
+  enabled: true,
+  label: 'Our Pick of the Day',
+  showOnSidebar: true,
+  showOnHomepage: false,
+  pinnedPostId: '',
+}
 
 const defaultCustomizations: BlogCustomizations = {
   sidebar: [],
   incontent: [],
   about: emptyAbout,
   footer: emptyFooter,
+  pickOfDay: defaultPickOfDay,
 }
 
 function newBlock(): AdBlock {
@@ -337,6 +354,7 @@ export default function CustomizePage() {
         incontent: (bc.incontent ?? []).map(migrateBlock),
         about,
         footer: { ...emptyFooter, ...(bc.footer ?? {}), socials },
+        pickOfDay: { ...defaultPickOfDay, ...(bc.pickOfDay ?? {}) },
       })
     }
     setLoading(false)
@@ -425,6 +443,10 @@ export default function CustomizePage() {
   function addIncontentBlock() { updateIncontent([...data.incontent, newBlock()]) }
   function updateIncontentBlock(id: string, b: AdBlock) { updateIncontent(data.incontent.map(x => x.id === id ? b : x)) }
   function deleteIncontentBlock(id: string) { updateIncontent(data.incontent.filter(x => x.id !== id)) }
+
+  function updatePickOfDay(patch: Partial<PickOfDayConfig>) {
+    setData(d => ({ ...d, pickOfDay: { ...d.pickOfDay, ...patch } }))
+  }
 
   function updateFooter(patch: Partial<FooterData>) { setData(d => ({ ...d, footer: { ...d.footer, ...patch } })) }
   function updateSocial(key: keyof SocialLinks, val: string) {
@@ -606,6 +628,101 @@ export default function CustomizePage() {
                 />
               </div>
             ))}
+          </div>
+        </Section>
+
+        {/* Pick of the Day */}
+        <Section
+          title="Pick of the Day"
+          description="A featured post that rotates automatically every 24 hours. Shows in the sidebar, the homepage, or both. Picked randomly from all published posts — same pick all day for every visitor, different pick each day."
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--text)]">Enable Pick of the Day</p>
+                <p className="text-xs text-[var(--text-3)]">Turn the whole feature on or off site-wide.</p>
+              </div>
+              <button
+                onClick={() => updatePickOfDay({ enabled: !data.pickOfDay.enabled })}
+                className="text-[var(--text-3)]"
+                aria-label="Toggle Pick of the Day"
+              >
+                {data.pickOfDay.enabled
+                  ? <ToggleRight size={28} className="text-[#0071e3]" />
+                  : <ToggleLeft size={28} />}
+              </button>
+            </div>
+
+            {data.pickOfDay.enabled && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Label shown above the pick</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={data.pickOfDay.label}
+                      onChange={e => updatePickOfDay({ label: e.target.value })}
+                      maxLength={40}
+                      className="input-field flex-1 text-sm"
+                      placeholder="Our Pick of the Day"
+                    />
+                    <div className="flex gap-1">
+                      {['Our Pick of the Day', "Editor's Choice", 'Best Value', 'Today\'s Pick'].map(preset => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => updatePickOfDay({ label: preset })}
+                          className="px-2 py-1 text-[10px] rounded-md border border-[var(--border-2)] text-[var(--text-3)] hover:text-[#0071e3] hover:border-[#0071e3]/40 transition-colors whitespace-nowrap"
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border-2)] cursor-pointer hover:border-[#0071e3]/40 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={data.pickOfDay.showOnSidebar}
+                      onChange={e => updatePickOfDay({ showOnSidebar: e.target.checked })}
+                      className="w-4 h-4 accent-[#0071e3]"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-[var(--text)]">Show in sidebar</p>
+                      <p className="text-xs text-[var(--text-3)]">On every single post page.</p>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border-2)] cursor-pointer hover:border-[#0071e3]/40 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={data.pickOfDay.showOnHomepage}
+                      onChange={e => updatePickOfDay({ showOnHomepage: e.target.checked })}
+                      className="w-4 h-4 accent-[#0071e3]"
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-[var(--text)]">Show on homepage</p>
+                      <p className="text-xs text-[var(--text-3)]">As a dedicated section.</p>
+                    </div>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">
+                    Pin a specific post <span className="text-[var(--text-3)] font-normal">(optional — leave blank to rotate randomly every 24h)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={data.pickOfDay.pinnedPostId}
+                    onChange={e => updatePickOfDay({ pinnedPostId: e.target.value.replace(/\D/g, '') })}
+                    placeholder="e.g. 42"
+                    className="input-field text-sm w-40 font-mono"
+                  />
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">Enter a WordPress post ID to always feature that post instead of rotating. Find the ID in wp-admin → Posts (hover over a post, the URL has <code className="font-mono">post=42</code>).</p>
+                </div>
+              </>
+            )}
           </div>
         </Section>
 
