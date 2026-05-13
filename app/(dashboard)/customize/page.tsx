@@ -321,6 +321,16 @@ export default function CustomizePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setUserId(user.id)
+    // Pull the canonical logo URL from brand_profiles — that's the single source
+    // of truth (set in Brand Profile). We only use blog_customizations.about
+    // for blog-specific layout choices (the banner background color).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: brandRow } = await (supabase as any)
+      .from('brand_profiles')
+      .select('logo_url')
+      .eq('user_id', user.id)
+      .single()
+    const canonicalLogoUrl: string = brandRow?.logo_url ?? ''
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: row } = await (supabase as any)
       .from('integrations')
@@ -342,7 +352,9 @@ export default function CustomizePage() {
       }
       const about: AboutData = {
         bio:      bc.about?.bio ?? bc.footer?.bio ?? '',
-        logoUrl:  bc.about?.logoUrl ?? bc.about?.imageUrl ?? '',
+        // Brand Profile is the source of truth for the logo. Fall back to any
+        // value stored in blog_customizations only if brand_profiles is empty.
+        logoUrl:  canonicalLogoUrl || bc.about?.logoUrl || bc.about?.imageUrl || '',
         headerBg: bc.about?.headerBg === 'white' ? 'white' : 'black',
       }
       setData({
