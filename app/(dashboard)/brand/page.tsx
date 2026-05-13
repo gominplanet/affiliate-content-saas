@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Header from '@/components/layout/Header'
-import { Save, Check, Plus, Trash2, GripVertical, Upload, X } from 'lucide-react'
+import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 async function uploadLogo(file: File, userId: string): Promise<string> {
@@ -153,6 +153,27 @@ export default function BrandPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [wpPushNote, setWpPushNote] = useState<string | null>(null)
   const [logoUploading, setLogoUploading] = useState(false)
+  const [purging, setPurging] = useState(false)
+  const [purged, setPurged] = useState(false)
+
+  async function purgeCache() {
+    setPurging(true)
+    setPurged(false)
+    try {
+      const res = await fetch('/api/wordpress/purge-cache', { method: 'POST' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(json.error || 'Cache purge failed.')
+        return
+      }
+      setPurged(true)
+      setTimeout(() => setPurged(false), 2500)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Cache purge failed.')
+    } finally {
+      setPurging(false)
+    }
+  }
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -290,14 +311,29 @@ export default function BrandPage() {
         title="Brand Profile"
         subtitle="Define your brand voice for consistent AI-generated content."
         actions={
-          <button onClick={save} disabled={saving} className="btn-primary">
-            {saved
-              ? <><Check size={14} /> Saved!</>
-              : saving
-              ? 'Saving…'
-              : <><Save size={14} /> Save changes</>
-            }
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={purgeCache}
+              disabled={purging || saving}
+              className="btn-secondary flex items-center gap-2"
+              title="Clear LiteSpeed cache so changes appear immediately on the live blog"
+            >
+              {purging
+                ? <><Loader2 size={14} className="animate-spin" /> Clearing…</>
+                : purged
+                ? <><Check size={14} /> Cleared!</>
+                : <><RefreshCw size={14} /> Clear Site Cache</>
+              }
+            </button>
+            <button onClick={save} disabled={saving} className="btn-primary">
+              {saved
+                ? <><Check size={14} /> Saved!</>
+                : saving
+                ? 'Saving…'
+                : <><Save size={14} /> Save changes</>
+              }
+            </button>
+          </div>
         }
       />
 
