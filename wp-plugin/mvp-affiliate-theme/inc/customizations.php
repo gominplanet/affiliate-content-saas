@@ -76,11 +76,39 @@ if (!function_exists('mvp_affiliate_pick_of_day')) {
         $config = mvp_affiliate_pick_of_day_config();
         if (empty($config['enabled'])) return null;
 
-        // Pinned mode
+        // Pinned mode — accepts either a URL or a raw numeric post ID
         if ($config['rotation'] === 'pinned') {
-            $pinned = intval($config['pinnedPostId'] ?? 0);
-            if ($pinned <= 0) return null;
-            $post = get_post($pinned);
+            $raw = trim((string)($config['pinnedPostId'] ?? ''));
+            if ($raw === '') return null;
+
+            // Numeric → treat as post ID (legacy)
+            if (ctype_digit($raw)) {
+                $pinned_id = intval($raw);
+            } else {
+                // URL → resolve via WP's built-in resolver
+                $pinned_id = url_to_postid($raw);
+                // url_to_postid returns 0 if it can't match (e.g. wrong domain).
+                // Try one more time by extracting the slug from the path.
+                if ($pinned_id === 0) {
+                    $path = parse_url($raw, PHP_URL_PATH);
+                    if ($path) {
+                        $slug = trim($path, '/');
+                        $slug = preg_replace('#^.*/#', '', $slug); // last path segment
+                        if ($slug) {
+                            $by_slug = get_posts([
+                                'name'        => $slug,
+                                'post_type'   => 'post',
+                                'post_status' => 'publish',
+                                'numberposts' => 1,
+                            ]);
+                            if (!empty($by_slug)) $pinned_id = $by_slug[0]->ID;
+                        }
+                    }
+                }
+            }
+
+            if ($pinned_id <= 0) return null;
+            $post = get_post($pinned_id);
             return ($post && $post->post_status === 'publish' && $post->post_type === 'post')
                 ? $post
                 : null;

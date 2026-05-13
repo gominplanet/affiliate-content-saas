@@ -740,15 +740,15 @@ export default function CustomizePage() {
 
                 {data.pickOfDay.rotation === 'pinned' && (
                   <div>
-                    <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Post ID to pin</label>
+                    <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Post URL to pin</label>
                     <input
-                      type="text"
+                      type="url"
                       value={data.pickOfDay.pinnedPostId}
-                      onChange={e => updatePickOfDay({ pinnedPostId: e.target.value.replace(/\D/g, '') })}
-                      placeholder="e.g. 42"
-                      className="input-field text-sm w-40 font-mono"
+                      onChange={e => updatePickOfDay({ pinnedPostId: e.target.value })}
+                      placeholder="https://yourdomain.com/your-review-post-slug/"
+                      className="input-field text-sm"
                     />
-                    <p className="text-[11px] text-[var(--text-3)] mt-1">Find the ID in wp-admin → Posts (hover over a post — the URL has <code className="font-mono">post=42</code>).</p>
+                    <p className="text-[11px] text-[var(--text-3)] mt-1">Paste the full URL of the post you want to feature. Open your blog, click the post you want, copy the URL from your browser&apos;s address bar.</p>
                   </div>
                 )}
               </>
