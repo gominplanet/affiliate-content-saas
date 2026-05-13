@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { createWordPressService } from '@/services/wordpress'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -42,18 +41,18 @@ export async function POST(req: Request) {
     .single()
 
   if (intRow?.wordpress_url && intRow?.wordpress_username && intRow?.wordpress_app_password) {
-    try {
-      const wpService = createWordPressService(
-        intRow.wordpress_url,
-        intRow.wordpress_username,
-        intRow.wordpress_app_password,
-        intRow.wordpress_api_token || undefined,
-      )
+    const wpBase = intRow.wordpress_url.replace(/\/$/, '')
+    const cleanPw = intRow.wordpress_app_password.replace(/\s+/g, '')
+    const authHeader = `Basic ${Buffer.from(`${intRow.wordpress_username}:${cleanPw}`).toString('base64')}`
 
+    try {
       // Fetch existing data so we only override footer-related fields
       let existing: Record<string, unknown> = {}
       try {
-        existing = await wpService.getCustomEndpoint('/wp-json/affiliateos/v1/customizations') as Record<string, unknown>
+        const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+          headers: { Authorization: authHeader },
+        })
+        if (getRes.ok) existing = await getRes.json() as Record<string, unknown>
       } catch { /* start fresh */ }
 
       // Map footer.socials → profile keys the WP plugin expects
@@ -80,15 +79,35 @@ export async function POST(req: Request) {
         ...(bio ? { bio } : {}),
       }
 
-      await wpService.postCustomEndpoint(
-        '/wp-json/affiliateos/v1/customizations',
-        { ...existing, ...customizations, footer: mergedFooter, profile: mergedProfile },
-      )
+      const payload = { ...existing, ...customizations, footer: mergedFooter, profile: mergedProfile }
+
+      // Push to WordPress — direct Basic Auth, no wp-login.php fallback (Hostinger blocks it)
+      const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authHeader,
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!postRes.ok) {
+        const text = await postRes.text()
+        let userMsg: string
+        if (postRes.status === 401 || postRes.status === 403) {
+          userMsg = 'WordPress rejected the Application Password. Disconnect WordPress in Site & Integrations and reconnect with a fresh Application Password from wp-admin → Users → Profile → Application Passwords.'
+        } else if (postRes.status === 404) {
+          userMsg = 'AffiliateOS plugin endpoint not found on your site. Re-run the WordPress setup from Site & Integrations to install the plugin.'
+        } else {
+          userMsg = `WordPress returned ${postRes.status}: ${text.slice(0, 200)}`
+        }
+        return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: userMsg })
+      }
+
       return NextResponse.json({ ok: true, wordpress: 'pushed' })
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       console.error('[customizations] WordPress push failed:', msg)
-      // Supabase save succeeded — return ok but surface the WP error so the UI can show it
       return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
     }
   }
