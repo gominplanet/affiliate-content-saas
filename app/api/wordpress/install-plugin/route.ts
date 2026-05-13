@@ -1,50 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-
-// ── helpers (same pattern as connect-and-setup) ───────────────────────────────
-
-function buildCookieHeader(rawSetCookie: string[]): string {
-  const seen = new Set<string>()
-  const parts: string[] = []
-  for (const raw of rawSetCookie) {
-    const kv = raw.split(';')[0].trim()
-    const key = kv.split('=')[0]
-    if (!seen.has(key)) { seen.add(key); parts.push(kv) }
-  }
-  return parts.join('; ')
-}
-
-async function wpLogin(
-  siteUrl: string,
-  username: string,
-  password: string,
-): Promise<{ cookies: string; ok: boolean }> {
-  const body = new URLSearchParams({
-    log: username, pwd: password,
-    'wp-submit': 'Log In', redirect_to: '/wp-admin/', testcookie: '1',
-  })
-  const res = await fetch(`${siteUrl}/wp-login.php`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: 'wordpress_test_cookie=WP+Cookie+check' },
-    body: body.toString(),
-    redirect: 'manual',
-  })
-  const rawCookies: string[] = []
-  res.headers.forEach((value, name) => { if (name.toLowerCase() === 'set-cookie') rawCookies.push(value) })
-  const cookies = buildCookieHeader(rawCookies)
-  const ok = rawCookies.some(c => c.includes('wordpress_logged_in_'))
-  return { cookies, ok }
-}
-
-async function getNonce(siteUrl: string, cookies: string): Promise<string> {
-  const res = await fetch(`${siteUrl}/wp-admin/index.php`, { headers: { Cookie: cookies } })
-  const html = await res.text()
-  let m = html.match(/createNonceMiddleware\("([^"]+)"\)/)
-  if (m) return m[1]
-  m = html.match(/"nonce"\s*:\s*"([^"]+)"/)
-  if (m) return m[1]
-  throw new Error('Could not extract WP nonce. Make sure your credentials have admin access.')
-}
+import { wpLogin, getNonce } from '@/lib/wordpress-login'
 
 async function ensureCodeSnippet(
   siteUrl: string,
@@ -453,10 +409,14 @@ export async function POST() {
 
   try {
     // 1. Login to get session cookies
-    const { cookies, ok: loginOk } = await wpLogin(siteUrl, username, password)
-    if (!loginOk) {
-      return NextResponse.json({ error: 'WordPress login failed. Check your username and password in Integrations.' }, { status: 400 })
+    const loginResult = await wpLogin(siteUrl, username, password)
+    if (!loginResult.ok) {
+      const msg = loginResult.reason === 'unreachable'
+        ? 'Could not reach your WordPress site. Check the URL in Integrations.'
+        : 'WordPress login failed. Check your username and password in Integrations.'
+      return NextResponse.json({ error: msg }, { status: 400 })
     }
+    const cookies = loginResult.cookies
 
     // 2. Get nonce
     const nonce = await getNonce(siteUrl, cookies)

@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { generateHomePage } from '@/lib/wordpress-home-template'
 import { generateAboutPage } from '@/lib/wordpress-about-template'
 import { generatePrivacyPolicy } from '@/lib/wordpress-privacy-template'
+import { wpLogin, getNonce } from '@/lib/wordpress-login'
 
 export const maxDuration = 60
 
@@ -20,50 +21,6 @@ function buildCookieHeader(rawSetCookie: string[]): string {
     }
   }
   return parts.join('; ')
-}
-
-async function wpLogin(
-  siteUrl: string,
-  username: string,
-  password: string,
-): Promise<{ cookies: string; ok: boolean }> {
-  const body = new URLSearchParams({
-    log: username,
-    pwd: password,
-    'wp-submit': 'Log In',
-    redirect_to: '/wp-admin/',
-    testcookie: '1',
-  })
-  const res = await fetch(`${siteUrl}/wp-login.php`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Cookie: 'wordpress_test_cookie=WP+Cookie+check',
-    },
-    body: body.toString(),
-    redirect: 'manual',
-  })
-
-  const rawCookies: string[] = []
-  res.headers.forEach((value, name) => {
-    if (name.toLowerCase() === 'set-cookie') rawCookies.push(value)
-  })
-
-  const cookies = buildCookieHeader(rawCookies)
-  const ok = rawCookies.some(c => c.includes('wordpress_logged_in_'))
-  return { cookies, ok }
-}
-
-async function getNonce(siteUrl: string, cookies: string): Promise<string> {
-  const res = await fetch(`${siteUrl}/wp-admin/index.php`, {
-    headers: { Cookie: cookies },
-  })
-  const html = await res.text()
-  let m = html.match(/createNonceMiddleware\("([^"]+)"\)/)
-  if (m) return m[1]
-  m = html.match(/"nonce"\s*:\s*"([^"]+)"/)
-  if (m) return m[1]
-  throw new Error('Could not extract WP nonce. Make sure your credentials have admin access.')
 }
 
 function wpFetch(siteUrl: string, cookies: string, nonce: string) {
@@ -226,10 +183,14 @@ export async function POST(request: Request) {
     siteUrl = siteUrl.replace(/\/wp-admin\/?.*$/, '').replace(/\/$/, '')
 
     // ── 1. Login ──────────────────────────────────────────────────────────────
-    const { cookies, ok: loginOk } = await wpLogin(siteUrl, username, password)
-    if (!loginOk) {
-      return NextResponse.json({ error: 'Login failed. Check your WordPress username and password.' }, { status: 400 })
+    const loginResult = await wpLogin(siteUrl, username, password)
+    if (!loginResult.ok) {
+      const msg = loginResult.reason === 'unreachable'
+        ? 'Could not reach your WordPress site. Check the URL.'
+        : 'Login failed. Check your WordPress username and password.'
+      return NextResponse.json({ error: msg }, { status: 400 })
     }
+    const cookies = loginResult.cookies
 
     // ── 2. Get nonce ──────────────────────────────────────────────────────────
     const nonce = await getNonce(siteUrl, cookies)
