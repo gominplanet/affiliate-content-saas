@@ -158,12 +158,19 @@ async function handleGenerate(request: Request) {
   } catch (err) {
   }
 
-  // ── 7.1. Resolve category from brand niches ───────────────────────────────
+  // ── 7.1. Resolve category — prefer the niche the AI picked for THIS post,
+  //         fall back to the first brand niche if the model returned something
+  //         outside the user's selected niches or left it blank. ─────────────
   let categoryIds: number[] = []
   try {
     const niches = ((brand as Record<string, unknown>).niches as string[]) || []
-    if (niches.length > 0) {
-      const catId = await wpService.createCategory(niches[0])
+    const aiPick = (generated.category || '').trim()
+    // Find the niche label in a case-insensitive way so minor casing drift
+    // ("home & kitchen" vs "Home & Kitchen") still resolves cleanly.
+    const matched = niches.find(n => n.toLowerCase() === aiPick.toLowerCase())
+    const finalNiche = matched || niches[0] || ''
+    if (finalNiche) {
+      const catId = await wpService.createCategory(finalNiche)
       categoryIds = [catId]
     }
   } catch { /* non-fatal */ }

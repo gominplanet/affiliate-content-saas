@@ -33,6 +33,13 @@ export interface BlogGenerationOutput {
   tags: string[]
   content: string
   rating: string
+  /**
+   * The single best-fitting niche label from the brand's `niches` array for
+   * this specific post. Filled in by the generator (it gets the niche list
+   * in the prompt). Falls back to the first niche if the model omits it or
+   * picks an unknown value.
+   */
+  category: string
   imagePrompts: {
     hero: string
     lifestyle: string
@@ -337,7 +344,7 @@ OUTPUT FORMAT — TWO BLOCKS, IN THIS ORDER
 
 BLOCK 1 — metadata only, no HTML content:
 %%META_START%%
-{"title":"...","slug":"...","excerpt":"...","tags":[...],"rating":"4.2","imagePrompts":{"hero":"...","lifestyle":"...","setting":"..."}}
+{"title":"...","slug":"...","excerpt":"...","tags":[...],"rating":"4.2","category":"...","imagePrompts":{"hero":"...","lifestyle":"...","setting":"..."}}
 %%META_END%%
 
 BLOCK 2 — full HTML content, no JSON escaping needed:
@@ -349,6 +356,7 @@ BLOCK 1 rules:
 - Valid JSON, no line breaks inside strings
 - excerpt: max 160 chars
 - tags: 10 items — mix of broad high-traffic, niche-specific, and product/brand tags for SEO and social virality
+- category: REQUIRED — pick EXACTLY ONE label from this list of brand niches that best fits THIS specific product: ${niches}. Copy the label verbatim, including capitalization, spacing, and the "&" character. If multiple niches plausibly fit, pick the most specific one (e.g. for a kitchen mat prefer "Home & Kitchen" over "Tools & Home Improvement"). If none of the brand niches plausibly fit, pick the closest match anyway — never invent a new category and never leave this field blank.
 - imagePrompts.hero: YouTube thumbnail style. Bold text overlay with short specific verdict (max 6 words, specific to this product outcome). NO hype words — banned: HONEST, TRUTH, REAL, SHOCKING, AMAZING, LEGIT, FINALLY, ACTUALLY, WORTH IT, REAL TALK. Dramatic product close-up, studio lighting, high contrast. No packaging, no box.
 - imagePrompts.lifestyle: Person using exact product, shallow depth of field, bokeh background, no box/packaging.
 - imagePrompts.setting: Clean flat lay, exact product, neutral surface, no box/packaging.
