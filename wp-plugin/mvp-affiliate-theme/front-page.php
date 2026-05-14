@@ -127,7 +127,10 @@ $used_ids = [];
           'category'    => $cat->term_id,
           'exclude'     => $used_ids,
       ]);
-      if (empty($cat_posts)) continue;
+      // Require at least 3 unused posts in a category — otherwise the
+      // 3-column grid renders with 1 or 2 awkward gaps. Those posts roll
+      // into "Recently Published" at the bottom instead.
+      if (count($cat_posts) < 3) continue;
       foreach ($cat_posts as $p) $used_ids[] = $p->ID;
   ?>
   <section class="mvp-section mvp-section-cat">

@@ -674,6 +674,11 @@ export default function ContentPage() {
   const [pinPublishingFor, setPinPublishingFor] = useState<string | null>(null)
   const [fixingCategories, setFixingCategories] = useState(false)
   const [fixCatResult, setFixCatResult] = useState<string | null>(null)
+  // Category-fix preview modal — dryRun the recategorize endpoint so the
+  // user sees exactly which posts go where before any WP write happens.
+  const [catPreview, setCatPreview] = useState<{ title: string; category: string }[] | null>(null)
+  const [catPreviewLoading, setCatPreviewLoading] = useState(false)
+  const [catApplying, setCatApplying] = useState(false)
   const [activeTab, setActiveTab] = useState<'videos' | 'posts'>('videos')
   const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null }[]>([])
   const [rewritingPostId, setRewritingPostId] = useState<number | null>(null)
@@ -1013,23 +1018,63 @@ export default function ContentPage() {
     }
   }
 
-  async function fixCategories() {
-    setFixingCategories(true)
+  /**
+   * Step 1 of the recategorize flow — runs the bulk-categorize endpoint
+   * in dryRun mode and surfaces the proposed mapping in a modal. Nothing
+   * is written to WP yet.
+   */
+  async function previewFixCategories() {
+    setCatPreviewLoading(true)
     setFixCatResult(null)
     try {
-      const res = await fetch('/api/blog/bulk-categorize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const res = await fetch('/api/blog/bulk-categorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setFixCatResult(`Error: ${data.error}`)
+      } else if (!Array.isArray(data.preview) || data.preview.length === 0) {
+        setFixCatResult(data.message || 'All posts already have a real niche category.')
+      } else {
+        setCatPreview(data.preview as { title: string; category: string }[])
+      }
+    } catch {
+      setFixCatResult('Something went wrong.')
+    } finally {
+      setCatPreviewLoading(false)
+    }
+  }
+
+  /**
+   * Step 2 — the user has reviewed the preview and clicked Apply.
+   * This time we hit the endpoint without dryRun so WP gets updated.
+   */
+  async function applyFixCategories() {
+    setCatApplying(true)
+    setFixingCategories(true)
+    try {
+      const res = await fetch('/api/blog/bulk-categorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
       const data = await res.json()
       if (data.error) {
         setFixCatResult(`Error: ${data.error}`)
       } else if (data.fixed === 0) {
-        setFixCatResult(data.message || 'All posts already have categories.')
+        setFixCatResult(data.message || 'All posts already had categories.')
       } else {
-        setFixCatResult(`Done — ${data.fixed} post${data.fixed !== 1 ? 's' : ''} categorized (${data.skipped} already had categories).`)
+        setFixCatResult(`Done — ${data.fixed} post${data.fixed !== 1 ? 's' : ''} re-categorized (${data.skipped} were already fine).`)
       }
     } catch {
       setFixCatResult('Something went wrong.')
+    } finally {
+      setCatApplying(false)
+      setFixingCategories(false)
+      setCatPreview(null)
     }
-    setFixingCategories(false)
   }
 
   async function loadMore() {
@@ -1074,8 +1119,15 @@ export default function ContentPage() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <button onClick={fixCategories} disabled={fixingCategories} className="btn-secondary text-sm" title="Auto-assign categories to all uncategorized posts">
-              {fixingCategories ? <><Loader2 size={14} className="animate-spin" /> Fixing…</> : 'Fix Categories'}
+            <button
+              onClick={previewFixCategories}
+              disabled={catPreviewLoading || fixingCategories}
+              className="btn-secondary text-sm"
+              title="Preview which category each post will be assigned to before applying"
+            >
+              {catPreviewLoading
+                ? <><Loader2 size={14} className="animate-spin" /> Loading preview…</>
+                : 'Fix Categories'}
             </button>
             {activeTab === 'videos' && (
               <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
@@ -1337,6 +1389,59 @@ export default function ContentPage() {
           onPublish={handlePublishPin}
           onClose={() => { if (!pinPublishingFor) setPinPreview(null) }}
         />
+      )}
+
+      {/* Recategorize preview modal — dryRun first, apply on confirm. */}
+      {catPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => !catApplying && setCatPreview(null)}>
+          <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-white/10">
+              <div>
+                <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Recategorize preview</h3>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                  {catPreview.length} post{catPreview.length !== 1 ? 's' : ''} will be re-categorized. Nothing&apos;s saved yet.
+                </p>
+              </div>
+              <button
+                onClick={() => !catApplying && setCatPreview(null)}
+                disabled={catApplying}
+                className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-5">
+              <ul className="flex flex-col gap-2">
+                {catPreview.map((row, i) => (
+                  <li key={i} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e]">
+                    <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex-1 line-clamp-2">{row.title}</p>
+                    <span className="text-xs font-semibold text-[#0071e3] whitespace-nowrap mt-0.5">→ {row.category}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 p-5 border-t border-gray-100 dark:border-white/10">
+              <button
+                onClick={() => !catApplying && setCatPreview(null)}
+                disabled={catApplying}
+                className="btn-secondary text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyFixCategories}
+                disabled={catApplying}
+                className="btn-primary text-sm"
+              >
+                {catApplying
+                  ? <><Loader2 size={14} className="animate-spin" /> Applying…</>
+                  : `Apply to ${catPreview.length} post${catPreview.length !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
