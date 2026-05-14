@@ -19,14 +19,15 @@ get_header();
         </div>
       </header>
 
-      <?php if (has_post_thumbnail()): ?>
-      <figure class="mvp-single-featured">
-        <?php the_post_thumbnail('mvp-card-large', ['loading' => 'eager', 'fetchpriority' => 'high']); ?>
-        <?php $caption = get_the_post_thumbnail_caption(); if ($caption): ?>
-        <figcaption class="mvp-single-featured-caption"><?php echo esc_html($caption); ?></figcaption>
-        <?php endif; ?>
-      </figure>
-      <?php endif; ?>
+      <?php /*
+        Featured-image block intentionally NOT rendered on single posts.
+        The thumbnail is still stored on the WP post and shown everywhere
+        else (homepage hero/featured grid, category archives, "Latest
+        Reviews" grid, "Browse by Category"). Reason: every review has a
+        YouTube "Watch Our Review" embed immediately below this point
+        whose poster image is the same thumbnail — rendering both would
+        show the same image twice in a row.
+      */ ?>
 
       <div class="mvp-single-body">
         <?php the_content(); ?>
