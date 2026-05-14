@@ -210,7 +210,11 @@ if (!function_exists('mvp_affiliate_bio')) {
 }
 
 /**
- * Merged socials: footer.socials wins; falls back to profile.{socialUrl} keys.
+ * Merged socials: profile.{socialUrl} wins (the Brand Profile source of
+ * truth); falls back to footer.socials only when profile.{socialUrl} is
+ * empty. This means updating a social URL in Brand Profile always wins
+ * over any stale footer.socials.* value that might be lingering in
+ * blog_customizations.
  */
 if (!function_exists('mvp_affiliate_socials')) {
     function mvp_affiliate_socials(): array {
@@ -228,7 +232,9 @@ if (!function_exists('mvp_affiliate_socials')) {
             'contact'   => 'contactEmail',
         ];
         foreach ($map as $key => $profileKey) {
-            if (empty($socials[$key]) && !empty($profile[$profileKey])) {
+            // profile.{socialUrl} wins. Only fall through to footer.socials
+            // if Brand Profile has nothing for this platform.
+            if (!empty($profile[$profileKey])) {
                 $socials[$key] = $profile[$profileKey];
             }
         }

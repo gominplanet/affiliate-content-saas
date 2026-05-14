@@ -55,31 +55,31 @@ export async function POST(req: Request) {
         if (getRes.ok) existing = await getRes.json() as Record<string, unknown>
       } catch { /* start fresh */ }
 
-      // Map footer.socials → profile keys the WP plugin expects
-      const socials = customizations?.footer?.socials ?? {}
-      // Bio lives in `about.bio` on the frontend form (AboutData interface).
-      // The PHP plugin reads `footer.bio` OR `profile.authorBio`, so we write both.
-      const bio = customizations?.about?.bio || customizations?.footer?.bio || ''
-      const mergedProfile = {
-        ...(existing?.profile ?? {}),
-        ...(socials.youtube   ? { youtubeUrl:   socials.youtube   } : {}),
-        ...(socials.facebook  ? { facebookUrl:  socials.facebook  } : {}),
-        ...(socials.instagram ? { instagramUrl: socials.instagram } : {}),
-        ...(socials.tiktok    ? { tiktokUrl:    socials.tiktok    } : {}),
-        ...(socials.twitter   ? { twitterUrl:   socials.twitter   } : {}),
-        ...(socials.pinterest ? { pinterestUrl: socials.pinterest } : {}),
-        ...(socials.threads   ? { threadsUrl:   socials.threads   } : {}),
-        ...(socials.contact   ? { contactEmail: socials.contact   } : {}),
-        ...(bio ? { authorBio: bio } : {}),
+      // Brand Profile (via /api/wordpress/sync-brand) is the SOLE source
+      // of truth for socials, bio, contact email, brand name, tagline,
+      // logo, colors, and fonts. Customize Blog must NOT write any of
+      // those fields here — doing so causes stale Customize state to
+      // overwrite whatever Brand Profile last set.
+      //
+      // What Customize Blog owns: sidebar/in-content ad blocks, pick of
+      // the day, custom footer links, logo banner background color.
+      const stripped = { ...(customizations ?? {}) } as Record<string, unknown>
+      if (stripped.footer && typeof stripped.footer === 'object') {
+        const f = { ...(stripped.footer as Record<string, unknown>) }
+        delete f.socials
+        delete f.bio
+        stripped.footer = f
       }
-
-      // Also write bio into footer.bio so the PHP plugin's first-choice key is set
-      const mergedFooter = {
-        ...(customizations?.footer ?? {}),
-        ...(bio ? { bio } : {}),
+      if (stripped.about && typeof stripped.about === 'object') {
+        const a = { ...(stripped.about as Record<string, unknown>) }
+        delete a.bio
+        stripped.about = a
       }
+      // Never touch `profile.*` either — that's Brand Profile territory.
+      delete stripped.profile
 
-      const payload = { ...existing, ...customizations, footer: mergedFooter, profile: mergedProfile }
+      // Merge with existing so we preserve whatever Brand Profile wrote.
+      const payload = { ...existing, ...stripped }
 
       // Push to WordPress — direct Basic Auth, no wp-login.php fallback (Hostinger blocks it)
       const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
