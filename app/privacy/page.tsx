@@ -116,7 +116,7 @@ export default function PrivacyPage() {
             <li>Facebook / Meta (Page posting — only Pages you authorize)</li>
             <li>YouTube Data API (channel and video data)</li>
             <li>WordPress REST API (publishing to your own self-hosted WordPress site)</li>
-            <li>Anthropic Claude API (content generation)</li>
+            <li>Large-language-model providers used to power our AI agent pipeline (content generation)</li>
             <li>Supabase (data storage)</li>
             <li>Stripe (billing and subscription management)</li>
             <li>Vercel (web hosting)</li>

@@ -80,10 +80,10 @@ export default function TermsPage() {
         <div>
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">7. AI-Generated Content</h2>
           <p>
-            The App generates draft content using AI (Anthropic Claude). AI-generated content may contain
-            inaccuracies, factual errors, or unintended language. You are responsible for reviewing and
-            editing all generated content before publishing, and for ensuring it complies with the
-            policies of the platforms you publish to and with applicable law (including required
+            The App generates draft content using a pipeline of specialized AI agents. AI-generated content
+            may contain inaccuracies, factual errors, or unintended language. You are responsible for
+            reviewing and editing all generated content before publishing, and for ensuring it complies with
+            the policies of the platforms you publish to and with applicable law (including required
             affiliate disclosures).
           </p>
         </div>
