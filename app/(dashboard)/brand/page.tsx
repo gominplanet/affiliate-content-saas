@@ -340,6 +340,7 @@ export default function BrandPage() {
           facebookUrl:    normalized.facebook_url,
           threadsUrl:     normalized.threads_url,
           contactEmail:   normalized.contact_email,
+          niches:         normalized.niches,
         }),
       })
       const json = await res.json().catch(() => ({}))

@@ -31,12 +31,14 @@ export async function POST(request: Request) {
     facebookUrl?: string
     threadsUrl?: string
     contactEmail?: string
+    niches?: string[]
   }
   const {
     authorName, brandName, tagline, authorBio,
     primaryColor, secondaryColor, fontTheme, logoUrl,
     youtubeUrl, instagramUrl, tiktokUrl, twitterUrl,
     pinterestUrl, facebookUrl, threadsUrl, contactEmail,
+    niches,
   } = body
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -196,9 +198,55 @@ export async function POST(request: Request) {
       }
     }
 
-    // Legacy Code Snippets refresh removed — the MVP Affiliate Theme + Plugin
-    // now own all rendering. Brand updates land on WP via the customizations
-    // endpoint above and are picked up by the theme on the next request.
+    // ─── Sync selected Affiliate Niches → WordPress categories ────────────
+    // Every niche the user has ticked on Brand Profile becomes a category on
+    // their WordPress site. Idempotent: existing categories with the same
+    // slug are skipped (no duplicate). We never DELETE categories — users
+    // unticking a niche just stops new category creation; any existing
+    // category they want to remove they can delete in wp-admin.
+    if (Array.isArray(niches) && niches.length > 0) {
+      const createdCategories: string[] = []
+      const skippedCategories: string[] = []
+      try {
+        for (const nicheLabel of niches) {
+          const slug = nicheLabel
+            .toLowerCase()
+            .replace(/&/g, 'and')
+            .replace(/[^a-z0-9\s-]/g, '')
+            .trim()
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+          if (!slug) continue
+
+          // Check if a category with this slug already exists.
+          const checkRes = await fetch(
+            `${wpBase}/wp-json/wp/v2/categories?slug=${encodeURIComponent(slug)}`,
+            { headers: { Authorization: authHeader } },
+          )
+          if (checkRes.ok) {
+            const found = await checkRes.json() as Array<{ id: number; slug: string }>
+            if (Array.isArray(found) && found.length > 0) {
+              skippedCategories.push(slug)
+              continue
+            }
+          }
+
+          // Create it.
+          const createRes = await fetch(`${wpBase}/wp-json/wp/v2/categories`, {
+            method: 'POST',
+            headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: nicheLabel, slug }),
+          })
+          if (createRes.ok) {
+            createdCategories.push(slug)
+          }
+        }
+        debug.nicheCategoriesCreated = createdCategories
+        debug.nicheCategoriesSkipped = skippedCategories
+      } catch (e) {
+        debug.nicheCategoriesError = e instanceof Error ? e.message : String(e)
+      }
+    }
 
     return NextResponse.json({ ok: true, wordpress: 'pushed', debug })
   } catch (e) {
