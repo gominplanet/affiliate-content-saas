@@ -358,6 +358,16 @@ p { margin: 0 0 1em; }
   margin: 32px 0;
 }
 .mvp-ad-strip .mvp-section-header { display: none; }
+.mvp-ad-strip-label {
+  font-family: var(--mvp-font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--mvp-text-dim);
+  text-align: center;
+  margin: 0 0 18px;
+}
 .mvp-ad-slot {
   display: block;
   aspect-ratio: 16 / 9;

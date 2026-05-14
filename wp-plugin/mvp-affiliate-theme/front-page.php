@@ -128,6 +128,7 @@ $used_ids = [];
       : []; ?>
   <section class="mvp-section mvp-ad-strip">
     <div class="mvp-container">
+      <p class="mvp-ad-strip-label">Advertisement</p>
       <div class="mvp-grid mvp-grid-3">
         <?php foreach ($homepage_ads as $ad):
             $img  = $ad['imageUrl'] ?? '';
