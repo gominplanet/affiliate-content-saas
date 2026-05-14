@@ -19,14 +19,14 @@ import {
 // Live = working today. Soon = built / scoped, awaiting external approval.
 // Roadmap = on the list, not promised by date.
 const platforms = [
-  { label: 'WordPress', status: 'live'    as const, color: '#21759b' },
-  { label: 'Facebook',  status: 'live'    as const, color: '#1877f2' },
-  { label: 'Threads',   status: 'live'    as const, color: '#000000' },
-  { label: 'LinkedIn',  status: 'pro'     as const, color: '#0a66c2' },
-  { label: 'Pinterest', status: 'soon'    as const, color: '#e60023' },
-  { label: 'Twitter / X', status: 'soon' as const, color: '#000000' },
-  { label: 'Bluesky',   status: 'soon' as const, color: '#1185fe' },
-  { label: 'Email digest', status: 'roadmap' as const, color: '#34c759' },
+  { label: 'WordPress',    status: 'live'    as const, color: '#21759b', logo: 'wordpress' },
+  { label: 'Facebook',     status: 'live'    as const, color: '#1877f2', logo: 'facebook' },
+  { label: 'Threads',      status: 'live'    as const, color: '#000000', logo: 'threads' },
+  { label: 'LinkedIn',     status: 'pro'     as const, color: '#0a66c2', logo: 'linkedin' },
+  { label: 'Pinterest',    status: 'soon'    as const, color: '#e60023', logo: 'pinterest' },
+  { label: 'Twitter / X',  status: 'soon'    as const, color: '#000000', logo: 'x' },
+  { label: 'Bluesky',      status: 'soon'    as const, color: '#1185fe', logo: 'bluesky' },
+  { label: 'Email digest', status: 'roadmap' as const, color: '#34c759', logo: 'email' },
 ]
 
 const statusBadge: Record<typeof platforms[number]['status'], { text: string; bg: string; fg: string }> = {
@@ -174,11 +174,16 @@ export default function LandingPage() {
             Publishes to your site + every platform you care about
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-            {platforms.map(({ label, status, color }) => {
+            {platforms.map(({ label, status, color, logo }) => {
               const badge = statusBadge[status]
               return (
-                <div key={label} className="flex flex-col items-center gap-2 p-4 rounded-xl bg-white border border-gray-100">
-                  <span className="w-4 h-4 rounded-full" style={{ background: color }} />
+                <div key={label} className="flex flex-col items-center gap-2.5 p-4 rounded-xl bg-white border border-gray-100 hover:border-gray-200 transition-colors">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: color }}
+                  >
+                    <PlatformLogo name={logo} />
+                  </div>
                   <span className="text-sm font-semibold text-[#1d1d1f] text-center leading-tight">{label}</span>
                   <span className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${badge.bg} ${badge.fg}`}>
                     {badge.text}
@@ -793,6 +798,67 @@ function ReviewAnatomy() {
       </div>
     </div>
   )
+}
+
+/** Inline platform-logo SVGs. Monochrome white, sized to fit a 40px chip. */
+function PlatformLogo({ name }: { name: string }) {
+  const props = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'white', className: 'text-white' }
+  switch (name) {
+    case 'wordpress':
+      return (
+        <svg {...props} fill="none" stroke="white" strokeWidth="1.8">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M2 12 L12 22" />
+          <path d="M5 7 L12 2 L19 7" />
+          <path d="M7 14 L17 14" />
+        </svg>
+      )
+    case 'facebook':
+      return (
+        <svg {...props}>
+          <path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.99 22 12z" />
+        </svg>
+      )
+    case 'threads':
+      return (
+        <svg {...props}>
+          <path d="M12.18 21.5h-.04c-2.93-.02-5.18-.99-6.69-2.88C4.1 16.93 3.39 14.6 3.36 11.7v-.01c.03-2.9.74-5.23 2.1-6.92C6.96 2.88 9.21 1.91 12.13 1.9h.04c2.25.02 4.13.59 5.6 1.71 1.38 1.05 2.35 2.55 2.88 4.45l-1.82.51c-.92-3.27-3.23-4.94-6.66-4.96-2.27.02-3.99.73-5.11 2.14-1.05 1.31-1.6 3.2-1.62 5.62.02 2.42.57 4.31 1.62 5.62 1.12 1.41 2.84 2.13 5.11 2.14 2.05-.01 3.4-.49 4.53-1.6.51-.5.91-1.11 1.21-1.82-.31-.18-.65-.34-1-.47-.92-.36-1.93-.5-2.99-.4-.79.08-1.46.31-1.99.66-.42.28-.7.65-.83 1.07-.13.43-.06.84.2 1.2.27.36.71.62 1.32.74.91.18 1.85-.04 2.42-.4.34-.21.6-.52.78-.91l1.73.78c-.32.66-.83 1.22-1.5 1.63-.93.57-2.2.79-3.4.55-.99-.2-1.81-.71-2.36-1.47-.55-.76-.7-1.69-.44-2.6.26-.91.93-1.7 1.94-2.27.83-.47 1.84-.75 2.93-.83.41-.03.83-.04 1.24-.04 1.13 0 2.21.18 3.18.55.39.15.76.33 1.11.55.15-.93.07-1.86-.25-2.74-.43-1.2-1.27-2.13-2.43-2.72-1.18-.59-2.7-.84-4.4-.72-.94.06-1.83.24-2.65.53l-.6-1.79c.99-.34 2.05-.55 3.16-.62 1.97-.13 3.74.16 5.13.85 1.4.7 2.46 1.83 3.06 3.27.59 1.43.66 3.04.18 4.66-.39 1.31-1.05 2.49-1.93 3.41-.91.95-2.04 1.66-3.3 2.07-.74.24-1.51.36-2.31.36z" />
+        </svg>
+      )
+    case 'linkedin':
+      return (
+        <svg {...props}>
+          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.063 2.063 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+        </svg>
+      )
+    case 'pinterest':
+      return (
+        <svg {...props}>
+          <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.688 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.099.12.112.225.085.345-.09.375-.293 1.199-.334 1.363-.053.225-.172.271-.402.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.92-7.252 4.158 0 7.392 2.967 7.392 6.923 0 4.135-2.607 7.462-6.233 7.462-1.214 0-2.357-.629-2.746-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24c6.624 0 11.99-5.367 11.99-11.987C24.007 5.367 18.641.001.012.001z" />
+        </svg>
+      )
+    case 'x':
+      return (
+        <svg {...props}>
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg>
+      )
+    case 'bluesky':
+      return (
+        <svg {...props}>
+          <path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.815 2.736 3.713 3.66 6.383 3.364.136-.02.275-.039.415-.056-.138.022-.276.04-.415.056-3.911.58-7.386 2.005-2.83 7.078 5.013 5.19 6.87-1.113 7.823-4.308.953 3.195 2.05 9.271 7.733 4.308 4.267-4.308 1.172-6.498-2.74-7.078a8.741 8.741 0 01-.415-.056c.14.017.279.036.415.056 2.67.297 5.568-.628 6.383-3.364.246-.828.624-5.79.624-6.478 0-.69-.139-1.861-.902-2.206-.659-.298-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z" />
+        </svg>
+      )
+    case 'email':
+      return (
+        <svg {...props} fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2.5" y="4" width="19" height="16" rx="2" />
+          <path d="m22 6-10 7L2 6" />
+        </svg>
+      )
+    default:
+      return null
+  }
 }
 
 function AgentCard({ color, name, job }: { color: string; name: string; job: string }) {
