@@ -1,6 +1,6 @@
 export type Tier = 'free' | 'starter' | 'growth' | 'pro' | 'admin'
 
-export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter'
+export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky'
 
 export const TIERS = {
   free:    {
@@ -41,7 +41,7 @@ export const TIERS = {
     basePosts: 60,
     bonusPosts: 20,
     sites: 1,
-    socials: ['facebook', 'threads', 'linkedin', 'pinterest'] as readonly Social[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'bluesky'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: false,
     publishAll: false,
@@ -55,7 +55,7 @@ export const TIERS = {
     basePosts: 90,
     bonusPosts: 60,
     sites: 1,
-    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter'] as readonly Social[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: true,
     publishAll: true,
@@ -69,7 +69,7 @@ export const TIERS = {
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
-    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter'] as readonly Social[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: true,
     publishAll: true,

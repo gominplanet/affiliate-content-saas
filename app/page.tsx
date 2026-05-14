@@ -25,7 +25,7 @@ const platforms = [
   { label: 'LinkedIn',     status: 'pro'     as const, color: '#0a66c2', logo: 'linkedin' },
   { label: 'Pinterest',    status: 'soon'    as const, color: '#e60023', logo: 'pinterest' },
   { label: 'Twitter / X',  status: 'live'    as const, color: '#000000', logo: 'x' },
-  { label: 'Bluesky',      status: 'soon'    as const, color: '#1185fe', logo: 'bluesky' },
+  { label: 'Bluesky',      status: 'live'    as const, color: '#1185fe', logo: 'bluesky' },
   { label: 'Email digest', status: 'roadmap' as const, color: '#34c759', logo: 'email' },
 ]
 
@@ -65,7 +65,7 @@ const plans = [
     regular: 199,
     limit: '80 posts / month',
     bonus: '60 + 20 bonus posts',
-    features: ['Everything in Starter', 'LinkedIn + Pinterest auto-post*', 'Priority generation queue'],
+    features: ['Everything in Starter', 'LinkedIn + Bluesky auto-post', 'Pinterest auto-post *', 'Priority generation queue'],
     cta: 'Get Growth',
     href: '/pricing',
     highlight: true,
@@ -198,8 +198,8 @@ export default function LandingPage() {
           </div>
           <p className="mt-6 text-center text-sm text-[#3a3a3c] max-w-2xl mx-auto leading-relaxed">
             We only ship what works. Pinterest auto-publish is built and in Pinterest&apos;s developer
-            review queue. Bluesky is actively in build. Email digests are on the roadmap. No false
-            promises.
+            review queue — activates automatically once approved. Email digests are on the roadmap.
+            No false promises.
           </p>
         </div>
       </section>

@@ -261,17 +261,18 @@ function GenerateButton({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, userTier,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, userTier,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string } | null
+  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string } | null
   wpSiteUrl: string
   fbConnected: boolean
   pinterestConnected: boolean
   threadsConnected: boolean
   linkedInConnected: boolean
   twitterConnected: boolean
+  blueskyConnected: boolean
   userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
@@ -296,6 +297,8 @@ function VideoCard({
   const [liPosted, setLiPosted] = useState(!!post?.linkedInPostId)
   const [twPosting, setTwPosting] = useState(false)
   const [twPosted, setTwPosted] = useState(!!post?.twitterPostId)
+  const [bsPosting, setBsPosting] = useState(false)
+  const [bsPosted, setBsPosted] = useState(!!post?.blueskyPostUri)
 
   // ── Publish All ───────────────────────────────────────────────────────────
   const [publishingAll, setPublishingAll] = useState(false)
@@ -363,15 +366,39 @@ function VideoCard({
           .catch(() => { /* non-fatal */ }),
       )
     }
+    if (blueskyConnected && !bsPosted) {
+      tasks.push(
+        fetch('/api/blog/bluesky-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
+          .then(r => { if (r.ok) setBsPosted(true) })
+          .catch(() => { /* non-fatal */ }),
+      )
+    }
 
     await Promise.allSettled(tasks)
     setPublishingAll(false)
     setPublishAllStep('')
   }
 
-  const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected].filter(Boolean).length
-  const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted)
+  const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected, blueskyConnected].filter(Boolean).length
+  const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted) || (blueskyConnected && !bsPosted)
   const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost)
+
+  async function handleBlueskyPost() {
+    if (!post?.postId) return
+    setBsPosting(true)
+    try {
+      const res = await fetch('/api/blog/bluesky-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: post.postId }),
+      })
+      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (res.ok) setBsPosted(true)
+      else alert(d.error || 'Bluesky post failed')
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Bluesky post failed')
+    } finally { setBsPosting(false) }
+  }
 
   async function handleTwitterPost() {
     if (!post?.postId) return
@@ -587,6 +614,18 @@ function VideoCard({
                   </button>
                 )
               )}
+              {blueskyConnected && (
+                bsPosted ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#1185fe', opacity: 0.8 }}>
+                    <CheckCircle size={11} /> On Bluesky
+                  </span>
+                ) : (
+                  <button onClick={handleBlueskyPost} disabled={bsPosting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-60 transition-colors" style={{ backgroundColor: '#1185fe' }}>
+                    {bsPosting ? <Loader2 size={11} className="animate-spin" /> : <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.815 2.736 3.713 3.66 6.383 3.364-3.911.58-7.386 2.005-2.83 7.078 5.013 5.19 6.87-1.113 7.823-4.308.953 3.195 2.05 9.271 7.733 4.308 4.267-4.308 1.172-6.498-2.74-7.078 2.67.297 5.568-.628 6.383-3.364.246-.828.624-5.79.624-6.478 0-.69-.139-1.861-.902-2.206-.659-.298-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z"/></svg>}
+                    {bsPosting ? 'Posting…' : 'Post to Bluesky'}
+                  </button>
+                )
+              )}
               <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#ff3b30] text-white hover:bg-[#e02d22] disabled:opacity-60 transition-colors">
                 {deleting ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
                 {deleting ? 'Deleting…' : 'Delete'}
@@ -616,13 +655,14 @@ function saveDismissed(set: Set<string>) {
 export default function ContentPage() {
   const supabase = createBrowserClient()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string }>>({})
   const [wpSiteUrl, setWpSiteUrl] = useState('')
   const [fbConnected, setFbConnected] = useState(false)
   const [pinterestConnected, setPinterestConnected] = useState(false)
   const [threadsConnected, setThreadsConnected] = useState(false)
   const [linkedInConnected, setLinkedInConnected] = useState(false)
   const [twitterConnected, setTwitterConnected] = useState(false)
+  const [blueskyConnected, setBlueskyConnected] = useState(false)
   const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -660,8 +700,8 @@ export default function ContentPage() {
     const [{ data: vids }, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
       sb.from('youtube_videos').select('*').eq('user_id', user.id).order('published_at', { ascending: false }),
       sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,tier').eq('user_id', user.id).single(),
-      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id').eq('user_id', user.id).eq('status', 'published'),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,tier').eq('user_id', user.id).single(),
+      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri').eq('user_id', user.id).eq('status', 'published'),
     ])
 
     const b = brand as Record<string, unknown> | null
@@ -678,6 +718,7 @@ export default function ContentPage() {
     setThreadsConnected(!!(i as Record<string, unknown>)?.threads_access_token)
     setLinkedInConnected(!!(i as Record<string, unknown>)?.linkedin_access_token && !!(i as Record<string, unknown>)?.linkedin_person_id)
     setTwitterConnected(!!(i as Record<string, unknown>)?.twitter_access_token)
+    setBlueskyConnected(!!(i as Record<string, unknown>)?.bluesky_handle && !!(i as Record<string, unknown>)?.bluesky_app_password)
     setUserTier(((i as Record<string, unknown>)?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free')
     setVideos((vids as Record<string, unknown>[]) ?? [])
 
@@ -694,6 +735,7 @@ export default function ContentPage() {
           threadsPostId: p.threads_post_id as string | undefined,
           linkedInPostId: p.linkedin_post_id as string | undefined,
           twitterPostId: p.twitter_post_id as string | undefined,
+          blueskyPostUri: p.bluesky_post_uri as string | undefined,
         }
       }
     }
@@ -1262,6 +1304,7 @@ export default function ContentPage() {
                     threadsConnected={threadsConnected}
                     linkedInConnected={linkedInConnected}
                     twitterConnected={twitterConnected}
+                    blueskyConnected={blueskyConnected}
                     userTier={userTier}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}

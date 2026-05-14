@@ -805,6 +805,12 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [twitter, setTwitter] = useState({ connected: false, handle: '' })
   const [twDisconnecting, setTwDisconnecting] = useState(false)
   const [twNotice, setTwNotice] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [bluesky, setBluesky] = useState({ connected: false, handle: '' })
+  const [bsHandle, setBsHandle] = useState('')
+  const [bsAppPassword, setBsAppPassword] = useState('')
+  const [bsConnecting, setBsConnecting] = useState(false)
+  const [bsDisconnecting, setBsDisconnecting] = useState(false)
+  const [bsNotice, setBsNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
@@ -847,6 +853,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setThreads({ connected: !!row.threads_access_token, userId: row.threads_user_id ?? '', username: row.threads_username ?? '' })
       setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
       setTwitter({ connected: !!row.twitter_access_token, handle: row.twitter_handle ?? '' })
+      setBluesky({ connected: !!row.bluesky_handle && !!row.bluesky_app_password, handle: row.bluesky_handle ?? '' })
       setGeniuslinkKey(row.geniuslink_api_key ?? '')
       setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
       setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
@@ -1012,6 +1019,40 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       const res = await fetch('/api/auth/twitter/disconnect', { method: 'POST' })
       if (res.ok) setTwitter({ connected: false, handle: '' })
     } finally { setTwDisconnecting(false) }
+  }
+
+  async function connectBluesky() {
+    setBsConnecting(true)
+    setBsNotice(null)
+    try {
+      const res = await fetch('/api/auth/bluesky', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: bsHandle, appPassword: bsAppPassword }),
+      })
+      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (res.ok) {
+        setBluesky({ connected: true, handle: d.handle ?? bsHandle })
+        setBsAppPassword('')
+        setBsNotice({ ok: true, msg: `Connected as @${d.handle ?? bsHandle}!` })
+      } else {
+        setBsNotice({ ok: false, msg: d.error || 'Bluesky connect failed' })
+      }
+    } catch (e) {
+      setBsNotice({ ok: false, msg: e instanceof Error ? e.message : 'Bluesky connect failed' })
+    } finally { setBsConnecting(false) }
+  }
+
+  async function disconnectBluesky() {
+    setBsDisconnecting(true)
+    try {
+      const res = await fetch('/api/auth/bluesky/disconnect', { method: 'POST' })
+      if (res.ok) {
+        setBluesky({ connected: false, handle: '' })
+        setBsHandle('')
+        setBsNotice(null)
+      }
+    } finally { setBsDisconnecting(false) }
   }
 
   if (loading) return (
@@ -1333,6 +1374,78 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               </svg>
               Connect X
             </a>
+          </div>
+        )}
+      </div>
+
+      {/* Bluesky */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#1185fe' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+              <path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.815 2.736 3.713 3.66 6.383 3.364-3.911.58-7.386 2.005-2.83 7.078 5.013 5.19 6.87-1.113 7.823-4.308.953 3.195 2.05 9.271 7.733 4.308 4.267-4.308 1.172-6.498-2.74-7.078 2.67.297 5.568-.628 6.383-3.364.246-.828.624-5.79.624-6.478 0-.69-.139-1.861-.902-2.206-.659-.298-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Bluesky</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Post each review to Bluesky with an embedded link</p>
+          </div>
+          {bluesky.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+          Bluesky doesn&apos;t use OAuth yet — instead, you generate an <strong>App Password</strong> in Bluesky settings and paste it here.
+        </p>
+        <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
+          <li>Open <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">bsky.app/settings/app-passwords</a></li>
+          <li>Click <strong>Add App Password</strong> → name it &quot;MVP Affiliate&quot;</li>
+          <li>Copy the password (only shown once)</li>
+          <li>Paste it below along with your handle</li>
+        </ol>
+
+        {bsNotice && <p className={`text-xs mb-3 ${bsNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{bsNotice.msg}</p>}
+
+        {bluesky.connected ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
+              Connected as <strong>@{bluesky.handle}</strong>
+            </p>
+            <button onClick={disconnectBluesky} disabled={bsDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {bsDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <input
+              type="text"
+              value={bsHandle}
+              onChange={(e) => setBsHandle(e.target.value)}
+              placeholder="yourhandle.bsky.social"
+              className="input-field"
+              autoComplete="off"
+            />
+            <input
+              type="password"
+              value={bsAppPassword}
+              onChange={(e) => setBsAppPassword(e.target.value)}
+              placeholder="App Password (xxxx-xxxx-xxxx-xxxx)"
+              className="input-field"
+              autoComplete="off"
+            />
+            <button
+              onClick={connectBluesky}
+              disabled={bsConnecting || !bsHandle || !bsAppPassword}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors disabled:opacity-60"
+              style={{ backgroundColor: '#1185fe' }}
+            >
+              {bsConnecting ? <Loader2 size={12} className="animate-spin" /> : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                  <path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.815 2.736 3.713 3.66 6.383 3.364-3.911.58-7.386 2.005-2.83 7.078 5.013 5.19 6.87-1.113 7.823-4.308.953 3.195 2.05 9.271 7.733 4.308 4.267-4.308 1.172-6.498-2.74-7.078 2.67.297 5.568-.628 6.383-3.364.246-.828.624-5.79.624-6.478 0-.69-.139-1.861-.902-2.206-.659-.298-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z"/>
+                </svg>
+              )}
+              {bsConnecting ? 'Connecting…' : 'Connect Bluesky'}
+            </button>
           </div>
         )}
       </div>

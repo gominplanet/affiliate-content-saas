@@ -66,6 +66,7 @@ const plans: PlanExt[] = [
       '80 blog posts per month (60 + 20 bonus)',
       'Everything in Starter',
       'LinkedIn auto-post',
+      'Bluesky auto-post',
       'Pinterest auto-post *',
       'Priority generation queue',
     ],
