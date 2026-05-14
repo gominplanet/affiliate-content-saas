@@ -236,17 +236,17 @@ export default function LandingPage() {
 
       {/* ── Army of agents ─────────────────────────────────────────────────── */}
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-[#0a0a0a] text-white relative overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-[#0071e3]/20 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-[#5856d6]/20 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-[#0071e3]/15 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-[#5856d6]/15 rounded-full blur-[120px] pointer-events-none" />
         <div className="relative max-w-6xl mx-auto">
           <div className="text-center mb-14">
-            <span className="inline-block text-sm font-semibold text-[#0071e3] uppercase tracking-wider mb-3">
+            <span className="inline-block text-sm font-semibold text-[#4ea3ff] uppercase tracking-wider mb-4 px-3 py-1 rounded-full bg-[#0071e3]/15 border border-[#0071e3]/30">
               The MVP Affiliate difference
             </span>
-            <h2 className="text-4xl sm:text-5xl font-bold mb-4 leading-tight">
-              An <span className="text-[#0071e3]">army of agents</span> on every review
+            <h2 className="text-5xl sm:text-6xl md:text-7xl font-black mb-6 leading-[1.05] tracking-tight text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.8)]">
+              An <span className="bg-gradient-to-r from-[#4ea3ff] to-[#a78bfa] bg-clip-text text-transparent">army of agents</span><br className="sm:hidden" /> on every review
             </h2>
-            <p className="text-lg sm:text-xl text-gray-300 max-w-2xl mx-auto leading-relaxed">
+            <p className="text-lg sm:text-xl text-gray-200 max-w-2xl mx-auto leading-relaxed">
               Other tools paste your prompt into one model and hope for the best. We orchestrate a team of
               specialized AI agents — each one focused on a single job, working together to produce a review
               that&apos;s genuinely worth publishing.
