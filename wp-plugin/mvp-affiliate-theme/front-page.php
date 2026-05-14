@@ -1,127 +1,187 @@
 <?php if (!defined('ABSPATH')) exit;
 get_header();
 
-$brand   = get_bloginfo('name');
-$tagline = get_bloginfo('description');
+// ─── Build a pool of all published posts so each section can exclude
+//     the IDs that have already been rendered above. ───────────────────────
+$all_post_ids = get_posts([
+    'numberposts' => -1,
+    'post_type'   => 'post',
+    'post_status' => 'publish',
+    'fields'      => 'ids',
+    'orderby'     => 'date',
+    'order'       => 'DESC',
+]);
+$used_ids = [];
 ?>
 
-<main class="mvp-main">
+<main class="mvp-main mvp-frontpage">
 
-  <!-- Hero -->
-  <section class="mvp-hero">
-    <div class="mvp-container">
-      <h1 class="mvp-hero-title"><?php echo esc_html($brand); ?></h1>
-      <?php if ($tagline): ?>
-      <p class="mvp-hero-tagline"><?php echo esc_html($tagline); ?></p>
-      <?php endif; ?>
-    </div>
-  </section>
-
-  <!-- Featured: 8 equal-sized cards (4-col on desktop, responsive down). -->
+  <?php /* ─── BIG EDITORIAL HERO — most recent post ─────────────────── */ ?>
   <?php
-  $featured = new WP_Query([
-      'post_type'           => 'post',
-      'post_status'         => 'publish',
-      'posts_per_page'      => 8,
-      'ignore_sticky_posts' => 1,
-  ]);
-  if ($featured->have_posts()):
+  $hero_ids = array_diff($all_post_ids, $used_ids);
+  $hero_id  = !empty($hero_ids) ? reset($hero_ids) : null;
+  if ($hero_id):
+      $used_ids[] = $hero_id;
+      $hero_post = get_post($hero_id);
+      setup_postdata($GLOBALS['post'] = $hero_post);
   ?>
-  <section class="mvp-section mvp-section-featured">
+  <section class="mvp-lead">
     <div class="mvp-container">
-      <div class="mvp-grid mvp-grid-4">
-        <?php while ($featured->have_posts()): $featured->the_post(); ?>
-        <article class="mvp-card">
-          <a href="<?php the_permalink(); ?>" class="mvp-card-link">
-            <?php if (has_post_thumbnail()): ?>
-            <div class="mvp-card-image">
-              <?php the_post_thumbnail('mvp-card', ['loading' => 'lazy']); ?>
-            </div>
-            <?php endif; ?>
-            <div class="mvp-card-body">
-              <?php echo mvp_affiliate_category_badge(); ?>
-              <h2 class="mvp-card-title"><?php the_title(); ?></h2>
-              <div class="mvp-card-meta">
-                <?php mvp_affiliate_posted_meta(); ?>
-              </div>
-            </div>
-          </a>
-        </article>
-        <?php endwhile; wp_reset_postdata(); ?>
-      </div>
+      <a href="<?php echo esc_url(get_permalink($hero_id)); ?>" class="mvp-lead-link">
+        <?php if (has_post_thumbnail($hero_id)): ?>
+        <div class="mvp-lead-image">
+          <?php echo get_the_post_thumbnail($hero_id, 'mvp-card-large', ['loading' => 'eager', 'fetchpriority' => 'high']); ?>
+        </div>
+        <?php endif; ?>
+        <div class="mvp-lead-body">
+          <p class="mvp-lead-eyebrow">
+            <span class="mvp-lead-pick">Editor&rsquo;s Pick</span>
+            <?php
+            $hero_cats = get_the_category($hero_id);
+            if (!empty($hero_cats)) {
+                echo ' · <span class="mvp-lead-cat">' . esc_html($hero_cats[0]->name) . '</span>';
+            }
+            ?>
+          </p>
+          <h2 class="mvp-lead-title"><?php echo esc_html(get_the_title($hero_id)); ?></h2>
+          <?php $excerpt = wp_trim_words(get_the_excerpt($hero_id), 36); if ($excerpt): ?>
+          <p class="mvp-lead-dek"><?php echo esc_html($excerpt); ?></p>
+          <?php endif; ?>
+          <p class="mvp-lead-byline">
+            By <strong><?php echo esc_html(get_the_author_meta('display_name', $hero_post->post_author)); ?></strong>
+            <span class="mvp-lead-dot">·</span>
+            <span class="mvp-lead-updated">Updated <?php echo esc_html(get_the_modified_date('M j, Y', $hero_id)); ?></span>
+          </p>
+          <span class="mvp-lead-cta">Read the review →</span>
+        </div>
+      </a>
     </div>
   </section>
-  <?php endif; ?>
+  <?php wp_reset_postdata(); endif; ?>
 
-  <!-- Pick of the Day (homepage section) -->
-  <?php $pick_html = mvp_affiliate_render_pick_of_day('homepage'); ?>
-  <?php if ($pick_html): ?>
-  <section class="mvp-section mvp-section-pick">
-    <div class="mvp-container">
-      <?php echo $pick_html; ?>
-    </div>
-  </section>
-  <?php endif; ?>
-
-  <!-- Latest reviews grid (more posts, excluding the 8 in the featured grid) -->
+  <?php /* ─── EDITOR'S PICKS STRIP — next 4 posts ───────────────────── */ ?>
   <?php
-  $more_q = new WP_Query([
-      'post_type'           => 'post',
-      'post_status'         => 'publish',
-      'posts_per_page'      => 9,
-      'offset'              => 8,
-      'ignore_sticky_posts' => 1,
-  ]);
-  if ($more_q->have_posts()):
+  $picks_ids = array_slice(array_values(array_diff($all_post_ids, $used_ids)), 0, 4);
+  if (!empty($picks_ids)):
+      $used_ids = array_merge($used_ids, $picks_ids);
   ?>
-  <section class="mvp-section">
+  <section class="mvp-section mvp-section-picks">
     <div class="mvp-container">
       <header class="mvp-section-header">
-        <h2 class="mvp-section-title">Latest Reviews</h2>
+        <h2 class="mvp-section-title">Editor&rsquo;s Picks</h2>
         <a href="<?php echo esc_url(home_url('/?s=&post_type=post')); ?>" class="mvp-section-link">All reviews →</a>
       </header>
-      <div class="mvp-grid mvp-grid-3">
-        <?php while ($more_q->have_posts()): $more_q->the_post(); ?>
+      <div class="mvp-grid mvp-grid-4">
+        <?php foreach ($picks_ids as $pid): $post = get_post($pid); setup_postdata($post); ?>
         <article class="mvp-card">
           <a href="<?php the_permalink(); ?>" class="mvp-card-link">
             <?php if (has_post_thumbnail()): ?>
-            <div class="mvp-card-image">
-              <?php the_post_thumbnail('mvp-card', ['loading' => 'lazy']); ?>
-            </div>
+            <div class="mvp-card-image"><?php the_post_thumbnail('mvp-card', ['loading' => 'lazy']); ?></div>
             <?php endif; ?>
             <div class="mvp-card-body">
               <?php echo mvp_affiliate_category_badge(); ?>
               <h3 class="mvp-card-title"><?php the_title(); ?></h3>
-              <div class="mvp-card-meta">
-                <?php mvp_affiliate_posted_meta(); ?>
-              </div>
+              <div class="mvp-card-meta"><?php mvp_affiliate_posted_meta(); ?></div>
             </div>
           </a>
         </article>
-        <?php endwhile; wp_reset_postdata(); ?>
+        <?php endforeach; wp_reset_postdata(); ?>
       </div>
     </div>
   </section>
   <?php endif; ?>
 
-  <!-- Featured Categories: top 3 categories with their latest posts -->
+  <?php /* ─── NEWSLETTER STRIP ───────────────────────────────────────── */ ?>
+  <section class="mvp-newsletter">
+    <div class="mvp-container">
+      <div class="mvp-newsletter-inner">
+        <div class="mvp-newsletter-copy">
+          <h3 class="mvp-newsletter-title">The best new reviews, every week</h3>
+          <p class="mvp-newsletter-dek">A short digest of the products we tested — straight to your inbox. No spam, ever.</p>
+        </div>
+        <form class="mvp-newsletter-form" action="#" method="post" onsubmit="event.preventDefault(); this.querySelector('button').textContent = 'Subscribed!'; this.querySelector('button').disabled = true;">
+          <input type="email" name="email" placeholder="your@email.com" required class="mvp-newsletter-input" />
+          <button type="submit" class="mvp-newsletter-button">Subscribe</button>
+        </form>
+        <p class="mvp-newsletter-fineprint">We&rsquo;re polishing the digest right now — sign up and you&rsquo;ll be on the first send.</p>
+      </div>
+    </div>
+  </section>
+
+  <?php /* ─── BY CATEGORY — for each category w/ ≥1 unused post, show 3 ─ */ ?>
   <?php
-  $top_cats = get_categories(['number' => 3, 'orderby' => 'count', 'order' => 'DESC']);
-  if (!empty($top_cats)):
+  $categories = get_categories([
+      'orderby' => 'count',
+      'order'   => 'DESC',
+      'hide_empty' => true,
+  ]);
+  // Skip the default "Uncategorized" category if it sneaks in
+  $categories = array_filter($categories, fn($c) => $c->slug !== 'uncategorized');
+
+  foreach ($categories as $cat):
+      // Pick up to 3 posts in this category that haven't already been rendered.
+      $cat_posts = get_posts([
+          'numberposts' => 3,
+          'post_type'   => 'post',
+          'post_status' => 'publish',
+          'category'    => $cat->term_id,
+          'exclude'     => $used_ids,
+      ]);
+      if (empty($cat_posts)) continue;
+      foreach ($cat_posts as $p) $used_ids[] = $p->ID;
   ?>
-  <section class="mvp-section mvp-section-categories">
+  <section class="mvp-section mvp-section-cat">
     <div class="mvp-container">
       <header class="mvp-section-header">
-        <h2 class="mvp-section-title">Browse by Category</h2>
+        <h2 class="mvp-section-title"><?php echo esc_html($cat->name); ?></h2>
+        <a href="<?php echo esc_url(get_category_link($cat->term_id)); ?>" class="mvp-section-link">All in <?php echo esc_html($cat->name); ?> →</a>
       </header>
       <div class="mvp-grid mvp-grid-3">
-        <?php foreach ($top_cats as $cat): ?>
-        <a href="<?php echo esc_url(get_category_link($cat->term_id)); ?>" class="mvp-category-card">
-          <h3 class="mvp-category-card-title"><?php echo esc_html($cat->name); ?></h3>
-          <p class="mvp-category-card-count"><?php echo intval($cat->count); ?> review<?php echo $cat->count === 1 ? '' : 's'; ?> →</p>
-        </a>
-        <?php endforeach; ?>
+        <?php foreach ($cat_posts as $p): setup_postdata($GLOBALS['post'] = $p); ?>
+        <article class="mvp-card">
+          <a href="<?php echo esc_url(get_permalink($p)); ?>" class="mvp-card-link">
+            <?php if (has_post_thumbnail($p)): ?>
+            <div class="mvp-card-image"><?php echo get_the_post_thumbnail($p, 'mvp-card', ['loading' => 'lazy']); ?></div>
+            <?php endif; ?>
+            <div class="mvp-card-body">
+              <?php echo mvp_affiliate_category_badge(); ?>
+              <h3 class="mvp-card-title"><?php echo esc_html(get_the_title($p)); ?></h3>
+              <div class="mvp-card-meta"><?php mvp_affiliate_posted_meta(); ?></div>
+            </div>
+          </a>
+        </article>
+        <?php endforeach; wp_reset_postdata(); ?>
       </div>
+    </div>
+  </section>
+  <?php endforeach; ?>
+
+  <?php /* ─── RECENTLY PUBLISHED — vertical list of remaining posts ─── */ ?>
+  <?php
+  $remaining_ids = array_slice(array_values(array_diff($all_post_ids, $used_ids)), 0, 10);
+  if (!empty($remaining_ids)):
+  ?>
+  <section class="mvp-section mvp-section-recent">
+    <div class="mvp-container">
+      <header class="mvp-section-header">
+        <h2 class="mvp-section-title">Recently Published</h2>
+        <a href="<?php echo esc_url(home_url('/?s=&post_type=post')); ?>" class="mvp-section-link">View archive →</a>
+      </header>
+      <ul class="mvp-recent-list">
+        <?php foreach ($remaining_ids as $pid): $p = get_post($pid); ?>
+        <li class="mvp-recent-item">
+          <a href="<?php echo esc_url(get_permalink($p)); ?>" class="mvp-recent-link">
+            <time class="mvp-recent-date" datetime="<?php echo esc_attr(get_the_date('c', $p)); ?>">
+              <?php echo esc_html(get_the_date('M j', $p)); ?>
+            </time>
+            <span class="mvp-recent-title"><?php echo esc_html(get_the_title($p)); ?></span>
+            <?php $rc = get_the_category($p->ID); if (!empty($rc)): ?>
+            <span class="mvp-recent-cat"><?php echo esc_html($rc[0]->name); ?></span>
+            <?php endif; ?>
+          </a>
+        </li>
+        <?php endforeach; ?>
+      </ul>
     </div>
   </section>
   <?php endif; ?>
