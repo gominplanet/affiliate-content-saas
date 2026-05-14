@@ -802,6 +802,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [linkedin, setLinkedin] = useState({ connected: false, personName: '' })
   const [liDisconnecting, setLiDisconnecting] = useState(false)
   const [liNotice, setLiNotice] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [twitter, setTwitter] = useState({ connected: false, handle: '' })
+  const [twDisconnecting, setTwDisconnecting] = useState(false)
+  const [twNotice, setTwNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
@@ -843,6 +846,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setPinterest({ connected: !!row.pinterest_access_token && !!row.pinterest_board_id, boardId: row.pinterest_board_id ?? '', boardName: row.pinterest_board_name ?? '', boards })
       setThreads({ connected: !!row.threads_access_token, userId: row.threads_user_id ?? '', username: row.threads_username ?? '' })
       setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
+      setTwitter({ connected: !!row.twitter_access_token, handle: row.twitter_handle ?? '' })
       setGeniuslinkKey(row.geniuslink_api_key ?? '')
       setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
       setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
@@ -869,6 +873,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const liError = searchParams.get('linkedin_error')
     if (liConnected) { setLiNotice({ ok: true, msg: 'LinkedIn connected!' }); load() }
     if (liError) setLiNotice({ ok: false, msg: liError === 'callback_failed' ? 'LinkedIn connection failed — please try again.' : `LinkedIn error: ${liError}` })
+    const twConnected = searchParams.get('twitter_connected')
+    const twError = searchParams.get('twitter_error')
+    if (twConnected) { setTwNotice({ ok: true, msg: 'X (Twitter) connected!' }); load() }
+    if (twError) setTwNotice({ ok: false, msg: `X error: ${decodeURIComponent(twError)}` })
     const ytConnected = searchParams.get('youtube_oauth_connected')
     const ytError = searchParams.get('youtube_oauth_error')
     if (ytConnected) { setYtOAuthNotice({ ok: true, msg: 'YouTube connected!' }); setYoutubeOAuthConnected(true); load() }
@@ -996,6 +1004,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       const res = await fetch('/api/auth/linkedin/disconnect', { method: 'POST' })
       if (res.ok) setLinkedin({ connected: false, personName: '' })
     } finally { setLiDisconnecting(false) }
+  }
+
+  async function disconnectTwitter() {
+    setTwDisconnecting(true)
+    try {
+      const res = await fetch('/api/auth/twitter/disconnect', { method: 'POST' })
+      if (res.ok) setTwitter({ connected: false, handle: '' })
+    } finally { setTwDisconnecting(false) }
   }
 
   if (loading) return (
@@ -1273,6 +1289,49 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               style={{ backgroundColor: '#0A66C2' }}
             >
               <Linkedin size={14} /> Connect LinkedIn
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* X (Twitter) */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-black">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">X (formerly Twitter)</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Post a single tweet linking to each published review</p>
+          </div>
+          {twitter.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Click <strong>Connect X</strong> and you&apos;ll be redirected to X to authorise the connection. We only request permission to post a single tweet per published review on your behalf — we never read, follow, like, or engage with other accounts.
+        </p>
+        {twNotice && <p className={`text-xs mb-3 ${twNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{twNotice.msg}</p>}
+        {twitter.connected ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
+              Connected as <strong>@{twitter.handle || 'your X account'}</strong>
+            </p>
+            <button onClick={disconnectTwitter} disabled={twDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {twDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <a
+              href="/api/auth/twitter"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors bg-black hover:bg-[#1a1a1a]"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              Connect X
             </a>
           </div>
         )}
