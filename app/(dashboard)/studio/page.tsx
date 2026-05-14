@@ -743,13 +743,8 @@ function VideoStudioCard({ video }: {
                     <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                       <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
                     </div>
-                    {sceneAnalysis && (
-                      <div className="px-3 py-2 rounded-lg bg-[#5856d6]/5 border border-[#5856d6]/15">
-                        <p className="text-[9px] font-semibold text-[#5856d6] flex items-center gap-1">
-                          🎬 {sceneAnalysis}
-                        </p>
-                      </div>
-                    )}
+                    {/* Visual Style Analysis text was here — removed so the
+                        AI's internal prompt/notes aren't surfaced to users. */}
                     <div className="flex items-center gap-3 flex-wrap">
                       {thumbnailUrl.startsWith('data:') ? (
                         // Canvas data URL — use a regular <a> with href
@@ -778,11 +773,8 @@ function VideoStudioCard({ video }: {
                           ⚡ Instant — your real frame
                         </span>
                       )}
-                      {thumbnailPrompt && (
-                        <button onClick={() => copy(thumbnailPrompt, 'prompt')} className="text-[10px] text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors flex items-center gap-0.5">
-                          <Copy size={10} /> {copied === 'prompt' ? 'Copied!' : 'Copy prompt'}
-                        </button>
-                      )}
+                      {/* "Copy prompt" button removed — internal AI prompt
+                          shouldn't be exposed to users. */}
                     </div>
                   </div>
                 )}
