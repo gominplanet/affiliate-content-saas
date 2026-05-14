@@ -76,7 +76,7 @@ const plans: PlanExt[] = [
     tier: 'pro',
     label: 'Pro',
     price: 199,
-    regularPrice: 299,
+    regularPrice: 499,
     limit: '150 posts / month',
     bonus: '90 + 60 bonus posts',
     description: 'Maximum output for serious affiliate marketers and agencies.',
@@ -137,7 +137,7 @@ export default function PricingPage() {
         <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0]">
           Every paid plan comes with a free themed review site. Cancel anytime.
         </p>
-        <p className="mt-2 text-sm font-semibold text-[#34c759]">Launch pricing — up to 50% off regular price.</p>
+        <p className="mt-2 text-sm font-semibold text-[#34c759]">Early access pricing — locked in for life on the tier you subscribe to.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl">
@@ -202,7 +202,15 @@ export default function PricingPage() {
         * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
         It activates automatically on Growth &amp; Pro accounts once approved at no extra cost.
       </p>
-      <p className="mt-3 text-sm text-[#86868b] dark:text-[#8e8e93]">
+      <div className="mt-6 max-w-2xl rounded-2xl bg-[#0071e3]/5 border border-[#0071e3]/20 p-5">
+        <p className="text-center text-sm font-semibold text-[#0071e3] mb-1.5">🔒 Price-lock guarantee</p>
+        <p className="text-center text-sm text-[#3a3a3c] dark:text-[#ebebf0] leading-relaxed">
+          When you subscribe at these Early Access rates, your price stays locked in for as long as you
+          keep your plan — even if we raise prices later. Your rate only changes if you choose to upgrade
+          or downgrade tiers.
+        </p>
+      </div>
+      <p className="mt-6 text-sm text-[#86868b] dark:text-[#8e8e93]">
         Cancel anytime. No contracts. Billed monthly via Stripe.
       </p>
     </div>

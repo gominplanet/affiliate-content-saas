@@ -82,7 +82,7 @@ export default function BillingPage() {
   const planDetails = [
     { tier: 'starter' as Tier, limit: '30 posts / month',          price: 49,  regularPrice: 99  },
     { tier: 'growth' as Tier,  limit: '80 posts / month (+20 bonus)',  price: 99,  regularPrice: 199 },
-    { tier: 'pro' as Tier,     limit: '150 posts / month (+60 bonus)', price: 199, regularPrice: 299 },
+    { tier: 'pro' as Tier,     limit: '150 posts / month (+60 bonus)', price: 199, regularPrice: 499 },
   ]
 
   async function openPortal() {

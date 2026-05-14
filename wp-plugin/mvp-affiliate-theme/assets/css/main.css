@@ -277,6 +277,17 @@ p { margin: 0 0 1em; }
 .mvp-featured-grid .mvp-card-hero { grid-row: span 3; }
 .mvp-featured-grid .mvp-card-secondary { /* default */ }
 
+/* Make the hero card stretch image + content to fill its column height
+   so there's no empty space at the bottom (the hero spans 3 grid rows
+   but its natural content is shorter than 3 secondary cards stacked). */
+.mvp-featured-grid .mvp-card-hero { display: flex; flex-direction: column; }
+.mvp-featured-grid .mvp-card-hero .mvp-card-link { display: flex; flex-direction: column; height: 100%; }
+.mvp-featured-grid .mvp-card-hero .mvp-card-image {
+  flex: 1 1 auto;
+  aspect-ratio: auto;
+  min-height: 380px;
+}
+
 @media (max-width: 900px) {
   .mvp-featured-grid { grid-template-columns: 1fr; }
   .mvp-featured-grid .mvp-card-hero { grid-row: auto; }

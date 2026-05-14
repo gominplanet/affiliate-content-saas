@@ -49,7 +49,7 @@ export const TIERS = {
   pro:     {
     label: 'Pro',
     price: 199,
-    regularPrice: 299,
+    regularPrice: 499,
     postsPerMonth: 150,
     lifetimeMax: null as number | null,
     basePosts: 90,

@@ -73,7 +73,7 @@ const plans = [
   {
     tier: 'Pro',
     price: 199,
-    regular: 299,
+    regular: 499,
     limit: '150 posts / month',
     bonus: '90 + 60 bonus posts',
     features: ['Everything in Growth', 'X (Twitter) auto-post', 'One-click Publish All', 'Priority support'],
@@ -408,7 +408,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
             <span className="inline-block text-xs font-semibold text-[#34c759] uppercase tracking-wider mb-2">
-              Launch pricing — up to 50% off
+              Early access pricing — locked in for life
             </span>
             <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">Pick a plan that fits your output</h2>
             <p className="text-[#6e6e73] text-base sm:text-lg">Every paid plan includes a free themed review site. Cancel anytime.</p>
@@ -478,6 +478,14 @@ export default function LandingPage() {
             * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
             Included on Growth &amp; Pro at no extra cost once approved.
           </p>
+          <div className="mt-6 max-w-2xl mx-auto rounded-2xl bg-[#0071e3]/5 border border-[#0071e3]/20 p-5">
+            <p className="text-center text-sm font-semibold text-[#0071e3] mb-1.5">🔒 Price-lock guarantee</p>
+            <p className="text-center text-sm text-[#3a3a3c] leading-relaxed">
+              When you subscribe at these Early Access rates, your price stays locked in for as long as
+              you keep your plan — even if we raise prices later. The rate only changes if you choose to
+              upgrade or downgrade tiers.
+            </p>
+          </div>
           <p className="mt-3 text-center text-sm text-[#86868b] dark:text-[#8e8e93]">
             Want all the details? <Link href="/pricing" className="text-[#0071e3] font-semibold hover:underline">See full pricing →</Link>
           </p>
