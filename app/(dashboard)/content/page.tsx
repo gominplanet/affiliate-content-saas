@@ -261,16 +261,17 @@ function GenerateButton({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string } | null
+  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string } | null
   wpSiteUrl: string
   fbConnected: boolean
   pinterestConnected: boolean
   threadsConnected: boolean
   linkedInConnected: boolean
+  twitterConnected: boolean
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
   onDelete: (postId: string) => void
@@ -291,6 +292,8 @@ function VideoCard({
   const [thPosted, setThPosted] = useState(!!post?.threadsPostId)
   const [liPosting, setLiPosting] = useState(false)
   const [liPosted, setLiPosted] = useState(!!post?.linkedInPostId)
+  const [twPosting, setTwPosting] = useState(false)
+  const [twPosted, setTwPosted] = useState(!!post?.twitterPostId)
 
   // ── Publish All ───────────────────────────────────────────────────────────
   const [publishingAll, setPublishingAll] = useState(false)
@@ -351,15 +354,39 @@ function VideoCard({
           .catch(() => { /* non-fatal */ }),
       )
     }
+    if (twitterConnected && !twPosted) {
+      tasks.push(
+        fetch('/api/blog/twitter-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
+          .then(r => { if (r.ok) setTwPosted(true) })
+          .catch(() => { /* non-fatal */ }),
+      )
+    }
 
     await Promise.allSettled(tasks)
     setPublishingAll(false)
     setPublishAllStep('')
   }
 
-  const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected].filter(Boolean).length
-  const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted)
+  const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected].filter(Boolean).length
+  const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted)
   const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost)
+
+  async function handleTwitterPost() {
+    if (!post?.postId) return
+    setTwPosting(true)
+    try {
+      const res = await fetch('/api/blog/twitter-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: post.postId }),
+      })
+      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (res.ok) setTwPosted(true)
+      else alert(d.error || 'X post failed')
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'X post failed')
+    } finally { setTwPosting(false) }
+  }
 
   async function handleLinkedInPost() {
     if (!post?.postId) return
@@ -534,6 +561,18 @@ function VideoCard({
                   </button>
                 )
               )}
+              {twitterConnected && (
+                twPosted ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/85 text-white">
+                    <CheckCircle size={11} /> Posted to X
+                  </span>
+                ) : (
+                  <button onClick={handleTwitterPost} disabled={twPosting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black text-white hover:bg-[#1a1a1a] disabled:opacity-60 transition-colors">
+                    {twPosting ? <Loader2 size={11} className="animate-spin" /> : <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>}
+                    {twPosting ? 'Posting…' : 'Post to X'}
+                  </button>
+                )
+              )}
               <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#ff3b30] text-white hover:bg-[#e02d22] disabled:opacity-60 transition-colors">
                 {deleting ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
                 {deleting ? 'Deleting…' : 'Delete'}
@@ -563,12 +602,13 @@ function saveDismissed(set: Set<string>) {
 export default function ContentPage() {
   const supabase = createBrowserClient()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string }>>({})
   const [wpSiteUrl, setWpSiteUrl] = useState('')
   const [fbConnected, setFbConnected] = useState(false)
   const [pinterestConnected, setPinterestConnected] = useState(false)
   const [threadsConnected, setThreadsConnected] = useState(false)
   const [linkedInConnected, setLinkedInConnected] = useState(false)
+  const [twitterConnected, setTwitterConnected] = useState(false)
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -605,8 +645,8 @@ export default function ContentPage() {
     const [{ data: vids }, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
       sb.from('youtube_videos').select('*').eq('user_id', user.id).order('published_at', { ascending: false }),
       sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id').eq('user_id', user.id).single(),
-      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id').eq('user_id', user.id).eq('status', 'published'),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle').eq('user_id', user.id).single(),
+      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id').eq('user_id', user.id).eq('status', 'published'),
     ])
 
     const b = brand as Record<string, unknown> | null
@@ -622,9 +662,10 @@ export default function ContentPage() {
     setPinterestConnected(!!(i as Record<string, unknown>)?.pinterest_access_token && !!(i as Record<string, unknown>)?.pinterest_board_id)
     setThreadsConnected(!!(i as Record<string, unknown>)?.threads_access_token)
     setLinkedInConnected(!!(i as Record<string, unknown>)?.linkedin_access_token && !!(i as Record<string, unknown>)?.linkedin_person_id)
+    setTwitterConnected(!!(i as Record<string, unknown>)?.twitter_access_token)
     setVideos((vids as Record<string, unknown>[]) ?? [])
 
-    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string }> = {}
+    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       if (p.video_id && p.wordpress_url) {
         postMap[p.video_id as string] = {
@@ -636,6 +677,7 @@ export default function ContentPage() {
           pinterestPinId: p.pinterest_pin_id as string | undefined,
           threadsPostId: p.threads_post_id as string | undefined,
           linkedInPostId: p.linkedin_post_id as string | undefined,
+          twitterPostId: p.twitter_post_id as string | undefined,
         }
       }
     }
@@ -1203,6 +1245,7 @@ export default function ContentPage() {
                     pinterestConnected={pinterestConnected}
                     threadsConnected={threadsConnected}
                     linkedInConnected={linkedInConnected}
+                    twitterConnected={twitterConnected}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
                     onDelete={(postId) => {
