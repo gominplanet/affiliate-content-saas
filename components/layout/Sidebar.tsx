@@ -16,6 +16,7 @@ import {
   Moon,
   Paintbrush,
   ExternalLink,
+  KeyRound,
   LogOut,
   Star,
   Clapperboard,
@@ -145,6 +146,22 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
           <ExternalLink size={16} className="flex-shrink-0" style={wpSiteUrl ? { color: '#0071e3' } : {}} />
           <span style={wpSiteUrl ? { color: '#0071e3', fontWeight: 500 } : {}}>Visit Blog</span>
         </a>
+
+        {/* WordPress Admin — direct link to wp-admin for the connected site.
+            Only renders when a site is connected; otherwise the wp-admin URL
+            is meaningless. */}
+        {wpSiteUrl && (
+          <a
+            href={`${wpSiteUrl.replace(/\/$/, '')}/wp-admin`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="nav-item"
+            title="Open your WordPress admin in a new tab"
+          >
+            <KeyRound size={16} className="flex-shrink-0" style={{ color: '#5856d6' }} />
+            <span style={{ color: '#5856d6', fontWeight: 500 }}>WP Admin</span>
+          </a>
+        )}
 
         {/* Purge cache — prominent global action, always active */}
         {(
