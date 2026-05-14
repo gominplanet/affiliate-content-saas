@@ -291,3 +291,24 @@ if (!function_exists('mvp_affiliate_render_block')) {
         return '<div class="mvp-ad-block mvp-ad-html">' . $label_html . $html . '</div>';
     }
 }
+
+/**
+ * Homepage 3-up banner strip — always returns exactly 3 slots so the
+ * theme template can iterate without bounds checks. Each slot has
+ * imageUrl + linkUrl; an empty imageUrl means "render placeholder".
+ */
+if (!function_exists('mvp_affiliate_homepage_ads')) {
+    function mvp_affiliate_homepage_ads(): array {
+        $d = mvp_affiliate_get_data();
+        $raw = is_array($d['homepageAds'] ?? null) ? $d['homepageAds'] : [];
+        $out = [];
+        for ($i = 0; $i < 3; $i++) {
+            $a = is_array($raw[$i] ?? null) ? $raw[$i] : [];
+            $out[] = [
+                'imageUrl' => is_string($a['imageUrl'] ?? null) ? $a['imageUrl'] : '',
+                'linkUrl'  => is_string($a['linkUrl']  ?? null) ? $a['linkUrl']  : '',
+            ];
+        }
+        return $out;
+    }
+}

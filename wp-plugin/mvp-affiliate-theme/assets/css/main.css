@@ -346,7 +346,56 @@ p { margin: 0 0 1em; }
   .mvp-lead-dek { font-size: 16px; }
 }
 
-/* ─── Newsletter strip ──────────────────────────────────────────────────── */
+/* ─── Homepage 3-up ad strip ────────────────────────────────────────────
+   Replaces the previous newsletter strip. Same grey-on-grey feel
+   (bg-soft, top/bottom border), but three 16:9 banner slots in a row
+   that match the proportions of the post cards above/below it. */
+.mvp-ad-strip {
+  background: var(--mvp-bg-soft);
+  border-top: 1px solid var(--mvp-border);
+  border-bottom: 1px solid var(--mvp-border);
+  padding: 40px 0;
+  margin: 32px 0;
+}
+.mvp-ad-strip .mvp-section-header { display: none; }
+.mvp-ad-slot {
+  display: block;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--mvp-border);
+  position: relative;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.mvp-ad-slot-filled img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+a.mvp-ad-slot-filled:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0,0,0,.08);
+}
+.mvp-ad-slot-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-style: dashed;
+  border-color: var(--mvp-border);
+}
+.mvp-ad-slot-label {
+  font-family: var(--mvp-font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--mvp-text-dim);
+}
+
+/* ─── Newsletter strip (legacy — kept around in case we re-enable) ────── */
 .mvp-newsletter {
   background: var(--mvp-bg-soft);
   border-top: 1px solid var(--mvp-border);

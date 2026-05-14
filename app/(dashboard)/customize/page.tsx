@@ -6,7 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
   ChevronDown, ChevronUp,
-  Upload, X, RefreshCw, Sparkles, AlertCircle,
+  Upload, X, RefreshCw, Sparkles, AlertCircle, Image as ImageIcon,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -59,9 +59,17 @@ interface PickOfDayConfig {
   pinnedPostId: string  // only used when rotation === 'pinned'
 }
 
+interface HomepageAd {
+  id: string
+  imageUrl: string
+  linkUrl: string
+}
+
 interface BlogCustomizations {
   sidebar: AdBlock[]
   incontent: AdBlock[]
+  /** Always exactly 3 slots — the homepage shows a fixed 3-up strip. */
+  homepageAds: HomepageAd[]
   about: AboutData
   footer: FooterData
   pickOfDay: PickOfDayConfig
@@ -81,9 +89,31 @@ const defaultPickOfDay: PickOfDayConfig = {
   pinnedPostId: '',
 }
 
+function newHomepageAd(): HomepageAd {
+  return { id: crypto.randomUUID(), imageUrl: '', linkUrl: '' }
+}
+
+const defaultHomepageAds: HomepageAd[] = [newHomepageAd(), newHomepageAd(), newHomepageAd()]
+
+/** Pad an incoming array to exactly 3 slots so the UI + theme can rely on length. */
+function padHomepageAds(input: unknown): HomepageAd[] {
+  const arr = Array.isArray(input) ? (input as Partial<HomepageAd>[]) : []
+  const padded: HomepageAd[] = []
+  for (let i = 0; i < 3; i++) {
+    const a = arr[i]
+    padded.push({
+      id: (a && typeof a.id === 'string') ? a.id : crypto.randomUUID(),
+      imageUrl: (a && typeof a.imageUrl === 'string') ? a.imageUrl : '',
+      linkUrl: (a && typeof a.linkUrl === 'string') ? a.linkUrl : '',
+    })
+  }
+  return padded
+}
+
 const defaultCustomizations: BlogCustomizations = {
   sidebar: [],
   incontent: [],
+  homepageAds: defaultHomepageAds,
   about: emptyAbout,
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
@@ -362,6 +392,7 @@ export default function CustomizePage() {
         ...bc,
         sidebar:   (bc.sidebar   ?? []).map(migrateBlock),
         incontent: (bc.incontent ?? []).map(migrateBlock),
+        homepageAds: padHomepageAds(bc.homepageAds),
         about,
         footer: { ...emptyFooter, ...(bc.footer ?? {}), socials },
         pickOfDay: { ...defaultPickOfDay, ...(bc.pickOfDay ?? {}) },
@@ -416,6 +447,28 @@ export default function CustomizePage() {
   function addIncontentBlock() { updateIncontent([...data.incontent, newBlock()]) }
   function updateIncontentBlock(id: string, b: AdBlock) { updateIncontent(data.incontent.map(x => x.id === id ? b : x)) }
   function deleteIncontentBlock(id: string) { updateIncontent(data.incontent.filter(x => x.id !== id)) }
+
+  function updateHomepageAd(index: number, patch: Partial<HomepageAd>) {
+    setData(d => ({
+      ...d,
+      homepageAds: d.homepageAds.map((a, i) => i === index ? { ...a, ...patch } : a),
+    }))
+  }
+  function clearHomepageAd(index: number) {
+    setData(d => ({
+      ...d,
+      homepageAds: d.homepageAds.map((a, i) => i === index ? { ...a, imageUrl: '', linkUrl: '' } : a),
+    }))
+  }
+  async function handleHomepageAdFile(index: number, file: File) {
+    if (!userId) return
+    try {
+      const url = await uploadImage(file, userId, 'homepage-ads')
+      updateHomepageAd(index, { imageUrl: url })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Image upload failed.')
+    }
+  }
 
   function updatePickOfDay(patch: Partial<PickOfDayConfig>) {
     setData(d => ({ ...d, pickOfDay: { ...d.pickOfDay, ...patch } }))
@@ -661,6 +714,54 @@ export default function CustomizePage() {
               className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
               <Plus size={15} /> Add sidebar banner
             </button>
+          </div>
+        </Section>
+
+        {/* Homepage 3-up banner strip */}
+        <Section
+          title="Homepage Banner Strip"
+          description="Three banner slots that appear in a row on your homepage (where readers see a clear ad break). Upload a 16:9 image and an optional destination URL. Empty slots show a 'Your ad here' placeholder."
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {data.homepageAds.map((ad, i) => (
+              <div key={ad.id} className="flex flex-col gap-2.5 p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">Slot {i + 1}</p>
+                {ad.imageUrl ? (
+                  <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={ad.imageUrl} alt="" className="w-full aspect-video object-cover rounded-lg border border-[var(--border-2)]" />
+                    <button
+                      onClick={() => clearHomepageAd(i)}
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white text-xs flex items-center justify-center hover:bg-[#ff3b30]"
+                      aria-label="Clear image"
+                      title="Clear image"
+                    >×</button>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center aspect-video rounded-lg border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] cursor-pointer transition-colors text-center px-3">
+                    <ImageIcon size={18} className="mb-1.5 opacity-50" />
+                    <span>Upload JPG or PNG</span>
+                    <span className="text-[10px] opacity-70 mt-0.5">16:9 — same shape as a post thumbnail</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleHomepageAdFile(i, f) }}
+                    />
+                  </label>
+                )}
+                <div>
+                  <label className="block text-[10px] font-medium text-[var(--text-3)] uppercase tracking-wider mb-1">Destination URL</label>
+                  <input
+                    type="url"
+                    value={ad.linkUrl}
+                    onChange={(e) => updateHomepageAd(i, { linkUrl: e.target.value })}
+                    placeholder="https://example.com/your-offer"
+                    className="input-field text-xs"
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </Section>
 

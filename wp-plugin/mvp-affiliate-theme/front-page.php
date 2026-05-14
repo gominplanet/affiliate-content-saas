@@ -119,19 +119,31 @@ $used_ids = [];
   endif;
   ?>
 
-  <?php /* ─── NEWSLETTER STRIP ───────────────────────────────────────── */ ?>
-  <section class="mvp-newsletter">
+  <?php /* ─── HOMEPAGE 3-UP AD STRIP ────────────────────────────────────
+       Three banner slots managed in Customize Blog → Homepage Banner
+       Strip. Empty slots render a "Your ad here" placeholder with the
+       same 16:9 shape so the layout stays consistent. */ ?>
+  <?php $homepage_ads = function_exists('mvp_affiliate_homepage_ads')
+      ? mvp_affiliate_homepage_ads()
+      : []; ?>
+  <section class="mvp-section mvp-ad-strip">
     <div class="mvp-container">
-      <div class="mvp-newsletter-inner">
-        <div class="mvp-newsletter-copy">
-          <h3 class="mvp-newsletter-title">The best new reviews, every week</h3>
-          <p class="mvp-newsletter-dek">A short digest of the products we tested — straight to your inbox. No spam, ever.</p>
-        </div>
-        <form class="mvp-newsletter-form" action="#" method="post" onsubmit="event.preventDefault(); this.querySelector('button').textContent = 'Subscribed!'; this.querySelector('button').disabled = true;">
-          <input type="email" name="email" placeholder="your@email.com" required class="mvp-newsletter-input" />
-          <button type="submit" class="mvp-newsletter-button">Subscribe</button>
-        </form>
-        <p class="mvp-newsletter-fineprint">We&rsquo;re polishing the digest right now — sign up and you&rsquo;ll be on the first send.</p>
+      <div class="mvp-grid mvp-grid-3">
+        <?php foreach ($homepage_ads as $ad):
+            $img  = $ad['imageUrl'] ?? '';
+            $href = $ad['linkUrl']  ?? '';
+        ?>
+        <?php if ($img): ?>
+          <?php if ($href): ?><a href="<?php echo esc_url($href); ?>" target="_blank" rel="noopener sponsored" class="mvp-ad-slot mvp-ad-slot-filled"><?php endif; ?>
+          <?php if (!$href): ?><div class="mvp-ad-slot mvp-ad-slot-filled"><?php endif; ?>
+            <img src="<?php echo esc_url($img); ?>" alt="" loading="lazy" />
+          <?php if ($href): ?></a><?php else: ?></div><?php endif; ?>
+        <?php else: ?>
+          <div class="mvp-ad-slot mvp-ad-slot-empty">
+            <span class="mvp-ad-slot-label">Your ad here</span>
+          </div>
+        <?php endif; ?>
+        <?php endforeach; ?>
       </div>
     </div>
   </section>
