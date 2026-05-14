@@ -17,33 +17,30 @@ $tagline = get_bloginfo('description');
     </div>
   </section>
 
-  <!-- Featured (latest) post + 3 secondary -->
+  <!-- Featured: 8 equal-sized cards (4-col on desktop, responsive down). -->
   <?php
   $featured = new WP_Query([
       'post_type'           => 'post',
       'post_status'         => 'publish',
-      'posts_per_page'      => 4,
+      'posts_per_page'      => 8,
       'ignore_sticky_posts' => 1,
   ]);
   if ($featured->have_posts()):
   ?>
   <section class="mvp-section mvp-section-featured">
     <div class="mvp-container">
-      <div class="mvp-featured-grid">
-        <?php $i = 0; while ($featured->have_posts()): $featured->the_post(); $i++; ?>
-        <article class="mvp-card <?php echo $i === 1 ? 'mvp-card-hero' : 'mvp-card-secondary'; ?>">
+      <div class="mvp-grid mvp-grid-4">
+        <?php while ($featured->have_posts()): $featured->the_post(); ?>
+        <article class="mvp-card">
           <a href="<?php the_permalink(); ?>" class="mvp-card-link">
             <?php if (has_post_thumbnail()): ?>
             <div class="mvp-card-image">
-              <?php the_post_thumbnail($i === 1 ? 'mvp-card-large' : 'mvp-card', ['loading' => 'lazy']); ?>
+              <?php the_post_thumbnail('mvp-card', ['loading' => 'lazy']); ?>
             </div>
             <?php endif; ?>
             <div class="mvp-card-body">
               <?php echo mvp_affiliate_category_badge(); ?>
               <h2 class="mvp-card-title"><?php the_title(); ?></h2>
-              <?php if ($i === 1): ?>
-              <p class="mvp-card-excerpt"><?php echo esc_html(wp_trim_words(get_the_excerpt(), 28)); ?></p>
-              <?php endif; ?>
               <div class="mvp-card-meta">
                 <?php mvp_affiliate_posted_meta(); ?>
               </div>
@@ -66,13 +63,13 @@ $tagline = get_bloginfo('description');
   </section>
   <?php endif; ?>
 
-  <!-- Latest reviews grid (more posts, excluding the 4 above) -->
+  <!-- Latest reviews grid (more posts, excluding the 8 in the featured grid) -->
   <?php
   $more_q = new WP_Query([
       'post_type'           => 'post',
       'post_status'         => 'publish',
       'posts_per_page'      => 9,
-      'offset'              => 4,
+      'offset'              => 8,
       'ignore_sticky_posts' => 1,
   ]);
   if ($more_q->have_posts()):
