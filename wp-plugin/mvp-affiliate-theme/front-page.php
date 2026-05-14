@@ -91,6 +91,34 @@ $used_ids = [];
   </section>
   <?php endif; ?>
 
+  <?php /* ─── PICK OF THE DAY ─────────────────────────────────────────
+       Renders only if the user has enabled Pick of the Day AND ticked
+       "Show on homepage" in Customize Blog. Tracks the picked post in
+       $used_ids so it never duplicates in category sections below.    */ ?>
+  <?php
+  $pick_config = function_exists('mvp_affiliate_pick_of_day_config')
+      ? mvp_affiliate_pick_of_day_config()
+      : [];
+  if (!empty($pick_config['enabled']) && !empty($pick_config['showOnHomepage'])):
+      $pick_post = function_exists('mvp_affiliate_pick_of_day')
+          ? mvp_affiliate_pick_of_day()
+          : null;
+      if ($pick_post):
+          $used_ids[] = $pick_post->ID;
+          $pick_html = mvp_affiliate_render_pick_of_day('homepage');
+          if ($pick_html):
+  ?>
+  <section class="mvp-section mvp-section-pick">
+    <div class="mvp-container">
+      <?php echo $pick_html; ?>
+    </div>
+  </section>
+  <?php
+          endif;
+      endif;
+  endif;
+  ?>
+
   <?php /* ─── NEWSLETTER STRIP ───────────────────────────────────────── */ ?>
   <section class="mvp-newsletter">
     <div class="mvp-container">
