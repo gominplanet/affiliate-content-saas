@@ -5,6 +5,7 @@ import {
   createTweet,
   refreshAccessToken,
 } from '@/services/twitter'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
 
 export const maxDuration = 60
 
@@ -15,6 +16,21 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // X / Twitter auto-publish is a Pro-only feature.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tierRow } = await (supabase as any)
+      .from('integrations')
+      .select('tier')
+      .eq('user_id', user.id)
+      .single()
+    const tier = (tierRow?.tier as Tier) ?? 'free'
+    if (!tierAllowsSocial(tier, 'twitter')) {
+      return NextResponse.json(
+        { error: 'X (Twitter) posting is a Pro plan feature. Upgrade to Pro to publish to X.' },
+        { status: 403 },
+      )
+    }
 
     const { postId } = await request.json()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })

@@ -261,7 +261,7 @@ function GenerateButton({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, userTier,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -272,11 +272,13 @@ function VideoCard({
   threadsConnected: boolean
   linkedInConnected: boolean
   twitterConnected: boolean
+  userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
   onDelete: (postId: string) => void
   onPinPreview: (data: PinPreviewData) => void
 }) {
+  const publishAllUnlocked = userTier === 'pro' || userTier === 'admin'
   const thumb = video.thumbnail_url as string
   const title = video.title as string
   const views = video.view_count as number | null
@@ -478,7 +480,8 @@ function VideoCard({
           <span>{new Date(publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
         </div>
         <div className="flex flex-col gap-2">
-          {/* Publish All — shown when ≥1 social platform is connected and unpublished */}
+          {/* Publish All — shown when ≥1 social platform is connected and unpublished.
+              Locked behind Pro tier; non-Pro users see the button but it links to /pricing. */}
           {showPublishAll && (
             <div className="flex items-center gap-2 flex-wrap">
               {publishingAll ? (
@@ -486,7 +489,7 @@ function VideoCard({
                   <Loader2 size={12} className="animate-spin" />
                   {publishAllStep || 'Working…'}
                 </div>
-              ) : (
+              ) : publishAllUnlocked ? (
                 <button
                   onClick={handlePublishAll}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
@@ -496,6 +499,17 @@ function VideoCard({
                   <Sparkles size={12} />
                   {post ? 'Publish to all' : 'Generate + publish all'}
                 </button>
+              ) : (
+                <a
+                  href="/pricing"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 relative"
+                  style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)', opacity: 0.85 }}
+                  title="Publish All is a Pro feature — click to upgrade"
+                >
+                  <Sparkles size={12} />
+                  {post ? 'Publish to all' : 'Generate + publish all'}
+                  <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-yellow-300 text-[#1d1d1f]">Pro</span>
+                </a>
               )}
               {publishAllError && (
                 <span className="text-xs text-[#ff3b30] line-clamp-1">{publishAllError}</span>
@@ -609,6 +623,7 @@ export default function ContentPage() {
   const [threadsConnected, setThreadsConnected] = useState(false)
   const [linkedInConnected, setLinkedInConnected] = useState(false)
   const [twitterConnected, setTwitterConnected] = useState(false)
+  const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -645,7 +660,7 @@ export default function ContentPage() {
     const [{ data: vids }, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
       sb.from('youtube_videos').select('*').eq('user_id', user.id).order('published_at', { ascending: false }),
       sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle').eq('user_id', user.id).single(),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,tier').eq('user_id', user.id).single(),
       sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id').eq('user_id', user.id).eq('status', 'published'),
     ])
 
@@ -663,6 +678,7 @@ export default function ContentPage() {
     setThreadsConnected(!!(i as Record<string, unknown>)?.threads_access_token)
     setLinkedInConnected(!!(i as Record<string, unknown>)?.linkedin_access_token && !!(i as Record<string, unknown>)?.linkedin_person_id)
     setTwitterConnected(!!(i as Record<string, unknown>)?.twitter_access_token)
+    setUserTier(((i as Record<string, unknown>)?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free')
     setVideos((vids as Record<string, unknown>[]) ?? [])
 
     const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string }> = {}
@@ -1246,6 +1262,7 @@ export default function ContentPage() {
                     threadsConnected={threadsConnected}
                     linkedInConnected={linkedInConnected}
                     twitterConnected={twitterConnected}
+                    userTier={userTier}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
                     onDelete={(postId) => {

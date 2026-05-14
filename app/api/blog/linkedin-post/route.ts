@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // LinkedIn posting is a Pro-only feature. Check tier before doing any work.
+    // LinkedIn posting is Growth+ (included on Growth, Pro, Admin).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await (supabase as any)
       .from('integrations')
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'free'
     if (!tierAllowsSocial(tier, 'linkedin')) {
       return NextResponse.json(
-        { error: 'LinkedIn posting is a Pro-only feature. Upgrade your plan to publish to LinkedIn.' },
+        { error: 'LinkedIn posting is a Growth plan feature. Upgrade to Growth or Pro to publish to LinkedIn.' },
         { status: 403 },
       )
     }

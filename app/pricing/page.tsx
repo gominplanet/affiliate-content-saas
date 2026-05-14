@@ -17,7 +17,9 @@ type Plan = {
   ctaLabel: string
 }
 
-const plans: Plan[] = [
+type PlanExt = Plan & { bonus?: string }
+
+const plans: PlanExt[] = [
   {
     tier: 'free',
     label: 'Free',
@@ -29,8 +31,8 @@ const plans: Plan[] = [
       '5 blog posts total (lifetime)',
       'Free themed review site',
       'WordPress auto-publish',
-      'Facebook, Pinterest & Threads posting',
-      'AI-generated content',
+      'Facebook + Threads auto-post',
+      'AI agent pipeline',
     ],
     highlight: false,
     ctaLabel: 'Start free',
@@ -46,8 +48,8 @@ const plans: Plan[] = [
       '30 blog posts per month',
       'Free themed review site',
       '1 connected WordPress site',
-      'Facebook, Pinterest & Threads posting',
-      'AI-generated content',
+      'Facebook + Threads auto-post',
+      'AI agent pipeline',
     ],
     highlight: false,
     ctaLabel: 'Get Starter',
@@ -57,11 +59,14 @@ const plans: Plan[] = [
     label: 'Growth',
     price: 99,
     regularPrice: 199,
-    limit: '60 posts / month',
+    limit: '80 posts / month',
+    bonus: '60 + 20 bonus posts',
     description: 'For creators publishing daily or catching up on a backlog.',
     features: [
-      '60 blog posts per month',
+      '80 blog posts per month (60 + 20 bonus)',
       'Everything in Starter',
+      'LinkedIn auto-post',
+      'Pinterest auto-post *',
       'Priority generation queue',
     ],
     highlight: true,
@@ -73,11 +78,13 @@ const plans: Plan[] = [
     price: 199,
     regularPrice: 299,
     limit: '150 posts / month',
+    bonus: '90 + 60 bonus posts',
     description: 'Maximum output for serious affiliate marketers and agencies.',
     features: [
-      '150 blog posts per month',
+      '150 blog posts per month (90 + 60 bonus)',
       'Everything in Growth',
-      'LinkedIn posting (Pro-only)',
+      'X (Twitter) auto-post',
+      'One-click Publish All',
       'Priority support',
     ],
     highlight: false,
@@ -191,7 +198,11 @@ export default function PricingPage() {
         ))}
       </div>
 
-      <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93]">
+      <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
+        * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
+        It activates automatically on Growth &amp; Pro accounts once approved at no extra cost.
+      </p>
+      <p className="mt-3 text-sm text-[#86868b] dark:text-[#8e8e93]">
         Cancel anytime. No contracts. Billed monthly via Stripe.
       </p>
     </div>

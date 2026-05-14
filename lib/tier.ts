@@ -1,5 +1,7 @@
 export type Tier = 'free' | 'starter' | 'growth' | 'pro' | 'admin'
 
+export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter'
+
 export const TIERS = {
   free:    {
     label: 'Free',
@@ -7,10 +9,14 @@ export const TIERS = {
     regularPrice: 0,
     postsPerMonth: null as number | null,
     lifetimeMax: 5 as number | null,
+    /** Base posts the tier markets (used for the "60 + 20 bonus" framing). */
+    basePosts: 5,
+    bonusPosts: 0,
     sites: 1,
-    socials: ['facebook', 'pinterest', 'threads'] as readonly string[],
+    socials: ['facebook', 'threads'] as readonly Social[],
     priorityQueue: false,
     prioritySupport: false,
+    publishAll: false,
   },
   starter: {
     label: 'Starter',
@@ -18,21 +24,27 @@ export const TIERS = {
     regularPrice: 99,
     postsPerMonth: 30,
     lifetimeMax: null as number | null,
+    basePosts: 30,
+    bonusPosts: 0,
     sites: 1,
-    socials: ['facebook', 'pinterest', 'threads'] as readonly string[],
+    socials: ['facebook', 'threads'] as readonly Social[],
     priorityQueue: false,
     prioritySupport: false,
+    publishAll: false,
   },
   growth:  {
     label: 'Growth',
     price: 99,
     regularPrice: 199,
-    postsPerMonth: 60,
+    postsPerMonth: 80,
     lifetimeMax: null as number | null,
+    basePosts: 60,
+    bonusPosts: 20,
     sites: 1,
-    socials: ['facebook', 'pinterest', 'threads'] as readonly string[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: false,
+    publishAll: false,
   },
   pro:     {
     label: 'Pro',
@@ -40,10 +52,13 @@ export const TIERS = {
     regularPrice: 299,
     postsPerMonth: 150,
     lifetimeMax: null as number | null,
+    basePosts: 90,
+    bonusPosts: 60,
     sites: 1,
-    socials: ['facebook', 'pinterest', 'threads', 'linkedin'] as readonly string[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: true,
+    publishAll: true,
   },
   admin:   {
     label: 'Admin',
@@ -51,16 +66,24 @@ export const TIERS = {
     regularPrice: 0,
     postsPerMonth: null as number | null,
     lifetimeMax: null as number | null,
+    basePosts: 0,
+    bonusPosts: 0,
     sites: 999,
-    socials: ['facebook', 'pinterest', 'threads', 'linkedin'] as readonly string[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: true,
+    publishAll: true,
   },
 } as const
 
 /** Whether a given tier can publish to a specific social platform. */
-export function tierAllowsSocial(tier: Tier, social: 'facebook' | 'pinterest' | 'threads' | 'linkedin'): boolean {
+export function tierAllowsSocial(tier: Tier, social: Social): boolean {
   return TIERS[tier].socials.includes(social)
+}
+
+/** Whether a given tier can use the one-click Publish All flow. */
+export function tierAllowsPublishAll(tier: Tier): boolean {
+  return TIERS[tier].publishAll
 }
 
 // Returns { allowed: true } or { allowed: false, reason, tier }

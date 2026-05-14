@@ -1,11 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { PinterestService } from '@/services/pinterest'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Pinterest auto-publish is Growth+ (Growth, Pro, Admin).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: tierRow } = await (supabase as any)
+    .from('integrations')
+    .select('tier')
+    .eq('user_id', user.id)
+    .single()
+  const tier = (tierRow?.tier as Tier) ?? 'free'
+  if (!tierAllowsSocial(tier, 'pinterest')) {
+    return NextResponse.json(
+      { error: 'Pinterest auto-publish is a Growth plan feature. Upgrade to Growth or Pro to pin to Pinterest.' },
+      { status: 403 },
+    )
+  }
 
   const { postId, description, imageBase64, mediaType, fallbackImageUrl } = await request.json()
   if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })

@@ -42,7 +42,8 @@ const plans = [
     price: 0,
     regular: 0,
     limit: '5 posts lifetime',
-    features: ['Free themed review site', 'AI-generated content', 'Facebook + Threads posting'],
+    bonus: '',
+    features: ['Free themed review site', 'AI agent pipeline', 'Facebook + Threads posting'],
     cta: 'Start free',
     href: '/signup',
     highlight: false,
@@ -52,6 +53,7 @@ const plans = [
     price: 49,
     regular: 99,
     limit: '30 posts / month',
+    bonus: '',
     features: ['Free themed review site', '1 connected WordPress site', 'Facebook + Threads posting'],
     cta: 'Get Starter',
     href: '/pricing',
@@ -61,8 +63,9 @@ const plans = [
     tier: 'Growth',
     price: 99,
     regular: 199,
-    limit: '60 posts / month',
-    features: ['Everything in Starter', 'Priority generation queue'],
+    limit: '80 posts / month',
+    bonus: '60 + 20 bonus posts',
+    features: ['Everything in Starter', 'LinkedIn + Pinterest auto-post*', 'Priority generation queue'],
     cta: 'Get Growth',
     href: '/pricing',
     highlight: true,
@@ -72,7 +75,8 @@ const plans = [
     price: 199,
     regular: 299,
     limit: '150 posts / month',
-    features: ['Everything in Growth', 'LinkedIn auto-post', 'Priority support'],
+    bonus: '90 + 60 bonus posts',
+    features: ['Everything in Growth', 'X (Twitter) auto-post', 'One-click Publish All', 'Priority support'],
     cta: 'Get Pro',
     href: '/pricing',
     highlight: false,
@@ -441,7 +445,13 @@ export default function LandingPage() {
                     </span>
                   </p>
                 )}
-                <p className={`text-sm font-medium mb-4 ${plan.highlight ? 'text-blue-100' : 'text-[#0071e3]'}`}>{plan.limit}</p>
+                <p className={`text-sm font-medium ${plan.highlight ? 'text-blue-100' : 'text-[#0071e3]'}`}>{plan.limit}</p>
+                {plan.bonus && (
+                  <p className={`text-xs font-medium mb-3 ${plan.highlight ? 'text-yellow-300' : 'text-[#34c759]'}`}>
+                    ↑ {plan.bonus}
+                  </p>
+                )}
+                {!plan.bonus && <div className="mb-3" />}
                 <ul className="flex flex-col gap-2 mb-6 flex-1">
                   {plan.features.map((f) => (
                     <li key={f} className="flex items-start gap-2 text-[13px]">
@@ -465,6 +475,10 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-8 text-center text-sm text-[#86868b]">
+            * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
+            Included on Growth &amp; Pro at no extra cost once approved.
+          </p>
+          <p className="mt-3 text-center text-sm text-[#86868b] dark:text-[#8e8e93]">
             Want all the details? <Link href="/pricing" className="text-[#0071e3] font-semibold hover:underline">See full pricing →</Link>
           </p>
         </div>
