@@ -52,6 +52,8 @@ export async function POST(request: Request) {
       channel_title: v.channelTitle,
       published_at: v.publishedAt,
       view_count: v.viewCount,
+      duration_seconds: v.durationSeconds,
+      is_vertical: v.isVertical,
     }))
 
     // Detect truly new videos (not already in DB) before upsert

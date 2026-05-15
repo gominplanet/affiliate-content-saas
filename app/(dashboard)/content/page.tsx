@@ -1299,7 +1299,7 @@ export default function ContentPage() {
   const [catPreview, setCatPreview] = useState<{ title: string; category: string }[] | null>(null)
   const [catPreviewLoading, setCatPreviewLoading] = useState(false)
   const [catApplying, setCatApplying] = useState(false)
-  const [activeTab, setActiveTab] = useState<'videos' | 'posts'>('videos')
+  const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts'>('horizontal')
   const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null }[]>([])
   const [rewritingPostId, setRewritingPostId] = useState<number | null>(null)
   const [postsLoading, setPostsLoading] = useState(false)
@@ -1728,6 +1728,13 @@ export default function ContentPage() {
 
   const allReady = checks?.brandReady && checks?.wpReady
   const visibleVideos = videos.filter(v => !dismissed.has(v.id as string))
+  // Split videos by orientation. is_vertical comes from YouTube sync (duration
+  // ≤ 180s OR #Shorts in title). For backwards-compat rows where is_vertical
+  // is null, default to horizontal (the existing behavior pre-migration).
+  const horizontalVideos = visibleVideos.filter(v => v.is_vertical !== true)
+  const verticalVideos = visibleVideos.filter(v => v.is_vertical === true)
+  // Which set the current tab shows. Vertical tab gets Shorts only.
+  const currentTabVideos = activeTab === 'vertical' ? verticalVideos : horizontalVideos
   const generatedCount = Object.keys(posts).length
 
   return (
@@ -1738,9 +1745,11 @@ export default function ContentPage() {
           loading ? 'Loading…' :
           activeTab === 'posts'
             ? `${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} published`
-            : visibleVideos.length > 0
-              ? `${visibleVideos.length} video${visibleVideos.length !== 1 ? 's' : ''} · ${generatedCount} post${generatedCount !== 1 ? 's' : ''} published`
-              : 'Hit Sync to pull every YouTube video into your generation queue.'
+            : activeTab === 'vertical'
+              ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} · use these for Instagram Reels & Stories`
+              : horizontalVideos.length > 0
+                ? `${horizontalVideos.length} horizontal video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} post${generatedCount !== 1 ? 's' : ''} published`
+                : 'Hit Sync to pull every YouTube video into your generation queue.'
         }
         actions={
           <div className="flex items-center gap-2">
@@ -1754,7 +1763,7 @@ export default function ContentPage() {
                 ? <><Loader2 size={14} className="animate-spin" /> Loading preview…</>
                 : 'Fix Categories'}
             </button>
-            {activeTab === 'videos' && (
+            {(activeTab === 'horizontal' || activeTab === 'vertical') && (
               <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
                 {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : <><RefreshCw size={14} /> Sync videos</>}
               </button>
@@ -1763,22 +1772,27 @@ export default function ContentPage() {
         }
       />
 
-      {/* Tab bar */}
+      {/* Tab bar — split Videos into Horizontal (16:9 long-form, blog source)
+          and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 -mt-2 mb-4">
-        {(['videos', 'posts'] as const).map(tab => (
+        {([
+          { key: 'horizontal' as const, label: 'Horizontal Videos' },
+          { key: 'vertical' as const, label: 'Vertical Videos' },
+          { key: 'posts' as const, label: `Posts${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
+        ]).map(({ key, label }) => (
           <button
-            key={tab}
+            key={key}
             onClick={() => {
-              setActiveTab(tab)
-              if (tab === 'posts' && !postsLoaded && !postsLoading) loadWpPosts()
+              setActiveTab(key)
+              if (key === 'posts' && !postsLoaded && !postsLoading) loadWpPosts()
             }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
-              activeTab === tab
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === key
                 ? 'border-[#0071e3] text-[#0071e3]'
                 : 'border-transparent text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
             }`}
           >
-            {tab === 'videos' ? 'Videos' : `Posts${postsLoaded ? ` (${allBlogPosts.length})` : ''}`}
+            {label}
           </button>
         ))}
       </div>
@@ -1919,17 +1933,35 @@ export default function ContentPage() {
             {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : 'Sync now'}
           </button>
         </div>
+      ) : currentTabVideos.length === 0 ? (
+        <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+            {activeTab === 'vertical' ? 'No vertical videos found' : 'No horizontal videos found'}
+          </p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm">
+            {activeTab === 'vertical'
+              ? 'We tag videos as vertical when their duration is ≤ 3 minutes or the title/description contains #Shorts. Hit Sync videos again — newly synced videos get classified automatically.'
+              : 'All your synced videos look like vertical Shorts. Hit Sync videos again to refresh, or check the Vertical Videos tab.'}
+          </p>
+          <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-xs">
+            {syncing ? <><Loader2 size={11} className="animate-spin" /> Syncing…</> : <><RefreshCw size={11} /> Re-sync videos</>}
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div className="flex items-center gap-2 text-sm">
               <Sparkles size={14} className="text-[#0071e3]" />
-              <span className="text-[#6e6e73] dark:text-[#ebebf0]">{generatedCount} of {visibleVideos.length} videos published as blog posts</span>
+              <span className="text-[#6e6e73] dark:text-[#ebebf0]">
+                {activeTab === 'vertical'
+                  ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} — source for Instagram Reels & Stories`
+                  : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts`}
+              </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {selectedVideoIds.size === 0 && visibleVideos.some(v => !posts[v.id as string]) && (
+              {activeTab === 'horizontal' && selectedVideoIds.size === 0 && currentTabVideos.some(v => !posts[v.id as string]) && (
                 <button
-                  onClick={() => setSelectedVideoIds(new Set(visibleVideos.filter(v => !posts[v.id as string]).map(v => v.id as string)))}
+                  onClick={() => setSelectedVideoIds(new Set(currentTabVideos.filter(v => !posts[v.id as string]).map(v => v.id as string)))}
                   className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
                 >
                   Select all ungenerated
@@ -1957,7 +1989,7 @@ export default function ContentPage() {
               )}
             </div>
           </div>
-          {visibleVideos.map((video) => {
+          {currentTabVideos.map((video) => {
             const isGenerated = !!posts[video.id as string]
             const isSelected = selectedVideoIds.has(video.id as string)
             return (

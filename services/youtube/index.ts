@@ -9,6 +9,14 @@ export interface YouTubeVideo {
   channelTitle: string
   publishedAt: string
   viewCount: number
+  /** Total length in seconds (from ISO duration). 0 if unknown. */
+  durationSeconds: number
+  /**
+   * True if this video looks like a vertical Short (≤ 180s OR has #Shorts
+   * in title/description). Heuristic; not 100% accurate but good enough
+   * for the Content page Vertical / Horizontal split.
+   */
+  isVertical: boolean
 }
 
 export class YouTubeService {
@@ -56,20 +64,37 @@ export class YouTubeService {
     if (items.length === 0) return { videos: [] }
 
     const videoIds = items.map((i: any) => i.snippet.resourceId.videoId).join(',')
-    const statsData = await this.get<any>('/videos', { part: 'statistics', id: videoIds })
+    // Pull statistics + contentDetails together — contentDetails gives us
+    // ISO-8601 duration which we use to classify Shorts (vertical) vs.
+    // long-form. One batched call per page.
+    const statsData = await this.get<any>('/videos', { part: 'statistics,contentDetails', id: videoIds })
 
     const statsMap: Record<string, number> = {}
+    const durationMap: Record<string, number> = {}
+    const SHORTS_TAG_RE = /#shorts\b/i
     for (const v of statsData.items ?? []) {
       statsMap[v.id] = parseInt(v.statistics?.viewCount ?? '0', 10)
+      // Parse ISO duration like "PT1H2M3S" → seconds
+      const iso: string = v.contentDetails?.duration ?? 'PT0S'
+      const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
+      const h = m?.[1] ? parseInt(m[1], 10) : 0
+      const min = m?.[2] ? parseInt(m[2], 10) : 0
+      const s = m?.[3] ? parseInt(m[3], 10) : 0
+      durationMap[v.id] = h * 3600 + min * 60 + s
     }
 
     const videos = items.map((item: any) => {
       const s = item.snippet
       const videoId = s.resourceId.videoId
+      const durationSeconds = durationMap[videoId] ?? 0
+      const title: string = s.title ?? ''
+      const description: string = s.description ?? ''
+      const taggedAsShort = SHORTS_TAG_RE.test(title) || SHORTS_TAG_RE.test(description)
+      const isVertical = (durationSeconds > 0 && durationSeconds <= 180) || taggedAsShort
       return {
         youtubeVideoId: videoId,
-        title: s.title,
-        description: s.description ?? '',
+        title,
+        description,
         thumbnailUrl:
           s.thumbnails?.maxres?.url ??
           s.thumbnails?.high?.url ??
@@ -79,6 +104,8 @@ export class YouTubeService {
         channelTitle: s.channelTitle,
         publishedAt: s.publishedAt,
         viewCount: statsMap[videoId] ?? 0,
+        durationSeconds,
+        isVertical,
       }
     })
 
@@ -259,10 +286,13 @@ export class YouTubeOAuthService {
   /**
    * List the authenticated user's recent vertical/Short videos.
    *
-   * Heuristic: a video is a Short if duration ≤ 60s OR its title/description
-   * contains "#Shorts" (creator convention). We pull the most recent N
-   * uploads, fetch contentDetails (duration) in a single batched videos.list,
-   * and filter.
+   * Heuristic: a video is treated as a Short candidate if duration ≤ 180s
+   * (covers the newer YouTube Shorts duration cap) OR its title/description
+   * contains "#Shorts" (creator convention). Many creators don't tag their
+   * Shorts so we lean on duration as the primary signal. Long-form review
+   * channels rarely produce <3-minute non-Short videos, so false positives
+   * are minimal in practice. We pull the most recent N uploads, fetch
+   * contentDetails (duration) in a single batched videos.list, and filter.
    *
    * If `asin` is provided, the matching Short (with that ASIN in the title)
    * is moved to the front of the returned list so the UI can highlight it
@@ -320,7 +350,10 @@ export class YouTubeOAuthService {
         const title = v.snippet.title ?? ''
         const description = v.snippet.description ?? ''
         const taggedAsShort = SHORTS_TAG_RE.test(title) || SHORTS_TAG_RE.test(description)
-        const looksLikeShort = durationSeconds > 0 && durationSeconds <= 60
+        // Bumped from 60s → 180s to cover YouTube's expanded Shorts limit
+        // (3 minutes) introduced in 2024. Long-form review channels rarely
+        // produce <3min non-Short videos, so false positives are minimal.
+        const looksLikeShort = durationSeconds > 0 && durationSeconds <= 180
         if (!looksLikeShort && !taggedAsShort) return null
 
         const asinMatch = title.match(asinRe)
