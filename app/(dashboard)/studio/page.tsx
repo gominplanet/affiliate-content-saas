@@ -1113,6 +1113,23 @@ export default function StudioPage() {
         </div>
       )}
 
+      {/* How-it-works disclaimer — always visible once connected */}
+      {!needsAuth && (
+        <div className="card p-4 mb-5 flex items-start gap-3 border border-[#0071e3]/20 bg-[#0071e3]/5">
+          <div className="w-7 h-7 rounded-lg bg-[#0071e3]/15 flex items-center justify-center flex-shrink-0">
+            <AlertCircle size={14} className="text-[#0071e3]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Before you upload to YouTube — include the Amazon ASIN in your video name</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+              Name the video file (or the YouTube title) so the 10-character Amazon ASIN sits inside it. Example:{' '}
+              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
+              That&apos;s how we identify the product, pull its Amazon data, and generate the description, tags, hashtags and thumbnail. No ASIN, no generation.
+            </p>
+          </div>
+        </div>
+      )}
+
       {!needsAuth && !error && (
         <>
           <div className="flex items-center justify-between mb-5">
