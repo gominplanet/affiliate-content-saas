@@ -76,7 +76,7 @@ const plans = [
     regular: 499,
     limit: '150 posts / month',
     bonus: '90 + 60 bonus posts',
-    features: ['Everything in Growth', 'X (Twitter) auto-post', 'One-click Publish All', 'Priority support'],
+    features: ['One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off)', 'Everything in Growth', 'X (Twitter) auto-post', 'One-click Publish All to socials', 'Priority support'],
     cta: 'Get Pro',
     href: '/pricing',
     highlight: false,
