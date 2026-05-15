@@ -93,7 +93,16 @@ export async function getVideoDetails(videoIdOrUrl: string): Promise<YouTubeVide
   const videoId = extractVideoId(videoIdOrUrl)
   if (!videoId) throw new Error(`Could not extract a YouTube video ID from: ${videoIdOrUrl.slice(0, 80)}`)
 
-  const url = `${BASE}/v2/video/details?videoId=${encodeURIComponent(videoId)}`
+  // urlAccess=normal + videos=auto + audios=auto are required by DataFanatic's
+  // API — without them it returns a spurious "VideoNotFound" even for real,
+  // public videos. Don't ask me, I didn't design it.
+  const params = new URLSearchParams({
+    videoId,
+    urlAccess: 'normal',
+    videos: 'auto',
+    audios: 'auto',
+  })
+  const url = `${BASE}/v2/video/details?${params.toString()}`
   const res = await fetch(url, {
     headers: {
       'X-RapidAPI-Key': apiKey,
