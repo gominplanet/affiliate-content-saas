@@ -312,6 +312,7 @@ function GenerateButton({
 function InstagramPublishModal({
   postId,
   videoDbId,
+  videoKind,
   alreadyReeled,
   alreadyStoried,
   onClose,
@@ -322,6 +323,8 @@ function InstagramPublishModal({
 }: {
   postId: string
   videoDbId: string
+  /** 'vertical' = upload-MP4 path (Reels). 'horizontal' = auto-composed-image path (Feed image). */
+  videoKind: 'horizontal' | 'vertical'
   alreadyReeled: boolean
   alreadyStoried: boolean
   onClose: () => void
@@ -331,32 +334,59 @@ function InstagramPublishModal({
   onStoryPosted: (affiliateUrl: string) => void
 }) {
   const supabase = createBrowserClient()
-  // Pre-check: does the youtube_videos row already have an instagram_video_url?
+  // Media-ready URL — instagram_video_url for vertical, instagram_image_url for horizontal
   const [existingUrl, setExistingUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [uploadError, setUploadError] = useState<string | null>(null)
+  // Image generation state (horizontal kind only)
+  const [generatingImage, setGeneratingImage] = useState(false)
   // Default mode: Both unless one's already been done — then only the missing one
-  const initialMode: 'reel' | 'story' | 'both' = alreadyReeled && !alreadyStoried ? 'story' : alreadyStoried && !alreadyReeled ? 'reel' : 'both'
-  const [mode, setMode] = useState<'reel' | 'story' | 'both'>(initialMode)
+  // Feed-post mode is 'reel' for vertical, 'image' for horizontal — kept in `feedMode`.
+  const feedMode: 'reel' | 'image' = videoKind === 'horizontal' ? 'image' : 'reel'
+  const initialMode: 'reel' | 'image' | 'story' | 'both' =
+    alreadyReeled && !alreadyStoried ? 'story' : alreadyStoried && !alreadyReeled ? feedMode : 'both'
+  const [mode, setMode] = useState<'reel' | 'image' | 'story' | 'both'>(initialMode)
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
-  // Preview step: after picking the mode the user clicks Preview, which calls
-  // the API with dryRun: true to get the generated caption + affiliate URL.
-  // They can then edit the caption in a textarea before hitting Publish.
   const [previewing, setPreviewing] = useState(false)
   const [previewLoaded, setPreviewLoaded] = useState(false)
   const [previewedReelCaption, setPreviewedReelCaption] = useState('')
   const [previewedAffiliateUrl, setPreviewedAffiliateUrl] = useState<string | null>(null)
 
-  // Load current upload state
+  // Load whichever URL applies to this kind
   useEffect(() => {
+    const col = videoKind === 'horizontal' ? 'instagram_image_url' : 'instagram_video_url'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(supabase as any).from('youtube_videos').select('instagram_video_url').eq('id', videoDbId).single().then(({ data }: { data: { instagram_video_url: string | null } | null }) => {
-      if (data?.instagram_video_url) setExistingUrl(data.instagram_video_url)
+    ;(supabase as any).from('youtube_videos').select(col).eq('id', videoDbId).single().then(({ data }: { data: Record<string, string | null> | null }) => {
+      const url = data?.[col]
+      if (url) setExistingUrl(url)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoDbId])
+  }, [videoDbId, videoKind])
+
+  /** Horizontal kind: kick off server-side image composition. */
+  async function handleGenerateImage() {
+    setGeneratingImage(true)
+    setUploadError(null)
+    setUploadProgress('Composing image…')
+    try {
+      const res = await fetch('/api/instagram/compose-thumbnail-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoDbId }),
+      })
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (!res.ok) throw new Error(data.error || 'Image generation failed')
+      setExistingUrl(data.instagramImageUrl as string)
+      setUploadProgress('')
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Image generation failed')
+      setUploadProgress('')
+    } finally {
+      setGeneratingImage(false)
+    }
+  }
 
   async function handleFileUpload(file: File) {
     if (!file) return
@@ -408,6 +438,8 @@ function InstagramPublishModal({
     setPublishError(null)
   }
 
+  const apiKind: 'video' | 'image' = videoKind === 'horizontal' ? 'image' : 'video'
+
   /** Step 3 — call publish route with dryRun: true to get the editable caption + affiliate URL. */
   async function previewContent() {
     setPreviewing(true)
@@ -416,7 +448,7 @@ function InstagramPublishModal({
       const res = await fetch('/api/blog/instagram-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, mode, dryRun: true }),
+        body: JSON.stringify({ postId, kind: apiKind, mode, dryRun: true }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       if (!res.ok) throw new Error(data.error || 'Preview failed')
@@ -433,33 +465,34 @@ function InstagramPublishModal({
   /** Step 4 — publish using the (possibly edited) caption from the preview step. */
   async function publish() {
     if (!existingUrl) {
-      setPublishError('Upload a vertical MP4 first.')
+      setPublishError(videoKind === 'horizontal' ? 'Generate the Instagram image first.' : 'Upload a vertical MP4 first.')
       return
     }
     setPublishing(true)
     setPublishError(null)
     onPublishStart()
     try {
+      const sendsFeedCaption = mode === feedMode || mode === 'both'
       const res = await fetch('/api/blog/instagram-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           postId,
+          kind: apiKind,
           mode,
-          caption: (mode === 'reel' || mode === 'both') ? previewedReelCaption : undefined,
+          caption: sendsFeedCaption ? previewedReelCaption : undefined,
         }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       if (!res.ok) throw new Error(data.error || 'Publish failed')
 
-      if (data.reelId) onReelPosted()
+      if (data.reelId || data.imagePostId) onReelPosted()
       if (data.storyId) onStoryPosted(data.affiliateUrl ?? '')
 
       if (Array.isArray(data.warnings) && data.warnings.length > 0) {
         setPublishError('Published with warnings: ' + data.warnings.join(' · '))
         return
       }
-      // Close on success
       onClose()
     } catch (err) {
       setPublishError(err instanceof Error ? err.message : 'Publish failed')
@@ -493,18 +526,58 @@ function InstagramPublishModal({
             </button>
           </div>
 
-          {/* Step 1 — Video source */}
+          {/* Step 1 — Media source (video upload for vertical, auto-image for horizontal) */}
           <div className="mb-5">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">1. Vertical video (9:16, MP4, &lt;100MB)</p>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
+              {videoKind === 'horizontal'
+                ? '1. Instagram image (4:5, auto-composed from your thumbnail)'
+                : '1. Vertical video (9:16, MP4, <100MB)'}
+            </p>
             {existingUrl ? (
-              <div className="flex items-center justify-between p-3 rounded-lg bg-[#34c759]/5 border border-[#34c759]/30">
-                <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
-                  <CheckCircle size={12} className="text-[#34c759]" /> Video ready
-                </p>
-                <button onClick={() => { setExistingUrl(null); resetPreview() }} className="text-[11px] text-[#0071e3] hover:underline">
-                  Replace
-                </button>
-              </div>
+              videoKind === 'horizontal' ? (
+                <div className="rounded-lg bg-[#34c759]/5 border border-[#34c759]/30 p-3">
+                  <div className="flex items-start gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={existingUrl} alt="Composed Instagram image" className="w-20 h-25 rounded-md object-cover border border-gray-200 dark:border-white/10" style={{ aspectRatio: '4/5' }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5 mb-1">
+                        <CheckCircle size={12} className="text-[#34c759]" /> Image ready
+                      </p>
+                      <button onClick={handleGenerateImage} disabled={generatingImage} className="text-[11px] text-[#0071e3] hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+                        {generatingImage ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-3 rounded-lg bg-[#34c759]/5 border border-[#34c759]/30">
+                  <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
+                    <CheckCircle size={12} className="text-[#34c759]" /> Video ready
+                  </p>
+                  <button onClick={() => { setExistingUrl(null); resetPreview() }} className="text-[11px] text-[#0071e3] hover:underline">
+                    Replace
+                  </button>
+                </div>
+              )
+            ) : videoKind === 'horizontal' ? (
+              <button
+                onClick={handleGenerateImage}
+                disabled={generatingImage}
+                className="w-full flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#E1306C] cursor-pointer transition-colors disabled:cursor-wait"
+              >
+                {generatingImage ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin text-[#E1306C] mb-2" />
+                    <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Composing image…'}</p>
+                  </>
+                ) : (
+                  <>
+                    <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
+                    <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Compose Instagram image</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">YouTube thumbnail + title + your brand · 1080×1350</p>
+                  </>
+                )}
+              </button>
             ) : (
               <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#0071e3] cursor-pointer transition-colors">
                 <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
@@ -529,11 +602,15 @@ function InstagramPublishModal({
           <div className="mb-5">
             <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">2. What to publish</p>
             <div className="grid grid-cols-3 gap-2">
-              {([
-                { val: 'reel', label: 'Reel only', hint: 'Max SEO caption + 20 hashtags. No clickable link (IG limitation).', disabled: alreadyReeled && !alreadyStoried },
-                { val: 'story', label: 'Story only', hint: 'Video + link sticker (you add the sticker manually after).', disabled: alreadyStoried && !alreadyReeled },
-                { val: 'both', label: 'Both', hint: 'Reel for reach + Story for affiliate clicks. Recommended.', disabled: alreadyReeled && alreadyStoried },
-              ] as const).map(opt => (
+              {(videoKind === 'horizontal' ? ([
+                { val: 'image' as const, label: 'Feed post', hint: 'Image + SEO caption + 20 hashtags. No clickable link (IG limitation).', disabled: alreadyReeled && !alreadyStoried },
+                { val: 'story' as const, label: 'Story only', hint: 'Image + link sticker (you add the sticker manually after).', disabled: alreadyStoried && !alreadyReeled },
+                { val: 'both' as const, label: 'Both', hint: 'Feed post for reach + Story for affiliate clicks. Recommended.', disabled: alreadyReeled && alreadyStoried },
+              ]) : ([
+                { val: 'reel' as const, label: 'Reel only', hint: 'Max SEO caption + 20 hashtags. No clickable link (IG limitation).', disabled: alreadyReeled && !alreadyStoried },
+                { val: 'story' as const, label: 'Story only', hint: 'Video + link sticker (you add the sticker manually after).', disabled: alreadyStoried && !alreadyReeled },
+                { val: 'both' as const, label: 'Both', hint: 'Reel for reach + Story for affiliate clicks. Recommended.', disabled: alreadyReeled && alreadyStoried },
+              ])).map(opt => (
                 <button
                   key={opt.val}
                   onClick={() => { setMode(opt.val); resetPreview() }}
@@ -575,9 +652,9 @@ function InstagramPublishModal({
             <div className="mb-5">
               <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">3. Edit before publishing</p>
 
-              {(mode === 'reel' || mode === 'both') && (
+              {(mode === feedMode || mode === 'both') && (
                 <div className="mb-3">
-                  <label className="text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1 block">Reel caption + hashtags <span className="text-[#86868b]">({previewedReelCaption.length}/2200)</span></label>
+                  <label className="text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1 block">{videoKind === 'horizontal' ? 'Post' : 'Reel'} caption + hashtags <span className="text-[#86868b]">({previewedReelCaption.length}/2200)</span></label>
                   <textarea
                     value={previewedReelCaption}
                     onChange={e => setPreviewedReelCaption(e.target.value.slice(0, 2200))}
@@ -1048,6 +1125,7 @@ function VideoCard({
             <InstagramPublishModal
               postId={post.postId}
               videoDbId={id}
+              videoKind={video.is_vertical === true ? 'vertical' : 'horizontal'}
               alreadyReeled={igReelPosted}
               alreadyStoried={igStoryPosted}
               onClose={() => setIgModalOpen(false)}

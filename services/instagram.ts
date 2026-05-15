@@ -163,21 +163,37 @@ export async function refreshLongLivedToken(currentToken: string): Promise<{ acc
 export async function createMediaContainer(opts: {
   userId: string
   accessToken: string
-  mediaType: 'REELS' | 'STORIES'
-  videoUrl: string
-  /** Reels only — caption with hashtags. Ignored for Stories. */
+  /**
+   * REELS = vertical video feed/reel post
+   * STORIES = 24h story (image or video)
+   * IMAGE = standard feed image post (single image, not carousel)
+   */
+  mediaType: 'REELS' | 'STORIES' | 'IMAGE'
+  /** Required for REELS and video-Stories. */
+  videoUrl?: string
+  /** Required for IMAGE and image-Stories. */
+  imageUrl?: string
+  /** Feed posts (REELS / IMAGE) — caption with hashtags. Ignored for Stories. */
   caption?: string
   /** Reels only — also share to feed (recommended for reach). */
   shareToFeed?: boolean
 }): Promise<string> {
   const body = new URLSearchParams({
     media_type: opts.mediaType,
-    video_url: opts.videoUrl,
     access_token: opts.accessToken,
   })
+  if (opts.imageUrl) {
+    body.set('image_url', opts.imageUrl)
+  } else if (opts.videoUrl) {
+    body.set('video_url', opts.videoUrl)
+  } else {
+    throw new Error('createMediaContainer: must provide imageUrl or videoUrl')
+  }
   if (opts.mediaType === 'REELS') {
     if (opts.caption) body.set('caption', opts.caption.slice(0, 2200))
     if (opts.shareToFeed !== false) body.set('share_to_feed', 'true')
+  } else if (opts.mediaType === 'IMAGE') {
+    if (opts.caption) body.set('caption', opts.caption.slice(0, 2200))
   }
 
   const res = await fetch(`${GRAPH_BASE}/${GRAPH_VERSION}/${opts.userId}/media`, {
@@ -254,8 +270,9 @@ export async function publishContainer(opts: {
 export async function publishMedia(opts: {
   userId: string
   accessToken: string
-  mediaType: 'REELS' | 'STORIES'
-  videoUrl: string
+  mediaType: 'REELS' | 'STORIES' | 'IMAGE'
+  videoUrl?: string
+  imageUrl?: string
   caption?: string
   shareToFeed?: boolean
 }): Promise<string> {
