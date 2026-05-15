@@ -312,7 +312,6 @@ function GenerateButton({
 function InstagramPublishModal({
   postId,
   videoDbId,
-  videoTitle,
   alreadyReeled,
   alreadyStoried,
   onClose,
@@ -323,7 +322,6 @@ function InstagramPublishModal({
 }: {
   postId: string
   videoDbId: string
-  videoTitle: string
   alreadyReeled: boolean
   alreadyStoried: boolean
   onClose: () => void
@@ -332,26 +330,12 @@ function InstagramPublishModal({
   onReelPosted: () => void
   onStoryPosted: (affiliateUrl: string) => void
 }) {
-  // Extract ASIN client-side from the long-form review title so we can
-  // ask the YouTube Shorts endpoint to flag a matching Short.
-  const ASIN_RE = /\b([A-Z0-9]{10})\b/
-  const detectedAsin = videoTitle.match(ASIN_RE)?.[1] ?? null
   const supabase = createBrowserClient()
   // Pre-check: does the youtube_videos row already have an instagram_video_url?
   const [existingUrl, setExistingUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [uploadError, setUploadError] = useState<string | null>(null)
-  // "Pick from your YouTube Shorts" path — alternative to manual upload.
-  // We auto-load the user's recent Shorts (flagged by ASIN match), they
-  // click one, server downloads the MP4 via RapidAPI to Supabase Storage.
-  const [sourceTab, setSourceTab] = useState<'upload' | 'youtube'>('upload')
-  const [ytFetching, setYtFetching] = useState(false)
-  const [ytFetchingId, setYtFetchingId] = useState<string | null>(null)
-  const [ytConfirmed, setYtConfirmed] = useState(false) // "I confirm this is my own content"
-  const [shortsLoading, setShortsLoading] = useState(false)
-  const [shortsError, setShortsError] = useState<string | null>(null)
-  const [shorts, setShorts] = useState<Array<{ youtubeVideoId: string; title: string; thumbnailUrl: string; durationSeconds: number; isAsinMatch: boolean }>>([])
   // Default mode: Both unless one's already been done — then only the missing one
   const initialMode: 'reel' | 'story' | 'both' = alreadyReeled && !alreadyStoried ? 'story' : alreadyStoried && !alreadyReeled ? 'reel' : 'both'
   const [mode, setMode] = useState<'reel' | 'story' | 'both'>(initialMode)
@@ -373,59 +357,6 @@ function InstagramPublishModal({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoDbId])
-
-  /** Load the user's recent YouTube Shorts once the YouTube tab is opened. */
-  async function loadShorts() {
-    setShortsLoading(true)
-    setShortsError(null)
-    try {
-      const url = detectedAsin
-        ? `/api/youtube/my-shorts?asin=${encodeURIComponent(detectedAsin)}`
-        : '/api/youtube/my-shorts'
-      const res = await fetch(url)
-      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (!res.ok) throw new Error(data.error || 'Failed to load Shorts')
-      setShorts(data.shorts ?? [])
-    } catch (err) {
-      setShortsError(err instanceof Error ? err.message : 'Failed to load Shorts')
-    } finally {
-      setShortsLoading(false)
-    }
-  }
-
-  /** Fetch a specific Short's MP4 server-side via RapidAPI. */
-  async function fetchShort(youtubeVideoId: string) {
-    if (!ytConfirmed) {
-      setUploadError('Please confirm this is your own content.')
-      return
-    }
-    setYtFetching(true)
-    setYtFetchingId(youtubeVideoId)
-    setUploadError(null)
-    setUploadProgress('Fetching from YouTube… (20-30s)')
-    try {
-      const youtubeUrl = `https://www.youtube.com/shorts/${youtubeVideoId}`
-      const res = await fetch('/api/instagram/fetch-from-youtube', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ youtubeUrl, videoDbId }),
-      })
-      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (!res.ok) throw new Error(data.error || 'Fetch failed')
-
-      setExistingUrl(data.instagramVideoUrl as string)
-      setUploadProgress('')
-      if (data.isVertical === false) {
-        setUploadError('Heads up: that video isn\'t 9:16. Instagram will accept it but show with letterboxing.')
-      }
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Failed to fetch from YouTube')
-      setUploadProgress('')
-    } finally {
-      setYtFetching(false)
-      setYtFetchingId(null)
-    }
-  }
 
   async function handleFileUpload(file: File) {
     if (!file) return
@@ -575,116 +506,21 @@ function InstagramPublishModal({
                 </button>
               </div>
             ) : (
-              <>
-                {/* Source tabs */}
-                <div className="flex gap-1 mb-3 p-1 rounded-lg bg-gray-100 dark:bg-white/5 w-fit">
-                  <button
-                    onClick={() => setSourceTab('upload')}
-                    className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                      sourceTab === 'upload'
-                        ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm'
-                        : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
-                    }`}
-                  >
-                    Upload MP4
-                  </button>
-                  <button
-                    onClick={() => { setSourceTab('youtube'); if (shorts.length === 0 && !shortsLoading) loadShorts() }}
-                    className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${
-                      sourceTab === 'youtube'
-                        ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm'
-                        : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
-                    }`}
-                  >
-                    <span className="inline-flex items-center gap-1">From your YouTube Shorts <span className="text-[8px] px-1 py-0.5 rounded bg-[#0071e3]/10 text-[#0071e3] font-bold uppercase">Pro</span></span>
-                  </button>
-                </div>
-
-                {sourceTab === 'upload' ? (
-                  <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#0071e3] cursor-pointer transition-colors">
-                    <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
-                    {uploading ? (
-                      <>
-                        <Loader2 size={20} className="animate-spin text-[#0071e3] mb-2" />
-                        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Uploading…'}</p>
-                      </>
-                    ) : (
-                      <>
-                        <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
-                        <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Click to upload vertical MP4</p>
-                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3–90 seconds, under 100MB</p>
-                      </>
-                    )}
-                  </label>
+              <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#0071e3] cursor-pointer transition-colors">
+                <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
+                {uploading ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin text-[#0071e3] mb-2" />
+                    <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Uploading…'}</p>
+                  </>
                 ) : (
-                  <div className="flex flex-col gap-3">
-                    <label className="flex items-start gap-2 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer">
-                      <input type="checkbox" checked={ytConfirmed} onChange={e => setYtConfirmed(e.target.checked)} disabled={ytFetching} className="mt-0.5" />
-                      <span>I confirm this is my own content (or I have permission to use it).</span>
-                    </label>
-
-                    {shortsLoading ? (
-                      <div className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#ebebf0] py-6 justify-center">
-                        <Loader2 size={14} className="animate-spin" /> Loading your YouTube Shorts…
-                      </div>
-                    ) : shortsError ? (
-                      <div className="text-xs text-[#ff3b30] py-4 text-center">
-                        {shortsError}
-                        <button onClick={loadShorts} className="text-[11px] text-[#0071e3] hover:underline ml-2">Retry</button>
-                      </div>
-                    ) : shorts.length === 0 ? (
-                      <div className="text-xs text-[#86868b] dark:text-[#8e8e93] py-4 text-center">
-                        No Shorts found on your channel. Upload manually instead, or record a Short on YouTube first.
-                      </div>
-                    ) : (
-                      <>
-                        {detectedAsin && shorts.some(s => s.isAsinMatch) && (
-                          <p className="text-[10px] text-[#34c759] font-semibold">
-                            ✓ Found matching Short for ASIN {detectedAsin}
-                          </p>
-                        )}
-                        <div className="grid grid-cols-3 gap-2 max-h-[280px] overflow-y-auto">
-                          {shorts.slice(0, 18).map(s => (
-                            <button
-                              key={s.youtubeVideoId}
-                              onClick={() => fetchShort(s.youtubeVideoId)}
-                              disabled={ytFetching || !ytConfirmed}
-                              className={`group relative rounded-lg overflow-hidden border-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                                s.isAsinMatch
-                                  ? 'border-[#34c759] ring-1 ring-[#34c759]'
-                                  : 'border-gray-200 dark:border-white/10 hover:border-[#E1306C]'
-                              }`}
-                              title={s.title}
-                            >
-                              <div className="aspect-[9/16] bg-gray-100 dark:bg-[#1c1c1e] overflow-hidden">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={s.thumbnailUrl} alt={s.title} className="w-full h-full object-cover" />
-                              </div>
-                              {s.isAsinMatch && (
-                                <span className="absolute top-1 left-1 text-[8px] font-bold px-1.5 py-0.5 rounded bg-[#34c759] text-white">MATCH</span>
-                              )}
-                              <span className="absolute bottom-1 right-1 text-[8px] font-semibold px-1 py-0.5 rounded bg-black/70 text-white">{s.durationSeconds}s</span>
-                              {ytFetchingId === s.youtubeVideoId && (
-                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                                  <Loader2 size={16} className="animate-spin text-white" />
-                                </div>
-                              )}
-                              <p className="text-[9px] text-[#1d1d1f] dark:text-[#f5f5f7] p-1 line-clamp-2 leading-tight bg-white dark:bg-[#1c1c1e] text-left">
-                                {s.title}
-                              </p>
-                            </button>
-                          ))}
-                        </div>
-                        {ytFetching && <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] text-center">{uploadProgress}</p>}
-                      </>
-                    )}
-
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-                      We pull your 50 most recent Shorts. Matching Short (same ASIN in title) is highlighted in green. Click to use — server downloads the MP4 in ~30s.
-                    </p>
-                  </div>
+                  <>
+                    <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
+                    <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Click to upload vertical MP4</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3–90 seconds, under 100MB</p>
+                  </>
                 )}
-              </>
+              </label>
             )}
             {uploadError && <p className="text-[11px] text-[#ff3b30] mt-2">{uploadError}</p>}
           </div>
@@ -1212,7 +1048,6 @@ function VideoCard({
             <InstagramPublishModal
               postId={post.postId}
               videoDbId={id}
-              videoTitle={title}
               alreadyReeled={igReelPosted}
               alreadyStoried={igStoryPosted}
               onClose={() => setIgModalOpen(false)}
