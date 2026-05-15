@@ -42,11 +42,25 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: video, error: videoErr } = await (supabase as any)
     .from('youtube_videos')
-    .select('id,title,thumbnail_url')
+    .select('id,youtube_video_id,title,thumbnail_url')
     .eq('id', videoDbId)
     .eq('user_id', user.id)
     .single()
   if (videoErr || !video) return NextResponse.json({ error: 'Video not found' }, { status: 404 })
+
+  // Pull the blog post's title + excerpt for the composite. We prefer the
+  // blog post's polished title over the raw YouTube title (which often
+  // contains the ASIN, brand tag, etc) and use the post's excerpt as the
+  // tagline below the thumbnail.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: blogPost } = await (supabase as any)
+    .from('blog_posts')
+    .select('title,excerpt')
+    .eq('video_id', videoDbId)
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   // Brand assets
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,20 +71,38 @@ export async function POST(request: Request) {
     .single()
 
   const primaryColor: string = brand?.primary_color || '#0071e3'
-  const secondaryColor: string = brand?.secondary_color || '#34c759'
   const authorName: string = brand?.author_name || ''
   const logoUrl: string | null = brand?.logo_url || null
-  const title: string = video.title || ''
+  const title: string = (blogPost?.title as string) || video.title || ''
+  // Trim excerpt to one phrase: first sentence, capped at ~110 chars
+  const rawExcerpt: string = (blogPost?.excerpt as string) || ''
+  const excerpt: string = trimToOnePhrase(rawExcerpt, 110)
   const thumbnailUrl: string = video.thumbnail_url || ''
 
   if (!thumbnailUrl) {
     return NextResponse.json({ error: 'Video has no thumbnail to compose from' }, { status: 400 })
   }
 
-  // YouTube serves a few thumbnail sizes; the mqdefault returned by Data API
-  // is only 320×180. Try to upgrade to maxresdefault for sharper output.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const upgradedThumb = thumbnailUrl.replace(/\/(default|mqdefault|hqdefault|sddefault)\.jpg/, '/maxresdefault.jpg')
+  // Pick the best available thumbnail size. maxresdefault is true 16:9
+  // 1280×720 but doesn't exist for every video — YouTube serves a generic
+  // placeholder when it's missing. HEAD-check it, fall back to whatever
+  // the DB already has (typically mqdefault 320×180, also 16:9). hqdefault
+  // and sddefault are 4:3 so we explicitly avoid them.
+  const youtubeVideoId = (video.youtube_video_id as string) || ''
+  const candidate = youtubeVideoId ? `https://i.ytimg.com/vi/${youtubeVideoId}/maxresdefault.jpg` : ''
+  let thumbToUse = thumbnailUrl
+  if (candidate) {
+    try {
+      const head = await fetch(candidate, { method: 'HEAD' })
+      // Real thumbs are usually 30-200kb. YouTube's "missing" placeholder
+      // is < 2kb. Filter out the placeholder via Content-Length.
+      const len = parseInt(head.headers.get('content-length') ?? '0', 10)
+      if (head.ok && len > 5000) thumbToUse = candidate
+    } catch { /* keep DB url */ }
+  }
+
+  // Title font size adapts to length to keep things proportional
+  const titleSize = title.length > 90 ? 56 : title.length > 60 ? 64 : 72
 
   let imageResponse: ImageResponse
   try {
@@ -82,68 +114,24 @@ export async function POST(request: Request) {
             height: '1350px',
             display: 'flex',
             flexDirection: 'column',
-            background: `linear-gradient(180deg, ${primaryColor} 0%, ${primaryColor} 60%, ${darken(primaryColor, 0.3)} 100%)`,
+            background: `linear-gradient(180deg, ${primaryColor} 0%, ${primaryColor} 70%, ${darken(primaryColor, 0.35)} 100%)`,
             fontFamily: 'sans-serif',
             color: 'white',
+            padding: '70px 70px 60px 70px',
           }}
         >
-          {/* Top strip — logo + author */}
+          {/* TITLE — top, with breathing room */}
           <div style={{
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '60px 60px 0 60px',
-            height: '120px',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-              {logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoUrl} alt="" width={72} height={72} style={{ borderRadius: '12px', objectFit: 'contain' }} />
-              ) : null}
-              {authorName ? (
-                <span style={{ fontSize: '36px', fontWeight: 700, letterSpacing: '-0.5px' }}>{authorName}</span>
-              ) : null}
-            </div>
-            <span style={{
-              fontSize: '24px',
-              fontWeight: 600,
-              padding: '10px 20px',
-              borderRadius: '999px',
-              background: 'rgba(255,255,255,0.18)',
-              color: 'white',
-            }}>NEW REVIEW</span>
-          </div>
-
-          {/* Thumbnail */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            padding: '60px',
-          }}>
-            <div style={{
-              width: '960px',
-              height: '540px',
-              borderRadius: '28px',
-              overflow: 'hidden',
-              display: 'flex',
-              boxShadow: '0 16px 60px rgba(0,0,0,0.35)',
-            }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={upgradedThumb} alt="" width={960} height={540} style={{ objectFit: 'cover', width: '960px', height: '540px' }} />
-            </div>
-          </div>
-
-          {/* Title */}
-          <div style={{
-            display: 'flex',
-            padding: '0 60px',
-            flex: 1,
-            alignItems: 'flex-start',
+            flexDirection: 'column',
+            flex: '0 0 auto',
+            minHeight: '220px',
+            justifyContent: 'flex-start',
           }}>
             <span style={{
-              fontSize: title.length > 80 ? '52px' : '64px',
+              fontSize: `${titleSize}px`,
               fontWeight: 800,
-              lineHeight: 1.1,
+              lineHeight: 1.08,
               letterSpacing: '-1.5px',
               color: 'white',
               display: '-webkit-box',
@@ -153,34 +141,67 @@ export async function POST(request: Request) {
             }}>{title}</span>
           </div>
 
-          {/* Bottom CTA */}
+          {/* THUMBNAIL — middle, full 16:9 with rounded corners, never cropped */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            margin: '40px 0',
+          }}>
+            <div style={{
+              width: '940px',
+              height: '529px',
+              borderRadius: '24px',
+              overflow: 'hidden',
+              display: 'flex',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+            }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={thumbToUse} alt="" width={940} height={529} style={{ width: '940px', height: '529px', objectFit: 'cover' }} />
+            </div>
+          </div>
+
+          {/* EXCERPT — under thumbnail */}
+          {excerpt ? (
+            <div style={{ display: 'flex', flex: 1, alignItems: 'flex-start' }}>
+              <span style={{
+                fontSize: '32px',
+                fontWeight: 500,
+                lineHeight: 1.35,
+                color: 'rgba(255,255,255,0.92)',
+                fontStyle: 'italic',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}>{excerpt}</span>
+            </div>
+          ) : <div style={{ display: 'flex', flex: 1 }} />}
+
+          {/* AUTHOR / LOGO STRIP — bottom */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '40px 60px 60px 60px',
+            marginTop: '30px',
           }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="" width={56} height={56} style={{ borderRadius: '10px', objectFit: 'contain' }} />
+              ) : null}
+              {authorName ? (
+                <span style={{ fontSize: '26px', fontWeight: 700, color: 'white' }}>{authorName}</span>
+              ) : null}
+            </div>
             <span style={{
-              fontSize: '28px',
+              fontSize: '22px',
               fontWeight: 700,
+              padding: '10px 22px',
+              borderRadius: '999px',
+              background: 'rgba(255,255,255,0.18)',
               color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-            }}>
-              <span style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                background: secondaryColor,
-                fontSize: '28px',
-              }}>▶</span>
-              Watch the full review on YouTube
-            </span>
-            <span style={{ fontSize: '28px', fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>→</span>
+              letterSpacing: '0.5px',
+            }}>FULL REVIEW →</span>
           </div>
         </div>
       ),
@@ -224,6 +245,26 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ ok: true, instagramImageUrl: publicUrl })
+}
+
+/**
+ * Trim a blog excerpt down to a single tagline.
+ * - Strips HTML
+ * - Takes the first sentence (split on '.', '!', '?')
+ * - Truncates to `maxChars` at the last word boundary
+ */
+function trimToOnePhrase(raw: string, maxChars: number): string {
+  if (!raw) return ''
+  const stripped = raw.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+  // First sentence end (with min length to skip false-positive periods like "U.S.")
+  const match = stripped.match(/^([^.!?]{15,}?[.!?])/)
+  let phrase = match ? match[1].trim() : stripped
+  if (phrase.length > maxChars) {
+    const cut = phrase.slice(0, maxChars)
+    const lastSpace = cut.lastIndexOf(' ')
+    phrase = (lastSpace > 40 ? cut.slice(0, lastSpace) : cut) + '…'
+  }
+  return phrase
 }
 
 /** Darken a hex color by `amount` (0–1). Returns hex. */
