@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id,youtube_videos(instagram_video_url,instagram_image_url,thumbnail_url,title)')
+      .select('id,title,excerpt,content,wordpress_url,video_id,youtube_videos(instagram_video_url,instagram_image_url,instagram_story_image_url,thumbnail_url,title)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -100,6 +100,9 @@ export async function POST(request: NextRequest) {
 
     const videoUrl = post.youtube_videos?.instagram_video_url as string | null
     const imageUrl = post.youtube_videos?.instagram_image_url as string | null
+    // 9:16 variant for Stories. Falls back to the 4:5 feed image for rows
+    // composed before migration 018 (Instagram will zoom-crop it).
+    const storyImageUrl = (post.youtube_videos?.instagram_story_image_url as string | null) || imageUrl
 
     if (!dryRun) {
       if (kind === 'video' && !videoUrl) {
@@ -270,7 +273,7 @@ Return ONLY the caption text + hashtags.`,
             userId: igUserId,
             accessToken: igToken,
             mediaType: 'STORIES',
-            imageUrl: imageUrl as string,
+            imageUrl: storyImageUrl as string,
           })
           results.storyId = storyId
           results.affiliateUrl = affiliateUrl

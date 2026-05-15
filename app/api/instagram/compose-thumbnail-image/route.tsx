@@ -104,147 +104,191 @@ export async function POST(request: Request) {
   // Title font size adapts to length to keep things proportional
   const titleSize = title.length > 90 ? 56 : title.length > 60 ? 64 : 72
 
-  let imageResponse: ImageResponse
+  const designProps = { title, titleSize, excerpt, thumbToUse, primaryColor, authorName, logoUrl }
+
+  let feedImage: ImageResponse
+  let storyImage: ImageResponse
   try {
-    imageResponse = new ImageResponse(
-      (
-        <div
-          style={{
-            width: '1080px',
-            height: '1350px',
-            display: 'flex',
-            flexDirection: 'column',
-            background: `linear-gradient(180deg, ${primaryColor} 0%, ${primaryColor} 70%, ${darken(primaryColor, 0.35)} 100%)`,
-            fontFamily: 'sans-serif',
-            color: 'white',
-            padding: '70px 70px 60px 70px',
-          }}
-        >
-          {/* TITLE — top, with breathing room */}
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            flex: '0 0 auto',
-            minHeight: '220px',
-            justifyContent: 'flex-start',
-          }}>
-            <span style={{
-              fontSize: `${titleSize}px`,
-              fontWeight: 800,
-              lineHeight: 1.08,
-              letterSpacing: '-1.5px',
-              color: 'white',
-              display: '-webkit-box',
-              WebkitLineClamp: 3,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }}>{title}</span>
-          </div>
-
-          {/* THUMBNAIL — middle, full 16:9 with rounded corners, never cropped */}
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            margin: '40px 0',
-          }}>
-            <div style={{
-              width: '940px',
-              height: '529px',
-              borderRadius: '24px',
-              overflow: 'hidden',
-              display: 'flex',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
-            }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={thumbToUse} alt="" width={940} height={529} style={{ width: '940px', height: '529px', objectFit: 'cover' }} />
-            </div>
-          </div>
-
-          {/* EXCERPT — under thumbnail */}
-          {excerpt ? (
-            <div style={{ display: 'flex', flex: 1, alignItems: 'flex-start' }}>
-              <span style={{
-                fontSize: '32px',
-                fontWeight: 500,
-                lineHeight: 1.35,
-                color: 'rgba(255,255,255,0.92)',
-                fontStyle: 'italic',
-                display: '-webkit-box',
-                WebkitLineClamp: 3,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}>{excerpt}</span>
-            </div>
-          ) : <div style={{ display: 'flex', flex: 1 }} />}
-
-          {/* AUTHOR / LOGO STRIP — bottom */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginTop: '30px',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              {logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoUrl} alt="" width={56} height={56} style={{ borderRadius: '10px', objectFit: 'contain' }} />
-              ) : null}
-              {authorName ? (
-                <span style={{ fontSize: '26px', fontWeight: 700, color: 'white' }}>{authorName}</span>
-              ) : null}
-            </div>
-            <span style={{
-              fontSize: '22px',
-              fontWeight: 700,
-              padding: '10px 22px',
-              borderRadius: '999px',
-              background: 'rgba(255,255,255,0.18)',
-              color: 'white',
-              letterSpacing: '0.5px',
-            }}>FULL REVIEW →</span>
-          </div>
-        </div>
-      ),
-      {
-        width: 1080,
-        height: 1350,
-      }
-    )
+    feedImage = new ImageResponse(<Composite {...designProps} format="feed" />, { width: 1080, height: 1350 })
+    storyImage = new ImageResponse(<Composite {...designProps} format="story" />, { width: 1080, height: 1920 })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'render failed'
     return NextResponse.json({ error: `Image render failed: ${msg}` }, { status: 500 })
   }
 
-  // Convert ImageResponse → ArrayBuffer for the Supabase upload
-  const pngBytes = new Uint8Array(await imageResponse.arrayBuffer())
+  const [feedBytes, storyBytes] = await Promise.all([
+    feedImage.arrayBuffer().then(b => new Uint8Array(b)),
+    storyImage.arrayBuffer().then(b => new Uint8Array(b)),
+  ])
 
-  // Upload to the public instagram-images bucket via admin client (bypass RLS)
+  // Upload both to the public instagram-images bucket via admin client
   const admin = createAdminClient()
-  const path = `${user.id}/${videoDbId}.png`
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: upErr } = await (admin.storage as any).from('instagram-images').upload(path, pngBytes, {
-    contentType: 'image/png',
-    cacheControl: '3600',
-    upsert: true,
-  })
+  const feedPath = `${user.id}/${videoDbId}.png`
+  const storyPath = `${user.id}/${videoDbId}-story.png`
+
+  const uploads = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.storage as any).from('instagram-images').upload(feedPath, feedBytes, {
+      contentType: 'image/png', cacheControl: '3600', upsert: true,
+    }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (admin.storage as any).from('instagram-images').upload(storyPath, storyBytes, {
+      contentType: 'image/png', cacheControl: '3600', upsert: true,
+    }),
+  ])
+  const upErr = uploads.find(u => u.error)?.error
   if (upErr) {
     return NextResponse.json({ error: `Storage upload failed: ${upErr.message}` }, { status: 500 })
   }
 
-  const { data: urlData } = admin.storage.from('instagram-images').getPublicUrl(path)
-  const publicUrl = urlData.publicUrl
+  const feedUrl = admin.storage.from('instagram-images').getPublicUrl(feedPath).data.publicUrl
+  const storyUrl = admin.storage.from('instagram-images').getPublicUrl(storyPath).data.publicUrl
 
-  // Persist on the youtube_videos row
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: updateErr } = await (supabase as any)
     .from('youtube_videos')
-    .update({ instagram_image_url: publicUrl })
+    .update({ instagram_image_url: feedUrl, instagram_story_image_url: storyUrl })
     .eq('id', videoDbId)
   if (updateErr) {
     return NextResponse.json({ error: `DB update failed: ${updateErr.message}` }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, instagramImageUrl: publicUrl })
+  return NextResponse.json({ ok: true, instagramImageUrl: feedUrl, instagramStoryImageUrl: storyUrl })
+}
+
+/**
+ * Shared layout for both the 4:5 feed image (1080×1350) and the 9:16
+ * story image (1080×1920). The Story variant has more vertical room and
+ * heavier top/bottom padding to clear Instagram's UI overlays:
+ *
+ *   ┌─────────────────┐
+ *   │ IG header area  │  ~210px overlay
+ *   ├─────────────────┤
+ *   │   TITLE         │
+ *   │                 │
+ *   │   [THUMBNAIL]   │
+ *   │                 │
+ *   │   EXCERPT       │
+ *   │                 │
+ *   │ AUTHOR ─ FULL → │
+ *   ├─────────────────┤
+ *   │ IG bottom UI    │  ~250px overlay (reply, sticker zone)
+ *   └─────────────────┘
+ */
+function Composite(props: {
+  title: string
+  titleSize: number
+  excerpt: string
+  thumbToUse: string
+  primaryColor: string
+  authorName: string
+  logoUrl: string | null
+  format: 'feed' | 'story'
+}) {
+  const { title, titleSize, excerpt, thumbToUse, primaryColor, authorName, logoUrl, format } = props
+  const isStory = format === 'story'
+  const canvasHeight = isStory ? 1920 : 1350
+  const paddingTop = isStory ? 240 : 70   // story: clear IG header
+  const paddingBottom = isStory ? 280 : 60  // story: clear IG reply/sticker zone
+  const horizontalPadding = 70
+
+  return (
+    <div
+      style={{
+        width: '1080px',
+        height: `${canvasHeight}px`,
+        display: 'flex',
+        flexDirection: 'column',
+        background: `linear-gradient(180deg, ${primaryColor} 0%, ${primaryColor} 70%, ${darken(primaryColor, 0.35)} 100%)`,
+        fontFamily: 'sans-serif',
+        color: 'white',
+        padding: `${paddingTop}px ${horizontalPadding}px ${paddingBottom}px ${horizontalPadding}px`,
+      }}
+    >
+      {/* TITLE */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '0 0 auto',
+        minHeight: '220px',
+      }}>
+        <span style={{
+          fontSize: `${titleSize}px`,
+          fontWeight: 800,
+          lineHeight: 1.08,
+          letterSpacing: '-1.5px',
+          color: 'white',
+          display: '-webkit-box',
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}>{title}</span>
+      </div>
+
+      {/* THUMBNAIL */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        margin: `${isStory ? 60 : 40}px 0`,
+      }}>
+        <div style={{
+          width: '940px',
+          height: '529px',
+          borderRadius: '24px',
+          overflow: 'hidden',
+          display: 'flex',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+        }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={thumbToUse} alt="" width={940} height={529} style={{ width: '940px', height: '529px', objectFit: 'cover' }} />
+        </div>
+      </div>
+
+      {/* EXCERPT */}
+      {excerpt ? (
+        <div style={{ display: 'flex', flex: 1, alignItems: 'flex-start' }}>
+          <span style={{
+            fontSize: isStory ? '38px' : '32px',
+            fontWeight: 500,
+            lineHeight: 1.35,
+            color: 'rgba(255,255,255,0.92)',
+            fontStyle: 'italic',
+            display: '-webkit-box',
+            WebkitLineClamp: isStory ? 4 : 3,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+          }}>{excerpt}</span>
+        </div>
+      ) : <div style={{ display: 'flex', flex: 1 }} />}
+
+      {/* AUTHOR / FULL REVIEW STRIP */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: '30px',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt="" width={56} height={56} style={{ borderRadius: '10px', objectFit: 'contain' }} />
+          ) : null}
+          {authorName ? (
+            <span style={{ fontSize: '26px', fontWeight: 700, color: 'white' }}>{authorName}</span>
+          ) : null}
+        </div>
+        <span style={{
+          fontSize: '22px',
+          fontWeight: 700,
+          padding: '10px 22px',
+          borderRadius: '999px',
+          background: 'rgba(255,255,255,0.18)',
+          color: 'white',
+          letterSpacing: '0.5px',
+        }}>FULL REVIEW →</span>
+      </div>
+    </div>
+  )
 }
 
 /**
