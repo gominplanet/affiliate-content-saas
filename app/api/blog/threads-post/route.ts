@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { ThreadsService } from '@/services/threads'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -10,6 +11,21 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Threads auto-publish is Growth+ (Growth, Pro, Admin).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tierRow } = await (supabase as any)
+      .from('integrations')
+      .select('tier')
+      .eq('user_id', user.id)
+      .single()
+    const tier = (tierRow?.tier as Tier) ?? 'free'
+    if (!tierAllowsSocial(tier, 'threads')) {
+      return NextResponse.json(
+        { error: 'Threads auto-publish is a Growth plan feature. Upgrade to Growth or Pro to post to Threads.' },
+        { status: 403 },
+      )
+    }
 
     const { postId } = await request.json()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'free'
     if (!tierAllowsSocial(tier, 'bluesky')) {
       return NextResponse.json(
-        { error: 'Bluesky auto-publish requires a paid plan. Upgrade to Starter, Growth, or Pro to post to Bluesky.' },
+        { error: 'Bluesky auto-publish is a Growth plan feature. Upgrade to Growth or Pro to post to Bluesky.' },
         { status: 403 },
       )
     }

@@ -41,9 +41,9 @@ const plans = [
     tier: 'Free',
     price: 0,
     regular: 0,
-    limit: '5 posts lifetime',
+    limit: '15 posts lifetime',
     bonus: '',
-    features: ['Free themed review site', 'AI agent pipeline', 'Facebook + Threads posting'],
+    features: ['Free themed review site', 'YouTube Studio autopilot', 'Facebook auto-post'],
     cta: 'Start free',
     href: '/signup',
     highlight: false,
@@ -54,7 +54,7 @@ const plans = [
     regular: 99,
     limit: '30 posts / month',
     bonus: '',
-    features: ['Free themed review site', '1 connected WordPress site', 'Facebook + Threads + Bluesky auto-post'],
+    features: ['Free themed review site', '1 connected WordPress site', 'Facebook auto-post'],
     cta: 'Get Starter',
     href: '/pricing',
     highlight: false,
@@ -65,7 +65,7 @@ const plans = [
     regular: 199,
     limit: '80 posts / month',
     bonus: '60 + 20 bonus posts',
-    features: ['Everything in Starter', 'LinkedIn auto-post', 'Pinterest auto-post *', 'Priority generation queue'],
+    features: ['Everything in Starter', '+ Threads, Bluesky, LinkedIn, Pinterest *', 'Priority generation queue'],
     cta: 'Get Growth',
     href: '/pricing',
     highlight: true,
@@ -142,20 +142,21 @@ export default function LandingPage() {
           <div className="text-center lg:text-left">
             <div className="inline-flex items-center gap-2 bg-white border border-[#0071e3]/20 rounded-full px-3 py-1.5 text-xs sm:text-sm text-[#0071e3] font-medium mb-6 shadow-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
-              5 free posts. No card. No catch.
+              15 free posts. No card. No catch.
             </div>
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.05] mb-5 text-[#1d1d1f]">
-              Turn one review into
+              Your YouTube draft.
               <br />
-              <span className="text-[#0071e3]">a full affiliate site.</span>
+              <span className="text-[#0071e3]">A full review site in one click.</span>
             </h1>
             <p className="text-lg sm:text-xl text-[#3a3a3c] max-w-xl mx-auto lg:mx-0 mb-8 leading-relaxed">
-              A team of AI agents writes the review. We publish it to your WordPress site with our editorial theme.
-              You get social posts ready for every platform — affiliate links woven in.
+              Drop in a YouTube draft. We generate the review post, a YouTube description, hashtags,
+              video tags, and a thumbnail — and push the description + tags + thumbnail straight back
+              to your YouTube draft. Ready to publish on both.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3">
               <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
-                Start free — 5 posts <ArrowRight size={17} />
+                Start free — 15 posts <ArrowRight size={17} />
               </Link>
               <Link href="/pricing" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-[#1d1d1f] font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors">
                 See pricing
@@ -204,36 +205,54 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── How it works ───────────────────────────────────────────────────── */}
+      {/* ── YouTube Studio autopilot ───────────────────────────────────────── */}
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">How it works</h2>
-            <p className="text-[#6e6e73] text-base sm:text-lg">Connect once. Publish forever.</p>
+          <div className="text-center mb-14 max-w-3xl mx-auto">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#ff0000] uppercase tracking-wider mb-3">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+              For YouTubers
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">Your YouTube Studio, on autopilot.</h2>
+            <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
+              Save a YouTube draft and forget about it. MVP Affiliate pulls the video, generates everything
+              you&apos;d normally hate writing — and sends it all back to your draft, ready to publish.
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
             <StepCard
               n="01"
               icon={<Wand2 size={20} />}
-              title="Drop in a product, video, or topic"
-              desc="Paste a product URL, pick a YouTube video, or just type the idea. Studio handles the rest."
-              accent="#0071e3"
+              title="Save a draft in YouTube Studio"
+              desc="That's it. Title it, set the video file, save as draft. No description, no tags, no thumbnail needed."
+              accent="#ff0000"
             />
             <StepCard
               n="02"
               icon={<Sparkles size={20} />}
-              title="AI writes the full review"
-              desc="Verdict box, pros/cons, body copy with affiliate links, rating, tags, FAQ — in your voice."
+              title="MVP generates the full package"
+              desc="A full blog review · a YouTube description with affiliate links · 10 SEO video tags · 5 hashtags · a clickable thumbnail. All in your voice."
               accent="#5856d6"
             />
             <StepCard
               n="03"
               icon={<Globe size={20} />}
-              title="One click publishes everywhere"
-              desc="Live on your themed WordPress site, plus social drafts ready for Facebook, Threads, LinkedIn."
+              title="One click. Pushed back to YouTube."
+              desc="The description, tags, hashtags, and thumbnail land on your YouTube draft — automatically. Your review post goes live on your site at the same time."
               accent="#34c759"
             />
+          </div>
+
+          <div className="rounded-2xl bg-gradient-to-br from-[#fff5f5] to-[#fff] border border-red-100 p-6 sm:p-8 text-center max-w-3xl mx-auto">
+            <p className="text-sm font-semibold text-[#ff0000] mb-2 uppercase tracking-wider">The math creators care about</p>
+            <p className="text-xl sm:text-2xl font-bold text-[#1d1d1f] leading-tight mb-2">
+              ~45 minutes of YouTube admin → under 5 minutes
+            </p>
+            <p className="text-sm sm:text-base text-[#3a3a3c]">
+              Description writing, tag research, hashtag picking, thumbnail editing — the unpaid tax on every video.
+              We do all of it, automatically, every time.
+            </p>
           </div>
         </div>
       </section>
