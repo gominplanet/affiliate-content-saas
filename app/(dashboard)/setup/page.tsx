@@ -1467,6 +1467,12 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
           Click <strong>Connect YouTube</strong> and sign in with the Google account that owns your channel. This grants read access to your private and draft videos so the YouTube Studio tool can show them here, and write access to push generated titles, descriptions, and tags back to YouTube — saving you from copy-pasting manually.
         </p>
+        <div className="rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 px-3 py-2">
+          <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
+            <strong>Naming convention — required:</strong> include the 10-character Amazon ASIN in the video file name or YouTube title before uploading. Example:{' '}
+            <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>. Without an ASIN we can&apos;t identify the product or generate the package.
+          </p>
+        </div>
         {ytOAuthNotice && (
           <p className={`text-xs ${ytOAuthNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ytOAuthNotice.msg}</p>
         )}

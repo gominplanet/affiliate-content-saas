@@ -1089,9 +1089,15 @@ export default function StudioPage() {
           </div>
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect YouTube to unlock the autopilot</h3>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
               We need read access to find your drafts (private + unlisted) and write access to push the description, tags, hashtags and thumbnail back into Studio. One-time Google OAuth — revoke anytime.
             </p>
+            <div className="rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 px-3 py-2 mb-4">
+              <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
+                <strong>Before you upload your next video:</strong> include the Amazon ASIN in the video file name or YouTube title — e.g.{' '}
+                <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>. That&apos;s how MVP knows which product to generate the review for.
+              </p>
+            </div>
             <a
               href="/api/auth/youtube"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
