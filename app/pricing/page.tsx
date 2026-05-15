@@ -26,14 +26,15 @@ const plans: PlanExt[] = [
     price: 0,
     regularPrice: 0,
     limit: '15 posts lifetime',
-    description: 'A real trial — not a teaser. Take the YouTube workflow for a 15-post spin.',
+    description: 'A real trial — not a teaser. Run the full YouTube workflow on 15 real reviews before paying a cent.',
     features: [
-      '15 blog posts total (lifetime)',
-      'YouTube Studio autopilot (description, tags, hashtags, thumbnail pushed back)',
-      'Free themed review site',
-      'WordPress auto-publish',
+      '15 full reviews (lifetime)',
+      'YouTube Studio autopilot — description, tags, hashtags & thumbnail pushed back',
+      'Branded WordPress review site (theme + plugin auto-installed)',
+      'One-click publish to your site',
       'Facebook auto-post',
-      'AI agent pipeline',
+      'Full AI agent pipeline (research → outline → draft → verdict → SEO)',
+      'Geniuslink affiliate-link wrapping',
     ],
     highlight: false,
     ctaLabel: 'Start free',
@@ -44,11 +45,11 @@ const plans: PlanExt[] = [
     price: 49,
     regularPrice: 99,
     limit: '30 posts / month',
-    description: 'For creators publishing a few reviews a week.',
+    description: 'Replace your "I\'ll do it this weekend" — and actually ship a few reviews a week.',
     features: [
-      '30 blog posts per month',
+      '30 full reviews per month',
       'Everything in Free',
-      '1 connected WordPress site',
+      'Monthly cap resets on the 1st — no rollover, no surprises',
     ],
     highlight: false,
     ctaLabel: 'Get Starter',
@@ -60,15 +61,15 @@ const plans: PlanExt[] = [
     regularPrice: 199,
     limit: '80 posts / month',
     bonus: '60 + 20 bonus posts',
-    description: 'For creators publishing daily or catching up on a backlog.',
+    description: 'Daily publishers + creators clearing a backlog. Fan-out to every major social, every time.',
     features: [
-      '80 blog posts per month (60 + 20 bonus)',
+      '80 full reviews per month (60 + 20 bonus)',
       'Everything in Starter',
       'Threads auto-post',
       'Bluesky auto-post',
       'LinkedIn auto-post',
       'Pinterest auto-post *',
-      'Priority generation queue',
+      'Priority generation queue (your jobs jump the line)',
     ],
     highlight: true,
     ctaLabel: 'Get Growth',
@@ -80,14 +81,14 @@ const plans: PlanExt[] = [
     regularPrice: 499,
     limit: '150 posts / month',
     bonus: '90 + 60 bonus posts',
-    description: 'One-click Apply to YouTube — push every Studio setting from MVP. Plus maximum output for serious affiliate marketers and agencies.',
+    description: 'Run an affiliate channel like a media company. One-click everything — YouTube settings included.',
     features: [
-      'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off — all in one batch)',
-      '150 blog posts per month (90 + 60 bonus)',
+      'One-click Apply to YouTube — playlist, schedule, paid-promotion disclosure, made-for-kids, notify-off, all batched',
+      '150 full reviews per month (90 + 60 bonus)',
       'Everything in Growth',
       'X (Twitter) auto-post',
-      'One-click Publish All to socials',
-      'Priority support',
+      'One-click Publish All — site + every social in one shot',
+      'Priority human support',
     ],
     highlight: false,
     ctaLabel: 'Get Pro',
@@ -135,9 +136,10 @@ export default function PricingPage() {
   return (
     <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000] flex flex-col items-center px-4 py-16">
       <div className="text-center mb-12 max-w-2xl">
-        <h1 className="text-4xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Simple, transparent pricing</h1>
+        <h1 className="text-4xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Pricing built for how often you ship</h1>
         <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0]">
-          Every paid plan comes with a free themed review site. Cancel anytime.
+          Every plan — even Free — includes the full agent pipeline, the YouTube Studio autopilot,
+          and a branded review site. Pick a tier by how many reviews you actually publish.
         </p>
         <p className="mt-2 text-sm font-semibold text-[#34c759]">Early access pricing — locked in for life on the tier you subscribe to.</p>
       </div>

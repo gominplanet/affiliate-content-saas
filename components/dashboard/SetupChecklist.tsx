@@ -17,16 +17,16 @@ interface Step {
 const steps: Step[] = [
   {
     id: 'hostinger',
-    label: 'Create your Hostinger account',
-    description: 'Get web hosting + a domain for your affiliate blog. Takes 5 minutes.',
+    label: 'Get a domain + WordPress host',
+    description: 'Your reviews need somewhere to live. Hostinger gives you a domain + WordPress install in about 5 minutes — that\'s the only piece that isn\'t built into MVP.',
     href: 'https://geni.us/ANaArQ',
     required: true,
     done: false,
   },
   {
     id: 'geniuslink',
-    label: 'Create a Geniuslink account',
-    description: 'Recommended. Smart affiliate links that work globally and track every click.',
+    label: 'Sign up for Geniuslink',
+    description: 'Optional but worth it. Geniuslink turns every Amazon link into a geo-routed affiliate link that pays you on .com, .co.uk, .ca and the rest — and tracks every click. Without it, we fall back to plain US Amazon links.',
     href: 'https://geni.us/Y70p9R',
     required: false,
     done: false,
@@ -86,12 +86,12 @@ export default function SetupChecklist() {
           </div>
           <div className="text-left">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {allDone ? 'Setup complete!' : 'Get started — create your accounts'}
+              {allDone ? 'External accounts ready' : 'Before you generate — two external accounts'}
             </p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
               {allDone
                 ? 'All required accounts are set up.'
-                : `${allRequired.length - doneCount} required step${allRequired.length - doneCount !== 1 ? 's' : ''} remaining`}
+                : `${allRequired.length - doneCount} required · 1 recommended — opens in a new tab`}
             </p>
           </div>
         </div>

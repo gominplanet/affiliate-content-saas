@@ -53,7 +53,7 @@ export default async function DashboardPage() {
     <>
       <Header
         title="Dashboard"
-        subtitle="Your affiliate content pipeline at a glance."
+        subtitle="Your affiliate pipeline at a glance — YouTube drafts, generated reviews, and published posts."
         actions={
           <Link href="/content" className="btn-secondary">
             View all content <ArrowRight size={14} />
@@ -69,30 +69,30 @@ export default async function DashboardPage() {
               <Sparkles size={18} className="text-white" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Welcome — let&apos;s get your first post live</p>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-5">Three steps and you&apos;re publishing. Takes about 5 minutes.</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Welcome — let&apos;s ship your first review</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-5">Three quick steps and you&apos;re live on YouTube + your site. About 5 minutes end to end.</p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <Link href="/brand" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
                   <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</div>
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Set up your brand</p>
-                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Name, niche, tone & writing sample</p>
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Build your Brand Profile</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Tone, niche, writing sample — every review writes in your voice</p>
                   </div>
                   <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
                 </Link>
                 <Link href="/setup" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
                   <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</div>
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Connect WordPress & YouTube</p>
-                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Connect once, publish everywhere</p>
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Connect YouTube + your site</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">One-time OAuth. We auto-install your theme + plugin.</p>
                   </div>
                   <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
                 </Link>
                 <Link href="/content" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
                   <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</div>
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pick a video &amp; generate</p>
-                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Your first post in minutes</p>
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Generate from a YouTube draft</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Pick an ASIN draft. We ship the rest.</p>
                   </div>
                   <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
                 </Link>
@@ -130,8 +130,9 @@ export default async function DashboardPage() {
 
           {!recentVideos || recentVideos.length === 0 ? (
             <div className="text-center py-8">
-              <p className="text-sm text-[#86868b] dark:text-[#8e8e93]">No videos yet.</p>
-              <Link href="/content" className="text-xs text-[#0071e3] hover:underline mt-1 inline-block">
+              <p className="text-sm text-[#86868b] dark:text-[#8e8e93]">No videos synced yet.</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Connect YouTube and we&apos;ll pull every draft with an Amazon ASIN in the title.</p>
+              <Link href="/content" className="text-xs text-[#0071e3] hover:underline mt-3 inline-block">
                 Sync your YouTube channel →
               </Link>
             </div>
@@ -183,7 +184,7 @@ export default async function DashboardPage() {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">No activity yet.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Nothing yet — your generated reviews and published posts will show up here.</p>
           )}
         </div>
       </div>
