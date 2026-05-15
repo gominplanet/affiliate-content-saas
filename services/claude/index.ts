@@ -235,6 +235,11 @@ Use exactly this structure with {VIDEO_ID} replaced:
 .gr-rating-text{font-size:15px;color:rgba(255,255,255,.8);line-height:1.6;max-width:480px}
 .gr-cta-link{display:inline-flex;align-items:center;gap:8px;background:#FFC200;color:#111;font-size:13px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:14px 24px;border-radius:3px;text-decoration:none;margin:8px 0}
 .gr-cta-link:hover{background:#111;color:#FFC200}
+.gr-cta-card{background:#f8f9fa;border:2px solid #111;border-radius:4px;padding:24px 28px;margin:32px 0;display:flex;flex-direction:column;gap:14px}
+.gr-cta-card .gr-cta-eyebrow{font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#111;margin:0;padding-bottom:12px;border-bottom:2px solid #FFC200}
+.gr-cta-card .gr-cta-product-name{font-size:20px;font-weight:800;color:#111;margin:0;line-height:1.3;letter-spacing:-.3px}
+.gr-cta-card .gr-cta-btn{display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box}
+.gr-cta-card .gr-cta-btn:hover{background:#111;color:#FFC200}
 .wp-post-image,.post-thumbnail img,.entry-thumbnail img{width:100%!important;height:auto!important;aspect-ratio:16/9;object-fit:cover}
 @media(max-width:600px){.gr-verdict-cols{grid-template-columns:1fr}.gr-rating-box{flex-direction:column;align-items:flex-start}}
 .gr-tags{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
@@ -286,11 +291,18 @@ Use exactly this structure with {VIDEO_ID} replaced:
   Section D: <!-- wp:heading {"level":3} --> H3 — The thing most reviews miss
     An insight from transcript others wouldn't cover.
 
-  After Section D insert mid-article CTA (HTML block — exact same button as [7]):
+  After Section D insert mid-article CTA card (HTML block — exact same markup as [7]).
+  Fill the product-name span with a clean 2–6 word product name derived from the video
+  title + transcript (drop the ASIN, drop generic words like "Review" or "Unboxing", drop
+  prefixes like "We tested" — keep brand + product type, e.g. "Kieba Cervical Neck Massager"):
   <!-- wp:html -->
-  <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-link">
-    🛒 See Today's Price on Amazon →
-  </a>
+  <div class="gr-cta-card">
+    <p class="gr-cta-eyebrow">Get it now</p>
+    <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
+    <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn">
+      🛒 See Today's Price on Amazon →
+    </a>
+  </div>
   <!-- /wp:html -->
 
   Section E: <!-- wp:heading {"level":3} --> H3 — Who this is actually for
@@ -316,10 +328,15 @@ Each Q: <!-- wp:heading {"level":3} --><h3>{question}</h3><!-- /wp:heading -->
   <div class="gr-rating-text">{2-3 sentences. Score justification. Personal sign-off. Sound like the reviewer.}</div>
 </div>
 
-[7] CTA BUTTON (HTML block)
-<a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-link">
-  🛒 See Today's Price on Amazon →
-</a>
+[7] CTA CARD (HTML block — full content width, matches the rating box width)
+Use the exact same product name string here as in the mid-article CTA from [4]:
+<div class="gr-cta-card">
+  <p class="gr-cta-eyebrow">Get it now</p>
+  <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
+  <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn">
+    🛒 See Today's Price on Amazon →
+  </a>
+</div>
 
 [8] HASHTAG TAGS (HTML block — immediately after [7], no gap)
 10 hashtags researched for SEO value AND social virality in this product's niche.
