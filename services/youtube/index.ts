@@ -1,5 +1,50 @@
 const BASE = 'https://www.googleapis.com/youtube/v3'
 
+/**
+ * Probe whether a video is a YouTube Short by checking the /shorts/ URL.
+ *
+ * YouTube's behavior:
+ *   - For actual Shorts: youtube.com/shorts/<id> returns 200
+ *   - For regular videos: youtube.com/shorts/<id> returns a 303 redirect
+ *     to /watch?v=<id>
+ *
+ * This is the gold-standard detection — heuristics like duration ≤ 60s
+ * or "#Shorts" in the description produce too many false positives
+ * (many creators paste #shorts into every video's description for SEO).
+ *
+ * We use `redirect: 'manual'` so the redirect status is observable
+ * instead of being followed silently. Resolves to false on network
+ * failure (don't block the sync on this).
+ */
+export async function probeIsYouTubeShort(videoId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://www.youtube.com/shorts/${videoId}`, {
+      method: 'HEAD',
+      redirect: 'manual',
+      headers: {
+        // Some YT edge nodes return different bodies for headless clients
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 MVPAffiliateBot',
+      },
+    })
+    return res.status >= 200 && res.status < 300
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Classify a batch of videos as Short/not-Short in parallel.
+ * Capped concurrency-wise by Promise.all on a small (≤50) array.
+ */
+export async function probeShortsBatch(videoIds: string[]): Promise<Record<string, boolean>> {
+  const results = await Promise.all(
+    videoIds.map(async id => [id, await probeIsYouTubeShort(id)] as const),
+  )
+  const map: Record<string, boolean> = {}
+  for (const [id, isShort] of results) map[id] = isShort
+  return map
+}
+
 export interface YouTubeVideo {
   youtubeVideoId: string
   title: string
@@ -63,18 +108,16 @@ export class YouTubeService {
     const items = playlistData.items ?? []
     if (items.length === 0) return { videos: [] }
 
-    const videoIds = items.map((i: any) => i.snippet.resourceId.videoId).join(',')
-    // Pull statistics + contentDetails together — contentDetails gives us
-    // ISO-8601 duration which we use to classify Shorts (vertical) vs.
-    // long-form. One batched call per page.
-    const statsData = await this.get<any>('/videos', { part: 'statistics,contentDetails', id: videoIds })
+    const videoIds = items.map((i: any) => i.snippet.resourceId.videoId)
+    const idsCsv = videoIds.join(',')
+    // Pull statistics + contentDetails together — duration is used as the
+    // displayed length, NOT for Short detection (we use the URL probe for that)
+    const statsData = await this.get<any>('/videos', { part: 'statistics,contentDetails', id: idsCsv })
 
     const statsMap: Record<string, number> = {}
     const durationMap: Record<string, number> = {}
-    const SHORTS_TAG_RE = /#shorts\b/i
     for (const v of statsData.items ?? []) {
       statsMap[v.id] = parseInt(v.statistics?.viewCount ?? '0', 10)
-      // Parse ISO duration like "PT1H2M3S" → seconds
       const iso: string = v.contentDetails?.duration ?? 'PT0S'
       const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
       const h = m?.[1] ? parseInt(m[1], 10) : 0
@@ -83,18 +126,25 @@ export class YouTubeService {
       durationMap[v.id] = h * 3600 + min * 60 + s
     }
 
+    // Probe Short status via the /shorts/<id> URL behavior. Skip the probe
+    // for videos with duration > 3 minutes — those can't possibly be Shorts
+    // (YouTube's max Shorts length is 3 min), so the probe would waste a
+    // network call.
+    const candidates = videoIds.filter((id: string) => {
+      const dur = durationMap[id] ?? 0
+      // If duration is unknown (0) we probe anyway; if known and > 180, skip
+      return dur === 0 || dur <= 180
+    })
+    const shortMap = await probeShortsBatch(candidates)
+
     const videos = items.map((item: any) => {
       const s = item.snippet
       const videoId = s.resourceId.videoId
       const durationSeconds = durationMap[videoId] ?? 0
-      const title: string = s.title ?? ''
-      const description: string = s.description ?? ''
-      const taggedAsShort = SHORTS_TAG_RE.test(title) || SHORTS_TAG_RE.test(description)
-      const isVertical = (durationSeconds > 0 && durationSeconds <= 180) || taggedAsShort
       return {
         youtubeVideoId: videoId,
-        title,
-        description,
+        title: s.title ?? '',
+        description: s.description ?? '',
         thumbnailUrl:
           s.thumbnails?.maxres?.url ??
           s.thumbnails?.high?.url ??
@@ -105,7 +155,7 @@ export class YouTubeService {
         publishedAt: s.publishedAt,
         viewCount: statsMap[videoId] ?? 0,
         durationSeconds,
-        isVertical,
+        isVertical: shortMap[videoId] === true,
       }
     })
 
@@ -333,44 +383,45 @@ export class YouTubeOAuthService {
     })
 
     const asinRe = /\b([A-Z0-9]{10})\b/
-    const SHORTS_TAG_RE = /#shorts\b/i
+    // Build candidate list first (only videos with duration ≤ 180s — anything
+    // longer can't be a Short by definition, no need to probe them)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const shorts = (videosData.items ?? [])
+    const candidates = (videosData.items ?? []).map((v: any) => {
+      const iso = v.contentDetails?.duration ?? 'PT0S'
+      const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
+      const h = m?.[1] ? parseInt(m[1], 10) : 0
+      const min = m?.[2] ? parseInt(m[2], 10) : 0
+      const s = m?.[3] ? parseInt(m[3], 10) : 0
+      const durationSeconds = h * 3600 + min * 60 + s
+      return { id: v.id as string, durationSeconds, snippet: v.snippet }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }).filter((c: any) => c.durationSeconds === 0 || c.durationSeconds <= 180)
+
+    // Probe /shorts/<id> URL — gold-standard Short detection. Skips
+    // network calls for the long-form videos we already filtered out.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shortMap = await probeShortsBatch(candidates.map((c: any) => c.id))
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shorts = candidates
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map((v: any) => {
-        const isoDuration = v.contentDetails?.duration ?? 'PT0S'
-        // Parse ISO 8601 duration → seconds (only seconds + minutes since
-        // Shorts are < 60s but #Shorts-tagged videos might be longer)
-        const m = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
-        const hours = m?.[1] ? parseInt(m[1], 10) : 0
-        const minutes = m?.[2] ? parseInt(m[2], 10) : 0
-        const seconds = m?.[3] ? parseInt(m[3], 10) : 0
-        const durationSeconds = hours * 3600 + minutes * 60 + seconds
-
-        const title = v.snippet.title ?? ''
-        const description = v.snippet.description ?? ''
-        const taggedAsShort = SHORTS_TAG_RE.test(title) || SHORTS_TAG_RE.test(description)
-        // Bumped from 60s → 180s to cover YouTube's expanded Shorts limit
-        // (3 minutes) introduced in 2024. Long-form review channels rarely
-        // produce <3min non-Short videos, so false positives are minimal.
-        const looksLikeShort = durationSeconds > 0 && durationSeconds <= 180
-        if (!looksLikeShort && !taggedAsShort) return null
-
+      .filter((c: any) => shortMap[c.id] === true)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((c: any) => {
+        const title = c.snippet.title ?? ''
         const asinMatch = title.match(asinRe)
         const detectedAsin = asinMatch ? asinMatch[1] : null
         const isAsinMatch = opts.asin ? detectedAsin === opts.asin : false
-
         return {
-          youtubeVideoId: v.id,
+          youtubeVideoId: c.id,
           title,
-          thumbnailUrl: v.snippet.thumbnails?.medium?.url ?? v.snippet.thumbnails?.default?.url ?? '',
-          durationSeconds,
-          publishedAt: v.snippet.publishedAt,
+          thumbnailUrl: c.snippet.thumbnails?.medium?.url ?? c.snippet.thumbnails?.default?.url ?? '',
+          durationSeconds: c.durationSeconds,
+          publishedAt: c.snippet.publishedAt,
           detectedAsin,
           isAsinMatch,
         }
       })
-      .filter((v: unknown): v is NonNullable<typeof v> => v !== null)
 
     // Sort: ASIN match first, then by newest
     shorts.sort((a: { isAsinMatch: boolean; publishedAt: string }, b: { isAsinMatch: boolean; publishedAt: string }) => {
