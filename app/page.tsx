@@ -159,7 +159,7 @@ export default function LandingPage() {
               click-tuned YouTube description with affiliate links inserted cleanly, video tags and
               hashtags ranked for discovery, a click-magnet thumbnail — plus fan-out posts to
               Facebook, Threads, LinkedIn, Pinterest, X and Bluesky.
-              <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. ~3 hours of unpaid post-production → gone.</span>
+              <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. ~2 hours of unpaid post-production per video → gone.</span>
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3">
               <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
@@ -256,7 +256,7 @@ export default function LandingPage() {
           <div className="rounded-2xl bg-gradient-to-br from-[#fff5f5] to-[#fff] border border-red-100 p-6 sm:p-8 text-center max-w-3xl mx-auto">
             <p className="text-sm font-semibold text-[#ff0000] mb-2 uppercase tracking-wider">The math creators care about</p>
             <p className="text-xl sm:text-2xl font-bold text-[#1d1d1f] leading-tight mb-2">
-              ~3 hours of post-production per video → under 5 minutes
+              ~2 hours of post-production per video → under 5 minutes
             </p>
             <p className="text-sm sm:text-base text-[#3a3a3c]">
               YouTube description, tag research, hashtag picking, thumbnail design, blog post writing,
