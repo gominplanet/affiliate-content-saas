@@ -336,6 +336,13 @@ function InstagramPublishModal({
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string>('')
   const [uploadError, setUploadError] = useState<string | null>(null)
+  // "Fetch from YouTube" path — alternative to manual upload. User pastes
+  // a YouTube Short URL, server downloads the MP4 via RapidAPI, stores in
+  // Supabase Storage, then this modal sees the existingUrl populated.
+  const [sourceTab, setSourceTab] = useState<'upload' | 'youtube'>('upload')
+  const [ytInput, setYtInput] = useState('')
+  const [ytFetching, setYtFetching] = useState(false)
+  const [ytConfirmed, setYtConfirmed] = useState(false) // "I confirm this is my own content"
   // Default mode: Both unless one's already been done — then only the missing one
   const initialMode: 'reel' | 'story' | 'both' = alreadyReeled && !alreadyStoried ? 'story' : alreadyStoried && !alreadyReeled ? 'reel' : 'both'
   const [mode, setMode] = useState<'reel' | 'story' | 'both'>(initialMode)
@@ -357,6 +364,42 @@ function InstagramPublishModal({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoDbId])
+
+  async function fetchFromYoutube() {
+    if (!ytInput.trim()) {
+      setUploadError('Paste a YouTube URL first.')
+      return
+    }
+    if (!ytConfirmed) {
+      setUploadError('Please confirm this is your own content.')
+      return
+    }
+    setYtFetching(true)
+    setUploadError(null)
+    setUploadProgress('Fetching from YouTube… (20-30s)')
+    try {
+      const res = await fetch('/api/instagram/fetch-from-youtube', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtubeUrl: ytInput.trim(), videoDbId }),
+      })
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (!res.ok) throw new Error(data.error || 'Fetch failed')
+
+      setExistingUrl(data.instagramVideoUrl as string)
+      setUploadProgress('')
+      // Soft-warn if the source wasn't vertical — IG will still accept it
+      // but the user might want to swap for a true 9:16 Short
+      if (data.isVertical === false) {
+        setUploadError('Heads up: that video isn\'t 9:16. Instagram will accept it but it\'ll show with letterboxing. Consider using a true Short instead.')
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Failed to fetch from YouTube')
+      setUploadProgress('')
+    } finally {
+      setYtFetching(false)
+    }
+  }
 
   async function handleFileUpload(file: File) {
     if (!file) return
@@ -493,35 +536,88 @@ function InstagramPublishModal({
             </button>
           </div>
 
-          {/* Step 1 — Video upload */}
+          {/* Step 1 — Video source */}
           <div className="mb-5">
             <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">1. Vertical video (9:16, MP4, &lt;100MB)</p>
             {existingUrl ? (
               <div className="flex items-center justify-between p-3 rounded-lg bg-[#34c759]/5 border border-[#34c759]/30">
                 <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
-                  <CheckCircle size={12} className="text-[#34c759]" /> Video uploaded
+                  <CheckCircle size={12} className="text-[#34c759]" /> Video ready
                 </p>
-                <label className="text-[11px] text-[#0071e3] hover:underline cursor-pointer">
+                <button onClick={() => { setExistingUrl(null); resetPreview() }} className="text-[11px] text-[#0071e3] hover:underline">
                   Replace
-                  <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
-                </label>
+                </button>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#0071e3] cursor-pointer transition-colors">
-                <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
-                {uploading ? (
-                  <>
-                    <Loader2 size={20} className="animate-spin text-[#0071e3] mb-2" />
-                    <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Uploading…'}</p>
-                  </>
+              <>
+                {/* Source tabs */}
+                <div className="flex gap-1 mb-3 p-1 rounded-lg bg-gray-100 dark:bg-white/5 w-fit">
+                  <button
+                    onClick={() => setSourceTab('upload')}
+                    className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                      sourceTab === 'upload'
+                        ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm'
+                        : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
+                    }`}
+                  >
+                    Upload MP4
+                  </button>
+                  <button
+                    onClick={() => setSourceTab('youtube')}
+                    className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                      sourceTab === 'youtube'
+                        ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm'
+                        : 'text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1">Fetch from YouTube <span className="text-[8px] px-1 py-0.5 rounded bg-[#0071e3]/10 text-[#0071e3] font-bold uppercase">Pro</span></span>
+                  </button>
+                </div>
+
+                {sourceTab === 'upload' ? (
+                  <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#0071e3] cursor-pointer transition-colors">
+                    <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
+                    {uploading ? (
+                      <>
+                        <Loader2 size={20} className="animate-spin text-[#0071e3] mb-2" />
+                        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Uploading…'}</p>
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
+                        <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Click to upload vertical MP4</p>
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3–90 seconds, under 100MB</p>
+                      </>
+                    )}
+                  </label>
                 ) : (
-                  <>
-                    <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
-                    <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Click to upload vertical MP4</p>
-                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3–90 seconds, under 100MB</p>
-                  </>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="url"
+                      value={ytInput}
+                      onChange={e => setYtInput(e.target.value)}
+                      placeholder="https://www.youtube.com/shorts/..."
+                      className="w-full px-3 py-2 text-xs rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#0071e3] focus:outline-none"
+                      disabled={ytFetching}
+                    />
+                    <label className="flex items-start gap-2 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer">
+                      <input type="checkbox" checked={ytConfirmed} onChange={e => setYtConfirmed(e.target.checked)} disabled={ytFetching} className="mt-0.5" />
+                      <span>I confirm this is my own content (or I have permission to use it).</span>
+                    </label>
+                    <button
+                      onClick={fetchFromYoutube}
+                      disabled={ytFetching || !ytInput.trim() || !ytConfirmed}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity hover:opacity-90 self-start"
+                      style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }}
+                    >
+                      {ytFetching ? <><Loader2 size={12} className="animate-spin" /> {uploadProgress || 'Fetching…'}</> : <>Fetch from YouTube</>}
+                    </button>
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+                      Best with YouTube Shorts (already 9:16). Standard videos work but may show letterboxing on Instagram. 20-30 seconds to download depending on size.
+                    </p>
+                  </div>
                 )}
-              </label>
+              </>
             )}
             {uploadError && <p className="text-[11px] text-[#ff3b30] mt-2">{uploadError}</p>}
           </div>

@@ -98,7 +98,28 @@ For development-mode testing (before App Review):
 
 The tester's IG account must be Business or Creator (not Personal).
 
-### 8. App Review (for production)
+### 8. RapidAPI (for "Fetch from YouTube" path)
+
+The IG modal lets users either upload a vertical MP4 manually OR paste
+a YouTube URL and we fetch the MP4 for them. The fetch path uses
+RapidAPI because YouTube's official Data API never returns file bytes.
+
+1. Sign up at https://rapidapi.com (free)
+2. Subscribe to **youtube-media-downloader** by DataFanatic:
+   https://rapidapi.com/DataFanatic/api/youtube-media-downloader
+   - Basic plan (~$5/mo for 10k requests) is plenty
+3. Copy the `X-RapidAPI-Key` from the playground
+4. Vercel → Environment Variables → add:
+   - Key: `RAPIDAPI_KEY` · Value: your key · Sensitive: ON · Production + Preview
+5. Redeploy
+
+ToS note: YouTube technically prohibits programmatic downloads, even of
+your own content. RapidAPI providers operate in this gray area at their
+own risk. We surface a confirmation checkbox in the UI ("I confirm this
+is my own content") to put the legal responsibility on the user. If
+Meta or YouTube ever flags it, removing the feature is a one-commit revert.
+
+### 9. App Review (for production)
 
 When you're ready to let non-tester users connect:
 - Meta dashboard → MVP AFFILIATE → **Review** → submit `instagram_business_content_publish` for Advanced Access
