@@ -127,7 +127,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
     setThumbnailUrl(null)
     setThumbnailError(null)
     try {
-      const res = await fetch('/api/youtube/generate-metadata', {
+      // Client-side retry-on-overload: if Anthropic is overloaded, the server
+      // already retries 8× internally, but if it still surfaces we automatically
+      // retry once more on the client after a back-off so the user doesn't have
+      // to click again. Total ceiling ≈ server attempts + 2 client tries.
+      const callOnce = () => fetch('/api/youtube/generate-metadata', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -136,8 +140,19 @@ function VideoStudioCard({ video, userTier, playlists }: {
           videoDescription: video.description,
         }),
       })
-      const data = await safeJson(res)
+
+      let res = await callOnce()
+      let data = await safeJson(res)
+      const isOverload = (d: Record<string, unknown>) =>
+        typeof d.error === 'string' && /overload/i.test(d.error as string)
+      for (let i = 0; !res.ok && isOverload(data) && i < 2; i++) {
+        setError(`Claude is overloaded — auto-retrying (${i + 1}/2)…`)
+        await new Promise(r => setTimeout(r, 8000 + i * 4000))
+        res = await callOnce()
+        data = await safeJson(res)
+      }
       if (!res.ok) throw new Error((data.error as string) || 'Generation failed')
+      setError(null)
 
       const generatedMeta = data.generated as GeneratedMetadata
       const productData = data.product as ProductInfo

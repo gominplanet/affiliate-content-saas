@@ -11,8 +11,8 @@ interface GearItem { name: string; url: string }
 interface GearSection { title: string; items: GearItem[] }
 
 // ── Retry wrapper for Anthropic 529 overloaded errors ────────────────────────
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
-  let delay = 3000
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 8): Promise<T> {
+  let delay = 2000
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn()
