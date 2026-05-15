@@ -250,6 +250,115 @@ export class YouTubeOAuthService {
     throw new Error(`YouTube update failed ${res.status}: ${body1.slice(0, 500)}`)
   }
 
+  // ── Pro batch-publish module ─────────────────────────────────────────
+  // The methods below back the "Apply to YouTube" Pro feature: list the
+  // creator's playlists for the dropdown, add a video to a playlist, and
+  // push the full set of Studio-side toggles (privacy, schedule, made-for-
+  // kids, paid promotion, etc.) in a single videos.update call.
+
+  /** Return the authenticated user's own playlists (id + title). */
+  async listMyPlaylists(): Promise<Array<{ id: string; title: string }>> {
+    const all: Array<{ id: string; title: string }> = []
+    let pageToken: string | undefined
+    // YouTube caps maxResults at 50 — page through if the creator has more.
+    do {
+      const data = await this.get<{
+        items?: Array<{ id: string; snippet: { title: string } }>
+        nextPageToken?: string
+      }>('/playlists', {
+        part: 'snippet',
+        mine: 'true',
+        maxResults: '50',
+        ...(pageToken ? { pageToken } : {}),
+      })
+      for (const p of data.items ?? []) {
+        all.push({ id: p.id, title: p.snippet.title })
+      }
+      pageToken = data.nextPageToken
+    } while (pageToken)
+    return all
+  }
+
+  /** Add a video to a playlist. No-op if it's already there. */
+  async addVideoToPlaylist(playlistId: string, videoId: string): Promise<void> {
+    const res = await fetch(`${BASE}/playlistItems?part=snippet`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        snippet: {
+          playlistId,
+          resourceId: { kind: 'youtube#video', videoId },
+        },
+      }),
+    })
+    // 409 conflict = video already in this playlist; treat as success.
+    if (!res.ok && res.status !== 409) {
+      const body = await res.text()
+      throw new Error(`Add to playlist failed ${res.status}: ${body.slice(0, 300)}`)
+    }
+  }
+
+  /**
+   * Push the full Studio settings panel in one videos.update call.
+   *
+   * Inputs map to YouTube fields like this:
+   *   madeForKids -> status.selfDeclaredMadeForKids
+   *   paidPromotion -> status.containsPaidPromotion (paid disclosure)
+   *   alteredContent -> status.containsSyntheticMedia (altered content)
+   *   publishAt (ISO string) -> status.publishAt (schedules video for later
+   *     and sets privacyStatus to 'private' until that time)
+   *   privacyStatus -> public/unlisted/private (only used when publishAt
+   *     is NOT set)
+   *
+   * `notifySubscribers` is passed as a URL query param to suppress the
+   * "you have a new video" notification YT would otherwise send.
+   */
+  async updateVideoStatus(
+    videoId: string,
+    args: {
+      madeForKids?: boolean
+      paidPromotion?: boolean
+      alteredContent?: boolean
+      privacyStatus?: 'public' | 'unlisted' | 'private'
+      publishAt?: string | null
+      notifySubscribers?: boolean
+    },
+  ): Promise<void> {
+    const status: Record<string, unknown> = {}
+    if (typeof args.madeForKids === 'boolean') status.selfDeclaredMadeForKids = args.madeForKids
+    if (typeof args.paidPromotion === 'boolean') status.containsPaidPromotion = args.paidPromotion
+    if (typeof args.alteredContent === 'boolean') status.containsSyntheticMedia = args.alteredContent
+
+    if (args.publishAt) {
+      // YouTube requires privacyStatus=private to schedule.
+      status.privacyStatus = 'private'
+      status.publishAt = args.publishAt
+    } else if (args.privacyStatus) {
+      status.privacyStatus = args.privacyStatus
+    }
+
+    if (Object.keys(status).length === 0) return
+
+    const params = new URLSearchParams({ part: 'status' })
+    if (args.notifySubscribers === false) params.set('notifySubscribers', 'false')
+
+    const res = await fetch(`${BASE}/videos?${params.toString()}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id: videoId, status }),
+    })
+    if (!res.ok) {
+      const body = await res.text()
+      throw new Error(`YouTube status update failed ${res.status}: ${body.slice(0, 500)}`)
+    }
+  }
+
   // Upload a custom thumbnail to YouTube for a video.
   // imageBuffer: raw image bytes; mimeType: 'image/jpeg' or 'image/png'
   async uploadThumbnail(videoId: string, imageBuffer: Buffer, mimeType: string): Promise<void> {

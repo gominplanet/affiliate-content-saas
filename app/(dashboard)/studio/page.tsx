@@ -48,9 +48,33 @@ const STATUS_ICON = {
   public: <Globe size={11} className="text-[#34c759]" />,
 }
 
-function VideoStudioCard({ video }: {
+/** Settings the Pro YouTube batch-apply panel pushes to YT in one shot. */
+interface ProPublishSettings {
+  playlistId: string | null
+  paidPromotion: boolean
+  alteredContent: boolean   // Pro keeps this false by default (no synthetic media flag)
+  madeForKids: boolean       // false by default
+  notifySubscribers: boolean // false by default — never spam the subscriber bell
+  privacyStatus: 'public' | 'unlisted' | 'private'
+  scheduleMode: 'now' | 'in1h' | 'in6h' | 'in24h'
+}
+
+const defaultProSettings: ProPublishSettings = {
+  playlistId: null,
+  paidPromotion: true,        // sensible default for affiliate creators
+  alteredContent: false,
+  madeForKids: false,
+  notifySubscribers: false,
+  privacyStatus: 'public',
+  scheduleMode: 'now',
+}
+
+function VideoStudioCard({ video, userTier, playlists }: {
   video: DraftVideo
+  userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
+  playlists: Array<{ id: string; title: string }>
 }) {
+  const isPro = userTier === 'pro' || userTier === 'admin'
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [generated, setGenerated] = useState<GeneratedMetadata | null>(null)
@@ -58,6 +82,7 @@ function VideoStudioCard({ video }: {
   const [product, setProduct] = useState<ProductInfo | null>(null)
   const [affiliateUrl, setAffiliateUrl] = useState<string | null>(null)
   const [geniuslinkUsed, setGeniuslinkUsed] = useState<boolean | null>(null)
+  const [proSettings, setProSettings] = useState<ProPublishSettings>(defaultProSettings)
   const [geniuslinkError, setGeniuslinkError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [applyError, setApplyError] = useState<string | null>(null)
@@ -146,6 +171,39 @@ function VideoStudioCard({ video }: {
     setApplying(true)
     setApplyError(null)
     try {
+      // Pro users get the one-click batch endpoint that pushes Studio
+      // settings + metadata + thumbnail in a single orchestrated call.
+      // Lower tiers fall through to the original metadata-only endpoint.
+      if (isPro) {
+        const publishAt = computePublishAt(proSettings.scheduleMode)
+        const res = await fetch('/api/youtube/apply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoId: video.youtubeVideoId,
+            title: editTitle,
+            description: editDesc,
+            tags: generated.tags,
+            thumbnailDataUri: thumbnailUrl ?? undefined,
+            playlistId: proSettings.playlistId,
+            madeForKids: proSettings.madeForKids,
+            paidPromotion: proSettings.paidPromotion,
+            alteredContent: proSettings.alteredContent,
+            notifySubscribers: proSettings.notifySubscribers,
+            publishAt,
+            privacyStatus: publishAt ? undefined : proSettings.privacyStatus,
+          }),
+        })
+        const data = await safeJson(res)
+        if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — apply failed`)
+        setApplied(true)
+        if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+          setApplyError(`Applied with warnings: ${(data.warnings as string[]).join(' · ')}`)
+        }
+        return
+      }
+
+      // Free / Starter / Growth — metadata + thumbnail only (no batch settings)
       const res = await fetch('/api/youtube/update-metadata', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -154,14 +212,12 @@ function VideoStudioCard({ video }: {
           title: editTitle,
           description: editDesc,
           tags: generated.tags,
-          // Include generated thumbnail so it gets pushed to YouTube too
           thumbnailDataUri: thumbnailUrl ?? undefined,
         }),
       })
       const data = await safeJson(res)
       if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — update failed`)
       setApplied(true)
-      // Warn if thumbnail uploaded but YouTube rejected it (e.g. unverified account)
       if (data.thumbnailWarning) {
         setApplyError(`Metadata applied ✓ — thumbnail not uploaded: ${data.thumbnailWarning}`)
       }
@@ -170,6 +226,18 @@ function VideoStudioCard({ video }: {
     } finally {
       setApplying(false)
     }
+  }
+
+  /** Convert the schedule mode dropdown choice to an ISO 8601 publishAt or null. */
+  function computePublishAt(mode: ProPublishSettings['scheduleMode']): string | null {
+    if (mode === 'now') return null
+    const offsets: Record<typeof mode, number> = {
+      now: 0,
+      in1h: 1 * 60 * 60 * 1000,
+      in6h: 6 * 60 * 60 * 1000,
+      in24h: 24 * 60 * 60 * 1000,
+    }
+    return new Date(Date.now() + offsets[mode]).toISOString()
   }
 
   // ── Shared thumbnail result handler ─────────────────────────────────────────
@@ -780,6 +848,99 @@ function VideoStudioCard({ video }: {
                 )}
               </div>
 
+              {/* Pro batch-apply settings panel — Pro/admin only */}
+              {isPro && (
+                <div className="border border-[#0071e3]/20 bg-[#0071e3]/5 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3] text-white font-semibold uppercase tracking-wide">Pro</span>
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">One-click Studio settings</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Playlist */}
+                    <label className="flex flex-col gap-1 text-xs">
+                      <span className="text-[#6e6e73] dark:text-[#ebebf0] font-medium">Add to playlist</span>
+                      <select
+                        value={proSettings.playlistId ?? ''}
+                        onChange={e => setProSettings(s => ({ ...s, playlistId: e.target.value || null }))}
+                        className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                      >
+                        <option value="">— None —</option>
+                        {playlists.map(p => (
+                          <option key={p.id} value={p.id}>{p.title}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {/* Visibility */}
+                    <label className="flex flex-col gap-1 text-xs">
+                      <span className="text-[#6e6e73] dark:text-[#ebebf0] font-medium">Visibility</span>
+                      <select
+                        value={proSettings.privacyStatus}
+                        onChange={e => setProSettings(s => ({ ...s, privacyStatus: e.target.value as ProPublishSettings['privacyStatus'] }))}
+                        className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                        disabled={proSettings.scheduleMode !== 'now'}
+                      >
+                        <option value="public">Public</option>
+                        <option value="unlisted">Unlisted</option>
+                        <option value="private">Private</option>
+                      </select>
+                    </label>
+
+                    {/* Schedule */}
+                    <label className="flex flex-col gap-1 text-xs">
+                      <span className="text-[#6e6e73] dark:text-[#ebebf0] font-medium">Schedule</span>
+                      <select
+                        value={proSettings.scheduleMode}
+                        onChange={e => setProSettings(s => ({ ...s, scheduleMode: e.target.value as ProPublishSettings['scheduleMode'] }))}
+                        className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                      >
+                        <option value="now">Publish now</option>
+                        <option value="in1h">In 1 hour</option>
+                        <option value="in6h">In 6 hours</option>
+                        <option value="in24h">In 24 hours</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  {/* Toggles */}
+                  <div className="flex flex-col gap-1.5 text-xs">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={proSettings.paidPromotion}
+                        onChange={e => setProSettings(s => ({ ...s, paidPromotion: e.target.checked }))}
+                      />
+                      <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Paid promotion disclosure <span className="text-[#86868b]">(recommended for affiliate)</span></span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={proSettings.alteredContent}
+                        onChange={e => setProSettings(s => ({ ...s, alteredContent: e.target.checked }))}
+                      />
+                      <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Altered / synthetic content</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={proSettings.madeForKids}
+                        onChange={e => setProSettings(s => ({ ...s, madeForKids: e.target.checked }))}
+                      />
+                      <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Made for kids</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={proSettings.notifySubscribers}
+                        onChange={e => setProSettings(s => ({ ...s, notifySubscribers: e.target.checked }))}
+                      />
+                      <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Notify subscribers <span className="text-[#86868b]">(off = no bell spam)</span></span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex flex-col gap-2 pt-1">
                 <div className="flex items-center gap-3">
@@ -819,6 +980,8 @@ export default function StudioPage() {
   const [needsAuth, setNeedsAuth] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasGeniuslink, setHasGeniuslink] = useState(false)
+  const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
+  const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([])
   // Pagination
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
   const [pageHistory, setPageHistory] = useState<string[]>([]) // stack of previous page tokens
@@ -832,8 +995,17 @@ export default function StudioPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const intResult = await (supabase as any).from('integrations').select('geniuslink_api_key').eq('user_id', user.id).single()
+        const intResult = await (supabase as any).from('integrations').select('geniuslink_api_key,tier').eq('user_id', user.id).single()
         setHasGeniuslink(!!intResult.data?.geniuslink_api_key)
+        const tier = (intResult.data?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free'
+        setUserTier(tier)
+        // Fetch playlists for Pro/admin so the batch-apply panel can populate
+        if (tier === 'pro' || tier === 'admin') {
+          fetch('/api/youtube/playlists')
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d?.playlists) setPlaylists(d.playlists) })
+            .catch(() => {})
+        }
       }
     }
 
@@ -946,7 +1118,7 @@ export default function StudioPage() {
             <>
               <div className="flex flex-col gap-4">
                 {drafts.map(video => (
-                  <VideoStudioCard key={video.youtubeVideoId} video={video} />
+                  <VideoStudioCard key={video.youtubeVideoId} video={video} userTier={userTier} playlists={playlists} />
                 ))}
               </div>
 
