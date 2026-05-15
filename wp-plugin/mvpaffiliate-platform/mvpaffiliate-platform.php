@@ -500,7 +500,7 @@ function mvp_affiliate_admin_page() {
     ?>
     <div class="wrap" style="max-width:760px;">
       <h1 style="margin-bottom:6px;">MVP Affiliate</h1>
-      <p style="color:#6e6e73;margin-top:0;">Connect this WordPress site to your MVP Affiliate dashboard.</p>
+      <p style="color:#6e6e73;margin-top:0;">Two steps to wire this site to your MVP Affiliate dashboard — install the theme, then generate a connection token.</p>
 
       <?php if ($theme_status_msg): ?>
       <div class="notice notice-<?php echo esc_attr($theme_status_msg[0]); ?>" style="margin-top:16px;">
@@ -527,7 +527,7 @@ function mvp_affiliate_admin_page() {
       <!-- Connect step -->
       <div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;margin-top:16px;">
         <h2 style="font-size:16px;margin:0 0 4px;">Step 2 — Get your Connection Token</h2>
-        <p style="margin:0 0 12px;color:#6e6e73;">Click below to generate a one-time token. Paste it into MVP Affiliate to connect this site.</p>
+        <p style="margin:0 0 12px;color:#6e6e73;">Generates a one-time token tied to a dedicated &quot;MVP Affiliate&quot; application password. Paste it into the MVP Affiliate setup wizard to finish the connection.</p>
 
         <?php if ($token_error): ?>
         <div class="notice notice-error inline" style="margin:0 0 12px;"><p><?php echo esc_html($token_error); ?></p></div>
