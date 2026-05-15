@@ -1,9 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CheckCircle, Zap } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase/client'
+
+// Rewardful injects a global `Rewardful` object once the script is ready.
+// Declared here so TypeScript stops complaining about the access below.
+declare global {
+  interface Window {
+    Rewardful?: { referral?: string | null }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rewardful?: (event: string, cb: () => void) => void
+  }
+}
 
 type Plan = {
   tier: 'free' | 'starter' | 'growth' | 'pro'
@@ -98,6 +108,16 @@ const plans: PlanExt[] = [
 export default function PricingPage() {
   const router = useRouter()
   const [loading, setLoading] = useState<string | null>(null)
+  const [referral, setReferral] = useState<string | null>(null)
+
+  // Capture Rewardful referral ID once the tracking script signals ready.
+  // We pass this to Stripe checkout below so the conversion gets attributed.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.rewardful) return
+    window.rewardful('ready', () => {
+      setReferral(window.Rewardful?.referral ?? null)
+    })
+  }, [])
 
   async function handleCheckout(tier: Plan['tier']) {
     if (tier === 'free') {
@@ -123,7 +143,7 @@ export default function PricingPage() {
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier }),
+        body: JSON.stringify({ tier, referral }),
       })
       const { url, error } = await res.json()
       if (error) { alert(error); return }

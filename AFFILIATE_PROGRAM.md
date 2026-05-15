@@ -55,6 +55,51 @@ for your audience? Email team@mvpaffiliate.io and we'll set you up fast.
 
 ---
 
+## Code integration (Step 1 + Step 2 from Rewardful's Next.js docs)
+
+Both steps are wired:
+
+1. **Tracking script** — loaded in [app/layout.tsx](app/layout.tsx) inside
+   `<body>`, behind a check for `NEXT_PUBLIC_REWARDFUL_KEY`. The script
+   only renders when that env var is set, so dev/local stays clean
+   unless you opt in.
+2. **Referral capture + Stripe attribution** — [app/pricing/page.tsx](app/pricing/page.tsx)
+   listens for the `rewardful('ready')` event, stores `Rewardful.referral`,
+   and POSTs it alongside `tier` to `/api/stripe/checkout`. The checkout
+   route forwards the referral as `client_reference_id` on the Stripe
+   Checkout Session — Rewardful's webhook reads that field to attribute
+   the conversion.
+
+### Required env vars
+
+Add to **Vercel** (Production + Preview at minimum, Sensitive OFF
+because this is a public-by-design tracking key):
+
+```
+NEXT_PUBLIC_REWARDFUL_KEY=<your-key-from-rewardful-dashboard>
+```
+
+And to local `.env.local` for testing referral flows in dev:
+
+```
+NEXT_PUBLIC_REWARDFUL_KEY=<your-key-from-rewardful-dashboard>
+```
+
+You can find the key in the Rewardful dashboard — it's the
+`data-rewardful` value Rewardful shows in the Next.js integration docs
+(a 6-character lowercase alphanumeric string).
+
+### Smoke test
+
+1. Get any affiliate's referral link from Rewardful (or use your own):
+   `https://mvpaffiliate.io/?via=<affiliate-id>`
+2. Open it in incognito → land on the site → navigate to pricing →
+   upgrade with a test card.
+3. In Rewardful → Conversions tab, the test transaction should appear
+   attributed to that affiliate.
+
+---
+
 ## Key talking points to keep consistent across the program
 
 1. **Lifetime recurring commission** — paid for as long as the referred

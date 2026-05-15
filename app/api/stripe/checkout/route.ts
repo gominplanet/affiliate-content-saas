@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { tier } = await request.json() as { tier: Tier }
+  const { tier, referral } = await request.json() as { tier: Tier; referral?: string | null }
   const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
   if (!priceId) return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
 
@@ -21,6 +21,10 @@ export async function POST(request: NextRequest) {
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: user.email,
     metadata: { user_id: user.id, tier },
+    // Rewardful affiliate attribution — the referral UUID lives in
+    // client_reference_id, which Rewardful's Stripe webhook reads to
+    // attribute the conversion to the correct affiliate.
+    ...(referral ? { client_reference_id: referral } : {}),
     success_url: `${appUrl}/billing?upgraded=1`,
     cancel_url: `${appUrl}/pricing`,
   })

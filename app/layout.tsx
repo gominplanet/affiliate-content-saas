@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import Script from 'next/script'
 import { ThemeProvider } from 'next-themes'
 import './globals.css'
 
@@ -21,9 +22,25 @@ export const viewport: Viewport = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Rewardful affiliate tracking — only loads when key is set in env, so
+  // dev/preview builds without the env var don't fire the script.
+  const rewardfulKey = process.env.NEXT_PUBLIC_REWARDFUL_KEY
   return (
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
+        {rewardfulKey && (
+          <>
+            <Script
+              id="rewardful-queue"
+              strategy="beforeInteractive"
+            >{`(function(w,r){w._rwq=r;w[r]=w[r]||function(){(w[r].q=w[r].q||[]).push(arguments)}})(window,'rewardful');`}</Script>
+            <Script
+              src="https://r.wdfl.co/rw.js"
+              data-rewardful={rewardfulKey}
+              strategy="afterInteractive"
+            />
+          </>
+        )}
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           {children}
         </ThemeProvider>
