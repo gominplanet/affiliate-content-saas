@@ -612,7 +612,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               )
             ) : (
               <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">
-                No ASIN detected in title — add an Amazon ASIN (e.g. B08N5WRWNW) to the video title to enable generation
+                No ASIN in the title — add the 10-character Amazon code (e.g. <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">B08N5WRWNW</span>) anywhere in the video title to unlock generation.
               </span>
             )}
             <a href={ytUrl} target="_blank" rel="noopener noreferrer"

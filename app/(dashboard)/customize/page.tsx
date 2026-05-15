@@ -488,7 +488,7 @@ export default function CustomizePage() {
   if (loading) {
     return (
       <>
-        <Header title="Customize Blog" subtitle="Manage your WordPress blog's look and content." />
+        <Header title="Customize Blog" subtitle="Edit the bits of your site that aren't covered by Brand Profile — Pick of the Day, in-content ad slots, footer links." />
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-8">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
@@ -500,7 +500,7 @@ export default function CustomizePage() {
     <>
       <Header
         title="Customize Blog"
-        subtitle="Manage your WordPress blog's look and content."
+        subtitle="Edit the bits of your site that aren't covered by Brand Profile — Pick of the Day, in-content ad slots, footer links."
         actions={
           <div className="flex items-center gap-2">
             <button onClick={purgeCache} disabled={purging || saving} className="btn-secondary flex items-center gap-2"

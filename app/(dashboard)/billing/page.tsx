@@ -113,7 +113,7 @@ export default function BillingPage() {
 
   return (
     <>
-      <Header title="Plan & Billing" subtitle="Manage your subscription and usage limits." />
+      <Header title="Plan & Billing" subtitle="See where you are this month, swap plans, or cancel — all in one place." />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-8">
@@ -180,7 +180,7 @@ export default function BillingPage() {
                 </div>
                 {usagePct >= 90 && (
                   <p className="text-xs text-[#ff3b30] mt-2">
-                    {usagePct >= 100 ? 'Limit reached — upgrade to keep publishing.' : 'Almost at your limit — consider upgrading.'}
+                    {usagePct >= 100 ? 'You\'ve used every post on this plan. Upgrade to keep generating.' : 'You\'re close to your cap — upgrade now to avoid being blocked mid-generation.'}
                   </p>
                 )}
 
