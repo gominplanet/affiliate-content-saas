@@ -1066,7 +1066,7 @@ export default function StudioPage() {
   if (loading) {
     return (
       <div>
-        <Header title="YouTube Studio" subtitle="Generate optimised titles, descriptions and tags from your Amazon ASINs." />
+        <Header title="YouTube Studio" subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to Studio in one click." />
         <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" /> Loading your videos…
         </div>
@@ -1078,7 +1078,7 @@ export default function StudioPage() {
     <div>
       <Header
         title="YouTube Studio"
-        subtitle="Generate optimised titles, descriptions and tags from your Amazon ASINs."
+        subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to Studio in one click."
       />
 
       {/* Connect YouTube OAuth banner */}
@@ -1088,9 +1088,9 @@ export default function StudioPage() {
             <Youtube size={20} className="text-[#ff0000]" />
           </div>
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect YouTube to read your drafts</h3>
+            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect YouTube to unlock the autopilot</h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              This feature needs permission to read your private/draft videos and update their metadata. Connect your Google account to get started.
+              We need read access to find your drafts (private + unlisted) and write access to push the description, tags, hashtags and thumbnail back into Studio. One-time Google OAuth — revoke anytime.
             </p>
             <a
               href="/api/auth/youtube"
@@ -1108,8 +1108,7 @@ export default function StudioPage() {
         <div className="card p-4 mb-6 flex items-center gap-3 border border-[#ff9500]/30 bg-[#ff9500]/5">
           <AlertCircle size={16} className="text-[#ff9500] flex-shrink-0" />
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex-1">
-            <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">No Geniuslink connected.</strong> Affiliate links will use plain Amazon URLs.
-            Add your Geniuslink API key in <a href="/setup?tab=integrations" className="text-[#0071e3] hover:underline">Site & Integrations</a>.
+            <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink not connected.</strong> We&apos;ll fall back to plain US Amazon links, which means you only earn on .com traffic. Add your Geniuslink API key in <a href="/setup?tab=integrations" className="text-[#0071e3] hover:underline">Site &amp; Integrations</a> to geo-route every click to the right Amazon storefront.
           </p>
         </div>
       )}
@@ -1126,8 +1125,8 @@ export default function StudioPage() {
           {drafts.length === 0 ? (
             <div className="card p-8 text-center">
               <Youtube size={28} className="mx-auto text-[#86868b] dark:text-[#8e8e93] mb-3" />
-              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No ASIN videos found</p>
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Add an Amazon ASIN (e.g. B08N5WRWNW) to your video titles on YouTube to have them appear here.</p>
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No ASIN drafts yet</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">Drop an Amazon ASIN (the 10-character code like <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">B08N5WRWNW</span>) anywhere in your YouTube video title. Save the draft, hit Refresh, and it&apos;ll show up here ready to generate.</p>
             </div>
           ) : (
             <>

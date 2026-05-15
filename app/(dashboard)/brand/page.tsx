@@ -412,7 +412,7 @@ export default function BrandPage() {
     <>
       <Header
         title="Brand Profile"
-        subtitle="Define your brand voice for consistent AI-generated content."
+        subtitle="The single source of truth for every review you generate. The agent team reads this before writing — so your reviews actually sound like you."
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -532,8 +532,10 @@ export default function BrandPage() {
           <div className="card p-6">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your Writing Style</h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Paste a sample of your writing — a blog post, email, or caption you&apos;re happy with.
-              The AI uses this to match your voice and tone when generating content.
+              Paste 300–1,000 words of writing you&apos;re proud of — a blog post, newsletter,
+              long caption. The Voice Matcher agent reads this before every draft and mimics
+              your rhythm, sentence length, slang, and idioms. The more authentic the sample,
+              the less it sounds like generic AI.
             </p>
             <textarea
               rows={10}
@@ -550,7 +552,9 @@ export default function BrandPage() {
           <div className="card p-6">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">About You</h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Who are you and why do you run this blog? The AI uses this to add authentic, first-person context to posts — the kind of detail that makes readers trust you.
+              Two sentences max. Who you are, what you test, why you bother. Reviews drop this in as
+              first-person context — the difference between &quot;experts recommend&quot; and &quot;I&apos;ve put 30 of
+              these in my own kitchen.&quot; Trust signal at zero effort.
             </p>
             <textarea
               rows={5}
@@ -598,7 +602,9 @@ export default function BrandPage() {
           <div className="card p-6">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your Target Reader</h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Describe your ideal reader. The AI will write directly to them — their goals, frustrations, and buying mindset.
+              Describe who&apos;s on the other side of the screen — what they want, what they&apos;re sick of,
+              what makes them click &quot;buy.&quot; Every review writes to *them* instead of a blank page,
+              which is the single biggest reason AI content reads flat.
             </p>
             <textarea
               rows={4}
@@ -615,7 +621,9 @@ export default function BrandPage() {
           <div className="card p-6">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Words &amp; Phrases to Avoid</h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              List words, phrases, or clichés you never want in your content. One per line. The AI will avoid these in every post it generates.
+              The fastest way to stop sounding like AI. One word or phrase per line — clichés,
+              corporate-speak, anything that makes you cringe. Every agent in the pipeline gets
+              this list and refuses to write them.
             </p>
             <textarea
               rows={5}

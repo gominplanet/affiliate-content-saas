@@ -192,9 +192,9 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">How would you like to get started?</h2>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Where should your reviews live?</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Pick the path that matches your situation — they work very differently.
+          Two very different paths. Pick one — you can always come back and run the other later for a second site.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -210,7 +210,7 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
           <div className="flex-1">
             <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">I already have a WordPress blog</p>
             <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-              Connect your site and start publishing AI-generated posts directly to your existing blog.
+              Plug MVP into your existing site. Reviews land as drafts on your current theme — your design, your settings, untouched.
             </p>
             <div className="flex flex-col gap-1.5 mb-3">
               {[
@@ -240,9 +240,9 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
             <Wand2 size={22} className="text-[#34c759]" />
           </div>
           <div className="flex-1">
-            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Build me a new blog from scratch</p>
+            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Build me a new review site from scratch</p>
             <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
-              Start with a blank slate on Hostinger. We configure everything automatically.
+              Point a blank WordPress install at us and walk away. Theme, pages, navigation, sidebar, footer, branding — all wired up automatically from your Brand Profile.
             </p>
             <div className="flex flex-col gap-1.5 mb-1">
               {[
@@ -310,9 +310,9 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
         <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#0071e3] hover:opacity-75 mb-4">
           <ArrowLeft size={14} /> Back
         </button>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your existing WordPress site</h2>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Plug MVP into your WordPress site</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Install the MVP Affiliate plugin, generate a connection token, and paste it here.
+          Two minutes, three steps: install our plugin, generate a connection token, paste it here. After that, every review you publish syncs automatically. Nothing else on your site changes.
         </p>
       </div>
 
@@ -607,8 +607,8 @@ function Step4({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect &amp; launch your site</h2>
-        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">Enter your WordPress credentials and pick your brand color. We&apos;ll build your site automatically.</p>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Launch your review site</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">One connection token, one brand color. We auto-install the MVP Affiliate theme + plugin, wire up the homepage, build your About + Privacy pages, and configure your sidebar + footer. About 60 seconds.</p>
       </div>
 
       <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
@@ -691,10 +691,10 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
         <CheckCircle size={32} style={{ color: accentColor }} />
       </div>
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your site is live!</h2>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your review site is live</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Home page, About page, Privacy Policy, and navigation are all set up at{' '}
-          <a href={wordpressUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline font-medium">{wordpressUrl}</a>
+          Homepage, About, Privacy and navigation are all wired up at{' '}
+          <a href={wordpressUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline font-medium">{wordpressUrl}</a>. Now head to Studio and generate your first review.
         </p>
       </div>
       <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-4 text-left w-full max-w-md">

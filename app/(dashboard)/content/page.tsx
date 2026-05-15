@@ -1115,7 +1115,7 @@ export default function ContentPage() {
             ? `${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} published`
             : visibleVideos.length > 0
               ? `${visibleVideos.length} video${visibleVideos.length !== 1 ? 's' : ''} · ${generatedCount} post${generatedCount !== 1 ? 's' : ''} published`
-              : 'Sync your YouTube channel to get started.'
+              : 'Hit Sync to pull every YouTube video into your generation queue.'
         }
         actions={
           <div className="flex items-center gap-2">
@@ -1230,8 +1230,8 @@ export default function ContentPage() {
             </div>
           ) : allBlogPosts.length === 0 ? (
             <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No posts yet</p>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Generate your first blog post from the Videos tab.</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No reviews live yet</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Head to the Videos tab, pick one with an Amazon ASIN, and click Generate. The full review lands on your site in about 60 seconds.</p>
             </div>
           ) : allBlogPosts.map(post => (
             <div key={post.id} className={`card p-4 flex items-center gap-3 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#0071e3]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
@@ -1287,8 +1287,8 @@ export default function ContentPage() {
             <Youtube size={22} className="text-red-500" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No videos yet</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Click "Sync videos" above to pull your latest YouTube uploads.</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No videos synced yet</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">One click and we pull every public, unlisted, and draft video from your channel. ASIN-tagged videos become instant generation candidates.</p>
           </div>
           <button onClick={syncVideos} disabled={syncing} className="btn-primary text-sm">
             {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : 'Sync now'}
