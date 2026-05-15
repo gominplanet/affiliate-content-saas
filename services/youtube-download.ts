@@ -112,6 +112,15 @@ export async function getVideoDetails(videoIdOrUrl: string): Promise<YouTubeVide
   })
   if (!res.ok) {
     const errBody = await res.text().catch(() => '')
+    // Log on the server too so Vercel logs show the exact request shape
+    // (with the API key masked). Helps when the in-UI error message is
+    // not enough to debug.
+    console.error('[youtube-download] non-OK response', {
+      status: res.status,
+      videoId,
+      url: url.replace(apiKey.slice(0, 8) + '*'.repeat(apiKey.length - 8), 'KEY_MASKED'),
+      bodyPreview: errBody.slice(0, 300),
+    })
     throw new Error(`YouTube downloader API failed (HTTP ${res.status}): ${errBody.slice(0, 200)}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
