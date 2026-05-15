@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'free'
     if (!tierAllowsSocial(tier, 'telegram')) {
       return NextResponse.json(
-        { error: 'Telegram auto-publish is a Growth plan feature. Upgrade to Growth or Pro to post to Telegram.' },
+        { error: 'Telegram auto-publish is a Pro plan feature. Upgrade to Pro to post reviews to your Telegram channel.' },
         { status: 403 },
       )
     }

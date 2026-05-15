@@ -41,7 +41,7 @@ export const TIERS = {
     basePosts: 60,
     bonusPosts: 20,
     sites: 1,
-    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'bluesky', 'telegram'] as readonly Social[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'bluesky'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: false,
     publishAll: false,

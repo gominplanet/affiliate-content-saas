@@ -1503,7 +1503,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Telegram <span className="ml-1 text-[10px] font-medium text-[#34c759] uppercase tracking-wider">Growth+</span></p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Telegram <span className="ml-1 text-[10px] font-medium text-[#0071e3] uppercase tracking-wider">Pro</span></p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Fan out every review to your Telegram channel</p>
           </div>
           {telegram.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}

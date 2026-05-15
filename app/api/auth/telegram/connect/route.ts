@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'free'
     if (!tierAllowsSocial(tier, 'telegram')) {
       return NextResponse.json(
-        { error: 'Telegram is a Growth plan feature. Upgrade to Growth or Pro to connect Telegram.' },
+        { error: 'Telegram is a Pro plan feature. Upgrade to Pro to connect a Telegram channel.' },
         { status: 403 },
       )
     }

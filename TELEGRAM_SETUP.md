@@ -1,6 +1,6 @@
 # Telegram fan-out setup
 
-Telegram auto-publish is a Growth+ feature. Reviews fan out to each
+Telegram auto-publish is a Pro plan feature. Reviews fan out to each
 user's own Telegram channel via the Bot API.
 
 Architecture:

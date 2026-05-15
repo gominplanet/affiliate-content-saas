@@ -14,7 +14,7 @@ Program URL: https://rewardful.com (your Rewardful dashboard)
 Promote MVP Affiliate — the platform that turns one unlisted YouTube
 draft into a full SEO-optimized review site, an optimized YouTube
 package (description, tags, hashtags, thumbnail), and auto-posts across
-Facebook, Threads, LinkedIn, Pinterest, X and Bluesky.
+Facebook, Threads, LinkedIn, Pinterest, X, Bluesky and Telegram.
 
 Your audience gets 15 reviews free — no credit card. You earn
 commission on every paying customer you refer — and you keep earning it
@@ -47,7 +47,8 @@ Best-converting pitch angles:
   draft into both, in two clicks."
 • "An entire affiliate engine out of one YouTube upload."
 • "Pro plan one-click YouTube Studio batch settings — playlist,
-  schedule, paid-promotion disclosure, made-for-kids — all from MVP."
+  schedule, paid-promotion disclosure, made-for-kids — plus Telegram
+  channel auto-post, all from MVP."
 
 Need logos, screenshots, demo videos, or want to discuss a custom angle
 for your audience? Email team@mvpaffiliate.io and we'll set you up fast.

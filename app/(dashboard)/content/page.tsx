@@ -174,6 +174,52 @@ type GenStatus = 'idle' | 'generating' | 'done' | 'error'
 
 const GEN_STEPS = ['Reading transcript…', 'Generating blog post…', 'Publishing to WordPress…']
 
+// Unified social pill used in the per-video card. Same shape for every
+// platform — brand color is applied to the icon only when unposted, and
+// fills the whole pill when posted. Keeps the row visually coherent
+// regardless of how many networks the user has connected.
+function SocialPill({
+  brand,
+  icon,
+  label,
+  postedLabel,
+  posted,
+  loading,
+  onClick,
+}: {
+  brand: string
+  icon: React.ReactNode
+  label: string
+  postedLabel: string
+  posted: boolean
+  loading: boolean
+  onClick?: () => void
+}) {
+  if (posted) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white shadow-sm"
+        style={{ background: brand }}
+      >
+        <CheckCircle size={11} /> {postedLabel}
+      </span>
+    )
+  }
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/[0.04] hover:border-gray-300 dark:hover:border-white/20 disabled:opacity-60 transition-all"
+    >
+      {loading
+        ? <Loader2 size={11} className="animate-spin" style={{ color: brand }} />
+        : <span style={{ color: brand, display: 'inline-flex' }}>{icon}</span>
+      }
+      <span>{label}</span>
+    </button>
+  )
+}
+
 function GenerateButton({
   videoId, existingPost, onDone,
 }: {
@@ -571,111 +617,92 @@ function VideoCard({
             </div>
           )}
 
-          {/* Individual platform buttons */}
-          <div className="flex items-center gap-2 flex-wrap">
-          <GenerateButton videoId={id} existingPost={post} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
-          {post ? (
-            <>
-              {editorUrl && (
-                <a href={editorUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-200 dark:hover:bg-white/20 transition-colors">
-                  <ExternalLink size={11} /> Edit in WP
-                </a>
-              )}
+          {/* Manage row — Generate / View / Rewrite (via GenerateButton),
+              Edit in WP, Delete or Ignore. Text-link styling, low emphasis. */}
+          <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
+            <GenerateButton videoId={id} existingPost={post} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            {post ? (
+              <>
+                {editorUrl && (
+                  <a href={editorUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
+                    <ExternalLink size={11} /> Edit in WP
+                  </a>
+                )}
+                <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors disabled:opacity-60">
+                  {deleting ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
+                  {deleting ? 'Deleting…' : 'Delete'}
+                </button>
+              </>
+            ) : (
+              <button onClick={onDismiss} className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors">
+                <X size={11} /> Ignore
+              </button>
+            )}
+          </div>
+
+          {/* Publish-to row — uniform pills, one per connected platform.
+              Only shown when a post exists and at least one social is connected. */}
+          {post && (fbConnected || pinterestConnected || threadsConnected || linkedInConnected || twitterConnected || blueskyConnected || telegramConnected) && (
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1">Publish to</span>
               {fbConnected && (
-                fbPosted ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1877F2]/10 text-[#1877F2]">
-                    <CheckCircle size={11} /> Posted to FB
-                  </span>
-                ) : (
-                  <button onClick={handleFacebookPost} disabled={fbPosting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1877F2] text-white hover:bg-[#166fe5] disabled:opacity-60 transition-colors">
-                    {fbPosting ? <Loader2 size={11} className="animate-spin" /> : <Facebook size={11} />}
-                    {fbPosting ? 'Posting…' : 'Post to FB'}
-                  </button>
-                )
+                <SocialPill
+                  brand="#1877F2"
+                  icon={<Facebook size={11} />}
+                  label="Facebook" postedLabel="On Facebook"
+                  posted={fbPosted} loading={fbPosting} onClick={handleFacebookPost}
+                />
               )}
               {pinterestConnected && (
-                pinPosted ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#E60023]/10 text-[#E60023]">
-                    <CheckCircle size={11} /> Pinned
-                  </span>
-                ) : (
-                  <button onClick={handlePinPreview} disabled={pinLoading} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#E60023] text-white hover:bg-[#cc001f] disabled:opacity-60 transition-colors">
-                    {pinLoading ? <Loader2 size={11} className="animate-spin" /> : <Pin size={11} />}
-                    {pinLoading ? 'Generating…' : 'Pin it'}
-                  </button>
-                )
+                <SocialPill
+                  brand="#E60023"
+                  icon={<Pin size={11} />}
+                  label="Pinterest" postedLabel="Pinned"
+                  posted={pinPosted} loading={pinLoading} onClick={handlePinPreview}
+                />
               )}
               {threadsConnected && (
-                thPosted ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/10 dark:bg-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]">
-                    <CheckCircle size={11} /> Threaded
-                  </span>
-                ) : (
-                  <button onClick={handleThreadsPost} disabled={thPosting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black text-white hover:bg-[#333] disabled:opacity-60 transition-colors">
-                    {thPosting ? <Loader2 size={11} className="animate-spin" /> : <MessageCircle size={11} />}
-                    {thPosting ? 'Posting…' : 'Thread it'}
-                  </button>
-                )
+                <SocialPill
+                  brand="#000000"
+                  icon={<MessageCircle size={11} />}
+                  label="Threads" postedLabel="On Threads"
+                  posted={thPosted} loading={thPosting} onClick={handleThreadsPost}
+                />
               )}
               {linkedInConnected && (
-                liPosted ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#0A66C2', opacity: 0.8 }}>
-                    <CheckCircle size={11} /> On LinkedIn
-                  </span>
-                ) : (
-                  <button onClick={handleLinkedInPost} disabled={liPosting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-60 transition-colors" style={{ backgroundColor: '#0A66C2' }}>
-                    {liPosting ? <Loader2 size={11} className="animate-spin" /> : <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>}
-                    {liPosting ? 'Posting…' : 'Share on LinkedIn'}
-                  </button>
-                )
+                <SocialPill
+                  brand="#0A66C2"
+                  icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>}
+                  label="LinkedIn" postedLabel="On LinkedIn"
+                  posted={liPosted} loading={liPosting} onClick={handleLinkedInPost}
+                />
               )}
               {twitterConnected && (
-                twPosted ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black/85 text-white">
-                    <CheckCircle size={11} /> Posted to X
-                  </span>
-                ) : (
-                  <button onClick={handleTwitterPost} disabled={twPosting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-black text-white hover:bg-[#1a1a1a] disabled:opacity-60 transition-colors">
-                    {twPosting ? <Loader2 size={11} className="animate-spin" /> : <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>}
-                    {twPosting ? 'Posting…' : 'Post to X'}
-                  </button>
-                )
+                <SocialPill
+                  brand="#000000"
+                  icon={<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>}
+                  label="X" postedLabel="On X"
+                  posted={twPosted} loading={twPosting} onClick={handleTwitterPost}
+                />
               )}
               {blueskyConnected && (
-                bsPosted ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#1185fe', opacity: 0.8 }}>
-                    <CheckCircle size={11} /> On Bluesky
-                  </span>
-                ) : (
-                  <button onClick={handleBlueskyPost} disabled={bsPosting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-60 transition-colors" style={{ backgroundColor: '#1185fe' }}>
-                    {bsPosting ? <Loader2 size={11} className="animate-spin" /> : <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.815 2.736 3.713 3.66 6.383 3.364-3.911.58-7.386 2.005-2.83 7.078 5.013 5.19 6.87-1.113 7.823-4.308.953 3.195 2.05 9.271 7.733 4.308 4.267-4.308 1.172-6.498-2.74-7.078 2.67.297 5.568-.628 6.383-3.364.246-.828.624-5.79.624-6.478 0-.69-.139-1.861-.902-2.206-.659-.298-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z"/></svg>}
-                    {bsPosting ? 'Posting…' : 'Post to Bluesky'}
-                  </button>
-                )
+                <SocialPill
+                  brand="#1185fe"
+                  icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.815 2.736 3.713 3.66 6.383 3.364-3.911.58-7.386 2.005-2.83 7.078 5.013 5.19 6.87-1.113 7.823-4.308.953 3.195 2.05 9.271 7.733 4.308 4.267-4.308 1.172-6.498-2.74-7.078 2.67.297 5.568-.628 6.383-3.364.246-.828.624-5.79.624-6.478 0-.69-.139-1.861-.902-2.206-.659-.298-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z"/></svg>}
+                  label="Bluesky" postedLabel="On Bluesky"
+                  posted={bsPosted} loading={bsPosting} onClick={handleBlueskyPost}
+                />
               )}
               {telegramConnected && (
-                tgPosted ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white" style={{ backgroundColor: '#229ED9', opacity: 0.8 }}>
-                    <CheckCircle size={11} /> On Telegram
-                  </span>
-                ) : (
-                  <button onClick={handleTelegramPost} disabled={tgPosting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-60 transition-colors" style={{ backgroundColor: '#229ED9' }}>
-                    {tgPosting ? <Loader2 size={11} className="animate-spin" /> : <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>}
-                    {tgPosting ? 'Posting…' : 'Send to Telegram'}
-                  </button>
-                )
+                <SocialPill
+                  brand="#229ED9"
+                  icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>}
+                  label="Telegram" postedLabel="On Telegram"
+                  posted={tgPosted} loading={tgPosting} onClick={handleTelegramPost}
+                />
               )}
-              <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#ff3b30] text-white hover:bg-[#e02d22] disabled:opacity-60 transition-colors">
-                {deleting ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
-                {deleting ? 'Deleting…' : 'Delete'}
-              </button>
-            </>
-          ) : (
-            <button onClick={onDismiss} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#ebebf0] hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-[#ff3b30] dark:hover:text-[#ff453a] transition-colors">
-              <X size={11} /> Ignore
-            </button>
+            </div>
           )}
-          </div>{/* end individual buttons */}
         </div>{/* end flex-col wrapper */}
       </div>
     </div>

@@ -97,6 +97,7 @@ const plans: PlanExt[] = [
       '150 full reviews per month (90 + 60 bonus)',
       'Everything in Growth',
       'X (Twitter) auto-post',
+      'Telegram channel auto-post',
       'One-click Publish All — site + every social in one shot',
       'Priority human support',
     ],
