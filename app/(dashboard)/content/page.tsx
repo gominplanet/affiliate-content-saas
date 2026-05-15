@@ -305,13 +305,244 @@ function GenerateButton({
   )
 }
 
+// ── Instagram Publish modal ───────────────────────────────────────────────────
+// Opens when the user clicks the Instagram pill on a video card. Walks them
+// through: upload vertical MP4 (if not yet) → pick mode (Reel/Story/Both) →
+// publish. Calls the parent's posted callbacks so the pill state updates.
+function InstagramPublishModal({
+  postId,
+  videoDbId,
+  alreadyReeled,
+  alreadyStoried,
+  onClose,
+  onPublishStart,
+  onPublishEnd,
+  onReelPosted,
+  onStoryPosted,
+}: {
+  postId: string
+  videoDbId: string
+  alreadyReeled: boolean
+  alreadyStoried: boolean
+  onClose: () => void
+  onPublishStart: () => void
+  onPublishEnd: () => void
+  onReelPosted: () => void
+  onStoryPosted: (affiliateUrl: string) => void
+}) {
+  const supabase = createBrowserClient()
+  // Pre-check: does the youtube_videos row already have an instagram_video_url?
+  const [existingUrl, setExistingUrl] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<string>('')
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  // Default mode: Both unless one's already been done — then only the missing one
+  const initialMode: 'reel' | 'story' | 'both' = alreadyReeled && !alreadyStoried ? 'story' : alreadyStoried && !alreadyReeled ? 'reel' : 'both'
+  const [mode, setMode] = useState<'reel' | 'story' | 'both'>(initialMode)
+  const [publishing, setPublishing] = useState(false)
+  const [publishError, setPublishError] = useState<string | null>(null)
+
+  // Load current upload state
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(supabase as any).from('youtube_videos').select('instagram_video_url').eq('id', videoDbId).single().then(({ data }: { data: { instagram_video_url: string | null } | null }) => {
+      if (data?.instagram_video_url) setExistingUrl(data.instagram_video_url)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoDbId])
+
+  async function handleFileUpload(file: File) {
+    if (!file) return
+    if (!file.type.startsWith('video/')) {
+      setUploadError('Please select a video file (MP4 recommended).')
+      return
+    }
+    // 100MB cap (Vercel Pro function payload limit, with headroom). For
+    // bigger videos the user has to compress first.
+    if (file.size > 100 * 1024 * 1024) {
+      setUploadError(`File is ${(file.size / 1024 / 1024).toFixed(1)}MB — Instagram videos must be under 100MB. Compress and retry.`)
+      return
+    }
+    setUploading(true)
+    setUploadError(null)
+    setUploadProgress('Uploading…')
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
+      const path = `${user.id}/${videoDbId}.${ext}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (supabase.storage as any).from('instagram-videos').upload(path, file, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: file.type || 'video/mp4',
+      })
+      if (upErr) throw new Error(upErr.message || 'Upload failed')
+      const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+      const publicUrl = urlData.publicUrl
+      // Persist on youtube_videos so the publish route can read it
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: updateErr } = await (supabase as any).from('youtube_videos').update({ instagram_video_url: publicUrl }).eq('id', videoDbId)
+      if (updateErr) throw new Error(updateErr.message || 'Save failed')
+      setExistingUrl(publicUrl)
+      setUploadProgress('')
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function publish() {
+    if (!existingUrl) {
+      setPublishError('Upload a vertical MP4 first.')
+      return
+    }
+    setPublishing(true)
+    setPublishError(null)
+    onPublishStart()
+    try {
+      const res = await fetch('/api/blog/instagram-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, mode }),
+      })
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (!res.ok) throw new Error(data.error || 'Publish failed')
+
+      if (data.reelId) onReelPosted()
+      if (data.storyId) onStoryPosted(data.affiliateUrl ?? '')
+
+      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+        setPublishError('Published with warnings: ' + data.warnings.join(' · '))
+        return
+      }
+      // Close on success
+      onClose()
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : 'Publish failed')
+    } finally {
+      setPublishing(false)
+      onPublishEnd()
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        onClick={e => e.stopPropagation()}
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+      >
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-7 h-7 rounded-lg flex items-center justify-center"
+                style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                  <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/>
+                </svg>
+              </div>
+              <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Publish to Instagram</h3>
+            </div>
+            <button onClick={onClose} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Step 1 — Video upload */}
+          <div className="mb-5">
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">1. Vertical video (9:16, MP4, &lt;100MB)</p>
+            {existingUrl ? (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-[#34c759]/5 border border-[#34c759]/30">
+                <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
+                  <CheckCircle size={12} className="text-[#34c759]" /> Video uploaded
+                </p>
+                <label className="text-[11px] text-[#0071e3] hover:underline cursor-pointer">
+                  Replace
+                  <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
+                </label>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#0071e3] cursor-pointer transition-colors">
+                <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
+                {uploading ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin text-[#0071e3] mb-2" />
+                    <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Uploading…'}</p>
+                  </>
+                ) : (
+                  <>
+                    <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
+                    <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Click to upload vertical MP4</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3–90 seconds, under 100MB</p>
+                  </>
+                )}
+              </label>
+            )}
+            {uploadError && <p className="text-[11px] text-[#ff3b30] mt-2">{uploadError}</p>}
+          </div>
+
+          {/* Step 2 — Mode picker */}
+          <div className="mb-5">
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">2. What to publish</p>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { val: 'reel', label: 'Reel only', hint: 'Max SEO caption + 20 hashtags. No clickable link (IG limitation).', disabled: alreadyReeled && !alreadyStoried },
+                { val: 'story', label: 'Story only', hint: 'Video + link sticker (you add the sticker manually after).', disabled: alreadyStoried && !alreadyReeled },
+                { val: 'both', label: 'Both', hint: 'Reel for reach + Story for affiliate clicks. Recommended.', disabled: alreadyReeled && alreadyStoried },
+              ] as const).map(opt => (
+                <button
+                  key={opt.val}
+                  onClick={() => setMode(opt.val)}
+                  disabled={opt.disabled}
+                  className={`p-3 rounded-lg border text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                    mode === opt.val
+                      ? 'border-[#E1306C] bg-[#E1306C]/5'
+                      : 'border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20'
+                  }`}
+                >
+                  <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{opt.label}</p>
+                  <p className="text-[10px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mt-1">{opt.hint}</p>
+                </button>
+              ))}
+            </div>
+            {(alreadyReeled || alreadyStoried) && (
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2 italic">
+                Already posted: {alreadyReeled && 'Reel'}{alreadyReeled && alreadyStoried && ' + '}{alreadyStoried && 'Story'}
+              </p>
+            )}
+          </div>
+
+          {/* Step 3 — Publish */}
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={onClose} disabled={publishing} className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] px-3 py-2">
+              Cancel
+            </button>
+            <button
+              onClick={publish}
+              disabled={!existingUrl || publishing}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }}
+            >
+              {publishing ? <><Loader2 size={12} className="animate-spin" /> Publishing…</> : <>Publish to Instagram</>}
+            </button>
+          </div>
+          {publishError && <p className="text-[11px] text-[#ff3b30] mt-3 break-all">{publishError}</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, userTier,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, userTier,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string } | null
+  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
   wpSiteUrl: string
   fbConnected: boolean
   pinterestConnected: boolean
@@ -320,6 +551,7 @@ function VideoCard({
   twitterConnected: boolean
   blueskyConnected: boolean
   telegramConnected: boolean
+  instagramConnected: boolean
   userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
@@ -348,6 +580,11 @@ function VideoCard({
   const [bsPosted, setBsPosted] = useState(!!post?.blueskyPostUri)
   const [tgPosting, setTgPosting] = useState(false)
   const [tgPosted, setTgPosted] = useState(!!post?.telegramMessageId)
+  const [igModalOpen, setIgModalOpen] = useState(false)
+  const [igPosting, setIgPosting] = useState(false)
+  const [igReelPosted, setIgReelPosted] = useState(!!post?.instagramReelId)
+  const [igStoryPosted, setIgStoryPosted] = useState(!!post?.instagramStoryId)
+  const [igStorySticker, setIgStorySticker] = useState<string | null>(null) // shown after Story publish
 
   // ── Publish All ───────────────────────────────────────────────────────────
   const [publishingAll, setPublishingAll] = useState(false)
@@ -435,6 +672,9 @@ function VideoCard({
     setPublishAllStep('')
   }
 
+  // Note: Instagram is excluded from Publish All because it requires
+  // per-post setup (vertical video upload + Reel/Story choice). Users
+  // trigger it explicitly via the Instagram pill on each card.
   const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected, blueskyConnected, telegramConnected].filter(Boolean).length
   const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted) || (blueskyConnected && !bsPosted) || (telegramConnected && !tgPosted)
   const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost)
@@ -701,6 +941,64 @@ function VideoCard({
                   posted={tgPosted} loading={tgPosting} onClick={handleTelegramPost}
                 />
               )}
+              {instagramConnected && (
+                <SocialPill
+                  brand="#E1306C"
+                  icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>}
+                  label="Instagram" postedLabel={igReelPosted && igStoryPosted ? 'On Instagram' : igReelPosted ? 'Reel posted' : 'Story posted'}
+                  posted={igReelPosted || igStoryPosted}
+                  loading={igPosting}
+                  onClick={() => setIgModalOpen(true)}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Instagram publish modal — opens when user clicks the IG pill */}
+          {igModalOpen && post?.postId && (
+            <InstagramPublishModal
+              postId={post.postId}
+              videoDbId={id}
+              alreadyReeled={igReelPosted}
+              alreadyStoried={igStoryPosted}
+              onClose={() => setIgModalOpen(false)}
+              onPublishStart={() => setIgPosting(true)}
+              onPublishEnd={() => setIgPosting(false)}
+              onReelPosted={() => setIgReelPosted(true)}
+              onStoryPosted={(affiliateUrl) => {
+                setIgStoryPosted(true)
+                setIgStorySticker(affiliateUrl)
+              }}
+            />
+          )}
+
+          {/* Post-Story sticker prompt — shown after a Story publish completes */}
+          {igStorySticker && (
+            <div className="rounded-xl border border-[#E1306C]/30 bg-[#E1306C]/5 p-3 flex items-start gap-3">
+              <AlertCircle size={14} className="text-[#E1306C] mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Story posted — add the affiliate link sticker on your phone (5 sec)</p>
+                <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
+                  Instagram&apos;s API doesn&apos;t expose link stickers. Open Instagram → your Story → tap sticker icon → Link sticker → paste:
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <code className="text-[11px] font-mono px-2 py-1 rounded bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#0071e3] truncate max-w-[260px]">
+                    {igStorySticker}
+                  </code>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(igStorySticker); }}
+                    className="text-[11px] font-semibold px-2 py-1 rounded bg-[#E1306C] text-white hover:opacity-90"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    onClick={() => setIgStorySticker(null)}
+                    className="text-[11px] text-[#86868b] hover:text-[#1d1d1f]"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>{/* end flex-col wrapper */}
@@ -721,7 +1019,7 @@ function saveDismissed(set: Set<string>) {
 export default function ContentPage() {
   const supabase = createBrowserClient()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
   const [wpSiteUrl, setWpSiteUrl] = useState('')
   const [fbConnected, setFbConnected] = useState(false)
   const [pinterestConnected, setPinterestConnected] = useState(false)
@@ -730,6 +1028,7 @@ export default function ContentPage() {
   const [twitterConnected, setTwitterConnected] = useState(false)
   const [blueskyConnected, setBlueskyConnected] = useState(false)
   const [telegramConnected, setTelegramConnected] = useState(false)
+  const [instagramConnected, setInstagramConnected] = useState(false)
   const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -772,8 +1071,8 @@ export default function ContentPage() {
     const [{ data: vids }, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
       sb.from('youtube_videos').select('*').eq('user_id', user.id).order('published_at', { ascending: false }),
       sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,tier').eq('user_id', user.id).single(),
-      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id').eq('user_id', user.id).eq('status', 'published'),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tier').eq('user_id', user.id).single(),
+      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
     ])
 
     const b = brand as Record<string, unknown> | null
@@ -792,10 +1091,11 @@ export default function ContentPage() {
     setTwitterConnected(!!(i as Record<string, unknown>)?.twitter_access_token)
     setBlueskyConnected(!!(i as Record<string, unknown>)?.bluesky_handle && !!(i as Record<string, unknown>)?.bluesky_app_password)
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
+    setInstagramConnected(!!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
     setUserTier(((i as Record<string, unknown>)?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free')
     setVideos((vids as Record<string, unknown>[]) ?? [])
 
-    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string }> = {}
+    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       if (p.video_id && p.wordpress_url) {
         postMap[p.video_id as string] = {
@@ -810,6 +1110,8 @@ export default function ContentPage() {
           twitterPostId: p.twitter_post_id as string | undefined,
           blueskyPostUri: p.bluesky_post_uri as string | undefined,
           telegramMessageId: p.telegram_message_id as string | undefined,
+          instagramReelId: p.instagram_reel_id as string | undefined,
+          instagramStoryId: p.instagram_story_id as string | undefined,
         }
       }
     }
@@ -1427,6 +1729,7 @@ export default function ContentPage() {
                     twitterConnected={twitterConnected}
                     blueskyConnected={blueskyConnected}
                     telegramConnected={telegramConnected}
+                    instagramConnected={instagramConnected}
                     userTier={userTier}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}

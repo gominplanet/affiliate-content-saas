@@ -816,6 +816,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [tgConnecting, setTgConnecting] = useState(false)
   const [tgDisconnecting, setTgDisconnecting] = useState(false)
   const [tgNotice, setTgNotice] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [instagram, setInstagram] = useState({ connected: false, username: '' })
+  const [igDisconnecting, setIgDisconnecting] = useState(false)
+  const [igNotice, setIgNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
@@ -864,6 +867,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         channelId: row.telegram_channel_id ?? '',
         channelTitle: row.telegram_channel_title ?? '',
       })
+      setInstagram({
+        connected: !!row.instagram_access_token && !!row.instagram_user_id,
+        username: row.instagram_username ?? '',
+      })
       setGeniuslinkKey(row.geniuslink_api_key ?? '')
       setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
       setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
@@ -898,6 +905,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const ytError = searchParams.get('youtube_oauth_error')
     if (ytConnected) { setYtOAuthNotice({ ok: true, msg: 'YouTube connected!' }); setYoutubeOAuthConnected(true); load() }
     if (ytError) setYtOAuthNotice({ ok: false, msg: `YouTube error: ${ytError}` })
+    const igConnected = searchParams.get('instagram_connected')
+    const igError = searchParams.get('instagram_error')
+    if (igConnected) { setIgNotice({ ok: true, msg: 'Instagram connected!' }); load() }
+    if (igError) setIgNotice({ ok: false, msg: `Instagram error: ${decodeURIComponent(igError)}` })
   }, [searchParams, load])
 
   useEffect(() => { load() }, [load])
@@ -1097,6 +1108,17 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         setTgNotice(null)
       }
     } finally { setTgDisconnecting(false) }
+  }
+
+  async function disconnectInstagram() {
+    setIgDisconnecting(true)
+    try {
+      const res = await fetch('/api/auth/instagram/disconnect', { method: 'POST' })
+      if (res.ok) {
+        setInstagram({ connected: false, username: '' })
+        setIgNotice(null)
+      }
+    } finally { setIgDisconnecting(false) }
   }
 
   if (loading) return (
@@ -1555,6 +1577,60 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               {tgConnecting ? 'Connecting…' : 'Connect Telegram'}
             </button>
           </div>
+        )}
+      </div>
+
+      {/* Instagram — Pro */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+              <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678c-3.405 0-6.162 2.76-6.162 6.162 0 3.405 2.76 6.162 6.162 6.162 3.405 0 6.162-2.76 6.162-6.162 0-3.405-2.76-6.162-6.162-6.162zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Instagram <span className="ml-1 text-[10px] font-medium text-[#0071e3] uppercase tracking-wider">Pro</span></p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Publish vertical reviews as Reels or Stories to your IG account</p>
+          </div>
+          {instagram.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+          MVP publishes Reels (SEO-optimized caption + hashtags, no clickable link — Instagram limitation) and Stories (video with the affiliate URL surfaced for you to add as a Link Sticker on your phone — 5 seconds of manual work since Instagram doesn&apos;t expose link stickers via API).
+        </p>
+        <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
+          <li>Your Instagram must be a <strong>Business or Creator</strong> account (Settings → Account type and tools → Switch to professional account).</li>
+          <li>Click <strong>Connect Instagram</strong> below — you&apos;ll be redirected to Instagram to authorize MVP Affiliate.</li>
+          <li>Upload a vertical 9:16 MP4 for each review in <a href="/studio" className="text-[#0071e3] hover:underline">YouTube Studio</a> — that&apos;s the video Instagram will publish.</li>
+          <li>From <a href="/content" className="text-[#0071e3] hover:underline">Library & Social Push</a>, click the Instagram pill on any review → choose Reel, Story, or Both.</li>
+        </ol>
+
+        {igNotice && <p className={`text-xs mb-3 ${igNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{igNotice.msg}</p>}
+
+        {instagram.connected ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
+              Connected as <strong>@{instagram.username}</strong>
+            </p>
+            <button onClick={disconnectInstagram} disabled={igDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {igDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+          </div>
+        ) : (
+          <a
+            href="/api/auth/instagram"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+              <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/>
+            </svg>
+            Connect Instagram
+          </a>
         )}
       </div>
 

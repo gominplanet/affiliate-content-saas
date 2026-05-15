@@ -27,6 +27,7 @@ const platforms = [
   { label: 'Twitter / X',  status: 'live'    as const, color: '#000000', logo: 'x' },
   { label: 'Bluesky',      status: 'live'    as const, color: '#1185fe', logo: 'bluesky' },
   { label: 'Telegram',     status: 'pro'     as const, color: '#229ED9', logo: 'telegram' },
+  { label: 'Instagram',    status: 'pro'     as const, color: '#E1306C', logo: 'instagram' },
   { label: 'Email digest', status: 'roadmap' as const, color: '#34c759', logo: 'email' },
 ]
 
@@ -77,7 +78,7 @@ const plans = [
     regular: 499,
     limit: '150 posts / month',
     bonus: '90 + 60 bonus posts',
-    features: ['One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off)', 'Everything in Growth', 'X (Twitter) auto-post', 'Telegram channel auto-post', 'One-click Publish All to socials', 'Priority support'],
+    features: ['One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off)', 'Everything in Growth', 'X (Twitter) auto-post', 'Telegram channel auto-post', 'Instagram Reels + Stories auto-publish', 'One-click Publish All to socials', 'Priority support'],
     cta: 'Get Pro',
     href: '/pricing',
     highlight: false,
@@ -429,7 +430,7 @@ export default function LandingPage() {
                 <CompareRow label="Verdict + rating + Buy/Skip blocks built in" us="check" gen="manual" free="manual" diy="manual" />
                 <CompareRow label="Affiliate disclaimer auto-inserted" us="check" gen="cross" free="manual" diy="manual" />
                 <CompareRow label="One-click publish to WordPress" us="check" gen="cross" free="manual" diy="manual" />
-                <CompareRow label="Fan-out to FB / Threads / LI / Pinterest / X / Bluesky / Telegram" us="check" gen="manual" free="manual" diy="cross" />
+                <CompareRow label="Fan-out to FB / Threads / LI / Pinterest / X / Bluesky / Telegram / Instagram" us="check" gen="manual" free="manual" diy="cross" />
                 <CompareRow label="Stays in your brand voice across posts" us="check" gen="manual" free="manual" diy="manual" />
                 <CompareRow label="Cost per 30 reviews / month" us="$49" gen="$30–80" free="$600–3000" diy="Your time" />
               </tbody>
@@ -914,6 +915,12 @@ function PlatformLogo({ name }: { name: string }) {
       return (
         <svg {...props}>
           <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+        </svg>
+      )
+    case 'instagram':
+      return (
+        <svg {...props}>
+          <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z" />
         </svg>
       )
     case 'email':

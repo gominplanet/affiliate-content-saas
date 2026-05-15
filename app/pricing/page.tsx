@@ -98,6 +98,7 @@ const plans: PlanExt[] = [
       'Everything in Growth',
       'X (Twitter) auto-post',
       'Telegram channel auto-post',
+      'Instagram Reels + Stories auto-publish',
       'One-click Publish All — site + every social in one shot',
       'Priority human support',
     ],
