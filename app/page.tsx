@@ -160,7 +160,8 @@ export default function LandingPage() {
               AI agents ships a long-form, SEO-optimized review on your branded review site, a
               click-tuned YouTube description with affiliate links inserted cleanly, video tags and
               hashtags ranked for discovery, a click-magnet thumbnail — plus fan-out posts to
-              Facebook, Threads, LinkedIn, Pinterest, X, Bluesky and Telegram.
+              Instagram (Reels, Feed posts and Stories), Facebook, Threads, LinkedIn, Pinterest, X,
+              Bluesky and Telegram.
               <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. ~2 hours of unpaid post-production per video → gone.</span>
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3">
@@ -250,7 +251,7 @@ export default function LandingPage() {
               n="03"
               icon={<Globe size={20} />}
               title="Two clicks. Both platforms live."
-              desc="Click 1 pushes the description, tags, hashtags and thumbnail back to YouTube. Click 2 publishes the review on your site and fans it out to every social you've connected — Facebook, Threads, LinkedIn, Pinterest, X, Bluesky, Telegram."
+              desc="Click 1 pushes the description, tags, hashtags and thumbnail back to YouTube. Click 2 publishes the review on your site and fans it out to every social you've connected — Instagram (Reels for Shorts, auto-composed image posts + Stories for long-form), Facebook, Threads, LinkedIn, Pinterest, X, Bluesky, Telegram."
               accent="#34c759"
             />
           </div>
@@ -303,6 +304,81 @@ export default function LandingPage() {
             Every agent feeds the next. The result lands in your Studio, ready for you to review and publish.
             You always have the final say before anything goes live.
           </p>
+        </div>
+      </section>
+
+      {/* ── Instagram fan-out (Pro flagship) ───────────────────────────────── */}
+      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-white via-[#fef6f9] to-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14 max-w-3xl mx-auto">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-gradient-to-r from-[#f09433]/15 via-[#dc2743]/15 to-[#bc1888]/15 border border-[#dc2743]/30 text-[#bc1888]">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>
+              Pro flagship · Instagram fan-out
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">
+              Every review, automatically on Instagram.
+            </h2>
+            <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
+              Most affiliate tools stop at the blog post. We go further — one click and your review
+              lands on your Instagram feed and Stories, formatted for each surface, with captions
+              and hashtags written in your voice. No Canva, no manual upload, no copy-pasting links.
+            </p>
+          </div>
+
+          {/* Two flows side-by-side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+            {/* Vertical Shorts → Reels */}
+            <div className="rounded-2xl bg-white border border-gray-200 p-6 sm:p-7 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ background: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' }}>
+                  9:16
+                </div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#bc1888]">Vertical Shorts</p>
+              </div>
+              <h3 className="text-xl font-bold text-[#1d1d1f] mb-2 leading-tight">Your YouTube Shorts → Instagram Reels + Stories</h3>
+              <p className="text-sm text-[#3a3a3c] leading-relaxed mb-4">
+                Upload your vertical MP4 once. We post it as a Reel with an AI-written caption (hook + 20 hashtags tuned for Instagram SEO) and as a Story so you can drop a Link sticker for affiliate clicks.
+              </p>
+              <ul className="text-[13px] text-[#3a3a3c] space-y-2">
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Reel caption matches your brand voice</li>
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Preview & edit before publishing</li>
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Affiliate URL surfaced for Story sticker</li>
+              </ul>
+            </div>
+
+            {/* Horizontal → Image post */}
+            <div className="rounded-2xl bg-white border border-gray-200 p-6 sm:p-7 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ background: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' }}>
+                  4:5
+                </div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#bc1888]">Long-form videos</p>
+              </div>
+              <h3 className="text-xl font-bold text-[#1d1d1f] mb-2 leading-tight">Your long-form video → an auto-composed Instagram post</h3>
+              <p className="text-sm text-[#3a3a3c] leading-relaxed mb-4">
+                We build a 1080×1350 feed image from your YouTube thumbnail, blog title, excerpt and brand colors — plus a 1080×1920 Story variant that fits IG&apos;s safe zones. Zero design work.
+              </p>
+              <ul className="text-[13px] text-[#3a3a3c] space-y-2">
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Brand-color background, your logo + name</li>
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Separate Story image (no zoom-crop)</li>
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Regenerate any time, no Canva subscription</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* CTA card */}
+          <div className="rounded-2xl p-6 sm:p-8 text-center max-w-3xl mx-auto border border-[#dc2743]/20" style={{ background: 'linear-gradient(135deg, #fff5f8 0%, #fef6f0 100%)' }}>
+            <p className="text-sm font-semibold mb-2 uppercase tracking-wider" style={{ color: '#bc1888' }}>Pro plan</p>
+            <p className="text-xl sm:text-2xl font-bold text-[#1d1d1f] leading-tight mb-3">
+              The only tool that closes the Instagram loop
+            </p>
+            <p className="text-sm sm:text-base text-[#3a3a3c] mb-5 max-w-xl mx-auto">
+              Other affiliate tools leave Instagram as a manual chore. We compose, write, and publish — feed and Stories — from the same source. Pro plan unlocks the full fan-out.
+            </p>
+            <Link href="/pricing" className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' }}>
+              See Pro pricing <ArrowRight size={15} />
+            </Link>
+          </div>
         </div>
       </section>
 
