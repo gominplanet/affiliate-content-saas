@@ -105,8 +105,9 @@ export async function getVideoDetails(videoIdOrUrl: string): Promise<YouTubeVide
   const url = `${BASE}/v2/video/details?${params.toString()}`
   const res = await fetch(url, {
     headers: {
-      'X-RapidAPI-Key': apiKey,
-      'X-RapidAPI-Host': RAPID_HOST,
+      'Content-Type': 'application/json',
+      'x-rapidapi-key': apiKey,
+      'x-rapidapi-host': RAPID_HOST,
     },
   })
   if (!res.ok) {
