@@ -145,14 +145,16 @@ export default function LandingPage() {
               15 free posts. No card. No catch.
             </div>
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.05] mb-5 text-[#1d1d1f]">
-              Your YouTube draft.
+              One YouTube draft in.
               <br />
-              <span className="text-[#0071e3]">A full review site in one click.</span>
+              <span className="text-[#0071e3]">An entire review business out.</span>
             </h1>
             <p className="text-lg sm:text-xl text-[#3a3a3c] max-w-xl mx-auto lg:mx-0 mb-8 leading-relaxed">
-              Drop in a YouTube draft. We generate the review post, a YouTube description, hashtags,
-              video tags, and a thumbnail — and push the description + tags + thumbnail straight back
-              to your YouTube draft. Ready to publish on both.
+              Record the video. We do the rest. From a single unlisted YouTube draft, an army of AI
+              agents writes a full SEO-optimized review post on your site, an irresistible YouTube
+              description with affiliate links, hashtags and video tags ranked for discovery, plus a
+              click-magnet thumbnail — and pushes every piece back to YouTube Studio for you.
+              <span className="font-semibold text-[#1d1d1f]"> 45 minutes of busywork, gone. One click. Both platforms live.</span>
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3">
               <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
