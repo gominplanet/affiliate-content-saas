@@ -147,14 +147,15 @@ export default function LandingPage() {
             <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.05] mb-5 text-[#1d1d1f]">
               One YouTube draft in.
               <br />
-              <span className="text-[#0071e3]">An entire review business out.</span>
+              <span className="text-[#0071e3]">An entire affiliate engine out.</span>
             </h1>
             <p className="text-lg sm:text-xl text-[#3a3a3c] max-w-xl mx-auto lg:mx-0 mb-8 leading-relaxed">
-              Record the video. We do the rest. From a single unlisted YouTube draft, an army of AI
-              agents writes a full SEO-optimized review post on your site, an irresistible YouTube
-              description with affiliate links, hashtags and video tags ranked for discovery, plus a
-              click-magnet thumbnail — and pushes every piece back to YouTube Studio for you.
-              <span className="font-semibold text-[#1d1d1f]"> 45 minutes of busywork, gone. One click. Both platforms live.</span>
+              Record the video. We do everything else. From one unlisted YouTube draft, an army of
+              AI agents ships a long-form, SEO-optimized review on your branded review site, a
+              click-tuned YouTube description with affiliate links inserted cleanly, video tags and
+              hashtags ranked for discovery, a click-magnet thumbnail — plus fan-out posts to
+              Facebook, Threads, LinkedIn, Pinterest, X and Bluesky.
+              <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. 45 minutes of unpaid busywork → gone.</span>
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3">
               <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
@@ -217,8 +218,10 @@ export default function LandingPage() {
             </span>
             <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">Your YouTube Studio, on autopilot.</h2>
             <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
-              Save a YouTube draft and forget about it. MVP Affiliate pulls the video, generates everything
-              you&apos;d normally hate writing — and sends it all back to your draft, ready to publish.
+              Save an unlisted draft in YouTube Studio. MVP Affiliate pulls the video, scrapes the
+              product on Amazon, deploys an agent team to write everything you&apos;d normally hate
+              writing, and pushes the finished YouTube package back into Studio for you. The
+              matching long-form review goes live on your branded site with one more click.
             </p>
           </div>
 
@@ -226,22 +229,22 @@ export default function LandingPage() {
             <StepCard
               n="01"
               icon={<Wand2 size={20} />}
-              title="Save a draft in YouTube Studio"
-              desc="That's it. Title it, set the video file, save as draft. No description, no tags, no thumbnail needed."
+              title="Save an unlisted draft"
+              desc="Title it with the Amazon ASIN, upload the video, save. No description, no tags, no thumbnail, no hashtags. Walk away."
               accent="#ff0000"
             />
             <StepCard
               n="02"
               icon={<Sparkles size={20} />}
-              title="MVP generates the full package"
-              desc="A full blog review · a YouTube description with affiliate links · 10 SEO video tags · 5 hashtags · a clickable thumbnail. All in your voice."
+              title="The agent team builds everything"
+              desc="A full editorial review for your site · a YouTube description with affiliate links · 10 SEO video tags · 5 hashtags · a click-magnet thumbnail. Written in your voice from your Brand Profile."
               accent="#5856d6"
             />
             <StepCard
               n="03"
               icon={<Globe size={20} />}
-              title="One click. Pushed back to YouTube."
-              desc="The description, tags, hashtags, and thumbnail land on your YouTube draft — automatically. Your review post goes live on your site at the same time."
+              title="Two clicks. Both platforms live."
+              desc="Click 1 pushes the description, tags, hashtags and thumbnail back to YouTube. Click 2 publishes the review on your site and fans it out to every social you've connected — Facebook, Threads, LinkedIn, Pinterest, X, Bluesky."
               accent="#34c759"
             />
           </div>
@@ -249,11 +252,12 @@ export default function LandingPage() {
           <div className="rounded-2xl bg-gradient-to-br from-[#fff5f5] to-[#fff] border border-red-100 p-6 sm:p-8 text-center max-w-3xl mx-auto">
             <p className="text-sm font-semibold text-[#ff0000] mb-2 uppercase tracking-wider">The math creators care about</p>
             <p className="text-xl sm:text-2xl font-bold text-[#1d1d1f] leading-tight mb-2">
-              ~45 minutes of YouTube admin → under 5 minutes
+              ~3 hours of post-production per video → under 5 minutes
             </p>
             <p className="text-sm sm:text-base text-[#3a3a3c]">
-              Description writing, tag research, hashtag picking, thumbnail editing — the unpaid tax on every video.
-              We do all of it, automatically, every time.
+              YouTube description, tag research, hashtag picking, thumbnail design, blog post writing,
+              affiliate link insertion, social post copy for every platform — the unpaid tax on every
+              upload. We run all of it, every time, while you record the next one.
             </p>
           </div>
         </div>
