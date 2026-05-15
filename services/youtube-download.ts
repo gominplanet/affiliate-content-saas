@@ -121,11 +121,17 @@ export async function getVideoDetails(videoIdOrUrl: string): Promise<YouTubeVide
       url: url.replace(apiKey.slice(0, 8) + '*'.repeat(apiKey.length - 8), 'KEY_MASKED'),
       bodyPreview: errBody.slice(0, 300),
     })
+    if (res.status === 404 && errBody.includes('VideoNotFound')) {
+      throw new Error(`This YouTube Short can't be fetched automatically (it may be age-restricted, copyright-claimed, or region-locked). Try uploading the MP4 manually instead.`)
+    }
     throw new Error(`YouTube downloader API failed (HTTP ${res.status}): ${errBody.slice(0, 200)}`)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = await res.json() as any
   if (data?.status === false || data?.errorId) {
+    if (data?.errorId === 'VideoNotFound') {
+      throw new Error(`This YouTube Short can't be fetched automatically (it may be age-restricted, copyright-claimed, or region-locked). Try uploading the MP4 manually instead.`)
+    }
     throw new Error(`YouTube downloader returned error: ${data?.reason ?? data?.errorId ?? 'unknown'}`)
   }
 
