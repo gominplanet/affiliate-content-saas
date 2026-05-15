@@ -256,6 +256,99 @@ export class YouTubeOAuthService {
   // push the full set of Studio-side toggles (privacy, schedule, made-for-
   // kids, paid promotion, etc.) in a single videos.update call.
 
+  /**
+   * List the authenticated user's recent vertical/Short videos.
+   *
+   * Heuristic: a video is a Short if duration ≤ 60s OR its title/description
+   * contains "#Shorts" (creator convention). We pull the most recent N
+   * uploads, fetch contentDetails (duration) in a single batched videos.list,
+   * and filter.
+   *
+   * If `asin` is provided, the matching Short (with that ASIN in the title)
+   * is moved to the front of the returned list so the UI can highlight it
+   * as the auto-suggested choice.
+   */
+  async getMyShorts(opts: { limit?: number; asin?: string | null } = {}): Promise<Array<{
+    youtubeVideoId: string
+    title: string
+    thumbnailUrl: string
+    durationSeconds: number
+    publishedAt: string
+    detectedAsin: string | null
+    isAsinMatch: boolean
+  }>> {
+    const limit = opts.limit ?? 50
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const channelData = await this.get<any>('/channels', { part: 'contentDetails', mine: 'true' })
+    const uploadsPlaylistId = channelData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads
+    if (!uploadsPlaylistId) return []
+
+    // Pull the most recent N uploads (1 page = max 50)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const playlistData = await this.get<any>('/playlistItems', {
+      part: 'snippet',
+      playlistId: uploadsPlaylistId,
+      maxResults: String(Math.min(limit, 50)),
+    })
+    const items = playlistData.items ?? []
+    if (items.length === 0) return []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const videoIds = items.map((i: any) => i.snippet.resourceId.videoId).join(',')
+
+    // Get contentDetails (duration) + snippet for each
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const videosData = await this.get<any>('/videos', {
+      part: 'snippet,contentDetails',
+      id: videoIds,
+    })
+
+    const asinRe = /\b([A-Z0-9]{10})\b/
+    const SHORTS_TAG_RE = /#shorts\b/i
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shorts = (videosData.items ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((v: any) => {
+        const isoDuration = v.contentDetails?.duration ?? 'PT0S'
+        // Parse ISO 8601 duration → seconds (only seconds + minutes since
+        // Shorts are < 60s but #Shorts-tagged videos might be longer)
+        const m = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
+        const hours = m?.[1] ? parseInt(m[1], 10) : 0
+        const minutes = m?.[2] ? parseInt(m[2], 10) : 0
+        const seconds = m?.[3] ? parseInt(m[3], 10) : 0
+        const durationSeconds = hours * 3600 + minutes * 60 + seconds
+
+        const title = v.snippet.title ?? ''
+        const description = v.snippet.description ?? ''
+        const taggedAsShort = SHORTS_TAG_RE.test(title) || SHORTS_TAG_RE.test(description)
+        const looksLikeShort = durationSeconds > 0 && durationSeconds <= 60
+        if (!looksLikeShort && !taggedAsShort) return null
+
+        const asinMatch = title.match(asinRe)
+        const detectedAsin = asinMatch ? asinMatch[1] : null
+        const isAsinMatch = opts.asin ? detectedAsin === opts.asin : false
+
+        return {
+          youtubeVideoId: v.id,
+          title,
+          thumbnailUrl: v.snippet.thumbnails?.medium?.url ?? v.snippet.thumbnails?.default?.url ?? '',
+          durationSeconds,
+          publishedAt: v.snippet.publishedAt,
+          detectedAsin,
+          isAsinMatch,
+        }
+      })
+      .filter((v: unknown): v is NonNullable<typeof v> => v !== null)
+
+    // Sort: ASIN match first, then by newest
+    shorts.sort((a: { isAsinMatch: boolean; publishedAt: string }, b: { isAsinMatch: boolean; publishedAt: string }) => {
+      if (a.isAsinMatch && !b.isAsinMatch) return -1
+      if (!a.isAsinMatch && b.isAsinMatch) return 1
+      return b.publishedAt.localeCompare(a.publishedAt)
+    })
+
+    return shorts
+  }
+
   /** Return the authenticated user's own playlists (id + title). */
   async listMyPlaylists(): Promise<Array<{ id: string; title: string }>> {
     const all: Array<{ id: string; title: string }> = []
