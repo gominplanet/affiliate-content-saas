@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import Header from '@/components/layout/Header'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
+import WhatsNew from '@/components/dashboard/WhatsNew'
 import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers } from 'lucide-react'
 import Link from 'next/link'
 
@@ -102,6 +103,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      <WhatsNew />
       <SetupChecklist />
       <ChannelStats />
 
