@@ -1563,6 +1563,13 @@ function SetupPageInner() {
   const [tab, setTab] = useState<'wordpress' | 'integrations'>(
     searchParams.get('tab') === 'integrations' ? 'integrations' : 'wordpress'
   )
+
+  // Keep tab in sync with the URL so sidebar links between "Blog Set Up"
+  // and "Integrations" (both at /setup) actually switch tabs when clicked.
+  useEffect(() => {
+    const next = searchParams.get('tab') === 'integrations' ? 'integrations' : 'wordpress'
+    setTab(prev => prev === next ? prev : next)
+  }, [searchParams])
   const [mode, setMode] = useState<Mode>(null)
   const [step, setStep] = useState<Step>(1)
   const [wordpressUrl, setWordpressUrl] = useState('')

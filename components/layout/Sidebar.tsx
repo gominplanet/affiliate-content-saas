@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import {
   LayoutDashboard,
@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ChevronRight,
   Wrench,
+  Plug,
   CreditCard,
   Sun,
   Moon,
@@ -27,13 +28,17 @@ import {
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
 
+// New nav order — Setup is split into two: Blog Set Up (WordPress wizard)
+// and Integrations (3rd-party social connectors). Both routes go to /setup
+// with different ?tab= values; active highlighting uses the query param.
 const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/content', label: 'Content', icon: PlaySquare },
-  { href: '/studio', label: 'YouTube Studio', icon: Clapperboard },
-  { href: '/brand', label: 'Brand Profile', icon: Palette },
-  { href: '/setup', label: 'Site & Integrations', icon: Wrench },
-  { href: '/customize', label: 'Customize Blog', icon: Paintbrush },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, matchKind: 'exact' as const },
+  { href: '/setup', label: 'Blog Set Up', icon: Wrench, matchKind: 'setup-wp' as const },
+  { href: '/setup?tab=integrations', label: 'Integrations', icon: Plug, matchKind: 'setup-int' as const },
+  { href: '/brand', label: 'Brand Profile', icon: Palette, matchKind: 'prefix' as const },
+  { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' as const },
+  { href: '/studio', label: 'YouTube Studio', icon: Clapperboard, matchKind: 'prefix' as const },
+  { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' as const },
 ]
 
 const secondaryNav = [
@@ -43,6 +48,7 @@ const secondaryNav = [
 
 export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: string; wpSiteUrl?: string | null }) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const { theme, setTheme } = useTheme()
   const supabase = createBrowserClient()
@@ -110,6 +116,15 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(href)
 
+  // Tab-aware active state for Blog Set Up vs Integrations (both live at /setup)
+  const isActiveTabbed = (matchKind: 'exact' | 'prefix' | 'setup-wp' | 'setup-int', href: string) => {
+    if (matchKind === 'exact')      return pathname === href
+    if (matchKind === 'setup-wp')   return pathname.startsWith('/setup') && searchParams?.get('tab') !== 'integrations'
+    if (matchKind === 'setup-int')  return pathname.startsWith('/setup') && searchParams?.get('tab') === 'integrations'
+    // 'prefix'
+    return pathname.startsWith(href)
+  }
+
   return (
     <aside className="sidebar flex flex-col h-screen sticky top-0 overflow-y-auto">
       {/* Logo */}
@@ -128,8 +143,8 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
       {/* Primary nav */}
       <nav className="flex-1 px-3 pt-4 pb-2 flex flex-col gap-0.5">
         <p className="section-label px-2 mb-2">Workspace</p>
-        {nav.map(({ href, label, icon: Icon }) => (
-          <Link key={href} href={href} className={cn('nav-item', isActive(href) && 'active')}>
+        {nav.map(({ href, label, icon: Icon, matchKind }) => (
+          <Link key={label} href={href} className={cn('nav-item', isActiveTabbed(matchKind, href) && 'active')}>
             <Icon size={16} className="flex-shrink-0" />
             {label}
           </Link>
@@ -151,16 +166,19 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
             Only renders when a site is connected; otherwise the wp-admin URL
             is meaningless. */}
         {wpSiteUrl && (
-          <a
-            href={`${wpSiteUrl.replace(/\/$/, '')}/wp-admin`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="nav-item"
-            title="Open your WordPress admin in a new tab"
+          <button
+            onClick={() => {
+              const ok = window.confirm(
+                'Heads up: editing posts, theme files or plugin settings directly in WordPress can break the MVP Affiliate setup — theme + plugin sync, Brand Profile push, and the cache layer all depend on MVP being the source of truth.\n\nYou\'re doing this at your own risk. Continue?'
+              )
+              if (ok) window.open(`${wpSiteUrl.replace(/\/$/, '')}/wp-admin`, '_blank', 'noopener,noreferrer')
+            }}
+            className="nav-item w-full text-left"
+            title="Open your WordPress admin (shows a warning first)"
           >
             <KeyRound size={16} className="flex-shrink-0" style={{ color: '#5856d6' }} />
             <span style={{ color: '#5856d6', fontWeight: 500 }}>WP Admin</span>
-          </a>
+          </button>
         )}
 
         {/* Purge cache — prominent global action, always active */}

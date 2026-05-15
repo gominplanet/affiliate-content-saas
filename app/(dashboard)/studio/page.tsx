@@ -765,16 +765,44 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 </div>
               </div>
 
-              {/* Pinned comment */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned comment</label>
-                  <button onClick={() => copy(generated.pinnedComment, 'pin')} className="text-[10px] text-[#0071e3] hover:underline flex items-center gap-0.5">
-                    <Copy size={10} /> {copied === 'pin' ? 'Copied!' : 'Copy'}
-                  </button>
+              {/* Manual: paste in YouTube Studio — items YT API can't push */}
+              <div className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 p-4">
+                <div className="flex items-start gap-2 mb-3">
+                  <AlertCircle size={14} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Manual: paste these in YouTube Studio after Apply</p>
+                    <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                      YouTube&apos;s API doesn&apos;t allow programmatic pinned comments or end-screen elements. We generate the content — you paste it in (90 seconds).
+                    </p>
+                  </div>
                 </div>
-                <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-gray-50 dark:bg-white/5 leading-relaxed">
-                  {generated.pinnedComment}
+
+                {/* Pinned comment */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1. Pinned comment</label>
+                    <button onClick={() => copy(generated.pinnedComment, 'pin')} className="text-[10px] text-[#0071e3] hover:underline flex items-center gap-0.5">
+                      <Copy size={10} /> {copied === 'pin' ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-[#d2d2d7] dark:border-[#3a3a3c] leading-relaxed">
+                    {generated.pinnedComment}
+                  </div>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">After the video is public: post this as a comment, then click the three-dot menu → <strong>Pin</strong>.</p>
+                </div>
+
+                {/* End-screen checklist */}
+                <div>
+                  <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] block mb-1.5">2. End screen (last 5–20 seconds)</label>
+                  <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-[#d2d2d7] dark:border-[#3a3a3c] leading-relaxed">
+                    <p className="font-semibold mb-1.5">Recommended layout — three elements:</p>
+                    <ul className="list-disc list-inside flex flex-col gap-1 text-[#3a3a3c] dark:text-[#ebebf0]">
+                      <li><strong>Subscribe button</strong> — bottom-right corner</li>
+                      <li><strong>Video element</strong> — bottom-left, set to &quot;Best for viewer&quot; (YouTube picks your top related video automatically)</li>
+                      <li><strong>Playlist or video</strong> — top-right, link to a related review or your channel&apos;s top playlist</li>
+                    </ul>
+                  </div>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">In Studio: open the video → <strong>Editor</strong> → <strong>End screen</strong> → add elements at the timestamp of your outro.</p>
                 </div>
               </div>
 
