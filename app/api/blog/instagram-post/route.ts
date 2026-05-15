@@ -45,9 +45,16 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const body = await request.json() as { postId?: string; mode?: 'reel' | 'story' | 'both' }
+    const body = await request.json() as {
+      postId?: string
+      mode?: 'reel' | 'story' | 'both'
+      dryRun?: boolean      // generate caption + affiliate URL without publishing
+      caption?: string      // user-edited caption to use instead of fresh-generating
+    }
     const postId = body.postId
     const mode = body.mode ?? 'reel'
+    const dryRun = body.dryRun === true
+    const overrideCaption = body.caption
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
     if (!['reel', 'story', 'both'].includes(mode)) {
       return NextResponse.json({ error: 'mode must be reel | story | both' }, { status: 400 })
@@ -74,8 +81,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Instagram not connected. Visit Setup → Integrations to connect your Instagram account.' }, { status: 400 })
     }
 
-    // Refresh token if it's < 7 days from expiry — keeps tokens fresh
-    if (tokenExpiry && tokenExpiry - Date.now() < SEVEN_DAYS_MS) {
+    // Refresh token if it's < 7 days from expiry — keeps tokens fresh.
+    // Skip on dryRun since we're not calling the IG API at all.
+    if (!dryRun && tokenExpiry && tokenExpiry - Date.now() < SEVEN_DAYS_MS) {
       try {
         const refreshed = await refreshLongLivedToken(igToken)
         igToken = refreshed.accessToken
@@ -103,7 +111,10 @@ export async function POST(request: NextRequest) {
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
     const videoUrl = post.youtube_videos?.instagram_video_url as string | null
-    if (!videoUrl) {
+    // Skip the video gate during dryRun — the preview step happens BEFORE
+    // the user finishes uploading in some flows, and they should still be
+    // able to see what caption + affiliate URL we'll generate.
+    if (!videoUrl && !dryRun) {
       return NextResponse.json(
         { error: 'No vertical Instagram video uploaded for this review. Open the post in Studio and upload a 9:16 MP4 first.' },
         { status: 400 },
@@ -141,18 +152,27 @@ export async function POST(request: NextRequest) {
     const brand = brandRow as any
     const voiceNote = brand?.voice_summary ? `\n\nVoice guidance: ${brand.voice_summary}` : ''
 
-    const results: { reelId?: string; storyId?: string; affiliateUrl?: string; warnings: string[] } = { warnings: [] }
+    const results: { reelId?: string; storyId?: string; affiliateUrl?: string; reelCaption?: string; warnings: string[] } = { warnings: [] }
 
-    // ── REEL ─────────────────────────────────────────────────────────────────
+    // ── Build the Reel caption ──────────────────────────────────────────────
+    // Either uses the user's edited caption (from preview-step) or fresh-generates
+    // via Haiku. Caption only relevant for Reel mode (Stories don't show captions).
+    let reelCaption: string | null = null
     if (mode === 'reel' || mode === 'both') {
-      const plainContent = (post.content as string ?? '').replace(/<[^>]+>/g, '').slice(0, 1500)
-      const anthropic = createAnthropicClient()
-      const msg = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 700,
-        messages: [{
-          role: 'user',
-          content: `Write an Instagram REEL caption for this product review article.
+      if (overrideCaption && overrideCaption.trim()) {
+        // User-edited from the preview step — use as-is, just enforce hard caps
+        reelCaption = overrideCaption.replace(/https?:\/\/\S+/g, '').trim()
+        if (reelCaption.length > 2200) reelCaption = reelCaption.slice(0, 2199) + '…'
+      } else {
+        // Fresh generate
+        const plainContent = (post.content as string ?? '').replace(/<[^>]+>/g, '').slice(0, 1500)
+        const anthropic = createAnthropicClient()
+        const msg = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 700,
+          messages: [{
+            role: 'user',
+            content: `Write an Instagram REEL caption for this product review article.
 
 Style: a content creator's authentic, punchy take. Strong hook in line 1 (max 6 words). 2-3 short value lines below the hook. End with 15-25 hashtags optimized for Instagram SEO — mix of broad high-traffic + niche-specific + product/brand. Match the voice provided.${voiceNote}
 
@@ -168,24 +188,42 @@ Blog excerpt: ${post.excerpt || plainContent.slice(0, 300)}
 Content preview: ${plainContent}
 
 Return ONLY the caption text + hashtags.`,
-        }],
+          }],
+        })
+
+        reelCaption = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+        // Defensive: strip any URLs the model snuck in
+        reelCaption = reelCaption.replace(/https?:\/\/\S+/g, '').trim()
+        if (reelCaption.length > 2200) reelCaption = reelCaption.slice(0, 2199) + '…'
+      }
+    }
+
+    // ── Dry-run: return preview without publishing ──────────────────────────
+    // Caller will surface the caption in an editable textarea + show the
+    // affiliate URL, then call this route again WITHOUT dryRun (and with
+    // caption: <user-edited>) to actually publish.
+    if (dryRun) {
+      return NextResponse.json({
+        ok: true,
+        dryRun: true,
+        reelCaption: reelCaption ?? null,
+        affiliateUrl: (mode === 'story' || mode === 'both') ? affiliateUrl : null,
       })
+    }
 
-      let caption = ((msg.content[0] as { type: string; text: string }).text || '').trim()
-      // Defensive: strip any URLs the model snuck in
-      caption = caption.replace(/https?:\/\/\S+/g, '').trim()
-      if (caption.length > 2200) caption = caption.slice(0, 2199) + '…'
-
+    // ── REEL publish ────────────────────────────────────────────────────────
+    if (mode === 'reel' || mode === 'both') {
       try {
         const reelId = await publishMedia({
           userId: igUserId,
           accessToken: igToken,
           mediaType: 'REELS',
-          videoUrl,
-          caption,
+          videoUrl: videoUrl as string,
+          caption: reelCaption ?? '',
           shareToFeed: true,
         })
         results.reelId = reelId
+        results.reelCaption = reelCaption ?? undefined
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any).from('blog_posts').update({ instagram_reel_id: reelId }).eq('id', postId)
       } catch (err) {
@@ -194,14 +232,14 @@ Return ONLY the caption text + hashtags.`,
       }
     }
 
-    // ── STORY ────────────────────────────────────────────────────────────────
+    // ── STORY publish ───────────────────────────────────────────────────────
     if (mode === 'story' || mode === 'both') {
       try {
         const storyId = await publishMedia({
           userId: igUserId,
           accessToken: igToken,
           mediaType: 'STORIES',
-          videoUrl,
+          videoUrl: videoUrl as string,
           // Stories don't show a caption to viewers; we skip it.
         })
         results.storyId = storyId

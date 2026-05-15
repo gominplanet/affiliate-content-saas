@@ -341,6 +341,13 @@ function InstagramPublishModal({
   const [mode, setMode] = useState<'reel' | 'story' | 'both'>(initialMode)
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
+  // Preview step: after picking the mode the user clicks Preview, which calls
+  // the API with dryRun: true to get the generated caption + affiliate URL.
+  // They can then edit the caption in a textarea before hitting Publish.
+  const [previewing, setPreviewing] = useState(false)
+  const [previewLoaded, setPreviewLoaded] = useState(false)
+  const [previewedReelCaption, setPreviewedReelCaption] = useState('')
+  const [previewedAffiliateUrl, setPreviewedAffiliateUrl] = useState<string | null>(null)
 
   // Load current upload state
   useEffect(() => {
@@ -393,6 +400,37 @@ function InstagramPublishModal({
     }
   }
 
+  /** Re-trigger preview generation when the user changes mode after previewing. */
+  function resetPreview() {
+    setPreviewLoaded(false)
+    setPreviewedReelCaption('')
+    setPreviewedAffiliateUrl(null)
+    setPublishError(null)
+  }
+
+  /** Step 3 — call publish route with dryRun: true to get the editable caption + affiliate URL. */
+  async function previewContent() {
+    setPreviewing(true)
+    setPublishError(null)
+    try {
+      const res = await fetch('/api/blog/instagram-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, mode, dryRun: true }),
+      })
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (!res.ok) throw new Error(data.error || 'Preview failed')
+      setPreviewedReelCaption((data.reelCaption as string) ?? '')
+      setPreviewedAffiliateUrl((data.affiliateUrl as string) ?? null)
+      setPreviewLoaded(true)
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : 'Preview failed')
+    } finally {
+      setPreviewing(false)
+    }
+  }
+
+  /** Step 4 — publish using the (possibly edited) caption from the preview step. */
   async function publish() {
     if (!existingUrl) {
       setPublishError('Upload a vertical MP4 first.')
@@ -405,7 +443,11 @@ function InstagramPublishModal({
       const res = await fetch('/api/blog/instagram-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, mode }),
+        body: JSON.stringify({
+          postId,
+          mode,
+          caption: (mode === 'reel' || mode === 'both') ? previewedReelCaption : undefined,
+        }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       if (!res.ok) throw new Error(data.error || 'Publish failed')
@@ -495,7 +537,7 @@ function InstagramPublishModal({
               ] as const).map(opt => (
                 <button
                   key={opt.val}
-                  onClick={() => setMode(opt.val)}
+                  onClick={() => { setMode(opt.val); resetPreview() }}
                   disabled={opt.disabled}
                   className={`p-3 rounded-lg border text-left transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
                     mode === opt.val
@@ -515,16 +557,64 @@ function InstagramPublishModal({
             )}
           </div>
 
-          {/* Step 3 — Publish */}
+          {/* Step 3 — Preview (collapses into Publish once user has previewed) */}
+          {!previewLoaded ? (
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">3. Preview the AI caption before publishing</p>
+              <button
+                onClick={previewContent}
+                disabled={previewing}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] bg-gray-100 dark:bg-white/10 border border-gray-200 dark:border-white/10 hover:bg-gray-200 dark:hover:bg-white/20 disabled:opacity-60 transition-colors"
+              >
+                {previewing ? <><Loader2 size={12} className="animate-spin" /> Generating preview…</> : <><Wand2 size={12} /> Preview AI content</>}
+              </button>
+              <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
+                We&apos;ll show you the generated caption + hashtags so you can edit them before publishing. Nothing posts to Instagram until you click Publish.
+              </p>
+            </div>
+          ) : (
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">3. Edit before publishing</p>
+
+              {(mode === 'reel' || mode === 'both') && (
+                <div className="mb-3">
+                  <label className="text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1 block">Reel caption + hashtags <span className="text-[#86868b]">({previewedReelCaption.length}/2200)</span></label>
+                  <textarea
+                    value={previewedReelCaption}
+                    onChange={e => setPreviewedReelCaption(e.target.value.slice(0, 2200))}
+                    rows={9}
+                    className="w-full text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#E1306C] focus:outline-none leading-relaxed font-mono"
+                    placeholder="Caption will appear here once preview is generated"
+                  />
+                  <button onClick={previewContent} disabled={previewing} className="text-[10px] text-[#0071e3] hover:underline mt-1 inline-flex items-center gap-1 disabled:opacity-60">
+                    {previewing ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate
+                  </button>
+                </div>
+              )}
+
+              {(mode === 'story' || mode === 'both') && previewedAffiliateUrl && (
+                <div className="rounded-lg border border-[#E1306C]/30 bg-[#E1306C]/5 p-3 mb-3">
+                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Story link (you&apos;ll add this as a Link Sticker after publish)</p>
+                  <code className="text-[11px] font-mono text-[#0071e3] break-all">{previewedAffiliateUrl}</code>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
+                    The Story video publishes automatically. Instagram&apos;s API doesn&apos;t expose link stickers, so you&apos;ll tap to copy this URL after publish and paste it into a Link sticker on your phone (5 sec).
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 4 — Publish (only shown once preview is loaded) */}
           <div className="flex items-center justify-end gap-2">
             <button onClick={onClose} disabled={publishing} className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] px-3 py-2">
               Cancel
             </button>
             <button
               onClick={publish}
-              disabled={!existingUrl || publishing}
+              disabled={!existingUrl || !previewLoaded || publishing}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
               style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }}
+              title={!previewLoaded ? 'Preview the AI content first' : ''}
             >
               {publishing ? <><Loader2 size={12} className="animate-spin" /> Publishing…</> : <>Publish to Instagram</>}
             </button>
