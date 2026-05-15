@@ -261,11 +261,11 @@ function GenerateButton({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, userTier,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, userTier,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string } | null
+  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string } | null
   wpSiteUrl: string
   fbConnected: boolean
   pinterestConnected: boolean
@@ -273,6 +273,7 @@ function VideoCard({
   linkedInConnected: boolean
   twitterConnected: boolean
   blueskyConnected: boolean
+  telegramConnected: boolean
   userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
@@ -299,6 +300,8 @@ function VideoCard({
   const [twPosted, setTwPosted] = useState(!!post?.twitterPostId)
   const [bsPosting, setBsPosting] = useState(false)
   const [bsPosted, setBsPosted] = useState(!!post?.blueskyPostUri)
+  const [tgPosting, setTgPosting] = useState(false)
+  const [tgPosted, setTgPosted] = useState(!!post?.telegramMessageId)
 
   // ── Publish All ───────────────────────────────────────────────────────────
   const [publishingAll, setPublishingAll] = useState(false)
@@ -373,14 +376,21 @@ function VideoCard({
           .catch(() => { /* non-fatal */ }),
       )
     }
+    if (telegramConnected && !tgPosted) {
+      tasks.push(
+        fetch('/api/blog/telegram-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
+          .then(r => { if (r.ok) setTgPosted(true) })
+          .catch(() => { /* non-fatal */ }),
+      )
+    }
 
     await Promise.allSettled(tasks)
     setPublishingAll(false)
     setPublishAllStep('')
   }
 
-  const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected, blueskyConnected].filter(Boolean).length
-  const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted) || (blueskyConnected && !bsPosted)
+  const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected, blueskyConnected, telegramConnected].filter(Boolean).length
+  const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted) || (blueskyConnected && !bsPosted) || (telegramConnected && !tgPosted)
   const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost)
 
   async function handleBlueskyPost() {
@@ -655,7 +665,7 @@ function saveDismissed(set: Set<string>) {
 export default function ContentPage() {
   const supabase = createBrowserClient()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string }>>({})
   const [wpSiteUrl, setWpSiteUrl] = useState('')
   const [fbConnected, setFbConnected] = useState(false)
   const [pinterestConnected, setPinterestConnected] = useState(false)
@@ -663,6 +673,7 @@ export default function ContentPage() {
   const [linkedInConnected, setLinkedInConnected] = useState(false)
   const [twitterConnected, setTwitterConnected] = useState(false)
   const [blueskyConnected, setBlueskyConnected] = useState(false)
+  const [telegramConnected, setTelegramConnected] = useState(false)
   const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
@@ -705,8 +716,8 @@ export default function ContentPage() {
     const [{ data: vids }, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
       sb.from('youtube_videos').select('*').eq('user_id', user.id).order('published_at', { ascending: false }),
       sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,tier').eq('user_id', user.id).single(),
-      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri').eq('user_id', user.id).eq('status', 'published'),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,tier').eq('user_id', user.id).single(),
+      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id').eq('user_id', user.id).eq('status', 'published'),
     ])
 
     const b = brand as Record<string, unknown> | null
@@ -724,10 +735,11 @@ export default function ContentPage() {
     setLinkedInConnected(!!(i as Record<string, unknown>)?.linkedin_access_token && !!(i as Record<string, unknown>)?.linkedin_person_id)
     setTwitterConnected(!!(i as Record<string, unknown>)?.twitter_access_token)
     setBlueskyConnected(!!(i as Record<string, unknown>)?.bluesky_handle && !!(i as Record<string, unknown>)?.bluesky_app_password)
+    setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
     setUserTier(((i as Record<string, unknown>)?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free')
     setVideos((vids as Record<string, unknown>[]) ?? [])
 
-    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string }> = {}
+    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       if (p.video_id && p.wordpress_url) {
         postMap[p.video_id as string] = {
@@ -741,6 +753,7 @@ export default function ContentPage() {
           linkedInPostId: p.linkedin_post_id as string | undefined,
           twitterPostId: p.twitter_post_id as string | undefined,
           blueskyPostUri: p.bluesky_post_uri as string | undefined,
+          telegramMessageId: p.telegram_message_id as string | undefined,
         }
       }
     }
@@ -1357,6 +1370,7 @@ export default function ContentPage() {
                     linkedInConnected={linkedInConnected}
                     twitterConnected={twitterConnected}
                     blueskyConnected={blueskyConnected}
+                    telegramConnected={telegramConnected}
                     userTier={userTier}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}

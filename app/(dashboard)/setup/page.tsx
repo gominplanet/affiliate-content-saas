@@ -811,6 +811,11 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [bsConnecting, setBsConnecting] = useState(false)
   const [bsDisconnecting, setBsDisconnecting] = useState(false)
   const [bsNotice, setBsNotice] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [telegram, setTelegram] = useState({ connected: false, channelId: '', channelTitle: '' })
+  const [tgInput, setTgInput] = useState('')
+  const [tgConnecting, setTgConnecting] = useState(false)
+  const [tgDisconnecting, setTgDisconnecting] = useState(false)
+  const [tgNotice, setTgNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
@@ -854,6 +859,11 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
       setTwitter({ connected: !!row.twitter_access_token, handle: row.twitter_handle ?? '' })
       setBluesky({ connected: !!row.bluesky_handle && !!row.bluesky_app_password, handle: row.bluesky_handle ?? '' })
+      setTelegram({
+        connected: !!row.telegram_channel_id,
+        channelId: row.telegram_channel_id ?? '',
+        channelTitle: row.telegram_channel_title ?? '',
+      })
       setGeniuslinkKey(row.geniuslink_api_key ?? '')
       setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
       setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
@@ -1053,6 +1063,40 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         setBsNotice(null)
       }
     } finally { setBsDisconnecting(false) }
+  }
+
+  async function connectTelegram() {
+    setTgConnecting(true)
+    setTgNotice(null)
+    try {
+      const res = await fetch('/api/auth/telegram/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelId: tgInput }),
+      })
+      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (res.ok) {
+        setTelegram({ connected: true, channelId: d.channelId, channelTitle: d.channelTitle })
+        setTgInput('')
+        setTgNotice({ ok: true, msg: `Connected to "${d.channelTitle}"` })
+      } else {
+        setTgNotice({ ok: false, msg: d.error || 'Telegram connect failed' })
+      }
+    } catch (e) {
+      setTgNotice({ ok: false, msg: e instanceof Error ? e.message : 'Telegram connect failed' })
+    } finally { setTgConnecting(false) }
+  }
+
+  async function disconnectTelegram() {
+    setTgDisconnecting(true)
+    try {
+      const res = await fetch('/api/auth/telegram/disconnect', { method: 'POST' })
+      if (res.ok) {
+        setTelegram({ connected: false, channelId: '', channelTitle: '' })
+        setTgInput('')
+        setTgNotice(null)
+      }
+    } finally { setTgDisconnecting(false) }
   }
 
   if (loading) return (
@@ -1445,6 +1489,70 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
                 </svg>
               )}
               {bsConnecting ? 'Connecting…' : 'Connect Bluesky'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Telegram — Growth+ */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#229ED9' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+              <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Telegram <span className="ml-1 text-[10px] font-medium text-[#34c759] uppercase tracking-wider">Growth+</span></p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Fan out every review to your Telegram channel</p>
+          </div>
+          {telegram.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+          We use one shared MVP Affiliate bot. You add it as an admin to your own Telegram channel, then paste your channel ID below.
+        </p>
+        <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
+          <li>Create a Telegram channel (or use an existing one). New channels: open Telegram → menu → <strong>New Channel</strong>.</li>
+          <li>Open the channel → tap the channel name → <strong>Administrators</strong> → <strong>Add Administrator</strong> → search for <strong>@MVPAffiliateBot</strong> (or whatever your bot is named) and add it with <strong>Post Messages</strong> permission.</li>
+          <li>Set your channel to <strong>Public</strong> and give it a username (e.g. <code>@myreviews</code>) — easiest. Or grab the numeric ID from a tool like <a href="https://t.me/getidsbot" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">@getidsbot</a> if you want it private.</li>
+          <li>Paste your channel ID below (<code>@myreviews</code> or the numeric form like <code>-1001234567890</code>).</li>
+        </ol>
+
+        {tgNotice && <p className={`text-xs mb-3 ${tgNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{tgNotice.msg}</p>}
+
+        {telegram.connected ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
+              Connected to <strong>{telegram.channelTitle || telegram.channelId}</strong>{telegram.channelTitle && telegram.channelId ? ` (${telegram.channelId})` : ''}
+            </p>
+            <button onClick={disconnectTelegram} disabled={tgDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {tgDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <input
+              type="text"
+              value={tgInput}
+              onChange={(e) => setTgInput(e.target.value)}
+              placeholder="@myreviews   or   -1001234567890"
+              className="input-field"
+              autoComplete="off"
+            />
+            <button
+              onClick={connectTelegram}
+              disabled={tgConnecting || !tgInput.trim()}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors disabled:opacity-60"
+              style={{ backgroundColor: '#229ED9' }}
+            >
+              {tgConnecting ? <Loader2 size={12} className="animate-spin" /> : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                  <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                </svg>
+              )}
+              {tgConnecting ? 'Connecting…' : 'Connect Telegram'}
             </button>
           </div>
         )}
