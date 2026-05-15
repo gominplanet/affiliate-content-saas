@@ -85,12 +85,16 @@ const plans = [
 
 const faqs = [
   {
+    q: 'How does the YouTube workflow actually work?',
+    a: 'Upload an unlisted draft to YouTube Studio with the Amazon ASIN in the title — that\'s all you need to do. MVP detects the ASIN, scrapes the product on Amazon, and the agent team generates the YouTube description (with affiliate links), 10 SEO video tags, 5 hashtags, and a click-magnet thumbnail. One click pushes everything back into your YouTube draft. Pro adds one-click batch settings: playlist, schedule, paid-promotion disclosure, made-for-kids flag, and notify-subscribers control.',
+  },
+  {
     q: 'Do I need my own WordPress site?',
-    a: 'You need a domain and a WordPress install (any host — we test on Hostinger). When you connect it, we install our editorial theme and plugin automatically so your reviews look polished from day one.',
+    a: 'You need a domain and a WordPress install (any host — we test on Hostinger). Connect it once and we install the MVP Affiliate theme + plugin automatically. Your reviews land on a real editorial homepage from day one — no setup, no theme shopping, no plugin hunting.',
   },
   {
     q: 'Is the content AI-generated?',
-    a: 'Yes — but not by a single chatbot. We orchestrate an army of specialized AI agents: one researches the product, one drafts the body, one matches your voice from your brand profile, one inserts affiliate links cleanly, one writes the FAQ, one tags and categorizes, one fact-checks. The output is reviewed in Studio before publish so you always have the final say.',
+    a: 'Yes — but not by a single chatbot. We orchestrate an army of specialized agents: one researches the product, one designs the outline for SEO, one matches your voice from your Brand Profile, one drafts the body section by section, one writes the verdict + Buy/Skip block, one inserts affiliate links cleanly, one writes the FAQ, one tags and categorizes. The output is reviewed in Studio before publish — you always have the final say.',
   },
   {
     q: 'Do I own the content?',
@@ -155,7 +159,7 @@ export default function LandingPage() {
               click-tuned YouTube description with affiliate links inserted cleanly, video tags and
               hashtags ranked for discovery, a click-magnet thumbnail — plus fan-out posts to
               Facebook, Threads, LinkedIn, Pinterest, X and Bluesky.
-              <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. 45 minutes of unpaid busywork → gone.</span>
+              <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. ~3 hours of unpaid post-production → gone.</span>
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3">
               <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
@@ -179,7 +183,7 @@ export default function LandingPage() {
       <section className="py-12 sm:py-16 border-y border-gray-100 bg-[#fafafa]">
         <div className="max-w-6xl mx-auto px-5 sm:px-6">
           <p className="text-center text-sm text-[#3a3a3c] mb-6 uppercase tracking-widest font-semibold">
-            Publishes to your site + every platform you care about
+            One click fans every review out to every platform that matters
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             {platforms.map(({ label, status, color, logo }) => {
@@ -304,10 +308,11 @@ export default function LandingPage() {
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-[#f7f9fc] to-white border-y border-gray-100">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">What&apos;s in every review</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">A full editorial review. Every time.</h2>
             <p className="text-[#6e6e73] text-base sm:text-lg max-w-2xl mx-auto">
-              Not a wall of text. A full editorial review built to convert — the same shape Wirecutter and
-              Tom&apos;s Guide use.
+              Not a wall of AI slop. A structured, conversion-built review with the same anatomy
+              Wirecutter and Tom&apos;s Guide use — disclaimer, embedded video, scannable verdict,
+              buy/skip, Q&amp;A, rating box, internal tags. Ready to outrank thin affiliate sites.
             </p>
           </div>
 
@@ -370,9 +375,12 @@ export default function LandingPage() {
             </span>
             <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-[#1d1d1f]">A real editorial site, not a default blog</h2>
             <p className="text-[#6e6e73] text-base sm:text-lg mb-6 leading-relaxed">
-              When you connect your WordPress site, we install our theme and plugin automatically.
-              Featured grid, Pick of the Day, sidebar banners, footer with your bio and socials — all
-              styled from your Brand Profile.
+              Connect your domain and we install the MVP Affiliate WordPress theme + plugin in one
+              step — no themes to shop for, no widgets to wire. You get an editorial homepage with a
+              rotating Pick of the Day, a 4-post featured grid, category hubs, sidebar + in-content
+              ad slots you control, and a footer wired to your bio, logo and socials. Brand colors,
+              fonts and tone of voice all flow from your Brand Profile — every new review lands
+              styled and on-brand without you opening WordPress once.
             </p>
             <ul className="flex flex-col gap-3 mb-6">
               <FeatureLine>Editorial hero + 4-post featured grid on the homepage</FeatureLine>
@@ -396,7 +404,8 @@ export default function LandingPage() {
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">How we stack up</h2>
             <p className="text-[#3a3a3c] text-base sm:text-lg max-w-2xl mx-auto">
-              A side-by-side look at the most common ways affiliate marketers produce review content.
+              The honest comparison nobody else will show you. No generic AI writer, freelancer, or
+              DIY WordPress setup covers the full creator workflow end-to-end.
             </p>
           </div>
           <div className="overflow-x-auto rounded-2xl border border-gray-200">
@@ -411,12 +420,15 @@ export default function LandingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                <CompareRow label="Full review draft" us="check" gen="check" free="check" diy="manual" />
-                <CompareRow label="Editorial review site theme included" us="check" gen="cross" free="cross" diy="cross" />
-                <CompareRow label="Verdict + rating + tags blocks built in" us="check" gen="manual" free="manual" diy="manual" />
+                <CompareRow label="Full long-form review draft" us="check" gen="check" free="check" diy="manual" />
+                <CompareRow label="Editorial WordPress theme included" us="check" gen="cross" free="cross" diy="cross" />
+                <CompareRow label="YouTube description + tags + hashtags" us="check" gen="manual" free="manual" diy="manual" />
+                <CompareRow label="One-click push back to YouTube Studio" us="check" gen="cross" free="cross" diy="cross" />
+                <CompareRow label="Click-magnet thumbnail generated" us="check" gen="cross" free="cross" diy="cross" />
+                <CompareRow label="Verdict + rating + Buy/Skip blocks built in" us="check" gen="manual" free="manual" diy="manual" />
                 <CompareRow label="Affiliate disclaimer auto-inserted" us="check" gen="cross" free="manual" diy="manual" />
                 <CompareRow label="One-click publish to WordPress" us="check" gen="cross" free="manual" diy="manual" />
-                <CompareRow label="Social posts ready for every platform" us="check" gen="manual" free="manual" diy="cross" />
+                <CompareRow label="Fan-out to FB / Threads / LI / Pinterest / X / Bluesky" us="check" gen="manual" free="manual" diy="cross" />
                 <CompareRow label="Stays in your brand voice across posts" us="check" gen="manual" free="manual" diy="manual" />
                 <CompareRow label="Cost per 30 reviews / month" us="$49" gen="$30–80" free="$600–3000" diy="Your time" />
               </tbody>
@@ -543,9 +555,10 @@ export default function LandingPage() {
       {/* ── Final CTA ──────────────────────────────────────────────────────── */}
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-br from-[#0071e3] to-[#5856d6] text-white">
         <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-3xl sm:text-5xl font-bold mb-4 leading-[1.1]">Ready to turn your reviews into a site?</h2>
+          <h2 className="text-3xl sm:text-5xl font-bold mb-4 leading-[1.1]">Stop writing descriptions. Start shipping reviews.</h2>
           <p className="text-blue-100 text-base sm:text-lg mb-8 max-w-xl mx-auto">
-            15 free posts. No credit card. No contracts. Cancel anytime.
+            One YouTube draft → a full review site, an optimized YouTube package, and social posts
+            on every platform. 15 free posts. No card. Cancel anytime.
           </p>
           <Link
             href="/signup"
