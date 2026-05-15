@@ -1657,11 +1657,11 @@ export default function ContentPage() {
         subtitle={
           loading ? 'Loading…' :
           activeTab === 'posts'
-            ? `${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} published`
+            ? `Published reviews — manage social fan-out from each card. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
             : activeTab === 'vertical'
-              ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} · use these for Instagram Reels & Stories`
+              ? `Your Shorts → Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
               : horizontalVideos.length > 0
-                ? `${horizontalVideos.length} horizontal video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} post${generatedCount !== 1 ? 's' : ''} published`
+                ? `Long-form videos → blog posts + auto-composed Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
                 : 'Hit Sync to pull every YouTube video into your generation queue.'
         }
         actions={
@@ -1853,8 +1853,8 @@ export default function ContentPage() {
           </p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm">
             {activeTab === 'vertical'
-              ? 'We tag videos as vertical when their duration is ≤ 3 minutes or the title/description contains #Shorts. Hit Sync videos again — newly synced videos get classified automatically.'
-              : 'All your synced videos look like vertical Shorts. Hit Sync videos again to refresh, or check the Vertical Videos tab.'}
+              ? 'No YouTube Shorts yet — these are the source for Instagram Reels & Stories. Record one on YouTube, hit Sync again, and it shows up here.'
+              : 'All your synced videos look like Shorts. Hit Sync again to refresh, or open the Vertical Videos tab to publish them as Reels.'}
           </p>
           <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-xs">
             {syncing ? <><Loader2 size={11} className="animate-spin" /> Syncing…</> : <><RefreshCw size={11} /> Re-sync videos</>}
@@ -1868,7 +1868,7 @@ export default function ContentPage() {
               <span className="text-[#6e6e73] dark:text-[#ebebf0]">
                 {activeTab === 'vertical'
                   ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} — source for Instagram Reels & Stories`
-                  : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts`}
+                  : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts (each can also become an Instagram image post)`}
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">

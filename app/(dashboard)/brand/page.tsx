@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Header from '@/components/layout/Header'
 import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { InfoTip } from '@/components/ui/InfoTip'
 
 async function uploadLogo(file: File, userId: string): Promise<string> {
   const supabase = createBrowserClient()
@@ -506,7 +507,10 @@ export default function BrandPage() {
 
           {/* Niches */}
           <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Affiliate Niches</h2>
+            <div className="flex items-center gap-1.5 mb-1">
+              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Affiliate Niches</h2>
+              <InfoTip>The Researcher and Outline Architect agents use this to pull niche-relevant comparisons, FAQs, and SEO terms when drafting your reviews. Pick the categories that match the products you actually cover.</InfoTip>
+            </div>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Select the product categories you promote.</p>
             <div className="flex flex-wrap gap-2">
               {NICHES.map((niche) => {
@@ -772,8 +776,11 @@ export default function BrandPage() {
 
           {/* Tone */}
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Brand Tone</h2>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Select all that apply.</p>
+            <div className="flex items-center gap-1.5 mb-1">
+              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Brand Tone</h2>
+              <InfoTip>Combine 2–3 for a richer voice. The Voice Matcher agent blends them — e.g. &quot;Conversational + Bold&quot; reads punchier than either alone. Skip this and posts default to neutral-professional.</InfoTip>
+            </div>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Select all that apply — these blend into your review voice.</p>
             <div className="flex flex-col gap-1">
               {TONE_OPTIONS.map((tone) => {
                 const active = data.tone.includes(tone)
@@ -799,7 +806,10 @@ export default function BrandPage() {
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Content Preferences</h2>
             <div className="flex flex-col gap-3">
               <div>
-                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">Post length</label>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
+                  Post length
+                  <InfoTip>Drives target word count for the Body Drafter agent. Longer = better SEO ranking but takes longer to generate. Medium is the sweet spot for most product reviews.</InfoTip>
+                </label>
                 <select
                   value={data.post_length}
                   onChange={(e) => set('post_length', e.target.value)}
@@ -812,7 +822,10 @@ export default function BrandPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">CTA style</label>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
+                  CTA style
+                  <InfoTip>How the review nudges readers to buy. &quot;Soft recommendation&quot; reads like advice; &quot;Direct CTA&quot; is more salesy; &quot;Comparison table&quot; / &quot;Pros &amp; cons&quot; structure the verdict block differently.</InfoTip>
+                </label>
                 <select
                   value={data.cta_style}
                   onChange={(e) => set('cta_style', e.target.value)}
@@ -825,7 +838,10 @@ export default function BrandPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">Affiliate disclaimer</label>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
+                  Affiliate disclaimer
+                  <InfoTip>Auto-inserted at the top of every published post. Required by the FTC if you earn from links. Edit the wording to match your jurisdiction.</InfoTip>
+                </label>
                 <textarea
                   rows={3}
                   value={data.affiliate_disclaimer}
@@ -838,7 +854,11 @@ export default function BrandPage() {
 
           {/* Brand colors */}
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Brand Colors</h2>
+            <div className="flex items-center gap-1.5 mb-1">
+              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Brand Colors</h2>
+              <InfoTip>Primary color is the background of your auto-composed Instagram image posts and the accent in your blog theme. Secondary color highlights buttons and the &quot;FULL REVIEW →&quot; chip on IG images. Use brand colors that contrast well with white text.</InfoTip>
+            </div>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Used in your blog theme and as the background of your Instagram image posts.</p>
             <div className="flex flex-col gap-5">
               <ColorPicker
                 label="Primary color"

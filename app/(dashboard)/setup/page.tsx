@@ -1131,7 +1131,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     <div className="flex flex-col gap-5 mt-6">
       <div>
         <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Integrations</h2>
-        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5">Connect your YouTube channel and social platforms.</p>
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
+          Connect each platform once. Recommended order: <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube</strong> (so we can see your videos) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</strong> (for affiliate URL routing) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">social platforms</strong> you want to fan out to. Each integration is optional — only connect what you&apos;ll use.
+        </p>
       </div>
 
       {/* Security notice */}
@@ -1593,19 +1595,22 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Instagram <span className="ml-1 text-[10px] font-medium text-[#0071e3] uppercase tracking-wider">Pro</span></p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Publish vertical reviews as Reels or Stories to your IG account</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Publish reviews as Reels, image Feed posts, or Stories — automatically</p>
           </div>
           {instagram.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
 
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          MVP publishes Reels (SEO-optimized caption + hashtags, no clickable link — Instagram limitation) and Stories (video with the affiliate URL surfaced for you to add as a Link Sticker on your phone — 5 seconds of manual work since Instagram doesn&apos;t expose link stickers via API).
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+          Two flows based on your video orientation:
         </p>
+        <ul className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 ml-1 flex flex-col gap-2 leading-relaxed">
+          <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Vertical Shorts → Reel + Story.</strong> You upload a 9:16 MP4 (one-time per review). We post it as a Reel with an AI-written caption and as a Story so you can drop a Link Sticker for affiliate clicks (5s of manual work — IG&apos;s API doesn&apos;t expose stickers).</li>
+          <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Long-form videos → auto-composed image post + Story.</strong> We build a 1080×1350 feed image and a 1080×1920 story image from your YouTube thumbnail, blog title, excerpt, and brand colors. Zero design work, no upload.</li>
+        </ul>
         <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
           <li>Your Instagram must be a <strong>Business or Creator</strong> account (Settings → Account type and tools → Switch to professional account).</li>
           <li>Click <strong>Connect Instagram</strong> below — you&apos;ll be redirected to Instagram to authorize MVP Affiliate.</li>
-          <li>Upload a vertical 9:16 MP4 for each review in <a href="/studio" className="text-[#0071e3] hover:underline">YouTube Studio</a> — that&apos;s the video Instagram will publish.</li>
-          <li>From <a href="/content" className="text-[#0071e3] hover:underline">Library & Social Push</a>, click the Instagram pill on any review → choose Reel, Story, or Both.</li>
+          <li>From <a href="/content" className="text-[#0071e3] hover:underline">Library &amp; Social Push</a>, click the Instagram pill on any review — modal walks you through the rest.</li>
         </ol>
 
         {igNotice && <p className={`text-xs mb-3 ${igNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{igNotice.msg}</p>}
