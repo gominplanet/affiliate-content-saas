@@ -104,7 +104,7 @@ export async function checkUsageLimit(
   // Admin — unlimited
   if (tier === 'admin') return { allowed: true }
 
-  // Free tier — 5 posts lifetime
+  // Free tier — 15 posts lifetime
   if (limits.lifetimeMax !== null) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { count } = await (supabase as any)

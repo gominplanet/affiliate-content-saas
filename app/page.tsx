@@ -97,7 +97,7 @@ const faqs = [
     a: 'You own everything generated for your account. We don\'t reuse, resell, or train models on your content.',
   },
   {
-    q: 'What happens after my 5 free posts?',
+    q: 'What happens after my 15 free posts?',
     a: 'You can upgrade to a paid plan or pause. Your existing posts and connected site stay exactly as they are — nothing gets taken down.',
   },
   {
@@ -539,7 +539,7 @@ export default function LandingPage() {
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-bold mb-4 leading-[1.1]">Ready to turn your reviews into a site?</h2>
           <p className="text-blue-100 text-base sm:text-lg mb-8 max-w-xl mx-auto">
-            5 free posts. No credit card. No contracts. Cancel anytime.
+            15 free posts. No credit card. No contracts. Cancel anytime.
           </p>
           <Link
             href="/signup"
