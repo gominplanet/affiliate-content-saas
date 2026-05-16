@@ -169,6 +169,108 @@ function PinterestPreviewModal({
   )
 }
 
+// Master list of available categories — mirrors the NICHES constant on the
+// Brand page. Kept in sync manually; if you add one there, add it here.
+// User's brand-niche subset is visually emphasized in the dropdown.
+const ALL_CATEGORIES = [
+  'Home & Kitchen', 'Electronics & Tech', 'Outdoor & Sports', 'Beauty & Personal Care',
+  'Health & Wellness', 'Pet Supplies', 'Tools & Home Improvement', 'Toys & Games',
+  'Books & Education', 'Fashion & Apparel', 'Garden & Outdoors', 'Automotive',
+  'Baby & Kids', 'Office & Productivity', 'Food & Grocery', 'Travel & Luggage',
+  'Arts & Crafts', 'Musical Instruments', 'Software & Apps', 'Finance & Investing',
+] as const
+
+/**
+ * Per-video category dropdown shown next to "Generate post".
+ *
+ * Before publish: writes to youtube_videos.selected_category so the next
+ * generate honors it (overrides the AI's category pick).
+ * After publish: same write, plus pushes the new category to WordPress on
+ * the existing post via /api/blog/update-category.
+ *
+ * Saving is debounced/auto on change — no separate save button. We surface
+ * a tiny inline status (✓ Saved / Error) for trust.
+ */
+function CategoryPicker({
+  videoId,
+  initial,
+  brandNiches,
+  hasPublishedPost,
+}: {
+  videoId: string
+  initial: string | null
+  brandNiches: string[]
+  hasPublishedPost: boolean
+}) {
+  const [value, setValue] = useState<string>(initial ?? '')
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  // Brand-niche set lookups for fast highlighting
+  const brandNicheSet = new Set(brandNiches.map(n => n.toLowerCase()))
+
+  // Order options: brand niches first (a "Your niches" optgroup), then the rest
+  const userNiches = ALL_CATEGORIES.filter(c => brandNicheSet.has(c.toLowerCase()))
+  const otherNiches = ALL_CATEGORIES.filter(c => !brandNicheSet.has(c.toLowerCase()))
+
+  async function save(next: string) {
+    setValue(next)
+    setStatus('saving')
+    setErrorMsg(null)
+    try {
+      const res = await fetch('/api/blog/update-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId, category: next || null }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      setStatus('saved')
+      // Auto-clear the "Saved" indicator after a few seconds
+      setTimeout(() => setStatus('idle'), 2000)
+      if (data.warning) setErrorMsg(data.warning) // partial success (WP push failed)
+    } catch (err) {
+      setStatus('error')
+      setErrorMsg(err instanceof Error ? err.message : 'Save failed')
+    }
+  }
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <select
+        value={value}
+        onChange={e => save(e.target.value)}
+        className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#0071e3] focus:outline-none max-w-[180px]"
+        title={hasPublishedPost ? 'Change the category on this published post' : 'Pick a category before generating'}
+      >
+        <option value="">— Category —</option>
+        {userNiches.length > 0 && (
+          <optgroup label="Your brand niches">
+            {userNiches.map(c => <option key={c} value={c}>{c}</option>)}
+          </optgroup>
+        )}
+        {otherNiches.length > 0 && (
+          <optgroup label={userNiches.length > 0 ? 'Other categories' : 'All categories'}>
+            {otherNiches.map(c => <option key={c} value={c}>{c}</option>)}
+          </optgroup>
+        )}
+      </select>
+      {status === 'saving' && <Loader2 size={11} className="animate-spin text-[#86868b]" />}
+      {status === 'saved' && <CheckCircle size={11} className="text-[#34c759]" />}
+      {status === 'error' && errorMsg && (
+        <span className="text-[10px] text-[#ff3b30] max-w-[120px] truncate" title={errorMsg}>
+          ⚠ {errorMsg}
+        </span>
+      )}
+      {status === 'saved' && errorMsg && (
+        <span className="text-[10px] text-[#ff9500] max-w-[120px] truncate" title={errorMsg}>
+          ⚠
+        </span>
+      )}
+    </div>
+  )
+}
+
 // ── Generation status badge ───────────────────────────────────────────────────
 type GenStatus = 'idle' | 'generating' | 'done' | 'error'
 
@@ -704,7 +806,7 @@ function InstagramPublishModal({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, userTier,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, userTier, brandNiches,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -719,6 +821,7 @@ function VideoCard({
   telegramConnected: boolean
   instagramConnected: boolean
   userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
+  brandNiches: string[]
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
   onDelete: (postId: string) => void
@@ -1027,6 +1130,12 @@ function VideoCard({
               Edit in WP, Delete or Ignore. Text-link styling, low emphasis. */}
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
             <GenerateButton videoId={id} existingPost={post} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <CategoryPicker
+              videoId={id}
+              initial={(video.selected_category as string | null) ?? null}
+              brandNiches={brandNiches}
+              hasPublishedPost={!!post}
+            />
             {post ? (
               <>
                 {editorUrl && (
@@ -1197,6 +1306,7 @@ export default function ContentPage() {
   const [telegramConnected, setTelegramConnected] = useState(false)
   const [instagramConnected, setInstagramConnected] = useState(false)
   const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
+  const [brandNiches, setBrandNiches] = useState<string[]>([])
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -1260,6 +1370,7 @@ export default function ContentPage() {
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
     setInstagramConnected(!!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
     setUserTier(((i as Record<string, unknown>)?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free')
+    setBrandNiches(((b?.niches as string[] | null) ?? []))
     setVideos((vids as Record<string, unknown>[]) ?? [])
 
     const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
@@ -1930,6 +2041,7 @@ export default function ContentPage() {
                     telegramConnected={telegramConnected}
                     instagramConnected={instagramConnected}
                     userTier={userTier}
+                    brandNiches={brandNiches}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
                     onDelete={(postId) => {

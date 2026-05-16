@@ -158,19 +158,23 @@ async function handleGenerate(request: Request) {
   } catch (err) {
   }
 
-  // ── 7.1. Resolve category — prefer the niche the AI picked for THIS post,
-  //         fall back to the first brand niche if the model returned something
-  //         outside the user's selected niches or left it blank. ─────────────
+  // ── 7.1. Resolve category — priority order:
+  //         1. User's explicit pick on youtube_videos.selected_category
+  //            (set via the dropdown next to "Generate post" on Content page)
+  //         2. AI's pick from generated.category, if it matches a brand niche
+  //         3. First brand niche as a fallback
   let categoryIds: number[] = []
   try {
     const niches = ((brand as Record<string, unknown>).niches as string[]) || []
+    const userPick = ((video as Record<string, unknown>).selected_category as string | null)?.trim() || ''
     const aiPick = (generated.category || '').trim()
     // Find the niche label in a case-insensitive way so minor casing drift
     // ("home & kitchen" vs "Home & Kitchen") still resolves cleanly.
-    const matched = niches.find(n => n.toLowerCase() === aiPick.toLowerCase())
-    const finalNiche = matched || niches[0] || ''
-    if (finalNiche) {
-      const catId = await wpService.createCategory(finalNiche)
+    const matched = userPick
+      ? userPick // honor user pick verbatim — they may have picked outside niches
+      : (niches.find(n => n.toLowerCase() === aiPick.toLowerCase()) || niches[0] || '')
+    if (matched) {
+      const catId = await wpService.createCategory(matched)
       categoryIds = [catId]
     }
   } catch { /* non-fatal */ }
