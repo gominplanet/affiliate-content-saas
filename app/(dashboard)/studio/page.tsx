@@ -48,11 +48,12 @@ const STATUS_ICON = {
   public: <Globe size={11} className="text-[#34c759]" />,
 }
 
-/** Settings the Pro YouTube batch-apply panel pushes to YT in one shot. */
+/** Settings the Pro YouTube batch-apply panel pushes to YT in one shot.
+ *  Note: paidPromotion + alteredContent intentionally NOT here — YouTube's
+ *  Data API doesn't expose those fields. They're surfaced in the post-apply
+ *  "Finish in Studio (3 clicks)" callout instead. */
 interface ProPublishSettings {
   playlistId: string | null
-  paidPromotion: boolean
-  alteredContent: boolean   // Pro keeps this false by default (no synthetic media flag)
   madeForKids: boolean       // false by default
   notifySubscribers: boolean // false by default — never spam the subscriber bell
   privacyStatus: 'public' | 'unlisted' | 'private'
@@ -61,8 +62,6 @@ interface ProPublishSettings {
 
 const defaultProSettings: ProPublishSettings = {
   playlistId: null,
-  paidPromotion: true,        // sensible default for affiliate creators
-  alteredContent: false,
   madeForKids: false,
   notifySubscribers: false,
   privacyStatus: 'public',
@@ -203,8 +202,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
             thumbnailDataUri: thumbnailUrl ?? undefined,
             playlistId: proSettings.playlistId,
             madeForKids: proSettings.madeForKids,
-            paidPromotion: proSettings.paidPromotion,
-            alteredContent: proSettings.alteredContent,
             notifySubscribers: proSettings.notifySubscribers,
             publishAt,
             privacyStatus: publishAt ? undefined : proSettings.privacyStatus,
@@ -1003,24 +1000,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     </label>
                   </div>
 
-                  {/* Toggles */}
+                  {/* Toggles. Paid promotion + altered content are NOT here —
+                      YouTube's API doesn't accept those fields. They appear
+                      in the post-apply "Finish in Studio (3 clicks)" callout
+                      below the Apply button instead. */}
                   <div className="flex flex-col gap-1.5 text-xs">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={proSettings.paidPromotion}
-                        onChange={e => setProSettings(s => ({ ...s, paidPromotion: e.target.checked }))}
-                      />
-                      <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Paid promotion disclosure <span className="text-[#86868b]">(recommended for affiliate)</span></span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={proSettings.alteredContent}
-                        onChange={e => setProSettings(s => ({ ...s, alteredContent: e.target.checked }))}
-                      />
-                      <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Altered / synthetic content</span>
-                    </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"

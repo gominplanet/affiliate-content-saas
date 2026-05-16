@@ -5,19 +5,21 @@
  * normally toggles in YouTube Studio after generation, in one shot:
  *
  *   - Updates title, description, tags (and optionally thumbnail)
- *   - Sets madeForKids, paidPromotion, alteredContent flags
+ *   - Sets madeForKids flag
  *   - Schedules the video for `publishAt` (ISO 8601) or publishes
  *     immediately as `privacyStatus` (public/unlisted/private)
  *   - Suppresses subscriber notifications via the notifySubscribers
  *     query param
  *   - Adds the video to a playlist (if `playlistId` provided)
  *
- * Things YouTube does NOT expose to apps (we can't automate, surface in
- * the UI for manual paste):
+ * Things YouTube does NOT expose to apps (surface in the UI as a
+ * post-apply "Finish in Studio (3 clicks)" checklist instead):
+ *   - Paid promotion disclosure (containsPaidPromotion is read-only via API)
+ *   - Monetization access policy (only available with youtubepartner scope,
+ *     which Google doesn't grant to general third-party tools)
+ *   - The advertiser-friendly content rating questionnaire — Studio-only
  *   - End-screens
  *   - Pinned comments (we can post a comment, can't pin it)
- *   - The full advertiser-friendly questionnaire — only some fields
- *     are settable via the API
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -36,6 +38,10 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    // Note: paidPromotion, alteredContent, monetization, and content-rating
+    // questionnaire fields are intentionally NOT in this signature. YouTube's
+    // Data API doesn't accept them. The Studio panel surfaces them as a
+    // post-apply "Finish in Studio (3 clicks)" callout instead.
     const body = await request.json() as {
       videoId: string
       title?: string
@@ -44,8 +50,6 @@ export async function POST(request: NextRequest) {
       thumbnailDataUri?: string
       playlistId?: string | null
       madeForKids?: boolean
-      paidPromotion?: boolean
-      alteredContent?: boolean
       notifySubscribers?: boolean
       /** ISO 8601 timestamp. When set, video is scheduled (private until then). */
       publishAt?: string | null
@@ -113,8 +117,6 @@ export async function POST(request: NextRequest) {
     //    so a videos.list race can't read stale state if YT replicates.
     const statusUpdate = yt.updateVideoStatus(body.videoId, {
       madeForKids: body.madeForKids,
-      paidPromotion: body.paidPromotion,
-      alteredContent: body.alteredContent,
       privacyStatus: body.privacyStatus,
       publishAt: body.publishAt ?? null,
       notifySubscribers: body.notifySubscribers,

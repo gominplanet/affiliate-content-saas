@@ -386,12 +386,10 @@ export class YouTubeOAuthService {
   }
 
   /**
-   * Push the full Studio settings panel in one videos.update call.
+   * Push the writable Studio settings in one videos.update call.
    *
    * Inputs map to YouTube fields like this:
    *   madeForKids -> status.selfDeclaredMadeForKids
-   *   paidPromotion -> status.containsPaidPromotion (paid disclosure)
-   *   alteredContent -> status.containsSyntheticMedia (altered content)
    *   publishAt (ISO string) -> status.publishAt (schedules video for later
    *     and sets privacyStatus to 'private' until that time)
    *   privacyStatus -> public/unlisted/private (only used when publishAt
@@ -399,13 +397,16 @@ export class YouTubeOAuthService {
    *
    * `notifySubscribers` is passed as a URL query param to suppress the
    * "you have a new video" notification YT would otherwise send.
+   *
+   * NOT supported by YouTube's Data API and therefore not in this signature:
+   * paidPromotion, alteredContent, monetization on/off, advertiser-friendly
+   * content rating. The Studio panel surfaces those as a "Finish in Studio
+   * (3 clicks)" post-apply checklist instead.
    */
   async updateVideoStatus(
     videoId: string,
     args: {
       madeForKids?: boolean
-      paidPromotion?: boolean
-      alteredContent?: boolean
       privacyStatus?: 'public' | 'unlisted' | 'private'
       publishAt?: string | null
       notifySubscribers?: boolean
@@ -413,8 +414,6 @@ export class YouTubeOAuthService {
   ): Promise<void> {
     const status: Record<string, unknown> = {}
     if (typeof args.madeForKids === 'boolean') status.selfDeclaredMadeForKids = args.madeForKids
-    if (typeof args.paidPromotion === 'boolean') status.containsPaidPromotion = args.paidPromotion
-    if (typeof args.alteredContent === 'boolean') status.containsSyntheticMedia = args.alteredContent
 
     if (args.publishAt) {
       // YouTube requires privacyStatus=private to schedule.
@@ -450,26 +449,6 @@ export class YouTubeOAuthService {
       throw new Error(`YouTube status update failed ${res.status}: ${body.slice(0, 500)}`)
     }
 
-    // YouTube silently ignores some status fields it doesn't support via the
-    // API (notably containsPaidPromotion and containsSyntheticMedia — those
-    // are Studio-only). Read the video back so we can verify what landed
-    // and warn the caller about fields that didn't take.
-    if (typeof args.paidPromotion === 'boolean' || typeof args.alteredContent === 'boolean') {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const verify = await this.get<any>('/videos', { part: 'status', id: videoId })
-        const after = verify.items?.[0]?.status ?? {}
-        const stuckPaid = typeof args.paidPromotion === 'boolean' && after.containsPaidPromotion !== args.paidPromotion
-        const stuckAltered = typeof args.alteredContent === 'boolean' && after.containsSyntheticMedia !== args.alteredContent
-        if (stuckPaid || stuckAltered) {
-          console.warn('[youtube] status fields not honored by API', {
-            videoId,
-            requested: { paidPromotion: args.paidPromotion, alteredContent: args.alteredContent },
-            actual: { containsPaidPromotion: after.containsPaidPromotion, containsSyntheticMedia: after.containsSyntheticMedia },
-          })
-        }
-      } catch { /* verification is best-effort — never fail the update over it */ }
-    }
   }
 
   // Upload a custom thumbnail to YouTube for a video.
