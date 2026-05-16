@@ -274,12 +274,19 @@ export class YouTubeOAuthService {
       // Deduplicate
       .filter((t, i, arr) => arr.indexOf(t) === i)
 
-    // Cap at 500 chars total (YouTube counts comma separators)
+    // Cap at 500 chars total. YouTube counts:
+    //   - the tag itself, plus
+    //   - a comma separator between tags, plus
+    //   - TWO quote chars around any tag that contains a space (YT stores
+    //     multi-word tags as "two words" with the quotes baked in).
+    // The previous calc only counted commas, so multi-word-heavy tag lists
+    // were silently rejected by the API and we'd retry without ANY tags.
     const finalTags: string[] = []
     let total = 0
     for (const tag of sanitizedTags) {
-      const addition = (finalTags.length > 0 ? 1 : 0) + tag.length
-      if (total + addition > 480) break // stay safely under 500
+      const quoted = tag.includes(' ') ? tag.length + 2 : tag.length
+      const addition = (finalTags.length > 0 ? 1 : 0) + quoted
+      if (total + addition > 460) break // stay safely under 500 (was 480, now tighter)
       finalTags.push(tag)
       total += addition
     }
@@ -432,7 +439,36 @@ export class YouTubeOAuthService {
     })
     if (!res.ok) {
       const body = await res.text()
+      // Log the full exchange so we can diagnose what YT rejects — Vercel
+      // logs strip nothing, the thrown message is truncated for the user.
+      console.error('[youtube] status update rejected', {
+        videoId,
+        requestStatus: status,
+        responseStatus: res.status,
+        responseBody: body.slice(0, 1200),
+      })
       throw new Error(`YouTube status update failed ${res.status}: ${body.slice(0, 500)}`)
+    }
+
+    // YouTube silently ignores some status fields it doesn't support via the
+    // API (notably containsPaidPromotion and containsSyntheticMedia — those
+    // are Studio-only). Read the video back so we can verify what landed
+    // and warn the caller about fields that didn't take.
+    if (typeof args.paidPromotion === 'boolean' || typeof args.alteredContent === 'boolean') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const verify = await this.get<any>('/videos', { part: 'status', id: videoId })
+        const after = verify.items?.[0]?.status ?? {}
+        const stuckPaid = typeof args.paidPromotion === 'boolean' && after.containsPaidPromotion !== args.paidPromotion
+        const stuckAltered = typeof args.alteredContent === 'boolean' && after.containsSyntheticMedia !== args.alteredContent
+        if (stuckPaid || stuckAltered) {
+          console.warn('[youtube] status fields not honored by API', {
+            videoId,
+            requested: { paidPromotion: args.paidPromotion, alteredContent: args.alteredContent },
+            actual: { containsPaidPromotion: after.containsPaidPromotion, containsSyntheticMedia: after.containsSyntheticMedia },
+          })
+        }
+      } catch { /* verification is best-effort — never fail the update over it */ }
     }
   }
 
