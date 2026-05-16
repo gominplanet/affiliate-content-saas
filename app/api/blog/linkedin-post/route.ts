@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createLinkedInService } from '@/services/linkedin'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 
 export const maxDuration = 60
 
@@ -95,7 +96,9 @@ Return ONLY the post text, no extra commentary.`,
       }],
     })
 
-    const postText = (msg.content[0] as { type: string; text: string }).text.trim()
+    // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap
+    // in case the model drifts way past the 600-char target.
+    const postText = capSocialText((msg.content[0] as { type: string; text: string }).text, SOCIAL_LIMITS.linkedin)
 
     // ── 5. Publish to LinkedIn ────────────────────────────────────────────────
     const linkedin = createLinkedInService(

@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { ThreadsService } from '@/services/threads'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -61,21 +62,14 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
     })
 
     // Threads API hard caps body text at 500 chars. The AI is asked to stay
-    // under 450 but drifts — defensively cap. We reserve room for the
-    // disclaimer (+ 2 chars for the \n\n separator) and trim the AI output
-    // at the last word boundary before appending the disclaimer.
-    const THREADS_MAX = 500
+    // under 450 but drifts — capSocialText trims (at the last word boundary)
+    // to leave exactly enough room for the disclaimer + separator.
     const sep = '\n\n'
-    const reserveForDisclaimer = sep.length + DISCLAIMER.length
-    const maxBody = THREADS_MAX - reserveForDisclaimer
-
-    let postText = (msg.content[0] as { type: string; text: string }).text.trim()
-    if (postText.length > maxBody) {
-      const cut = postText.slice(0, maxBody - 1) // leave room for an ellipsis
-      const lastSpace = cut.lastIndexOf(' ')
-      postText = (lastSpace > maxBody * 0.6 ? cut.slice(0, lastSpace) : cut) + '…'
-    }
-    const fullText = `${postText}${sep}${DISCLAIMER}`
+    const fullText = capSocialText(
+      (msg.content[0] as { type: string; text: string }).text,
+      SOCIAL_LIMITS.threads,
+      `${sep}${DISCLAIMER}`,
+    )
 
     // Use YouTube thumbnail (hero image with person + product)
     const imageUrl = p.youtube_videos?.thumbnail_url || null

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { GoogleGenAI } from '@google/genai'
+import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 
 const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you. #ad #affiliate #amazonfinds'
 
@@ -84,7 +85,8 @@ Return ONLY valid JSON with these exact keys:
 
   return NextResponse.json({
     title: p.title,
-    description: fields.pinterest_description,
+    // Pinterest pin description is hard-capped at 500 chars by the API.
+    description: capSocialText(fields.pinterest_description ?? '', SOCIAL_LIMITS.pinterest),
     disclaimer: AFFILIATE_DISCLAIMER,
     imageBase64: imageResult?.data ?? null,
     mediaType: imageResult?.mediaType ?? null,
