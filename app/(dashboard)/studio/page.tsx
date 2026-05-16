@@ -6,7 +6,7 @@ import Header from '@/components/layout/Header'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, ChevronLeft, ChevronRight,
+  Image, Download, Sparkles, ChevronLeft, ChevronRight, Upload,
 } from 'lucide-react'
 
 interface DraftVideo {
@@ -276,6 +276,37 @@ function VideoStudioCard({ video, userTier, playlists }: {
     setThumbnailPrompt((data.prompt as string) ?? null)
     setThumbnailModel((data.modelUsed as string) ?? null)
     setSceneAnalysis((data.channelStyle as string) ?? null)
+  }
+
+  /**
+   * Upload-your-own thumbnail path. We read the file into a data URI
+   * (matching the format the Apply-to-YouTube route already expects) and
+   * skip all AI work. Enforces YouTube's hard limits: 2 MB max, image
+   * mime type. Aspect ratio is recommended 16:9 but YouTube will accept
+   * other shapes (just letterboxes / pillar-boxes in the player).
+   */
+  async function handleThumbnailUpload(file: File) {
+    if (!file) return
+    setThumbnailError(null)
+    if (!file.type.startsWith('image/')) {
+      setThumbnailError('Please pick an image file (JPG, PNG, GIF, or BMP).')
+      return
+    }
+    // YouTube's thumbnail endpoint rejects > 2 MB
+    if (file.size > 2 * 1024 * 1024) {
+      setThumbnailError(`That file is ${(file.size / 1024 / 1024).toFixed(1)} MB — YouTube caps thumbnails at 2 MB. Compress and try again.`)
+      return
+    }
+    const reader = new FileReader()
+    reader.onerror = () => setThumbnailError("Couldn't read that file. Try a different image.")
+    reader.onload = () => {
+      const dataUri = reader.result as string
+      setThumbnailUrl(dataUri)
+      setThumbnailPrompt(null)
+      setThumbnailModel('upload')
+      setThumbnailHook(null)
+    }
+    reader.readAsDataURL(file)
   }
 
   async function generateThumbnail() {
@@ -842,6 +873,26 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         : <>⚡ Instant</>}
                     </button>
                   )}
+
+                  {/* Upload your own — skips AI, uses the user's file as-is. */}
+                  <label
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer disabled:opacity-60 transition-opacity hover:bg-gray-50 dark:hover:bg-white/5"
+                    style={{ borderColor: '#d2d2d7', color: '#1d1d1f' }}
+                    title="Use your own thumbnail (JPG/PNG, ≤ 2 MB, 1280×720 recommended)"
+                  >
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/bmp"
+                      className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0]
+                        if (f) handleThumbnailUpload(f)
+                        e.target.value = '' // allow re-uploading the same file
+                      }}
+                      disabled={generatingThumbnail || instantLoading}
+                    />
+                    <Upload size={12} /> Upload your own
+                  </label>
                 </div>
 
                 {thumbnailError && (
@@ -878,6 +929,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         >
                           <Download size={12} /> Download Thumbnail
                         </a>
+                      )}
+                      {thumbnailModel === 'upload' && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">
+                          📤 Your upload
+                        </span>
                       )}
                       {thumbnailModel === 'instant' && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
