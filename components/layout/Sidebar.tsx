@@ -9,6 +9,7 @@ import {
   PlaySquare,
   Palette,
   AlertTriangle,
+  UserCog,
   ChevronRight,
   Wrench,
   Plug,
@@ -43,6 +44,7 @@ const nav = [
 
 const secondaryNav = [
   { href: '/billing', label: 'Plan & Billing', icon: CreditCard },
+  { href: '/admin/users', label: 'Users (admin)', icon: UserCog, danger: false },
   { href: '/admin/failures', label: 'Failures', icon: AlertTriangle, danger: true },
 ]
 
