@@ -77,6 +77,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const isPro = userTier === 'pro' || userTier === 'admin'
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
+  const [finishCheckDone, setFinishCheckDone] = useState(false)
   const [generated, setGenerated] = useState<GeneratedMetadata | null>(null)
   const [agentInsights, setAgentInsights] = useState<AgentInsights | null>(null)
   const [product, setProduct] = useState<ProductInfo | null>(null)
@@ -1062,6 +1063,55 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   <p className="text-xs text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2 break-all">
                     ❌ {applyError}
                   </p>
+                )}
+
+                {/* Post-apply Studio checklist — covers fields YouTube's API
+                    doesn't accept (paid promotion, monetization, content
+                    rating). Three clicks in Studio and the video is fully
+                    set up. Dismissible so repeat applies don't nag. */}
+                {applied && !finishCheckDone && (
+                  <div className="rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3 flex flex-col gap-2.5">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle size={14} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Finish in Studio (3 clicks)</p>
+                        <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+                          YouTube&apos;s API doesn&apos;t accept these fields — open Studio and tick them once. Takes 10 seconds.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setFinishCheckDone(true)}
+                        className="text-[10px] text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0"
+                        title="Hide this reminder"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+
+                    <ul className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] flex flex-col gap-1.5 pl-1">
+                      <li className="flex items-start gap-2">
+                        <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">1</span>
+                        <span><strong>Paid promotion</strong>: Details → tick <em>&quot;Yes, the video contains paid promotion&quot;</em>.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">2</span>
+                        <span><strong>Monetization</strong>: Monetization tab → toggle <em>On</em>.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-4 h-4 rounded-full border border-[#ff9500] flex items-center justify-center text-[10px] font-bold text-[#ff9500] flex-shrink-0 mt-px">3</span>
+                        <span><strong>Content rating</strong>: pick <em>&quot;None of the above&quot;</em> for each row, then Submit.</span>
+                      </li>
+                    </ul>
+
+                    <a
+                      href={`https://studio.youtube.com/video/${video.youtubeVideoId}/edit`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#ff0000] hover:bg-[#cc0000] transition-colors"
+                    >
+                      <Youtube size={11} /> Open this video in Studio <ExternalLink size={10} />
+                    </a>
+                  </div>
                 )}
               </div>
             </div>
