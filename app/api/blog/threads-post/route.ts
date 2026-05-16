@@ -60,8 +60,22 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
       }],
     })
 
-    const postText = (msg.content[0] as { type: string; text: string }).text.trim()
-    const fullText = `${postText}\n\n${DISCLAIMER}`
+    // Threads API hard caps body text at 500 chars. The AI is asked to stay
+    // under 450 but drifts — defensively cap. We reserve room for the
+    // disclaimer (+ 2 chars for the \n\n separator) and trim the AI output
+    // at the last word boundary before appending the disclaimer.
+    const THREADS_MAX = 500
+    const sep = '\n\n'
+    const reserveForDisclaimer = sep.length + DISCLAIMER.length
+    const maxBody = THREADS_MAX - reserveForDisclaimer
+
+    let postText = (msg.content[0] as { type: string; text: string }).text.trim()
+    if (postText.length > maxBody) {
+      const cut = postText.slice(0, maxBody - 1) // leave room for an ellipsis
+      const lastSpace = cut.lastIndexOf(' ')
+      postText = (lastSpace > maxBody * 0.6 ? cut.slice(0, lastSpace) : cut) + '…'
+    }
+    const fullText = `${postText}${sep}${DISCLAIMER}`
 
     // Use YouTube thumbnail (hero image with person + product)
     const imageUrl = p.youtube_videos?.thumbnail_url || null
