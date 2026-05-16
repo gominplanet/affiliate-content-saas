@@ -195,23 +195,29 @@ function CategoryPicker({
   videoId,
   initial,
   brandNiches,
+  customCategories,
+  onCustomCategoryAdded,
   hasPublishedPost,
 }: {
   videoId: string
   initial: string | null
   brandNiches: string[]
+  customCategories: string[]
+  onCustomCategoryAdded: (next: string[]) => void
   hasPublishedPost: boolean
 }) {
   const [value, setValue] = useState<string>(initial ?? '')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const ADD_NEW = '__add_new__'
 
   // Brand-niche set lookups for fast highlighting
   const brandNicheSet = new Set(brandNiches.map(n => n.toLowerCase()))
+  const customSet = new Set(customCategories.map(c => c.toLowerCase()))
 
-  // Order options: brand niches first (a "Your niches" optgroup), then the rest
+  // Group options: brand niches → custom categories → remaining master niches
   const userNiches = ALL_CATEGORIES.filter(c => brandNicheSet.has(c.toLowerCase()))
-  const otherNiches = ALL_CATEGORIES.filter(c => !brandNicheSet.has(c.toLowerCase()))
+  const otherNiches = ALL_CATEGORIES.filter(c => !brandNicheSet.has(c.toLowerCase()) && !customSet.has(c.toLowerCase()))
 
   async function save(next: string) {
     setValue(next)
@@ -226,7 +232,6 @@ function CategoryPicker({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Save failed')
       setStatus('saved')
-      // Auto-clear the "Saved" indicator after a few seconds
       setTimeout(() => setStatus('idle'), 2000)
       if (data.warning) setErrorMsg(data.warning) // partial success (WP push failed)
     } catch (err) {
@@ -235,11 +240,44 @@ function CategoryPicker({
     }
   }
 
+  /** Prompt the user for a new category name → save to brand_profiles → assign. */
+  async function addCustomCategory() {
+    const name = window.prompt('Add a new category (e.g. "Smart Home Locks"):')?.trim()
+    if (!name) return
+    setStatus('saving')
+    setErrorMsg(null)
+    try {
+      const res = await fetch('/api/brand/add-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to add category')
+      onCustomCategoryAdded((data.customCategories as string[]) ?? customCategories)
+      // Auto-select the newly added (or existing) category for this video
+      await save(name)
+      if (data.warning) setErrorMsg(data.warning)
+    } catch (err) {
+      setStatus('error')
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to add category')
+    }
+  }
+
+  function handleChange(next: string) {
+    if (next === ADD_NEW) {
+      // Reset the visible select to current value, then trigger the prompt
+      addCustomCategory()
+      return
+    }
+    save(next)
+  }
+
   return (
     <div className="inline-flex items-center gap-1.5">
       <select
         value={value}
-        onChange={e => save(e.target.value)}
+        onChange={e => handleChange(e.target.value)}
         className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#0071e3] focus:outline-none max-w-[180px]"
         title={hasPublishedPost ? 'Change the category on this published post' : 'Pick a category before generating'}
       >
@@ -249,21 +287,27 @@ function CategoryPicker({
             {userNiches.map(c => <option key={c} value={c}>{c}</option>)}
           </optgroup>
         )}
+        {customCategories.length > 0 && (
+          <optgroup label="Your custom categories">
+            {customCategories.map(c => <option key={c} value={c}>{c}</option>)}
+          </optgroup>
+        )}
         {otherNiches.length > 0 && (
-          <optgroup label={userNiches.length > 0 ? 'Other categories' : 'All categories'}>
+          <optgroup label="Other categories">
             {otherNiches.map(c => <option key={c} value={c}>{c}</option>)}
           </optgroup>
         )}
+        <option value={ADD_NEW}>+ Add new category…</option>
       </select>
       {status === 'saving' && <Loader2 size={11} className="animate-spin text-[#86868b]" />}
-      {status === 'saved' && <CheckCircle size={11} className="text-[#34c759]" />}
+      {status === 'saved' && !errorMsg && <CheckCircle size={11} className="text-[#34c759]" />}
       {status === 'error' && errorMsg && (
-        <span className="text-[10px] text-[#ff3b30] max-w-[120px] truncate" title={errorMsg}>
+        <span className="text-[10px] text-[#ff3b30] max-w-[160px] truncate" title={errorMsg}>
           ⚠ {errorMsg}
         </span>
       )}
-      {status === 'saved' && errorMsg && (
-        <span className="text-[10px] text-[#ff9500] max-w-[120px] truncate" title={errorMsg}>
+      {errorMsg && status !== 'error' && (
+        <span className="text-[10px] text-[#ff9500] max-w-[160px] truncate" title={errorMsg}>
           ⚠
         </span>
       )}
@@ -806,7 +850,7 @@ function InstagramPublishModal({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, userTier, brandNiches,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, userTier, brandNiches, customCategories, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -822,6 +866,8 @@ function VideoCard({
   instagramConnected: boolean
   userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
   brandNiches: string[]
+  customCategories: string[]
+  onCustomCategoryAdded: (next: string[]) => void
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
   onDelete: (postId: string) => void
@@ -1134,6 +1180,8 @@ function VideoCard({
               videoId={id}
               initial={(video.selected_category as string | null) ?? null}
               brandNiches={brandNiches}
+              customCategories={customCategories}
+              onCustomCategoryAdded={onCustomCategoryAdded}
               hasPublishedPost={!!post}
             />
             {post ? (
@@ -1307,6 +1355,7 @@ export default function ContentPage() {
   const [instagramConnected, setInstagramConnected] = useState(false)
   const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
   const [brandNiches, setBrandNiches] = useState<string[]>([])
+  const [customCategories, setCustomCategories] = useState<string[]>([])
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -1347,7 +1396,7 @@ export default function ContentPage() {
     const sb = supabase as any
     const [{ data: vids }, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
       sb.from('youtube_videos').select('*').eq('user_id', user.id).order('published_at', { ascending: false }),
-      sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
+      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tier').eq('user_id', user.id).single(),
       sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
     ])
@@ -1371,6 +1420,7 @@ export default function ContentPage() {
     setInstagramConnected(!!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
     setUserTier(((i as Record<string, unknown>)?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free')
     setBrandNiches(((b?.niches as string[] | null) ?? []))
+    setCustomCategories(((b?.custom_categories as string[] | null) ?? []))
     setVideos((vids as Record<string, unknown>[]) ?? [])
 
     const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
@@ -2042,6 +2092,8 @@ export default function ContentPage() {
                     instagramConnected={instagramConnected}
                     userTier={userTier}
                     brandNiches={brandNiches}
+                    customCategories={customCategories}
+                    onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
                     onDelete={(postId) => {
