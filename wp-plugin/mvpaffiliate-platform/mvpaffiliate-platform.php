@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.5
+ * Version: 1.0.6
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.5');
+define('MVP_AFFILIATE_VERSION', '1.0.6');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -690,3 +690,107 @@ add_filter('plugins_api', function ($result, $action, $args) {
         ],
     ];
 }, 10, 3);
+
+// ─── 19. Dashboard-driven update (no wp-admin trip) ──────────────────────────
+// Two REST routes the MVP Affiliate dashboard calls with Basic Auth:
+//   GET  /affiliateos/v1/status      -> installed plugin + theme versions
+//   POST /affiliateos/v1/self-update -> pull + install the latest zips
+//
+// The dashboard compares /status against /api/wp-version to decide whether
+// to show an "Update now" button, then hits /self-update on click.
+add_action('rest_api_init', function () {
+    register_rest_route('affiliateos/v1', '/status', [
+        'methods'             => 'GET',
+        'callback'            => 'mvp_affiliate_rest_status',
+        'permission_callback' => function () { return current_user_can('manage_options'); },
+    ]);
+    register_rest_route('affiliateos/v1', '/self-update', [
+        'methods'             => 'POST',
+        'callback'            => 'mvp_affiliate_rest_self_update',
+        'permission_callback' => function () { return current_user_can('manage_options'); },
+    ]);
+});
+
+if (!function_exists('mvp_affiliate_rest_status')) {
+    function mvp_affiliate_rest_status() {
+        $theme = wp_get_theme('mvp-affiliate-theme');
+        return new WP_REST_Response([
+            'plugin_version' => MVP_AFFILIATE_VERSION,
+            'theme_version'  => $theme->exists() ? (string) $theme->get('Version') : null,
+            'theme_active'   => (get_stylesheet() === 'mvp-affiliate-theme'),
+        ], 200);
+    }
+}
+
+if (!function_exists('mvp_affiliate_rest_self_update')) {
+    function mvp_affiliate_rest_self_update() {
+        $info = mvp_affiliate_fetch_remote_version();
+        if (!$info) {
+            return new WP_REST_Response(['error' => 'Could not reach the MVP Affiliate version endpoint.'], 502);
+        }
+
+        if (!class_exists('WP_Upgrader')) {
+            require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        }
+        if (!class_exists('Automatic_Upgrader_Skin')) {
+            require_once ABSPATH . 'wp-admin/includes/class-automatic-upgrader-skin.php';
+        }
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/misc.php';
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';        // is_plugin_active / activate_plugin
+        require_once ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
+        require_once ABSPATH . 'wp-admin/includes/class-theme-upgrader.php';
+
+        $results = ['theme' => null, 'plugin' => null];
+
+        // ── Theme first (safe — not the running code) ───────────────────────
+        $theme_latest = $info['theme']['version'] ?? null;
+        $theme_zip    = $info['theme']['download_url'] ?? null;
+        $theme        = wp_get_theme('mvp-affiliate-theme');
+        $theme_local  = $theme->exists() ? (string) $theme->get('Version') : '0';
+        if ($theme_zip && $theme_latest && version_compare($theme_local, $theme_latest, '<')) {
+            try {
+                $up = new Theme_Upgrader(new Automatic_Upgrader_Skin());
+                $r  = $up->install($theme_zip, ['overwrite_package' => true]);
+                $results['theme'] = is_wp_error($r)
+                    ? ['ok' => false, 'error' => $r->get_error_message()]
+                    : ['ok' => (bool) $r, 'from' => $theme_local, 'to' => $theme_latest];
+            } catch (\Throwable $e) {
+                $results['theme'] = ['ok' => false, 'error' => $e->getMessage()];
+            }
+        } else {
+            $results['theme'] = ['ok' => true, 'skipped' => 'up-to-date', 'version' => $theme_local];
+        }
+
+        // ── Plugin last (replaces running code; current request finishes on
+        //    the old code, next request loads the new — WP-standard behaviour) ─
+        $plugin_latest = $info['plugin']['version'] ?? null;
+        $plugin_zip    = $info['plugin']['download_url'] ?? null;
+        if ($plugin_zip && $plugin_latest && version_compare(MVP_AFFILIATE_VERSION, $plugin_latest, '<')) {
+            try {
+                $up = new Plugin_Upgrader(new Automatic_Upgrader_Skin());
+                $r  = $up->install($plugin_zip, ['overwrite_package' => true]);
+                if (!is_wp_error($r) && $r) {
+                    // install() can deactivate on overwrite — make sure we stay on.
+                    $basename = plugin_basename(__FILE__);
+                    if (!is_plugin_active($basename)) activate_plugin($basename);
+                }
+                $results['plugin'] = is_wp_error($r)
+                    ? ['ok' => false, 'error' => $r->get_error_message()]
+                    : ['ok' => (bool) $r, 'from' => MVP_AFFILIATE_VERSION, 'to' => $plugin_latest];
+            } catch (\Throwable $e) {
+                $results['plugin'] = ['ok' => false, 'error' => $e->getMessage()];
+            }
+        } else {
+            $results['plugin'] = ['ok' => true, 'skipped' => 'up-to-date', 'version' => MVP_AFFILIATE_VERSION];
+        }
+
+        // Bust caches so the new theme/plugin code is served immediately.
+        do_action('litespeed_purge_all');
+        if (function_exists('wp_cache_flush')) wp_cache_flush();
+        delete_transient('mvp_affiliate_remote_version');
+
+        $allOk = (!empty($results['theme']['ok'])) && (!empty($results['plugin']['ok']));
+        return new WP_REST_Response(['ok' => $allOk, 'results' => $results], $allOk ? 200 : 207);
+    }
+}

@@ -5,6 +5,7 @@ import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import WhatsNew from '@/components/dashboard/WhatsNew'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
+import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers } from 'lucide-react'
 import Link from 'next/link'
 
@@ -104,6 +105,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      <WpUpdateBanner />
       <WhatsNew />
       <ReferralBanner />
       <SetupChecklist />
