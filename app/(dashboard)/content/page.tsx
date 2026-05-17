@@ -8,6 +8,7 @@ import {
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle,
 } from 'lucide-react'
 import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
+import { BulkScheduleModal } from '@/components/content/BulkScheduleModal'
 
 // Shape returned by /api/blog/scheduled-list — flat enough that we don't
 // need a separate type module.
@@ -1568,6 +1569,13 @@ export default function ContentPage() {
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set())
   const [bulkGenerating, setBulkGenerating] = useState(false)
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<{ done: number; total: number } | null>(null)
+  // Bulk Set Category — inline picker shown when the user clicks the
+  // "Set category" button in the action bar.
+  const [bulkCategoryOpen, setBulkCategoryOpen] = useState(false)
+  const [bulkCategoryApplying, setBulkCategoryApplying] = useState(false)
+  const [bulkCategoryProgress, setBulkCategoryProgress] = useState<{ done: number; total: number } | null>(null)
+  // Bulk Schedule — modal opens with date picker + platform multi-select
+  const [bulkScheduleOpen, setBulkScheduleOpen] = useState(false)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
   // Hydrate the preview-before-publish toggle from localStorage
@@ -1899,6 +1907,41 @@ export default function ContentPage() {
     setBulkGenerating(false)
     setSelectedVideoIds(new Set())
     if (failed > 0) setFixCatResult(`${success} generated · ${failed} failed${firstError ? ` (${firstError})` : ''}`)
+  }
+
+  /**
+   * Bulk Set Category — applies the same category to every selected video.
+   * For videos that already have a published post, the change pushes to
+   * WordPress via /api/blog/update-category (same as the per-card picker).
+   */
+  async function bulkSetCategory(category: string) {
+    const ids = visibleVideos.filter(v => selectedVideoIds.has(v.id as string)).map(v => v.id as string)
+    if (!ids.length) return
+    setBulkCategoryApplying(true)
+    setBulkCategoryProgress({ done: 0, total: ids.length })
+    let success = 0; let failed = 0; let firstError = ''
+    for (let i = 0; i < ids.length; i++) {
+      setBulkCategoryProgress({ done: i, total: ids.length })
+      try {
+        const res = await fetch('/api/blog/update-category', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: ids[i], category }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) success++
+        else { failed++; if (!firstError) firstError = data.error || `HTTP ${res.status}` }
+      } catch (e) {
+        failed++
+        if (!firstError) firstError = e instanceof Error ? e.message : 'Network error'
+      }
+    }
+    setBulkCategoryProgress(null)
+    setBulkCategoryApplying(false)
+    setBulkCategoryOpen(false)
+    setFixCatResult(`Category "${category}" applied to ${success}${failed > 0 ? ` · ${failed} failed${firstError ? ` (${firstError})` : ''}` : ''}`)
+    // Refresh video rows so the picker shows the new category
+    await load()
   }
 
   async function backfillVideoLinks() {
@@ -2294,42 +2337,100 @@ export default function ContentPage() {
                   Select all ungenerated
                 </button>
               )}
-              {selectedVideoIds.size > 0 && (
-                <>
-                  <button
-                    onClick={() => setSelectedVideoIds(new Set())}
-                    className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
-                  >
-                    Clear ({selectedVideoIds.size})
-                  </button>
-                  <button
-                    onClick={bulkGenerateSelected}
-                    disabled={bulkGenerating}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0071e3] text-white rounded-lg hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
-                  >
-                    {bulkGenerating
-                      ? <><Loader2 size={11} className="animate-spin" /> Generating {bulkGenerateProgress?.done ?? 0}/{bulkGenerateProgress?.total ?? 0}…</>
-                      : <><Sparkles size={11} /> Generate {selectedVideoIds.size} selected</>
-                    }
-                  </button>
-                </>
-              )}
+              {selectedVideoIds.size > 0 && (() => {
+                // Partition selected videos by generated/ungenerated so the
+                // action buttons can show the right counts and gate themselves
+                // (e.g. Schedule only makes sense for videos with a post).
+                const selectedVideosArr = visibleVideos.filter(v => selectedVideoIds.has(v.id as string))
+                const ungenerated = selectedVideosArr.filter(v => !posts[v.id as string])
+                const generated   = selectedVideosArr.filter(v =>  posts[v.id as string])
+                const bulkBusy = bulkGenerating || bulkCategoryApplying
+                return (
+                  <>
+                    <button
+                      onClick={() => setSelectedVideoIds(new Set())}
+                      disabled={bulkBusy}
+                      className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline disabled:opacity-60"
+                    >
+                      Clear ({selectedVideoIds.size})
+                    </button>
+                    {ungenerated.length > 0 && (
+                      <button
+                        onClick={bulkGenerateSelected}
+                        disabled={bulkBusy}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0071e3] text-white rounded-lg hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                      >
+                        {bulkGenerating
+                          ? <><Loader2 size={11} className="animate-spin" /> Generating {bulkGenerateProgress?.done ?? 0}/{bulkGenerateProgress?.total ?? 0}…</>
+                          : <><Sparkles size={11} /> Generate {ungenerated.length} ungenerated</>
+                        }
+                      </button>
+                    )}
+                    {/* Set Category — works on all selected, generated or not.
+                        Inline picker so it stays on-page (no modal needed). */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setBulkCategoryOpen(o => !o)}
+                        disabled={bulkBusy}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] rounded-lg hover:border-gray-300 disabled:opacity-60 transition-colors"
+                      >
+                        {bulkCategoryApplying
+                          ? <><Loader2 size={11} className="animate-spin" /> Applying {bulkCategoryProgress?.done ?? 0}/{bulkCategoryProgress?.total ?? 0}…</>
+                          : <>Set category…</>
+                        }
+                      </button>
+                      {bulkCategoryOpen && !bulkCategoryApplying && (
+                        <div className="absolute top-full mt-1 right-0 z-30 bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-lg shadow-xl max-h-[300px] overflow-y-auto w-56">
+                          {brandNiches.length > 0 && (
+                            <div className="border-b border-gray-100 dark:border-white/10 py-1">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] px-3 py-1.5">Your brand niches</p>
+                              {brandNiches.map(c => (
+                                <button key={c} onClick={() => bulkSetCategory(c)} className="block w-full text-left px-3 py-1.5 text-xs text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/5">{c}</button>
+                              ))}
+                            </div>
+                          )}
+                          {customCategories.length > 0 && (
+                            <div className="border-b border-gray-100 dark:border-white/10 py-1">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] px-3 py-1.5">Custom</p>
+                              {customCategories.map(c => (
+                                <button key={c} onClick={() => bulkSetCategory(c)} className="block w-full text-left px-3 py-1.5 text-xs text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/5">{c}</button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="py-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] px-3 py-1.5">Other</p>
+                            {ALL_CATEGORIES.filter(c => !brandNiches.includes(c) && !customCategories.includes(c)).map(c => (
+                              <button key={c} onClick={() => bulkSetCategory(c)} className="block w-full text-left px-3 py-1.5 text-xs text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/5">{c}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {generated.length > 0 && (
+                      <button
+                        onClick={() => setBulkScheduleOpen(true)}
+                        disabled={bulkBusy}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] rounded-lg hover:border-gray-300 disabled:opacity-60 transition-colors"
+                      >
+                        Schedule {generated.length}…
+                      </button>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           </div>
           {currentTabVideos.map((video) => {
-            const isGenerated = !!posts[video.id as string]
             const isSelected = selectedVideoIds.has(video.id as string)
             return (
               <div key={video.id as string} className="flex items-start gap-2">
-                {!isGenerated && (
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => toggleVideoSelect(video.id as string)}
-                    className="mt-5 flex-shrink-0 w-4 h-4 rounded accent-[#0071e3] cursor-pointer"
-                  />
-                )}
-                {isGenerated && <div className="w-4 mt-5 flex-shrink-0" />}
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleVideoSelect(video.id as string)}
+                  className="mt-5 flex-shrink-0 w-4 h-4 rounded accent-[#0071e3] cursor-pointer"
+                  title="Select for bulk actions"
+                />
                 <div className="flex-1 min-w-0">
                   <VideoCard
                     video={video}
@@ -2433,6 +2534,37 @@ export default function ContentPage() {
           </div>
         </div>
       )}
+
+      {/* Bulk Schedule modal — only the videos that have a published post
+          are passed in, because scheduling requires an existing blog_posts.id. */}
+      {bulkScheduleOpen && (() => {
+        const eligible = visibleVideos
+          .filter(v => selectedVideoIds.has(v.id as string) && posts[v.id as string]?.postId)
+          .map(v => ({
+            postId: posts[v.id as string]!.postId!,
+            videoTitle: v.title as string,
+          }))
+        return (
+          <BulkScheduleModal
+            posts={eligible}
+            platforms={[
+              { key: 'facebook', label: 'Facebook', color: '#1877f2', connected: fbConnected,        dryRunEndpoint: '/api/blog/facebook-post' },
+              { key: 'threads',  label: 'Threads',  color: '#000000', connected: threadsConnected,   dryRunEndpoint: '/api/blog/threads-post' },
+              { key: 'twitter',  label: 'X',        color: '#000000', connected: twitterConnected,   dryRunEndpoint: '/api/blog/twitter-post' },
+              { key: 'linkedin', label: 'LinkedIn', color: '#0a66c2', connected: linkedInConnected,  dryRunEndpoint: '/api/blog/linkedin-post' },
+              { key: 'bluesky',  label: 'Bluesky',  color: '#1185fe', connected: blueskyConnected,   dryRunEndpoint: '/api/blog/bluesky-post' },
+              { key: 'telegram', label: 'Telegram', color: '#229ED9', connected: telegramConnected,  dryRunEndpoint: '/api/blog/telegram-post' },
+            ]}
+            onClose={() => setBulkScheduleOpen(false)}
+            onScheduled={({ ok, failed, firstError }) => {
+              setFixCatResult(`${ok} scheduled${failed > 0 ? ` · ${failed} failed${firstError ? ` (${firstError})` : ''}` : ''}`)
+              setSelectedVideoIds(new Set())
+              // Refresh the Scheduled tab next time it opens
+              setScheduledItems(null)
+            }}
+          />
+        )
+      })()}
     </>
   )
 }
