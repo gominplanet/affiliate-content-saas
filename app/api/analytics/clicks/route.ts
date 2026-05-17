@@ -1,55 +1,42 @@
 /**
  * GET /api/analytics/clicks
  *
- * Returns click + per-post analytics for the /analytics page. Source of truth
- * is Geniuslink — we list the user's shortlinks via their API, then join
- * back to blog_posts.geniuslink_code.
+ * Returns click + per-post analytics for the /analytics page. Source of
+ * truth is Geniuslink — we look up lifetime clicks per shortcode via their
+ * /v1/reports/link-click-trend-by-resolution endpoint.
  *
- * Auto-backfill: for blog posts that don't yet have geniuslink_code stored
- * (created before migration 022) we match by Note → blog_posts.title. We
- * set Note to the post title when creating the link upstream, so this
- * matches with good fidelity. Match is saved so subsequent hits skip the
- * backfill cost.
+ * Backfill strategy: Geniuslink doesn't expose a "list-all-shortlinks"
+ * endpoint, so we can't enumerate them server-side. Instead we extract
+ * the geni.us/CODE shortcode from each blog post's stored content (Claude
+ * embeds it in the body during generation). Any post that doesn't have a
+ * geniuslink_code on the row gets one assigned from content scraping, and
+ * we persist it so subsequent hits skip the scrape.
  *
  * Response shape:
  *   {
- *     connected: boolean        // false if user hasn't set up Geniuslink
- *     totals: {
- *       clicks: number          // sum across all matched links
- *       posts: number           // # of blog posts that have ≥1 click
- *       topClicks: number       // clicks on the top-performing post
- *     }
- *     posts: Array<{ postId, title, url, clicks, code }>  // sorted desc
+ *     connected: boolean
+ *     totals: { clicks, posts, topClicks }
+ *     posts: Array<{ postId, title, url, clicks, code }>
  *   }
- *
- * Note: Geniuslink's standard tier doesn't return time-series data. To get
- * a daily-clicks series we'd need their Insights add-on. For now we return
- * cumulative-per-link, no daily series. The UI handles its absence.
  */
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createGeniuslinkService } from '@/services/geniuslink'
 
-interface ShortlinkRow {
-  // Geniuslink returns inconsistent casing across versions — handle both.
-  Code?: string
-  code?: string
-  Note?: string
-  note?: string
-  Clicks?: number
-  clicks?: number
-  ClickCount?: number
-  clickCount?: number
-  Url?: string
-  url?: string
-}
-
 interface BlogPostRow {
   id: string
   title: string | null
   wordpress_url: string | null
   geniuslink_code: string | null
+  content: string | null
+}
+
+/** Pull geni.us/CODE out of arbitrary text. */
+function extractCode(text: string | null | undefined): string | null {
+  if (!text) return null
+  const m = text.match(/https?:\/\/(?:www\.)?geni\.us\/([A-Za-z0-9]+)/)
+  return m ? m[1] : null
 }
 
 export async function GET() {
@@ -58,7 +45,7 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Geniuslink credentials
+    // Geniuslink creds
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)
       .from('integrations')
@@ -74,43 +61,27 @@ export async function GET() {
       })
     }
 
-    // 1. Pull every shortlink on the account.
-    let shortlinks: ShortlinkRow[] = []
-    try {
-      const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-      shortlinks = await genius.listShortlinks()
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return NextResponse.json({ error: `Geniuslink list failed: ${msg}` }, { status: 502 })
-    }
-
-    // Normalize each row to consistent { code, note, clicks }
-    const normalized = shortlinks.map(s => ({
-      code: (s.Code ?? s.code ?? '').toString(),
-      note: ((s.Note ?? s.note ?? '') as string).trim(),
-      clicks: Number(s.Clicks ?? s.clicks ?? s.ClickCount ?? s.clickCount ?? 0),
-    })).filter(s => !!s.code)
-
-    // 2. Pull all this user's blog posts.
+    // Pull every published post for this user with enough columns to do
+    // the backfill in-process.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postsRaw } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,wordpress_url,geniuslink_code')
+      .select('id,title,wordpress_url,geniuslink_code,content')
       .eq('user_id', user.id)
       .eq('status', 'published')
     const posts: BlogPostRow[] = postsRaw ?? []
 
-    // 3. Backfill: for posts without a code, match by Note → title.
-    const byCode = new Map(normalized.map(s => [s.code, s]))
-    const byNote = new Map(normalized.map(s => [s.note.toLowerCase(), s]))
+    // Backfill: extract geni.us/CODE from content for any post missing
+    // the column. Persist so we don't re-scrape next time.
     const backfills: Array<{ id: string; code: string }> = []
     for (const p of posts) {
-      if (p.geniuslink_code && byCode.has(p.geniuslink_code)) continue
-      const noteMatch = (p.title ?? '').toLowerCase().trim()
-      const matched = noteMatch ? byNote.get(noteMatch) : undefined
-      if (matched) backfills.push({ id: p.id, code: matched.code })
+      if (p.geniuslink_code) continue
+      const code = extractCode(p.content)
+      if (code) {
+        p.geniuslink_code = code
+        backfills.push({ id: p.id, code })
+      }
     }
-    // Persist the backfilled codes so future hits skip the matching step.
     if (backfills.length > 0) {
       await Promise.all(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,26 +91,32 @@ export async function GET() {
           .eq('id', b.id)
         ),
       )
-      // Reflect the backfill into the local `posts` array so the response
-      // includes it without a second SELECT.
-      const bMap = new Map(backfills.map(b => [b.id, b.code]))
-      for (const p of posts) {
-        if (!p.geniuslink_code && bMap.has(p.id)) p.geniuslink_code = bMap.get(p.id)!
-      }
     }
 
-    // 4. Build per-post rows joined with click counts.
+    // Look up lifetime clicks for every post that has a code. We dedupe by
+    // code first since multiple posts can share the same affiliate link
+    // (e.g. re-generated versions of the same review).
+    const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+    const uniqueCodes = Array.from(new Set(posts.map(p => p.geniuslink_code).filter((c): c is string => !!c)))
+    // Fire in parallel but cap concurrency at 8 — Geniuslink isn't rate
+    // limited aggressively but this protects us if a user has 100s of posts.
+    const clicksByCode = new Map<string, number>()
+    const CONCURRENCY = 8
+    for (let i = 0; i < uniqueCodes.length; i += CONCURRENCY) {
+      const batch = uniqueCodes.slice(i, i + CONCURRENCY)
+      const counts = await Promise.all(batch.map(code => genius.getLifetimeClicks(code)))
+      batch.forEach((code, idx) => clicksByCode.set(code, counts[idx]))
+    }
+
+    // Build per-post rows.
     const postRows = posts
-      .map(p => {
-        const link = p.geniuslink_code ? byCode.get(p.geniuslink_code) : undefined
-        return {
-          postId: p.id,
-          title: p.title ?? '',
-          url: p.wordpress_url ?? '',
-          code: p.geniuslink_code ?? null,
-          clicks: link?.clicks ?? 0,
-        }
-      })
+      .map(p => ({
+        postId: p.id,
+        title: p.title ?? '',
+        url: p.wordpress_url ?? '',
+        code: p.geniuslink_code ?? null,
+        clicks: p.geniuslink_code ? (clicksByCode.get(p.geniuslink_code) ?? 0) : 0,
+      }))
       .sort((a, b) => b.clicks - a.clicks)
 
     const withClicks = postRows.filter(p => p.clicks > 0)
@@ -152,7 +129,7 @@ export async function GET() {
     return NextResponse.json({
       connected: true,
       totals,
-      posts: postRows.slice(0, 25), // top 25
+      posts: postRows.slice(0, 25),
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

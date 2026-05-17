@@ -92,53 +92,32 @@ export class GeniuslinkService {
    * cumulative clicks per link.
    */
   /**
-   * Geniuslink list endpoint. They version it inconsistently across docs
-   * (/v3/shorturls/list vs /v1/shorturls/list vs /v3/shorturls without
-   * /list), so we try a couple in order and use whichever returns 200.
-   * Once we know which one your account responds to we can hardcode it.
+   * Lifetime clicks for a single shortcode.
+   *
+   * Endpoint discovered via the official Geniuslink node SDK
+   * (github.com/mishguruorg/geniuslink) — they don't ship a "list all"
+   * endpoint, so we look up per-link instead.
+   *
+   * Response shape: { ClicksByDate: [{ Value: { Clicks: number } }] }
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async listShortlinks(): Promise<Array<Record<string, any>>> {
-    const candidates = [
-      // Geniuslink's actual paginated list endpoint per their public docs.
-      (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls/search?page=${page}&pageSize=${pageSize}`,
-      (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls/find?page=${page}&pageSize=${pageSize}`,
-      (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls/list?page=${page}&pageSize=${pageSize}`,
-      (page: number, pageSize: number) => `${GENIUSLINK_API}/v1/shorturls/list?page=${page}&pageSize=${pageSize}`,
-      (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls?page=${page}&pageSize=${pageSize}`,
-    ]
-
-    let lastErr: string | null = null
-    for (const buildUrl of candidates) {
-      const all: Array<Record<string, unknown>> = []
-      let page = 1
-      const pageSize = 200
-      let succeeded = false
-      while (page <= 10) {
-        const res = await fetch(buildUrl(page, pageSize), { headers: this.authHeaders })
-        if (!res.ok) {
-          const text = await res.text()
-          lastErr = `${res.status} at ${buildUrl(page, pageSize)}: ${text.slice(0, 200)}`
-          break
-        }
-        succeeded = true
-        const data = (await res.json()) as {
-          ShortUrls?: Array<Record<string, unknown>>
-          shortUrls?: Array<Record<string, unknown>>
-          // Some Geniuslink endpoints wrap the list in a Results/Items envelope.
-          Results?: Array<Record<string, unknown>>
-          results?: Array<Record<string, unknown>>
-          Items?: Array<Record<string, unknown>>
-          items?: Array<Record<string, unknown>>
-        }
-        const items = data.ShortUrls ?? data.shortUrls ?? data.Results ?? data.results ?? data.Items ?? data.items ?? []
-        all.push(...items)
-        if (items.length < pageSize) break
-        page += 1
-      }
-      if (succeeded) return all
+  async getLifetimeClicks(shortcode: string): Promise<number> {
+    const params = new URLSearchParams({
+      shortcode,
+      advertiserid: '0',
+      resolution: 'lifetime',
+    })
+    const res = await fetch(
+      `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`,
+      { headers: this.authHeaders },
+    )
+    if (!res.ok) {
+      // Don't throw on individual failures — caller aggregates many.
+      return 0
     }
-    throw new Error(`Geniuslink list: all endpoint variants failed. Last: ${lastErr ?? 'no detail'}`)
+    const data = await res.json().catch(() => null) as
+      | { ClicksByDate?: Array<{ Value?: { Clicks?: number } }> }
+      | null
+    return data?.ClicksByDate?.[0]?.Value?.Clicks ?? 0
   }
 }
 
