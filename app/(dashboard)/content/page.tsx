@@ -9,6 +9,22 @@ import {
 } from 'lucide-react'
 import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
 
+// Shape returned by /api/blog/scheduled-list — flat enough that we don't
+// need a separate type module.
+interface ScheduledItem {
+  id: string
+  blog_post_id: string
+  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
+  scheduled_at: string
+  body_text: string
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
+  attempts: number
+  error_message: string | null
+  external_id: string | null
+  created_at: string
+  blog_posts?: { title: string | null; wordpress_url: string | null } | null
+}
+
 // ── Readiness gate ────────────────────────────────────────────────────────────
 interface ReadinessCheck {
   brandReady: boolean
@@ -1304,6 +1320,7 @@ function VideoCard({
             return (
               <SocialPreviewModal
                 platform={cfg.label}
+                platformKey={previewPlatform}
                 brandColor={cfg.color}
                 endpoint={cfg.endpoint}
                 postId={post.postId}
@@ -1367,6 +1384,129 @@ function VideoCard({
   )
 }
 
+// Display label + brand color for each schedulable platform — used by the
+// Scheduled list. Kept in sync with the cron worker's switch statement.
+const PLATFORM_META: Record<ScheduledItem['platform'], { label: string; color: string }> = {
+  facebook: { label: 'Facebook', color: '#1877f2' },
+  threads:  { label: 'Threads',  color: '#000000' },
+  twitter:  { label: 'X',        color: '#000000' },
+  linkedin: { label: 'LinkedIn', color: '#0a66c2' },
+  bluesky:  { label: 'Bluesky',  color: '#1185fe' },
+  telegram: { label: 'Telegram', color: '#229ED9' },
+}
+
+const STATUS_PILL: Record<ScheduledItem['status'], { label: string; bg: string; fg: string }> = {
+  pending:    { label: 'Pending',    bg: 'bg-[#ff9500]/10', fg: 'text-[#9a5d00]' },
+  processing: { label: 'Publishing', bg: 'bg-[#0071e3]/10', fg: 'text-[#0071e3]' },
+  completed:  { label: 'Published',  bg: 'bg-[#34c759]/10', fg: 'text-[#1f8a3a]' },
+  failed:     { label: 'Failed',     bg: 'bg-[#ff3b30]/10', fg: 'text-[#ff3b30]' },
+  cancelled:  { label: 'Cancelled',  bg: 'bg-gray-100',     fg: 'text-[#86868b]' },
+}
+
+function ScheduledList({
+  items, loading, error, onRefresh, onCancel,
+}: {
+  items: ScheduledItem[] | null
+  loading: boolean
+  error: string | null
+  onRefresh: () => void
+  onCancel: (id: string) => void
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
+        <Loader2 size={16} className="animate-spin" /> Loading scheduled posts…
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <div className="card p-6 max-w-md flex flex-col items-center text-center gap-3">
+        <AlertCircle size={20} className="text-[#ff3b30]" />
+        <p className="text-xs text-[#ff3b30]">{error}</p>
+        <button onClick={onRefresh} className="text-xs text-[#0071e3] hover:underline">Retry</button>
+      </div>
+    )
+  }
+  if (!items || items.length === 0) {
+    return (
+      <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No scheduled posts yet</p>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] max-w-sm leading-relaxed">
+          When you publish to a social, tick <strong>Schedule for later</strong> in the preview modal
+          to queue it for a future time. The cron worker fires automatically — no need to keep the
+          app open.
+        </p>
+      </div>
+    )
+  }
+
+  // Sort: pending first (oldest-due at top), then everything else by most recent.
+  const sorted = [...items].sort((a, b) => {
+    const aPending = a.status === 'pending' ? 0 : 1
+    const bPending = b.status === 'pending' ? 0 : 1
+    if (aPending !== bPending) return aPending - bPending
+    return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()
+  })
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+          {items.filter(i => i.status === 'pending').length} pending · {items.length} total
+        </p>
+        <button onClick={onRefresh} className="text-xs text-[#0071e3] hover:underline inline-flex items-center gap-1">
+          <RefreshCw size={11} /> Refresh
+        </button>
+      </div>
+      {sorted.map(item => {
+        const meta = PLATFORM_META[item.platform]
+        const pill = STATUS_PILL[item.status]
+        const when = new Date(item.scheduled_at)
+        const dt = when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        return (
+          <div key={item.id} className="card p-4 flex items-start gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white text-xs font-bold"
+              style={{ background: meta.color }}
+            >
+              {meta.label.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{meta.label}</span>
+                <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${pill.bg} ${pill.fg}`}>
+                  {pill.label}
+                </span>
+                <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                  {item.status === 'pending' ? 'Scheduled for ' : ''}{dt}
+                </span>
+              </div>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] truncate mb-1">
+                {item.blog_posts?.title ?? 'Untitled post'}
+              </p>
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] line-clamp-2 italic">
+                &ldquo;{item.body_text.slice(0, 150)}{item.body_text.length > 150 ? '…' : ''}&rdquo;
+              </p>
+              {item.error_message && (
+                <p className="text-[11px] text-[#ff3b30] mt-2 break-all">⚠ {item.error_message}</p>
+              )}
+            </div>
+            {item.status === 'pending' && (
+              <button
+                onClick={() => onCancel(item.id)}
+                className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors flex-shrink-0"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 const DISMISSED_KEY = 'affiliateos_dismissed_videos'
 function getDismissed(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]')) } catch { return new Set() }
@@ -1410,7 +1550,11 @@ export default function ContentPage() {
   const [catPreview, setCatPreview] = useState<{ title: string; category: string }[] | null>(null)
   const [catPreviewLoading, setCatPreviewLoading] = useState(false)
   const [catApplying, setCatApplying] = useState(false)
-  const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts'>('horizontal')
+  const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
+  // Scheduled posts list (loaded on demand when the Scheduled tab opens)
+  const [scheduledItems, setScheduledItems] = useState<ScheduledItem[] | null>(null)
+  const [scheduledLoading, setScheduledLoading] = useState(false)
+  const [scheduledError, setScheduledError] = useState<string | null>(null)
   const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null }[]>([])
   const [rewritingPostId, setRewritingPostId] = useState<number | null>(null)
   const [postsLoading, setPostsLoading] = useState(false)
@@ -1524,6 +1668,40 @@ export default function ContentPage() {
       setPinPreview(null)
     } finally {
       setPinPublishingFor(null)
+    }
+  }
+
+  /** Load the user's scheduled posts list. Called when they open the Scheduled tab. */
+  async function loadScheduled() {
+    setScheduledLoading(true)
+    setScheduledError(null)
+    try {
+      const res = await fetch('/api/blog/scheduled-list')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to load scheduled posts')
+      setScheduledItems((data.scheduled ?? []) as ScheduledItem[])
+    } catch (err) {
+      setScheduledError(err instanceof Error ? err.message : 'Failed to load scheduled posts')
+    } finally {
+      setScheduledLoading(false)
+    }
+  }
+
+  /** Cancel a pending scheduled post. */
+  async function cancelScheduled(id: string) {
+    if (!confirm('Cancel this scheduled post? It won\'t publish.')) return
+    try {
+      const res = await fetch('/api/blog/scheduled-cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Cancel failed')
+      // Reflect locally — flip status to cancelled
+      setScheduledItems(items => items?.map(i => i.id === id ? { ...i, status: 'cancelled' as const } : i) ?? null)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Cancel failed')
     }
   }
 
@@ -1862,7 +2040,9 @@ export default function ContentPage() {
         title="Content"
         subtitle={
           loading ? 'Loading…' :
-          activeTab === 'posts'
+          activeTab === 'scheduled'
+            ? `Queued posts that will fire automatically. The cron runs every minute — your computer can be off.`
+            : activeTab === 'posts'
             ? `Published reviews — manage social fan-out from each card. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
             : activeTab === 'vertical'
               ? `Your Shorts → Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
@@ -1916,12 +2096,14 @@ export default function ContentPage() {
           { key: 'horizontal' as const, label: 'Horizontal Videos' },
           { key: 'vertical' as const, label: 'Vertical Videos' },
           { key: 'posts' as const, label: `Posts${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
+          { key: 'scheduled' as const, label: `Scheduled${scheduledItems ? ` (${scheduledItems.filter(s => s.status === 'pending').length})` : ''}` },
         ]).map(({ key, label }) => (
           <button
             key={key}
             onClick={() => {
               setActiveTab(key)
               if (key === 'posts' && !postsLoaded && !postsLoading) loadWpPosts()
+              if (key === 'scheduled' && !scheduledItems && !scheduledLoading) loadScheduled()
             }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === key
@@ -1945,6 +2127,14 @@ export default function ContentPage() {
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
+      ) : activeTab === 'scheduled' ? (
+        <ScheduledList
+          items={scheduledItems}
+          loading={scheduledLoading}
+          error={scheduledError}
+          onRefresh={loadScheduled}
+          onCancel={cancelScheduled}
+        />
       ) : activeTab === 'posts' ? (
         <div className="flex flex-col gap-2">
           {/* Bulk action toolbar */}

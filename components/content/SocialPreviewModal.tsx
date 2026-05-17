@@ -1,7 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, X, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
+import { Loader2, X, RefreshCw, CheckCircle, AlertCircle, Calendar } from 'lucide-react'
+
+/** Platform key the SocialPreviewModal accepts for scheduling. The cron
+ *  worker handles the same set. */
+type SchedulablePlatform = 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
 
 /**
  * Generic preview/edit modal used before any text-based social publish.
@@ -22,14 +26,19 @@ import { Loader2, X, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react'
  */
 export function SocialPreviewModal({
   platform,
+  platformKey,
   brandColor,
   endpoint,
   postId,
   onClose,
   onPublished,
+  onScheduled,
 }: {
   /** Display label, e.g. "Threads" — shows in the modal header. */
   platform: string
+  /** Lowercase platform key used by /api/blog/schedule-post. If omitted,
+   *  the Schedule-for-later toggle is hidden (immediate publish only). */
+  platformKey?: SchedulablePlatform
   /** Hex color used for the publish button background. */
   brandColor: string
   /** Relative API path, e.g. /api/blog/threads-post */
@@ -40,6 +49,8 @@ export function SocialPreviewModal({
   onClose: () => void
   /** Called after a successful publish so the pill can flip to "Posted". */
   onPublished: () => void
+  /** Called after a scheduled-for-later succeeds. */
+  onScheduled?: (when: Date) => void
 }) {
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -48,6 +59,14 @@ export function SocialPreviewModal({
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [regenerating, setRegenerating] = useState(false)
+
+  // ── Schedule-for-later state ─────────────────────────────────────────────
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  // Default schedule: 1 hour from now, rounded to the next 5 min boundary.
+  // datetime-local <input> wants a local-time string ("YYYY-MM-DDTHH:mm").
+  const [scheduledAt, setScheduledAt] = useState<string>(() => defaultScheduleString())
+  const [scheduling, setScheduling] = useState(false)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
 
   async function generate() {
     setLoadError(null)
@@ -99,6 +118,40 @@ export function SocialPreviewModal({
       setPublishError(err instanceof Error ? err.message : 'Publish failed')
     } finally {
       setPublishing(false)
+    }
+  }
+
+  /** Schedule-for-later path. Posts to /api/blog/schedule-post with the
+   *  user's edited text and the chosen ISO timestamp. */
+  async function schedule() {
+    if (!platformKey) return
+    if (!text.trim()) return
+    setScheduling(true)
+    setScheduleError(null)
+    try {
+      // Build the ISO timestamp from the datetime-local string. The browser
+      // returns it as local time without TZ — we treat it as the user's
+      // local clock and convert to ISO for the server.
+      const when = new Date(scheduledAt)
+      if (isNaN(when.getTime())) throw new Error('Invalid date / time')
+      const res = await fetch('/api/blog/schedule-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postId,
+          platform: platformKey,
+          scheduledAt: when.toISOString(),
+          text,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Schedule failed')
+      onScheduled?.(when)
+      onClose()
+    } catch (err) {
+      setScheduleError(err instanceof Error ? err.message : 'Schedule failed')
+    } finally {
+      setScheduling(false)
     }
   }
 
@@ -167,31 +220,91 @@ export function SocialPreviewModal({
                 </details>
               )}
 
+              {/* Schedule-for-later toggle + date picker (only when caller
+                  passed a platformKey — i.e. one of the 6 supported
+                  schedulable platforms). */}
+              {platformKey && (
+                <div className="mb-4">
+                  <label className="flex items-center gap-2 text-xs cursor-pointer mb-2">
+                    <input
+                      type="checkbox"
+                      checked={scheduleEnabled}
+                      onChange={e => setScheduleEnabled(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
+                      <Calendar size={11} className="text-[#86868b]" />
+                      Schedule for later
+                    </span>
+                  </label>
+                  {scheduleEnabled && (
+                    <div className="pl-6">
+                      <input
+                        type="datetime-local"
+                        value={scheduledAt}
+                        onChange={e => setScheduledAt(e.target.value)}
+                        min={defaultScheduleString()}
+                        className="w-full text-xs px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#0071e3] focus:outline-none"
+                      />
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
+                        Your timezone. The post fires automatically — you don&apos;t need to keep the app open.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2">
                 <button
                   onClick={onClose}
-                  disabled={publishing}
+                  disabled={publishing || scheduling}
                   className="text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] px-3 py-2 disabled:opacity-60"
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={publish}
-                  disabled={publishing || !text.trim()}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
-                  style={{ background: brandColor }}
-                >
-                  {publishing
-                    ? <><Loader2 size={12} className="animate-spin" /> Publishing…</>
-                    : <><CheckCircle size={12} /> Publish to {platform}</>
-                  }
-                </button>
+                {scheduleEnabled && platformKey ? (
+                  <button
+                    onClick={schedule}
+                    disabled={scheduling || !text.trim()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+                    style={{ background: brandColor }}
+                  >
+                    {scheduling
+                      ? <><Loader2 size={12} className="animate-spin" /> Scheduling…</>
+                      : <><Calendar size={12} /> Schedule for {platform}</>
+                    }
+                  </button>
+                ) : (
+                  <button
+                    onClick={publish}
+                    disabled={publishing || !text.trim()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+                    style={{ background: brandColor }}
+                  >
+                    {publishing
+                      ? <><Loader2 size={12} className="animate-spin" /> Publishing…</>
+                      : <><CheckCircle size={12} /> Publish to {platform}</>
+                    }
+                  </button>
+                )}
               </div>
               {publishError && <p className="text-[11px] text-[#ff3b30] mt-3 break-all">{publishError}</p>}
+              {scheduleError && <p className="text-[11px] text-[#ff3b30] mt-3 break-all">{scheduleError}</p>}
             </>
           )}
         </div>
       </div>
     </div>
   )
+}
+
+/** Returns a "YYYY-MM-DDTHH:mm" string for <input type="datetime-local">
+ *  pointing at now + 1 hour, rounded to the next 5-minute mark. */
+function defaultScheduleString(): string {
+  const d = new Date(Date.now() + 60 * 60 * 1000)
+  const m = d.getMinutes()
+  d.setMinutes(Math.ceil(m / 5) * 5, 0, 0)
+  // Local components (datetime-local has no timezone)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
