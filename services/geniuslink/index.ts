@@ -110,14 +110,45 @@ export class GeniuslinkService {
       `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`,
       { headers: this.authHeaders },
     )
-    if (!res.ok) {
-      // Don't throw on individual failures — caller aggregates many.
-      return 0
-    }
+    if (!res.ok) return 0
     const data = await res.json().catch(() => null) as
       | { ClicksByDate?: Array<{ Value?: { Clicks?: number } }> }
       | null
     return data?.ClicksByDate?.[0]?.Value?.Clicks ?? 0
+  }
+
+  /**
+   * Daily click series for a single shortcode over the last `days` days.
+   * Returns `[{ date: 'YYYY-MM-DD', clicks: N }, ...]` ordered oldest -> newest.
+   * Caller sums for the period total + builds an all-posts daily series.
+   *
+   * Same endpoint as getLifetimeClicks, but resolution=daily + an explicit
+   * date window so the response doesn't fall back to lifetime.
+   */
+  async getDailyClicks(shortcode: string, days = 30): Promise<Array<{ date: string; clicks: number }>> {
+    const end = new Date()
+    const start = new Date(end.getTime() - (days - 1) * 24 * 60 * 60 * 1000)
+    const fmt = (d: Date) => d.toISOString().slice(0, 10) // YYYY-MM-DD
+    const params = new URLSearchParams({
+      shortcode,
+      advertiserid: '0',
+      resolution: 'daily',
+      startdate: fmt(start),
+      enddate: fmt(end),
+    })
+    const res = await fetch(
+      `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`,
+      { headers: this.authHeaders },
+    )
+    if (!res.ok) return []
+    // Geniuslink's daily response has both Key (the date) and Value.Clicks.
+    const data = await res.json().catch(() => null) as
+      | { ClicksByDate?: Array<{ Key?: string; Value?: { Clicks?: number } }> }
+      | null
+    return (data?.ClicksByDate ?? []).map(b => ({
+      date: (b.Key ?? '').slice(0, 10),
+      clicks: b.Value?.Clicks ?? 0,
+    }))
   }
 }
 
