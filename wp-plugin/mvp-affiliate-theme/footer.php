@@ -10,25 +10,27 @@ $brand   = get_bloginfo('name');
 $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
 ?>
 
+<?php if ($author || $bio || $headshot): ?>
+<section class="mvp-about-band">
+  <div class="mvp-container mvp-about-inner">
+    <?php if ($headshot): ?>
+    <img src="<?php echo esc_url($headshot); ?>" alt="<?php echo esc_attr($author); ?>" class="mvp-about-headshot" loading="lazy" />
+    <?php endif; ?>
+    <div class="mvp-about-text">
+      <p class="mvp-about-eyebrow">About us</p>
+      <?php if ($author): ?>
+      <h2 class="mvp-about-name"><?php echo esc_html($author); ?></h2>
+      <?php endif; ?>
+      <?php if ($bio): ?>
+      <div class="mvp-about-bio"><?php echo nl2br(esc_html($bio)); ?></div>
+      <?php endif; ?>
+    </div>
+  </div>
+</section>
+<?php endif; ?>
+
 <footer class="mvp-footer">
   <div class="mvp-container mvp-footer-grid">
-
-    <?php if ($author || $bio || $headshot): ?>
-    <div class="mvp-footer-col mvp-footer-author">
-      <h3 class="mvp-footer-heading">About</h3>
-      <div class="mvp-footer-author-card">
-        <?php if ($headshot): ?>
-        <img src="<?php echo esc_url($headshot); ?>" alt="<?php echo esc_attr($author); ?>" class="mvp-footer-headshot" loading="lazy" />
-        <?php endif; ?>
-        <?php if ($author): ?>
-        <p class="mvp-footer-author-name"><?php echo esc_html($author); ?></p>
-        <?php endif; ?>
-        <?php if ($bio): ?>
-        <p class="mvp-footer-author-bio"><?php echo esc_html($bio); ?></p>
-        <?php endif; ?>
-      </div>
-    </div>
-    <?php endif; ?>
 
     <?php
     $cats = get_categories(['number' => 6, 'orderby' => 'count', 'order' => 'DESC']);

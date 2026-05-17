@@ -858,16 +858,68 @@ a.mvp-ad-slot-filled:hover {
 .mvp-pagination .page-numbers:hover,
 .mvp-pagination .current { background: var(--mvp-primary); color: #fff; border-color: var(--mvp-primary); opacity: 1; }
 
+/* ─── About Us band (sits just above the footer) ─────────────────────────── */
+.mvp-about-band {
+  margin-top: 80px;
+  background: #161616;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  color: #fff;
+}
+.mvp-about-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 36px;
+  padding: 56px 24px;
+  max-width: 920px;
+}
+.mvp-about-headshot {
+  width: 110px; height: 110px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 3px solid rgba(255,255,255,0.12);
+}
+.mvp-about-text { flex: 1; min-width: 0; }
+.mvp-about-eyebrow {
+  font-family: var(--mvp-font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+  margin: 0 0 8px;
+}
+.mvp-about-name {
+  font-family: var(--mvp-font-serif);
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 14px;
+  line-height: 1.15;
+}
+.mvp-about-bio {
+  color: rgba(255,255,255,0.72);
+  line-height: 1.7;
+  font-size: 15px;
+}
+.mvp-about-bio br { content: ""; display: block; margin-bottom: 8px; }
+@media (max-width: 640px) {
+  .mvp-about-inner { flex-direction: column; align-items: center; text-align: center; gap: 20px; padding: 40px 20px; }
+  .mvp-about-headshot { width: 88px; height: 88px; }
+  .mvp-about-name { font-size: 24px; }
+}
+
 /* ─── Footer ─────────────────────────────────────────────────────────────── */
 .mvp-footer {
-  margin-top: 80px;
+  margin-top: 0;
   background: #111;
   color: #fff;
   font-size: 14px;
 }
 .mvp-footer-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  grid-template-columns: 1.4fr 1fr 1fr;
   gap: 48px;
   padding: 56px 24px 32px;
 }
