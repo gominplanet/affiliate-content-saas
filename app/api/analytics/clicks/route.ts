@@ -93,39 +93,24 @@ export async function GET() {
       )
     }
 
-    // Look up last-30-day daily clicks for every unique shortcode. Dedupe
+    // Look up last-30-day click totals for every unique shortcode. Dedupe
     // first since multiple posts can share the same affiliate link.
+    // We sum across the daily series to get a 30-day total — Geniuslink's
+    // date keys aren't reliably parseable for charting, but the click
+    // counts themselves are accurate.
     const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
     const uniqueCodes = Array.from(new Set(posts.map(p => p.geniuslink_code).filter((c): c is string => !!c)))
 
-    // Concurrency cap so we don't hammer Geniuslink with 100 parallel
-    // requests on a large account.
     const CONCURRENCY = 8
     const DAYS = 30
     const clicksByCode = new Map<string, number>()
-    // Sum across all codes per day for the sparkline.
-    const dailyTotal = new Map<string, number>()
     for (let i = 0; i < uniqueCodes.length; i += CONCURRENCY) {
       const batch = uniqueCodes.slice(i, i + CONCURRENCY)
       const seriesBatch = await Promise.all(batch.map(code => genius.getDailyClicks(code, DAYS)))
       batch.forEach((code, idx) => {
-        const series = seriesBatch[idx]
-        const total = series.reduce((s, d) => s + d.clicks, 0)
+        const total = seriesBatch[idx].reduce((s, d) => s + d.clicks, 0)
         clicksByCode.set(code, total)
-        for (const day of series) {
-          if (!day.date) continue
-          dailyTotal.set(day.date, (dailyTotal.get(day.date) ?? 0) + day.clicks)
-        }
       })
-    }
-
-    // Build a dense 30-day series (Geniuslink omits days with zero clicks).
-    const daily: Array<{ date: string; clicks: number }> = []
-    const today = new Date()
-    for (let i = DAYS - 1; i >= 0; i--) {
-      const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000)
-      const key = d.toISOString().slice(0, 10)
-      daily.push({ date: key, clicks: dailyTotal.get(key) ?? 0 })
     }
 
     // Build per-post rows.
@@ -150,7 +135,6 @@ export async function GET() {
       connected: true,
       totals,
       posts: postRows.slice(0, 25),
-      daily,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
