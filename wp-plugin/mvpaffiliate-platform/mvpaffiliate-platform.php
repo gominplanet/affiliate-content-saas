@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.6
+ * Version: 1.0.7
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.6');
+define('MVP_AFFILIATE_VERSION', '1.0.7');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -724,6 +724,9 @@ if (!function_exists('mvp_affiliate_rest_status')) {
 
 if (!function_exists('mvp_affiliate_rest_self_update')) {
     function mvp_affiliate_rest_self_update() {
+        // Fresh version data — drop our 6h cache so we compare against the
+        // true latest, not a stale value.
+        delete_transient('mvp_affiliate_remote_version');
         $info = mvp_affiliate_fetch_remote_version();
         if (!$info) {
             return new WP_REST_Response(['error' => 'Could not reach the MVP Affiliate version endpoint.'], 502);
@@ -737,24 +740,48 @@ if (!function_exists('mvp_affiliate_rest_self_update')) {
         }
         require_once ABSPATH . 'wp-admin/includes/file.php';
         require_once ABSPATH . 'wp-admin/includes/misc.php';
-        require_once ABSPATH . 'wp-admin/includes/plugin.php';        // is_plugin_active / activate_plugin
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
         require_once ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
         require_once ABSPATH . 'wp-admin/includes/class-theme-upgrader.php';
 
         $results = ['theme' => null, 'plugin' => null];
 
-        // ── Theme first (safe — not the running code) ───────────────────────
+        // ── THEME: use the canonical transient + upgrade() path ─────────────
+        // install()+overwrite is unreliable for the *active* theme (WP guards
+        // the running theme dir). upgrade() against a primed update_themes
+        // transient is exactly what wp-admin's "update now" does, and it
+        // handles the active-theme swap correctly.
         $theme_latest = $info['theme']['version'] ?? null;
         $theme_zip    = $info['theme']['download_url'] ?? null;
-        $theme        = wp_get_theme('mvp-affiliate-theme');
+        $theme_slug   = 'mvp-affiliate-theme';
+        $theme        = wp_get_theme($theme_slug);
         $theme_local  = $theme->exists() ? (string) $theme->get('Version') : '0';
+
         if ($theme_zip && $theme_latest && version_compare($theme_local, $theme_latest, '<')) {
             try {
-                $up = new Theme_Upgrader(new Automatic_Upgrader_Skin());
-                $r  = $up->install($theme_zip, ['overwrite_package' => true]);
-                $results['theme'] = is_wp_error($r)
-                    ? ['ok' => false, 'error' => $r->get_error_message()]
-                    : ['ok' => (bool) $r, 'from' => $theme_local, 'to' => $theme_latest];
+                $tt = get_site_transient('update_themes');
+                if (!is_object($tt)) $tt = new stdClass();
+                if (!isset($tt->response) || !is_array($tt->response)) $tt->response = [];
+                $tt->response[$theme_slug] = [
+                    'theme'       => $theme_slug,
+                    'new_version' => $theme_latest,
+                    'url'         => 'https://www.mvpaffiliate.io',
+                    'package'     => $theme_zip,
+                ];
+                set_site_transient('update_themes', $tt);
+
+                $skin = new Automatic_Upgrader_Skin();
+                $up   = new Theme_Upgrader($skin);
+                $r    = $up->upgrade($theme_slug);
+                $msgs = method_exists($skin, 'get_upgrade_messages') ? $skin->get_upgrade_messages() : [];
+
+                if (is_wp_error($r)) {
+                    $results['theme'] = ['ok' => false, 'error' => $r->get_error_message(), 'log' => $msgs];
+                } elseif ($r === false || $r === null) {
+                    $results['theme'] = ['ok' => false, 'error' => 'Theme upgrade returned no result', 'log' => $msgs];
+                } else {
+                    $results['theme'] = ['ok' => true, 'from' => $theme_local, 'to' => $theme_latest];
+                }
             } catch (\Throwable $e) {
                 $results['theme'] = ['ok' => false, 'error' => $e->getMessage()];
             }
@@ -762,22 +789,40 @@ if (!function_exists('mvp_affiliate_rest_self_update')) {
             $results['theme'] = ['ok' => true, 'skipped' => 'up-to-date', 'version' => $theme_local];
         }
 
-        // ── Plugin last (replaces running code; current request finishes on
-        //    the old code, next request loads the new — WP-standard behaviour) ─
+        // ── PLUGIN: same canonical transient + upgrade() path ───────────────
         $plugin_latest = $info['plugin']['version'] ?? null;
         $plugin_zip    = $info['plugin']['download_url'] ?? null;
+        $basename      = plugin_basename(__FILE__);
+
         if ($plugin_zip && $plugin_latest && version_compare(MVP_AFFILIATE_VERSION, $plugin_latest, '<')) {
             try {
-                $up = new Plugin_Upgrader(new Automatic_Upgrader_Skin());
-                $r  = $up->install($plugin_zip, ['overwrite_package' => true]);
-                if (!is_wp_error($r) && $r) {
-                    // install() can deactivate on overwrite — make sure we stay on.
-                    $basename = plugin_basename(__FILE__);
-                    if (!is_plugin_active($basename)) activate_plugin($basename);
+                $pt = get_site_transient('update_plugins');
+                if (!is_object($pt)) $pt = new stdClass();
+                if (!isset($pt->response) || !is_array($pt->response)) $pt->response = [];
+                $pt->response[$basename] = (object) [
+                    'slug'        => 'mvpaffiliate-platform',
+                    'plugin'      => $basename,
+                    'new_version' => $plugin_latest,
+                    'url'         => 'https://www.mvpaffiliate.io',
+                    'package'     => $plugin_zip,
+                ];
+                set_site_transient('update_plugins', $pt);
+
+                $skin = new Automatic_Upgrader_Skin();
+                $up   = new Plugin_Upgrader($skin);
+                $r    = $up->upgrade($basename);
+                $msgs = method_exists($skin, 'get_upgrade_messages') ? $skin->get_upgrade_messages() : [];
+
+                // upgrade() can deactivate on file swap — keep it on.
+                if (!is_plugin_active($basename)) activate_plugin($basename);
+
+                if (is_wp_error($r)) {
+                    $results['plugin'] = ['ok' => false, 'error' => $r->get_error_message(), 'log' => $msgs];
+                } elseif ($r === false || $r === null) {
+                    $results['plugin'] = ['ok' => false, 'error' => 'Plugin upgrade returned no result', 'log' => $msgs];
+                } else {
+                    $results['plugin'] = ['ok' => true, 'from' => MVP_AFFILIATE_VERSION, 'to' => $plugin_latest];
                 }
-                $results['plugin'] = is_wp_error($r)
-                    ? ['ok' => false, 'error' => $r->get_error_message()]
-                    : ['ok' => (bool) $r, 'from' => MVP_AFFILIATE_VERSION, 'to' => $plugin_latest];
             } catch (\Throwable $e) {
                 $results['plugin'] = ['ok' => false, 'error' => $e->getMessage()];
             }
@@ -785,9 +830,11 @@ if (!function_exists('mvp_affiliate_rest_self_update')) {
             $results['plugin'] = ['ok' => true, 'skipped' => 'up-to-date', 'version' => MVP_AFFILIATE_VERSION];
         }
 
-        // Bust caches so the new theme/plugin code is served immediately.
+        // Bust caches so the new code/markup is served immediately.
         do_action('litespeed_purge_all');
         if (function_exists('wp_cache_flush')) wp_cache_flush();
+        delete_site_transient('update_themes');
+        delete_site_transient('update_plugins');
         delete_transient('mvp_affiliate_remote_version');
 
         $allOk = (!empty($results['theme']['ok'])) && (!empty($results['plugin']['ok']));
