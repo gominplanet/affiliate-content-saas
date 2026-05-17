@@ -131,7 +131,17 @@ export default function LandingPage() {
           <Image src="/mvp-affiliate-logo.png" alt="MVP Affiliate" width={36} height={36} className="rounded-xl" />
           <span className="font-semibold text-[#1d1d1f] hidden sm:inline">MVP Affiliate</span>
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
+          <a
+            href="https://mvp-affiliate.getrewardful.com/signup"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden md:inline-flex items-center gap-1.5 text-sm font-medium text-[#1f8a3a] hover:text-[#136b2c] transition-colors px-3 py-2"
+            title="Earn 10% recurring for every creator you refer"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-[#34c759]" />
+            Earn 10%
+          </a>
           <Link href="/pricing" className="hidden sm:block text-sm text-[#6e6e73] hover:text-[#1d1d1f] transition-colors px-3 py-2">
             Pricing
           </Link>
