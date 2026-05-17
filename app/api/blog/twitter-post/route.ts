@@ -32,7 +32,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { postId } = await request.json()
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const postId = body.postId
+    const dryRun = body.dryRun === true
+    const overrideText = body.text?.trim()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // ── 1. Fetch blog post ─────────────────────────────────────────────────
@@ -98,26 +101,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── 4. Generate tweet copy ─────────────────────────────────────────────
-    const anthropic = createAnthropicClient()
-    const plainContent = (post.content as string ?? '')
-      .replace(/<[^>]+>/g, '')
-      .slice(0, 1200)
-
-    const voiceNote = brand?.voice_summary
-      ? `\n\nVoice guidance: ${brand.voice_summary}`
-      : ''
-
+    // ── 4. Resolve tweet copy — user override or fresh AI gen ──────────────
     // Reserve characters for the URL — X autoshortens any URL to 23 chars,
     // and we add one space before it. Generation budget is 280 - 23 - 1 = 256.
     const generationBudget = TWEET_HARD_LIMIT - 23 - 1
 
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      messages: [{
-        role: 'user',
-        content: `Write a single tweet for this product review article.
+    let tweetText: string
+    if (overrideText) {
+      tweetText = overrideText
+    } else {
+      const anthropic = createAnthropicClient()
+      const plainContent = (post.content as string ?? '')
+        .replace(/<[^>]+>/g, '')
+        .slice(0, 1200)
+
+      const voiceNote = brand?.voice_summary
+        ? `\n\nVoice guidance: ${brand.voice_summary}`
+        : ''
+
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: `Write a single tweet for this product review article.
 
 Style: a content creator's authentic short take. Strong hook, one clear value bullet, one short line of curiosity. Match the voice provided.${voiceNote}
 
@@ -132,17 +139,22 @@ Blog excerpt: ${post.excerpt || plainContent.slice(0, 300)}
 Content preview: ${plainContent}
 
 Return ONLY the tweet text.`,
-      }],
-    })
+        }],
+      })
 
-    let tweetText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+      tweetText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+    }
 
-    // Defensive trim — if the model went over, hard-cap with an ellipsis.
+    // Defensive trim — protects against AI drift AND user-edited overshoot
     if (tweetText.length > generationBudget) {
       tweetText = tweetText.slice(0, generationBudget - 1).replace(/\s+\S*$/, '') + '…'
     }
 
     const finalText = `${tweetText} ${post.wordpress_url}`
+
+    if (dryRun) {
+      return NextResponse.json({ ok: true, dryRun: true, text: tweetText, finalText })
+    }
 
     // ── 5. Post the tweet ──────────────────────────────────────────────────
     const tweet = await createTweet(accessToken, finalText)

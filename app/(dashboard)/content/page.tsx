@@ -7,6 +7,7 @@ import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle,
 } from 'lucide-react'
+import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
 
 // ── Readiness gate ────────────────────────────────────────────────────────────
 interface ReadinessCheck {
@@ -850,7 +851,7 @@ function InstagramPublishModal({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, userTier, brandNiches, customCategories, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, userTier, brandNiches, customCategories, previewBeforePublish, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -867,6 +868,7 @@ function VideoCard({
   userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
   brandNiches: string[]
   customCategories: string[]
+  previewBeforePublish: boolean
   onCustomCategoryAdded: (next: string[]) => void
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
@@ -900,6 +902,9 @@ function VideoCard({
   const [igReelPosted, setIgReelPosted] = useState(!!post?.instagramReelId)
   const [igStoryPosted, setIgStoryPosted] = useState(!!post?.instagramStoryId)
   const [igStorySticker, setIgStorySticker] = useState<string | null>(null) // shown after Story publish
+
+  /** Which social preview modal is open (null = none). Only one at a time. */
+  const [previewPlatform, setPreviewPlatform] = useState<null | 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'>(null)
 
   // ── Publish All ───────────────────────────────────────────────────────────
   const [publishingAll, setPublishingAll] = useState(false)
@@ -996,6 +1001,7 @@ function VideoCard({
 
   async function handleBlueskyPost() {
     if (!post?.postId) return
+    if (previewBeforePublish) { setPreviewPlatform('bluesky'); return }
     setBsPosting(true)
     try {
       const res = await fetch('/api/blog/bluesky-post', {
@@ -1013,6 +1019,7 @@ function VideoCard({
 
   async function handleTelegramPost() {
     if (!post?.postId) return
+    if (previewBeforePublish) { setPreviewPlatform('telegram'); return }
     setTgPosting(true)
     try {
       const res = await fetch('/api/blog/telegram-post', {
@@ -1030,6 +1037,7 @@ function VideoCard({
 
   async function handleTwitterPost() {
     if (!post?.postId) return
+    if (previewBeforePublish) { setPreviewPlatform('twitter'); return }
     setTwPosting(true)
     try {
       const res = await fetch('/api/blog/twitter-post', {
@@ -1047,6 +1055,7 @@ function VideoCard({
 
   async function handleLinkedInPost() {
     if (!post?.postId) return
+    if (previewBeforePublish) { setPreviewPlatform('linkedin'); return }
     setLiPosting(true)
     try {
       const res = await fetch('/api/blog/linkedin-post', {
@@ -1064,6 +1073,7 @@ function VideoCard({
 
   async function handleFacebookPost() {
     if (!post?.postId) return
+    if (previewBeforePublish) { setPreviewPlatform('facebook'); return }
     setFbPosting(true)
     try {
       const res = await fetch('/api/blog/facebook-post', {
@@ -1078,6 +1088,7 @@ function VideoCard({
 
   async function handleThreadsPost() {
     if (!post?.postId) return
+    if (previewBeforePublish) { setPreviewPlatform('threads'); return }
     setThPosting(true)
     try {
       const res = await fetch('/api/blog/threads-post', {
@@ -1277,6 +1288,31 @@ function VideoCard({
             </div>
           )}
 
+          {/* Social preview/edit modal — shown when previewBeforePublish is on
+              and the user clicks a non-Instagram social pill. Single instance
+              keyed on `previewPlatform`; the platform config (endpoint, brand
+              color, label) is resolved inline. */}
+          {previewPlatform && post?.postId && (() => {
+            const cfg = {
+              facebook: { endpoint: '/api/blog/facebook-post', color: '#1877f2', label: 'Facebook',  onPublished: () => setFbPosted(true) },
+              threads:  { endpoint: '/api/blog/threads-post',  color: '#000000', label: 'Threads',   onPublished: () => setThPosted(true) },
+              twitter:  { endpoint: '/api/blog/twitter-post',  color: '#000000', label: 'X',         onPublished: () => setTwPosted(true) },
+              linkedin: { endpoint: '/api/blog/linkedin-post', color: '#0a66c2', label: 'LinkedIn',  onPublished: () => setLiPosted(true) },
+              bluesky:  { endpoint: '/api/blog/bluesky-post',  color: '#1185fe', label: 'Bluesky',   onPublished: () => setBsPosted(true) },
+              telegram: { endpoint: '/api/blog/telegram-post', color: '#229ED9', label: 'Telegram',  onPublished: () => setTgPosted(true) },
+            }[previewPlatform]
+            return (
+              <SocialPreviewModal
+                platform={cfg.label}
+                brandColor={cfg.color}
+                endpoint={cfg.endpoint}
+                postId={post.postId}
+                onClose={() => setPreviewPlatform(null)}
+                onPublished={cfg.onPublished}
+              />
+            )
+          })()}
+
           {/* Instagram publish modal — opens when user clicks the IG pill */}
           {igModalOpen && post?.postId && (
             <InstagramPublishModal
@@ -1356,6 +1392,9 @@ export default function ContentPage() {
   const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
   const [brandNiches, setBrandNiches] = useState<string[]>([])
   const [customCategories, setCustomCategories] = useState<string[]>([])
+  /** When true, social pill clicks open a preview/edit modal instead of one-click publishing.
+   *  Persisted across sessions in localStorage so it sticks to the user's choice. */
+  const [previewBeforePublish, setPreviewBeforePublish] = useState(false)
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -1387,6 +1426,12 @@ export default function ContentPage() {
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
+  // Hydrate the preview-before-publish toggle from localStorage
+  useEffect(() => {
+    try {
+      setPreviewBeforePublish(localStorage.getItem('mvp_preview_before_publish') === '1')
+    } catch { /* ignore */ }
+  }, [])
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -1846,9 +1891,27 @@ export default function ContentPage() {
         }
       />
 
+      {/* Preview-before-publish toggle. When checked, clicking a social pill
+          on a video card opens an editable modal with the AI-generated text
+          instead of publishing immediately. Choice persists per browser. */}
+      <label className="flex items-center gap-2 -mt-2 mb-3 cursor-pointer w-fit">
+        <input
+          type="checkbox"
+          checked={previewBeforePublish}
+          onChange={e => {
+            const next = e.target.checked
+            setPreviewBeforePublish(next)
+            try { localStorage.setItem('mvp_preview_before_publish', next ? '1' : '0') } catch { /* ignore */ }
+          }}
+          className="rounded border-gray-300"
+        />
+        <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Edit preview before publishing to socials</span>
+        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">— when off, posts ship immediately</span>
+      </label>
+
       {/* Tab bar — split Videos into Horizontal (16:9 long-form, blog source)
           and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
-      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 -mt-2 mb-4">
+      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4">
         {([
           { key: 'horizontal' as const, label: 'Horizontal Videos' },
           { key: 'vertical' as const, label: 'Vertical Videos' },
@@ -2093,6 +2156,7 @@ export default function ContentPage() {
                     userTier={userTier}
                     brandNiches={brandNiches}
                     customCategories={customCategories}
+                    previewBeforePublish={previewBeforePublish}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}

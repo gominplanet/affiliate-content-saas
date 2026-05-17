@@ -28,7 +28,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { postId } = await request.json()
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const postId = body.postId
+    const dryRun = body.dryRun === true
+    const overrideText = body.text?.trim()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,35 +44,38 @@ export async function POST(request: NextRequest) {
     const ig = integration as any
 
     if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
-    if (!ig?.threads_access_token) return NextResponse.json({ error: 'Threads not connected' }, { status: 400 })
-    if (!ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing — try reconnecting Threads in Settings' }, { status: 400 })
+    if (!dryRun && !ig?.threads_access_token) return NextResponse.json({ error: 'Threads not connected' }, { status: 400 })
+    if (!dryRun && !ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing — try reconnecting Threads in Settings' }, { status: 400 })
 
-    // Claude generates the thread text
-    const anthropic = createAnthropicClient()
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      messages: [{
-        role: 'user',
-        content: `Write a Threads post for this blog article. Make it punchy and conversational — like a creator sharing a genuine find. Start with a hook that stops the scroll. Include the blog URL. End with 2-3 relevant hashtags. Keep the ENTIRE post under 450 characters (leave room for the disclaimer).
+    let bodyText: string
+    if (overrideText) {
+      bodyText = overrideText
+    } else {
+      const anthropic = createAnthropicClient()
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: `Write a Threads post for this blog article. Make it punchy and conversational — like a creator sharing a genuine find. Start with a hook that stops the scroll. Include the blog URL. End with 2-3 relevant hashtags. Keep the ENTIRE post under 450 characters (leave room for the disclaimer).
 
 Blog title: ${p.title}
 Blog excerpt: ${p.excerpt || p.content?.substring(0, 300) || ''}
 Blog URL: ${p.wordpress_url}
 
 Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`,
-      }],
-    })
+        }],
+      })
+      bodyText = (msg.content[0] as { type: string; text: string }).text
+    }
 
-    // Threads API hard caps body text at 500 chars. The AI is asked to stay
-    // under 450 but drifts — capSocialText trims (at the last word boundary)
-    // to leave exactly enough room for the disclaimer + separator.
+    // Threads API hard caps body text at 500 chars. Cap defensively then append disclaimer.
     const sep = '\n\n'
-    const fullText = capSocialText(
-      (msg.content[0] as { type: string; text: string }).text,
-      SOCIAL_LIMITS.threads,
-      `${sep}${DISCLAIMER}`,
-    )
+    const fullText = capSocialText(bodyText, SOCIAL_LIMITS.threads, `${sep}${DISCLAIMER}`)
+
+    if (dryRun) {
+      return NextResponse.json({ ok: true, dryRun: true, text: bodyText.trim(), finalText: fullText })
+    }
 
     // Use YouTube thumbnail (hero image with person + product)
     const imageUrl = p.youtube_videos?.thumbnail_url || null

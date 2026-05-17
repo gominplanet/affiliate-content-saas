@@ -30,7 +30,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { postId } = await request.json()
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const postId = body.postId
+    const dryRun = body.dryRun === true
+    const overrideText = body.text?.trim()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // ── 1. Fetch blog post ─────────────────────────────────────────────────
@@ -58,7 +61,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const brand = brandRow as any
 
-    // ── 3. Fetch Bluesky credentials ───────────────────────────────────────
+    // ── 3. Fetch Bluesky credentials (skip on dryRun — preview doesn't publish) ─
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)
       .from('integrations')
@@ -67,30 +70,33 @@ export async function POST(request: NextRequest) {
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const integration = intRow as any
-    if (!integration?.bluesky_handle || !integration?.bluesky_app_password) {
+    if (!dryRun && (!integration?.bluesky_handle || !integration?.bluesky_app_password)) {
       return NextResponse.json({ error: 'Bluesky not connected' }, { status: 400 })
     }
 
-    // ── 4. Generate post copy ──────────────────────────────────────────────
-    // Bluesky max 300 chars. Reserve ~80 for the URL + spacing to keep the
-    // generated text comfortably under the cap.
+    // ── 4. Resolve post copy — user override or fresh AI gen ───────────────
+    // Bluesky max 300 chars. Reserve ~80 for the URL + spacing.
     const generationBudget = POST_CHAR_LIMIT - 80
 
-    const anthropic = createAnthropicClient()
-    const plainContent = (post.content as string ?? '')
-      .replace(/<[^>]+>/g, '')
-      .slice(0, 1200)
+    let postText: string
+    if (overrideText) {
+      postText = overrideText
+    } else {
+      const anthropic = createAnthropicClient()
+      const plainContent = (post.content as string ?? '')
+        .replace(/<[^>]+>/g, '')
+        .slice(0, 1200)
 
-    const voiceNote = brand?.voice_summary
-      ? `\n\nVoice guidance: ${brand.voice_summary}`
-      : ''
+      const voiceNote = brand?.voice_summary
+        ? `\n\nVoice guidance: ${brand.voice_summary}`
+        : ''
 
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      messages: [{
-        role: 'user',
-        content: `Write a single Bluesky post for this product review article.
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: `Write a single Bluesky post for this product review article.
 
 Style: a content creator's authentic short take. Strong hook, one clear value bullet, conversational. Match the voice provided.${voiceNote}
 
@@ -105,16 +111,24 @@ Blog excerpt: ${post.excerpt || plainContent.slice(0, 300)}
 Content preview: ${plainContent}
 
 Return ONLY the post text.`,
-      }],
-    })
+        }],
+      })
 
-    let postText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+      postText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+    }
+
+    // Always defensively cap, even user-edited (they could paste over the limit)
     if (postText.length > generationBudget) {
       postText = postText.slice(0, generationBudget - 1).replace(/\s+\S*$/, '') + '…'
     }
 
     const url = post.wordpress_url as string
     const finalText = `${postText}\n\n${url}`
+
+    // Dry-run: return the generated text without publishing
+    if (dryRun) {
+      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText })
+    }
 
     // ── 5. Login and post ──────────────────────────────────────────────────
     const session = await createSession(integration.bluesky_handle, integration.bluesky_app_password)

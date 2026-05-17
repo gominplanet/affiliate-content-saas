@@ -54,7 +54,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Telegram bot not configured on the server' }, { status: 500 })
     }
 
-    const { postId } = await request.json()
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const postId = body.postId
+    const dryRun = body.dryRun === true
+    const overrideText = body.text?.trim()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // ── Fetch post + thumbnail ──────────────────────────────────────────────
@@ -84,22 +87,26 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const brand = brandRow as any
 
-    // ── Generate caption ────────────────────────────────────────────────────
-    const plainContent = (post.content as string ?? '')
-      .replace(/<[^>]+>/g, '')
-      .slice(0, 1500)
+    // ── Resolve caption — override or fresh AI gen ───────────────────────────
+    let captionText: string
+    if (overrideText) {
+      captionText = overrideText
+    } else {
+      const plainContent = (post.content as string ?? '')
+        .replace(/<[^>]+>/g, '')
+        .slice(0, 1500)
 
-    const voiceNote = brand?.voice_summary
-      ? `\n\nVoice guidance: ${brand.voice_summary}`
-      : ''
+      const voiceNote = brand?.voice_summary
+        ? `\n\nVoice guidance: ${brand.voice_summary}`
+        : ''
 
-    const anthropic = createAnthropicClient()
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
-      messages: [{
-        role: 'user',
-        content: `Write a single Telegram channel post for this product review article.
+      const anthropic = createAnthropicClient()
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: `Write a single Telegram channel post for this product review article.
 
 Style: a content creator's authentic, scannable take. Strong hook in line 1, 2-3 short bullets or short lines with key takeaways, conversational. Match the voice provided.${voiceNote}
 
@@ -115,10 +122,11 @@ Blog excerpt: ${post.excerpt || plainContent.slice(0, 300)}
 Content preview: ${plainContent}
 
 Return ONLY the post text.`,
-      }],
-    })
+        }],
+      })
+      captionText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+    }
 
-    let captionText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
     if (captionText.length > CAPTION_BUDGET) {
       captionText = captionText.slice(0, CAPTION_BUDGET - 1).replace(/\s+\S*$/, '') + '…'
     }
@@ -130,6 +138,12 @@ Return ONLY the post text.`,
     const escapedUrl = escapeMarkdownV2(post.wordpress_url as string)
     const linkLabel = escapeMarkdownV2('Read the full review →')
     const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
+
+    if (dryRun) {
+      // Show the body the user can edit; finalText is the rendered Markdown
+      // version that ships to Telegram (with the CTA link appended).
+      return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: `${captionText}\n\nRead the full review → ${post.wordpress_url}` })
+    }
 
     // ── Post to Telegram ────────────────────────────────────────────────────
     const result = imageUrl

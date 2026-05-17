@@ -28,7 +28,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { postId } = await request.json()
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const postId = body.postId
+    const dryRun = body.dryRun === true
+    const overrideText = body.text?.trim()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // ── 1. Fetch blog post ────────────────────────────────────────────────────
@@ -63,26 +66,30 @@ export async function POST(request: NextRequest) {
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const integration = intRow as any
-    if (!integration?.linkedin_access_token || !integration?.linkedin_person_id) {
+    if (!dryRun && (!integration?.linkedin_access_token || !integration?.linkedin_person_id)) {
       return NextResponse.json({ error: 'LinkedIn not connected' }, { status: 400 })
     }
 
-    // ── 4. Generate LinkedIn post with Claude ─────────────────────────────────
-    const anthropic = createAnthropicClient()
+    // ── 4. Resolve LinkedIn post — override or fresh Claude gen ───────────────
     const plainContent = (post.content as string ?? '')
       .replace(/<[^>]+>/g, '')
       .slice(0, 1500)
 
-    const voiceNote = brand?.voice_summary
-      ? `\n\nVoice guidance: ${brand.voice_summary}`
-      : ''
+    let rawText: string
+    if (overrideText) {
+      rawText = overrideText
+    } else {
+      const anthropic = createAnthropicClient()
+      const voiceNote = brand?.voice_summary
+        ? `\n\nVoice guidance: ${brand.voice_summary}`
+        : ''
 
-    const msg = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
-      messages: [{
-        role: 'user',
-        content: `Write a compelling LinkedIn post for this blog article.
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 400,
+        messages: [{
+          role: 'user',
+          content: `Write a compelling LinkedIn post for this blog article.
 
 Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a call to action to read the full post. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${voiceNote}
 
@@ -93,12 +100,17 @@ Blog excerpt: ${post.excerpt || plainContent.slice(0, 300)}
 Content preview: ${plainContent}
 
 Return ONLY the post text, no extra commentary.`,
-      }],
-    })
+        }],
+      })
+      rawText = (msg.content[0] as { type: string; text: string }).text
+    }
 
-    // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap
-    // in case the model drifts way past the 600-char target.
-    const postText = capSocialText((msg.content[0] as { type: string; text: string }).text, SOCIAL_LIMITS.linkedin)
+    // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap.
+    const postText = capSocialText(rawText, SOCIAL_LIMITS.linkedin)
+
+    if (dryRun) {
+      return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText })
+    }
 
     // ── 5. Publish to LinkedIn ────────────────────────────────────────────────
     const linkedin = createLinkedInService(

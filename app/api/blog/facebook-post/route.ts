@@ -11,7 +11,10 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { postId } = await request.json()
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const postId = body.postId
+    const dryRun = body.dryRun === true
+    const overrideText = body.text?.trim()
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // ── 1. Fetch blog post ────────────────────────────────────────────────────
@@ -57,30 +60,35 @@ export async function POST(request: NextRequest) {
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const integration = intRow as any
-    if (!integration?.facebook_page_id || !integration?.facebook_page_access_token) {
+    if (!dryRun && (!integration?.facebook_page_id || !integration?.facebook_page_access_token)) {
       return NextResponse.json({ error: 'Facebook not connected' }, { status: 400 })
     }
 
-    // ── 5. Generate 300-word Facebook review with Claude ──────────────────────
-    const anthropic = createAnthropicClient()
-    const blogText = `Title: ${post.title}\n\nExcerpt: ${post.excerpt || ''}\n\nContent (first 1500 chars):\n${(post.content as string).replace(/<[^>]+>/g, '').slice(0, 1500)}`
+    // ── 5. Resolve Facebook review — override or fresh Claude gen ─────────────
+    let reviewText: string
+    if (overrideText) {
+      reviewText = overrideText
+    } else {
+      const anthropic = createAnthropicClient()
+      const blogText = `Title: ${post.title}\n\nExcerpt: ${post.excerpt || ''}\n\nContent (first 1500 chars):\n${(post.content as string).replace(/<[^>]+>/g, '').slice(0, 1500)}`
 
-    const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 600,
-      messages: [{
-        role: 'user',
-        content: `Write a compelling ~300-word Facebook post promoting this blog article.
+      const msg = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 600,
+        messages: [{
+          role: 'user',
+          content: `Write a compelling ~300-word Facebook post promoting this blog article.
 
 Write in first person, conversational tone. Include 2-3 relevant emojis naturally placed. End with a clear call to action to read the full post. Do NOT include the URL or disclaimer — those will be added separately. Do NOT use hashtags.
 
 ${blogText}
 
 Return ONLY the post text, nothing else.`,
-      }],
-    })
+        }],
+      })
 
-    const reviewText = (msg.content[0] as { type: string; text: string }).text.trim()
+      reviewText = (msg.content[0] as { type: string; text: string }).text.trim()
+    }
 
     // ── 6. Build image URL ────────────────────────────────────────────────────
     const youtubeId = video?.youtube_video_id
@@ -90,6 +98,10 @@ Return ONLY the post text, nothing else.`,
 
     // ── 7. Build full caption ─────────────────────────────────────────────────
     const caption = `${reviewText}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
+
+    if (dryRun) {
+      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption })
+    }
 
     // ── 8. Post to Facebook ───────────────────────────────────────────────────
     const fbService = createFacebookService(
