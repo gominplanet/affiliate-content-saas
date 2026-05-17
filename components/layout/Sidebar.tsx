@@ -27,6 +27,7 @@ import {
   Loader2,
   HandCoins,
   Menu,
+  TrendingUp,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -42,6 +43,7 @@ const nav = [
   { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' as const },
   { href: '/studio', label: 'YouTube Studio', icon: Clapperboard, matchKind: 'prefix' as const },
   { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' as const },
+  { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' as const, badge: 'PREVIEW' },
 ]
 
 const secondaryNav = [
@@ -183,12 +185,21 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
       {/* Primary nav */}
       <nav className="flex-1 px-3 pt-4 pb-2 flex flex-col gap-0.5">
         <p className="section-label px-2 mb-2">Workspace</p>
-        {nav.map(({ href, label, icon: Icon, matchKind }) => (
-          <Link key={label} href={href} className={cn('nav-item', isActiveTabbed(matchKind, href) && 'active')}>
-            <Icon size={16} className="flex-shrink-0" />
-            {label}
-          </Link>
-        ))}
+        {nav.map((item) => {
+          const { href, label, icon: Icon, matchKind } = item
+          const badge = 'badge' in item ? item.badge : undefined
+          return (
+            <Link key={label} href={href} className={cn('nav-item', isActiveTabbed(matchKind, href) && 'active')}>
+              <Icon size={16} className="flex-shrink-0" />
+              <span className="flex-1">{label}</span>
+              {badge && (
+                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#ff9500]/15 text-[#9a5d00] flex-shrink-0">
+                  {badge}
+                </span>
+              )}
+            </Link>
+          )
+        })}
 
         {/* Visit Blog */}
         <a
