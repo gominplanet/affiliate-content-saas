@@ -73,6 +73,10 @@ interface BlogCustomizations {
   about: AboutData
   footer: FooterData
   pickOfDay: PickOfDayConfig
+  /** Raw <meta> tags injected into the site's <head> — domain verification
+   *  for Google Search Console, Pinterest, Facebook, Bing, etc. One full
+   *  tag string per entry. Sanitized server-side in the WP plugin. */
+  headMetaTags: string[]
 }
 
 const emptyAbout: AboutData = { bio: '', logoUrl: '', headerBg: 'black' }
@@ -117,6 +121,7 @@ const defaultCustomizations: BlogCustomizations = {
   about: emptyAbout,
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
+  headMetaTags: [],
 }
 
 function newBlock(): AdBlock {
@@ -396,6 +401,7 @@ export default function CustomizePage() {
         about,
         footer: { ...emptyFooter, ...(bc.footer ?? {}), socials },
         pickOfDay: { ...defaultPickOfDay, ...(bc.pickOfDay ?? {}) },
+        headMetaTags: Array.isArray(bc.headMetaTags) ? bc.headMetaTags.filter((t: unknown): t is string => typeof t === 'string') : [],
       })
     }
     setLoading(false)
@@ -807,6 +813,49 @@ export default function CustomizePage() {
               className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
               <Plus size={15} /> Add link
             </button>
+          </div>
+        </Section>
+
+        {/* Site verification / head meta tags */}
+        <Section
+          title="Site Verification & Meta Tags"
+          description="Paste verification <meta> tags from Google Search Console, Pinterest, Facebook, Bing, etc. They're injected into your site's <head> on every page. One full tag per box."
+        >
+          <div className="flex flex-col gap-2">
+            {data.headMetaTags.map((tag, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <textarea
+                  value={tag}
+                  onChange={e => setData(d => {
+                    const next = [...d.headMetaTags]
+                    next[i] = e.target.value
+                    return { ...d, headMetaTags: next }
+                  })}
+                  rows={2}
+                  placeholder={'<meta name="google-site-verification" content="…" />'}
+                  className="input-field flex-1 font-mono text-xs resize-none leading-relaxed"
+                  spellCheck={false}
+                />
+                <button
+                  onClick={() => setData(d => ({ ...d, headMetaTags: d.headMetaTags.filter((_, idx) => idx !== i) }))}
+                  className="text-[var(--text-3)] hover:text-[#ff3b30] mt-2"
+                  title="Remove"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={() => setData(d => ({ ...d, headMetaTags: [...d.headMetaTags, ''] }))}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors"
+            >
+              <Plus size={15} /> Add meta tag
+            </button>
+            <p className="text-xs text-[var(--text-3)] leading-relaxed mt-1">
+              Only <code className="bg-[var(--surface-2)] px-1 rounded">&lt;meta&gt;</code> tags are allowed —
+              anything else (scripts, styles, arbitrary HTML) is stripped server-side for security. Changes
+              go live on your next save.
+            </p>
           </div>
         </Section>
 

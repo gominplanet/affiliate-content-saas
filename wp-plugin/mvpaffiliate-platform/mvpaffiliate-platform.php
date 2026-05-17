@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.0');
+define('MVP_AFFILIATE_VERSION', '1.0.3');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -419,6 +419,37 @@ add_action('wp_head', function () {
     </style>
     <?php
 }, 100);
+
+// ─── 13b. Custom <head> meta tags (site verification, etc.) ──────────────────
+// Users paste verification tags (Google Search Console, Pinterest, Facebook,
+// Bing…) in the dashboard's Customize Blog page. We print them in <head> on
+// every page, but sanitize HARD: wp_kses only lets a bare <meta> through with
+// a fixed attribute whitelist. Scripts, styles, event handlers, arbitrary
+// HTML — all stripped. A malformed entry simply renders nothing.
+add_action('wp_head', function () {
+    $tags = mvp_affiliate_get_data()['headMetaTags'] ?? [];
+    if (!is_array($tags) || empty($tags)) return;
+
+    $allowed = [
+        'meta' => [
+            'name'       => true,
+            'property'   => true,
+            'http-equiv' => true,
+            'content'    => true,
+            'charset'    => true,
+        ],
+    ];
+
+    echo "\n<!-- MVP Affiliate: custom meta -->\n";
+    foreach ($tags as $raw) {
+        if (!is_string($raw)) continue;
+        $clean = trim(wp_kses($raw, $allowed));
+        // After sanitisation it must still actually be a <meta> tag.
+        if ($clean !== '' && stripos($clean, '<meta') === 0) {
+            echo $clean . "\n";
+        }
+    }
+}, 1);
 
 // ─── 14. LiteSpeed REST cache fix (one-time, on activation) ───────────────────
 add_action('admin_init', function () {
