@@ -9,7 +9,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_THEME_VERSION', '1.3.1');
+define('MVP_AFFILIATE_THEME_VERSION', '1.3.2');
 
 // ── Theme support ───────────────────────────────────────────────────────────
 add_action('after_setup_theme', function () {
@@ -151,6 +151,38 @@ require_once get_template_directory() . '/inc/customizations.php';
 // ── Excerpt tweaks ──────────────────────────────────────────────────────────
 add_filter('excerpt_length', function () { return 28; });
 add_filter('excerpt_more',   function () { return '…'; });
+
+// ── Custom <head> meta tags (site verification, etc.) ───────────────────────
+// The site runs this theme (not Kadence + plugin), so the plugin's head
+// injection never fires here — the theme has to do it. Users paste
+// verification tags (Google Search Console, Pinterest, Facebook, Impact,
+// Bing…) in the dashboard. Sanitize HARD with wp_kses: only a bare <meta>
+// with a fixed inert-attribute whitelist survives.
+add_action('wp_head', function () {
+    $tags = mvp_affiliate_data()['headMetaTags'] ?? [];
+    if (!is_array($tags) || empty($tags)) return;
+
+    $allowed = [
+        'meta' => [
+            'name'       => true,
+            'property'   => true,
+            'http-equiv' => true,
+            'content'    => true,
+            'value'      => true,   // Impact uses value= instead of content=
+            'itemprop'   => true,
+            'charset'    => true,
+        ],
+    ];
+
+    echo "\n<!-- MVP Affiliate: custom meta -->\n";
+    foreach ($tags as $raw) {
+        if (!is_string($raw)) continue;
+        $clean = trim(wp_kses($raw, $allowed));
+        if ($clean !== '' && stripos($clean, '<meta') === 0) {
+            echo $clean . "\n";
+        }
+    }
+}, 1);
 
 // ── Comments (used in templates) ────────────────────────────────────────────
 add_action('after_setup_theme', function () {
