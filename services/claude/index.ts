@@ -541,6 +541,91 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     return parsed
   }
 
+  /**
+   * Campaign content engine — research-driven, NOT transcript-driven.
+   * Same brand-voice system prompt + same BlogGenerationOutput contract as
+   * generateBlogPost (so the route can reuse the WP-publish path), but the
+   * substance comes from an Amazon product + a web-research brief, and the
+   * structure is problem→solution marketing + a real FAQ for search intent.
+   */
+  async generateCampaignBlogPost(
+    brand: BrandProfile,
+    input: { product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null }; researchBrief: string; affiliateUrl: string },
+  ): Promise<BlogGenerationOutput> {
+    const systemPrompt = buildSystemPrompt(brand)
+    const p = input.product
+
+    const userMessage = `Generate a long-form, SEO-optimized affiliate review blog post for this product. There is NO video — base the post entirely on the product facts and the research brief below.
+
+PRODUCT
+ASIN: ${p.asin}
+Title: ${p.title}
+${p.price ? `Price: ${p.price}` : ''}
+${p.rating ? `Amazon rating: ${p.rating}` : ''}
+${p.bullets.length ? `Features:\n${p.bullets.map(b => `- ${b}`).join('\n')}` : ''}
+${p.description ? `Description: ${p.description.slice(0, 1500)}` : ''}
+
+AFFILIATE URL: ${input.affiliateUrl || '[AFFILIATE_LINK]'}
+
+RESEARCH BRIEF (use this as the backbone — it reflects what real buyers ask and the problems this solves):
+${input.researchBrief}
+
+STRUCTURE REQUIREMENTS (in addition to your normal brand-voice rules):
+- Lead with the PROBLEM the reader has, then position the product as the solution. Don't open with specs.
+- Weave the affiliate URL in naturally where a reader would be ready to act (not jammed in the first line).
+- Include a substantial FAQ section near the end built from the "What buyers actually ask" questions in the brief — real answers, not filler.
+- Address the honest objections from the brief — a review that only praises reads as fake and converts worse.
+- Keep it search-intent friendly: clear H2/H3s phrased the way people search.
+- Match the brand voice exactly. Respect the words-to-avoid list.
+
+Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONTENT_END%% format you always use.`
+
+    const stream = this.client.messages.stream({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 32000,
+      thinking: { type: 'enabled', budget_tokens: 10000 },
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: userMessage }],
+    })
+
+    const message = await stream.finalMessage()
+    const raw = message.content
+      .filter(block => block.type === 'text')
+      .map(block => (block as Anthropic.TextBlock).text)
+      .join('')
+
+    const metaMatch = raw.match(/%%META_START%%\s*([\s\S]*?)\s*%%META_END%%/)
+    const contentMatch = raw.match(/%%CONTENT_START%%\s*([\s\S]*?)\s*%%CONTENT_END%%/)
+
+    if (!metaMatch || !contentMatch) {
+      const start = raw.indexOf('{')
+      const end = raw.lastIndexOf('}')
+      const extracted = start >= 0 && end > start ? raw.slice(start, end + 1) : raw.trim()
+      try {
+        return JSON.parse(extracted) as BlogGenerationOutput
+      } catch {
+        try {
+          return JSON.parse(jsonrepair(extracted)) as BlogGenerationOutput
+        } catch {
+          throw new Error(`Claude returned invalid JSON: ${raw.slice(0, 300)}`)
+        }
+      }
+    }
+
+    let meta: Omit<BlogGenerationOutput, 'content'>
+    try {
+      meta = JSON.parse(metaMatch[1])
+    } catch {
+      try {
+        meta = JSON.parse(jsonrepair(metaMatch[1]))
+      } catch {
+        throw new Error(`Claude returned invalid metadata JSON: ${metaMatch[1].slice(0, 200)}`)
+      }
+    }
+
+    return { ...meta, content: contentMatch[1] }
+  }
+
   async checkConnection(): Promise<boolean> {
     try {
       await this.client.messages.create({

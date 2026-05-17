@@ -28,6 +28,7 @@ import {
   HandCoins,
   Menu,
   TrendingUp,
+  Megaphone,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -43,6 +44,7 @@ const nav = [
   { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' as const },
   { href: '/studio', label: 'YouTube Studio', icon: Clapperboard, matchKind: 'prefix' as const },
   { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' as const },
+  { href: '/campaigns', label: 'Campaigns', icon: Megaphone, matchKind: 'prefix' as const, badge: 'PRO' },
   { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' as const },
 ]
 
