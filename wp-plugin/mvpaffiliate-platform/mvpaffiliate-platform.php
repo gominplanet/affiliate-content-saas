@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.4
+ * Version: 1.0.5
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.4');
+define('MVP_AFFILIATE_VERSION', '1.0.5');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -622,3 +622,71 @@ add_filter('plugin_action_links_' . plugin_basename(__FILE__), function ($links)
     array_unshift($links, '<a href="' . admin_url('admin.php?page=mvp-affiliate') . '">Connect</a>');
     return $links;
 });
+
+// ─── 18. Self-update: native "Update available" on the Plugins page ──────────
+// Polls https://www.mvpaffiliate.io/api/wp-version (cached 6h, shared with
+// the theme via a function_exists guard) and injects an entry into WP's
+// plugin-update transient when a newer version is published. The user then
+// gets the normal "update now" link — no delete-and-reinstall.
+if (!function_exists('mvp_affiliate_fetch_remote_version')) {
+    function mvp_affiliate_fetch_remote_version() {
+        $cached = get_transient('mvp_affiliate_remote_version');
+        if ($cached !== false) return $cached;
+        $res = wp_remote_get('https://www.mvpaffiliate.io/api/wp-version', [
+            'timeout' => 8,
+            'headers' => ['Accept' => 'application/json'],
+        ]);
+        if (is_wp_error($res) || (int) wp_remote_retrieve_response_code($res) !== 200) {
+            set_transient('mvp_affiliate_remote_version', null, 30 * MINUTE_IN_SECONDS);
+            return null;
+        }
+        $data = json_decode(wp_remote_retrieve_body($res), true);
+        if (!is_array($data)) return null;
+        set_transient('mvp_affiliate_remote_version', $data, 6 * HOUR_IN_SECONDS);
+        return $data;
+    }
+}
+
+add_filter('pre_set_site_transient_update_plugins', function ($transient) {
+    if (!is_object($transient)) return $transient;
+    $info = mvp_affiliate_fetch_remote_version();
+    if (empty($info['plugin']['version'])) return $transient;
+
+    $basename = plugin_basename(__FILE__); // mvpaffiliate-platform/mvpaffiliate-platform.php
+    $latest   = (string) $info['plugin']['version'];
+    $package  = (string) ($info['plugin']['download_url'] ?? '');
+
+    if ($package && version_compare(MVP_AFFILIATE_VERSION, $latest, '<')) {
+        $transient->response[$basename] = (object) [
+            'slug'        => 'mvpaffiliate-platform',
+            'plugin'      => $basename,
+            'new_version' => $latest,
+            'url'         => 'https://www.mvpaffiliate.io',
+            'package'     => $package,
+        ];
+    } else {
+        unset($transient->response[$basename]);
+    }
+    return $transient;
+});
+
+// "View details" modal on the Plugins page — minimal but prevents a WP error
+// when the user clicks the version link on the update row.
+add_filter('plugins_api', function ($result, $action, $args) {
+    if ($action !== 'plugin_information' || empty($args->slug) || $args->slug !== 'mvpaffiliate-platform') {
+        return $result;
+    }
+    $info = mvp_affiliate_fetch_remote_version();
+    $latest = $info['plugin']['version'] ?? MVP_AFFILIATE_VERSION;
+    return (object) [
+        'name'          => 'MVP Affiliate Platform',
+        'slug'          => 'mvpaffiliate-platform',
+        'version'       => $latest,
+        'author'        => 'MVP Affiliate',
+        'homepage'      => 'https://www.mvpaffiliate.io',
+        'download_link' => $info['plugin']['download_url'] ?? '',
+        'sections'      => [
+            'description' => 'Connects this WordPress site to the MVP Affiliate dashboard.',
+        ],
+    ];
+}, 10, 3);

@@ -9,7 +9,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_THEME_VERSION', '1.3.2');
+define('MVP_AFFILIATE_THEME_VERSION', '1.3.3');
 
 // ── Theme support ───────────────────────────────────────────────────────────
 add_action('after_setup_theme', function () {
@@ -183,6 +183,58 @@ add_action('wp_head', function () {
         }
     }
 }, 1);
+
+// ── Self-update: native "Update available" in wp-admin ──────────────────────
+// Polls https://www.mvpaffiliate.io/api/wp-version (cached 6h) and, if a
+// newer theme version is published, injects an entry into WP's theme-update
+// transient. The user then sees the normal Appearance → Themes "update now"
+// button — one click, no delete-and-reinstall.
+//
+// The remote-version fetch is shared with the plugin (if both are installed)
+// via a function_exists guard.
+if (!function_exists('mvp_affiliate_fetch_remote_version')) {
+    function mvp_affiliate_fetch_remote_version() {
+        $cached = get_transient('mvp_affiliate_remote_version');
+        if ($cached !== false) return $cached;
+        $res = wp_remote_get('https://www.mvpaffiliate.io/api/wp-version', [
+            'timeout' => 8,
+            'headers' => ['Accept' => 'application/json'],
+        ]);
+        if (is_wp_error($res) || (int) wp_remote_retrieve_response_code($res) !== 200) {
+            // Cache the failure briefly so a flaky network doesn't hammer the
+            // endpoint on every admin page load.
+            set_transient('mvp_affiliate_remote_version', null, 30 * MINUTE_IN_SECONDS);
+            return null;
+        }
+        $data = json_decode(wp_remote_retrieve_body($res), true);
+        if (!is_array($data)) return null;
+        set_transient('mvp_affiliate_remote_version', $data, 6 * HOUR_IN_SECONDS);
+        return $data;
+    }
+}
+
+add_filter('pre_set_site_transient_update_themes', function ($transient) {
+    if (!is_object($transient)) return $transient;
+    $info = mvp_affiliate_fetch_remote_version();
+    if (empty($info['theme']['version'])) return $transient;
+
+    $slug    = 'mvp-affiliate-theme';
+    $latest  = (string) $info['theme']['version'];
+    $package = (string) ($info['theme']['download_url'] ?? '');
+
+    if ($package && version_compare(MVP_AFFILIATE_THEME_VERSION, $latest, '<')) {
+        $transient->response[$slug] = [
+            'theme'       => $slug,
+            'new_version' => $latest,
+            'url'         => 'https://www.mvpaffiliate.io',
+            'package'     => $package,
+        ];
+    } else {
+        // Not stale — make sure WP doesn't keep a phantom update queued.
+        unset($transient->response[$slug]);
+    }
+    return $transient;
+});
 
 // ── Comments (used in templates) ────────────────────────────────────────────
 add_action('after_setup_theme', function () {
