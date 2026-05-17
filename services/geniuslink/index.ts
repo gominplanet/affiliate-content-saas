@@ -100,7 +100,9 @@ export class GeniuslinkService {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async listShortlinks(): Promise<Array<Record<string, any>>> {
     const candidates = [
-      // Most likely (matches /v1/groups/list pattern we already use)
+      // Geniuslink's actual paginated list endpoint per their public docs.
+      (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls/search?page=${page}&pageSize=${pageSize}`,
+      (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls/find?page=${page}&pageSize=${pageSize}`,
       (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls/list?page=${page}&pageSize=${pageSize}`,
       (page: number, pageSize: number) => `${GENIUSLINK_API}/v1/shorturls/list?page=${page}&pageSize=${pageSize}`,
       (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls?page=${page}&pageSize=${pageSize}`,
