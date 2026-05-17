@@ -91,28 +91,52 @@ export class GeniuslinkService {
    * keys, so we keep this loose). Used by /api/analytics/clicks to pull
    * cumulative clicks per link.
    */
+  /**
+   * Geniuslink list endpoint. They version it inconsistently across docs
+   * (/v3/shorturls/list vs /v1/shorturls/list vs /v3/shorturls without
+   * /list), so we try a couple in order and use whichever returns 200.
+   * Once we know which one your account responds to we can hardcode it.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async listShortlinks(): Promise<Array<Record<string, any>>> {
-    const all: Array<Record<string, unknown>> = []
-    let page = 1
-    const pageSize = 200
-    // Cap pagination so a runaway loop can't hang the analytics endpoint.
-    while (page <= 10) {
-      const res = await fetch(
-        `${GENIUSLINK_API}/v3/shorturls?page=${page}&pageSize=${pageSize}`,
-        { headers: this.authHeaders },
-      )
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(`Geniuslink list error ${res.status}: ${text.slice(0, 200)}`)
+    const candidates = [
+      // Most likely (matches /v1/groups/list pattern we already use)
+      (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls/list?page=${page}&pageSize=${pageSize}`,
+      (page: number, pageSize: number) => `${GENIUSLINK_API}/v1/shorturls/list?page=${page}&pageSize=${pageSize}`,
+      (page: number, pageSize: number) => `${GENIUSLINK_API}/v3/shorturls?page=${page}&pageSize=${pageSize}`,
+    ]
+
+    let lastErr: string | null = null
+    for (const buildUrl of candidates) {
+      const all: Array<Record<string, unknown>> = []
+      let page = 1
+      const pageSize = 200
+      let succeeded = false
+      while (page <= 10) {
+        const res = await fetch(buildUrl(page, pageSize), { headers: this.authHeaders })
+        if (!res.ok) {
+          const text = await res.text()
+          lastErr = `${res.status} at ${buildUrl(page, pageSize)}: ${text.slice(0, 200)}`
+          break
+        }
+        succeeded = true
+        const data = (await res.json()) as {
+          ShortUrls?: Array<Record<string, unknown>>
+          shortUrls?: Array<Record<string, unknown>>
+          // Some Geniuslink endpoints wrap the list in a Results/Items envelope.
+          Results?: Array<Record<string, unknown>>
+          results?: Array<Record<string, unknown>>
+          Items?: Array<Record<string, unknown>>
+          items?: Array<Record<string, unknown>>
+        }
+        const items = data.ShortUrls ?? data.shortUrls ?? data.Results ?? data.results ?? data.Items ?? data.items ?? []
+        all.push(...items)
+        if (items.length < pageSize) break
+        page += 1
       }
-      const data = (await res.json()) as { ShortUrls?: Array<Record<string, unknown>>; shortUrls?: Array<Record<string, unknown>> }
-      const items = data.ShortUrls ?? data.shortUrls ?? []
-      all.push(...items)
-      if (items.length < pageSize) break
-      page += 1
+      if (succeeded) return all
     }
-    return all
+    throw new Error(`Geniuslink list: all endpoint variants failed. Last: ${lastErr ?? 'no detail'}`)
   }
 }
 
