@@ -142,45 +142,21 @@ export default function LandingPage() {
       {/* ── Hero ───────────────────────────────────────────────────────────── */}
       <section className="pt-28 sm:pt-36 pb-12 sm:pb-20 px-5 sm:px-6 relative overflow-hidden bg-gradient-to-b from-[#f0f7ff] via-white to-white">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1100px] h-[600px] bg-[#0071e3]/8 rounded-full blur-[120px] pointer-events-none" />
-        <div className="relative max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+        <div className="relative max-w-5xl mx-auto flex flex-col items-center text-center">
 
-          {/* Left — copy */}
-          <div className="text-center lg:text-left">
-            <div className="inline-flex items-center gap-2 bg-white border border-[#0071e3]/20 rounded-full px-3 py-1.5 text-xs sm:text-sm text-[#0071e3] font-medium mb-6 shadow-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
-              15 free posts. No card. No catch.
-            </div>
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.05] mb-5 text-[#1d1d1f]">
-              One YouTube draft in.
-              <br />
-              <span className="text-[#0071e3]">An entire affiliate engine out.</span>
-            </h1>
-            <p className="text-lg sm:text-xl text-[#3a3a3c] max-w-xl mx-auto lg:mx-0 mb-8 leading-relaxed">
-              Record the video. We do everything else. From one unlisted YouTube draft, an army of
-              AI agents ships a long-form, SEO-optimized review on your branded review site, a
-              click-tuned YouTube description with affiliate links inserted cleanly, video tags and
-              hashtags ranked for discovery, a click-magnet thumbnail — plus fan-out posts to
-              Instagram (Reels, Feed posts and Stories), Facebook, Threads, LinkedIn, Pinterest, X,
-              Bluesky and Telegram.
-              <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. ~2 hours of unpaid post-production per video → gone.</span>
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3">
-              <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
-                Start free — 15 posts <ArrowRight size={17} />
-              </Link>
-              <Link href="/pricing" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-[#1d1d1f] font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors">
-                See pricing
-              </Link>
-            </div>
-            <p className="mt-4 text-sm text-[#86868b]">
-              Includes a free themed review site · Cancel anytime
-            </p>
+          {/* Free-posts pill */}
+          <div className="inline-flex items-center gap-2 bg-white border border-[#0071e3]/20 rounded-full px-3 py-1.5 text-xs sm:text-sm text-[#0071e3] font-medium mb-6 shadow-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
+            15 free posts. No card. No catch.
           </div>
 
-          {/* Right — "Complete Apps Automation Hub" infographic.
-              Shows the nine platforms MVP fans out to at a glance, which
-              the BrowserFrame mockup couldn't. */}
-          <div className="relative w-full">
+          {/* Main title */}
+          <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-10 text-[#1d1d1f]">
+            Start your <span className="text-[#0071e3]">affiliate engine</span>!
+          </h1>
+
+          {/* Centered infographic */}
+          <div className="relative w-full max-w-4xl mb-10">
             <Image
               src="/automation-hub.png"
               alt="MVP Affiliate automation hub — YouTube, Instagram, Facebook, Threads, LinkedIn, X, Pinterest, Bluesky, Telegram"
@@ -190,6 +166,29 @@ export default function LandingPage() {
               className="w-full h-auto rounded-2xl shadow-xl"
             />
           </div>
+
+          {/* Subtext */}
+          <p className="text-lg sm:text-xl text-[#3a3a3c] max-w-3xl mb-8 leading-relaxed">
+            Record the video. We do everything else. From one unlisted YouTube draft, an army of
+            AI agents ships a long-form, SEO-optimized review on your branded review site, a
+            click-tuned YouTube description with affiliate links inserted cleanly, video tags and
+            hashtags ranked for discovery, a click-magnet thumbnail — plus fan-out posts to
+            Instagram (Reels, Feed posts and Stories), Facebook, Threads, LinkedIn, Pinterest, X,
+            Bluesky and Telegram.
+            <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. ~2 hours of unpaid post-production per video → gone.</span>
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
+              Start free — 15 posts <ArrowRight size={17} />
+            </Link>
+            <Link href="/pricing" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-[#1d1d1f] font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors">
+              See pricing
+            </Link>
+          </div>
+          <p className="mt-4 text-sm text-[#86868b]">
+            Includes a free themed review site · Cancel anytime
+          </p>
         </div>
       </section>
 
