@@ -110,7 +110,7 @@ export default async function DashboardPage() {
       <ChannelStats />
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         {stats.map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className="stat-card">
             <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center mb-3`}>
@@ -122,9 +122,9 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Videos */}
-        <div className="col-span-2 card p-5">
+        <div className="lg:col-span-2 card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Recent Videos</h2>
             <Link href="/content" className="text-xs text-[#0071e3] hover:underline font-medium">

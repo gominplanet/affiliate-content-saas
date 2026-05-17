@@ -2091,7 +2091,7 @@ export default function ContentPage() {
 
       {/* Tab bar — split Videos into Horizontal (16:9 long-form, blog source)
           and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
-      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4">
+      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {([
           { key: 'horizontal' as const, label: 'Horizontal Videos' },
           { key: 'vertical' as const, label: 'Vertical Videos' },
@@ -2105,7 +2105,7 @@ export default function ContentPage() {
               if (key === 'posts' && !postsLoaded && !postsLoading) loadWpPosts()
               if (key === 'scheduled' && !scheduledItems && !scheduledLoading) loadScheduled()
             }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === key
                 ? 'border-[#0071e3] text-[#0071e3]'
                 : 'border-transparent text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'

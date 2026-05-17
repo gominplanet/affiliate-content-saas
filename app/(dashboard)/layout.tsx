@@ -20,8 +20,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
       <Sidebar email={user.email} wpSiteUrl={wpSiteUrl} />
-      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--bg)' }}>
-        <div className="max-w-6xl mx-auto px-8 py-8">
+      <main className="flex-1 overflow-y-auto w-full" style={{ background: 'var(--bg)' }}>
+        {/* pt-16 on mobile leaves room for the fixed hamburger button; px-4 keeps
+            content from kissing the screen edge on phones. lg: restores the
+            generous desktop padding. */}
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 lg:pt-8 pb-8">
           {children}
         </div>
       </main>

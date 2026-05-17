@@ -26,6 +26,7 @@ import {
   Check,
   Loader2,
   HandCoins,
+  Menu,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -60,6 +61,10 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
   const [purging, setPurging] = useState(false)
   const [purged, setPurged] = useState(false)
+  // Mobile drawer state — sidebar is hidden offscreen below lg and slides in
+  // when this is true. Auto-closes on every route change.
+  const [mobileOpen, setMobileOpen] = useState(false)
+  useEffect(() => { setMobileOpen(false) }, [pathname, searchParams])
 
   async function purgeCache() {
     setPurging(true)
@@ -131,7 +136,37 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   }
 
   return (
-    <aside className="sidebar flex flex-col h-screen sticky top-0 overflow-y-auto">
+    <>
+      {/* Mobile hamburger — visible below lg, fixed top-left so it stays put as
+          the user scrolls. The dashboard layout adds top padding on mobile so
+          page content doesn't slide under this button. */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        className="lg:hidden fixed top-3 left-3 z-40 w-10 h-10 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 shadow-sm flex items-center justify-center text-[#1d1d1f] dark:text-[#f5f5f7]"
+        aria-label="Open menu"
+      >
+        <Menu size={18} />
+      </button>
+
+      {/* Backdrop — only on mobile when drawer is open. Click anywhere to close. */}
+      {mobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={cn(
+          'sidebar flex flex-col h-screen overflow-y-auto z-50',
+          // Desktop: classic sticky sidebar
+          'lg:sticky lg:top-0 lg:translate-x-0',
+          // Mobile: fixed off-canvas drawer that slides in when open
+          'fixed top-0 left-0 transition-transform duration-200 ease-out',
+          mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
+        )}
+      >
       {/* Logo */}
       <div className="px-4 pt-5 pb-4" style={{ borderBottom: '1px solid var(--border-2)' }}>
         <div className="flex items-center gap-2.5">
@@ -325,5 +360,6 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         </button>
       </div>
     </aside>
+    </>
   )
 }
