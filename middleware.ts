@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
 
-const publicPaths = ['/login', '/signup', '/reset-password', '/api/auth', '/api/proxy-image', '/pricing', '/privacy', '/terms']
+const publicPaths = ['/login', '/signup', '/reset-password', '/api/auth', '/api/proxy-image', '/api/cron', '/pricing', '/privacy', '/terms']
 
 function isPublicRoot(pathname: string) {
   return pathname === '/'
