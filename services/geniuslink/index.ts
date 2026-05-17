@@ -141,15 +141,38 @@ export class GeniuslinkService {
       { headers: this.authHeaders },
     )
     if (!res.ok) return []
-    // Geniuslink's daily response has both Key (the date) and Value.Clicks.
+    // Geniuslink's daily response has Key (the date) + Value.Clicks. Key
+    // shape varies: ISO "2026-05-16T00:00:00", epoch number, or .NET-style
+    // "/Date(1747353600000)/". normaliseDate handles all three.
     const data = await res.json().catch(() => null) as
-      | { ClicksByDate?: Array<{ Key?: string; Value?: { Clicks?: number } }> }
+      | { ClicksByDate?: Array<{ Key?: unknown; Value?: { Clicks?: number } }> }
       | null
     return (data?.ClicksByDate ?? []).map(b => ({
-      date: (b.Key ?? '').slice(0, 10),
+      date: normaliseDate(b.Key),
       clicks: b.Value?.Clicks ?? 0,
     }))
   }
+}
+
+/** Turn whatever Geniuslink hands back as a "Key" into a YYYY-MM-DD string. */
+function normaliseDate(raw: unknown): string {
+  if (raw == null) return ''
+  // ASP.NET style "/Date(1747353600000)/"
+  if (typeof raw === 'string') {
+    const aspMatch = raw.match(/\/Date\((-?\d+)\)\//)
+    if (aspMatch) {
+      const d = new Date(Number(aspMatch[1]))
+      return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+    }
+    // Plain ISO string — slice the date portion off
+    return raw.slice(0, 10)
+  }
+  if (typeof raw === 'number') {
+    // Geniuslink occasionally returns ms-since-epoch as a bare number
+    const d = new Date(raw)
+    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+  }
+  return ''
 }
 
 export function createGeniuslinkService(apiKey: string, apiSecret: string) {
