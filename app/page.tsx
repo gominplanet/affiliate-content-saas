@@ -494,6 +494,95 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Stack consolidation pitch ───────────────────────────────────────
+          Honest, concrete cost comparison: the 5 tools an active affiliate
+          creator is already paying for, vs MVP doing it all in one. This is
+          a price-pressure pitch (you're already spending this elsewhere),
+          distinct from the "How we stack up" capability comparison below. */}
+      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-[#f7f9fc] to-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14 max-w-3xl mx-auto">
+            <span className="inline-block text-xs font-bold text-[#0071e3] uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-[#0071e3]/10">
+              Stack consolidation
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">
+              You&apos;re already paying <span className="text-[#0071e3]">$223/mo</span> for this.
+            </h2>
+            <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
+              Most active affiliate creators are running 5 separate tools to do what MVP does in one click.
+              None of them talk to each other. We checked the math — yours probably looks like this.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-6 lg:gap-8 items-center">
+
+            {/* LEFT — the current stack */}
+            <div className="rounded-2xl bg-white border border-gray-200 p-6 sm:p-7 shadow-sm">
+              <p className="text-xs font-semibold text-[#86868b] uppercase tracking-wider mb-4">Your stack today</p>
+              <div className="flex flex-col gap-3.5">
+                <StackTool emoji="🔗" name="Lasso" job="Affiliate link mgmt + WordPress display blocks" price="$49/mo" />
+                <StackTool emoji="✍️" name="Surfer SEO" job="AI-written long-form review articles" price="$89/mo" />
+                <StackTool emoji="📅" name="Buffer (Team)" job="Schedule social posts to 8+ channels" price="$50/mo" />
+                <StackTool emoji="🎯" name="TubeBuddy Pro" job="YouTube metadata, tags, hashtag research" price="$20/mo" />
+                <StackTool emoji="🎨" name="Canva Pro" job="Thumbnails + Instagram image posts" price="$15/mo" />
+              </div>
+              <div className="mt-5 pt-5 border-t border-gray-200 flex items-baseline justify-between">
+                <span className="text-sm font-semibold text-[#1d1d1f]">Total per month</span>
+                <span className="text-3xl font-bold text-[#1d1d1f]">$223</span>
+              </div>
+              <p className="text-[11px] text-[#86868b] mt-2 leading-relaxed">
+                And they don&apos;t talk to each other. You&apos;re the integration layer.
+              </p>
+            </div>
+
+            {/* MIDDLE — divider with arrow */}
+            <div className="flex lg:flex-col items-center justify-center gap-2 py-2">
+              <span className="hidden lg:block text-xs font-bold text-[#86868b] uppercase tracking-widest">vs</span>
+              <ArrowRight size={28} className="text-[#0071e3] hidden lg:block" />
+              <span className="lg:hidden text-xs font-bold text-[#86868b] uppercase tracking-widest">↓ becomes ↓</span>
+            </div>
+
+            {/* RIGHT — MVP all-in-one */}
+            <div
+              className="rounded-2xl p-6 sm:p-7 shadow-xl text-white relative overflow-hidden"
+              style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+            >
+              <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+              <p className="relative text-xs font-semibold text-white/80 uppercase tracking-wider mb-4">One tool. Same job.</p>
+              <div className="relative flex flex-col gap-3">
+                <StackPerk label="Affiliate link mgmt + branded WordPress site" />
+                <StackPerk label="AI-written reviews in your brand voice" />
+                <StackPerk label="Fan-out to 8 socials, one click" />
+                <StackPerk label="YouTube metadata + tags + click-magnet thumbnail" />
+                <StackPerk label="Auto-composed 4:5 Instagram image + 9:16 Story" />
+                <StackPerk label="Affiliate disclaimer + Geniuslink routing built in" />
+              </div>
+              <div className="relative mt-5 pt-5 border-t border-white/20 flex items-baseline justify-between">
+                <span className="text-sm font-semibold">Growth plan</span>
+                <span className="text-3xl font-bold">$99<span className="text-base font-medium">/mo</span></span>
+              </div>
+              <p className="relative text-[11px] text-white/80 mt-2 leading-relaxed">
+                Pro at $199 unlocks Instagram + LinkedIn + Telegram + X. Starter at $49 covers Facebook + WP.
+              </p>
+            </div>
+          </div>
+
+          {/* Bottom savings callout */}
+          <div className="mt-10 rounded-2xl bg-[#34c759]/10 border border-[#34c759]/30 px-6 py-5 max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-[#1d1d1f] mb-1">Save $124/month switching to Growth.</p>
+              <p className="text-xs text-[#3a3a3c]">That&apos;s $1,488/year — plus the time you stop spending integrating five dashboards.</p>
+            </div>
+            <Link
+              href="/pricing"
+              className="flex-shrink-0 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#34c759] hover:bg-[#2db34a] transition-colors"
+            >
+              See pricing <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ── Comparison table ───────────────────────────────────────────────── */}
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white border-y border-gray-100">
         <div className="max-w-5xl mx-auto">
@@ -714,6 +803,30 @@ function FeatureLine({ children }: { children: React.ReactNode }) {
       <CheckCircle size={17} className="text-[#34c759] mt-0.5 flex-shrink-0" />
       <span>{children}</span>
     </li>
+  )
+}
+
+/** Single row in the "your current stack" card — emoji, name, job, price. */
+function StackTool({ emoji, name, job, price }: { emoji: string; name: string; job: string; price: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-xl flex-shrink-0">{emoji}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-[#1d1d1f] leading-tight">{name}</p>
+        <p className="text-[11px] text-[#6e6e73] leading-snug truncate">{job}</p>
+      </div>
+      <span className="text-sm font-bold text-[#1d1d1f] tabular-nums flex-shrink-0">{price}</span>
+    </div>
+  )
+}
+
+/** Single check-mark line in the MVP "one tool" card. */
+function StackPerk({ label }: { label: string }) {
+  return (
+    <div className="flex items-start gap-2.5 text-sm text-white">
+      <CheckCircle size={15} className="text-[#34c759] mt-0.5 flex-shrink-0" />
+      <span className="leading-snug">{label}</span>
+    </div>
   )
 }
 
