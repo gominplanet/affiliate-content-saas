@@ -25,6 +25,7 @@ import {
   Zap,
   Check,
   Loader2,
+  HandCoins,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -44,6 +45,8 @@ const nav = [
 
 const secondaryNav = [
   { href: '/billing', label: 'Plan & Billing', icon: CreditCard },
+  // Rewardful-hosted affiliate dashboard — opens in a new tab.
+  { href: 'https://mvp-affiliate.getrewardful.com/signup', label: 'Earn 10% — Refer', icon: HandCoins, external: true as const, accent: '#34c759' },
   { href: '/admin/users', label: 'Users (admin)', icon: UserCog, danger: false },
   { href: '/admin/failures', label: 'Failures', icon: AlertTriangle, danger: true },
 ]
@@ -235,20 +238,44 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
 
         <div className="mt-4 mb-2 pt-4" style={{ borderTop: '1px solid var(--border-2)' }}>
           <p className="section-label px-2 mb-2">System</p>
-          {secondaryNav.map(({ href, label, icon: Icon, danger }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                'nav-item',
-                isActive(href) && 'active',
-                danger && !isActive(href) && 'hover:!text-[#ff3b30]',
-              )}
-            >
-              <Icon size={16} className="flex-shrink-0" />
-              {label}
-            </Link>
-          ))}
+          {secondaryNav.map((item) => {
+            const { href, label, icon: Icon } = item
+            const danger = 'danger' in item && item.danger
+            const external = 'external' in item && item.external
+            const accent = 'accent' in item ? item.accent : undefined
+
+            if (external) {
+              return (
+                <a
+                  key={href}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="nav-item"
+                  style={accent ? { color: accent } : undefined}
+                >
+                  <Icon size={16} className="flex-shrink-0" />
+                  <span className="flex-1">{label}</span>
+                  <ExternalLink size={11} className="opacity-60 flex-shrink-0" />
+                </a>
+              )
+            }
+
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  'nav-item',
+                  isActive(href) && 'active',
+                  danger && !isActive(href) && 'hover:!text-[#ff3b30]',
+                )}
+              >
+                <Icon size={16} className="flex-shrink-0" />
+                {label}
+              </Link>
+            )
+          })}
         </div>
       </nav>
 

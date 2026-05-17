@@ -4,6 +4,7 @@ import Header from '@/components/layout/Header'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import WhatsNew from '@/components/dashboard/WhatsNew'
+import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers } from 'lucide-react'
 import Link from 'next/link'
 
@@ -104,6 +105,7 @@ export default async function DashboardPage() {
       )}
 
       <WhatsNew />
+      <ReferralBanner />
       <SetupChecklist />
       <ChannelStats />
 
