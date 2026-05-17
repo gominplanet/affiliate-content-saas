@@ -836,8 +836,17 @@ export default function LandingPage() {
             <span className="text-sm font-semibold text-[#1d1d1f]">MVP Affiliate</span>
             <span className="text-xs text-[#86868b] ml-2">© {new Date().getFullYear()} Gomin Planet Holdings Ltd</span>
           </div>
-          <div className="flex items-center gap-5 text-xs text-[#86868b]">
+          <div className="flex items-center gap-5 text-xs text-[#86868b] flex-wrap justify-center">
             <Link href="/pricing" className="hover:text-[#1d1d1f]">Pricing</Link>
+            <a
+              href="https://mvp-affiliate.getrewardful.com/signup"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#1f8a3a] hover:text-[#136b2c] font-medium inline-flex items-center gap-1"
+            >
+              <span className="w-1 h-1 rounded-full bg-[#34c759]" />
+              Affiliate program
+            </a>
             <Link href="/privacy" className="hover:text-[#1d1d1f]">Privacy</Link>
             <Link href="/terms" className="hover:text-[#1d1d1f]">Terms</Link>
             <Link href="/login" className="hover:text-[#1d1d1f]">Sign in</Link>
