@@ -28,7 +28,14 @@ export class GeniuslinkService {
     return (youtubeGroup ?? groups[0]).Id
   }
 
+  /** Backwards-compat wrapper that returns just the URL. Prefer
+   *  `createAsinLinkWithCode` so you can persist the code for analytics. */
   async createAsinLink(asin: string, label: string): Promise<string> {
+    const { url } = await this.createAsinLinkWithCode(asin, label)
+    return url
+  }
+
+  async createAsinLinkWithCode(asin: string, label: string): Promise<{ url: string; code: string | null }> {
     const destination = `https://www.amazon.com/dp/${asin}`
     const groupId = await this.getDefaultGroupId()
 
@@ -58,22 +65,54 @@ export class GeniuslinkService {
       const su = data.shortUrl as Record<string, unknown>
       const code = (su.code ?? su.baseCode) as string | undefined
       const domain = ((su.domain ?? su.baseDomain ?? 'geni.us') as string).replace(/^https?:\/\//, '')
-      if (code) return `https://${domain}/${code}`
+      if (code) return { url: `https://${domain}/${code}`, code }
     }
 
     // Fallback: shortUrl might be a plain string in some API versions
     if (typeof data.shortUrl === 'string' && data.shortUrl.startsWith('http')) {
-      return data.shortUrl
+      // Extract code from the URL itself
+      const m = (data.shortUrl as string).match(/\/([A-Za-z0-9]+)$/)
+      return { url: data.shortUrl as string, code: m ? m[1] : null }
     }
 
     // Legacy fallback: ShortUrlCode + Domain at top level
     const shortCode = (data.ShortUrlCode ?? data.shortUrlCode) as string | undefined
     const domain = ((data.Domain ?? data.domain ?? 'geni.us') as string).replace(/^https?:\/\//, '')
-    if (shortCode) return `https://${domain}/${shortCode}`
+    if (shortCode) return { url: `https://${domain}/${shortCode}`, code: shortCode }
 
     throw new Error(
       `Geniuslink: could not parse URL from response. Keys: ${Object.keys(data).join(', ')} | ${text.slice(0, 300)}`
     )
+  }
+
+  /**
+   * List every shortlink on the user's Geniuslink account. Returns the
+   * raw shape from the API (different versions return slightly different
+   * keys, so we keep this loose). Used by /api/analytics/clicks to pull
+   * cumulative clicks per link.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async listShortlinks(): Promise<Array<Record<string, any>>> {
+    const all: Array<Record<string, unknown>> = []
+    let page = 1
+    const pageSize = 200
+    // Cap pagination so a runaway loop can't hang the analytics endpoint.
+    while (page <= 10) {
+      const res = await fetch(
+        `${GENIUSLINK_API}/v3/shorturls?page=${page}&pageSize=${pageSize}`,
+        { headers: this.authHeaders },
+      )
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`Geniuslink list error ${res.status}: ${text.slice(0, 200)}`)
+      }
+      const data = (await res.json()) as { ShortUrls?: Array<Record<string, unknown>>; shortUrls?: Array<Record<string, unknown>> }
+      const items = data.ShortUrls ?? data.shortUrls ?? []
+      all.push(...items)
+      if (items.length < pageSize) break
+      page += 1
+    }
+    return all
   }
 }
 

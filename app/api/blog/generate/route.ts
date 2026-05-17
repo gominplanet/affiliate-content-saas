@@ -235,6 +235,14 @@ async function handleGenerate(request: Request) {
     .limit(1)
     .single()
 
+  // Extract the Geniuslink shortcode from the YouTube description so we can
+  // tie it back to this post in /api/analytics/clicks. The link itself is
+  // already created upstream (during generate-metadata) and lives in the
+  // YouTube description; we just persist the code here for join purposes.
+  const geniuslinkCode = extractGeniuslinkCode(
+    (video as Record<string, unknown>).description as string | null | undefined,
+  )
+
   const blogPayload = {
     user_id: user.id,
     video_id: videoId,
@@ -249,6 +257,7 @@ async function handleGenerate(request: Request) {
     generation_prompt_version: 'v3.0',
     published_at: new Date().toISOString(),
     image_prompts: generated.imagePrompts,
+    ...(geniuslinkCode ? { geniuslink_code: geniuslinkCode } : {}),
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -320,4 +329,12 @@ async function logFailure(
     retry_count: 0,
     status: 'pending_retry',
   })
+}
+
+/** Pull the shortcode out of a Geniuslink URL embedded in text.
+ *  e.g. "https://geni.us/y2ClyW" -> "y2ClyW". Returns null if not found. */
+function extractGeniuslinkCode(text: string | null | undefined): string | null {
+  if (!text) return null
+  const m = text.match(/https?:\/\/(?:www\.)?geni\.us\/([A-Za-z0-9]+)/)
+  return m ? m[1] : null
 }
