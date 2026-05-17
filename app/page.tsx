@@ -177,8 +177,19 @@ export default function LandingPage() {
             </p>
           </div>
 
-          {/* Right — live preview "browser frame" */}
-          <BrowserFrame />
+          {/* Right — "Complete Apps Automation Hub" infographic.
+              Shows the nine platforms MVP fans out to at a glance, which
+              the BrowserFrame mockup couldn't. */}
+          <div className="relative w-full">
+            <Image
+              src="/automation-hub.png"
+              alt="MVP Affiliate automation hub — YouTube, Instagram, Facebook, Threads, LinkedIn, X, Pinterest, Bluesky, Telegram"
+              width={1400}
+              height={788}
+              priority
+              className="w-full h-auto rounded-2xl shadow-xl"
+            />
+          </div>
         </div>
       </section>
 
