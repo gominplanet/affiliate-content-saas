@@ -869,9 +869,11 @@ a.mvp-ad-slot-filled:hover {
 .mvp-about-inner {
   display: flex;
   align-items: flex-start;
-  gap: 36px;
+  gap: 44px;
   padding: 56px 24px;
-  max-width: 920px;
+  /* No max-width override — inherit the site's 1200px .mvp-container so
+     the bio flows at the same width as the rest of the page instead of
+     a cramped column. */
 }
 .mvp-about-headshot {
   width: 110px; height: 110px;
