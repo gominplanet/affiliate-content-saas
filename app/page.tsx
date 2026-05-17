@@ -737,6 +737,67 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Affiliate / referral program ────────────────────────────────────
+          Two doors at the bottom of the page: buy below, or earn here.
+          Rewardful-hosted signup; we never see card data, payouts are
+          managed by Rewardful + Stripe. 10% recurring lifetime. */}
+      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-white to-[#f0fff4]">
+        <div className="max-w-5xl mx-auto">
+          <div className="rounded-3xl border border-[#34c759]/30 bg-white p-8 sm:p-12 shadow-sm relative overflow-hidden">
+            <div className="absolute -top-20 -right-20 w-72 h-72 bg-[#34c759]/15 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-10 items-center">
+              <div>
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider mb-4 px-3 py-1 rounded-full bg-[#34c759]/15 text-[#1f8a3a]">
+                  Affiliate program
+                </span>
+                <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f] leading-[1.1]">
+                  Refer a creator. Earn <span className="text-[#34c759]">10% every month</span>, forever.
+                </h2>
+                <p className="text-[#3a3a3c] text-base sm:text-lg leading-relaxed mb-6">
+                  Send creators our way — every paying customer you refer pays you 10% of their plan
+                  for as long as they stay. Not a one-time bounty. Not a 90-day cookie. Recurring
+                  commission for the lifetime of the membership.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                  <ReferralStat label="Per Pro referral" value="$19.90/mo" sub="forever" />
+                  <ReferralStat label="10 Pro referrals" value="$199/mo" sub="$2,388/year" />
+                  <ReferralStat label="50 Pro referrals" value="$995/mo" sub="$11,940/year" />
+                </div>
+
+                <ul className="text-sm text-[#3a3a3c] flex flex-col gap-1.5 mb-1">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Tracked + paid out by Rewardful — automatic, transparent, no spreadsheets
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Personal dashboard with real-time clicks, signups, and earnings
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Net-30 payouts via PayPal or Wise — no minimum threshold
+                  </li>
+                </ul>
+              </div>
+
+              {/* CTA card */}
+              <div className="lg:w-64 flex flex-col gap-4">
+                <a
+                  href="https://mvp-affiliate.getrewardful.com/signup"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 px-6 py-4 rounded-2xl text-base font-semibold text-white bg-[#34c759] hover:bg-[#2db34a] transition-colors shadow-lg shadow-[#34c759]/30"
+                >
+                  Join the program <ArrowRight size={17} />
+                </a>
+                <p className="text-xs text-[#86868b] text-center leading-relaxed">
+                  Free to join. Takes 60 seconds. You don&apos;t need to be a customer.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Final CTA ──────────────────────────────────────────────────────── */}
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-br from-[#0071e3] to-[#5856d6] text-white">
         <div className="max-w-3xl mx-auto text-center">
@@ -816,6 +877,17 @@ function StackTool({ emoji, name, job, price }: { emoji: string; name: string; j
         <p className="text-[11px] text-[#6e6e73] leading-snug truncate">{job}</p>
       </div>
       <span className="text-sm font-bold text-[#1d1d1f] tabular-nums flex-shrink-0">{price}</span>
+    </div>
+  )
+}
+
+/** Small stat tile for the affiliate program section — label + big value + sub. */
+function ReferralStat({ label, value, sub }: { label: string; value: string; sub: string }) {
+  return (
+    <div className="rounded-xl bg-[#34c759]/8 border border-[#34c759]/20 p-3.5">
+      <p className="text-[10px] font-semibold text-[#1f8a3a] uppercase tracking-wider mb-1">{label}</p>
+      <p className="text-2xl font-bold text-[#1d1d1f] tabular-nums leading-none">{value}</p>
+      <p className="text-[11px] text-[#6e6e73] mt-1">{sub}</p>
     </div>
   )
 }
