@@ -18,16 +18,21 @@ import {
 // ─── Honest platform availability ──────────────────────────────────────────
 // Live = working today. Soon = built / scoped, awaiting external approval.
 // Roadmap = on the list, not promised by date.
+// Order matters for the strip layout: Live -> Pro -> Soon -> Roadmap.
+// With 10 platforms we render as a 5x2 grid for a clean split, with the
+// "ship today" platforms on the top row.
 const platforms = [
+  // Top row — live and free to use
   { label: 'WordPress',    status: 'live'    as const, color: '#21759b', logo: 'wordpress' },
   { label: 'Facebook',     status: 'live'    as const, color: '#1877f2', logo: 'facebook' },
   { label: 'Threads',      status: 'live'    as const, color: '#000000', logo: 'threads' },
-  { label: 'LinkedIn',     status: 'pro'     as const, color: '#0a66c2', logo: 'linkedin' },
-  { label: 'Pinterest',    status: 'soon'    as const, color: '#e60023', logo: 'pinterest' },
   { label: 'Twitter / X',  status: 'live'    as const, color: '#000000', logo: 'x' },
   { label: 'Bluesky',      status: 'live'    as const, color: '#1185fe', logo: 'bluesky' },
-  { label: 'Telegram',     status: 'pro'     as const, color: '#229ED9', logo: 'telegram' },
+  // Bottom row — Pro-gated, coming soon, roadmap
   { label: 'Instagram',    status: 'pro'     as const, color: '#E1306C', logo: 'instagram' },
+  { label: 'LinkedIn',     status: 'pro'     as const, color: '#0a66c2', logo: 'linkedin' },
+  { label: 'Telegram',     status: 'pro'     as const, color: '#229ED9', logo: 'telegram' },
+  { label: 'Pinterest',    status: 'soon'    as const, color: '#e60023', logo: 'pinterest' },
   { label: 'Email digest', status: 'roadmap' as const, color: '#34c759', logo: 'email' },
 ]
 
@@ -193,31 +198,34 @@ export default function LandingPage() {
       </section>
 
       {/* ── Platform strip ─────────────────────────────────────────────────── */}
-      <section className="py-12 sm:py-16 border-y border-gray-100 bg-[#fafafa]">
-        <div className="max-w-6xl mx-auto px-5 sm:px-6">
-          <p className="text-center text-sm text-[#3a3a3c] mb-6 uppercase tracking-widest font-semibold">
+      <section className="py-16 sm:py-20 border-y border-gray-100 bg-[#fafafa]">
+        <div className="max-w-5xl mx-auto px-5 sm:px-6">
+          <p className="text-center text-sm text-[#3a3a3c] mb-10 uppercase tracking-widest font-semibold">
             One click fans every review out to every platform that matters
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 max-w-4xl mx-auto">
             {platforms.map(({ label, status, color, logo }) => {
               const badge = statusBadge[status]
               return (
-                <div key={label} className="flex flex-col items-center gap-2.5 p-4 rounded-xl bg-white border border-gray-100 hover:border-gray-200 transition-colors">
+                <div
+                  key={label}
+                  className="flex flex-col items-center gap-3 p-5 rounded-2xl bg-white border border-gray-100 hover:border-gray-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                >
                   <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm"
                     style={{ background: color }}
                   >
                     <PlatformLogo name={logo} />
                   </div>
                   <span className="text-sm font-semibold text-[#1d1d1f] text-center leading-tight">{label}</span>
-                  <span className={`text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${badge.bg} ${badge.fg}`}>
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full ${badge.bg} ${badge.fg}`}>
                     {badge.text}
                   </span>
                 </div>
               )
             })}
           </div>
-          <p className="mt-6 text-center text-sm text-[#3a3a3c] max-w-2xl mx-auto leading-relaxed">
+          <p className="mt-10 text-center text-sm text-[#3a3a3c] max-w-2xl mx-auto leading-relaxed">
             We only ship what works. Pinterest auto-publish is built and in Pinterest&apos;s developer
             review queue — activates automatically once approved. Email digests are on the roadmap.
             No false promises.
