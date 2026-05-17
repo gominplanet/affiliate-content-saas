@@ -44,4 +44,22 @@
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
   }
+
+  // ── About band: Read more / Read less toggle ───────────────────────────────
+  var aboutBtn = document.querySelector('.mvp-about-readmore');
+  if (aboutBtn) {
+    var aboutRest = document.querySelector('.mvp-about-bio-rest');
+    aboutBtn.addEventListener('click', function () {
+      var expanded = aboutBtn.getAttribute('aria-expanded') === 'true';
+      if (expanded) {
+        if (aboutRest) aboutRest.setAttribute('hidden', '');
+        aboutBtn.setAttribute('aria-expanded', 'false');
+        aboutBtn.textContent = 'Read more';
+      } else {
+        if (aboutRest) aboutRest.removeAttribute('hidden');
+        aboutBtn.setAttribute('aria-expanded', 'true');
+        aboutBtn.textContent = 'Read less';
+      }
+    });
+  }
 })();

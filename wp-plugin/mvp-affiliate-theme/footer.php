@@ -21,8 +21,22 @@ $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
       <?php if ($author): ?>
       <h2 class="mvp-about-name"><?php echo esc_html($author); ?></h2>
       <?php endif; ?>
-      <?php if ($bio): ?>
-      <div class="mvp-about-bio"><?php echo nl2br(esc_html($bio)); ?></div>
+      <?php if ($bio):
+        // Collapse everything from "How we got here" onward behind a
+        // Read more toggle. If that marker isn't in the bio (user edited
+        // it), fall back to showing the whole thing — no broken state.
+        $marker = 'How we got here';
+        $pos = stripos($bio, $marker);
+        $intro = ($pos !== false && $pos > 0) ? trim(substr($bio, 0, $pos)) : $bio;
+        $rest  = ($pos !== false && $pos > 0) ? trim(substr($bio, $pos)) : '';
+      ?>
+      <div class="mvp-about-bio">
+        <div class="mvp-about-bio-intro"><?php echo nl2br(esc_html($intro)); ?></div>
+        <?php if ($rest !== ''): ?>
+        <div class="mvp-about-bio-rest" hidden><?php echo nl2br(esc_html($rest)); ?></div>
+        <button type="button" class="mvp-about-readmore" aria-expanded="false">Read more</button>
+        <?php endif; ?>
+      </div>
       <?php endif; ?>
     </div>
   </div>
