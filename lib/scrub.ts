@@ -11,6 +11,14 @@
 
 const BANNED = /\b(honest(?:ly)?)\b/gi
 
+/**
+ * Drop-in instruction for any AI prompt. Keep the banned list here so
+ * every generator enforces the same rule (prompt-side) while scrubBanned
+ * enforces it again on the output (last line of defense).
+ */
+export const BANNED_RULE =
+  'HARD RULE — BANNED WORDS: never use the word "honest" or "honestly" anywhere, in any field or sentence. It is banned everywhere. Write "review" not "honest review". This is non-negotiable.'
+
 export function scrubBanned(input: string | null | undefined): string {
   if (!input) return ''
   let s = input.replace(BANNED, '')

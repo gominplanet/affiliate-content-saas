@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { GoogleGenAI } from '@google/genai'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
-import { scrubBanned } from '@/lib/scrub'
+import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 
 const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you. #ad #affiliate #amazonfinds'
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       role: 'user',
       content: `You are an expert affiliate marketing content strategist. Analyze this blog post and return a JSON object.
 
-HARD RULE: never use the word "honest" or "honestly" anywhere in any field. It is banned. Write "review" not "honest review".
+${BANNED_RULE}
 
 Blog post title: ${p.title}
 Blog post content (first 500 chars): ${p.excerpt || p.content?.substring(0, 500) || ''}
@@ -49,7 +49,9 @@ Blog URL: ${p.wordpress_url}
 Return ONLY valid JSON with these exact keys:
 
 {
-  "pinterest_description": "Engaging Pinterest description under 300 chars, keyword-rich for SEO, ends with a CTA to click the link. Do NOT include hashtags here.",
+  "pin_title": "A curiosity-driven, intrigue-building Pinterest pin title. Max 90 characters. Make people NEED to click — open a loop, hint at a surprising result or mistake — but no false claims and no clickbait lies. Do not just restate the blog title.",
+  "pinterest_description": "ONE or TWO short, plain sentences (max ~180 chars total) that simply explain what the post is about, ending with a soft CTA like 'See the full breakdown.' No hashtags, no hype, no keyword stuffing.",
+  "hashtags": ["6 to 8 short, relevant, SEO + viral hashtags about THIS post's subject. No '#' symbol, lowercase, no spaces, no banned words. e.g. swampcooler, garagecooling, homecoolinghacks"],
   "product_category": "e.g. Face Cream, Vacuum Cleaner, Dog Toy",
   "product_name": "The specific product name from the post",
   "emotion": "One word emotion for the expert in the image: shocked | excited | relieved | disgusted | happy | amazed",
@@ -63,13 +65,16 @@ Return ONLY valid JSON with these exact keys:
   })
 
   const raw = (claudeMsg.content[0] as { type: string; text: string }).text.trim()
-  let fields: Record<string, string>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any
   try {
     const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    fields = JSON.parse(jsonMatch?.[0] ?? raw)
+    parsed = JSON.parse(jsonMatch?.[0] ?? raw)
   } catch {
-    fields = {
-      pinterest_description: `${p.title} — Check the link for the full review!`,
+    parsed = {
+      pin_title: p.title,
+      pinterest_description: `${p.title}. See the full breakdown at the link.`,
+      hashtags: [],
       product_category: 'Product',
       product_name: p.title,
       emotion: 'excited',
@@ -81,9 +86,25 @@ Return ONLY valid JSON with these exact keys:
     }
   }
 
-  // Last-line-of-defense: strip the banned word from every generated
-  // value (description AND the image-prompt fields — banned everywhere).
+  // Hashtags handled separately (array); the rest are string fields for
+  // the image prompt.
+  const rawTags: string[] = Array.isArray(parsed.hashtags) ? parsed.hashtags : []
+  const fields: Record<string, string> = {
+    product_category: parsed.product_category, product_name: parsed.product_name,
+    emotion: parsed.emotion, viral_hook: parsed.viral_hook, main_benefit: parsed.main_benefit,
+    trust_factor: parsed.trust_factor, problem: parsed.problem, solution: parsed.solution,
+  }
+
+  // Last-line-of-defense: strip banned words from EVERY generated value
+  // (banned everywhere — prompts and generations alike).
   for (const k of Object.keys(fields)) fields[k] = scrubBanned(fields[k])
+  const hashtags = rawTags
+    .map(t => scrubBanned(String(t)).replace(/[^a-z0-9]/gi, '').toLowerCase())
+    .filter(Boolean)
+    .slice(0, 8)
+  const pinTitle = scrubBanned(parsed.pin_title) || scrubBanned(p.title) || p.title
+  const pinDescription = scrubBanned(parsed.pinterest_description)
+    || `${scrubBanned(p.title) || p.title}. See the full breakdown at the link.`
 
   // Build Gemini image prompt and generate image
   const imagePrompt = buildViralImagePrompt(fields)
@@ -96,9 +117,11 @@ Return ONLY valid JSON with these exact keys:
     || (p.video_id ? `https://i.ytimg.com/vi/${p.video_id}/hqdefault.jpg` : null)
 
   return NextResponse.json({
-    title: scrubBanned(p.title) || p.title,
+    // Pinterest title is capped at 100 chars by the API.
+    title: capSocialText(pinTitle, 100),
     // Pinterest pin description is hard-capped at 500 chars by the API.
-    description: capSocialText(scrubBanned(fields.pinterest_description) || `${p.title} — see the full review at the link!`, SOCIAL_LIMITS.pinterest),
+    description: capSocialText(pinDescription, SOCIAL_LIMITS.pinterest),
+    hashtags,
     disclaimer: AFFILIATE_DISCLAIMER,
     imageBase64: imageResult?.data ?? null,
     mediaType: imageResult?.mediaType ?? null,
@@ -108,7 +131,7 @@ Return ONLY valid JSON with these exact keys:
 }
 
 function buildViralImagePrompt(f: Record<string, string>): string {
-  return `Create a high-energy vertical 9:16 social media marketing graphic for a ${f.product_category}.
+  return `Create a high-energy vertical Pinterest Pin graphic for a ${f.product_category}. Exact dimensions 1000 x 1500 pixels (2:3 portrait aspect ratio).
 
 Composition: A dynamic split-screen or multi-layered layout.
 The Person: On the left, a charismatic and expressive person (the expert) looking directly at the camera with a ${f.emotion} expression, pointing toward the product.
@@ -121,7 +144,7 @@ Typography overlays to render on the image:
 - CENTER BANNER: High-contrast white text with slight drop shadow across the middle reading: "${f.main_benefit}"
 - BOTTOM BADGE: Small clean sticker-style badge in the lower corner reading: "${f.trust_factor}"
 
-Final quality: 8K resolution, cinematic post-processing, professional advertising photography style. Vertical portrait format, 9:16 aspect ratio.`
+Final quality: high resolution, cinematic post-processing, professional advertising photography style. Vertical Pinterest Pin format, 1000 x 1500 pixels, 2:3 portrait aspect ratio.`
 }
 
 async function generatePinImage(prompt: string): Promise<{ data: string; mediaType: string } | null> {

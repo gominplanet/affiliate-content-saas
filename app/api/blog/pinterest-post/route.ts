@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { PinterestService } from '@/services/pinterest'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { scrubBanned } from '@/lib/scrub'
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient()
@@ -23,9 +24,13 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { postId, description, imageBase64, mediaType, fallbackImageUrl } = await request.json()
+  const { postId, title, description, imageBase64, mediaType, fallbackImageUrl } = await request.json()
   if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
   if (!description) return NextResponse.json({ error: 'description required' }, { status: 400 })
+
+  // Final server-side guard — banned words never leave the building,
+  // even if a stale client posted unscrubbed text.
+  const safeDescription = scrubBanned(description) || description
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
@@ -41,13 +46,16 @@ export async function POST(request: NextRequest) {
   if (!ig?.pinterest_board_id) return NextResponse.json({ error: 'No Pinterest board selected' }, { status: 400 })
 
   const pinterest = new PinterestService(ig.pinterest_access_token)
+  // Prefer the (curiosity-driven, possibly edited) title from the modal;
+  // scrub + cap to Pinterest's 100-char limit. Fall back to post title.
+  const safeTitle = (scrubBanned(title) || scrubBanned(p.title) || p.title).slice(0, 100)
 
   let pin: { id: string }
   if (imageBase64 && mediaType) {
     pin = await pinterest.createPinWithBase64({
       boardId: ig.pinterest_board_id,
-      title: p.title,
-      description,
+      title: safeTitle,
+      description: safeDescription,
       imageBase64,
       mediaType,
       link: p.wordpress_url,
@@ -55,8 +63,8 @@ export async function POST(request: NextRequest) {
   } else if (fallbackImageUrl) {
     pin = await pinterest.createPin({
       boardId: ig.pinterest_board_id,
-      title: p.title,
-      description,
+      title: safeTitle,
+      description: safeDescription,
       imageUrl: fallbackImageUrl,
       link: p.wordpress_url,
     })

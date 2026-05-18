@@ -71,6 +71,7 @@ interface PinPreviewData {
   postId: string
   title: string
   description: string
+  hashtags: string[]
   disclaimer: string
   imageBase64: string | null
   mediaType: string | null
@@ -84,11 +85,14 @@ function PinterestPreviewModal({
   onClose,
 }: {
   data: PinPreviewData
-  onPublish: (description: string) => void
+  onPublish: (description: string, title: string) => void
   onClose: () => void
 }) {
+  const [title, setTitle] = useState(data.title)
   const [description, setDescription] = useState(data.description)
   const [publishing, setPublishing] = useState(false)
+
+  const tagLine = data.hashtags.length ? data.hashtags.map(t => `#${t}`).join(' ') : ''
 
   const imageSrc = data.imageBase64
     ? `data:${data.mediaType};base64,${data.imageBase64}`
@@ -96,7 +100,8 @@ function PinterestPreviewModal({
 
   async function publish() {
     setPublishing(true)
-    onPublish(description + '\n\n' + data.disclaimer)
+    const composed = [description, tagLine, data.disclaimer].filter(Boolean).join('\n\n')
+    onPublish(composed, title.trim() || data.title)
   }
 
   return (
@@ -118,9 +123,9 @@ function PinterestPreviewModal({
 
         {/* Body */}
         <div className="flex gap-6 p-6">
-          {/* Pin image preview — 9:16 aspect ratio */}
-          <div className="flex-shrink-0 w-[160px]">
-            <div className="w-[160px] rounded-xl overflow-hidden bg-gray-100" style={{ aspectRatio: '9/16' }}>
+          {/* Pin image preview — Pinterest 2:3 (1000×1500) */}
+          <div className="flex-shrink-0 w-[170px]">
+            <div className="w-[170px] rounded-xl overflow-hidden bg-gray-100" style={{ aspectRatio: '2/3' }}>
               {imageSrc ? (
                 <img src={imageSrc} alt={data.title} className="w-full h-full object-cover" />
               ) : (
@@ -136,10 +141,19 @@ function PinterestPreviewModal({
 
           {/* Pin details */}
           <div className="flex-1 min-w-0 flex flex-col gap-4">
-            {/* Title */}
+            {/* Title — curiosity-driven, editable */}
             <div>
-              <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1">Title</p>
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug">{data.title}</p>
+              <div className="flex items-center gap-1.5 mb-1">
+                <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Title</p>
+                <Edit3 size={10} className="text-[#86868b] dark:text-[#8e8e93]" />
+                <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">editable · {title.length}/100</span>
+              </div>
+              <input
+                value={title}
+                maxLength={100}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 focus:outline-none focus:border-[#E60023]/50 focus:ring-1 focus:ring-[#E60023]/20 transition-colors"
+              />
             </div>
 
             {/* Description — editable */}
@@ -156,6 +170,18 @@ function PinterestPreviewModal({
                 className="w-full text-sm text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-[#E60023]/50 focus:ring-1 focus:ring-[#E60023]/20 transition-colors"
               />
             </div>
+
+            {/* Hashtags — relevant, SEO + viral, auto-appended */}
+            {data.hashtags.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1.5">Tags — auto-appended</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {data.hashtags.map(t => (
+                    <span key={t} className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#E60023]/8 text-[#c0001a] dark:text-[#ff6b81]">#{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Disclaimer */}
             <div className="rounded-lg p-3" style={{ background: '#fff8f0', border: '1px solid #ffe4cc' }}>
@@ -1758,7 +1784,7 @@ export default function ContentPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function handlePublishPin(description: string) {
+  async function handlePublishPin(description: string, title: string) {
     if (!pinPreview) return
     setPinPublishingFor(pinPreview.postId)
     try {
@@ -1767,6 +1793,7 @@ export default function ContentPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           postId: pinPreview.postId,
+          title,
           description,
           imageBase64: pinPreview.imageBase64,
           mediaType: pinPreview.mediaType,
