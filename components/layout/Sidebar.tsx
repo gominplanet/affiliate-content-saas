@@ -265,11 +265,11 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
             <Star size={10} className="text-[#ff9500]" /> Recommended Tools
           </p>
           {[
+            { label: 'Oink', href: 'https://geni.us/2y5sBo' },
             { label: 'Levanta', href: 'https://geni.us/GCad5Q' },
             { label: 'PartnerBoost', href: 'https://geni.us/Z0q3hY' },
             { label: 'Archer Affiliate', href: 'https://geni.us/khuHTe' },
             { label: 'Geniuslink', href: 'https://geni.us/Y70p9R' },
-            { label: 'Oink', href: 'https://geni.us/2y5sBo' },
           ].map(({ label, href }) => (
             <a
               key={label}
