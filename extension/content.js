@@ -136,11 +136,16 @@ async function parseCampaigns() {
   return [...byAsin.values()]
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type === 'CC_SCAN') {
-    parseCampaigns()
-      .then(campaigns => sendResponse({ campaigns }))
-      .catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [] }))
-    return true // async response
-  }
-})
+// Guard: this file may be (re)injected by the popup on every scan.
+// Register the message listener only once per page.
+if (!window.__ccScoutListener) {
+  window.__ccScoutListener = true
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'CC_SCAN') {
+      parseCampaigns()
+        .then(campaigns => sendResponse({ campaigns }))
+        .catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [] }))
+      return true // async response
+    }
+  })
+}

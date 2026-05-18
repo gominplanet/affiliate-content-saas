@@ -29,9 +29,19 @@ $('scan').addEventListener('click', async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) return setStatus('No active tab.', 'err')
+    if (!/^https:\/\/(affiliate-program|www)\.amazon\.com\//.test(tab.url || '')) {
+      return setStatus('Open your Amazon Creator Connections page in this tab first.', 'err')
+    }
+    // Inject the scanner on demand so it works even if the tab was open
+    // before the extension was loaded/updated.
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] })
+    } catch (e) {
+      return setStatus(`Could not access this page (${e?.message || 'injection blocked'}). Reload the Amazon tab and retry.`, 'err')
+    }
     const res = await chrome.tabs.sendMessage(tab.id, { type: 'CC_SCAN' }).catch(() => null)
     if (!res || !Array.isArray(res.campaigns)) {
-      return setStatus('Could not read this page. Open your Amazon Creator Connections campaigns list and try again.', 'err')
+      return setStatus('Scanner did not respond. Reload the Amazon tab and try again.', 'err')
     }
     found = res.campaigns
     if (found.length === 0) return setStatus('No campaigns detected on this page.', 'err')
