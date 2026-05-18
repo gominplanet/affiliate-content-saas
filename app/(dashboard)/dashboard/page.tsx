@@ -24,7 +24,7 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     supabase.from('youtube_videos').select('id').eq('user_id', user!.id),
     supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
-    sb.from('integrations').select('wordpress_url,facebook_page_id,pinterest_access_token,threads_access_token').eq('user_id', user!.id).single(),
+    sb.from('integrations').select('wordpress_url,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).single(),
   ])
 
   const videoCount = videos?.length ?? 0
@@ -32,17 +32,25 @@ export default async function DashboardPage() {
   const isNewUser = publishedCount === 0
 
   const int = integration as Record<string, unknown> | null
-  const platformsConnected = [
+  const platformFlags = [
     !!(int?.wordpress_url),
+    !!(int?.youtube_oauth_access_token),
     !!(int?.facebook_page_id),
     !!(int?.pinterest_access_token),
     !!(int?.threads_access_token),
-  ].filter(Boolean).length
+    !!(int?.twitter_access_token),
+    !!(int?.linkedin_access_token),
+    !!(int?.bluesky_handle),
+    !!(int?.telegram_channel_id),
+    !!(int?.instagram_user_id),
+  ]
+  const platformsTotal = platformFlags.length
+  const platformsConnected = platformFlags.filter(Boolean).length
 
   const stats = [
     { label: 'Videos Tracked',     value: String(videoCount),      icon: PlaySquare, color: 'text-[#0071e3]',  bg: 'bg-[#0071e3]/8' },
     { label: 'Posts Published',     value: String(publishedCount),  icon: FileText,   color: 'text-[#34c759]',  bg: 'bg-[#34c759]/8' },
-    { label: 'Platforms Connected', value: `${platformsConnected}/4`, icon: Layers,  color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+    { label: 'Platforms Connected', value: `${platformsConnected}/${platformsTotal}`, icon: Layers,  color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
   ]
 
   const { data: recentVideos } = await supabase
