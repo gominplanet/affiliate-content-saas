@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save,
 } from 'lucide-react'
 import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
 import { BulkScheduleModal } from '@/components/content/BulkScheduleModal'
@@ -466,6 +466,97 @@ function GenerateButton({
     <button onClick={generate} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
       <Wand2 size={12} /> Generate post
     </button>
+  )
+}
+
+// ── Manual word editor ────────────────────────────────────────────────────────
+// Expands an inline editor with the published article's text. Structure
+// (headings, links — incl. affiliate links) is preserved; the user edits
+// the wording. Save persists to blog_posts.content AND the live WP post.
+function ManualEdit({ postId }: { postId?: string }) {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  async function toggle() {
+    if (open) { setOpen(false); return }
+    if (!postId) { setMsg('No post to edit yet.'); setOpen(true); return }
+    setOpen(true); setLoading(true); setMsg(null)
+    try {
+      const res = await fetch(`/api/blog/content?postId=${postId}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not load the article')
+      // Defer so the contentEditable node is mounted.
+      setTimeout(() => { if (ref.current) ref.current.innerHTML = data.content || '' }, 0)
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Load failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function save() {
+    if (!ref.current || !postId) return
+    setSaving(true); setMsg(null)
+    try {
+      const res = await fetch('/api/blog/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, content: ref.current.innerHTML }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      setMsg(data.warning || (data.pushedToWp ? 'Saved — live post updated.' : 'Saved.'))
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className={open ? 'basis-full order-last mt-1' : ''}>
+      <button
+        onClick={toggle}
+        className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors"
+      >
+        <Edit3 size={11} /> {open ? 'Close editor' : 'Manual edit'}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] p-3">
+          {loading ? (
+            <div className="flex items-center gap-2 text-xs text-[#86868b] py-8 justify-center">
+              <Loader2 size={14} className="animate-spin" /> Loading article…
+            </div>
+          ) : (
+            <>
+              <div
+                ref={ref}
+                contentEditable
+                suppressContentEditableWarning
+                className="max-w-none min-h-[220px] max-h-[480px] overflow-auto text-sm leading-relaxed text-[#1d1d1f] dark:text-[#f5f5f7] outline-none rounded-lg border border-gray-100 dark:border-white/5 p-3 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5 [&_h3]:font-semibold [&_a]:text-[#0071e3] [&_a]:underline [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2"
+              />
+              <div className="flex items-center gap-3 mt-3 flex-wrap">
+                <button
+                  onClick={save}
+                  disabled={saving || !postId}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                >
+                  {saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <><Save size={12} /> Save changes</>}
+                </button>
+                <button onClick={() => setOpen(false)} className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white">Cancel</button>
+                {msg && <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93]">{msg}</span>}
+              </div>
+              <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">
+                Edit the wording directly. Headings and links (including affiliate links) are kept — saving updates the live WordPress post.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1214,6 +1305,7 @@ function VideoCard({
             />
             {post ? (
               <>
+                <ManualEdit postId={post.postId} />
                 {editorUrl && (
                   <a href={editorUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
                     <ExternalLink size={11} /> Edit in WP
@@ -2080,7 +2172,7 @@ export default function ContentPage() {
   return (
     <>
       <Header
-        title="Content"
+        title="Library and Social Push"
         subtitle={
           loading ? 'Loading…' :
           activeTab === 'scheduled'
