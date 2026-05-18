@@ -42,6 +42,7 @@ export default function CollaborationsPage() {
   const [allPlatforms, setAllPlatforms] = useState<string[]>([])
   const [platforms, setPlatforms] = useState<Set<string>>(new Set())
   const [bannerAds, setBannerAds] = useState(false)
+  const [bannerAdsAmount, setBannerAdsAmount] = useState('')
   const [freeSample, setFreeSample] = useState(true)
   const [productionFee, setProductionFee] = useState(false)
   const [productionFeeAmount, setProductionFeeAmount] = useState('')
@@ -87,7 +88,7 @@ export default function CollaborationsPage() {
         body: JSON.stringify({
           brandName, amazonStorefront, websiteUrl, youtubeUrl,
           platforms: [...platforms],
-          bannerAds, freeSample, productionFee, productionFeeAmount, shareAddress,
+          bannerAds, bannerAdsAmount, freeSample, productionFee, productionFeeAmount, shareAddress,
           collabsDone, extraNotes,
         }),
       })
@@ -172,6 +173,12 @@ export default function CollaborationsPage() {
             <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Sell a banner ad on your blog to this brand?</span>
             <YesNo value={bannerAds} onChange={setBannerAds} />
           </div>
+          {bannerAds && (
+            <div>
+              <label className={lbl}>How much for the banner ad?</label>
+              <input value={bannerAdsAmount} onChange={e => setBannerAdsAmount(e.target.value)} placeholder="e.g. $500 / month" className="input-field text-sm w-full sm:w-64" />
+            </div>
+          )}
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Want a free sample in exchange for a review?</span>
             <YesNo value={freeSample} onChange={setFreeSample} />

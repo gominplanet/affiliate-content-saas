@@ -14,6 +14,7 @@ export interface CollabInput {
   youtubeUrl?: string
   platforms: string[]
   bannerAds: boolean
+  bannerAdsAmount?: string
   freeSample: boolean
   productionFee: boolean
   productionFeeAmount?: string
@@ -73,7 +74,7 @@ Return a tight markdown brief under 250 words. No fluff.`,
   const offered = input.platforms.length ? input.platforms.join(', ') : 'my channels'
   const asks: string[] = []
   if (input.freeSample) asks.push('a free product sample in exchange for a genuine, in-depth review')
-  if (input.bannerAds) asks.push('discussing a paid banner placement on the blog')
+  if (input.bannerAds) asks.push(`a paid banner ad placement on the blog${input.bannerAdsAmount ? ` at ${input.bannerAdsAmount}` : ''}`)
   if (input.productionFee) asks.push(`a production fee${input.productionFeeAmount ? ` of ${input.productionFeeAmount}` : ''} for producing the review content`)
 
   const profile = [
