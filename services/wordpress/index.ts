@@ -337,6 +337,19 @@ export class WordPressService {
     await this.request(`/posts/${id}?force=true`, { method: 'DELETE' })
   }
 
+  /** Resolve a post id from its slug (for cleaning up posts whose
+   *  blog_posts row never linked — e.g. campaign rows that errored). */
+  async getPostIdBySlug(slug: string): Promise<number | null> {
+    try {
+      const posts = await this.request<{ id: number }[]>(
+        `/posts?slug=${encodeURIComponent(slug)}&status=publish,future,draft,pending,private&per_page=1`,
+      )
+      return Array.isArray(posts) && posts[0]?.id ? posts[0].id : null
+    } catch {
+      return null
+    }
+  }
+
   async checkConnection(): Promise<boolean> {
     try {
       await this.request('/users/me')

@@ -27,7 +27,16 @@ const DATE_TXT_RE = /\b([A-Z][a-z]{2,8}\.?\s+\d{1,2},?\s+\d{4})\b/
 const NOISE_RE = /^(recommended|accept|accept all|new|sponsored|estimated epc|budget availability|no end date|add to|save|open product|ask creator|view details|learn more|see details|\$|\d)/i
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
-const textOf = (n) => (n?.textContent || '').replace(/\s+/g, ' ').trim()
+// Decode HTML entities — Amazon double-encodes some titles ("Wall &amp;").
+const _dec = document.createElement('textarea')
+function decodeEntities(s) {
+  if (!s || s.indexOf('&') === -1) return s
+  _dec.innerHTML = s
+  let out = _dec.value
+  if (out.indexOf('&') !== -1 && /&[a-z#0-9]+;/i.test(out)) { _dec.innerHTML = out; out = _dec.value }
+  return out
+}
+const textOf = (n) => decodeEntities((n?.textContent || '').replace(/\s+/g, ' ').trim())
 
 function findGrid() {
   // Prefer the requests list grid; fall back to any virtualized grid

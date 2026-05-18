@@ -2,15 +2,34 @@
  * DELETE /api/campaigns/delete
  *
  * Removes a campaign post end-to-end: the WordPress post, the linked
- * blog_posts row (which powers the social pills), and the campaigns row
- * itself. Mirrors /api/blog/delete but also clears the campaign tracking
- * row so the list reflects reality.
+ * blog_posts row (which powers the social pills), and the campaigns row.
+ *
+ * Uses the service-role client (scoped by user_id) on purpose: the
+ * `campaigns` table has no DELETE RLS policy, so a user-scoped client
+ * silently no-ops the campaign delete and the row reappears on refresh.
+ *
+ * WP post resolution: prefer blog_posts.wordpress_post_id; if the
+ * campaign errored before blog_posts linked (blog_post_id null), fall
+ * back to resolving the post id from the slug in wordpress_url so the
+ * orphaned WP post still gets deleted.
  *
  * Body: { campaignId }
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createWordPressService } from '@/services/wordpress'
+
+function slugFromUrl(url: string | null): string | null {
+  if (!url) return null
+  try {
+    const path = new URL(url).pathname.replace(/\/+$/, '')
+    const seg = path.split('/').filter(Boolean).pop()
+    return seg ? decodeURIComponent(seg) : null
+  } catch {
+    return null
+  }
+}
 
 export async function DELETE(request: Request) {
   try {
@@ -24,10 +43,12 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'campaignId required' }, { status: 400 })
     }
 
+    const admin = createAdminClient()
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: campaign } = await (supabase as any)
+    const { data: campaign } = await (admin as any)
       .from('campaigns')
-      .select('id,blog_post_id')
+      .select('id,blog_post_id,wordpress_url')
       .eq('id', campaignId)
       .eq('user_id', user.id)
       .single()
@@ -37,47 +58,57 @@ export async function DELETE(request: Request) {
 
     const blogPostId = campaign.blog_post_id as string | null
 
-    // Resolve the WP post id from the linked blog_posts row
+    // Resolve the WP post id: linked blog_posts row first, slug fallback.
     let resolvedWpPostId: number | null = null
     if (blogPostId) {
-      const { data: postRow } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: postRow } = await (admin as any)
         .from('blog_posts')
         .select('wordpress_post_id')
         .eq('id', blogPostId)
         .eq('user_id', user.id)
         .single()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      resolvedWpPostId = (postRow as any)?.wordpress_post_id ?? null
+      resolvedWpPostId = postRow?.wordpress_post_id ?? null
     }
 
-    // Delete the live WordPress post (non-fatal — keep cleaning up locally)
-    if (resolvedWpPostId) {
-      const { data: wpRow } = await supabase
-        .from('integrations')
-        .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-        .eq('user_id', user.id)
-        .single()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const wp = wpRow as any
-      if (wp?.wordpress_url) {
-        try {
-          const wpService = createWordPressService(
-            wp.wordpress_url,
-            wp.wordpress_username,
-            wp.wordpress_app_password,
-            wp.wordpress_api_token || undefined,
-          )
-          await wpService.deletePost(resolvedWpPostId)
-        } catch { /* non-fatal */ }
-      }
+    const { data: wpRow } = await supabase
+      .from('integrations')
+      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
+      .eq('user_id', user.id)
+      .single()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const wp = wpRow as any
+
+    if (wp?.wordpress_url) {
+      try {
+        const wpService = createWordPressService(
+          wp.wordpress_url,
+          wp.wordpress_username,
+          wp.wordpress_app_password,
+          wp.wordpress_api_token || undefined,
+        )
+        if (!resolvedWpPostId) {
+          const slug = slugFromUrl(campaign.wordpress_url as string | null)
+          if (slug) resolvedWpPostId = await wpService.getPostIdBySlug(slug)
+        }
+        if (resolvedWpPostId) await wpService.deletePost(resolvedWpPostId)
+      } catch { /* non-fatal — still clean up our rows */ }
     }
 
     if (blogPostId) {
-      await supabase.from('blog_posts').delete().eq('id', blogPostId).eq('user_id', user.id)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (admin as any).from('blog_posts').delete().eq('id', blogPostId).eq('user_id', user.id)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('campaigns').delete().eq('id', campaignId).eq('user_id', user.id)
+    const { error: delErr } = await (admin as any)
+      .from('campaigns')
+      .delete()
+      .eq('id', campaignId)
+      .eq('user_id', user.id)
+    if (delErr) {
+      return NextResponse.json({ error: `Campaign delete failed: ${delErr.message}` }, { status: 500 })
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err: unknown) {
