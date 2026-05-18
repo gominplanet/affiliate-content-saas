@@ -72,7 +72,39 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">5. How We Use Your Data</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">5. Google / YouTube Data</h2>
+          <p>
+            If you connect your YouTube channel, MVP Affiliate uses YouTube API Services. We
+            request only the scopes needed to read <strong>your own</strong> channel and videos
+            and, <strong>only when you explicitly click an action</strong> (such as
+            &quot;Apply&quot; or &quot;Save as draft&quot;), to update the title, description,
+            tags, thumbnail, privacy or schedule on <strong>your own</strong> videos:
+          </p>
+          <ul className="list-disc ml-5 space-y-1 mt-2">
+            <li><strong>https://www.googleapis.com/auth/youtube</strong> — read your channel/videos and update your own video metadata, thumbnail, privacy and schedule.</li>
+            <li><strong>https://www.googleapis.com/auth/youtube.force-ssl</strong> — perform those same read/update operations over a secure connection, as required by the YouTube Data API.</li>
+          </ul>
+          <p className="mt-3">
+            We never access channels other than the authenticated user&apos;s own, never post or
+            change anything in the background, and never use YouTube data for advertising or to
+            train AI/ML models. You can revoke access at any time from the App&apos;s Settings page
+            (we delete the stored tokens on disconnection) and via your Google Account at{' '}
+            <a href="https://myaccount.google.com/permissions" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">myaccount.google.com/permissions</a>.
+          </p>
+          <p className="mt-3">
+            MVP Affiliate&apos;s use and transfer of information received from Google APIs to any
+            other app will adhere to the{' '}
+            <a href="https://developers.google.com/terms/api-services-user-data-policy" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>,
+            including the Limited Use requirements. Your use of YouTube features is also subject to
+            the{' '}
+            <a href="https://www.youtube.com/t/terms" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">YouTube Terms of Service</a>{' '}
+            and the{' '}
+            <a href="https://policies.google.com/privacy" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">6. How We Use Your Data</h2>
           <ul className="list-disc ml-5 space-y-1">
             <li>To generate blog posts from your inputs (product URLs, YouTube videos, etc.)</li>
             <li>To publish posts to your WordPress site</li>
@@ -87,7 +119,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">6. Data Storage and Security</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">7. Data Storage and Security</h2>
           <p>
             Account data, content, and integration credentials are stored in Supabase (PostgreSQL) on
             servers in the United States. OAuth access tokens and other secrets are stored encrypted at
@@ -97,7 +129,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">7. Data Retention and Deletion</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">8. Data Retention and Deletion</h2>
           <p>
             We retain your data for as long as your account is active. To delete your account and all
             associated data, email{' '}
@@ -109,7 +141,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">8. Third-Party Services</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">9. Third-Party Services</h2>
           <p>MVP Affiliate integrates with the following services on your behalf:</p>
           <ul className="list-disc ml-5 mt-2 space-y-1">
             <li>Pinterest (Pin creation and analytics — only the connected business account)</li>
@@ -125,7 +157,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">9. Children</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">10. Children</h2>
           <p>
             MVP Affiliate is not directed to anyone under the age of 16. We do not knowingly collect
             personal data from children. If you believe a child has provided us with personal data,
@@ -134,7 +166,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">10. Changes to This Policy</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Changes to This Policy</h2>
           <p>
             We may update this Privacy Policy. The &quot;Last updated&quot; date at the top reflects the
             most recent revision. Material changes will be announced via an in-app notice or email.
@@ -142,7 +174,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Contact</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">12. Contact</h2>
           <p>
             For privacy questions, deletion requests, or any other concerns, contact us at{' '}
             <a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>.
