@@ -132,6 +132,7 @@ interface BrandData {
   pinterest_url: string
   facebook_url: string
   threads_url: string
+  amazon_storefront_url: string
   contact_email: string
   // Private — shipping details for product samples (collab emails only)
   sample_full_name: string
@@ -204,6 +205,7 @@ const DEFAULT: BrandData = {
   pinterest_url: '',
   facebook_url: '',
   threads_url: '',
+  amazon_storefront_url: '',
   contact_email: '',
   sample_full_name: '',
   sample_address: '',
@@ -276,6 +278,7 @@ export default function BrandPage() {
         pinterest_url: row.pinterest_url ?? '',
         facebook_url: row.facebook_url ?? '',
         threads_url: row.threads_url ?? '',
+        amazon_storefront_url: row.amazon_storefront_url ?? '',
         contact_email: row.contact_email ?? '',
         sample_full_name: row.sample_full_name ?? '',
         sample_address: row.sample_address ?? '',
@@ -312,6 +315,7 @@ export default function BrandPage() {
       pinterest_url:       normalizeUrl(data.pinterest_url),
       facebook_url:        normalizeUrl(data.facebook_url),
       threads_url:         normalizeUrl(data.threads_url),
+      amazon_storefront_url: normalizeUrl(data.amazon_storefront_url),
     }
     // Update local state so the user sees their normalized URLs after save
     setData(normalized)
@@ -596,6 +600,7 @@ export default function BrandPage() {
                 { key: 'pinterest_url' as const,        label: 'Pinterest', placeholder: 'pinterest.com/yourprofile' },
                 { key: 'facebook_url' as const,         label: 'Facebook',  placeholder: 'facebook.com/yourpage' },
                 { key: 'threads_url' as const,          label: 'Threads',   placeholder: 'threads.net/@yourhandle' },
+                { key: 'amazon_storefront_url' as const, label: 'Amazon storefront', placeholder: 'amazon.com/shop/yourstore' },
                 { key: 'contact_email' as const,        label: 'Contact email', placeholder: 'hello@yourdomain.com' },
               ].map(({ key, label, placeholder }) => (
                 <div key={key}>

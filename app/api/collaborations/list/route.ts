@@ -29,7 +29,7 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('brand_profiles')
-      .select('website_url,youtube_channel_url,instagram_url,tiktok_url')
+      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url')
       .eq('user_id', user.id)
       .single(),
   ])
@@ -55,6 +55,7 @@ export async function GET() {
     prefill: {
       websiteUrl: brand?.website_url ?? '',
       youtubeUrl: brand?.youtube_channel_url ?? '',
+      amazonStorefront: brand?.amazon_storefront_url ?? '',
     },
   })
 }

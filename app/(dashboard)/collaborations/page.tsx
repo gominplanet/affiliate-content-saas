@@ -68,6 +68,7 @@ export default function CollaborationsPage() {
       if (d.prefill) {
         setWebsiteUrl(p => p || d.prefill.websiteUrl || '')
         setYoutubeUrl(p => p || d.prefill.youtubeUrl || '')
+        setAmazonStorefront(p => p || d.prefill.amazonStorefront || '')
       }
       setHistory((d.collaborations ?? []) as CollabRow[])
     } catch { /* ignore */ }
