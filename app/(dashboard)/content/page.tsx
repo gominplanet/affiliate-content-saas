@@ -478,18 +478,30 @@ function ManualEdit({ postId }: { postId?: string }) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  const [html, setHtml] = useState('')
   const ref = useRef<HTMLDivElement>(null)
+  const seeded = useRef(false)
+
+  // Seed the contentEditable AFTER it mounts (it only renders once
+  // loading is false). Only once per open so user edits aren't clobbered.
+  useEffect(() => {
+    if (open && !loading && ref.current && !seeded.current) {
+      ref.current.innerHTML = html
+      seeded.current = true
+    }
+  }, [open, loading, html])
 
   async function toggle() {
-    if (open) { setOpen(false); return }
-    if (!postId) { setMsg('No post to edit yet.'); setOpen(true); return }
-    setOpen(true); setLoading(true); setMsg(null)
+    if (open) { setOpen(false); seeded.current = false; return }
+    seeded.current = false
+    setMsg(null)
+    if (!postId) { setHtml(''); setOpen(true); setMsg('No post to edit yet.'); return }
+    setOpen(true); setLoading(true)
     try {
       const res = await fetch(`/api/blog/content?postId=${postId}`)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Could not load the article')
-      // Defer so the contentEditable node is mounted.
-      setTimeout(() => { if (ref.current) ref.current.innerHTML = data.content || '' }, 0)
+      setHtml(data.content || '')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Load failed')
     } finally {
@@ -546,7 +558,7 @@ function ManualEdit({ postId }: { postId?: string }) {
                 >
                   {saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <><Save size={12} /> Save changes</>}
                 </button>
-                <button onClick={() => setOpen(false)} className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white">Cancel</button>
+                <button onClick={() => { setOpen(false); seeded.current = false }} className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white">Cancel</button>
                 {msg && <span className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93]">{msg}</span>}
               </div>
               <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">
