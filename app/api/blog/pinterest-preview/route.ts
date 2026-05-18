@@ -4,44 +4,9 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { GoogleGenAI } from '@google/genai'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
-import sharp from 'sharp'
+import { composePin } from '@/lib/pin-compose'
 
 export const maxDuration = 60
-
-// Force the AI image to an exact 1000x1500 (2:3) Pinterest pin WITHOUT
-// cropping anything: the full image is shown uncropped and centered,
-// and a blurred, dimmed copy of itself fills the remaining space so
-// there are no black letterbox bars. Re-encoded to JPEG to keep the
-// base64 payload small enough to publish reliably.
-const PIN_W = 1000
-const PIN_H = 1500
-async function normalizePin(base64: string): Promise<{ data: string; mediaType: string } | null> {
-  try {
-    const src = Buffer.from(base64, 'base64')
-
-    // Blurred cover background (fills the whole canvas, may crop — fine,
-    // it's only the out-of-focus backdrop).
-    const background = await sharp(src)
-      .resize(PIN_W, PIN_H, { fit: 'cover', position: 'centre' })
-      .blur(36)
-      .modulate({ brightness: 0.78 })
-      .toBuffer()
-
-    // Foreground = the ENTIRE image, scaled to fit inside with no crop.
-    const foreground = await sharp(src)
-      .resize(PIN_W, PIN_H, { fit: 'inside', withoutEnlargement: false })
-      .toBuffer()
-
-    const out = await sharp(background)
-      .composite([{ input: foreground, gravity: 'centre' }])
-      .jpeg({ quality: 86 })
-      .toBuffer()
-
-    return { data: out.toString('base64'), mediaType: 'image/jpeg' }
-  } catch {
-    return null
-  }
-}
 
 const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you. #ad #affiliate #amazonfinds'
 
@@ -147,7 +112,15 @@ Return ONLY valid JSON with these exact keys:
   // Build Gemini image prompt and generate image
   const imagePrompt = buildViralImagePrompt(fields)
   const rawImage = await generatePinImage(imagePrompt)
-  const imageResult = rawImage ? (await normalizePin(rawImage.data)) : null
+  // AI makes a clean text-free scene; we render the headline/badge
+  // ourselves so text can never be clipped.
+  const imageResult = rawImage
+    ? await composePin(rawImage.data, rawImage.mediaType, {
+        viral_hook: fields.viral_hook,
+        main_benefit: fields.main_benefit,
+        trust_factor: fields.trust_factor,
+      })
+    : null
 
   // Fall back to a real image if Gemini fails — a pin REQUIRES one.
   // Try the stored blog image, then the YouTube thumbnail (always exists
@@ -170,26 +143,17 @@ Return ONLY valid JSON with these exact keys:
 }
 
 function buildViralImagePrompt(f: Record<string, string>): string {
-  return `Create a high-energy vertical Pinterest Pin graphic for a ${f.product_category}. Exact dimensions 1000 x 1500 pixels (2:3 portrait aspect ratio).
+  return `Create a high-energy vertical photographic scene for a ${f.product_category}, 2:3 portrait aspect ratio.
 
-Composition: A dynamic split-screen or multi-layered layout.
-The Person: On the left, a charismatic and expressive person (the expert) looking directly at the camera with a ${f.emotion} expression, pointing toward the product.
-The Product: On the right, a crisp high-definition close-up of ${f.product_name} being used in action, showing a dramatic before vs. after result — before: ${f.problem}, after: ${f.solution}.
+Composition: A dynamic split-screen / before-and-after layout.
+The Person: A charismatic, expressive person (the expert) looking toward the camera with a ${f.emotion} expression, gesturing toward the product.
+The Product: A crisp, high-definition view of ${f.product_name} in real use, showing a clear before-vs-after transformation — before: ${f.problem}, after: ${f.solution}.
 
-Visual Style: Vibrant, saturated colors with high-contrast lighting. Luxury tech / modern lifestyle aesthetic. Background slightly blurred (bokeh) to make foreground elements pop.
+Visual Style: Vibrant, saturated colors, high-contrast cinematic lighting, modern lifestyle / luxury-tech aesthetic, shallow depth of field so the subject pops. Leave some clean, less-busy space near the TOP and the BOTTOM of the frame (calmer areas, e.g. softer background or gradient) suitable for overlaying text later.
 
-Typography overlays — render EXACTLY these three text elements, each appearing ONCE, spelled exactly as written:
-- TOP HEADER: Bold chunky 3D text in neon yellow/green near the top: "${f.viral_hook}"
-- CENTER BANNER: High-contrast white text with drop shadow across the middle: "${f.main_benefit}"
-- BOTTOM BADGE: Small clean sticker-style badge in a lower corner: "${f.trust_factor}"
+ABSOLUTELY NO TEXT: Do NOT render ANY text, letters, words, numbers, captions, labels, logos, watermarks, signage, UI, badges, stickers, or typography of ANY kind anywhere in the image. It must be a purely photographic scene with zero written characters. (Headline text is added separately afterward.)
 
-CRITICAL TEXT SAFETY RULES:
-- ALL text must sit fully inside a safe margin of at least 12% of the image width from the left and right edges, and at least 8% of the height from the top and bottom edges. No letter may touch or cross any edge.
-- Every word must be 100% visible and not cropped, clipped, or cut off. If a phrase is long, scale the font down and/or wrap it onto two centered lines so the WHOLE phrase fits within the safe margins.
-- Do NOT add any extra, duplicated, or repeated words or labels (no repeated "BEFORE"/"AFTER"). Only the three text elements above. The before/after contrast should be conveyed VISUALLY (split image), not with extra text.
-- Keep typography large and bold but legibility and full containment take priority over size.
-
-Final quality: high resolution, cinematic post-processing, professional advertising photography style. Vertical Pinterest Pin format, 1000 x 1500 pixels, 2:3 portrait aspect ratio. The entire composition including all text must be fully contained within the frame with comfortable margins.`
+Final quality: high resolution, photorealistic, professional advertising photography, cinematic post-processing. Vertical 2:3 portrait. Completely text-free.`
 }
 
 async function generatePinImage(prompt: string): Promise<{ data: string; mediaType: string } | null> {
