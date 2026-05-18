@@ -32,7 +32,7 @@ export async function researchProduct(product: AmazonProduct): Promise<ResearchB
     product.description ? `Description: ${product.description.slice(0, 800)}` : '',
   ].filter(Boolean).join('\n')
 
-  const prompt = `You are a product research analyst preparing a brief for an affiliate review writer.
+  const prompt = `You are a product research analyst preparing a brief for a buyer's-guide writer (an informational article, not a personal hands-on review).
 
 Research this product thoroughly using web search. Run multiple searches — the product by name, "<product> review", "<product> problems", "<product> vs", "is <product> worth it", relevant Reddit / forum threads, and the underlying use-case or problem category.
 

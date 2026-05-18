@@ -555,7 +555,13 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     const systemPrompt = buildSystemPrompt(brand)
     const p = input.product
 
-    const userMessage = `Generate a long-form, SEO-optimized affiliate review blog post for this product. There is NO video — base the post entirely on the product facts and the research brief below.
+    const userMessage = `Generate a long-form, SEO-optimized INFORMATIONAL buyer's-guide article about this product. This is NOT a personal review. There is NO video — base the post entirely on the product facts and the research brief below.
+
+⛔ CRITICAL FRAMING — this overrides any "first-person reviewer" instruction in your system prompt:
+- This is a general informational + commercial-intent article ABOUT the product: its features, the benefits, and the most-asked questions answered.
+- DO NOT claim or imply that you (or "we"/"I") bought, owned, tested, tried, used, or hands-on evaluated this product. No "in our testing", "we put this through", "I've used this for months", "after weeks of use", "our experience with", "we recommend" framed as personal endorsement.
+- Write in an informative, third-person-about-the-product voice. The brand voice still governs TONE (rhythm, word choice, personality) — but NOT a false claim of personal use.
+- It's fine to be genuinely helpful and persuasive about who it's for and what problems it solves. It is NOT fine to fabricate first-hand experience.
 
 PRODUCT
 ASIN: ${p.asin}
@@ -572,11 +578,12 @@ ${input.researchBrief}
 
 STRUCTURE REQUIREMENTS (in addition to your normal brand-voice rules):
 - Lead with the PROBLEM the reader has, then position the product as the solution. Don't open with specs.
+- A clear "features and what they actually mean for you" section — translate specs into benefits.
 - Weave the affiliate URL in naturally where a reader would be ready to act (not jammed in the first line).
-- Include a substantial FAQ section near the end built from the "What buyers actually ask" questions in the brief — real answers, not filler.
-- Address the honest objections from the brief — a review that only praises reads as fake and converts worse.
-- Keep it search-intent friendly: clear H2/H3s phrased the way people search.
-- Match the brand voice exactly. Respect the words-to-avoid list.
+- A substantial FAQ section built from the "What buyers actually ask" questions in the brief — real, useful answers.
+- Honestly cover the considerations / who it's NOT for from the brief, framed as objective guidance ("worth knowing before you buy"), NOT as a reviewer's personal verdict.
+- Search-intent friendly: clear H2/H3s phrased the way people actually search.
+- Match the brand voice for tone only. Respect the words-to-avoid list. No fabricated first-hand testing language anywhere.
 
 Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONTENT_END%% format you always use.`
 

@@ -15,7 +15,75 @@ interface Campaign {
   status: 'pending' | 'researching' | 'generating' | 'published' | 'failed'
   error_message: string | null
   wordpress_url: string | null
+  blog_post_id: string | null
   created_at: string
+}
+
+type SocialKey = 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
+
+const SOCIALS: { key: SocialKey; label: string; color: string; endpoint: string }[] = [
+  { key: 'facebook', label: 'Facebook', color: '#1877f2', endpoint: '/api/blog/facebook-post' },
+  { key: 'threads',  label: 'Threads',  color: '#000000', endpoint: '/api/blog/threads-post' },
+  { key: 'twitter',  label: 'X',        color: '#000000', endpoint: '/api/blog/twitter-post' },
+  { key: 'linkedin', label: 'LinkedIn', color: '#0a66c2', endpoint: '/api/blog/linkedin-post' },
+  { key: 'bluesky',  label: 'Bluesky',  color: '#1185fe', endpoint: '/api/blog/bluesky-post' },
+  { key: 'telegram', label: 'Telegram', color: '#229ED9', endpoint: '/api/blog/telegram-post' },
+]
+
+/** Compact one-click fan-out pills for a published campaign post. */
+function CampaignSocialPills({ postId, connected }: { postId: string; connected: Record<SocialKey, boolean> }) {
+  const [posting, setPosting] = useState<SocialKey | null>(null)
+  const [posted, setPosted] = useState<Set<SocialKey>>(new Set())
+  const [err, setErr] = useState<string | null>(null)
+
+  const available = SOCIALS.filter(s => connected[s.key])
+  if (available.length === 0) return null
+
+  async function push(s: typeof SOCIALS[number]) {
+    setPosting(s.key)
+    setErr(null)
+    try {
+      const res = await fetch(s.endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `${s.label} failed`)
+      setPosted(p => new Set(p).add(s.key))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : `${s.label} failed`)
+    } finally {
+      setPosting(null)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mt-2.5 pt-2.5 border-t border-gray-100 dark:border-white/5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1">Publish to</span>
+      {available.map(s => {
+        const isPosted = posted.has(s.key)
+        const isPosting = posting === s.key
+        return (
+          <button
+            key={s.key}
+            onClick={() => !isPosted && push(s)}
+            disabled={isPosting || isPosted}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
+              isPosted
+                ? 'text-white'
+                : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300'
+            } disabled:opacity-70`}
+            style={isPosted ? { background: s.color } : undefined}
+          >
+            {isPosting ? <Loader2 size={10} className="animate-spin" /> : isPosted ? <CheckCircle size={10} /> : null}
+            {s.label}
+          </button>
+        )
+      })}
+      {err && <span className="text-[10px] text-[#ff3b30] ml-1">{err}</span>}
+    </div>
+  )
 }
 
 const STATUS: Record<Campaign['status'], { label: string; bg: string; fg: string }> = {
@@ -37,12 +105,16 @@ function CampaignsInner() {
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const [items, setItems] = useState<Campaign[] | null>(null)
+  const [connected, setConnected] = useState<Record<SocialKey, boolean>>({
+    facebook: false, threads: false, twitter: false, linkedin: false, bluesky: false, telegram: false,
+  })
 
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/campaigns/list')
       const data = await res.json().catch(() => ({}))
       setItems((data.campaigns ?? []) as Campaign[])
+      if (data.connected) setConnected(data.connected)
     } catch { setItems([]) }
   }, [])
 
@@ -140,7 +212,8 @@ function CampaignsInner() {
             const pill = STATUS[c.status]
             const expired = c.ends_at && new Date(c.ends_at) < new Date()
             return (
-              <div key={c.id} className="card p-4 flex items-start gap-3">
+              <div key={c.id} className="card p-4">
+               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">
@@ -167,6 +240,10 @@ function CampaignsInner() {
                     <CheckCircle size={12} /> View <ExternalLink size={10} />
                   </a>
                 )}
+               </div>
+               {c.status === 'published' && c.blog_post_id && (
+                 <CampaignSocialPills postId={c.blog_post_id} connected={connected} />
+               )}
               </div>
             )
           })}
