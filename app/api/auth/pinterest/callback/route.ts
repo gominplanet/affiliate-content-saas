@@ -3,7 +3,9 @@ import { createServerClient } from '@/lib/supabase/server'
 import { exchangeCodeForToken, PinterestService } from '@/services/pinterest'
 
 export async function GET(request: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+  // Must match the start route's redirect_uri byte-for-byte (Pinterest
+  // exact-matches it again at token exchange). Strip trailing slash.
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '')
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const error = searchParams.get('error')
