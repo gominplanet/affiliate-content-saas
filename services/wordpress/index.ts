@@ -33,6 +33,17 @@ export interface WPTagResponse {
   slug: string
 }
 
+// Shared across all service instances in a warm process so we don't
+// re-POST /wp-login.php on every request (that pattern looks like a
+// brute-force attack to WP security plugins and gets the account
+// locked → "blog disconnected"). Keyed by siteUrl|username.
+const SHARED_NONCE = new Map<string, { cookies: string; nonce: string; expiry: number }>()
+// Circuit breaker: after a failed/blocked login we stop hitting
+// wp-login.php for this site for a cooldown window and fail fast with
+// an actionable message — never hammer the login form.
+const LOGIN_BREAKER = new Map<string, number>() // key → cooldown-until ms
+const LOGIN_COOLDOWN_MS = 15 * 60 * 1000
+
 export class WordPressService {
   private baseUrl: string
   private siteUrl: string
@@ -55,9 +66,31 @@ export class WordPressService {
 
   // ── Nonce-based auth fallback (for hosts that strip Authorization headers) ──
 
+  private get breakerKey(): string {
+    return `${this.siteUrl}|${this.username}`
+  }
+
   private async loginAndGetNonce(): Promise<{ cookies: string; nonce: string }> {
+    const key = this.breakerKey
+    // 1. Instance cache, then process-shared cache (warm Lambda reuse).
     if (this.nonceCache && Date.now() < this.nonceCache.expiry) {
       return this.nonceCache
+    }
+    const shared = SHARED_NONCE.get(key)
+    if (shared && Date.now() < shared.expiry) {
+      this.nonceCache = shared
+      return shared
+    }
+    // 2. Circuit breaker — never hammer wp-login.php. If a recent login
+    //    failed/was blocked, fail fast with an actionable message so the
+    //    user's brute-force protection can stay ON.
+    const cooldownUntil = LOGIN_BREAKER.get(key)
+    if (cooldownUntil && Date.now() < cooldownUntil) {
+      throw new Error(
+        'WordPress is temporarily blocking sign-in (likely your security / brute-force plugin). ' +
+        'Keep that protection ON — reconnect using an Application Password from MVP Affiliate → Generate Connection Token, ' +
+        'and make sure REST API Application Passwords are allowed. We paused login attempts to avoid locking your account.',
+      )
     }
     const loginPassword = this.apiToken || this.password
     const loginBody = new URLSearchParams({
@@ -67,15 +100,22 @@ export class WordPressService {
       redirect_to: '/wp-admin/',
       testcookie: '1',
     })
-    const loginRes = await fetch(`${this.siteUrl}/wp-login.php`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Cookie: 'wordpress_test_cookie=WP+Cookie+check',
-      },
-      body: loginBody.toString(),
-      redirect: 'manual',
-    })
+    let loginRes: Response
+    try {
+      loginRes = await fetch(`${this.siteUrl}/wp-login.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: 'wordpress_test_cookie=WP+Cookie+check',
+        },
+        body: loginBody.toString(),
+        redirect: 'manual',
+        signal: AbortSignal.timeout(15000),
+      })
+    } catch (e) {
+      LOGIN_BREAKER.set(key, Date.now() + LOGIN_COOLDOWN_MS)
+      throw new Error(`Could not reach WordPress sign-in (${e instanceof Error ? e.message : 'network error'}). Login attempts paused to protect your account.`)
+    }
 
     // Use getSetCookie() if available (Node 18.14+) — forEach may merge multiple
     // Set-Cookie headers into one string on some runtimes, losing cookies like
@@ -96,7 +136,14 @@ export class WordPressService {
     }
 
     if (!rawCookies.some(c => c.includes('wordpress_logged_in_'))) {
-      throw new Error('WordPress login failed — credentials may have changed')
+      // Failed/blocked login — trip the breaker so we don't retry into a
+      // brute-force lockout. Surface an actionable message.
+      LOGIN_BREAKER.set(key, Date.now() + LOGIN_COOLDOWN_MS)
+      throw new Error(
+        'WordPress did not accept the connection (credentials changed, or a security/brute-force plugin blocked it). ' +
+        'Keep brute-force protection ON and reconnect via MVP Affiliate → Generate Connection Token (Application Password). ' +
+        'Further login attempts are paused for 15 minutes to avoid locking your account.',
+      )
     }
     const seen = new Set<string>()
     const cookieParts: string[] = []
@@ -136,8 +183,13 @@ export class WordPressService {
       nonce = m[1]
     }
 
-    this.nonceCache = { cookies, nonce, expiry: Date.now() + 5 * 60 * 1000 }
-    return this.nonceCache
+    // Success — clear any breaker and share the session process-wide so
+    // subsequent requests reuse it instead of re-logging in.
+    LOGIN_BREAKER.delete(key)
+    const entry = { cookies, nonce, expiry: Date.now() + 10 * 60 * 1000 }
+    this.nonceCache = entry
+    SHARED_NONCE.set(key, entry)
+    return entry
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -183,7 +235,10 @@ export class WordPressService {
       if (res.status === 403) {
         const bodyText = await res.clone().text()
         if (bodyText.includes('rest_cookie_invalid_nonce') || bodyText.includes('cookie_invalid')) {
+          // Stale nonce: force exactly one fresh login (the breaker still
+          // guards against any runaway that could lock the account).
           this.nonceCache = null
+          SHARED_NONCE.delete(this.breakerKey)
           const freshNonce = await this.loginAndGetNonce()
           res = await run(buildHeaders(freshNonce), freshNonce)
         }
@@ -290,7 +345,10 @@ export class WordPressService {
       if (res.status === 403) {
         const bodyText = await res.clone().text()
         if (bodyText.includes('rest_cookie_invalid_nonce') || bodyText.includes('cookie_invalid')) {
+          // Stale nonce: force exactly one fresh login (the breaker still
+          // guards against any runaway that could lock the account).
           this.nonceCache = null
+          SHARED_NONCE.delete(this.breakerKey)
           const freshNonce = await this.loginAndGetNonce()
           res = await run(buildHeaders(freshNonce), freshNonce)
         }
