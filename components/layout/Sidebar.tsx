@@ -189,7 +189,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         <p className="section-label px-2 mb-2">Workspace</p>
         {nav.map((item) => {
           const { href, label, icon: Icon, matchKind } = item
-          const badge = 'badge' in item ? item.badge : undefined
+          const badge = (item as { badge?: string }).badge
           return (
             <Link key={label} href={href} className={cn('nav-item', isActiveTabbed(matchKind, href) && 'active')}>
               <Icon size={16} className="flex-shrink-0" />
