@@ -2,7 +2,8 @@
 
 const APP_URL = 'https://www.mvpaffiliate.io'
 const $ = (id) => document.getElementById(id)
-let found = [] // [{ asin, campaignName, epc, endsAt }]
+let found = []                 // [{ asin, campaignName, epc, endsAt, ... }]
+const unchecked = new Set()    // asins the user has deselected
 
 function setStatus(msg, kind) {
   const el = $('status')
@@ -10,9 +11,32 @@ function setStatus(msg, kind) {
   el.className = kind || ''
 }
 
-// ── Token persistence ───────────────────────────────────────────────
-chrome.storage.local.get('ccToken', ({ ccToken }) => {
+function ago(ts) {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000))
+  if (s < 45) return 'just now'
+  if (s < 3600) return `${Math.round(s / 60)}m ago`
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`
+  return `${Math.round(s / 86400)}d ago`
+}
+
+// Persist the scan + selection so it survives the popup closing
+// (Chrome destroys the popup whenever it loses focus).
+function persist() {
+  chrome.storage.local.set({
+    ccScan: { campaigns: found, unchecked: [...unchecked], ts: Date.now() },
+  })
+}
+
+// ── Token + last-scan restore ───────────────────────────────────────
+chrome.storage.local.get(['ccToken', 'ccScan'], ({ ccToken, ccScan }) => {
   if (ccToken) $('token').value = ccToken
+  if (ccScan && Array.isArray(ccScan.campaigns) && ccScan.campaigns.length) {
+    found = ccScan.campaigns
+    unchecked.clear()
+    ;(ccScan.unchecked || []).forEach(a => unchecked.add(a))
+    renderList()
+    setStatus(`Showing ${found.length} from last scan (${ago(ccScan.ts)}). Scan again to refresh.`, 'ok')
+  }
 })
 
 $('saveToken').addEventListener('click', () => {
@@ -45,6 +69,8 @@ $('scan').addEventListener('click', async () => {
     }
     found = res.campaigns
     if (found.length === 0) return setStatus('No campaigns detected on this page.', 'err')
+    unchecked.clear()
+    persist()
     renderList()
     setStatus(`Found ${found.length} campaign${found.length === 1 ? '' : 's'}.`, 'ok')
   } catch (e) {
@@ -61,12 +87,19 @@ function makePh() {
 function renderList() {
   const list = $('list')
   list.innerHTML = ''
-  found.forEach((c, i) => {
+  found.forEach((c) => {
     const div = document.createElement('div')
     div.className = 'item'
 
     const cb = document.createElement('input')
-    cb.type = 'checkbox'; cb.checked = true; cb.dataset.i = String(i)
+    cb.type = 'checkbox'
+    cb.checked = !unchecked.has(c.asin)
+    cb.dataset.asin = c.asin
+    cb.addEventListener('change', () => {
+      if (cb.checked) unchecked.delete(c.asin)
+      else unchecked.add(c.asin)
+      persist()
+    })
 
     let thumb
     if (c.image) {
@@ -101,22 +134,22 @@ function renderList() {
     div.appendChild(cb); div.appendChild(thumb); div.appendChild(body)
     list.appendChild(div)
   })
-  $('pushRow').style.display = 'flex'
+  $('pushRow').style.display = found.length ? 'flex' : 'none'
 }
 
 $('selectAll').addEventListener('click', () => {
-  const boxes = $('list').querySelectorAll('input[type=checkbox]')
-  const allOn = [...boxes].every(b => b.checked)
-  boxes.forEach(b => { b.checked = !allOn })
+  const allOn = found.every(c => !unchecked.has(c.asin))
+  if (allOn) found.forEach(c => unchecked.add(c.asin))
+  else unchecked.clear()
+  persist()
+  renderList()
 })
 
 // ── Push selected to MVP Affiliate ──────────────────────────────────
 $('push').addEventListener('click', async () => {
   const token = $('token').value.trim()
   if (!token) return setStatus('Paste your ingest token first.', 'err')
-  const selected = [...$('list').querySelectorAll('input[type=checkbox]')]
-    .filter(b => b.checked)
-    .map(b => found[Number(b.dataset.i)])
+  const selected = found.filter(c => !unchecked.has(c.asin))
   if (selected.length === 0) return setStatus('Select at least one campaign.', 'err')
 
   $('push').disabled = true
