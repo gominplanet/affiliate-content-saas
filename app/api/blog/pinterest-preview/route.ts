@@ -139,12 +139,18 @@ The Product: On the right, a crisp high-definition close-up of ${f.product_name}
 
 Visual Style: Vibrant, saturated colors with high-contrast lighting. Luxury tech / modern lifestyle aesthetic. Background slightly blurred (bokeh) to make foreground elements pop.
 
-Typography overlays to render on the image:
-- TOP HEADER: Bold chunky 3D text in neon yellow/green at the top that reads: "${f.viral_hook}"
-- CENTER BANNER: High-contrast white text with slight drop shadow across the middle reading: "${f.main_benefit}"
-- BOTTOM BADGE: Small clean sticker-style badge in the lower corner reading: "${f.trust_factor}"
+Typography overlays — render EXACTLY these three text elements, each appearing ONCE, spelled exactly as written:
+- TOP HEADER: Bold chunky 3D text in neon yellow/green near the top: "${f.viral_hook}"
+- CENTER BANNER: High-contrast white text with drop shadow across the middle: "${f.main_benefit}"
+- BOTTOM BADGE: Small clean sticker-style badge in a lower corner: "${f.trust_factor}"
 
-Final quality: high resolution, cinematic post-processing, professional advertising photography style. Vertical Pinterest Pin format, 1000 x 1500 pixels, 2:3 portrait aspect ratio.`
+CRITICAL TEXT SAFETY RULES:
+- ALL text must sit fully inside a safe margin of at least 12% of the image width from the left and right edges, and at least 8% of the height from the top and bottom edges. No letter may touch or cross any edge.
+- Every word must be 100% visible and not cropped, clipped, or cut off. If a phrase is long, scale the font down and/or wrap it onto two centered lines so the WHOLE phrase fits within the safe margins.
+- Do NOT add any extra, duplicated, or repeated words or labels (no repeated "BEFORE"/"AFTER"). Only the three text elements above. The before/after contrast should be conveyed VISUALLY (split image), not with extra text.
+- Keep typography large and bold but legibility and full containment take priority over size.
+
+Final quality: high resolution, cinematic post-processing, professional advertising photography style. Vertical Pinterest Pin format, 1000 x 1500 pixels, 2:3 portrait aspect ratio. The entire composition including all text must be fully contained within the frame with comfortable margins.`
 }
 
 async function generatePinImage(prompt: string): Promise<{ data: string; mediaType: string } | null> {

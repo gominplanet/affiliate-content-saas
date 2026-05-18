@@ -127,7 +127,7 @@ function PinterestPreviewModal({
           <div className="flex-shrink-0 w-[170px]">
             <div className="w-[170px] rounded-xl overflow-hidden bg-gray-100" style={{ aspectRatio: '2/3' }}>
               {imageSrc ? (
-                <img src={imageSrc} alt={data.title} className="w-full h-full object-cover" />
+                <img src={imageSrc} alt={data.title} className="w-full h-full object-contain bg-black" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-[#86868b] dark:text-[#8e8e93]">
                   <Pin size={24} />
