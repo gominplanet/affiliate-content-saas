@@ -7,6 +7,9 @@ import { scrubBanned } from '@/lib/scrub'
 
 const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you. #ad #affiliate #amazonfinds'
 
+// Module-scoped so the top-level generatePinImage() can use it too.
+const genai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY ?? '' })
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -30,7 +33,6 @@ export async function POST(request: NextRequest) {
 
   // Claude fills in Pinterest description + image prompt variables in one call
   const anthropic = createAnthropicClient()
-  const genai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GEMINI_API_KEY ?? '' })
   const claudeMsg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1000,
