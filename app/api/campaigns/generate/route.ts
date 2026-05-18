@@ -195,8 +195,12 @@ export async function POST(request: Request) {
     }
 
     // ── 6. Persist blog_posts + finalize campaign ───────────────────────────
+    // The post is already LIVE on WordPress at this point. The blog_posts
+    // row is what powers the post-publish social fan-out (the pills need a
+    // blog_posts.id). Capture the insert error explicitly — swallowing it
+    // is what made "pills not showing" undebuggable.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: blogRow } = await (supabase as any)
+    const { data: blogRow, error: blogErr } = await (supabase as any)
       .from('blog_posts')
       .insert({
         user_id: user.id,
@@ -215,12 +219,15 @@ export async function POST(request: Request) {
       .select('id')
       .single()
 
+    const blogLinked = !!blogRow?.id
     if (campaignId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase as any).from('campaigns').update({
         status: 'published',
         blog_post_id: blogRow?.id ?? null,
         wordpress_url: wpPost.link,
+        // Surface WHY fan-out is unavailable rather than silently null.
+        error_message: blogLinked ? null : `Post published, but social fan-out is unavailable: blog_posts insert failed (${blogErr?.message ?? 'unknown'}). Run migration 024 then regenerate.`,
         updated_at: new Date().toISOString(),
       }).eq('id', campaignId)
     }
@@ -230,6 +237,8 @@ export async function POST(request: Request) {
       campaignId,
       wordpressUrl: wpPost.link,
       title: generated.title,
+      socialFanoutAvailable: blogLinked,
+      blogInsertError: blogLinked ? null : (blogErr?.message ?? null),
       citations: research.citations,
     })
   } catch (err: unknown) {

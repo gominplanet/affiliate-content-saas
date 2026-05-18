@@ -37,7 +37,14 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
   const [err, setErr] = useState<string | null>(null)
 
   const available = SOCIALS.filter(s => connected[s.key])
-  if (available.length === 0) return null
+  if (available.length === 0) {
+    return (
+      <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2.5 pt-2.5 border-t border-gray-100 dark:border-white/5">
+        Connect a social (Facebook · Threads · X · LinkedIn · Bluesky · Telegram) in{' '}
+        <a href="/setup?tab=integrations" className="text-[#0071e3] hover:underline">Setup</a> to fan this post out.
+      </p>
+    )
+  }
 
   async function push(s: typeof SOCIALS[number]) {
     setPosting(s.key)
