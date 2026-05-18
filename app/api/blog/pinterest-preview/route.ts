@@ -8,15 +8,35 @@ import sharp from 'sharp'
 
 export const maxDuration = 60
 
-// Force the AI image to an exact 1000x1500 (2:3) Pinterest pin —
-// fills the frame edge-to-edge (no letterbox bars) and re-encodes to
-// JPEG so the base64 payload is small enough to publish reliably.
+// Force the AI image to an exact 1000x1500 (2:3) Pinterest pin WITHOUT
+// cropping anything: the full image is shown uncropped and centered,
+// and a blurred, dimmed copy of itself fills the remaining space so
+// there are no black letterbox bars. Re-encoded to JPEG to keep the
+// base64 payload small enough to publish reliably.
+const PIN_W = 1000
+const PIN_H = 1500
 async function normalizePin(base64: string): Promise<{ data: string; mediaType: string } | null> {
   try {
-    const out = await sharp(Buffer.from(base64, 'base64'))
-      .resize(1000, 1500, { fit: 'cover', position: 'centre' })
+    const src = Buffer.from(base64, 'base64')
+
+    // Blurred cover background (fills the whole canvas, may crop — fine,
+    // it's only the out-of-focus backdrop).
+    const background = await sharp(src)
+      .resize(PIN_W, PIN_H, { fit: 'cover', position: 'centre' })
+      .blur(36)
+      .modulate({ brightness: 0.78 })
+      .toBuffer()
+
+    // Foreground = the ENTIRE image, scaled to fit inside with no crop.
+    const foreground = await sharp(src)
+      .resize(PIN_W, PIN_H, { fit: 'inside', withoutEnlargement: false })
+      .toBuffer()
+
+    const out = await sharp(background)
+      .composite([{ input: foreground, gravity: 'centre' }])
       .jpeg({ quality: 86 })
       .toBuffer()
+
     return { data: out.toString('base64'), mediaType: 'image/jpeg' }
   } catch {
     return null
