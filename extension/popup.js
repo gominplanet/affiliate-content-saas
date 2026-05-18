@@ -23,9 +23,14 @@ function ago(ts) {
 
 function filterCfg() {
   const minEpc = parseFloat($('minEpc').value)
+  // Comma/space separated → OR match (any term present qualifies).
+  const terms = $('keyword').value.toLowerCase().split(/[,\n]/)
+    .map(s => s.trim()).filter(Boolean)
   return {
     minEpc: isNaN(minEpc) ? 0 : minEpc,
     reqBudget: $('reqBudget').checked,
+    keyword: $('keyword').value.trim(),
+    terms,
   }
 }
 
@@ -37,6 +42,10 @@ function qualifies(c, cfg = filterCfg()) {
   if (cfg.minEpc > 0) {
     if (c.epcValue == null) return false
     if (c.epcValue < cfg.minEpc) return false
+  }
+  if (cfg.terms && cfg.terms.length) {
+    const hay = `${c.campaignName || ''} ${c.brand || ''} ${c.asin || ''}`.toLowerCase()
+    if (!cfg.terms.some(t => hay.includes(t))) return false
   }
   return true
 }
@@ -70,6 +79,7 @@ chrome.storage.local.get(['ccToken', 'ccScan', 'ccFilter'], ({ ccToken, ccScan, 
   if (ccFilter) {
     if (typeof ccFilter.minEpc === 'number') $('minEpc').value = ccFilter.minEpc
     if (typeof ccFilter.reqBudget === 'boolean') $('reqBudget').checked = ccFilter.reqBudget
+    if (typeof ccFilter.keyword === 'string') $('keyword').value = ccFilter.keyword
   }
   if (ccScan && Array.isArray(ccScan.campaigns) && ccScan.campaigns.length) {
     found = ccScan.campaigns
@@ -87,7 +97,7 @@ $('saveToken').addEventListener('click', () => {
 })
 
 // Re-derive the default selection whenever the filter changes.
-;['minEpc', 'reqBudget'].forEach(id => {
+;['minEpc', 'reqBudget', 'keyword'].forEach(id => {
   $(id).addEventListener('input', () => {
     if (found.length) { applySmartSelection(); persist(); renderList() }
   })
