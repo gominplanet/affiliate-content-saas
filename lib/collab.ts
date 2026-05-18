@@ -137,15 +137,37 @@ STYLE (critical — many brand contacts are NOT fluent English speakers):
 - Tone: professional but warm — formal sliding into casual.
 - Whole email body UNDER 250 words.
 
-PLAIN TEXT ONLY. Absolutely NO markdown or symbols for formatting: do NOT use **, __, *, #, backticks, or "---" / "***" separator lines anywhere. Write it exactly as it should appear pasted into an email.
+PLAIN TEXT ONLY. Absolutely NO markdown: no **, __, *, #, or backticks anywhere.
 
 ${BANNED_RULE}
 
-OUTPUT FORMAT — return EXACTLY this and nothing else (the two marker lines must each be on their own line, verbatim):
+OUTPUT FORMAT — return EXACTLY this, nothing before or after. Two marker lines, each on its own line, verbatim:
 <<<SUBJECT>>>
-RE: one short single-line subject, max 80 characters, no line breaks
+RE: one short single-line subject, max 80 characters
 <<<BODY>>>
-the full plain-text email body (greeting, credibility, pitch, plain ask, address block if given, long-term close, signed with the creator's name + contact email)`
+<the body as a sequence of BLOCKS>
+
+BLOCK RULES (this controls spacing — follow precisely):
+- Separate every block with a line containing ONLY: ===
+- A "block" = one short paragraph OR one list. Never mix a sentence and a list in the same block — a lead-in line like "Here is why we are worth your time:" is its own block, the bullets are the NEXT block.
+- In a list block, put EACH item on its own line starting with "- " (or for example/work links, the bare URL on its own line). One item per line. Nothing else in a list block.
+- Do NOT put blank lines or "===" inside a block. The "===" lines are the ONLY separators.
+
+Produce the blocks in THIS order (skip a block only if its data is absent):
+1. Greeting — "Hi <Brand> Team,"
+2. Who we are + "Here is why we are worth your time:"
+3. LIST: credibility/accolades bullets
+4. "You can see our work here: <portfolio>" and "Amazon storefront: <storefront>" (each on its own line, this one block)
+5. The pitch: collaborate on the product/ASIN + "Here is exactly what we produce from one review:"
+6. LIST: a YouTube video review / a blog post on <blog> / social posts across <the platforms>
+7. Live streams (if offered) + open to more products/categories paragraph
+8. "Here are a few examples of our recent work:"
+9. LIST: the example links (bare URLs, one per line)
+10. "What we ask for:"
+11. LIST: the asks (free sample / banner ad at <amount> / production fee at <amount>)
+12. "Ship samples to:" then the address lines (only if sharing address) — address as its own block
+13. Long-term close paragraph
+14. Sign-off: creator name(s), then brand/site, then contact email (each on its own line, one block)`
 
   const userMsg = `TARGET BRAND: ${input.brandName}
 
@@ -213,7 +235,18 @@ Write the email now.`
   }
 
   subject = stripMd(subject).split('\n')[0].trim().replace(/^subject:\s*/i, '')
-  body = stripMd(body)
+
+  // The model emits blocks separated by a line that is only "===".
+  // We own the spacing: one blank line between every block. Tolerate the
+  // model using blank lines instead of (or as well as) the marker.
+  const blocks = body
+    .split(/^\s*={2,}\s*$/m)
+    .flatMap(b => (b.includes('===') ? b.split(/\s*={3,}\s*/) : [b]))
+    .map(b => stripMd(b).replace(/\n{2,}/g, '\n').trim())
+    .filter(Boolean)
+  body = blocks.length > 1
+    ? blocks.join('\n\n')
+    : stripMd(body)  // no markers came back — strip md, keep as-is
 
   // Hard guard: a subject must be ONE short line. If the model jammed the
   // body in, discard it and synthesize a clean one (body stays intact).
