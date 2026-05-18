@@ -4,6 +4,24 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { GoogleGenAI } from '@google/genai'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
+import sharp from 'sharp'
+
+export const maxDuration = 60
+
+// Force the AI image to an exact 1000x1500 (2:3) Pinterest pin —
+// fills the frame edge-to-edge (no letterbox bars) and re-encodes to
+// JPEG so the base64 payload is small enough to publish reliably.
+async function normalizePin(base64: string): Promise<{ data: string; mediaType: string } | null> {
+  try {
+    const out = await sharp(Buffer.from(base64, 'base64'))
+      .resize(1000, 1500, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: 86 })
+      .toBuffer()
+    return { data: out.toString('base64'), mediaType: 'image/jpeg' }
+  } catch {
+    return null
+  }
+}
 
 const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you. #ad #affiliate #amazonfinds'
 
@@ -108,7 +126,8 @@ Return ONLY valid JSON with these exact keys:
 
   // Build Gemini image prompt and generate image
   const imagePrompt = buildViralImagePrompt(fields)
-  const imageResult = await generatePinImage(imagePrompt)
+  const rawImage = await generatePinImage(imagePrompt)
+  const imageResult = rawImage ? (await normalizePin(rawImage.data)) : null
 
   // Fall back to a real image if Gemini fails — a pin REQUIRES one.
   // Try the stored blog image, then the YouTube thumbnail (always exists

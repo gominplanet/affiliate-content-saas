@@ -4,6 +4,8 @@ import { PinterestService } from '@/services/pinterest'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 
+export const maxDuration = 60
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -51,25 +53,31 @@ export async function POST(request: NextRequest) {
   const safeTitle = (scrubBanned(title) || scrubBanned(p.title) || p.title).slice(0, 100)
 
   let pin: { id: string }
-  if (imageBase64 && mediaType) {
-    pin = await pinterest.createPinWithBase64({
-      boardId: ig.pinterest_board_id,
-      title: safeTitle,
-      description: safeDescription,
-      imageBase64,
-      mediaType,
-      link: p.wordpress_url,
-    })
-  } else if (fallbackImageUrl) {
-    pin = await pinterest.createPin({
-      boardId: ig.pinterest_board_id,
-      title: safeTitle,
-      description: safeDescription,
-      imageUrl: fallbackImageUrl,
-      link: p.wordpress_url,
-    })
-  } else {
-    return NextResponse.json({ error: 'No image available for pin' }, { status: 400 })
+  try {
+    if (imageBase64 && mediaType) {
+      pin = await pinterest.createPinWithBase64({
+        boardId: ig.pinterest_board_id,
+        title: safeTitle,
+        description: safeDescription,
+        imageBase64,
+        mediaType,
+        link: p.wordpress_url,
+      })
+    } else if (fallbackImageUrl) {
+      pin = await pinterest.createPin({
+        boardId: ig.pinterest_board_id,
+        title: safeTitle,
+        description: safeDescription,
+        imageUrl: fallbackImageUrl,
+        link: p.wordpress_url,
+      })
+    } else {
+      return NextResponse.json({ error: 'No image available for pin' }, { status: 400 })
+    }
+  } catch (e) {
+    const aborted = e instanceof DOMException && e.name === 'TimeoutError'
+    const msg = aborted ? 'Pinterest took too long to accept the pin. Please try again.' : (e instanceof Error ? e.message : 'Pinterest pin failed')
+    return NextResponse.json({ error: msg }, { status: 502 })
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -85,12 +85,13 @@ function PinterestPreviewModal({
   onClose,
 }: {
   data: PinPreviewData
-  onPublish: (description: string, title: string) => void
+  onPublish: (description: string, title: string) => Promise<{ ok: boolean; error?: string }>
   onClose: () => void
 }) {
   const [title, setTitle] = useState(data.title)
   const [description, setDescription] = useState(data.description)
   const [publishing, setPublishing] = useState(false)
+  const [pubError, setPubError] = useState<string | null>(null)
 
   const tagLine = data.hashtags.length ? data.hashtags.map(t => `#${t}`).join(' ') : ''
 
@@ -100,8 +101,15 @@ function PinterestPreviewModal({
 
   async function publish() {
     setPublishing(true)
+    setPubError(null)
     const composed = [description, tagLine, data.disclaimer].filter(Boolean).join('\n\n')
-    onPublish(composed, title.trim() || data.title)
+    const result = await onPublish(composed, title.trim() || data.title)
+    // On success the parent unmounts this modal; on failure recover so
+    // the button isn't stuck on "Publishing…" forever.
+    if (!result.ok) {
+      setPubError(result.error || 'Publish failed. Try again.')
+      setPublishing(false)
+    }
   }
 
   return (
@@ -127,7 +135,7 @@ function PinterestPreviewModal({
           <div className="flex-shrink-0 w-[170px]">
             <div className="w-[170px] rounded-xl overflow-hidden bg-gray-100" style={{ aspectRatio: '2/3' }}>
               {imageSrc ? (
-                <img src={imageSrc} alt={data.title} className="w-full h-full object-contain bg-black" />
+                <img src={imageSrc} alt={data.title} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-[#86868b] dark:text-[#8e8e93]">
                   <Pin size={24} />
@@ -205,6 +213,7 @@ function PinterestPreviewModal({
               <button onClick={onClose} className="text-sm text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:text-[#f5f5f7] transition-colors">
                 Cancel
               </button>
+              {pubError && <span className="text-xs text-[#ff3b30] flex-1">{pubError}</span>}
             </div>
           </div>
         </div>
@@ -1784,9 +1793,11 @@ export default function ContentPage() {
 
   useEffect(() => { load() }, [load])
 
-  async function handlePublishPin(description: string, title: string) {
-    if (!pinPreview) return
+  async function handlePublishPin(description: string, title: string): Promise<{ ok: boolean; error?: string }> {
+    if (!pinPreview) return { ok: false, error: 'No pin to publish' }
     setPinPublishingFor(pinPreview.postId)
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 70_000)
     try {
       const res = await fetch('/api/blog/pinterest-post', {
         method: 'POST',
@@ -1799,10 +1810,10 @@ export default function ContentPage() {
           mediaType: pinPreview.mediaType,
           fallbackImageUrl: pinPreview.fallbackImageUrl,
         }),
+        signal: ctrl.signal,
       })
-      const d = await res.json()
-      if (!res.ok) { alert(d.error || 'Pinterest post failed'); return }
-      // Mark as pinned in local state
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) return { ok: false, error: d.error || `Pinterest rejected the pin (${res.status})` }
       setPosts((prev) => {
         const next = { ...prev }
         for (const vid in next) {
@@ -1813,7 +1824,12 @@ export default function ContentPage() {
         return next
       })
       setPinPreview(null)
+      return { ok: true }
+    } catch (e) {
+      const aborted = e instanceof DOMException && e.name === 'AbortError'
+      return { ok: false, error: aborted ? 'Timed out talking to Pinterest. Try again.' : (e instanceof Error ? e.message : 'Publish failed') }
     } finally {
+      clearTimeout(timer)
       setPinPublishingFor(null)
     }
   }

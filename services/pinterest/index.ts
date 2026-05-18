@@ -35,9 +35,10 @@ export class PinterestService {
           url: opts.imageUrl,
         },
       }),
+      signal: AbortSignal.timeout(45_000),
     })
     if (!res.ok) {
-      const err = await res.json()
+      const err = await res.json().catch(() => ({}))
       throw new Error(err.message || `Pinterest pin error: ${res.status}`)
     }
     return res.json() as Promise<{ id: string }>
@@ -67,9 +68,10 @@ export class PinterestService {
           content_type: opts.mediaType,
         },
       }),
+      signal: AbortSignal.timeout(50_000),
     })
     if (!res.ok) {
-      const err = await res.json()
+      const err = await res.json().catch(() => ({}))
       throw new Error(err.message || `Pinterest pin error: ${res.status}`)
     }
     return res.json() as Promise<{ id: string }>
