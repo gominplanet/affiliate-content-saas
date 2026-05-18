@@ -37,15 +37,18 @@ function filterCfg() {
 // "Smart" rule: budget medium/high (if required) AND EPC at/above the
 // minimum. Campaigns missing an EPC value can't be confirmed as "higher
 // EPC", so they don't qualify when a minimum is set.
+function matchesKeyword(c, cfg = filterCfg()) {
+  if (!cfg.terms || !cfg.terms.length) return true
+  const hay = `${c.campaignName || ''} ${c.brand || ''} ${c.asin || ''}`.toLowerCase()
+  return cfg.terms.some(t => hay.includes(t))
+}
+
 function qualifies(c, cfg = filterCfg()) {
+  if (!matchesKeyword(c, cfg)) return false
   if (cfg.reqBudget && (BUD_RANK[c.budget] || 0) < 2) return false
   if (cfg.minEpc > 0) {
     if (c.epcValue == null) return false
     if (c.epcValue < cfg.minEpc) return false
-  }
-  if (cfg.terms && cfg.terms.length) {
-    const hay = `${c.campaignName || ''} ${c.brand || ''} ${c.asin || ''}`.toLowerCase()
-    if (!cfg.terms.some(t => hay.includes(t))) return false
   }
   return true
 }
@@ -151,8 +154,16 @@ function renderList() {
   const cfg = filterCfg()
   const list = $('list')
   list.innerHTML = ''
+  // Keyword acts as a search: only matching campaigns are shown.
+  const rows = found.filter(c => matchesKeyword(c, cfg))
   let q = 0
-  found.forEach((c) => {
+  if (cfg.terms.length && rows.length === 0) {
+    const empty = document.createElement('div')
+    empty.style.cssText = 'padding:14px 4px;font-size:12px;color:#86868b'
+    empty.textContent = `No campaigns match “${cfg.keyword}”.`
+    list.appendChild(empty)
+  }
+  rows.forEach((c) => {
     const ok = qualifies(c, cfg)
     if (ok) q++
     const div = document.createElement('div')
@@ -209,7 +220,11 @@ function renderList() {
     div.appendChild(cb); div.appendChild(thumb); div.appendChild(body)
     list.appendChild(div)
   })
-  $('qualCount').textContent = found.length ? `${q} of ${found.length} qualify` : ''
+  $('qualCount').textContent = found.length
+    ? (cfg.terms.length
+        ? `${rows.length} match · ${q} qualify (of ${found.length})`
+        : `${q} of ${found.length} qualify`)
+    : ''
   $('pushRow').style.display = found.length ? 'flex' : 'none'
 }
 
