@@ -133,6 +133,10 @@ interface BrandData {
   facebook_url: string
   threads_url: string
   contact_email: string
+  // Private — shipping details for product samples (collab emails only)
+  sample_full_name: string
+  sample_address: string
+  sample_phone: string
 }
 
 // Curated font pairings shown to users. Theme renders these via Google Fonts.
@@ -201,6 +205,9 @@ const DEFAULT: BrandData = {
   facebook_url: '',
   threads_url: '',
   contact_email: '',
+  sample_full_name: '',
+  sample_address: '',
+  sample_phone: '',
 }
 
 export default function BrandPage() {
@@ -270,6 +277,9 @@ export default function BrandPage() {
         facebook_url: row.facebook_url ?? '',
         threads_url: row.threads_url ?? '',
         contact_email: row.contact_email ?? '',
+        sample_full_name: row.sample_full_name ?? '',
+        sample_address: row.sample_address ?? '',
+        sample_phone: row.sample_phone ?? '',
       })
     }
     setLoading(false)
@@ -599,6 +609,51 @@ export default function BrandPage() {
                   />
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Sample shipping details — private */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Product Sample Shipping</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+              Where brands can send you product samples. Used to fill in collaboration emails so you don&apos;t have to retype it each time.
+            </p>
+            <div className="rounded-lg p-3 mb-4 flex items-start gap-2" style={{ background: '#f0f7ff', border: '1px solid #cfe4ff' }}>
+              <span className="text-xs leading-relaxed text-[#0a4a8f]">
+                🔒 Private. This information is never shown on your blog, never shared or sold, and is only used to generate collaboration emails on your behalf.
+              </span>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Full name</label>
+                <input
+                  type="text"
+                  value={data.sample_full_name}
+                  onChange={(e) => set('sample_full_name', e.target.value)}
+                  placeholder="Jane Doe"
+                  className="input-field text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Full address</label>
+                <textarea
+                  value={data.sample_address}
+                  onChange={(e) => set('sample_address', e.target.value)}
+                  placeholder="123 Main St, Apt 4&#10;Springfield, IL 62704&#10;United States"
+                  rows={3}
+                  className="input-field text-sm resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Telephone number</label>
+                <input
+                  type="tel"
+                  value={data.sample_phone}
+                  onChange={(e) => set('sample_phone', e.target.value)}
+                  placeholder="+1 555 123 4567"
+                  className="input-field text-sm"
+                />
+              </div>
             </div>
           </div>
 
