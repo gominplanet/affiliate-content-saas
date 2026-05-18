@@ -1,17 +1,29 @@
 {
   "manifest_version": 3,
   "name": "MVP Affiliate — CC Scout",
-  "version": "1.0.0",
-  "description": "Scout Amazon Creator Connections campaigns and push them into your MVP Affiliate CC Campaigns queue.",
+  "version": "1.1.0",
+  "description": "Scan Amazon Creator Connections, auto-select the high-EPC / medium-to-high-budget campaigns, and push them into your MVP Affiliate CC Campaigns queue.",
+  "homepage_url": "https://www.mvpaffiliate.io",
+  "minimum_chrome_version": "114",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
     "https://affiliate-program.amazon.com/*",
-    "https://www.amazon.com/*",
+    "https://www.amazon.com/creatorconnections/*",
     "https://www.mvpaffiliate.io/*"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
     "default_title": "MVP Affiliate — CC Scout",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {

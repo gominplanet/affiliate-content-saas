@@ -34,8 +34,20 @@
   .item .meta { margin-top: 2px; color: #6e6e73; font-size: 11px; white-space: nowrap;
                 overflow: hidden; text-overflow: ellipsis; }
   .item .meta .asin { font-family: ui-monospace, Menlo, monospace; color: #1d1d1f; }
-  .item .meta .epc { color: #1f8a3a; font-weight: 600; }
+  .item .meta .epc { color: #1f8a3a; font-weight: 700; }
   .item .meta .ends { color: #86868b; }
+  .item .meta .bud { font-weight: 700; text-transform: capitalize; }
+  .item .meta .bud.high { color: #1f8a3a; }
+  .item .meta .bud.medium { color: #b26a00; }
+  .item .meta .bud.low { color: #c0001a; }
+  .item.dim { opacity: 0.5; }
+  .filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+             margin-top: 12px; padding: 10px 12px; background: #f7f7f8;
+             border: 1px solid #ececec; border-radius: 10px; font-size: 11px; color: #6e6e73; }
+  .filters label { margin: 0; display: flex; align-items: center; gap: 6px; font-weight: 600; }
+  .filters input[type=number] { width: 70px; padding: 5px 7px; }
+  .filters input[type=checkbox] { width: 14px; height: 14px; }
+  .filters .qual { margin-left: auto; font-weight: 700; color: #1d1d1f; }
 </style>
 </head>
 <body>
@@ -48,6 +60,15 @@
   <div class="row">
     <button id="scan" class="primary grow">Scan this page</button>
     <button id="saveToken" class="ghost">Save token</button>
+  </div>
+  <div class="row">
+    <button id="oneClick" class="primary grow" style="background:#1f8a3a">⚡ Scan &amp; push qualifying</button>
+  </div>
+
+  <div class="filters">
+    <label>Min EPC&nbsp;$ <input id="minEpc" type="number" step="0.05" min="0" value="0.20" /></label>
+    <label><input id="reqBudget" type="checkbox" checked /> Budget ≥ Medium</label>
+    <span class="qual" id="qualCount"></span>
   </div>
 
   <div id="status"></div>

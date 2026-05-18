@@ -67,10 +67,20 @@ function cellsIn(grid) {
 function extractCard(asin, el) {
   const full = textOf(el)
 
-  // EPC — "Estimated EPC: Up to $0.38"
+  // EPC — "Estimated EPC: Up to $0.38" → display string + numeric value
   let epc = null
+  let epcValue = null
   const epcM = full.match(/Estimated EPC[:\s]*((?:Up to\s*)?\$\s?\d[\d.,]*)/i)
-  if (epcM) epc = epcM[1].replace(/\s+/g, ' ').trim()
+  if (epcM) {
+    epc = epcM[1].replace(/\s+/g, ' ').trim()
+    const n = epc.match(/\$\s?([\d.,]+)/)
+    if (n) { const v = parseFloat(n[1].replace(/,/g, '')); if (!isNaN(v)) epcValue = v }
+  }
+
+  // Budget availability score — "Budget availability score: Medium"
+  let budget = null
+  const bM = full.match(/Budget availability(?:\s*score)?[:\s]*\b(Low|Medium|High)\b/i)
+  if (bM) budget = bM[1].toLowerCase()
 
   // End date — "No end date" → none; else a date if present
   let endsAt = null
@@ -124,7 +134,7 @@ function extractCard(asin, el) {
   const img = el.querySelector('img[src]')
   if (img && /^https?:/.test(img.src) && !/sprite|icon|logo/i.test(img.src)) image = img.src
 
-  return { asin, campaignName, brand, epc, endsAt, image }
+  return { asin, campaignName, brand, epc, epcValue, budget, endsAt, image }
 }
 
 async function parseCampaigns() {
@@ -140,7 +150,12 @@ async function parseCampaigns() {
       // First sighting, or upgrade a name-less snapshot once the card
       // has actually painted its title/image.
       if (!prev || (isThin(prev) && !isThin(fresh))) byAsin.set(asin, fresh)
-      else if (prev && !prev.image && fresh.image) prev.image = fresh.image
+      else if (prev) {
+        // Fill in fields that may have painted after the first sighting.
+        if (!prev.image && fresh.image) prev.image = fresh.image
+        if (prev.epcValue == null && fresh.epcValue != null) { prev.epcValue = fresh.epcValue; prev.epc = fresh.epc }
+        if (!prev.budget && fresh.budget) prev.budget = fresh.budget
+      }
     }
   }
 
