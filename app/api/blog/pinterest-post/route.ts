@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { PinterestService } from '@/services/pinterest'
+import { createWordPressService } from '@/services/wordpress'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 
@@ -36,8 +37,8 @@ export async function POST(request: NextRequest) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    (supabase as any).from('blog_posts').select('id,title,wordpress_url').eq('id', postId).single(),
-    (supabase as any).from('integrations').select('pinterest_access_token,pinterest_board_id').eq('user_id', user.id).single(),
+    (supabase as any).from('blog_posts').select('id,title,wordpress_url,wordpress_post_id').eq('id', postId).single(),
+    (supabase as any).from('integrations').select('pinterest_access_token,pinterest_board_id,wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token').eq('user_id', user.id).single(),
   ])
 
   const p = post as any
@@ -59,11 +60,30 @@ export async function POST(request: NextRequest) {
   // scrub + cap to Pinterest's 100-char limit. Fall back to post title.
   const safeTitle = (scrubBanned(title) || scrubBanned(p.title) || p.title).slice(0, 100)
 
+  // Route the pin to a board matching the post's category (one board
+  // per niche) — auto-create it if missing. Fall back to the selected
+  // Active board when the category is generic/unknown.
+  const GENERIC = /^(blog|uncategorized|general|news|misc|other|posts?)$/i
+  let targetBoardId: string = ig.pinterest_board_id
+  try {
+    if (p.wordpress_post_id && ig.wordpress_url) {
+      const wpSvc = createWordPressService(
+        ig.wordpress_url, ig.wordpress_username, ig.wordpress_app_password, ig.wordpress_api_token || undefined,
+      )
+      const cats = await wpSvc.getPostCategoryNames(p.wordpress_post_id)
+      const cat = cats.map(c => (c || '').trim()).find(c => c && !GENERIC.test(c))
+      if (cat) {
+        const board = await pinterest.findOrCreateBoard(cat)
+        targetBoardId = board.id
+      }
+    }
+  } catch { /* keep the selected Active board as fallback */ }
+
   let pin: { id: string }
   try {
     if (imageBase64 && mediaType) {
       pin = await pinterest.createPinWithBase64({
-        boardId: ig.pinterest_board_id,
+        boardId: targetBoardId,
         title: safeTitle,
         description: safeDescription,
         imageBase64,
@@ -72,7 +92,7 @@ export async function POST(request: NextRequest) {
       })
     } else if (fallbackImageUrl) {
       pin = await pinterest.createPin({
-        boardId: ig.pinterest_board_id,
+        boardId: targetBoardId,
         title: safeTitle,
         description: safeDescription,
         imageUrl: fallbackImageUrl,

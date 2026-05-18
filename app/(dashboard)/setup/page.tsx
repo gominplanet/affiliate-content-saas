@@ -1303,14 +1303,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           {pinterest.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Connect via OAuth and we'll import your boards automatically. After connecting, choose which board new pins should be saved to. We only request permission to create pins — we never read your private boards or personal data.
+          Connect via OAuth and each pin is automatically saved to a board that matches the blog post&apos;s category — we create the board for you if it doesn&apos;t exist yet (e.g. an Automotive post → your &ldquo;Automotive&rdquo; board). The board below is the fallback used only when a post has no specific category.
         </p>
         {ptNotice && <p className={`text-xs mb-3 ${ptNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ptNotice.msg}</p>}
         {pinterest.connected ? (
           <div className="flex flex-col gap-3">
             {pinterest.boards.length > 1 ? (
               <div>
-                <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Active board</label>
+                <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Fallback board (uncategorized posts)</label>
                 <select value={pinterest.boardId} onChange={e => selectPinterestBoard(e.target.value)} className="input-field text-sm">
                   {pinterest.boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>

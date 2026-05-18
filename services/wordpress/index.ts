@@ -350,6 +350,19 @@ export class WordPressService {
     }
   }
 
+  /** Category names actually assigned to a published post (source of
+   *  truth for "what niche is this post in"). */
+  async getPostCategoryNames(postId: number): Promise<string[]> {
+    try {
+      const cats = await this.request<{ name: string }[]>(
+        `/categories?post=${postId}&per_page=10&_fields=name`,
+      )
+      return Array.isArray(cats) ? cats.map(c => c.name).filter(Boolean) : []
+    } catch {
+      return []
+    }
+  }
+
   async checkConnection(): Promise<boolean> {
     try {
       await this.request('/users/me')
