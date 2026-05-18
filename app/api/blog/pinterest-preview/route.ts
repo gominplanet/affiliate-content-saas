@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { GoogleGenAI } from '@google/genai'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
+import { scrubBanned } from '@/lib/scrub'
 
 const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you. #ad #affiliate #amazonfinds'
 
@@ -36,6 +37,8 @@ export async function POST(request: NextRequest) {
     messages: [{
       role: 'user',
       content: `You are an expert affiliate marketing content strategist. Analyze this blog post and return a JSON object.
+
+HARD RULE: never use the word "honest" or "honestly" anywhere in any field. It is banned. Write "review" not "honest review".
 
 Blog post title: ${p.title}
 Blog post content (first 500 chars): ${p.excerpt || p.content?.substring(0, 500) || ''}
@@ -76,17 +79,24 @@ Return ONLY valid JSON with these exact keys:
     }
   }
 
+  // Last-line-of-defense: strip the banned word from every generated
+  // value (description AND the image-prompt fields — banned everywhere).
+  for (const k of Object.keys(fields)) fields[k] = scrubBanned(fields[k])
+
   // Build Gemini image prompt and generate image
   const imagePrompt = buildViralImagePrompt(fields)
   const imageResult = await generatePinImage(imagePrompt)
 
-  // Fall back to blog thumbnail if Gemini fails
-  const fallbackImageUrl = p.featured_image_url || p.thumbnail_url || null
+  // Fall back to a real image if Gemini fails — a pin REQUIRES one.
+  // Try the stored blog image, then the YouTube thumbnail (always exists
+  // for video-derived posts).
+  const fallbackImageUrl = p.featured_image_url || p.thumbnail_url
+    || (p.video_id ? `https://i.ytimg.com/vi/${p.video_id}/hqdefault.jpg` : null)
 
   return NextResponse.json({
-    title: p.title,
+    title: scrubBanned(p.title) || p.title,
     // Pinterest pin description is hard-capped at 500 chars by the API.
-    description: capSocialText(fields.pinterest_description ?? '', SOCIAL_LIMITS.pinterest),
+    description: capSocialText(scrubBanned(fields.pinterest_description) || `${p.title} — see the full review at the link!`, SOCIAL_LIMITS.pinterest),
     disclaimer: AFFILIATE_DISCLAIMER,
     imageBase64: imageResult?.data ?? null,
     mediaType: imageResult?.mediaType ?? null,

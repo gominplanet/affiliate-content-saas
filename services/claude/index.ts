@@ -74,7 +74,7 @@ function buildSystemPrompt(brand: BrandProfile, voiceProfile?: string): string {
     : ''
 
   const niches = brand.niches?.length ? brand.niches.join(', ') : 'general consumer products'
-  const tones = brand.tone?.length ? brand.tone.join(', ') : 'conversational, honest'
+  const tones = brand.tone?.length ? brand.tone.join(', ') : 'conversational, candid'
 
   const lengthMap: Record<string, string> = {
     short: '6,000–9,000 characters',
@@ -255,7 +255,7 @@ Use exactly this structure with {VIDEO_ID} replaced:
 [3] QUICK VERDICT BOX (HTML block)
 <div class="gr-verdict-box">
   <h3>Quick Verdict</h3>
-  <p class="gr-verdict-text">{2-3 sentence honest summary. Personal. Specific to transcript. Use the reviewer's actual words where possible.}</p>
+  <p class="gr-verdict-text">{2-3 sentence candid summary. Personal. Specific to transcript. Use the reviewer's actual words where possible.}</p>
   <div class="gr-verdict-cols">
     <div class="gr-verdict-col buy">
       <h4>Buy if you:</h4>
@@ -269,9 +269,9 @@ Use exactly this structure with {VIDEO_ID} replaced:
     <div class="gr-verdict-col skip">
       <h4>Skip if you:</h4>
       <ul>
-        <li>{honest limitation}</li>
-        <li>{honest limitation}</li>
-        <li>{honest limitation}</li>
+        <li>{candid limitation}</li>
+        <li>{candid limitation}</li>
+        <li>{candid limitation}</li>
       </ul>
     </div>
   </div>
@@ -317,7 +317,7 @@ Use exactly this structure with {VIDEO_ID} replaced:
 [5] FAQ — Minimum 5 questions (product-specific, not generic)
 <!-- wp:heading {"level":2} --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->
 Each Q: <!-- wp:heading {"level":3} --><h3>{question}</h3><!-- /wp:heading -->
-        <!-- wp:paragraph --><p>{specific honest answer}</p><!-- /wp:paragraph -->
+        <!-- wp:paragraph --><p>{specific candid answer}</p><!-- /wp:paragraph -->
 
 [6] RATING BOX (HTML block)
 <div class="gr-rating-box">
