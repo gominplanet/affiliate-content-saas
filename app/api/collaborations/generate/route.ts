@@ -43,11 +43,16 @@ export async function POST(request: Request) {
       productionFee: !!body.productionFee,
       productionFeeAmount: body.productionFeeAmount?.toString().trim() || '',
       shareAddress: !!body.shareAddress,
+      productOrAsin: body.productOrAsin?.toString().trim() || '',
+      portfolioUrl: body.portfolioUrl?.toString().trim() || '',
       collabsDone: body.collabsDone?.toString().trim() || '',
+      exampleLinks: Array.isArray(body.exampleLinks)
+        ? body.exampleLinks.map(s => String(s).trim()).filter(Boolean).slice(0, 3)
+        : [],
       extraNotes: body.extraNotes?.toString().trim() || '',
     }
 
-    const { email, citations } = await generateCollabEmail(input, brand, { userId: user.id, tier })
+    const { subject, body: emailBody, email, citations } = await generateCollabEmail(input, brand, { userId: user.id, tier })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: row } = await (supabase as any)
@@ -65,6 +70,9 @@ export async function POST(request: Request) {
         production_fee: input.productionFee,
         production_fee_amount: input.productionFeeAmount || null,
         share_address: input.shareAddress,
+        product_or_asin: input.productOrAsin || null,
+        portfolio_url: input.portfolioUrl || null,
+        example_links: input.exampleLinks ?? [],
         collabs_done: input.collabsDone || null,
         extra_notes: input.extraNotes || null,
         generated_email: email,
@@ -72,7 +80,7 @@ export async function POST(request: Request) {
       .select('id')
       .single()
 
-    return NextResponse.json({ ok: true, id: row?.id ?? null, email, citations })
+    return NextResponse.json({ ok: true, id: row?.id ?? null, subject, body: emailBody, email, citations })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

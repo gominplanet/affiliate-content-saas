@@ -35,9 +35,11 @@ function YesNo({ value, onChange }: { value: boolean; onChange: (v: boolean) => 
 
 export default function CollaborationsPage() {
   const [brandName, setBrandName] = useState('')
+  const [productOrAsin, setProductOrAsin] = useState('')
   const [amazonStorefront, setAmazonStorefront] = useState('')
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [portfolioUrl, setPortfolioUrl] = useState('')
 
   const [allPlatforms, setAllPlatforms] = useState<string[]>([])
   const [platforms, setPlatforms] = useState<Set<string>>(new Set())
@@ -48,12 +50,14 @@ export default function CollaborationsPage() {
   const [productionFeeAmount, setProductionFeeAmount] = useState('')
   const [shareAddress, setShareAddress] = useState(false)
   const [collabsDone, setCollabsDone] = useState('')
+  const [exampleLinks, setExampleLinks] = useState<string[]>(['', '', ''])
   const [extraNotes, setExtraNotes] = useState('')
 
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  const [email, setEmail] = useState('')
-  const [copied, setCopied] = useState(false)
+  const [subject, setSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
+  const [copied, setCopied] = useState<'subject' | 'body' | null>(null)
   const [history, setHistory] = useState<CollabRow[]>([])
 
   const load = useCallback(async () => {
@@ -80,21 +84,22 @@ export default function CollaborationsPage() {
 
   async function generate() {
     if (!brandName.trim()) { setGenError('Enter the brand name you want to pitch.'); return }
-    setGenerating(true); setGenError(null); setEmail('')
+    setGenerating(true); setGenError(null); setSubject(''); setEmailBody('')
     try {
       const res = await fetch('/api/collaborations/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brandName, amazonStorefront, websiteUrl, youtubeUrl,
+          brandName, productOrAsin, amazonStorefront, websiteUrl, youtubeUrl, portfolioUrl,
           platforms: [...platforms],
           bannerAds, bannerAdsAmount, freeSample, productionFee, productionFeeAmount, shareAddress,
-          collabsDone, extraNotes,
+          collabsDone, exampleLinks: exampleLinks.map(s => s.trim()).filter(Boolean), extraNotes,
         }),
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error || 'Generation failed')
-      setEmail(d.email || '')
+      setSubject(d.subject || '')
+      setEmailBody(d.body || '')
       load()
     } catch (e) {
       setGenError(e instanceof Error ? e.message : 'Generation failed')
@@ -103,9 +108,9 @@ export default function CollaborationsPage() {
     }
   }
 
-  function copyEmail(text: string) {
+  function copyText(text: string, which: 'subject' | 'body') {
     navigator.clipboard.writeText(text).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 1500)
+      setCopied(which); setTimeout(() => setCopied(null), 1500)
     }).catch(() => {})
   }
 
@@ -125,6 +130,10 @@ export default function CollaborationsPage() {
             <label className={lbl}>Brand name <span className="text-[#ff3b30]">*</span></label>
             <input value={brandName} onChange={e => setBrandName(e.target.value)} placeholder="The brand you want to collaborate with" className="input-field text-sm w-full" />
           </div>
+          <div className="sm:col-span-2">
+            <label className={lbl}>Product name or ASIN <span className="text-[#86868b]">(the specific product you want to pitch)</span></label>
+            <input value={productOrAsin} onChange={e => setProductOrAsin(e.target.value)} placeholder="e.g. Acme Cordless Drill — or B0XXXXXXXX" className="input-field text-sm w-full" />
+          </div>
           <div>
             <label className={lbl}>Amazon storefront</label>
             <input value={amazonStorefront} onChange={e => setAmazonStorefront(e.target.value)} placeholder="amazon.com/shop/yourstore" className="input-field text-sm w-full" />
@@ -133,9 +142,13 @@ export default function CollaborationsPage() {
             <label className={lbl}>Website / blog</label>
             <input value={websiteUrl} onChange={e => setWebsiteUrl(e.target.value)} placeholder="yourblog.com" className="input-field text-sm w-full" />
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <label className={lbl}>Your YouTube channel</label>
             <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="youtube.com/@yourchannel" className="input-field text-sm w-full" />
+          </div>
+          <div>
+            <label className={lbl}>Portfolio / link hub <span className="text-[#86868b]">(Linktree, etc.)</span></label>
+            <input value={portfolioUrl} onChange={e => setPortfolioUrl(e.target.value)} placeholder="linktr.ee/yourname" className="input-field text-sm w-full" />
           </div>
         </div>
       </div>
@@ -213,8 +226,22 @@ export default function CollaborationsPage() {
             <input value={collabsDone} onChange={e => setCollabsDone(e.target.value)} placeholder="e.g. 12 brand collabs, 40+ sponsored reviews" className="input-field text-sm w-full" />
           </div>
           <div>
-            <label className={lbl}>Anything else that should be in the email? (optional)</label>
-            <textarea value={extraNotes} onChange={e => setExtraNotes(e.target.value)} rows={3} placeholder="Audience size/demographics, standout results, why this brand specifically, deadlines…" className="input-field text-sm w-full resize-none" />
+            <label className={lbl}>Example links of your best work <span className="text-[#86868b]">(up to 3 — most-viewed videos / highest-quality work)</span></label>
+            <div className="flex flex-col gap-2">
+              {[0, 1, 2].map(i => (
+                <input
+                  key={i}
+                  value={exampleLinks[i]}
+                  onChange={e => setExampleLinks(prev => { const n = [...prev]; n[i] = e.target.value; return n })}
+                  placeholder={`Example link ${i + 1}`}
+                  className="input-field text-sm w-full"
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={lbl}>Your wins &amp; anything else for the email <span className="text-[#86868b]">(optional)</span></label>
+            <textarea value={extraNotes} onChange={e => setExtraNotes(e.target.value)} rows={3} placeholder="Badges & status (Amazon Platinum/A-Lister since 2022, YouTube badges), # of video reviews, whether you're open to live streams, why this brand specifically…" className="input-field text-sm w-full resize-none" />
           </div>
         </div>
 
@@ -232,24 +259,38 @@ export default function CollaborationsPage() {
         </div>
       </div>
 
-      {email && (
+      {(subject || emailBody) && (
         <div className="card p-5 mb-6 max-w-3xl">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your pitch email</p>
+            <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Subject</p>
             <button
-              onClick={() => copyEmail(email)}
+              onClick={() => copyText(subject, 'subject')}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 transition-colors"
             >
-              {copied ? <><CheckCircle size={12} className="text-[#34c759]" /> Copied</> : <><Copy size={12} /> Copy</>}
+              {copied === 'subject' ? <><CheckCircle size={12} className="text-[#34c759]" /> Copied</> : <><Copy size={12} /> Copy subject</>}
+            </button>
+          </div>
+          <input
+            value={subject}
+            onChange={e => setSubject(e.target.value)}
+            className="w-full text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 mb-4 focus:outline-none focus:border-[#0071e3]/50"
+          />
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Body</p>
+            <button
+              onClick={() => copyText(emailBody, 'body')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 transition-colors"
+            >
+              {copied === 'body' ? <><CheckCircle size={12} className="text-[#34c759]" /> Copied</> : <><Copy size={12} /> Copy body</>}
             </button>
           </div>
           <textarea
-            value={email}
-            onChange={e => setEmail(e.target.value)}
+            value={emailBody}
+            onChange={e => setEmailBody(e.target.value)}
             rows={16}
-            className="w-full text-sm text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 font-mono leading-relaxed resize-y focus:outline-none focus:border-[#0071e3]/50"
+            className="w-full text-sm text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 leading-relaxed resize-y focus:outline-none focus:border-[#0071e3]/50"
           />
-          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">Edit anything before you send — your changes are kept when you copy.</p>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">Edit anything before you send — copy the subject and body separately into your email.</p>
         </div>
       )}
 
@@ -262,7 +303,7 @@ export default function CollaborationsPage() {
                 <div className="flex items-center justify-between gap-3 mb-1">
                   <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{h.brand_name}</span>
                   <button
-                    onClick={() => copyEmail(h.generated_email)}
+                    onClick={() => copyText(h.generated_email, 'body')}
                     className="inline-flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:underline"
                   >
                     <Copy size={11} /> Copy
