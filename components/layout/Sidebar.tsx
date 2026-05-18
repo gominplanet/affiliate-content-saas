@@ -30,6 +30,7 @@ import {
   TrendingUp,
   Megaphone,
   DollarSign,
+  Handshake,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -46,6 +47,7 @@ const nav = [
   { href: '/studio', label: 'YouTube Studio', icon: Clapperboard, matchKind: 'prefix' as const },
   { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' as const },
   { href: '/campaigns', label: 'CC & EPC Campaign', icon: Megaphone, matchKind: 'prefix' as const },
+  { href: '/collaborations', label: 'Collaborations', icon: Handshake, matchKind: 'prefix' as const },
   { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' as const },
 ]
 
