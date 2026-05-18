@@ -130,7 +130,7 @@ export async function POST(request: Request) {
     // ── 2. Web research ─────────────────────────────────────────────────────
     let research
     try {
-      research = await researchProduct(product)
+      research = await researchProduct(product, { userId: user.id, tier })
     } catch (err) {
       return fail(`Research step failed: ${err instanceof Error ? err.message : 'unknown'}`)
     }
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
         product,
         researchBrief: research.brief,
         affiliateUrl,
-      })
+      }, { userId: user.id, tier })
     } catch (err) {
       return fail(`Content generation failed: ${err instanceof Error ? err.message : 'unknown'}`)
     }

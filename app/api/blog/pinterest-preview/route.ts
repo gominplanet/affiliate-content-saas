@@ -4,6 +4,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { GoogleGenAI } from '@google/genai'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
+import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { composePin } from '@/lib/pin-compose'
 
 export const maxDuration = 60
@@ -66,6 +67,10 @@ Return ONLY valid JSON with these exact keys:
 }`,
     }],
   })
+  {
+    const u = usageFromAnthropic(claudeMsg)
+    recordUsage({ userId: user.id, tier: ig?.tier ?? null, feature: 'pinterest_text', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
+  }
 
   const raw = (claudeMsg.content[0] as { type: string; text: string }).text.trim()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,6 +126,9 @@ Return ONLY valid JSON with these exact keys:
         trust_factor: fields.trust_factor,
       })
     : null
+  if (rawImage) {
+    recordUsage({ userId: user.id, tier: ig?.tier ?? null, feature: 'pinterest_image', model: 'gemini-2.5-flash-image', images: 1 })
+  }
 
   // Fall back to a real image if Gemini fails — a pin REQUIRES one.
   // Try the stored blog image, then the YouTube thumbnail (always exists

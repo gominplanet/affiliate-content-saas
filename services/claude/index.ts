@@ -1,5 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { jsonrepair } from 'jsonrepair'
+import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
+
+/** Caller identity for cost telemetry (optional — logging is best-effort). */
+export interface UsageCtx { userId?: string | null; tier?: string | null }
 
 export interface BrandProfile {
   name: string
@@ -452,7 +456,7 @@ Output only valid JSON. No explanation, no markdown.`,
     }
   }
 
-  async generateBlogPost(brand: BrandProfile, video: VideoInput): Promise<BlogGenerationOutput> {
+  async generateBlogPost(brand: BrandProfile, video: VideoInput, ctx?: UsageCtx): Promise<BlogGenerationOutput> {
     const affiliateUrl = extractAffiliateUrl(video.description)
 
     // Pass 1 — extract voice profile from transcript (fast, cheap)
@@ -492,6 +496,10 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     })
 
     const message = await stream.finalMessage()
+    {
+      const u = usageFromAnthropic(message)
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_generate', model: 'claude-sonnet-4-6', input: u.input, output: u.output })
+    }
 
     // Filter out thinking blocks — only keep text output
     const raw = message.content
@@ -551,6 +559,7 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
   async generateCampaignBlogPost(
     brand: BrandProfile,
     input: { product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null }; researchBrief: string; affiliateUrl: string },
+    ctx?: UsageCtx,
   ): Promise<BlogGenerationOutput> {
     const systemPrompt = buildSystemPrompt(brand)
     const p = input.product
@@ -596,6 +605,10 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
     })
 
     const message = await stream.finalMessage()
+    {
+      const u = usageFromAnthropic(message)
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'campaign_generate', model: 'claude-sonnet-4-6', input: u.input, output: u.output })
+    }
     const raw = message.content
       .filter(block => block.type === 'text')
       .map(block => (block as Anthropic.TextBlock).text)

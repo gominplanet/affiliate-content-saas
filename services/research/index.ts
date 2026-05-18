@@ -1,5 +1,6 @@
 import { createAnthropicClient } from '@/lib/anthropic'
 import type { AmazonProduct } from '@/services/amazon'
+import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 
 /**
  * Web-research agent for the campaign content engine.
@@ -21,7 +22,10 @@ export interface ResearchBrief {
   citations: string[]
 }
 
-export async function researchProduct(product: AmazonProduct): Promise<ResearchBrief> {
+export async function researchProduct(
+  product: AmazonProduct,
+  ctx?: { userId?: string | null; tier?: string | null },
+): Promise<ResearchBrief> {
   const client = createAnthropicClient()
 
   const productContext = [
@@ -72,6 +76,11 @@ Return ONLY the markdown brief.`
     ],
     messages: [{ role: 'user', content: prompt }],
   })
+
+  {
+    const u = usageFromAnthropic(msg)
+    recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'campaign_research', model: 'claude-sonnet-4-6', input: u.input, output: u.output, webSearches: u.webSearches })
+  }
 
   // The response interleaves tool-use / search-result / text blocks. We want
   // the final synthesized text; concatenate any text blocks. Citation URLs

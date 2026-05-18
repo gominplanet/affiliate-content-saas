@@ -130,6 +130,7 @@ async function handleGenerate(request: Request) {
         tags: (v as Record<string, string[]>).tags || [],
         transcript,
       },
+      { userId: user.id, tier: (wp?.tier as string) ?? null },
     )
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Claude generation failed'
