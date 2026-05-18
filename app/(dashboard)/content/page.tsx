@@ -520,7 +520,15 @@ function ManualEdit({ postId }: { postId?: string }) {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Save failed')
-      setMsg(data.warning || (data.pushedToWp ? 'Saved — live post updated.' : 'Saved.'))
+      if (data.warning) {
+        // Saved locally but WP push had an issue — keep open so the
+        // user sees why.
+        setMsg(data.warning)
+      } else {
+        // Success — collapse the editor.
+        setOpen(false)
+        seeded.current = false
+      }
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Save failed')
     } finally {
