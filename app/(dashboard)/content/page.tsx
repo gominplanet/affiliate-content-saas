@@ -102,7 +102,8 @@ function PinterestPreviewModal({
   async function publish() {
     setPublishing(true)
     setPubError(null)
-    const composed = [description, tagLine, data.disclaimer].filter(Boolean).join('\n\n')
+    // Compliance tags always last, at the very end of the description.
+    const composed = [description, tagLine, data.disclaimer, '#ad #affiliate'].filter(Boolean).join('\n\n')
     const result = await onPublish(composed, title.trim() || data.title)
     // On success the parent unmounts this modal; on failure recover so
     // the button isn't stuck on "Publishing…" forever.

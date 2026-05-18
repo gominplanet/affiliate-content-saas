@@ -47,6 +47,13 @@ export async function POST(request: NextRequest) {
   if (!ig?.pinterest_access_token) return NextResponse.json({ error: 'Pinterest not connected' }, { status: 400 })
   if (!ig?.pinterest_board_id) return NextResponse.json({ error: 'No Pinterest board selected' }, { status: 400 })
 
+  // The pin must link DIRECTLY to the blog post it refers to — never an
+  // Amazon/affiliate/redirect URL (Amazon Associates + Pinterest ToS).
+  const blogLink = (p.wordpress_url as string | null) || ''
+  if (!/^https?:\/\//i.test(blogLink)) {
+    return NextResponse.json({ error: 'This post has no blog URL to link the pin to.' }, { status: 400 })
+  }
+
   const pinterest = new PinterestService(ig.pinterest_access_token)
   // Prefer the (curiosity-driven, possibly edited) title from the modal;
   // scrub + cap to Pinterest's 100-char limit. Fall back to post title.
@@ -61,7 +68,7 @@ export async function POST(request: NextRequest) {
         description: safeDescription,
         imageBase64,
         mediaType,
-        link: p.wordpress_url,
+        link: blogLink,
       })
     } else if (fallbackImageUrl) {
       pin = await pinterest.createPin({
@@ -69,7 +76,7 @@ export async function POST(request: NextRequest) {
         title: safeTitle,
         description: safeDescription,
         imageUrl: fallbackImageUrl,
-        link: p.wordpress_url,
+        link: blogLink,
       })
     } else {
       return NextResponse.json({ error: 'No image available for pin' }, { status: 400 })
