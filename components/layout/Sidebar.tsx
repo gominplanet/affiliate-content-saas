@@ -29,6 +29,7 @@ import {
   Menu,
   TrendingUp,
   Megaphone,
+  DollarSign,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -63,6 +64,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const { theme, setTheme } = useTheme()
   const supabase = createBrowserClient()
   const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [purging, setPurging] = useState(false)
   const [purged, setPurged] = useState(false)
   // Mobile drawer state — sidebar is hidden offscreen below lg and slides in
@@ -111,12 +113,13 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(supabase as any)
         .from('integrations')
-        .select('wordpress_url')
+        .select('wordpress_url,tier')
         .eq('user_id', user.id)
         .maybeSingle()
         .then(({ data }: { data: Record<string, string> | null }) => {
           const url = data?.wordpress_url || null
           if (url) setWpSiteUrl(url)
+          setIsAdmin(data?.tier === 'admin')
         })
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -324,6 +327,15 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
               </Link>
             )
           })}
+          {isAdmin && (
+            <Link
+              href="/admin/costs"
+              className={cn('nav-item', isActive('/admin/costs') && 'active')}
+            >
+              <DollarSign size={16} className="flex-shrink-0" />
+              AI Cost (admin)
+            </Link>
+          )}
         </div>
       </nav>
 
