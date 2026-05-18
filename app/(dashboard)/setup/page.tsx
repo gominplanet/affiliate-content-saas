@@ -823,6 +823,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
   const [youtubeOAuthConnected, setYoutubeOAuthConnected] = useState(false)
+  const [ytDisconnecting, setYtDisconnecting] = useState(false)
   const [ytOAuthNotice, setYtOAuthNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [wpTesting, setWpTesting] = useState(false)
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null)
@@ -1016,6 +1017,17 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('integrations').update({ pinterest_board_id: board.id, pinterest_board_name: board.name }).eq('user_id', user.id)
     setPinterest(prev => ({ ...prev, boardId: board.id, boardName: board.name }))
+  }
+
+  async function disconnectYoutube() {
+    setYtDisconnecting(true)
+    try {
+      const res = await fetch('/api/auth/youtube/disconnect', { method: 'POST' })
+      if (res.ok) {
+        setYoutubeOAuthConnected(false)
+        setYtOAuthNotice({ ok: true, msg: 'YouTube disconnected.' })
+      }
+    } finally { setYtDisconnecting(false) }
   }
 
   async function disconnectThreads() {
@@ -1669,9 +1681,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           <p className={`text-xs ${ytOAuthNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ytOAuthNotice.msg}</p>
         )}
         {youtubeOAuthConnected ? (
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-            Your Google account is connected. Visit <a href="/studio" className="text-[#0071e3] hover:underline">YouTube Studio</a> to generate metadata for your draft videos.
-          </p>
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+              Your Google account is connected. Visit <a href="/studio" className="text-[#0071e3] hover:underline">YouTube Studio</a> to generate metadata for your draft videos.
+            </p>
+            <button onClick={disconnectYoutube} disabled={ytDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {ytDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect YouTube
+            </button>
+          </div>
         ) : (
           <div className="flex flex-col gap-2">
             <a
