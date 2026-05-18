@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const body = await request.json() as { asin?: string; campaignName?: string; epc?: string; endsAt?: string }
+    const body = await request.json() as { asin?: string; campaignName?: string; epc?: string; endsAt?: string; campaignId?: string }
     const asin = extractAsin((body.asin ?? '').toUpperCase()) || (body.asin ?? '').trim()
     if (!asin || !/^[A-Z0-9]{10}$/.test(asin)) {
       return NextResponse.json({ error: 'A valid 10-character ASIN is required' }, { status: 400 })
@@ -67,20 +67,43 @@ export async function POST(request: Request) {
     }
 
     // ── Track the campaign row up front so failures are visible ─────────────
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: campaignRow } = await (supabase as any)
-      .from('campaigns')
-      .insert({
-        user_id: user.id,
-        asin,
-        campaign_name: body.campaignName?.trim() || null,
-        epc: body.epc?.trim() || null,
-        ends_at: body.endsAt || null,
-        status: 'researching',
-      })
-      .select('id')
-      .single()
-    const campaignId = campaignRow?.id as string | undefined
+    // Scouted rows (from the extension ingest) already exist as `pending`;
+    // reuse that row instead of inserting a duplicate. Otherwise insert.
+    let campaignId: string | undefined
+    if (body.campaignId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: reused } = await (supabase as any)
+        .from('campaigns')
+        .update({
+          status: 'researching',
+          campaign_name: body.campaignName?.trim() || null,
+          epc: body.epc?.trim() || null,
+          ends_at: body.endsAt || null,
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', body.campaignId)
+        .eq('user_id', user.id)
+        .select('id')
+        .single()
+      campaignId = reused?.id as string | undefined
+    }
+    if (!campaignId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: campaignRow } = await (supabase as any)
+        .from('campaigns')
+        .insert({
+          user_id: user.id,
+          asin,
+          campaign_name: body.campaignName?.trim() || null,
+          epc: body.epc?.trim() || null,
+          ends_at: body.endsAt || null,
+          status: 'researching',
+        })
+        .select('id')
+        .single()
+      campaignId = campaignRow?.id as string | undefined
+    }
 
     async function fail(message: string, code = 500) {
       if (campaignId) {

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { width: 380px; margin: 0; padding: 16px; color: #1d1d1f; background: #fff; }
+  h1 { font-size: 14px; margin: 0 0 2px; }
+  p.sub { font-size: 11px; color: #86868b; margin: 0 0 14px; }
+  label { display: block; font-size: 11px; font-weight: 600; color: #6e6e73; margin: 10px 0 4px; }
+  input { width: 100%; font-size: 12px; padding: 7px 9px; border: 1px solid #d2d2d7; border-radius: 8px; }
+  input.mono { font-family: ui-monospace, Menlo, monospace; }
+  button { font-size: 12px; font-weight: 600; padding: 8px 12px; border-radius: 8px; border: 0; cursor: pointer; }
+  button.primary { background: #0071e3; color: #fff; }
+  button.primary:disabled { opacity: .6; cursor: default; }
+  button.ghost { background: #fff; border: 1px solid #d2d2d7; color: #1d1d1f; }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  .grow { flex: 1; }
+  #status { font-size: 11px; margin-top: 12px; min-height: 14px; }
+  #status.err { color: #ff3b30; }
+  #status.ok { color: #1f8a3a; }
+  #list { margin-top: 12px; max-height: 260px; overflow: auto; border-top: 1px solid #f0f0f0; }
+  .item { display: flex; gap: 8px; align-items: flex-start; padding: 8px 2px; border-bottom: 1px solid #f5f5f5; font-size: 12px; }
+  .item .meta { color: #86868b; font-size: 10px; font-family: ui-monospace, Menlo, monospace; }
+  .item input[type=checkbox] { margin-top: 2px; }
+</style>
+</head>
+<body>
+  <h1>MVP Affiliate — CC Scout</h1>
+  <p class="sub">Scan an Amazon Creator Connections page, then push the campaigns you pick into your CC Campaigns queue.</p>
+
+  <label for="token">Ingest token</label>
+  <input id="token" class="mono" placeholder="cc_…  (copy it from the CC Campaigns page)" />
+
+  <div class="row">
+    <button id="scan" class="primary grow">Scan this page</button>
+    <button id="saveToken" class="ghost">Save token</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="list"></div>
+
+  <div class="row" id="pushRow" style="display:none">
+    <button id="selectAll" class="ghost">Select all</button>
+    <button id="push" class="primary grow">Push selected</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

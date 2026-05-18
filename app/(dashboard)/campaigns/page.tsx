@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '@/components/layout/Header'
-import { Loader2, Sparkles, ExternalLink, AlertCircle, CheckCircle, Clock, Send, Trash2 } from 'lucide-react'
+import { Loader2, Sparkles, ExternalLink, AlertCircle, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle } from 'lucide-react'
 
 interface Campaign {
   id: string
@@ -141,6 +141,10 @@ function CampaignsInner() {
   const [genError, setGenError] = useState<string | null>(null)
   const [items, setItems] = useState<Campaign[] | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [genRow, setGenRow] = useState<string | null>(null)
+  const [extToken, setExtToken] = useState<string | null>(null)
+  const [tokenBusy, setTokenBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [connected, setConnected] = useState<Record<SocialKey, boolean>>({
     facebook: false, threads: false, twitter: false, linkedin: false, bluesky: false, telegram: false,
   })
@@ -155,6 +159,26 @@ function CampaignsInner() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    fetch('/api/campaigns/ingest-token')
+      .then(r => r.json()).then(d => d.token && setExtToken(d.token)).catch(() => {})
+  }, [])
+
+  async function regenToken() {
+    setTokenBusy(true)
+    try {
+      const res = await fetch('/api/campaigns/ingest-token', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (data.token) setExtToken(data.token)
+    } finally { setTokenBusy(false) }
+  }
+
+  function copyToken() {
+    if (!extToken) return
+    navigator.clipboard.writeText(extToken).then(() => {
+      setCopied(true); setTimeout(() => setCopied(false), 1500)
+    }).catch(() => {})
+  }
 
   async function generate() {
     const clean = asin.trim().toUpperCase()
@@ -178,6 +202,32 @@ function CampaignsInner() {
       setGenError(err instanceof Error ? err.message : 'Generation failed')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function generateRow(c: Campaign) {
+    setGenRow(c.id)
+    // Optimistic: flip the row to "researching" so the user sees progress.
+    setItems(prev => (prev ?? []).map(x => x.id === c.id ? { ...x, status: 'researching' as const } : x))
+    try {
+      const res = await fetch('/api/campaigns/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          asin: c.asin,
+          campaignId: c.id,
+          campaignName: c.campaign_name ?? undefined,
+          epc: c.epc ?? undefined,
+          endsAt: c.ends_at ?? undefined,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Generation failed')
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Generation failed')
+    } finally {
+      setGenRow(null)
+      await load()
     }
   }
 
@@ -254,6 +304,39 @@ function CampaignsInner() {
         </p>
       </div>
 
+      {/* Browser extension connect */}
+      <div className="card p-5 mb-6 max-w-3xl">
+        <div className="flex items-center gap-2 mb-2">
+          <Puzzle size={14} className="text-[#5856d6]" />
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Scout campaigns with the browser extension</p>
+        </div>
+        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
+          Install the MVP Affiliate extension, open Amazon Creator Connections, select the campaigns
+          you want, and they land here as queued posts — one click each to research, write, and publish.
+          Paste this token into the extension once to link it to your account.
+        </p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 min-w-0 truncate font-mono text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]">
+            {extToken ?? '••••••••••••••••••••••••'}
+          </code>
+          <button
+            onClick={copyToken}
+            disabled={!extToken}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 disabled:opacity-50 transition-colors"
+          >
+            {copied ? <><CheckCircle size={12} className="text-[#34c759]" /> Copied</> : <><Copy size={12} /> Copy</>}
+          </button>
+          <button
+            onClick={regenToken}
+            disabled={tokenBusy}
+            title="Regenerate — invalidates the old token"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#86868b] hover:text-[#ff3b30] disabled:opacity-50 transition-colors"
+          >
+            {tokenBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+          </button>
+        </div>
+      </div>
+
       {/* Campaign list */}
       {items === null ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] py-8 justify-center">
@@ -294,6 +377,17 @@ function CampaignsInner() {
                   {c.error_message && <p className="text-[11px] text-[#ff3b30] mt-1.5 break-all">⚠ {c.error_message}</p>}
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0 mt-0.5">
+                  {(c.status === 'pending' || c.status === 'failed') && (
+                    <button
+                      onClick={() => generateRow(c)}
+                      disabled={genRow === c.id}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                    >
+                      {genRow === c.id
+                        ? <><Loader2 size={12} className="animate-spin" /> Starting…</>
+                        : <><Sparkles size={12} /> {c.status === 'failed' ? 'Retry' : 'Generate post'}</>}
+                    </button>
+                  )}
                   {c.wordpress_url && c.status === 'published' && (
                     <a href={c.wordpress_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-[#34c759] hover:underline">
                       <CheckCircle size={12} /> View <ExternalLink size={10} />
