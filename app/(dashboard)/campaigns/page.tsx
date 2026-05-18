@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '@/components/layout/Header'
-import { Loader2, Sparkles, ExternalLink, AlertCircle, CheckCircle, Clock } from 'lucide-react'
+import { Loader2, Sparkles, ExternalLink, AlertCircle, CheckCircle, Clock, Send, Trash2 } from 'lucide-react'
 
 interface Campaign {
   id: string
@@ -35,6 +35,7 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
   const [posting, setPosting] = useState<SocialKey | null>(null)
   const [posted, setPosted] = useState<Set<SocialKey>>(new Set())
   const [err, setErr] = useState<string | null>(null)
+  const [publishingAll, setPublishingAll] = useState(false)
 
   const available = SOCIALS.filter(s => connected[s.key])
   if (available.length === 0) {
@@ -46,9 +47,7 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
     )
   }
 
-  async function push(s: typeof SOCIALS[number]) {
-    setPosting(s.key)
-    setErr(null)
+  async function postOne(s: typeof SOCIALS[number]): Promise<boolean> {
     try {
       const res = await fetch(s.endpoint, {
         method: 'POST',
@@ -58,16 +57,45 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || `${s.label} failed`)
       setPosted(p => new Set(p).add(s.key))
+      return true
     } catch (e) {
       setErr(e instanceof Error ? e.message : `${s.label} failed`)
-    } finally {
-      setPosting(null)
+      return false
     }
+  }
+
+  async function push(s: typeof SOCIALS[number]) {
+    setPosting(s.key)
+    setErr(null)
+    await postOne(s)
+    setPosting(null)
+  }
+
+  async function publishAll() {
+    setPublishingAll(true)
+    setErr(null)
+    for (const s of available) {
+      if (posted.has(s.key)) continue
+      setPosting(s.key)
+      await postOne(s)
+    }
+    setPosting(null)
+    setPublishingAll(false)
   }
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap mt-2.5 pt-2.5 border-t border-gray-100 dark:border-white/5">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1">Publish to</span>
+      {available.length > 1 && (
+        <button
+          onClick={publishAll}
+          disabled={publishingAll || posting !== null}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-70 transition-all"
+        >
+          {publishingAll ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
+          Publish all
+        </button>
+      )}
       {available.map(s => {
         const isPosted = posted.has(s.key)
         const isPosting = posting === s.key
@@ -112,6 +140,7 @@ function CampaignsInner() {
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const [items, setItems] = useState<Campaign[] | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const [connected, setConnected] = useState<Record<SocialKey, boolean>>({
     facebook: false, threads: false, twitter: false, linkedin: false, bluesky: false, telegram: false,
   })
@@ -149,6 +178,28 @@ function CampaignsInner() {
       setGenError(err instanceof Error ? err.message : 'Generation failed')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function remove(c: Campaign) {
+    const label = c.product_title || c.campaign_name || c.asin
+    if (!confirm(`Delete this campaign post?\n\n"${label}"\n\nThis removes the WordPress post and cannot be undone.`)) return
+    setDeleting(c.id)
+    try {
+      const res = await fetch('/api/campaigns/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: c.id }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Delete failed')
+      }
+      setItems(prev => (prev ?? []).filter(x => x.id !== c.id))
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setDeleting(null)
     }
   }
 
@@ -242,11 +293,21 @@ function CampaignsInner() {
                   </div>
                   {c.error_message && <p className="text-[11px] text-[#ff3b30] mt-1.5 break-all">⚠ {c.error_message}</p>}
                 </div>
-                {c.wordpress_url && c.status === 'published' && (
-                  <a href={c.wordpress_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-[#34c759] hover:underline flex-shrink-0 mt-0.5">
-                    <CheckCircle size={12} /> View <ExternalLink size={10} />
-                  </a>
-                )}
+                <div className="flex items-center gap-3 flex-shrink-0 mt-0.5">
+                  {c.wordpress_url && c.status === 'published' && (
+                    <a href={c.wordpress_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-[#34c759] hover:underline">
+                      <CheckCircle size={12} /> View <ExternalLink size={10} />
+                    </a>
+                  )}
+                  <button
+                    onClick={() => remove(c)}
+                    disabled={deleting === c.id}
+                    title="Delete post"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#86868b] hover:text-[#ff3b30] disabled:opacity-50 transition-colors"
+                  >
+                    {deleting === c.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  </button>
+                </div>
                </div>
                {c.status === 'published' && c.blog_post_id && (
                  <CampaignSocialPills postId={c.blog_post_id} connected={connected} />
