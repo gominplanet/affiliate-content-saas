@@ -133,16 +133,19 @@ CLOSE:
 
 STYLE (critical — many brand contacts are NOT fluent English speakers):
 - Short, simple sentences. No "smart"/complex words, no jargon, no long-winded clauses.
-- Use line breaks and structured bullet points so it scans instantly.
+- Use real line breaks: a blank line between paragraphs, each bullet on its own line starting with "- ".
 - Tone: professional but warm — formal sliding into casual.
 - Whole email body UNDER 250 words.
 
+PLAIN TEXT ONLY. Absolutely NO markdown or symbols for formatting: do NOT use **, __, *, #, backticks, or "---" / "***" separator lines anywhere. Write it exactly as it should appear pasted into an email.
+
 ${BANNED_RULE}
 
-Output EXACTLY this structure and nothing else, with the literal markers:
-SUBJECT: RE: <subject>
-BODY:
-<the email body following the method above — greeting, credibility, pitch, plain ask, address block if given, long-term close, signed with the creator's name + contact email>`
+OUTPUT FORMAT — return EXACTLY this and nothing else (the two marker lines must each be on their own line, verbatim):
+<<<SUBJECT>>>
+RE: one short single-line subject, max 80 characters, no line breaks
+<<<BODY>>>
+the full plain-text email body (greeting, credibility, pitch, plain ask, address block if given, long-term close, signed with the creator's name + contact email)`
 
   const userMsg = `TARGET BRAND: ${input.brandName}
 
@@ -178,23 +181,49 @@ Write the email now.`
   out = scrubBanned(out) || out
   if (!out) throw new Error('Could not compose the email — try again.')
 
-  // Split on the SUBJECT:/BODY: markers the prompt enforces.
+  // Strip any markdown the model slipped in — must be clean plain text.
+  const stripMd = (s: string): string => s
+    .replace(/\*\*(.+?)\*\*/g, '$1')        // **bold**
+    .replace(/__(.+?)__/g, '$1')            // __bold__
+    .replace(/(^|[^*])\*(?!\s)([^*\n]+?)\*(?!\*)/g, '$1$2') // *italic*
+    .replace(/^#{1,6}\s+/gm, '')            // # headings
+    .replace(/^\s*([-*_]\s*){3,}\s*$/gm, '') // --- / *** separator lines
+    .replace(/`{1,3}/g, '')                 // backticks
+    .replace(/\n{3,}/g, '\n\n')             // collapse blank runs
+    .trim()
+
+  // Parse the explicit markers; tolerate missing/loose ones.
   let subject = ''
-  let body = out
-  const m = out.match(/SUBJECT:\s*(.+?)\s*\n+BODY:\s*\n?([\s\S]*)$/i)
-  if (m) {
-    subject = m[1].trim()
-    body = m[2].trim()
+  let body = ''
+  const sIdx = out.search(/<<<\s*SUBJECT\s*>>>/i)
+  const bIdx = out.search(/<<<\s*BODY\s*>>>/i)
+  if (sIdx !== -1 && bIdx !== -1 && bIdx > sIdx) {
+    subject = out.slice(out.indexOf('\n', sIdx) + 1, bIdx).trim()
+    body = out.slice(out.indexOf('\n', bIdx) + 1).trim()
   } else {
-    // Fallback: first "Subject:" line, rest is body.
-    const sm = out.match(/^\s*subject:\s*(.+)$/im)
-    if (sm) {
-      subject = sm[1].trim()
-      body = out.replace(sm[0], '').trim()
+    // Fallback: first short line that looks like a subject; rest is body.
+    const lines = out.split('\n')
+    const first = (lines[0] || '').replace(/^\s*subject:\s*/i, '').trim()
+    if (first && first.length <= 110) {
+      subject = first
+      body = lines.slice(1).join('\n').trim()
+    } else {
+      body = out
     }
   }
-  if (subject && !/^re:/i.test(subject)) subject = `RE: ${subject}`
-  if (!subject) subject = `RE: Collaboration with ${input.brandName}?`
+
+  subject = stripMd(subject).split('\n')[0].trim().replace(/^subject:\s*/i, '')
+  body = stripMd(body)
+
+  // Hard guard: a subject must be ONE short line. If the model jammed the
+  // body in, discard it and synthesize a clean one (body stays intact).
+  if (!subject || subject.length > 120) {
+    if (subject && !body) body = subject
+    subject = `RE: Collaboration with ${input.brandName}?`
+  }
+  if (!/^re:/i.test(subject)) subject = `RE: ${subject}`
+  subject = subject.slice(0, 120)
+  if (!body) throw new Error('Could not compose the email — try again.')
 
   const email = `Subject: ${subject}\n\n${body}`
   return { subject, body, email, citations: Array.from(citations).slice(0, 12) }
