@@ -11,11 +11,11 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [{ data, error }, { data: intg }] = await Promise.all([
+  const [{ data, error }, { data: intg }, { data: brand }] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('campaigns')
-      .select('id,asin,product_title,campaign_name,epc,ends_at,status,error_message,wordpress_url,blog_post_id,created_at')
+      .select('id,asin,product_title,campaign_name,epc,ends_at,status,error_message,wordpress_url,blog_post_id,category,created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100),
@@ -23,6 +23,12 @@ export async function GET() {
     (supabase as any)
       .from('integrations')
       .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id')
+      .eq('user_id', user.id)
+      .single(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('brand_profiles')
+      .select('niches,custom_categories')
       .eq('user_id', user.id)
       .single(),
   ])
@@ -41,5 +47,18 @@ export async function GET() {
     telegram: !!intg?.telegram_channel_id,
   }
 
-  return NextResponse.json({ campaigns: data ?? [], connected })
+  // Real category options for the manual picker: brand niches + the
+  // user's custom categories, deduped case-insensitively.
+  const seen = new Set<string>()
+  const categoryOptions = [
+    ...((brand?.niches as string[]) || []),
+    ...((brand?.custom_categories as string[]) || []),
+  ].filter(c => {
+    const k = (c || '').trim().toLowerCase()
+    if (!k || seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+
+  return NextResponse.json({ campaigns: data ?? [], connected, categoryOptions })
 }

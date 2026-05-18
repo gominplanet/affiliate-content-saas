@@ -16,6 +16,7 @@ interface Campaign {
   error_message: string | null
   wordpress_url: string | null
   blog_post_id: string | null
+  category: string | null
   created_at: string
 }
 
@@ -148,6 +149,8 @@ function CampaignsInner() {
   const [connected, setConnected] = useState<Record<SocialKey, boolean>>({
     facebook: false, threads: false, twitter: false, linkedin: false, bluesky: false, telegram: false,
   })
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([])
+  const [catBusy, setCatBusy] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -155,6 +158,7 @@ function CampaignsInner() {
       const data = await res.json().catch(() => ({}))
       setItems((data.campaigns ?? []) as Campaign[])
       if (data.connected) setConnected(data.connected)
+      if (Array.isArray(data.categoryOptions)) setCategoryOptions(data.categoryOptions)
     } catch { setItems([]) }
   }, [])
 
@@ -228,6 +232,26 @@ function CampaignsInner() {
     } finally {
       setGenRow(null)
       await load()
+    }
+  }
+
+  async function setCategory(c: Campaign, category: string) {
+    setCatBusy(c.id)
+    setItems(prev => (prev ?? []).map(x => x.id === c.id ? { ...x, category: category || null } : x))
+    try {
+      const res = await fetch('/api/campaigns/set-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: c.id, category }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not set category')
+      if (data.warning) alert(data.warning)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not set category')
+      await load()
+    } finally {
+      setCatBusy(null)
     }
   }
 
@@ -375,6 +399,30 @@ function CampaignsInner() {
                     )}
                   </div>
                   {c.error_message && <p className="text-[11px] text-[#ff3b30] mt-1.5 break-all">⚠ {c.error_message}</p>}
+                  {c.status === 'published' && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={`text-[11px] font-medium ${c.category ? 'text-[#86868b] dark:text-[#8e8e93]' : 'text-[#ff9500]'}`}>
+                        {c.category ? 'Category' : '⚠ Choose a category'}
+                      </span>
+                      <select
+                        value={c.category ?? ''}
+                        disabled={catBusy === c.id}
+                        onChange={e => setCategory(c, e.target.value)}
+                        className={`text-[11px] rounded-md border px-2 py-1 bg-white dark:bg-[#1c1c1e] disabled:opacity-50 ${
+                          c.category
+                            ? 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'
+                            : 'border-[#ff9500]/40 text-[#ff9500]'
+                        }`}
+                      >
+                        <option value="">— Select —</option>
+                        {c.category && !categoryOptions.some(o => o.toLowerCase() === c.category!.toLowerCase()) && (
+                          <option value={c.category}>{c.category}</option>
+                        )}
+                        {categoryOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                      {catBusy === c.id && <Loader2 size={11} className="animate-spin text-[#86868b]" />}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0 mt-0.5">
                   {(c.status === 'pending' || c.status === 'failed') && (

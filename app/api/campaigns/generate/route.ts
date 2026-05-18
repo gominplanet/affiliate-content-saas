@@ -181,13 +181,30 @@ export async function POST(request: Request) {
     let tagIds: number[] = []
     try { tagIds = await wpService.resolveTagIds((generated.tags || []).slice(0, 10)) } catch { /* non-fatal */ }
 
+    // Category: match the AI's pick against the user's REAL categories
+    // (brand niches + custom categories). Never fall back to niches[0]
+    // and never create "Blog"/"Uncategorized"/generic — if there's no
+    // confident match, leave it unresolved so the UI offers a manual
+    // dropdown (chosenCategory stays null).
     let categoryIds: number[] = []
+    let chosenCategory: string | null = null
     try {
-      const niches = (brand.niches as string[]) || []
+      const options = [
+        ...((brand.niches as string[]) || []),
+        ...((brand.custom_categories as string[]) || []),
+      ].filter(Boolean)
       const pick = (generated.category || '').trim()
-      const matched = niches.find(n => n.toLowerCase() === pick.toLowerCase()) || niches[0] || ''
-      if (matched) categoryIds = [await wpService.createCategory(matched)]
-    } catch { /* non-fatal */ }
+      const GENERIC = /^(blog|uncategorized|general|news|misc|other|posts?)$/i
+      const matched = options.find(o => o.toLowerCase() === pick.toLowerCase())
+      if (matched) {
+        chosenCategory = matched
+      } else if (pick && !GENERIC.test(pick)) {
+        // AI suggested something specific that isn't one of their saved
+        // labels — trust the specific suggestion over a wrong guess.
+        chosenCategory = pick
+      }
+      if (chosenCategory) categoryIds = [await wpService.createCategory(chosenCategory)]
+    } catch { /* non-fatal — post still publishes, user can set it later */ }
 
     let wpPost
     try {
@@ -249,6 +266,7 @@ export async function POST(request: Request) {
         status: 'published',
         blog_post_id: blogRow?.id ?? null,
         wordpress_url: wpPost.link,
+        category: chosenCategory,
         // Surface WHY fan-out is unavailable rather than silently null.
         error_message: blogLinked ? null : `Post published, but social fan-out is unavailable: blog_posts insert failed (${blogErr?.message ?? 'unknown'}). Run migration 024 then regenerate.`,
         updated_at: new Date().toISOString(),
