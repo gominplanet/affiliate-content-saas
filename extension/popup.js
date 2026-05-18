@@ -52,23 +52,53 @@ $('scan').addEventListener('click', async () => {
   }
 })
 
+function makePh() {
+  const d = document.createElement('div')
+  d.className = 'thumb ph'; d.textContent = 'IMG'
+  return d
+}
+
 function renderList() {
   const list = $('list')
   list.innerHTML = ''
   found.forEach((c, i) => {
     const div = document.createElement('div')
     div.className = 'item'
+
     const cb = document.createElement('input')
     cb.type = 'checkbox'; cb.checked = true; cb.dataset.i = String(i)
+
+    let thumb
+    if (c.image) {
+      thumb = document.createElement('img')
+      thumb.className = 'thumb'; thumb.src = c.image; thumb.referrerPolicy = 'no-referrer'
+      thumb.onerror = () => { thumb.replaceWith(makePh()) }
+    } else {
+      thumb = makePh()
+    }
+
     const body = document.createElement('div')
-    body.className = 'grow'
-    const title = document.createElement('div')
-    title.textContent = c.campaignName || c.asin
+    body.className = 'body'
+
+    const name = document.createElement('div')
+    name.className = 'name'
+    if (c.brand && c.campaignName && !c.campaignName.toLowerCase().startsWith(c.brand.toLowerCase())) {
+      const b = document.createElement('span'); b.className = 'brand'; b.textContent = c.brand + ' · '
+      name.appendChild(b)
+    }
+    name.appendChild(document.createTextNode(c.campaignName || '(name not detected)'))
+
     const meta = document.createElement('div')
     meta.className = 'meta'
-    meta.textContent = [c.asin, c.epc, c.endsAt].filter(Boolean).join('  ·  ')
-    body.appendChild(title); body.appendChild(meta)
-    div.appendChild(cb); div.appendChild(body)
+    const asin = document.createElement('span'); asin.className = 'asin'; asin.textContent = c.asin
+    meta.appendChild(asin)
+    if (c.epc) { meta.appendChild(document.createTextNode('  ·  ')); const e = document.createElement('span'); e.className = 'epc'; e.textContent = c.epc; meta.appendChild(e) }
+    meta.appendChild(document.createTextNode('  ·  '))
+    const end = document.createElement('span'); end.className = 'ends'; end.textContent = c.endsAt || 'no end date'
+    meta.appendChild(end)
+
+    body.appendChild(name); body.appendChild(meta)
+    div.appendChild(cb); div.appendChild(thumb); div.appendChild(body)
     list.appendChild(div)
   })
   $('pushRow').style.display = 'flex'

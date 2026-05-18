@@ -77,21 +77,45 @@ function extractCard(asin, el) {
     }
   }
 
-  // Campaign / product name — the longest leaf-text line in the card
-  // that isn't a badge, button, price, rating, or metadata label.
+  // Product name — prefer the text of the product link (the title is an
+  // <a href=".../dp/ASIN">), else the longest non-noise leaf line.
   let campaignName = null
-  let best = 0
-  for (const node of el.querySelectorAll('h1,h2,h3,h4,h5,p,span,div,a')) {
-    if (node.children.length) continue // leaf text only
-    const t = textOf(node)
-    if (!t || t.length < 6 || t.length > 160) continue
-    if (NOISE_RE.test(t) || PRICE_RE.test(t) || RATING_RE.test(t)) continue
-    if (ASIN_RE.test(t.toUpperCase())) continue
-    if (/^\(?\d[\d,]*\)?$/.test(t)) continue // review counts
-    if (t.length > best) { best = t.length; campaignName = t }
+  const link = el.querySelector(`a[href*="/dp/${asin}"], a[href*="/dp/"], a[href*="/product/"]`)
+  const linkTxt = textOf(link)
+  if (linkTxt && linkTxt.length >= 6 && !NOISE_RE.test(linkTxt) && !ASIN_RE.test(linkTxt.toUpperCase())) {
+    campaignName = linkTxt
+  }
+  if (!campaignName) {
+    let best = 0
+    for (const node of el.querySelectorAll('h1,h2,h3,h4,h5,p,span,div,a')) {
+      if (node.children.length) continue // leaf text only
+      const t = textOf(node)
+      if (!t || t.length < 6 || t.length > 200) continue
+      if (NOISE_RE.test(t) || PRICE_RE.test(t) || RATING_RE.test(t)) continue
+      if (ASIN_RE.test(t.toUpperCase())) continue
+      if (/^\(?\d[\d,]*\)?$/.test(t)) continue // review counts
+      if (t.length > best) { best = t.length; campaignName = t }
+    }
   }
 
-  return { asin, campaignName, epc, endsAt }
+  // Brand — short line near the top that isn't the title/price/badge.
+  let brand = null
+  for (const node of el.querySelectorAll('span,div,a,h3,h4')) {
+    if (node.children.length) continue
+    const t = textOf(node)
+    if (!t || t.length < 2 || t.length > 40) continue
+    if (t === campaignName || NOISE_RE.test(t) || PRICE_RE.test(t) || RATING_RE.test(t)) continue
+    if (ASIN_RE.test(t.toUpperCase()) || /^\(?\d/.test(t)) continue
+    brand = t
+    break
+  }
+
+  // Thumbnail (nice-to-have) — the product image in the card.
+  let image = null
+  const img = el.querySelector('img[src]')
+  if (img && /^https?:/.test(img.src) && !/sprite|icon|logo/i.test(img.src)) image = img.src
+
+  return { asin, campaignName, brand, epc, endsAt, image }
 }
 
 async function parseCampaigns() {
@@ -99,9 +123,15 @@ async function parseCampaigns() {
   if (!grid) return []
 
   const byAsin = new Map()
+  const isThin = (c) => !c || !c.campaignName || c.campaignName === c.asin
   const harvest = () => {
     for (const { asin, el } of cellsIn(grid)) {
-      if (!byAsin.has(asin)) byAsin.set(asin, extractCard(asin, el))
+      const fresh = extractCard(asin, el)
+      const prev = byAsin.get(asin)
+      // First sighting, or upgrade a name-less snapshot once the card
+      // has actually painted its title/image.
+      if (!prev || (isThin(prev) && !isThin(fresh))) byAsin.set(asin, fresh)
+      else if (prev && !prev.image && fresh.image) prev.image = fresh.image
     }
   }
 
@@ -129,6 +159,27 @@ async function parseCampaigns() {
     }
     if (top + grid.clientHeight >= grid.scrollHeight - 2) {
       await sleep(140); harvest(); break
+    }
+  }
+
+  // Enrichment pass: some cells were scrolled past before they painted
+  // their title/image. Re-walk top→bottom (slower) to fill the gaps.
+  const thin = () => [...byAsin.values()].filter(isThin).length
+  if (thin() > 0) {
+    pos = 0
+    grid.scrollTop = 0
+    await sleep(180)
+    harvest()
+    for (let i = 0; i < 400; i++) {
+      pos += step
+      grid.scrollTop = pos
+      await sleep(220)
+      harvest()
+      const top = grid.scrollTop
+      if (top + grid.clientHeight >= grid.scrollHeight - 2) { await sleep(220); harvest(); break }
+      if (top === lastTop) break
+      lastTop = top
+      if (thin() === 0) break
     }
   }
 
