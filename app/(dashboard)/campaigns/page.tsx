@@ -206,7 +206,7 @@ function CampaignsInner() {
   return (
     <>
       <Header
-        title="Campaigns"
+        title="CC Campaigns"
         subtitle="Turn an Amazon Creator Connections campaign into a researched, SEO-optimized blog post in your voice. Paste the product ASIN — we research the web, write it, and publish."
       />
 
