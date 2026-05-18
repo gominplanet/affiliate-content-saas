@@ -56,7 +56,9 @@ interface ProPublishSettings {
   playlistId: string | null
   madeForKids: boolean       // false by default
   notifySubscribers: boolean // false by default — never spam the subscriber bell
-  privacyStatus: 'public' | 'unlisted' | 'private'
+  // 'draft' = push metadata/thumbnail only, never touch the video's
+  // published state (it stays an unpublished YouTube draft).
+  privacyStatus: 'draft' | 'public' | 'unlisted' | 'private'
   scheduleMode: 'now' | 'in1h' | 'in6h' | 'in24h'
 }
 
@@ -64,7 +66,7 @@ const defaultProSettings: ProPublishSettings = {
   playlistId: null,
   madeForKids: false,
   notifySubscribers: false,
-  privacyStatus: 'public',
+  privacyStatus: 'draft',
   scheduleMode: 'now',
 }
 
@@ -190,7 +192,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
       // settings + metadata + thumbnail in a single orchestrated call.
       // Lower tiers fall through to the original metadata-only endpoint.
       if (isPro) {
-        const publishAt = computePublishAt(proSettings.scheduleMode)
+        // Draft mode: push metadata/thumbnail only — send NO status
+        // fields so the video stays an unpublished YouTube draft.
+        const isDraft = proSettings.privacyStatus === 'draft'
+        const publishAt = isDraft ? null : computePublishAt(proSettings.scheduleMode)
         const res = await fetch('/api/youtube/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -201,10 +206,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
             tags: generated.tags,
             thumbnailDataUri: thumbnailUrl ?? undefined,
             playlistId: proSettings.playlistId,
-            madeForKids: proSettings.madeForKids,
+            madeForKids: isDraft ? undefined : proSettings.madeForKids,
             notifySubscribers: proSettings.notifySubscribers,
             publishAt,
-            privacyStatus: publishAt ? undefined : proSettings.privacyStatus,
+            privacyStatus: isDraft || publishAt ? undefined : proSettings.privacyStatus,
           }),
         })
         const data = await safeJson(res)
@@ -244,8 +249,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
   /** Convert the schedule mode dropdown choice to an ISO 8601 publishAt or null. */
   function computePublishAt(mode: ProPublishSettings['scheduleMode']): string | null {
     if (mode === 'now') return null
-    const offsets: Record<typeof mode, number> = {
-      now: 0,
+    const offsets: Record<'in1h' | 'in6h' | 'in24h', number> = {
       in1h: 1 * 60 * 60 * 1000,
       in6h: 6 * 60 * 60 * 1000,
       in24h: 24 * 60 * 60 * 1000,
@@ -978,6 +982,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                         disabled={proSettings.scheduleMode !== 'now'}
                       >
+                        <option value="draft">Save as draft (don&apos;t publish)</option>
                         <option value="public">Public</option>
                         <option value="unlisted">Unlisted</option>
                         <option value="private">Private</option>
@@ -990,7 +995,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       <select
                         value={proSettings.scheduleMode}
                         onChange={e => setProSettings(s => ({ ...s, scheduleMode: e.target.value as ProPublishSettings['scheduleMode'] }))}
-                        className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                        className="px-2 py-1.5 rounded-lg border border-[#d2d2d7] dark:border-[#3a3a3c] bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] disabled:opacity-50"
+                        disabled={proSettings.privacyStatus === 'draft'}
                       >
                         <option value="now">Publish now</option>
                         <option value="in1h">In 1 hour</option>
@@ -1034,9 +1040,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60 transition-colors"
                     style={{ background: applied ? '#34c759' : '#ff0000' }}
                   >
-                    {applying ? <><Loader2 size={14} className="animate-spin" /> Applying…</>
-                      : applied ? <><CheckCircle size={14} /> Applied to YouTube</>
-                      : <><Youtube size={14} /> Apply to YouTube</>}
+                    {applying ? <><Loader2 size={14} className="animate-spin" /> {proSettings.privacyStatus === 'draft' ? 'Saving draft…' : 'Applying…'}</>
+                      : applied ? <><CheckCircle size={14} /> {proSettings.privacyStatus === 'draft' ? 'Saved to draft' : 'Applied to YouTube'}</>
+                      : <><Youtube size={14} /> {proSettings.privacyStatus === 'draft' ? 'Save draft to YouTube' : 'Apply to YouTube'}</>}
                   </button>
                   <button onClick={generate} disabled={generating}
                     className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
