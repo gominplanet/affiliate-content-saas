@@ -1325,10 +1325,13 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <span className="badge bg-[#ff9500]/10 text-[#ff9500]">Coming soon</span>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Pinterest API approval in progress — available shortly.</p>
-          </div>
+          <a
+            href="/api/auth/pinterest"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
+            style={{ backgroundColor: '#E60023' }}
+          >
+            <Pin size={14} /> Connect Pinterest
+          </a>
         )}
       </div>
 
