@@ -1,8 +1,8 @@
 /**
  * POST /api/blog/pinterest-preview
  * Generates pin assets (title, description, hashtags, image) for the
- * preview modal. Heavy lifting lives in lib/pin-assets (shared with
- * the one-click /api/blog/pinterest-auto path).
+ * editable preview modal (used by Library & Social Push AND the
+ * CC & EPC Campaign Pinterest pill). Heavy lifting: lib/pin-assets.
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'

@@ -1,10 +1,10 @@
 /**
- * Shared Pinterest pin generation — used by:
- *  - /api/blog/pinterest-preview  (modal preview, content page)
- *  - /api/blog/pinterest-auto     (one-click campaign-pill publish)
+ * Shared Pinterest pin generation — used by /api/blog/pinterest-preview
+ * (the editable preview modal, opened from both Library & Social Push
+ * and the CC & EPC Campaign pills).
  *
  * Single source of truth so the prompt, banned-word scrubbing, image
- * compositing and compliance text never drift between the two paths.
+ * compositing and compliance text stay consistent everywhere.
  */
 import { GoogleGenAI } from '@google/genai'
 import { createAnthropicClient } from '@/lib/anthropic'

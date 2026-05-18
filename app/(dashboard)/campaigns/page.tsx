@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Header from '@/components/layout/Header'
 import { Loader2, Sparkles, ExternalLink, AlertCircle, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle } from 'lucide-react'
+import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
 
 interface Campaign {
   id: string
@@ -29,7 +30,8 @@ const SOCIALS: { key: SocialKey; label: string; color: string; endpoint: string 
   { key: 'linkedin',  label: 'LinkedIn',  color: '#0a66c2', endpoint: '/api/blog/linkedin-post' },
   { key: 'bluesky',   label: 'Bluesky',   color: '#1185fe', endpoint: '/api/blog/bluesky-post' },
   { key: 'telegram',  label: 'Telegram',  color: '#229ED9', endpoint: '/api/blog/telegram-post' },
-  { key: 'pinterest', label: 'Pinterest', color: '#E60023', endpoint: '/api/blog/pinterest-auto' },
+  // Pinterest is special-cased to the editable preview modal (not postOne).
+  { key: 'pinterest', label: 'Pinterest', color: '#E60023', endpoint: '/api/blog/pinterest-post' },
 ]
 
 /** Compact one-click fan-out pills for a published campaign post. */
@@ -38,6 +40,7 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
   const [posted, setPosted] = useState<Set<SocialKey>>(new Set())
   const [err, setErr] = useState<string | null>(null)
   const [publishingAll, setPublishingAll] = useState(false)
+  const [pinData, setPinData] = useState<PinPreviewData | null>(null)
 
   const available = SOCIALS.filter(s => connected[s.key])
   if (available.length === 0) {
@@ -78,6 +81,8 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
     setErr(null)
     for (const s of available) {
       if (posted.has(s.key)) continue
+      // Pinterest always goes through the editable preview, never bulk.
+      if (s.key === 'pinterest') continue
       setPosting(s.key)
       await postOne(s)
     }
@@ -85,7 +90,51 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
     setPublishingAll(false)
   }
 
+  // Pinterest: open the same editable preview modal as Library & Social Push.
+  async function openPinterest() {
+    setPosting('pinterest')
+    setErr(null)
+    try {
+      const res = await fetch('/api/blog/pinterest-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Could not build pin preview')
+      setPinData({ ...data, postId })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Pinterest preview failed')
+    } finally {
+      setPosting(null)
+    }
+  }
+
+  async function publishPinned(description: string, title: string): Promise<{ ok: boolean; error?: string }> {
+    if (!pinData) return { ok: false, error: 'No pin data' }
+    try {
+      const res = await fetch('/api/blog/pinterest-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postId, title, description,
+          imageBase64: pinData.imageBase64,
+          mediaType: pinData.mediaType,
+          fallbackImageUrl: pinData.fallbackImageUrl,
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) return { ok: false, error: d.error || `Pinterest failed (${res.status})` }
+      setPosted(p => new Set(p).add('pinterest'))
+      setPinData(null)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Pinterest publish failed' }
+    }
+  }
+
   return (
+    <>
     <div className="flex items-center gap-1.5 flex-wrap mt-2.5 pt-2.5 border-t border-gray-100 dark:border-white/5">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1">Publish to</span>
       {available.length > 1 && (
@@ -104,7 +153,7 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
         return (
           <button
             key={s.key}
-            onClick={() => !isPosted && push(s)}
+            onClick={() => !isPosted && (s.key === 'pinterest' ? openPinterest() : push(s))}
             disabled={isPosting || isPosted}
             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
               isPosted
@@ -120,6 +169,14 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
       })}
       {err && <span className="text-[10px] text-[#ff3b30] ml-1">{err}</span>}
     </div>
+    {pinData && (
+      <PinterestPreviewModal
+        data={pinData}
+        onPublish={publishPinned}
+        onClose={() => setPinData(null)}
+      />
+    )}
+    </>
   )
 }
 
