@@ -20,15 +20,16 @@ interface Campaign {
   created_at: string
 }
 
-type SocialKey = 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
+type SocialKey = 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | 'pinterest'
 
 const SOCIALS: { key: SocialKey; label: string; color: string; endpoint: string }[] = [
-  { key: 'facebook', label: 'Facebook', color: '#1877f2', endpoint: '/api/blog/facebook-post' },
-  { key: 'threads',  label: 'Threads',  color: '#000000', endpoint: '/api/blog/threads-post' },
-  { key: 'twitter',  label: 'X',        color: '#000000', endpoint: '/api/blog/twitter-post' },
-  { key: 'linkedin', label: 'LinkedIn', color: '#0a66c2', endpoint: '/api/blog/linkedin-post' },
-  { key: 'bluesky',  label: 'Bluesky',  color: '#1185fe', endpoint: '/api/blog/bluesky-post' },
-  { key: 'telegram', label: 'Telegram', color: '#229ED9', endpoint: '/api/blog/telegram-post' },
+  { key: 'facebook',  label: 'Facebook',  color: '#1877f2', endpoint: '/api/blog/facebook-post' },
+  { key: 'threads',   label: 'Threads',   color: '#000000', endpoint: '/api/blog/threads-post' },
+  { key: 'twitter',   label: 'X',         color: '#000000', endpoint: '/api/blog/twitter-post' },
+  { key: 'linkedin',  label: 'LinkedIn',  color: '#0a66c2', endpoint: '/api/blog/linkedin-post' },
+  { key: 'bluesky',   label: 'Bluesky',   color: '#1185fe', endpoint: '/api/blog/bluesky-post' },
+  { key: 'telegram',  label: 'Telegram',  color: '#229ED9', endpoint: '/api/blog/telegram-post' },
+  { key: 'pinterest', label: 'Pinterest', color: '#E60023', endpoint: '/api/blog/pinterest-auto' },
 ]
 
 /** Compact one-click fan-out pills for a published campaign post. */
@@ -42,7 +43,7 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
   if (available.length === 0) {
     return (
       <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2.5 pt-2.5 border-t border-gray-100 dark:border-white/5">
-        Connect a social (Facebook · Threads · X · LinkedIn · Bluesky · Telegram) in{' '}
+        Connect a social (Facebook · Threads · X · LinkedIn · Bluesky · Telegram · Pinterest) in{' '}
         <a href="/setup?tab=integrations" className="text-[#0071e3] hover:underline">Setup</a> to fan this post out.
       </p>
     )
@@ -147,7 +148,7 @@ function CampaignsInner() {
   const [tokenBusy, setTokenBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [connected, setConnected] = useState<Record<SocialKey, boolean>>({
-    facebook: false, threads: false, twitter: false, linkedin: false, bluesky: false, telegram: false,
+    facebook: false, threads: false, twitter: false, linkedin: false, bluesky: false, telegram: false, pinterest: false,
   })
   const [categoryOptions, setCategoryOptions] = useState<string[]>([])
   const [catBusy, setCatBusy] = useState<string | null>(null)

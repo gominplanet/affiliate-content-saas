@@ -22,7 +22,7 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('integrations')
-      .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id')
+      .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,pinterest_access_token,pinterest_board_id')
       .eq('user_id', user.id)
       .single(),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,16 +35,17 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Which text socials the user has connected — campaign rows show pills
-  // for these once published. (Instagram/Pinterest need their own image
-  // flow; not in this v1.)
+  // Which socials the user has connected — campaign rows show pills for
+  // these once published. Pinterest uses the one-click auto endpoint
+  // (generates the pin image/desc server-side) and needs a board picked.
   const connected = {
-    facebook: !!intg?.facebook_page_id,
-    threads:  !!intg?.threads_access_token,
-    twitter:  !!intg?.twitter_access_token,
-    linkedin: !!intg?.linkedin_access_token,
-    bluesky:  !!intg?.bluesky_handle,
-    telegram: !!intg?.telegram_channel_id,
+    facebook:  !!intg?.facebook_page_id,
+    threads:   !!intg?.threads_access_token,
+    twitter:   !!intg?.twitter_access_token,
+    linkedin:  !!intg?.linkedin_access_token,
+    bluesky:   !!intg?.bluesky_handle,
+    telegram:  !!intg?.telegram_channel_id,
+    pinterest: !!intg?.pinterest_access_token && !!intg?.pinterest_board_id,
   }
 
   // Real category options for the manual picker: brand niches + the

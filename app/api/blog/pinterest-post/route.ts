@@ -1,9 +1,12 @@
+/**
+ * POST /api/blog/pinterest-post
+ * Publishes a pin from assets the user reviewed in the preview modal.
+ * Publish logic is shared via lib/pin-publish.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { PinterestService } from '@/services/pinterest'
-import { createWordPressService } from '@/services/wordpress'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { scrubBanned } from '@/lib/scrub'
+import { publishPinForPost, PinPublishError } from '@/lib/pin-publish'
 
 export const maxDuration = 60
 
@@ -12,13 +15,9 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Pinterest auto-publish is Growth+ (Growth, Pro, Admin).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: tierRow } = await (supabase as any)
-    .from('integrations')
-    .select('tier')
-    .eq('user_id', user.id)
-    .single()
+    .from('integrations').select('tier').eq('user_id', user.id).single()
   const tier = (tierRow?.tier as Tier) ?? 'free'
   if (!tierAllowsSocial(tier, 'pinterest')) {
     return NextResponse.json(
@@ -31,84 +30,22 @@ export async function POST(request: NextRequest) {
   if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
   if (!description) return NextResponse.json({ error: 'description required' }, { status: 400 })
 
-  // Final server-side guard — banned words never leave the building,
-  // even if a stale client posted unscrubbed text.
-  const safeDescription = scrubBanned(description) || description
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
     (supabase as any).from('blog_posts').select('id,title,wordpress_url,wordpress_post_id').eq('id', postId).single(),
     (supabase as any).from('integrations').select('pinterest_access_token,pinterest_board_id,wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token').eq('user_id', user.id).single(),
   ])
+  if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
-  const p = post as any
-  const ig = integration as any
-
-  if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
-  if (!ig?.pinterest_access_token) return NextResponse.json({ error: 'Pinterest not connected' }, { status: 400 })
-  if (!ig?.pinterest_board_id) return NextResponse.json({ error: 'No Pinterest board selected' }, { status: 400 })
-
-  // The pin must link DIRECTLY to the blog post it refers to — never an
-  // Amazon/affiliate/redirect URL (Amazon Associates + Pinterest ToS).
-  const blogLink = (p.wordpress_url as string | null) || ''
-  if (!/^https?:\/\//i.test(blogLink)) {
-    return NextResponse.json({ error: 'This post has no blog URL to link the pin to.' }, { status: 400 })
-  }
-
-  const pinterest = new PinterestService(ig.pinterest_access_token)
-  // Prefer the (curiosity-driven, possibly edited) title from the modal;
-  // scrub + cap to Pinterest's 100-char limit. Fall back to post title.
-  const safeTitle = (scrubBanned(title) || scrubBanned(p.title) || p.title).slice(0, 100)
-
-  // Route the pin to a board matching the post's category (one board
-  // per niche) — auto-create it if missing. Fall back to the selected
-  // Active board when the category is generic/unknown.
-  const GENERIC = /^(blog|uncategorized|general|news|misc|other|posts?)$/i
-  let targetBoardId: string = ig.pinterest_board_id
   try {
-    if (p.wordpress_post_id && ig.wordpress_url) {
-      const wpSvc = createWordPressService(
-        ig.wordpress_url, ig.wordpress_username, ig.wordpress_app_password, ig.wordpress_api_token || undefined,
-      )
-      const cats = await wpSvc.getPostCategoryNames(p.wordpress_post_id)
-      const cat = cats.map(c => (c || '').trim()).find(c => c && !GENERIC.test(c))
-      if (cat) {
-        const board = await pinterest.findOrCreateBoard(cat)
-        targetBoardId = board.id
-      }
-    }
-  } catch { /* keep the selected Active board as fallback */ }
-
-  let pin: { id: string }
-  try {
-    if (imageBase64 && mediaType) {
-      pin = await pinterest.createPinWithBase64({
-        boardId: targetBoardId,
-        title: safeTitle,
-        description: safeDescription,
-        imageBase64,
-        mediaType,
-        link: blogLink,
-      })
-    } else if (fallbackImageUrl) {
-      pin = await pinterest.createPin({
-        boardId: targetBoardId,
-        title: safeTitle,
-        description: safeDescription,
-        imageUrl: fallbackImageUrl,
-        link: blogLink,
-      })
-    } else {
-      return NextResponse.json({ error: 'No image available for pin' }, { status: 400 })
-    }
+    const { pinId } = await publishPinForPost({
+      p: post, ig: integration, title, description, imageBase64, mediaType, fallbackImageUrl,
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)
+    return NextResponse.json({ ok: true, pinId })
   } catch (e) {
-    const aborted = e instanceof DOMException && e.name === 'TimeoutError'
-    const msg = aborted ? 'Pinterest took too long to accept the pin. Please try again.' : (e instanceof Error ? e.message : 'Pinterest pin failed')
-    return NextResponse.json({ error: msg }, { status: 502 })
+    if (e instanceof PinPublishError) return NextResponse.json({ error: e.message }, { status: e.status })
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Pinterest pin failed' }, { status: 500 })
   }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('blog_posts').update({ pinterest_pin_id: pin.id }).eq('id', postId)
-
-  return NextResponse.json({ ok: true, pinId: pin.id })
 }
