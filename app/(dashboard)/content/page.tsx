@@ -73,6 +73,8 @@ interface PinPreviewData {
   description: string
   hashtags: string[]
   disclaimer: string
+  complianceTags: string
+  link: string
   imageBase64: string | null
   mediaType: string | null
   fallbackImageUrl: string | null
@@ -103,7 +105,7 @@ function PinterestPreviewModal({
     setPublishing(true)
     setPubError(null)
     // Compliance tags always last, at the very end of the description.
-    const composed = [description, tagLine, data.disclaimer, '#ad #affiliate'].filter(Boolean).join('\n\n')
+    const composed = [description, tagLine, data.disclaimer, data.complianceTags].filter(Boolean).join('\n\n')
     const result = await onPublish(composed, title.trim() || data.title)
     // On success the parent unmounts this modal; on failure recover so
     // the button isn't stuck on "Publishing…" forever.
@@ -192,10 +194,21 @@ function PinterestPreviewModal({
               </div>
             )}
 
-            {/* Disclaimer */}
+            {/* Disclaimer + compliance tags */}
             <div className="rounded-lg p-3" style={{ background: '#fff8f0', border: '1px solid #ffe4cc' }}>
-              <p className="text-[10px] font-semibold text-[#ff9500] uppercase tracking-wide mb-0.5">Affiliate disclaimer — auto-appended</p>
+              <p className="text-[10px] font-semibold text-[#ff9500] uppercase tracking-wide mb-0.5">Affiliate disclaimer + tags — auto-appended</p>
               <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">{data.disclaimer}</p>
+              <p className="text-[11px] font-semibold text-[#c0001a] mt-1.5">{data.complianceTags}</p>
+            </div>
+
+            {/* Pin destination — always the blog post itself */}
+            <div>
+              <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1">Links to (blog post)</p>
+              {data.link ? (
+                <a href={data.link} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#0071e3] hover:underline break-all">{data.link}</a>
+              ) : (
+                <p className="text-[11px] text-[#ff3b30]">No blog URL — this post can&apos;t be pinned.</p>
+              )}
             </div>
 
             {/* Actions */}

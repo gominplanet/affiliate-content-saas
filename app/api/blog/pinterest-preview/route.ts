@@ -135,6 +135,8 @@ Return ONLY valid JSON with these exact keys:
     description: capSocialText(pinDescription, SOCIAL_LIMITS.pinterest),
     hashtags,
     disclaimer: AFFILIATE_DISCLAIMER,
+    complianceTags: '#ad #affiliate',
+    link: (p.wordpress_url as string | null) || '',
     imageBase64: imageResult?.data ?? null,
     mediaType: imageResult?.mediaType ?? null,
     fallbackImageUrl,
