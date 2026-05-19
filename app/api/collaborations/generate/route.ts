@@ -27,6 +27,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Collaborations is a Pro plan feature.' }, { status: 403 })
     }
 
+    // Monthly cap — collab generation is the most expensive per-action
+    // feature (Sonnet + web search). Generous enough that real outreach
+    // never hits it; stops runaway/abuse. Admins are unlimited.
+    const COLLAB_MONTHLY_CAP = 100
+    if (tier !== 'admin') {
+      const now = new Date()
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { count } = await (supabase as any)
+        .from('collaborations')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('created_at', monthStart)
+      if ((count ?? 0) >= COLLAB_MONTHLY_CAP) {
+        const resets = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+          .toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+        return NextResponse.json({
+          error: `You've reached your ${COLLAB_MONTHLY_CAP} collaboration emails this month on the Pro plan. Resets ${resets}.`,
+        }, { status: 429 })
+      }
+    }
+
     const body = await request.json().catch(() => ({})) as Partial<CollabInput>
     const brandName = (body.brandName ?? '').trim()
     if (!brandName) return NextResponse.json({ error: 'Brand name is required' }, { status: 400 })
