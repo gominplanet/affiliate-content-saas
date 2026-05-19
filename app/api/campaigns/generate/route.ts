@@ -26,6 +26,7 @@ import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { researchProduct } from '@/services/research'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
+import { buildCampaignHero } from '@/lib/hero-image'
 
 export const maxDuration = 300
 
@@ -242,16 +243,20 @@ export async function POST(request: Request) {
       return fail(`WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}`)
     }
 
-    // Featured image — the Amazon product photo. (AI thumbnail is a fast follow.)
-    if (product.imageUrl) {
-      try {
-        const media = await wpService.uploadImageFromUrl(product.imageUrl, `${asin}.jpg`)
-        await wpService.updatePost(wpPost.id, {
-          title: generated.title, slug, content: generated.content,
-          excerpt: generated.excerpt, status: 'publish', tags: tagIds, featured_media: media.id,
-        })
-      } catch { /* non-fatal — post is live without a featured image */ }
-    }
+    // Featured image — a 16:9 hero (AI from the hero prompt, else the
+    // product photo letterboxed to 16:9). PATCH only featured_media so
+    // we don't disturb the already-published title/content/categories.
+    try {
+      const hero = await buildCampaignHero({
+        heroPrompt: generated.imagePrompts?.hero,
+        productImageUrl: product.imageUrl,
+        ctx: { userId: user.id, tier },
+      })
+      if (hero) {
+        const media = await wpService.uploadImageFromBase64(hero.b64, `${asin}-hero.jpg`, hero.mime)
+        await wpService.updatePost(wpPost.id, { featured_media: media.id })
+      }
+    } catch { /* non-fatal — post is live without a featured image */ }
 
     // ── 6. Persist blog_posts + finalize campaign ───────────────────────────
     // The post is already LIVE on WordPress at this point. The blog_posts

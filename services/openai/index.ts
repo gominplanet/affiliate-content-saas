@@ -22,9 +22,15 @@ export class OpenAIService {
       quality: 'standard',
       response_format: 'b64_json',
     })
-    const b64 = response.data[0]?.b64_json
+    const b64 = response.data?.[0]?.b64_json
     if (!b64) throw new Error('DALL-E returned no image data')
     return b64
+  }
+
+  /** Single 16:9 hero image (1792x1024 b64 PNG) — for campaign post
+   *  featured images. Caller normalizes to exact 1280x720. */
+  async generateHeroImage(prompt: string): Promise<string> {
+    return this.generateOne(prompt, '1792x1024')
   }
 
   async generateImageSet(prompts: {
