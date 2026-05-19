@@ -31,6 +31,7 @@ import {
   Megaphone,
   DollarSign,
   Handshake,
+  GraduationCap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -43,6 +44,7 @@ const nav = [
   { href: '/setup', label: 'Blog Set Up', icon: Wrench, matchKind: 'setup-wp' as const },
   { href: '/setup?tab=integrations', label: 'Integrations', icon: Plug, matchKind: 'setup-int' as const },
   { href: '/brand', label: 'Brand Profile', icon: Palette, matchKind: 'prefix' as const },
+  { href: '/learn', label: 'LEARN', icon: GraduationCap, matchKind: 'prefix' as const },
   { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' as const },
   { href: '/studio', label: 'YouTube Studio', icon: Clapperboard, matchKind: 'prefix' as const },
   { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' as const },

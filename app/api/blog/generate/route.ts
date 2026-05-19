@@ -123,6 +123,7 @@ async function handleGenerate(request: Request) {
         author_bio: (brand as Record<string, unknown>).author_bio as string | null,
         target_audience: (brand as Record<string, unknown>).target_audience as string | null,
         words_to_avoid: (brand as Record<string, unknown>).words_to_avoid as string | null,
+        learn_profile: (brand as Record<string, unknown>).learn_profile,
       },
       {
         videoId: v.youtube_video_id as string,

@@ -2,6 +2,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { jsonrepair } from 'jsonrepair'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
+import { learnProfileToPrompt } from '@/lib/learn'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
 export interface UsageCtx { userId?: string | null; tier?: string | null }
@@ -20,6 +21,8 @@ export interface BrandProfile {
   author_bio: string | null
   target_audience: string | null
   words_to_avoid: string | null
+  /** Structured LEARN voice profile (jsonb). Shape validated in lib/learn. */
+  learn_profile?: unknown
 }
 
 export interface VideoInput {
@@ -92,6 +95,10 @@ function buildSystemPrompt(brand: BrandProfile, voiceProfile?: string): string {
   const disclaimer = brand.affiliate_disclaimer
     || 'This post contains affiliate links. As an Amazon Associate, we earn from qualifying purchases at no extra cost to you.'
 
+  // The LEARN voice profile — the writer's own taste/style training.
+  // High priority: it encodes what THIS user finds fake vs trustworthy.
+  const learnSection = learnProfileToPrompt(brand.learn_profile)
+
   const voiceSection = voiceProfile ? `
 ═══════════════════════════════════════
 REVIEWER VOICE — USE THEIR EXACT WORDS
@@ -113,6 +120,7 @@ Brand voice: ${tones}
 Target post length: ${targetLength}
 ${writingGuidance}
 ${avoidLine}
+${learnSection}
 ${voiceSection}
 ═══════════════════════════════════════
 CRITICAL RULES — FOLLOW STRICTLY

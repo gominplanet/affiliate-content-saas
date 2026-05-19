@@ -86,25 +86,6 @@ function ColorPicker({
   )
 }
 
-function WordCount({ text, max }: { text: string; max: number }) {
-  const words = text.trim() === '' ? 0 : text.trim().split(/\s+/).length
-  const pct = Math.min((words / max) * 100, 100)
-  const over = words > max
-  return (
-    <div className="flex items-center gap-2 mt-1.5">
-      <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${over ? 'bg-[#ff3b30]' : pct > 80 ? 'bg-[#ff9500]' : 'bg-[#0071e3]'}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className={`text-xs tabular-nums ${over ? 'text-[#ff3b30]' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>
-        {words} / {max} words
-      </span>
-    </div>
-  )
-}
-
 interface BrandData {
   name: string
   tagline: string
@@ -117,10 +98,8 @@ interface BrandData {
   affiliate_disclaimer: string
   primary_color: string
   secondary_color: string
-  writing_sample: string
-  author_bio: string
-  target_audience: string
-  words_to_avoid: string
+  // Writing Style / About You / Target Reader / Words to Avoid now
+  // live on the LEARN page (single editing surface for voice).
   gear_sections: GearSection[]
   logo_url: string
   font_theme: string
@@ -191,10 +170,6 @@ const DEFAULT: BrandData = {
   affiliate_disclaimer: 'This post contains affiliate links. I may earn a commission at no extra cost to you.',
   primary_color: '#0071e3',
   secondary_color: '#34c759',
-  writing_sample: '',
-  author_bio: '',
-  target_audience: '',
-  words_to_avoid: '',
   gear_sections: [],
   logo_url: '',
   font_theme: 'editorial',
@@ -264,10 +239,6 @@ export default function BrandPage() {
         affiliate_disclaimer: row.affiliate_disclaimer ?? DEFAULT.affiliate_disclaimer,
         primary_color: row.primary_color ?? '#0071e3',
         secondary_color: row.secondary_color ?? '#34c759',
-        writing_sample: row.writing_sample ?? '',
-        author_bio: row.author_bio ?? '',
-        target_audience: row.target_audience ?? '',
-        words_to_avoid: row.words_to_avoid ?? '',
         gear_sections: row.gear_sections ?? [],
         logo_url: row.logo_url ?? '',
         font_theme: row.font_theme ?? 'editorial',
@@ -342,7 +313,6 @@ export default function BrandPage() {
           authorName:     normalized.author_name,
           brandName:      normalized.name,
           tagline:        normalized.tagline,
-          authorBio:      normalized.author_bio,
           primaryColor:   normalized.primary_color,
           secondaryColor: normalized.secondary_color,
           fontTheme:      normalized.font_theme,
@@ -557,44 +527,8 @@ export default function BrandPage() {
             </div>
           </div>
 
-          {/* Writing sample */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your Writing Style</h2>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Paste 300–1,000 words of writing you&apos;re proud of — a blog post, newsletter,
-              long caption. The Voice Matcher agent reads this before every draft and mimics
-              your rhythm, sentence length, slang, and idioms. The more authentic the sample,
-              the less it sounds like generic AI.
-            </p>
-            <textarea
-              rows={10}
-              maxLength={6000}
-              value={data.writing_sample}
-              onChange={(e) => set('writing_sample', e.target.value)}
-              placeholder="Paste up to 1,000 words of your own writing here…"
-              className="input-field resize-none leading-relaxed"
-            />
-            <WordCount text={data.writing_sample} max={1000} />
-          </div>
-
-          {/* About you */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">About You</h2>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Two sentences max. Who you are, what you test, why you bother. Reviews drop this in as
-              first-person context — the difference between &quot;experts recommend&quot; and &quot;I&apos;ve put 30 of
-              these in my own kitchen.&quot; Trust signal at zero effort.
-            </p>
-            <textarea
-              rows={5}
-              maxLength={1000}
-              value={data.author_bio}
-              onChange={(e) => set('author_bio', e.target.value)}
-              placeholder="e.g. I'm a dad of 2 obsessed with finding products that actually work. My partner and I started this blog after getting burned by too many overhyped gadgets. We buy and test everything ourselves before recommending it."
-              className="input-field resize-none leading-relaxed"
-            />
-            <WordCount text={data.author_bio} max={150} />
-          </div>
+          {/* Writing Style, About You, Target Reader and Words to Avoid
+              moved to the LEARN page (single editing surface for voice). */}
 
           {/* Social links */}
           <div className="card p-6">
@@ -670,43 +604,6 @@ export default function BrandPage() {
                 />
               </div>
             </div>
-          </div>
-
-          {/* Target audience */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your Target Reader</h2>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Describe who&apos;s on the other side of the screen — what they want, what they&apos;re sick of,
-              what makes them click &quot;buy.&quot; Every review writes to *them* instead of a blank page,
-              which is the single biggest reason AI content reads flat.
-            </p>
-            <textarea
-              rows={4}
-              maxLength={600}
-              value={data.target_audience}
-              onChange={(e) => set('target_audience', e.target.value)}
-              placeholder="e.g. Everyday shoppers who want real, no-nonsense product opinions before spending money. They're busy, skeptical of influencer hype, and just want to know if something is actually worth it."
-              className="input-field resize-none leading-relaxed"
-            />
-            <WordCount text={data.target_audience} max={100} />
-          </div>
-
-          {/* Words to avoid */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Words &amp; Phrases to Avoid</h2>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              The fastest way to stop sounding like AI. One word or phrase per line — clichés,
-              corporate-speak, anything that makes you cringe. Every agent in the pipeline gets
-              this list and refuses to write them.
-            </p>
-            <textarea
-              rows={5}
-              maxLength={600}
-              value={data.words_to_avoid}
-              onChange={(e) => set('words_to_avoid', e.target.value)}
-              placeholder={"e.g.\nhonest\ngame-changer\nleverage\nseamlessly\nit's worth noting"}
-              className="input-field resize-none leading-relaxed font-mono text-xs"
-            />
           </div>
 
           {/* YouTube gear sections */}
