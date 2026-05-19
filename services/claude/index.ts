@@ -404,14 +404,83 @@ QUALITY CHECK:
 ✅ "honest" / "honestly" appears NOWHERE in the post`
 }
 
-function extractAffiliateUrl(description: string): string {
-  const geniusMatch = description.match(/https?:\/\/geni\.us\/[^\s)"'\]]+/)
-  if (geniusMatch) return geniusMatch[0]
-  const amazonMatch = description.match(/https?:\/\/(www\.)?amazon\.[a-z.]+\/[^\s)"'\]]+/)
-  if (amazonMatch) return amazonMatch[0]
-  const urlMatch = description.match(/https?:\/\/[^\s)"'\]]+/)
-  if (urlMatch) return urlMatch[0]
-  return ''
+/** Pull a 10-char Amazon ASIN out of an Amazon product URL path. */
+function asinFromAmazonUrl(url: string): string | null {
+  const m = url.match(/\/(?:dp|gp\/product|gp\/aw\/d|product)\/([A-Z0-9]{10})(?:[/?]|$)/i)
+  return m ? m[1].toUpperCase() : null
+}
+
+const SHORTENERS = /^https?:\/\/(geni\.us|amzn\.to|amzn\.eu|a\.co)\//i
+
+/**
+ * Resolve the affiliate link + ASIN for a YouTube review.
+ *
+ * Cascade (per the user's content conventions): the 10-char ASIN may be
+ * in the title; if not, the reviewed product's link is in the first
+ * sentences of the description (Amazon link, Geniuslink, or short link).
+ *
+ *  1. A description Amazon link whose /dp/ASIN == the title's ASIN — best.
+ *  2. A Geniuslink (commission/CC boost rides it), then short links
+ *     (resolved once to recover the ASIN), then any Amazon link, then
+ *     the first product URL — earlier-in-description wins ties.
+ *  3. Title ASIN with no usable link → construct a clean /dp/ASIN URL.
+ *
+ * Returns the link to put in the post (Geniuslink/affiliate tags
+ * preserved verbatim) and the best-known ASIN.
+ */
+async function resolveAffiliateUrl(
+  description: string,
+  title: string,
+): Promise<{ url: string; asin: string | null }> {
+  const titleAsin = (title.match(/\b([A-Z0-9]{10})\b/) || [])[1]?.toUpperCase() || null
+
+  const urls = (description.match(/https?:\/\/[^\s)"'\]]+/g) || [])
+    .map(u => u.replace(/[.,)]+$/, ''))
+  // De-dupe, keep order (earlier = closer to the top of the description).
+  const seen = new Set<string>()
+  const ordered = urls.filter(u => (seen.has(u) ? false : (seen.add(u), true)))
+
+  type Cand = { url: string; pos: number; score: number; asin: string | null }
+  const cands: Cand[] = ordered.map((url, pos) => {
+    const isAmazon = /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(url)
+    const isGenius = /^https?:\/\/geni\.us\//i.test(url)
+    const isShort = SHORTENERS.test(url)
+    const dpAsin = isAmazon ? asinFromAmazonUrl(url) : null
+    let score = 10
+    if (dpAsin && titleAsin && dpAsin === titleAsin) score = 100
+    else if (isGenius) score = 80
+    else if (isShort) score = 70
+    else if (dpAsin) score = 60
+    else if (isAmazon) score = 50
+    return { url, pos, score, asin: dpAsin }
+  })
+
+  cands.sort((a, b) => (b.score - a.score) || (a.pos - b.pos))
+  const top = cands[0]
+
+  if (!top) {
+    // No links at all — fall back to the title ASIN if present.
+    return titleAsin
+      ? { url: `https://www.amazon.com/dp/${titleAsin}`, asin: titleAsin }
+      : { url: '', asin: null }
+  }
+
+  let asin = top.asin || titleAsin
+  // If we still don't have an ASIN and the winner is a short/Geniuslink,
+  // resolve it once to recover the real product ASIN.
+  if (!asin && (SHORTENERS.test(top.url))) {
+    try {
+      const res = await fetch(top.url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(6000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MVPAffiliate/1.0)' },
+      })
+      asin = asinFromAmazonUrl(res.url) || null
+    } catch { /* keep the short link as-is; ASIN unknown */ }
+  }
+
+  return { url: top.url, asin: asin || null }
 }
 
 export class ClaudeService {
@@ -457,7 +526,7 @@ Output only valid JSON. No explanation, no markdown.`,
   }
 
   async generateBlogPost(brand: BrandProfile, video: VideoInput, ctx?: UsageCtx): Promise<BlogGenerationOutput> {
-    const affiliateUrl = extractAffiliateUrl(video.description)
+    const { url: affiliateUrl } = await resolveAffiliateUrl(video.description, video.title)
 
     // Pass 1 — extract voice profile from transcript (fast, cheap)
     let voiceProfile = ''
