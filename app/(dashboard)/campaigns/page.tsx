@@ -192,6 +192,8 @@ const STATUS: Record<Campaign['status'], { label: string; bg: string; fg: string
 function CampaignsInner() {
   const [items, setItems] = useState<Campaign[] | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const [genRow, setGenRow] = useState<string | null>(null)
   const [extToken, setExtToken] = useState<string | null>(null)
   const [tokenBusy, setTokenBusy] = useState(false)
@@ -481,6 +483,46 @@ function CampaignsInner() {
     }
   }
 
+  function toggleSel(id: string) {
+    setSelected(prev => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id); else n.add(id)
+      return n
+    })
+  }
+
+  const allSelected = !!items && items.length > 0 && selected.size === items.length
+
+  function toggleSelectAll() {
+    setSelected(allSelected ? new Set() : new Set((items ?? []).map(c => c.id)))
+  }
+
+  async function deleteSelected() {
+    if (selected.size === 0 || !items) return
+    const ids = [...selected]
+    if (!confirm(`Delete ${ids.length} campaign post${ids.length === 1 ? '' : 's'}?\n\nThis also removes their WordPress posts and cannot be undone.`)) return
+    setBulkDeleting(true)
+    const failed: string[] = []
+    // Sequential — each delete also hits the WordPress API; keep it gentle
+    // and tolerant so one failure doesn't abort the rest.
+    for (const id of ids) {
+      try {
+        const res = await fetch('/api/campaigns/delete', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaignId: id }),
+        })
+        if (!res.ok) { failed.push(id); continue }
+        setItems(prev => (prev ?? []).filter(x => x.id !== id))
+      } catch {
+        failed.push(id)
+      }
+    }
+    setSelected(new Set(failed))
+    setBulkDeleting(false)
+    if (failed.length) alert(`${failed.length} of ${ids.length} could not be deleted — left selected so you can retry.`)
+  }
+
   return (
     <>
       <Header
@@ -647,6 +689,32 @@ function CampaignsInner() {
         </div>
       )}
 
+      {/* Select-all + bulk delete */}
+      {items && items.length > 0 && (
+        <div className="flex items-center gap-4 mb-2 max-w-3xl">
+          <label className="inline-flex items-center gap-2 text-xs font-medium text-[#86868b] dark:text-[#8e8e93] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="accent-[#0071e3]"
+            />
+            {allSelected ? 'Clear selection' : `Select all (${items.length})`}
+          </label>
+          {selected.size > 0 && (
+            <button
+              onClick={deleteSelected}
+              disabled={bulkDeleting}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#ff3b30] hover:underline disabled:opacity-50"
+            >
+              {bulkDeleting
+                ? <><Loader2 size={12} className="animate-spin" /> Deleting…</>
+                : <><Trash2 size={12} /> Delete {selected.size} selected</>}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Campaign list */}
       {items === null ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] py-8 justify-center">
@@ -663,8 +731,15 @@ function CampaignsInner() {
             const pill = STATUS[c.status]
             const expired = c.ends_at && new Date(c.ends_at) < new Date()
             return (
-              <div key={c.id} className="card p-4">
+              <div key={c.id} className={`card p-4 ${selected.has(c.id) ? 'ring-1 ring-[#0071e3]' : ''}`}>
                <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={selected.has(c.id)}
+                  onChange={() => toggleSel(c.id)}
+                  className="mt-1 shrink-0 accent-[#0071e3]"
+                  aria-label="Select campaign"
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">
