@@ -18,10 +18,14 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
+  // Track which step failed so the surfaced error is actionable
+  // (token exchange vs. boards fetch behave very differently in sandbox).
+  let step = 'token_exchange'
   try {
     const redirectUri = `${appUrl}/api/auth/pinterest/callback`
     const tokens = await exchangeCodeForToken(code, redirectUri)
 
+    step = 'get_boards'
     const pinterest = new PinterestService(tokens.access_token)
     const boards = await pinterest.getBoards()
     const defaultBoard = boards[0] ?? null
@@ -41,6 +45,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.redirect(`${appUrl}/setup?pinterest_connected=1`)
   } catch (err) {
-    return NextResponse.redirect(`${appUrl}/setup?pinterest_error=callback_failed`)
+    const msg = err instanceof Error ? err.message : String(err)
+    // eslint-disable-next-line no-console
+    console.error(`[pinterest callback] ${step} failed:`, msg)
+    const detail = encodeURIComponent(`${step}: ${msg}`.slice(0, 300))
+    return NextResponse.redirect(`${appUrl}/setup?pinterest_error=${detail}`)
   }
 }

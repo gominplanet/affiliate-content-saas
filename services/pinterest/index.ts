@@ -125,8 +125,14 @@ export async function exchangeCodeForToken(code: string, redirectUri: string) {
     }),
   })
   if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.message || 'Token exchange failed')
+    // Surface the real reason — body may be JSON or text (sandbox can
+    // return non-JSON). Include status + host so a sandbox/prod mismatch
+    // is obvious instead of a generic "callback_failed".
+    const raw = await res.text().catch(() => '')
+    let detail = raw
+    try { const j = JSON.parse(raw); detail = j.message || j.error_description || j.error || raw } catch { /* keep raw */ }
+    const host = BASE.replace(/^https?:\/\//, '').split('/')[0]
+    throw new Error(`Token exchange ${res.status} @ ${host}: ${String(detail).slice(0, 200)}`)
   }
   return res.json() as Promise<{ access_token: string; refresh_token: string; expires_in: number }>
 }
