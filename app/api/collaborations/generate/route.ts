@@ -43,6 +43,8 @@ export async function POST(request: Request) {
       productionFee: !!body.productionFee,
       productionFeeAmount: body.productionFeeAmount?.toString().trim() || '',
       shareAddress: !!body.shareAddress,
+      livestreams: !!body.livestreams,
+      livestreamLink: body.livestreamLink?.toString().trim() || '',
       productOrAsin: body.productOrAsin?.toString().trim() || '',
       portfolioUrl: body.portfolioUrl?.toString().trim() || '',
       collabsDone: body.collabsDone?.toString().trim() || '',

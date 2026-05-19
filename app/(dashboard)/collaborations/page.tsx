@@ -48,6 +48,8 @@ export default function CollaborationsPage() {
   const [freeSample, setFreeSample] = useState(true)
   const [productionFee, setProductionFee] = useState(false)
   const [productionFeeAmount, setProductionFeeAmount] = useState('')
+  const [livestreams, setLivestreams] = useState(false)
+  const [livestreamLink, setLivestreamLink] = useState('')
   const [shareAddress, setShareAddress] = useState(false)
   const [collabsDone, setCollabsDone] = useState('')
   const [exampleLinks, setExampleLinks] = useState<string[]>(['', '', ''])
@@ -159,6 +161,7 @@ export default function CollaborationsPage() {
           brandName, productOrAsin, amazonStorefront, websiteUrl, youtubeUrl, portfolioUrl,
           platforms: [...platforms],
           bannerAds, bannerAdsAmount, freeSample, productionFee, productionFeeAmount, shareAddress,
+          livestreams, livestreamLink,
           collabsDone, exampleLinks: exampleLinks.map(s => s.trim()).filter(Boolean), extraNotes,
         }),
       })
@@ -270,6 +273,16 @@ export default function CollaborationsPage() {
             <div>
               <label className={lbl}>How much are you charging?</label>
               <input value={productionFeeAmount} onChange={e => setProductionFeeAmount(e.target.value)} placeholder="e.g. $350 per video" className="input-field text-sm w-full sm:w-64" />
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">Open to live streams on your channels?</span>
+            <YesNo value={livestreams} onChange={setLivestreams} />
+          </div>
+          {livestreams && (
+            <div>
+              <label className={lbl}>Your best livestream link <span className="text-[#86868b]">(optional — shown as proof in the pitch)</span></label>
+              <input value={livestreamLink} onChange={e => setLivestreamLink(e.target.value)} placeholder="e.g. youtube.com/live/… or twitch.tv/…" className="input-field text-sm w-full" />
             </div>
           )}
           <div className="flex items-center justify-between gap-3">

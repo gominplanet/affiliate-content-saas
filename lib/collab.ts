@@ -19,6 +19,8 @@ export interface CollabInput {
   freeSample: boolean
   productionFee: boolean
   productionFeeAmount?: string
+  livestreams?: boolean
+  livestreamLink?: string
   shareAddress: boolean
   productOrAsin?: string
   portfolioUrl?: string
@@ -96,6 +98,9 @@ Return a tight markdown brief under 250 words. No fluff.`,
     input.productOrAsin ? `Product / ASIN they want to collaborate on: ${input.productOrAsin}` : '',
     input.collabsDone ? `Track record / accolades & wins (use these confidently in the opening): ${input.collabsDone}` : '',
     exampleLinks.length ? `Example past work to offer (links — NOT stats):\n${exampleLinks.map(l => `- ${l}`).join('\n')}` : '',
+    input.livestreams
+      ? `Open to LIVE STREAMS on their channels${input.livestreamLink ? ` — best livestream to show as proof: ${input.livestreamLink}` : ''}`
+      : '',
   ].filter(Boolean).join('\n')
 
   const shipBlock = input.shareAddress
@@ -113,11 +118,11 @@ SUBJECT LINE:
 
 OPENING (lead with credibility, fast):
 - Greet the brand by name, then immediately establish who the creator is and their accolades/wins — badges, "Amazon Platinum/A-Lister since <year>", number of video reviews, number of brand collaborations, top conversion. Pull these from the creator profile / accolades context. DO be confident; don't be shy about wins.
-- Mention they also post on their blog + YouTube and push to several social platforms. Include the portfolio/link-hub URL and the Amazon storefront if provided ("You can see our work here: <portfolio>", "storefront: <amazon>").
+- Mention the channels they ACTUALLY have, using ONLY the platforms in "Promotion platforms offered" plus their blog/YouTube if present. NEVER name or imply a platform that is not in that list (no "and more", no "across all our socials" — be specific to what they offer). If a Linktree / link-hub URL is provided, include it ("You can see all our channels here: <portfolio>"); if an Amazon storefront is provided, include it ("Amazon storefront: <storefront>"). Omit either line if its URL is absent.
 
 THE PITCH:
 - If a specific product/ASIN is given, name it and say you can help boost its sales.
-- Over-offer: state you produce ONE high-quality review video that gets repurposed into a blog post AND a variety of social posts across all channels. List the channels in order (YouTube, Pinterest, Instagram, blog, etc. — whatever they offer).
+- Over-offer: state you produce ONE high-quality review video that gets repurposed into a blog post AND social posts — but ONLY across the platforms in "Promotion platforms offered". List exactly those platforms, in a sensible order. Do NOT pad the list with platforms they did not offer.
 - Say you're open to MANY products across categories (Home & Kitchen, Tech, Outdoors, Sports, Beauty, Health & Household, Tools, Pet, Office, Musical Instruments, and more) and invite them to send other products too.
 - If the creator offers live streams, mention you're also open to live streams on your channels.
 
@@ -158,10 +163,10 @@ Produce the blocks in THIS order (skip a block only if its data is absent):
 1. Greeting — "Hi <Brand> Team,"
 2. Who we are + "Here is why we are worth your time:"
 3. LIST: credibility/accolades bullets
-4. "You can see our work here: <portfolio>" and "Amazon storefront: <storefront>" (each on its own line, this one block)
+4. Links block — include ONLY the lines whose URL was provided, each on its own line: "You can see all our channels here: <Linktree/portfolio>" and/or "Amazon storefront: <storefront>". Skip this entire block if neither URL exists.
 5. The pitch: collaborate on the product/ASIN + "Here is exactly what we produce from one review:"
-6. LIST: a YouTube video review / a blog post on <blog> / social posts across <the platforms>
-7. Live streams (if offered) + open to more products/categories paragraph
+6. LIST: one bullet per deliverable — a YouTube video review, a blog post on <blog>, then ONE bullet per platform from "Promotion platforms offered" (only those — never list a platform that was not offered)
+7. Live streams: include this block ONLY if the creator is open to live streams. Say they're also open to live streams on their channels, and if a best-livestream link was provided, include it as proof ("Here's one of our live streams: <link>"). Then the open-to-more-products/categories paragraph.
 8. "Here are a few examples of our recent work:"
 9. LIST: the example links (bare URLs, one per line)
 10. "What we ask for:"
