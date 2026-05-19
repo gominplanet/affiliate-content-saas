@@ -1,4 +1,13 @@
-const BASE = 'https://api.pinterest.com/v5'
+// Pinterest API host. Trial-access apps may NOT create pins against
+// production (api.pinterest.com) — Pinterest requires the Sandbox host
+// for that until Standard access is granted. Flip this via env to
+// record the approval demo against sandbox, then remove it (back to
+// production) once Standard access is approved. Both the API calls and
+// the OAuth token exchange below use BASE, so one switch moves the
+// whole flow consistently.
+//   Production (default): https://api.pinterest.com/v5
+//   Sandbox (for demo):   set PINTEREST_API_BASE=https://api-sandbox.pinterest.com/v5
+const BASE = (process.env.PINTEREST_API_BASE || 'https://api.pinterest.com/v5').replace(/\/+$/, '')
 
 export class PinterestService {
   constructor(private accessToken: string) {}
