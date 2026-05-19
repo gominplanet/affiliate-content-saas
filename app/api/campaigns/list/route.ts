@@ -45,7 +45,7 @@ export async function GET() {
     linkedin:  !!intg?.linkedin_access_token,
     bluesky:   !!intg?.bluesky_handle,
     telegram:  !!intg?.telegram_channel_id,
-    pinterest: !!intg?.pinterest_access_token && !!intg?.pinterest_board_id,
+    pinterest: !!intg?.pinterest_access_token,
   }
 
   // Real category options for the manual picker: brand niches + the

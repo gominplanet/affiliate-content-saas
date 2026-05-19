@@ -858,7 +858,11 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       const pages = JSON.parse(row.facebook_pages_json || '[]')
       setFacebook({ connected: !!row.facebook_page_id, pageName: row.facebook_page_name ?? '', pageId: row.facebook_page_id ?? '', pages })
       const boards = JSON.parse(row.pinterest_boards_json || '[]')
-      setPinterest({ connected: !!row.pinterest_access_token && !!row.pinterest_board_id, boardId: row.pinterest_board_id ?? '', boardName: row.pinterest_board_name ?? '', boards })
+      // Connected = we hold a token. A board is NOT required: fresh
+      // accounts (and the API sandbox) have zero boards, and we
+      // auto-create a per-category board on publish. Gating on board_id
+      // made a valid connection show as disconnected.
+      setPinterest({ connected: !!row.pinterest_access_token, boardId: row.pinterest_board_id ?? '', boardName: row.pinterest_board_name ?? '', boards })
       setThreads({ connected: !!row.threads_access_token, userId: row.threads_user_id ?? '', username: row.threads_username ?? '' })
       setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
       setTwitter({ connected: !!row.twitter_access_token, handle: row.twitter_handle ?? '' })

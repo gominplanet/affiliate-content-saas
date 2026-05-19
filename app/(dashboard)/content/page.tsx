@@ -1600,7 +1600,7 @@ export default function ContentPage() {
     })
     setWpSiteUrl((i?.wordpress_url as string) || '')
     setFbConnected(!!(i as Record<string, unknown>)?.facebook_page_id)
-    setPinterestConnected(!!(i as Record<string, unknown>)?.pinterest_access_token && !!(i as Record<string, unknown>)?.pinterest_board_id)
+    setPinterestConnected(!!(i as Record<string, unknown>)?.pinterest_access_token)
     setThreadsConnected(!!(i as Record<string, unknown>)?.threads_access_token)
     setLinkedInConnected(!!(i as Record<string, unknown>)?.linkedin_access_token && !!(i as Record<string, unknown>)?.linkedin_person_id)
     setTwitterConnected(!!(i as Record<string, unknown>)?.twitter_access_token)

@@ -30,8 +30,9 @@ export async function GET(request: NextRequest) {
     const boards = await pinterest.getBoards()
     const defaultBoard = boards[0] ?? null
 
+    step = 'save_token'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    const { error: saveErr } = await (supabase as any).from('integrations').upsert(
       {
         user_id: user.id,
         pinterest_access_token: tokens.access_token,
@@ -42,6 +43,9 @@ export async function GET(request: NextRequest) {
       },
       { onConflict: 'user_id' },
     )
+    // Don't report a false success — if the token didn't persist, the
+    // pill would stay red with no explanation (exactly this bug class).
+    if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
     return NextResponse.redirect(`${appUrl}/setup?pinterest_connected=1`)
   } catch (err) {
