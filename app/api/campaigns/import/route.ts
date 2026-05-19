@@ -17,6 +17,7 @@ const MAX = 1000 // hard server cap regardless of client
 
 interface Incoming {
   asin?: string
+  campaignId?: string
   campaignName?: string
   epc?: string
   endsAt?: string
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
     const clean = incoming
       .map(c => ({
         asin: String(c.asin ?? '').toUpperCase().trim(),
+        cc_campaign_id: c.campaignId?.toString().trim() || null,
         campaign_name: c.campaignName?.toString().trim() || null,
         epc: c.epc?.toString().trim() || null,
         ends_at: c.endsAt?.toString().trim() || null,

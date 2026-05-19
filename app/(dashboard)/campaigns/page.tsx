@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react'
 import Header from '@/components/layout/Header'
 import { Loader2, Sparkles, ExternalLink, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle, AlertCircle } from 'lucide-react'
 import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
@@ -8,6 +8,7 @@ import { PinterestPreviewModal, type PinPreviewData } from '@/components/Pintere
 interface Campaign {
   id: string
   asin: string
+  cc_campaign_id: string | null
   product_title: string | null
   campaign_name: string | null
   epc: string | null
@@ -194,6 +195,7 @@ function CampaignsInner() {
   const [extToken, setExtToken] = useState<string | null>(null)
   const [tokenBusy, setTokenBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copiedIds, setCopiedIds] = useState(false)
   const [connected, setConnected] = useState<Record<SocialKey, boolean>>({
     facebook: false, threads: false, twitter: false, linkedin: false, bluesky: false, telegram: false, pinterest: false,
   })
@@ -208,7 +210,7 @@ function CampaignsInner() {
   const [impCap, setImpCap] = useState(500)
   const [impPhase, setImpPhase] = useState<'idle' | 'parsing' | 'ready' | 'pushing'>('idle')
   const [impScanned, setImpScanned] = useState(0)
-  const [impMatches, setImpMatches] = useState<{ asin: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }[]>([])
+  const [impMatches, setImpMatches] = useState<{ asin: string; campaignId: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }[]>([])
   const [impMsg, setImpMsg] = useState<string | null>(null)
   const [impErr, setImpErr] = useState<string | null>(null)
 
@@ -244,6 +246,24 @@ function CampaignsInner() {
     }).catch(() => {})
   }
 
+  // Distinct Campaign Ids across the queue, for pasting into Amazon's
+  // "Submit accepted campaigns" bulk-accept box (comma/space/newline OK).
+  const ccIds = useMemo(() => {
+    const seen = new Set<string>()
+    for (const c of items ?? []) {
+      const id = (c.cc_campaign_id || '').trim()
+      if (id) seen.add(id)
+    }
+    return [...seen]
+  }, [items])
+
+  function copyCampaignIds() {
+    if (ccIds.length === 0) return
+    navigator.clipboard.writeText(ccIds.join('\n')).then(() => {
+      setCopiedIds(true); setTimeout(() => setCopiedIds(false), 1800)
+    }).catch(() => {})
+  }
+
   async function runImport(file: File) {
     setImpErr(null); setImpMsg(null); setImpMatches([]); setImpScanned(0)
     setImpPhase('parsing')
@@ -260,7 +280,7 @@ function CampaignsInner() {
       const minComm = isNaN(impMinComm) ? 0 : impMinComm
       const minDays = isNaN(impMinDays) ? 0 : impMinDays
       const COLLECT_MAX = Math.max(impCap, 3000) // bound memory; sort+trim after
-      type M = { asin: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }
+      type M = { asin: string; campaignId: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }
       const out: M[] = []
       const now = Date.now()
       let total = 0
@@ -282,6 +302,7 @@ function CampaignsInner() {
               // failed the days gate → 0 matches.
               if (x.includes('asin')) idx!.asin = k
               else if (x.includes('campaign name')) idx!.name = k
+              else if (x.includes('campaign id')) idx!.cid = k
               else if (x.includes('brand')) idx!.brand = k
               else if (x.includes('campaign end') || x.includes('end date')) idx!.end = k
               else if (x.includes('commission')) idx!.comm = k
@@ -325,7 +346,8 @@ function CampaignsInner() {
           if (daysLeft !== null && daysLeft < minDays) { cutDays++; return out.length < COLLECT_MAX }
           if (impNeedBudget && (budgetRemain <= 0 || slots <= 0)) { cutBudget++; return out.length < COLLECT_MAX }
 
-          out.push({ asin, campaignName: name || brand || asin, brand, epc: `${comm}%`, endsAt: dm ? `${dm[1]}-${dm[2]}-${dm[3]}` : '', commission: comm })
+          const campaignId = idx.cid != null ? (cols[idx.cid] ?? '').trim() : ''
+          out.push({ asin, campaignId, campaignName: name || brand || asin, brand, epc: `${comm}%`, endsAt: dm ? `${dm[1]}-${dm[2]}-${dm[3]}` : '', commission: comm })
           setImpScanned(total)
           return out.length < COLLECT_MAX
         }, (seen) => setImpScanned(seen))
@@ -373,7 +395,7 @@ function CampaignsInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           campaigns: impMatches.map(m => ({
-            asin: m.asin, campaignName: m.campaignName, epc: m.epc, endsAt: m.endsAt,
+            asin: m.asin, campaignId: m.campaignId, campaignName: m.campaignName, epc: m.epc, endsAt: m.endsAt,
           })),
         }),
       })
@@ -571,6 +593,25 @@ function CampaignsInner() {
           {impErr && <span className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {impErr}</span>}
         </div>
       </div>
+
+      {/* Bulk-accept helper: copy every Campaign Id for Amazon's
+          "Submit accepted campaigns" box. */}
+      {ccIds.length > 0 && (
+        <div className="flex items-center justify-between gap-3 mb-3 max-w-3xl">
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+            Paste these into Amazon Creator Connections → <strong>Submit accepted campaigns</strong> to
+            accept them all at once.
+          </p>
+          <button
+            onClick={copyCampaignIds}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 transition-colors"
+          >
+            {copiedIds
+              ? <><CheckCircle size={12} className="text-[#34c759]" /> Copied {ccIds.length}</>
+              : <><Copy size={12} /> Copy {ccIds.length} campaign ID{ccIds.length === 1 ? '' : 's'}</>}
+          </button>
+        </div>
+      )}
 
       {/* Campaign list */}
       {items === null ? (
