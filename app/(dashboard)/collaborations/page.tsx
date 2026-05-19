@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
-import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle } from 'lucide-react'
+import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle, Trash2 } from 'lucide-react'
 
 interface CollabRow {
   id: string
@@ -59,6 +59,8 @@ export default function CollaborationsPage() {
   const [emailBody, setEmailBody] = useState('')
   const [copied, setCopied] = useState<'subject' | 'body' | null>(null)
   const [history, setHistory] = useState<CollabRow[]>([])
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -74,6 +76,42 @@ export default function CollaborationsPage() {
     } catch { /* ignore */ }
   }, [])
   useEffect(() => { load() }, [load])
+
+  function toggleSel(id: string) {
+    setSelected(prev => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id); else n.add(id)
+      return n
+    })
+  }
+
+  const allSelected = history.length > 0 && selected.size === history.length
+
+  function toggleSelectAll() {
+    setSelected(allSelected ? new Set() : new Set(history.map(h => h.id)))
+  }
+
+  async function deleteSelected() {
+    if (selected.size === 0) return
+    const ids = [...selected]
+    if (!window.confirm(`Delete ${ids.length} pitch${ids.length === 1 ? '' : 'es'}? This can't be undone.`)) return
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/collaborations/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Delete failed')
+      setHistory(prev => prev.filter(h => !selected.has(h.id)))
+      setSelected(new Set())
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   function togglePlatform(p: string) {
     setPlatforms(prev => {
@@ -297,20 +335,52 @@ export default function CollaborationsPage() {
 
       {history.length > 0 && (
         <div className="max-w-3xl">
-          <p className="text-xs font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-2">Past pitches</p>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <p className="text-xs font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Past pitches</p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={toggleSelectAll}
+                className="text-xs font-medium text-[#0071e3] hover:underline"
+              >
+                {allSelected ? 'Clear selection' : `Select all (${history.length})`}
+              </button>
+              {selected.size > 0 && (
+                <button
+                  onClick={deleteSelected}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#ff3b30] hover:underline disabled:opacity-50"
+                >
+                  {deleting
+                    ? <><Loader2 size={12} className="animate-spin" /> Deleting…</>
+                    : <><Trash2 size={12} /> Delete {selected.size} selected</>}
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex flex-col gap-2">
             {history.map(h => (
-              <div key={h.id} className="card p-4">
+              <div
+                key={h.id}
+                className={`card p-4 ${selected.has(h.id) ? 'ring-1 ring-[#0071e3]' : ''}`}
+              >
                 <div className="flex items-center justify-between gap-3 mb-1">
-                  <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{h.brand_name}</span>
+                  <label className="flex items-center gap-2 min-w-0 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(h.id)}
+                      onChange={() => toggleSel(h.id)}
+                      className="shrink-0 accent-[#0071e3]"
+                    />
+                    <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{h.brand_name}</span>
+                  </label>
                   <button
                     onClick={() => copyText(h.generated_email, 'body')}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:underline"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:underline shrink-0"
                   >
                     <Copy size={11} /> Copy
                   </button>
                 </div>
-                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] pl-6">
                   {h.platforms?.length ? h.platforms.join(' · ') + '  ·  ' : ''}
                   {new Date(h.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </p>
