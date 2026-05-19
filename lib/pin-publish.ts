@@ -49,10 +49,13 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
 
   const pinterest = new PinterestService(ig.pinterest_access_token)
 
-  // Board resolution, in order: the post's category board (auto-created)
-  // → the user's previously-selected board → a default board we create.
-  // Never hard-fail: sandbox/new accounts start with zero boards.
-  let targetBoardId: string = ig.pinterest_board_id || ''
+  // Board resolution, in priority order: the post's category board
+  // (auto-created) → the user's named fallback board → the
+  // previously-selected board → "Reviews". Don't pre-seed from the
+  // saved board id, or it would shadow the user's explicit fallback
+  // name for uncategorized posts. Never hard-fail: sandbox/new
+  // accounts start with zero boards.
+  let targetBoardId = ''
   try {
     if (p.wordpress_post_id && ig.wordpress_url) {
       const wpSvc = createWordPressService(
@@ -68,10 +71,18 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
   } catch { /* keep selected board as fallback */ }
 
   if (!targetBoardId) {
-    // No category board and nothing saved — create/reuse a default so
-    // the pin can still publish instead of throwing "no board selected".
-    const fallback = await pinterest.findOrCreateBoard('Reviews')
-    targetBoardId = fallback.id
+    // No category board. Order: the user's named fallback board → the
+    // previously-selected board id → "Reviews". The typed name wins
+    // over the saved id so an explicit choice is honored, and it
+    // works on accounts with zero boards (created on demand).
+    const fbName = (ig.pinterest_fallback_board || '').trim()
+    if (fbName) {
+      targetBoardId = (await pinterest.findOrCreateBoard(fbName)).id
+    } else if (ig.pinterest_board_id) {
+      targetBoardId = ig.pinterest_board_id
+    } else {
+      targetBoardId = (await pinterest.findOrCreateBoard('Reviews')).id
+    }
   }
 
   try {

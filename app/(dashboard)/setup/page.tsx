@@ -793,7 +793,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [facebook, setFacebook] = useState({ connected: false, pageName: '', pageId: '', pages: [] as { id: string; name: string }[] })
   const [fbDisconnecting, setFbDisconnecting] = useState(false)
   const [fbNotice, setFbNotice] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [pinterest, setPinterest] = useState({ connected: false, boardId: '', boardName: '', boards: [] as { id: string; name: string }[] })
+  const [pinterest, setPinterest] = useState({ connected: false, boardId: '', boardName: '', boards: [] as { id: string; name: string }[], fallbackBoard: '' })
   const [ptDisconnecting, setPtDisconnecting] = useState(false)
   const [ptNotice, setPtNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [threads, setThreads] = useState({ connected: false, userId: '', username: '' })
@@ -862,7 +862,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       // accounts (and the API sandbox) have zero boards, and we
       // auto-create a per-category board on publish. Gating on board_id
       // made a valid connection show as disconnected.
-      setPinterest({ connected: !!row.pinterest_access_token, boardId: row.pinterest_board_id ?? '', boardName: row.pinterest_board_name ?? '', boards })
+      setPinterest({ connected: !!row.pinterest_access_token, boardId: row.pinterest_board_id ?? '', boardName: row.pinterest_board_name ?? '', boards, fallbackBoard: row.pinterest_fallback_board ?? '' })
       setThreads({ connected: !!row.threads_access_token, userId: row.threads_user_id ?? '', username: row.threads_username ?? '' })
       setLinkedin({ connected: !!row.linkedin_access_token, personName: row.linkedin_person_name ?? '' })
       setTwitter({ connected: !!row.twitter_access_token, handle: row.twitter_handle ?? '' })
@@ -1009,18 +1009,15 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     setPtDisconnecting(true)
     try {
       const res = await fetch('/api/auth/pinterest/disconnect', { method: 'POST' })
-      if (res.ok) setPinterest({ connected: false, boardId: '', boardName: '', boards: [] })
+      if (res.ok) setPinterest({ connected: false, boardId: '', boardName: '', boards: [], fallbackBoard: '' })
     } finally { setPtDisconnecting(false) }
   }
 
-  async function selectPinterestBoard(boardId: string) {
-    const board = pinterest.boards.find(b => b.id === boardId)
-    if (!board) return
+  async function savePinterestFallback(name: string) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').update({ pinterest_board_id: board.id, pinterest_board_name: board.name }).eq('user_id', user.id)
-    setPinterest(prev => ({ ...prev, boardId: board.id, boardName: board.name }))
+    await (supabase as any).from('integrations').update({ pinterest_fallback_board: name.trim() || null }).eq('user_id', user.id)
   }
 
   async function disconnectYoutube() {
@@ -1319,23 +1316,25 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           {pinterest.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Connect via OAuth and each pin is automatically saved to a board that matches the blog post&apos;s category — we create the board for you if it doesn&apos;t exist yet (e.g. an Automotive post → your &ldquo;Automotive&rdquo; board). The board below is the fallback used only when a post has no specific category.
+          Connect via OAuth and each pin is automatically saved to a board that matches the blog post&apos;s category — we create the board for you if it doesn&apos;t exist yet (e.g. an Automotive post → your &ldquo;Automotive&rdquo; board). For posts with no specific category, pins go to the board you name below (created automatically if it doesn&apos;t exist).
         </p>
         {ptNotice && <p className={`text-xs mb-3 ${ptNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ptNotice.msg}</p>}
         {pinterest.connected ? (
           <div className="flex flex-col gap-3">
-            {pinterest.boards.length > 1 ? (
-              <div>
-                <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Fallback board (uncategorized posts)</label>
-                <select value={pinterest.boardId} onChange={e => selectPinterestBoard(e.target.value)} className="input-field text-sm">
-                  {pinterest.boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-              </div>
-            ) : (
-              <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
-                <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" /> {pinterest.boardName || pinterest.boardId}
+            <div>
+              <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Board for posts with no category</label>
+              <input
+                type="text"
+                value={pinterest.fallbackBoard}
+                onChange={e => setPinterest(prev => ({ ...prev, fallbackBoard: e.target.value }))}
+                onBlur={e => savePinterestFallback(e.target.value)}
+                placeholder="Reviews"
+                className="input-field text-sm"
+              />
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                Defaults to &ldquo;Reviews&rdquo; if left blank. Categorized posts still get their own per-category board.
               </p>
-            )}
+            </div>
             <button onClick={disconnectPinterest} disabled={ptDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {ptDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
             </button>
