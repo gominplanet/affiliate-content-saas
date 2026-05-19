@@ -48,7 +48,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (event.type === 'customer.subscription.updated') {
+  // Handle .created the same as .updated so a fresh Pro signup gets
+  // subscription_period_start/end populated immediately (not on the
+  // next Stripe event). Without this the dashboard falls back to
+  // calendar-month wording until the next renewal/portal action.
+  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
     const sub = event.data.object as {
       id: string
       customer: string

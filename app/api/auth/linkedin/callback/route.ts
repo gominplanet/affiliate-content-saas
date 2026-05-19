@@ -30,14 +30,18 @@ export async function GET(request: NextRequest) {
 
   if (!userId) return NextResponse.redirect(`${appUrl}/login`)
 
+  let step = 'token_exchange'
   try {
     const redirectUri = `${appUrl}/api/auth/linkedin/callback`
     const accessToken = await exchangeCodeForToken(code, redirectUri)
+
+    step = 'get_profile'
     const profile = await getProfile(accessToken)
 
+    step = 'save_token'
     const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    const { error: saveErr } = await (supabase as any).from('integrations').upsert(
       {
         user_id: userId,
         linkedin_access_token: accessToken,
@@ -46,9 +50,14 @@ export async function GET(request: NextRequest) {
       },
       { onConflict: 'user_id' },
     )
+    if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
     return NextResponse.redirect(`${appUrl}/setup?tab=integrations&linkedin_connected=1`)
-  } catch {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&linkedin_error=callback_failed`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // eslint-disable-next-line no-console
+    console.error(`[linkedin callback] ${step} failed:`, msg)
+    const detail = encodeURIComponent(`${step}: ${msg}`.slice(0, 300))
+    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&linkedin_error=${detail}`)
   }
 }

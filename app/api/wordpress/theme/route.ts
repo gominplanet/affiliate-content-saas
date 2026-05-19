@@ -7,9 +7,13 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  return NextResponse.redirect(
-    new URL('/downloads/kadence-affiliate-child.zip', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
-  )
+  // No localhost fallback — if NEXT_PUBLIC_APP_URL is unset in prod we
+  // surface that clearly rather than silently redirect users to localhost.
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) {
+    return NextResponse.json({ error: 'NEXT_PUBLIC_APP_URL is not configured' }, { status: 500 })
+  }
+  return NextResponse.redirect(new URL('/downloads/kadence-affiliate-child.zip', appUrl))
 }
 
 // Sets WordPress reading settings (non-critical, used optionally)

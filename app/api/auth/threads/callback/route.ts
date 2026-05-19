@@ -16,18 +16,25 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
+  let step = 'token_exchange'
   try {
     const redirectUri = `${appUrl}/api/auth/threads/callback`
     const { access_token, user_id } = await exchangeCodeForToken(code, redirectUri)
 
+    step = 'save_token'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    const { error: saveErr } = await (supabase as any).from('integrations').upsert(
       { user_id: user.id, threads_access_token: access_token, threads_user_id: user_id },
       { onConflict: 'user_id' },
     )
+    if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
     return NextResponse.redirect(`${appUrl}/setup?threads_connected=1`)
   } catch (err) {
-    return NextResponse.redirect(`${appUrl}/setup?threads_error=callback_failed`)
+    const msg = err instanceof Error ? err.message : String(err)
+    // eslint-disable-next-line no-console
+    console.error(`[threads callback] ${step} failed:`, msg)
+    const detail = encodeURIComponent(`${step}: ${msg}`.slice(0, 300))
+    return NextResponse.redirect(`${appUrl}/setup?threads_error=${detail}`)
   }
 }
