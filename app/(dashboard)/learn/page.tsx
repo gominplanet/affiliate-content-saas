@@ -54,7 +54,7 @@ export default function LearnPage() {
         learn_profile: { ...emptyLearnProfile(), ...d.learn_profile },
       })
     } catch {
-      setError('Could not load your LEARN profile.')
+      setError('Could not load your Learning profile.')
     } finally {
       setLoading(false)
     }
@@ -102,7 +102,7 @@ export default function LearnPage() {
   if (loading) {
     return (
       <>
-        <Header title="LEARN" subtitle="Train the blog writer in your voice. Everything here is read on every generation." />
+        <Header title="Learning" subtitle="Train the blog writer in your voice. Everything here is read on every generation." />
         <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
@@ -115,7 +115,7 @@ export default function LearnPage() {
   return (
     <>
       <Header
-        title="LEARN"
+        title="Learning"
         subtitle="Train the blog writer in your voice. Every field here is read by the AI on every post — be specific."
       />
 
