@@ -9,6 +9,9 @@ export const TIERS = {
     regularPrice: 0,
     postsPerMonth: null as number | null,
     lifetimeMax: 15 as number | null,
+    /** Collaboration pitch emails / month. 0 = not on this plan (Pro+
+     *  only), null = unlimited. Single source of truth for the cap. */
+    collabsPerMonth: 0 as number | null,
     /** Base posts the tier markets (used for the "60 + 20 bonus" framing). */
     basePosts: 15,
     bonusPosts: 0,
@@ -24,6 +27,7 @@ export const TIERS = {
     regularPrice: 99,
     postsPerMonth: 30,
     lifetimeMax: null as number | null,
+    collabsPerMonth: 0 as number | null,
     basePosts: 30,
     bonusPosts: 0,
     sites: 1,
@@ -38,6 +42,7 @@ export const TIERS = {
     regularPrice: 199,
     postsPerMonth: 80,
     lifetimeMax: null as number | null,
+    collabsPerMonth: 0 as number | null,
     basePosts: 60,
     bonusPosts: 20,
     sites: 1,
@@ -52,6 +57,7 @@ export const TIERS = {
     regularPrice: 499,
     postsPerMonth: 150,
     lifetimeMax: null as number | null,
+    collabsPerMonth: 100 as number | null,
     basePosts: 90,
     bonusPosts: 60,
     sites: 1,
@@ -66,6 +72,7 @@ export const TIERS = {
     regularPrice: 0,
     postsPerMonth: null as number | null,
     lifetimeMax: null as number | null,
+    collabsPerMonth: null as number | null,
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,

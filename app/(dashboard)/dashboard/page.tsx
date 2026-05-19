@@ -6,8 +6,9 @@ import ChannelStats from '@/components/dashboard/ChannelStats'
 import WhatsNew from '@/components/dashboard/WhatsNew'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
-import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers } from 'lucide-react'
+import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers, Gauge } from 'lucide-react'
 import Link from 'next/link'
+import { TIERS, type Tier } from '@/lib/tier'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -24,8 +25,34 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     supabase.from('youtube_videos').select('id').eq('user_id', user!.id),
     supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
-    sb.from('integrations').select('wordpress_url,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).single(),
+    sb.from('integrations').select('tier,wordpress_url,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).single(),
   ])
+
+  // ── Plan & usage ────────────────────────────────────────────────────────
+  const tier = (((integration as Record<string, unknown> | null)?.tier as Tier) ?? 'free')
+  const plan = TIERS[tier] ?? TIERS.free
+  const now = new Date()
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+  const resetsOn = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const [{ count: postsThisMonth }, { count: collabsThisMonth }] = await Promise.all([
+    sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).gte('published_at', monthStart),
+    sb.from('collaborations').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).gte('created_at', monthStart),
+  ])
+  // Posts: free tier is lifetime-capped; paid tiers are monthly.
+  const postsUsed = plan.lifetimeMax !== null ? (postCount ?? 0) : (postsThisMonth ?? 0)
+  const postsLimit = plan.lifetimeMax !== null ? plan.lifetimeMax : plan.postsPerMonth // null = unlimited
+  const usage = [
+    {
+      label: plan.lifetimeMax !== null ? 'Posts (lifetime)' : 'Posts this month',
+      used: postsUsed,
+      limit: postsLimit,
+    },
+    // Collab is Pro+; collabsPerMonth 0 = not on plan (hide the row).
+    ...(plan.collabsPerMonth !== 0
+      ? [{ label: 'Collab emails this month', used: collabsThisMonth ?? 0, limit: plan.collabsPerMonth }]
+      : []),
+  ]
 
   const videoCount = videos?.length ?? 0
   const publishedCount = postCount ?? 0
@@ -130,6 +157,48 @@ export default async function DashboardPage() {
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] font-medium">{label}</p>
           </div>
         ))}
+      </div>
+
+      {/* Plan & usage */}
+      <div className="card p-5 mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Gauge size={16} className="text-[#0071e3]" />
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Plan &amp; usage</h2>
+            <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3]">{plan.label}</span>
+          </div>
+          <Link href="/billing" className="text-xs text-[#0071e3] hover:underline font-medium">
+            {tier === 'pro' || tier === 'admin' ? 'Manage plan' : 'Upgrade'}
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {usage.map(({ label, used, limit }) => {
+            const unlimited = limit === null
+            const pct = unlimited ? 0 : Math.min(100, Math.round((used / Math.max(1, limit as number)) * 100))
+            const near = !unlimited && pct >= 80
+            return (
+              <div key={label}>
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span className="text-[#6e6e73] dark:text-[#ebebf0] font-medium">{label}</span>
+                  <span className={`tabular-nums font-semibold ${near ? 'text-[#ff9500]' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
+                    {used}{unlimited ? ' / ∞' : ` / ${limit}`}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${unlimited ? 'bg-[#34c759]' : near ? 'bg-[#ff9500]' : 'bg-[#0071e3]'}`}
+                    style={{ width: unlimited ? '100%' : `${pct}%` }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">
+          {plan.lifetimeMax !== null
+            ? 'Free plan posts are a one-time lifetime allowance.'
+            : `Monthly limits reset ${resetsOn}.`}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -6,7 +6,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsPublishAll, type Tier } from '@/lib/tier'
+import { tierAllowsPublishAll, TIERS, type Tier } from '@/lib/tier'
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 
 export const maxDuration = 120
@@ -27,11 +27,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Collaborations is a Pro plan feature.' }, { status: 403 })
     }
 
-    // Monthly cap — collab generation is the most expensive per-action
-    // feature (Sonnet + web search). Generous enough that real outreach
-    // never hits it; stops runaway/abuse. Admins are unlimited.
-    const COLLAB_MONTHLY_CAP = 100
-    if (tier !== 'admin') {
+    // Monthly cap from the single source of truth (lib/tier.ts).
+    // null = unlimited (admin). Collab gen is the priciest per-action
+    // feature, so this bounds worst-case cost / abuse.
+    const collabCap = TIERS[tier].collabsPerMonth
+    if (collabCap !== null) {
       const now = new Date()
       const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,11 +40,11 @@ export async function POST(request: Request) {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .gte('created_at', monthStart)
-      if ((count ?? 0) >= COLLAB_MONTHLY_CAP) {
+      if ((count ?? 0) >= collabCap) {
         const resets = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
           .toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
         return NextResponse.json({
-          error: `You've reached your ${COLLAB_MONTHLY_CAP} collaboration emails this month on the Pro plan. Resets ${resets}.`,
+          error: `You've reached your ${collabCap} collaboration emails this month on the ${TIERS[tier].label} plan. Resets ${resets}.`,
         }, { status: 429 })
       }
     }
