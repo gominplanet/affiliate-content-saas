@@ -1,3 +1,4 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
 /**
  * Collaboration pitch generator (Pro). Researches the target brand on
  * the web, then composes a compelling outreach email selling the

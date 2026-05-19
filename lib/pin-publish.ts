@@ -1,3 +1,4 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
 /**
  * Shared Pinterest publish — used by /api/blog/pinterest-post (modal)
  * and /api/blog/pinterest-auto (one-click campaign pill). Single source

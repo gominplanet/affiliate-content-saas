@@ -1,3 +1,4 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
 /**
  * Shared Pinterest pin generation — used by /api/blog/pinterest-preview
  * (the editable preview modal, opened from both Library & Social Push

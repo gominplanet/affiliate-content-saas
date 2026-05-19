@@ -1,3 +1,4 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
 import { createAnthropicClient } from '@/lib/anthropic'
 import type { AmazonProduct } from '@/services/amazon'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'

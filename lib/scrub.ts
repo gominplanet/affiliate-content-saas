@@ -1,3 +1,4 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
 /**
  * Hard guarantee for the user's banned-word rule. LLM instructions alone
  * aren't reliable, so any AI-generated copy that reaches a user surface

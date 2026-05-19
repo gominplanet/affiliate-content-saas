@@ -45,7 +45,9 @@ export default function TermsPage() {
             <li>You do not use the App to publish spam, misleading, fraudulent, deceptive, infringing, hateful, or illegal content.</li>
             <li>You include any affiliate disclosures required by law and by the platforms you publish to.</li>
             <li>You do not attempt to bypass rate limits, automate engagement, or otherwise manipulate the platforms the App connects to.</li>
-            <li>You do not reverse engineer, scrape, or attempt to access other users&apos; data through the App.</li>
+            <li>You do not reverse engineer, decompile, disassemble, scrape, crawl, or attempt to derive the source code, prompts, models, or methods of the App, or access it other than through the interfaces we provide.</li>
+            <li>You do not copy, resell, rent, sublicense, white-label, or redistribute the App or any part of it, and you do not use it (or data/outputs derived from it) to build, train, or operate a competing product or service.</li>
+            <li>You do not access or attempt to access other users&apos; data.</li>
           </ul>
         </div>
 
@@ -146,7 +148,31 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">14. Contact</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">14. Intellectual Property &amp; Restrictions</h2>
+          <p>
+            The App, including its software, source code, design, prompts, AI generation
+            logic, content pipelines, and all related know-how, is the proprietary and
+            confidential property of Gominplanet / MVP Affiliate and is protected by
+            intellectual property and trade-secret law. We grant you a limited,
+            non-exclusive, non-transferable right to use the App for your own affiliate
+            content while your subscription is active — and nothing more. No ownership or
+            license to the underlying software or methods is transferred to you.
+          </p>
+          <p className="mt-3">
+            You may not, directly or indirectly: (a) reverse engineer, decompile,
+            disassemble, or attempt to derive the source code, prompts, or methods of the
+            App; (b) copy, modify, distribute, resell, rent, sublicense, or white-label the
+            App or any part of it; (c) use the App, or any data or output obtained from it,
+            to build, train, or operate a competing product or service; or (d) remove or
+            obscure any proprietary notice. Content you generate for your own sites remains
+            yours; the App and its technology remain ours. We reserve all rights not
+            expressly granted and may pursue all available remedies for misuse or
+            misappropriation.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">15. Contact</h2>
           <p>
             Questions about these Terms? Contact us at{' '}
             <a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>.
