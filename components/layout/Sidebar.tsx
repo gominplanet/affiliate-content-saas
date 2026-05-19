@@ -67,6 +67,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const supabase = createBrowserClient()
   const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [geniusConnected, setGeniusConnected] = useState(false)
   const [purging, setPurging] = useState(false)
   const [purged, setPurged] = useState(false)
   // Mobile drawer state — sidebar is hidden offscreen below lg and slides in
@@ -115,13 +116,14 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(supabase as any)
         .from('integrations')
-        .select('wordpress_url,tier')
+        .select('wordpress_url,tier,geniuslink_api_key,geniuslink_api_secret')
         .eq('user_id', user.id)
         .maybeSingle()
         .then(({ data }: { data: Record<string, string> | null }) => {
           const url = data?.wordpress_url || null
           if (url) setWpSiteUrl(url)
           setIsAdmin(data?.tier === 'admin')
+          setGeniusConnected(!!data?.geniuslink_api_key && !!data?.geniuslink_api_secret)
         })
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,6 +196,8 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         <p className="section-label px-2 mb-2">Workspace</p>
         {nav.map((item) => {
           const { href, label, icon: Icon, matchKind } = item
+          // Analytics is Geniuslink-only — hide it until Geniuslink is connected.
+          if (href === '/analytics' && !geniusConnected) return null
           const badge = (item as { badge?: string }).badge
           return (
             <Link key={label} href={href} className={cn('nav-item', isActiveTabbed(matchKind, href) && 'active')}>
