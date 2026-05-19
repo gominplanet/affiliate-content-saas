@@ -553,6 +553,9 @@ function CampaignsInner() {
           <div>
             <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Queue cap</label>
             <select value={impCap} onChange={e => setImpCap(parseInt(e.target.value, 10))} className="input-field text-sm w-full">
+              <option value={10}>Top 10</option>
+              <option value={20}>Top 20</option>
+              <option value={50}>Top 50</option>
               <option value={200}>Top 200</option>
               <option value={500}>Top 500</option>
               <option value={1000}>Top 1000</option>
