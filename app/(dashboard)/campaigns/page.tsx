@@ -337,10 +337,16 @@ function CampaignsInner() {
         const prev = byAsin.get(m.asin)
         if (!prev || m.commission > prev.commission) byAsin.set(m.asin, m)
       }
+      const uniqueAsins = byAsin.size
       const final = [...byAsin.values()].sort((a, b) => b.commission - a.commission).slice(0, impCap)
       setImpMatches(final)
       setImpPhase('ready')
       const kwLabel = kw ? `"${impKw.trim()}" matched ${kwHits.toLocaleString()}` : `${kwHits.toLocaleString()} rows`
+      // Many campaigns share the same product, so passed-rows ≫ unique ASINs.
+      const dedupeNote = uniqueAsins !== out.length
+        ? `${out.length.toLocaleString()} passed → ${uniqueAsins.toLocaleString()} unique products`
+        : `${uniqueAsins.toLocaleString()} unique products`
+      const capNote = uniqueAsins > impCap ? `, queued top ${impCap}` : ''
       const cuts = [
         cutComm ? `${cutComm.toLocaleString()} cut by commission<${minComm}%` : '',
         cutDays ? `${cutDays.toLocaleString()} cut by <${minDays} days` : '',
@@ -348,7 +354,7 @@ function CampaignsInner() {
         badDate ? `${badDate.toLocaleString()} had an unreadable end date (kept)` : '',
       ].filter(Boolean).join(' · ')
       setImpMsg(
-        `Scanned ${total.toLocaleString()} · ${kwLabel} · ${final.length} queued (capped at ${impCap})` +
+        `Scanned ${total.toLocaleString()} · ${kwLabel} · ${dedupeNote}${capNote} · ${final.length} queued` +
         (cuts ? ` — ${cuts}` : '') +
         (final.length === 0 ? '. Loosen the filters above.' : '.'),
       )
