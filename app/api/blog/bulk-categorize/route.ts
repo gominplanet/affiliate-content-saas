@@ -81,15 +81,35 @@ export async function POST(request: Request) {
     }
 
     // ── Identify "default" category IDs (Uncategorized + Blog) ──────────
-    // We treat any post whose ONLY categories are these defaults as
-    // "needs a real niche."
-    const defaultSlugs = ['uncategorized', 'blog']
-    const defaultCatRes = await fetch(
-      `${wpBase}/wp-json/wp/v2/categories?slug=${defaultSlugs.join(',')}&per_page=10`,
-      { headers: { Authorization: authHeader } },
+    // WP REST does NOT accept a comma-joined `slug` param, so the old
+    // `?slug=uncategorized,blog` matched nothing and Blog-categorized
+    // posts were never detected (Fix Categories did nothing). Pull ALL
+    // categories and match by slug OR name (covers a real "Blog"
+    // category AND an "Uncategorized" that was renamed to "Blog").
+    const DEFAULT_NAMES = new Set(['uncategorized', 'blog'])
+    const allCats: { id: number; slug: string; name: string }[] = []
+    let catPage = 1
+    while (true) {
+      const cr = await fetch(
+        `${wpBase}/wp-json/wp/v2/categories?per_page=100&page=${catPage}&_fields=id,slug,name`,
+        { headers: { Authorization: authHeader } },
+      )
+      if (!cr.ok) break
+      const cb = (await cr.json().catch(() => [])) as typeof allCats
+      if (!cb.length) break
+      allCats.push(...cb)
+      const ct = parseInt(cr.headers.get('X-WP-TotalPages') || '1', 10)
+      if (catPage >= ct) break
+      catPage++
+    }
+    const defaultCatIds = new Set(
+      allCats
+        .filter((c) =>
+          DEFAULT_NAMES.has((c.slug || '').toLowerCase()) ||
+          DEFAULT_NAMES.has((c.name || '').toLowerCase()),
+        )
+        .map((c) => c.id),
     )
-    const defaultCatList = (await defaultCatRes.json().catch(() => [])) as { id: number; slug: string }[]
-    const defaultCatIds = new Set(defaultCatList.map((c) => c.id))
 
     const needsCat = allPosts.filter((p) =>
       p.categories.length === 0 ||
