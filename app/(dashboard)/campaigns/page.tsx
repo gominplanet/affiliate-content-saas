@@ -509,6 +509,11 @@ function CampaignsInner() {
           The keyword matches the campaign &amp; brand name (e.g. &quot;vacuum&quot;). Leave it blank to
           pull everything that fits the filters.
         </p>
+        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
+          <strong>Why fewer queue than match:</strong> Amazon lists the same product under many separate
+          campaigns, so thousands of matching rows are usually only a few hundred actual products. We keep
+          one campaign per product (the highest commission) so you don&apos;t get duplicate posts.
+        </p>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
           <div>
