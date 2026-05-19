@@ -29,7 +29,7 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('brand_profiles')
-      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url,collab_track_record,collab_example_links,collab_extra_notes')
+      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes')
       .eq('user_id', user.id)
       .single(),
   ])
@@ -56,6 +56,7 @@ export async function GET() {
       websiteUrl: brand?.website_url ?? '',
       youtubeUrl: brand?.youtube_channel_url ?? '',
       amazonStorefront: brand?.amazon_storefront_url ?? '',
+      portfolioUrl: brand?.linktree_url ?? '',
       collabsDone: brand?.collab_track_record ?? '',
       exampleLinks: Array.isArray(brand?.collab_example_links) ? brand.collab_example_links : [],
       extraNotes: brand?.collab_extra_notes ?? '',

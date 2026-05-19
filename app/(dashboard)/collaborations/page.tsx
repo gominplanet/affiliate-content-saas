@@ -73,6 +73,7 @@ export default function CollaborationsPage() {
         setWebsiteUrl(p => p || d.prefill.websiteUrl || '')
         setYoutubeUrl(p => p || d.prefill.youtubeUrl || '')
         setAmazonStorefront(p => p || d.prefill.amazonStorefront || '')
+        setPortfolioUrl(p => p || d.prefill.portfolioUrl || '')
         setCollabsDone(p => p || d.prefill.collabsDone || '')
         setExtraNotes(p => p || d.prefill.extraNotes || '')
         const savedLinks = Array.isArray(d.prefill.exampleLinks) ? d.prefill.exampleLinks : []

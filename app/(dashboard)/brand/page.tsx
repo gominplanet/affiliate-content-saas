@@ -112,6 +112,7 @@ interface BrandData {
   facebook_url: string
   threads_url: string
   amazon_storefront_url: string
+  linktree_url: string
   contact_email: string
   // Private — shipping details for product samples (collab emails only)
   sample_full_name: string
@@ -181,6 +182,7 @@ const DEFAULT: BrandData = {
   facebook_url: '',
   threads_url: '',
   amazon_storefront_url: '',
+  linktree_url: '',
   contact_email: '',
   sample_full_name: '',
   sample_address: '',
@@ -250,6 +252,7 @@ export default function BrandPage() {
         facebook_url: row.facebook_url ?? '',
         threads_url: row.threads_url ?? '',
         amazon_storefront_url: row.amazon_storefront_url ?? '',
+        linktree_url: row.linktree_url ?? '',
         contact_email: row.contact_email ?? '',
         sample_full_name: row.sample_full_name ?? '',
         sample_address: row.sample_address ?? '',
@@ -287,6 +290,7 @@ export default function BrandPage() {
       facebook_url:        normalizeUrl(data.facebook_url),
       threads_url:         normalizeUrl(data.threads_url),
       amazon_storefront_url: normalizeUrl(data.amazon_storefront_url),
+      linktree_url: normalizeUrl(data.linktree_url),
     }
     // Update local state so the user sees their normalized URLs after save
     setData(normalized)
@@ -496,6 +500,17 @@ export default function BrandPage() {
                   className="input-field"
                 />
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">Used to pre-fill the Collaborations pitch email.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Linktree / link hub <span className="text-[#86868b]">(optional)</span></label>
+                <input
+                  type="text"
+                  value={data.linktree_url}
+                  onChange={(e) => set('linktree_url', e.target.value)}
+                  placeholder="linktr.ee/yourname"
+                  className="input-field"
+                />
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">A single hub of all your channels. Pre-fills the Collaborations pitch email.</p>
               </div>
             </div>
           </div>
