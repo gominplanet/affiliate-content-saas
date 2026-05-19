@@ -93,6 +93,35 @@ export function tierAllowsPublishAll(tier: Tier): boolean {
   return TIERS[tier].publishAll
 }
 
+/**
+ * The user's current quota window. Paid subscribers get their actual
+ * Stripe billing cycle (period_start → period_end), so a user who
+ * subscribed on the 14th sees their quota reset on the 14th, not the
+ * 1st. Falls back to calendar-month when those columns are null — free
+ * tier, no Stripe subscription yet, or legacy rows before we started
+ * capturing period_start (migration 041).
+ *
+ * Single source of truth: enforcement (checkUsageLimit, collab cap)
+ * and the dashboard Plan & usage card all read this so they can't
+ * disagree about the window or the displayed reset date.
+ */
+export function billingWindow(opts: {
+  periodStart?: string | null
+  periodEnd?: string | null
+}): { startISO: string; resetLabel: string } {
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (opts.periodStart) {
+    return {
+      startISO: new Date(opts.periodStart).toISOString(),
+      resetLabel: opts.periodEnd ? fmt(new Date(opts.periodEnd)) : 'your next billing date',
+    }
+  }
+  const now = new Date()
+  const startISO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+  const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+  return { startISO, resetLabel: fmt(reset) }
+}
+
 // Returns { allowed: true } or { allowed: false, reason, tier }
 export async function checkUsageLimit(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createServerClient>>,
@@ -101,7 +130,7 @@ export async function checkUsageLimit(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ig } = await (supabase as any)
     .from('integrations')
-    .select('tier')
+    .select('tier,subscription_period_start,subscription_period_end')
     .eq('user_id', userId)
     .single()
 
@@ -129,21 +158,22 @@ export async function checkUsageLimit(
     return { allowed: true }
   }
 
-  const now = new Date()
-
   if (limits.postsPerMonth !== null) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+    const { startISO, resetLabel } = billingWindow({
+      periodStart: ig?.subscription_period_start ?? null,
+      periodEnd: ig?.subscription_period_end ?? null,
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { count } = await (supabase as any)
       .from('blog_posts')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .gte('published_at', monthStart)
+      .gte('published_at', startISO)
 
     if ((count ?? 0) >= limits.postsPerMonth) {
       return {
         allowed: false,
-        reason: `You've reached your ${limits.postsPerMonth} posts/month limit on the ${limits.label} plan. Resets on the 1st.`,
+        reason: `You've reached your ${limits.postsPerMonth} posts limit on the ${limits.label} plan for this billing period. Resets ${resetLabel}.`,
         tier,
       }
     }

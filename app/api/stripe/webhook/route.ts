@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
       items: { data: { price: { id: string } }[] }
       status: string
       cancel_at_period_end?: boolean
+      current_period_start?: number
       current_period_end?: number
     }
     const priceId = sub.items.data[0]?.price.id
@@ -66,6 +67,9 @@ export async function POST(request: NextRequest) {
           tier,
           stripe_subscription_id: sub.id,
           subscription_status: sub.cancel_at_period_end ? 'canceling' : sub.status,
+          subscription_period_start: sub.current_period_start
+            ? new Date(sub.current_period_start * 1000).toISOString()
+            : null,
           subscription_period_end: sub.current_period_end
             ? new Date(sub.current_period_end * 1000).toISOString()
             : null,
@@ -83,6 +87,7 @@ export async function POST(request: NextRequest) {
         tier: 'free',
         stripe_subscription_id: null,
         subscription_status: 'canceled',
+        subscription_period_start: null,
         subscription_period_end: null,
       })
       .eq('stripe_customer_id', sub.customer)

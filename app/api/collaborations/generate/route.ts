@@ -6,7 +6,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsPublishAll, TIERS, type Tier } from '@/lib/tier'
+import { tierAllowsPublishAll, TIERS, billingWindow, type Tier } from '@/lib/tier'
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 
 export const maxDuration = 120
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: intRow }, { data: brand }] = await Promise.all([
-      (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single(),
+      (supabase as any).from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).single(),
       (supabase as any).from('brand_profiles').select('*').eq('user_id', user.id).single(),
     ])
     const tier = (intRow?.tier as Tier) ?? 'free'
@@ -27,24 +27,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Collaborations is a Pro plan feature.' }, { status: 403 })
     }
 
-    // Monthly cap from the single source of truth (lib/tier.ts).
-    // null = unlimited (admin). Collab gen is the priciest per-action
-    // feature, so this bounds worst-case cost / abuse.
+    // Per-BILLING-PERIOD cap from the single source of truth
+    // (lib/tier.ts). null = unlimited (admin). Window honors the user's
+    // actual Stripe billing cycle when present, falls back to calendar
+    // month otherwise — same logic the dashboard's usage card uses.
     const collabCap = TIERS[tier].collabsPerMonth
     if (collabCap !== null) {
-      const now = new Date()
-      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+      const { startISO, resetLabel } = billingWindow({
+        periodStart: (intRow as Record<string, unknown> | null)?.subscription_period_start as string | null,
+        periodEnd: (intRow as Record<string, unknown> | null)?.subscription_period_end as string | null,
+      })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { count } = await (supabase as any)
         .from('collaborations')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .gte('created_at', monthStart)
+        .gte('created_at', startISO)
       if ((count ?? 0) >= collabCap) {
-        const resets = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
-          .toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
         return NextResponse.json({
-          error: `You've reached your ${collabCap} collaboration emails this month on the ${TIERS[tier].label} plan. Resets ${resets}.`,
+          error: `You've reached your ${collabCap} collaboration emails for this billing period on the ${TIERS[tier].label} plan. Resets ${resetLabel}.`,
         }, { status: 429 })
       }
     }

@@ -8,7 +8,7 @@ import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers, Gauge } from 'lucide-react'
 import Link from 'next/link'
-import { TIERS, type Tier } from '@/lib/tier'
+import { TIERS, billingWindow, type Tier } from '@/lib/tier'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -25,32 +25,36 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     supabase.from('youtube_videos').select('id').eq('user_id', user!.id),
     supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
-    sb.from('integrations').select('tier,wordpress_url,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).single(),
+    sb.from('integrations').select('tier,subscription_period_start,subscription_period_end,wordpress_url,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).single(),
   ])
 
   // ── Plan & usage ────────────────────────────────────────────────────────
-  const tier = (((integration as Record<string, unknown> | null)?.tier as Tier) ?? 'free')
+  // Window honors the user's Stripe billing cycle when known; falls back
+  // to calendar month for free / pre-Stripe / legacy rows.
+  const intAny = integration as Record<string, unknown> | null
+  const tier = ((intAny?.tier as Tier) ?? 'free')
   const plan = TIERS[tier] ?? TIERS.free
-  const now = new Date()
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
-  const resetsOn = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
-    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  const [{ count: postsThisMonth }, { count: collabsThisMonth }] = await Promise.all([
-    sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).gte('published_at', monthStart),
-    sb.from('collaborations').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).gte('created_at', monthStart),
+  const { startISO: periodStartISO, resetLabel: resetsOn } = billingWindow({
+    periodStart: (intAny?.subscription_period_start as string | null) ?? null,
+    periodEnd: (intAny?.subscription_period_end as string | null) ?? null,
+  })
+  const onBillingCycle = !!intAny?.subscription_period_start
+  const [{ count: postsThisPeriod }, { count: collabsThisPeriod }] = await Promise.all([
+    sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).gte('published_at', periodStartISO),
+    sb.from('collaborations').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).gte('created_at', periodStartISO),
   ])
-  // Posts: free tier is lifetime-capped; paid tiers are monthly.
-  const postsUsed = plan.lifetimeMax !== null ? (postCount ?? 0) : (postsThisMonth ?? 0)
+  // Posts: free tier is lifetime-capped; paid tiers count per billing period.
+  const postsUsed = plan.lifetimeMax !== null ? (postCount ?? 0) : (postsThisPeriod ?? 0)
   const postsLimit = plan.lifetimeMax !== null ? plan.lifetimeMax : plan.postsPerMonth // null = unlimited
   const usage = [
     {
-      label: plan.lifetimeMax !== null ? 'Posts (lifetime)' : 'Posts this month',
+      label: plan.lifetimeMax !== null ? 'Posts (lifetime)' : 'Posts this period',
       used: postsUsed,
       limit: postsLimit,
     },
     // Collab is Pro+; collabsPerMonth 0 = not on plan (hide the row).
     ...(plan.collabsPerMonth !== 0
-      ? [{ label: 'Collab emails this month', used: collabsThisMonth ?? 0, limit: plan.collabsPerMonth }]
+      ? [{ label: 'Collab emails this period', used: collabsThisPeriod ?? 0, limit: plan.collabsPerMonth }]
       : []),
   ]
 
@@ -197,7 +201,9 @@ export default async function DashboardPage() {
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">
           {plan.lifetimeMax !== null
             ? 'Free plan posts are a one-time lifetime allowance.'
-            : `Monthly limits reset ${resetsOn}.`}
+            : onBillingCycle
+              ? `Your billing period resets ${resetsOn}.`
+              : `Limits reset ${resetsOn}.`}
         </p>
       </div>
 
