@@ -198,13 +198,17 @@ export default async function DashboardPage() {
             )
           })}
         </div>
-        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">
-          {plan.lifetimeMax !== null
-            ? 'Free plan posts are a one-time lifetime allowance.'
-            : onBillingCycle
-              ? `Your billing period resets ${resetsOn}.`
-              : `Limits reset ${resetsOn}.`}
-        </p>
+        {/* Footer copy only when something is actually capped — admin
+            and any future fully-unlimited tier just see the ∞ bars. */}
+        {usage.some(u => u.limit !== null) && (
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3">
+            {plan.lifetimeMax !== null
+              ? 'Free plan posts are a one-time lifetime allowance.'
+              : onBillingCycle
+                ? `Your billing period resets ${resetsOn}.`
+                : `Limits reset ${resetsOn}.`}
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
