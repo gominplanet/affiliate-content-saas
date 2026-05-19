@@ -560,8 +560,34 @@ function CampaignsInner() {
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
           Install the MVP Affiliate extension, open Amazon Creator Connections, select the campaigns
           you want, and they land here as queued posts — one click each to research, write, and publish.
-          Paste this token into the extension once to link it to your account.
+          Paste the token below into the extension once to link it to your account.
         </p>
+
+        <a
+          href="/mvp-cc-scout.zip"
+          download
+          className="inline-flex items-center gap-1.5 px-3 py-2 mb-3 rounded-lg text-xs font-semibold text-white bg-[#5856d6] hover:bg-[#4a48c0] transition-colors"
+        >
+          <Puzzle size={12} /> Download extension (.zip)
+        </a>
+
+        <details className="mb-3 group">
+          <summary className="text-[11px] font-medium text-[#0071e3] cursor-pointer select-none">
+            How to install (1 min — no Chrome Web Store needed)
+          </summary>
+          <ol className="list-decimal ml-5 mt-2 space-y-1 text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+            <li>Download the .zip above and <strong>unzip it</strong> (you&apos;ll get a folder).</li>
+            <li>Open <code className="font-mono">chrome://extensions</code> in Chrome.</li>
+            <li>Turn on <strong>Developer mode</strong> (top-right toggle).</li>
+            <li>Click <strong>Load unpacked</strong> and select the unzipped folder.</li>
+            <li>Pin the extension, paste the token below into it, then open Amazon Creator Connections.</li>
+          </ol>
+          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
+            Chrome may show a &ldquo;disable developer-mode extensions&rdquo; notice on restart — that&apos;s normal for
+            tools installed outside the Web Store; just close it. Keep the folder where it is (deleting it removes the extension).
+          </p>
+        </details>
+
         <div className="flex items-center gap-2">
           <code className="flex-1 min-w-0 truncate font-mono text-xs px-3 py-2 rounded-lg bg-gray-50 dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]">
             {extToken ?? '••••••••••••••••••••••••'}
