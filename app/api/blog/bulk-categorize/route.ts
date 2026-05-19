@@ -212,12 +212,24 @@ ${titlesList}`,
       }
     }
 
+    // We had posts to fix but none succeeded — that's a failure, not
+    // "all good". Surface why instead of the misleading
+    // "already had categories" the UI shows on fixed === 0.
+    if (fixed === 0 && needsCat.length > 0) {
+      return NextResponse.json({
+        error: `Couldn't update any of the ${needsCat.length} post${needsCat.length !== 1 ? 's' : ''} in WordPress. ${errors[0] ?? 'Unknown WordPress error.'}`,
+        attempted: needsCat.length,
+        errors: errors.slice(0, 10),
+      }, { status: 502 })
+    }
+
     return NextResponse.json({
       success: true,
       total: allPosts.length,
       fixed,
       skipped: allPosts.length - needsCat.length,
       niches,
+      partial: errors.length > 0 ? `${errors.length} post${errors.length !== 1 ? 's' : ''} failed` : null,
       errors: errors.slice(0, 10),
     })
   } catch (err: unknown) {

@@ -2031,7 +2031,8 @@ export default function ContentPage() {
       } else if (data.fixed === 0) {
         setFixCatResult(data.message || 'All posts already had categories.')
       } else {
-        setFixCatResult(`Done — ${data.fixed} post${data.fixed !== 1 ? 's' : ''} re-categorized (${data.skipped} were already fine).`)
+        const partial = data.partial ? ` — ${data.partial}` : ''
+        setFixCatResult(`Done — ${data.fixed} post${data.fixed !== 1 ? 's' : ''} re-categorized (${data.skipped} were already fine)${partial}.`)
       }
     } catch {
       setFixCatResult('Something went wrong.')

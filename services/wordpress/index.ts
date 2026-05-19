@@ -448,20 +448,45 @@ export class WordPressService {
 
   async createCategory(name: string): Promise<number> {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-    // Check if already exists
+    const wantName = name.trim().toLowerCase()
+
+    // Look it up first. Match by slug OR name (case-insensitive) — niches
+    // with an "&" (e.g. "Home & Kitchen") often have a WP slug that
+    // doesn't equal our computed slug, so a slug-only check missed them
+    // and we'd fall through to a create that 400s with `term_exists`.
+    const findExisting = async (): Promise<number | null> => {
+      for (const q of [`/categories?slug=${slug}&per_page=5`,
+                        `/categories?search=${encodeURIComponent(name)}&per_page=20`]) {
+        try {
+          const rows = await this.request<{ id: number; slug: string; name: string }[]>(q)
+          const hit = rows.find(c =>
+            c.slug === slug || (c.name || '').trim().toLowerCase() === wantName)
+          if (hit) return hit.id
+        } catch { /* try next */ }
+      }
+      return null
+    }
+
+    const pre = await findExisting()
+    if (pre) return pre
+
     try {
-      const existing = await this.request<{ id: number; slug: string }[]>(
-        `/categories?search=${encodeURIComponent(name)}&per_page=5`,
-      )
-      const match = existing.find(c => c.slug === slug)
-      if (match) return match.id
-    } catch { /* proceed to create */ }
-    const created = await this.request<{ id: number }>('/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, slug }),
-    })
-    return created.id
+      const created = await this.request<{ id: number }>('/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, slug }),
+      })
+      return created.id
+    } catch (err) {
+      // Race or stale-search: another path already created it (WP returns
+      // `term_exists`, sometimes with the id in the body). Recover instead
+      // of failing the whole re-categorize.
+      const m = String(err instanceof Error ? err.message : err).match(/"term_id"\s*:\s*(\d+)/)
+      if (m) return parseInt(m[1], 10)
+      const found = await findExisting()
+      if (found) return found
+      throw err
+    }
   }
 
   async createPage(title: string, content: string): Promise<{ id: number; link: string }> {
