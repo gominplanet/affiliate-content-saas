@@ -61,7 +61,7 @@ const plans = [
     regular: 99,
     limit: '30 posts / month',
     bonus: '',
-    features: ['Free themed review site', '1 connected WordPress site', 'Facebook auto-post'],
+    features: ['Free themed review site', '1 connected WordPress site', 'Facebook auto-post', 'Pinterest auto-post *'],
     cta: 'Get Starter',
     href: '/pricing',
     highlight: false,
@@ -72,7 +72,7 @@ const plans = [
     regular: 199,
     limit: '80 posts / month',
     bonus: '60 + 20 bonus posts',
-    features: ['Everything in Starter', '+ Threads, Bluesky, LinkedIn, Pinterest *', 'Priority generation queue'],
+    features: ['Everything in Starter', '+ Threads, Bluesky, LinkedIn', 'Priority generation queue'],
     cta: 'Get Growth',
     href: '/pricing',
     highlight: true,
@@ -572,7 +572,7 @@ export default function LandingPage() {
                 <span className="text-3xl font-bold">$99<span className="text-base font-medium">/mo</span></span>
               </div>
               <p className="relative text-[11px] text-white/80 mt-2 leading-relaxed">
-                Pro at $199 unlocks Instagram + LinkedIn + Telegram + X. Starter at $49 covers Facebook + WP.
+                Pro at $199 unlocks Instagram + LinkedIn + Telegram + X. Starter at $49 covers Facebook + Pinterest + WP.
               </p>
             </div>
           </div>
@@ -708,7 +708,7 @@ export default function LandingPage() {
 
           <p className="mt-8 text-center text-sm text-[#86868b]">
             * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
-            Included on Growth &amp; Pro at no extra cost once approved.
+            Included on Starter, Growth &amp; Pro at no extra cost once approved.
           </p>
           <div className="mt-6 max-w-2xl mx-auto rounded-2xl bg-[#0071e3]/5 border border-[#0071e3]/20 p-5">
             <p className="text-center text-sm font-semibold text-[#0071e3] mb-1.5">🔒 Price-lock guarantee</p>
