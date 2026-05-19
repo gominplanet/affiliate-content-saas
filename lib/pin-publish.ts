@@ -31,7 +31,9 @@ interface PublishArgs {
 export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: string }> {
   const { p, ig } = args
   if (!ig?.pinterest_access_token) throw new PinPublishError('Pinterest not connected', 400)
-  if (!ig?.pinterest_board_id) throw new PinPublishError('No Pinterest board selected', 400)
+  // A board is NOT a precondition — it's resolved below (category board,
+  // then the saved board, then a default we create). Fresh and sandbox
+  // accounts have zero boards, so hard-failing here was wrong.
 
   // Pin must link DIRECTLY to the blog post — never an Amazon/affiliate
   // redirect (Amazon Associates + Pinterest ToS).
@@ -47,8 +49,10 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
 
   const pinterest = new PinterestService(ig.pinterest_access_token)
 
-  // One board per category — auto-create; fall back to the selected board.
-  let targetBoardId: string = ig.pinterest_board_id
+  // Board resolution, in order: the post's category board (auto-created)
+  // → the user's previously-selected board → a default board we create.
+  // Never hard-fail: sandbox/new accounts start with zero boards.
+  let targetBoardId: string = ig.pinterest_board_id || ''
   try {
     if (p.wordpress_post_id && ig.wordpress_url) {
       const wpSvc = createWordPressService(
@@ -62,6 +66,13 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
       }
     }
   } catch { /* keep selected board as fallback */ }
+
+  if (!targetBoardId) {
+    // No category board and nothing saved — create/reuse a default so
+    // the pin can still publish instead of throwing "no board selected".
+    const fallback = await pinterest.findOrCreateBoard('Reviews')
+    targetBoardId = fallback.id
+  }
 
   try {
     let pin: { id: string }

@@ -30,11 +30,12 @@ export async function POST(request: NextRequest) {
 
   if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
   if (!ig?.pinterest_access_token) return NextResponse.json({ error: 'Pinterest not connected' }, { status: 400 })
-  if (!ig?.pinterest_board_id) return NextResponse.json({ error: 'No Pinterest board selected' }, { status: 400 })
+  // No board required to PREVIEW — the publish step resolves a board
+  // (per-category, auto-created). Fresh/sandbox accounts have none yet.
 
   const a = await buildPinAssets(p, { userId: user.id, tier: ig?.tier ?? null })
   return NextResponse.json({
     ...a,
-    boardName: ig.pinterest_board_name || ig.pinterest_board_id,
+    boardName: ig.pinterest_board_name || ig.pinterest_board_id || 'auto-created from the post category',
   })
 }
