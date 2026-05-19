@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import Header from '@/components/layout/Header'
-import { Loader2, Sparkles, ExternalLink, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle } from 'lucide-react'
+import { Loader2, Sparkles, ExternalLink, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle, AlertCircle } from 'lucide-react'
 import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
 
 interface Campaign {
@@ -200,6 +200,18 @@ function CampaignsInner() {
   const [categoryOptions, setCategoryOptions] = useState<string[]>([])
   const [catBusy, setCatBusy] = useState<string | null>(null)
 
+  // ── Amazon CC export (.zip) importer ───────────────────────────────
+  const [impKw, setImpKw] = useState('')
+  const [impMinComm, setImpMinComm] = useState(10)
+  const [impMinDays, setImpMinDays] = useState(120)
+  const [impNeedBudget, setImpNeedBudget] = useState(true)
+  const [impCap, setImpCap] = useState(500)
+  const [impPhase, setImpPhase] = useState<'idle' | 'parsing' | 'ready' | 'pushing'>('idle')
+  const [impScanned, setImpScanned] = useState(0)
+  const [impMatches, setImpMatches] = useState<{ asin: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }[]>([])
+  const [impMsg, setImpMsg] = useState<string | null>(null)
+  const [impErr, setImpErr] = useState<string | null>(null)
+
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/campaigns/list')
@@ -230,6 +242,116 @@ function CampaignsInner() {
     navigator.clipboard.writeText(extToken).then(() => {
       setCopied(true); setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})
+  }
+
+  async function runImport(file: File) {
+    setImpErr(null); setImpMsg(null); setImpMatches([]); setImpScanned(0)
+    setImpPhase('parsing')
+    try {
+      const [{ default: JSZip }, { streamCsv }] = await Promise.all([
+        import('jszip'),
+        import('@/lib/parse-csv'),
+      ])
+      const zip = await JSZip.loadAsync(file)
+      const csvs = Object.values(zip.files).filter(f => !f.dir && /\.csv$/i.test(f.name))
+      if (csvs.length === 0) throw new Error('No .csv files found in that zip.')
+
+      const kw = impKw.trim().toLowerCase()
+      const minComm = isNaN(impMinComm) ? 0 : impMinComm
+      const minDays = isNaN(impMinDays) ? 0 : impMinDays
+      const COLLECT_MAX = Math.max(impCap, 3000) // bound memory; sort+trim after
+      type M = { asin: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }
+      const out: M[] = []
+      const now = Date.now()
+      let total = 0
+
+      for (const entry of csvs) {
+        if (out.length >= COLLECT_MAX) break
+        const text = await entry.async('string')
+        let idx: Record<string, number> | null = null
+        await streamCsv(text, (cols, i) => {
+          if (i === 0) {
+            idx = {}
+            cols.forEach((h, k) => {
+              const x = h.toLowerCase()
+              if (x.includes('asin')) idx!.asin = k
+              else if (x.includes('campaign name')) idx!.name = k
+              else if (x.includes('brand')) idx!.brand = k
+              else if (x.includes('end')) idx!.end = k
+              else if (x.includes('commission')) idx!.comm = k
+              else if (x.includes('remain')) idx!.budget = k
+              else if (x.includes('available')) idx!.slots = k
+            })
+            return true
+          }
+          if (!idx) return true
+          total++
+          const asinRaw = cols[idx.asin] ?? ''
+          const asin = (asinRaw.match(/[A-Z0-9]{10}/) || [])[0] || ''
+          if (!asin) return true
+          const name = (cols[idx.name] ?? '').trim()
+          const brand = (cols[idx.brand] ?? '').trim()
+          const comm = parseFloat((cols[idx.comm] ?? '').replace(/[^\d.]/g, '')) || 0
+          const end = (cols[idx.end] ?? '').trim()
+          const endMs = Date.parse(`${end}T00:00:00Z`)
+          const daysLeft = isNaN(endMs) ? -1 : Math.floor((endMs - now) / 86400000)
+          const budgetRemain = parseFloat((cols[idx.budget] ?? '').replace(/[^\d.]/g, '')) || 0
+          const slots = parseFloat((cols[idx.slots] ?? '').replace(/[^\d.]/g, '')) || 0
+
+          if (comm < minComm) return true
+          if (daysLeft < minDays) return true            // also enforces not-expired
+          if (impNeedBudget && (budgetRemain <= 0 || slots <= 0)) return true
+          if (kw) {
+            const hay = `${brand} ${name} ${asinRaw}`.toLowerCase()
+            if (!hay.includes(kw)) return true
+          }
+          out.push({ asin, campaignName: name || brand || asin, brand, epc: `${comm}%`, endsAt: end, commission: comm })
+          setImpScanned(total)
+          return out.length < COLLECT_MAX
+        }, (seen) => setImpScanned(seen))
+      }
+
+      // Dedupe on ASIN, best commission first, cap.
+      const byAsin = new Map<string, M>()
+      for (const m of out) {
+        const prev = byAsin.get(m.asin)
+        if (!prev || m.commission > prev.commission) byAsin.set(m.asin, m)
+      }
+      const final = [...byAsin.values()].sort((a, b) => b.commission - a.commission).slice(0, impCap)
+      setImpMatches(final)
+      setImpPhase('ready')
+      setImpMsg(final.length
+        ? `${final.length} campaign${final.length === 1 ? '' : 's'} match your filters (scanned ${total.toLocaleString()}).`
+        : `No matches (scanned ${total.toLocaleString()}). Loosen the filters.`)
+    } catch (e) {
+      setImpErr(e instanceof Error ? e.message : 'Could not read that export.')
+      setImpPhase('idle')
+    }
+  }
+
+  async function pushImported() {
+    if (impMatches.length === 0) return
+    setImpPhase('pushing'); setImpErr(null)
+    try {
+      const res = await fetch('/api/campaigns/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaigns: impMatches.map(m => ({
+            asin: m.asin, campaignName: m.campaignName, epc: m.epc, endsAt: m.endsAt,
+          })),
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Import failed')
+      setImpMsg(`Queued ${d.inserted} — ${d.skipped} already in your queue.`)
+      setImpMatches([])
+      setImpPhase('idle')
+      await load()
+    } catch (e) {
+      setImpErr(e instanceof Error ? e.message : 'Import failed')
+      setImpPhase('ready')
+    }
   }
 
   async function generateRow(c: Campaign) {
@@ -337,6 +459,74 @@ function CampaignsInner() {
           >
             {tokenBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
           </button>
+        </div>
+      </div>
+
+      {/* Amazon CC export importer */}
+      <div className="card p-5 mb-6 max-w-3xl">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles size={14} className="text-[#0071e3]" />
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Import the Amazon campaigns export (.zip)</p>
+        </div>
+        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
+          On Amazon Creator Connections click <strong>Download all available campaigns</strong>, then drop
+          the .zip here. We filter it in your browser (nothing huge is uploaded) and queue the matches.
+        </p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+          <div>
+            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Keyword</label>
+            <input value={impKw} onChange={e => setImpKw(e.target.value)} placeholder="brand / product / ASIN" className="input-field text-sm w-full" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Min commission %</label>
+            <input type="number" value={impMinComm} onChange={e => setImpMinComm(parseFloat(e.target.value))} className="input-field text-sm w-full" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Min days left</label>
+            <input type="number" value={impMinDays} onChange={e => setImpMinDays(parseFloat(e.target.value))} className="input-field text-sm w-full" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Queue cap</label>
+            <select value={impCap} onChange={e => setImpCap(parseInt(e.target.value, 10))} className="input-field text-sm w-full">
+              <option value={200}>Top 200</option>
+              <option value={500}>Top 500</option>
+              <option value={1000}>Top 1000</option>
+            </select>
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+          <input type="checkbox" checked={impNeedBudget} onChange={e => setImpNeedBudget(e.target.checked)} />
+          Only campaigns with budget &amp; open slots remaining
+        </label>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors ${impPhase === 'parsing' || impPhase === 'pushing' ? 'bg-gray-200 text-[#86868b] cursor-default' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300'}`}>
+            {impPhase === 'parsing' ? <><Loader2 size={14} className="animate-spin" /> Reading…</> : <><Sparkles size={14} /> Choose .zip</>}
+            <input
+              type="file"
+              accept=".zip,application/zip"
+              className="hidden"
+              disabled={impPhase === 'parsing' || impPhase === 'pushing'}
+              onChange={e => { const f = e.target.files?.[0]; if (f) runImport(f); e.target.value = '' }}
+            />
+          </label>
+          {impPhase === 'ready' && impMatches.length > 0 && (
+            <button
+              onClick={pushImported}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] transition-colors"
+            >
+              <Sparkles size={14} /> Queue {impMatches.length}
+            </button>
+          )}
+          {impPhase === 'pushing' && (
+            <span className="text-xs text-[#86868b] flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Queuing…</span>
+          )}
+          {impPhase === 'parsing' && (
+            <span className="text-xs text-[#86868b]">Scanned {impScanned.toLocaleString()} rows…</span>
+          )}
+          {impMsg && <span className="text-xs text-[#1f8a3a]">{impMsg}</span>}
+          {impErr && <span className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {impErr}</span>}
         </div>
       </div>
 
