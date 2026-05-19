@@ -1,4 +1,4 @@
--- Migration 036: campaigns.hero_kind
+-- Migration 037: campaigns.hero_kind
 --
 -- Records which path produced the post's 16:9 featured image:
 --   'ai'      → DALL-E hero from the generated hero prompt
