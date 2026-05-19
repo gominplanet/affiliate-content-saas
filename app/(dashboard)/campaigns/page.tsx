@@ -197,6 +197,7 @@ function CampaignsInner() {
   const [tokenBusy, setTokenBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copiedIds, setCopiedIds] = useState(false)
+  const [tab, setTab] = useState<'cc' | 'epc'>('cc')
   const [connected, setConnected] = useState<Record<SocialKey, boolean>>({
     facebook: false, threads: false, twitter: false, linkedin: false, bluesky: false, telegram: false, pinterest: false,
   })
@@ -483,11 +484,32 @@ function CampaignsInner() {
   return (
     <>
       <Header
-        title="CC & EPC Campaign"
-        subtitle="Scout Amazon Creator Connections campaigns with the browser extension — they land here as queued posts. One click each to research, write, and publish in your brand voice."
+        title="Creator Campaigns"
+        subtitle="Bring Amazon Creator Connections campaigns in two ways — they land in one queue. One click each to research, write, and publish in your brand voice."
       />
 
-      {/* Browser extension connect */}
+      {/* Intake method tabs — both feed the same queue below */}
+      <div className="flex items-center gap-1 mb-6 border-b border-gray-200 dark:border-white/10 max-w-3xl">
+        {([
+          { k: 'cc' as const, label: 'Creator Connections' },
+          { k: 'epc' as const, label: 'EPC' },
+        ]).map(t => (
+          <button
+            key={t.k}
+            onClick={() => setTab(t.k)}
+            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+              tab === t.k
+                ? 'border-[#0071e3] text-[#0071e3]'
+                : 'border-transparent text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* EPC — scout via the browser extension */}
+      {tab === 'epc' && (
       <div className="card p-5 mb-6 max-w-3xl">
         <div className="flex items-center gap-2 mb-2">
           <Puzzle size={14} className="text-[#5856d6]" />
@@ -520,7 +542,10 @@ function CampaignsInner() {
         </div>
       </div>
 
-      {/* Amazon CC export importer */}
+      )}
+
+      {/* Creator Connections — Amazon campaigns .zip importer */}
+      {tab === 'cc' && (
       <div className="card p-5 mb-6 max-w-3xl">
         <div className="flex items-center gap-2 mb-2">
           <Sparkles size={14} className="text-[#0071e3]" />
@@ -597,6 +622,7 @@ function CampaignsInner() {
           {impErr && <span className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {impErr}</span>}
         </div>
       </div>
+      )}
 
       {/* Bulk-accept helper: copy every Campaign Id for Amazon's
           "Submit accepted campaigns" box. */}
