@@ -721,6 +721,15 @@ function CampaignsInner() {
                   )}
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0 mt-0.5">
+                  <a
+                    href={`https://www.amazon.com/dp/${c.asin}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open this product on Amazon"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#86868b] hover:text-[#0071e3] transition-colors"
+                  >
+                    Product Page <ExternalLink size={10} />
+                  </a>
                   {(c.status === 'pending' || c.status === 'failed') && (
                     <button
                       onClick={() => generateRow(c)}
