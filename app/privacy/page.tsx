@@ -166,7 +166,32 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Changes to This Policy</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Browser Extension (CC Scout)</h2>
+          <p>
+            The optional &quot;MVP Affiliate — CC Scout&quot; Chrome extension has a single purpose: to
+            help you find Amazon Creator Connections campaigns and queue the ones you choose into
+            your own MVP Affiliate account. It is not required to use MVP Affiliate.
+          </p>
+          <p className="mt-3">What it accesses, and only when you open it on the relevant page:</p>
+          <ul className="list-disc ml-5 space-y-1 mt-1">
+            <li>It reads campaign listing data (product ASINs, commission/EPC, budget, available slots) from the Amazon Creator Connections page you are already viewing in your own logged-in Amazon session. It runs only on <strong>affiliate-program.amazon.com</strong> and <strong>amazon.com/creatorconnections</strong> pages, plus mvpaffiliate.io.</li>
+            <li>It stores a single MVP Affiliate link token locally in your browser (<code>chrome.storage</code>) so the extension can attach campaigns to your account. The token stays on your device and is only sent to mvpaffiliate.io.</li>
+            <li>When you click to push campaigns, it transmits only the campaign identifiers/metadata you selected to your own MVP Affiliate account.</li>
+          </ul>
+          <p className="mt-3">
+            The extension does <strong>not</strong> read other tabs, browsing history, your Amazon
+            credentials, or payment data; does not run in the background; does not use analytics or
+            advertising; and does not sell or share data with third parties. Its permissions
+            (<code>activeTab</code>, <code>scripting</code>, <code>storage</code>, and the host
+            permissions above) are the minimum needed for this single purpose. Use of the extension
+            is consistent with the Chrome Web Store User Data policy, including its Limited Use
+            requirements. You can remove the extension at any time from Chrome; doing so deletes its
+            locally stored token.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">12. Changes to This Policy</h2>
           <p>
             We may update this Privacy Policy. The &quot;Last updated&quot; date at the top reflects the
             most recent revision. Material changes will be announced via an in-app notice or email.
@@ -174,7 +199,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">12. Contact</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">13. Contact</h2>
           <p>
             For privacy questions, deletion requests, or any other concerns, contact us at{' '}
             <a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>.
