@@ -79,9 +79,9 @@ Return a tight markdown brief under 250 words. No fluff.`,
   // ── 2. Compose the outreach email ─────────────────────────────────────
   const offered = input.platforms.length ? input.platforms.join(', ') : 'my channels'
   const asks: string[] = []
-  if (input.freeSample) asks.push('a free product sample in exchange for a genuine, in-depth review')
-  if (input.bannerAds) asks.push(`a paid banner ad placement on the blog${input.bannerAdsAmount ? ` at ${input.bannerAdsAmount}` : ''}`)
-  if (input.productionFee) asks.push(`a production fee${input.productionFeeAmount ? ` of ${input.productionFeeAmount}` : ''} for producing the review content`)
+  if (input.freeSample) asks.push('REQUEST: a free product sample in exchange for a genuine, in-depth review')
+  if (input.bannerAds) asks.push(`OPTION WE OFFER (not required): a paid banner ad placement on our blog${input.bannerAdsAmount ? ` at ${input.bannerAdsAmount}` : ''} — available if they want extra visibility`)
+  if (input.productionFee) asks.push(`OPTION WE OFFER (not required): a production fee${input.productionFeeAmount ? ` of ${input.productionFeeAmount}` : ''} if they'd like us to produce the review content`)
 
   const exampleLinks = (input.exampleLinks || []).map(s => s.trim()).filter(Boolean).slice(0, 3)
   const profile = [
@@ -126,9 +126,9 @@ THE PITCH:
 - Say you're open to MANY products across categories (Home & Kitchen, Tech, Outdoors, Sports, Beauty, Health & Household, Tools, Pet, Office, Musical Instruments, and more) and invite them to send other products too.
 - If the creator offers live streams, mention you're also open to live streams on your channels.
 
-THE ASK (state it plainly in this first email):
-- If they want a free sample for the review, say so directly.
-- If they charge a production fee, state it (and the amount) directly.
+THE ASK vs THE OPTIONS (frame these correctly — this matters):
+- The ONLY real request is the free product sample (when present): ask for it directly and warmly.
+- Paid placements (banner ad, production fee) are OPTIONS the creator OFFERS — extra services the brand can choose, NOT demands or conditions of the collaboration. Phrase them as available choices, e.g. "We also offer, as an option, a paid banner ad placement on our blog at <amount>/month" or "Optionally, a production fee of <amount> if you'd like us to produce the content." Never make them sound like a price of admission or an ultimatum. State the amount clearly but keep the tone "here's what's available if useful to you."
 - If sharing a shipping address, include the address block exactly where indicated and ask them to send samples there.
 
 CREDIBILITY WITHOUT STATS:
@@ -169,8 +169,8 @@ Produce the blocks in THIS order (skip a block only if its data is absent):
 7. Live streams: include this block ONLY if the creator is open to live streams. Say they're also open to live streams on their channels, and if a best-livestream link was provided, include it as proof ("Here's one of our live streams: <link>"). Then the open-to-more-products/categories paragraph.
 8. "Here are a few examples of our recent work:"
 9. LIST: the example links (bare URLs, one per line)
-10. "What we ask for:"
-11. LIST: the asks (free sample / banner ad at <amount> / production fee at <amount>)
+10. Lead-in line: "What we ask for, and what we also offer:" (only if there are any asks/options)
+11. LIST: the free-sample request phrased as a friendly ask; then any paid placements phrased clearly as OPTIONAL offerings (start those lines with "Optional —", e.g. "Optional — a paid banner ad placement on our blog at <amount>/month"). Never present the paid options as requirements.
 12. "Ship samples to:" then the address lines (only if sharing address) — address as its own block
 13. Long-term close paragraph
 14. Sign-off: creator name(s), then brand/site, then contact email (each on its own line, one block)`
