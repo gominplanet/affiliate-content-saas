@@ -25,6 +25,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { researchProduct } from '@/services/research'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { scrubBanned } from '@/lib/scrub'
 
 export const maxDuration = 300
 
@@ -168,6 +169,17 @@ export async function POST(request: Request) {
       return fail(`Content generation failed: ${err instanceof Error ? err.message : 'unknown'}`)
     }
 
+    // Hard-enforce the banned-word rule on every user-facing field before
+    // publish/persist — LLM instructions alone aren't a guarantee.
+    generated.title = scrubBanned(generated.title)
+    generated.excerpt = scrubBanned(generated.excerpt)
+    generated.content = scrubBanned(generated.content)
+    generated.imagePrompts = {
+      hero: scrubBanned(generated.imagePrompts.hero),
+      lifestyle: scrubBanned(generated.imagePrompts.lifestyle),
+      setting: scrubBanned(generated.imagePrompts.setting),
+    }
+
     const slug = generated.slug ? slugify(generated.slug) : slugify(generated.title)
 
     // ── 5. Publish to WordPress ─────────────────────────────────────────────
@@ -204,7 +216,14 @@ export async function POST(request: Request) {
         chosenCategory = pick
       }
       if (chosenCategory) categoryIds = [await wpService.createCategory(chosenCategory)]
-    } catch { /* non-fatal — post still publishes, user can set it later */ }
+    } catch {
+      // Category creation failed — the post still publishes, but it
+      // publishes WITHOUT a category. Null `chosenCategory` so the
+      // campaigns row reflects reality and the UI offers the manual
+      // dropdown instead of showing a category that isn't on the post.
+      chosenCategory = null
+      categoryIds = []
+    }
 
     let wpPost
     try {

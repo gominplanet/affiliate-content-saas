@@ -4,6 +4,7 @@ import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit } from '@/lib/tier'
+import { scrubBanned } from '@/lib/scrub'
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
 // Images are generated separately via /api/blog/images
@@ -136,6 +137,18 @@ async function handleGenerate(request: Request) {
     const msg = err instanceof Error ? err.message : 'Claude generation failed'
     await logFailure(supabase, user.id, videoId, 'blog_generation', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
+  }
+
+  // ── 5.5. Hard-enforce the banned-word rule on every user-facing field.
+  //         LLM instructions aren't a guarantee; this is the last line of
+  //         defense before anything is published or persisted.
+  generated.title = scrubBanned(generated.title)
+  generated.excerpt = scrubBanned(generated.excerpt)
+  generated.content = scrubBanned(generated.content)
+  generated.imagePrompts = {
+    hero: scrubBanned(generated.imagePrompts.hero),
+    lifestyle: scrubBanned(generated.imagePrompts.lifestyle),
+    setting: scrubBanned(generated.imagePrompts.setting),
   }
 
   // ── 6. Strip image placeholders (images added later via /api/blog/images) ─

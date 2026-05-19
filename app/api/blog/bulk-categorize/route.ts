@@ -168,12 +168,22 @@ ${titlesList}`,
       }, { status: 500 })
     }
 
-    // Constrain each classification to the brand's niche list (case-insensitive).
+    // Map the AI's classifications by their stated 1-based index, then
+    // drive assignment off `needsCat` itself — so a dropped, duplicated,
+    // or renumbered AI entry can't shift every post onto the wrong niche
+    // (or silently skip posts). A post with no classification falls back
+    // to the first niche rather than being left on "Blog".
     const nichesLowered = niches.map((n) => n.toLowerCase())
-    const normalized = classifications.map((c) => {
+    const byIndex = new Map<number, string>()
+    for (const c of classifications) {
+      if (typeof c?.index !== 'number') continue
       const idx = nichesLowered.indexOf((c.category || '').toLowerCase())
-      return { index: c.index, category: idx >= 0 ? niches[idx] : niches[0] }
-    })
+      byIndex.set(c.index, idx >= 0 ? niches[idx] : niches[0])
+    }
+    const assignments = needsCat.map((post, i) => ({
+      post,
+      category: byIndex.get(i + 1) ?? niches[0],
+    }))
 
     if (dryRun) {
       return NextResponse.json({
@@ -181,9 +191,9 @@ ${titlesList}`,
         total: allPosts.length,
         toFix: needsCat.length,
         niches,
-        preview: normalized.map((c) => ({
-          title: needsCat[c.index - 1]?.title.rendered.replace(/<[^>]+>/g, ''),
-          category: c.category,
+        preview: assignments.map((a) => ({
+          title: a.post.title.rendered.replace(/<[^>]+>/g, ''),
+          category: a.category,
         })),
       })
     }
@@ -193,11 +203,10 @@ ${titlesList}`,
     let fixed = 0
     const errors: string[] = []
 
-    for (const { index, category } of normalized) {
-      const post = needsCat[index - 1]
+    for (const { post, category } of assignments) {
       if (!post) continue
       try {
-        if (!categoryCache[category]) {
+        if (!(category in categoryCache)) {
           categoryCache[category] = await wpService.createCategory(category)
         }
         const catId = categoryCache[category]

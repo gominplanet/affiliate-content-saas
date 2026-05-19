@@ -104,9 +104,11 @@ Return ONLY valid JSON with these exact keys:
   const hashtags = rawTags
     .map(t => scrubBanned(String(t)).replace(/[^a-z0-9]/gi, '').toLowerCase())
     .filter(Boolean).slice(0, 8)
-  const pinTitle = scrubBanned(parsed.pin_title) || scrubBanned(p.title) || p.title
+  // Never fall back to a raw (unscrubbed) value — keep the banned word out
+  // even when the scrubbed string is empty.
+  const pinTitle = scrubBanned(parsed.pin_title) || scrubBanned(p.title)
   const pinDescription = scrubBanned(parsed.pinterest_description)
-    || `${scrubBanned(p.title) || p.title}. See the full breakdown at the link.`
+    || `${scrubBanned(p.title)}. See the full breakdown at the link.`
 
   const rawImage = await generatePinImage(buildViralImagePrompt(fields))
   const imageResult = rawImage

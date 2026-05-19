@@ -51,7 +51,7 @@ Produce a RESEARCH BRIEF in markdown with exactly these sections:
 ## Problems it solves
 The concrete pain points / frustrations this product addresses. Be specific about the "before" state — what's annoying/broken without it.
 
-## Honest objections & complaints
+## Objections & complaints
 Real downsides, common complaints, who it's NOT for. Pulled from reviews/forums, not invented. A trustworthy review acknowledges these.
 
 ## How it compares

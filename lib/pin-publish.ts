@@ -40,8 +40,10 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
     throw new PinPublishError('This post has no blog URL to link the pin to.', 400)
   }
 
-  const safeDescription = scrubBanned(args.description) || args.description
-  const safeTitle = (scrubBanned(args.title) || scrubBanned(p.title) || p.title || '').slice(0, 100)
+  // Never fall back to a raw (unscrubbed) value — that would leak the
+  // banned word in the edge case where the scrubbed string is empty.
+  const safeDescription = scrubBanned(args.description)
+  const safeTitle = (scrubBanned(args.title) || scrubBanned(p.title) || '').slice(0, 100)
 
   const pinterest = new PinterestService(ig.pinterest_access_token)
 
