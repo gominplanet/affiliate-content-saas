@@ -558,9 +558,11 @@ function CampaignsInner() {
           <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Scout campaigns with the browser extension</p>
         </div>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
-          Install the MVP Affiliate extension, open Amazon Creator Connections, select the campaigns
-          you want, and they land here as queued posts — one click each to research, write, and publish.
-          Paste the token below into the extension once to link it to your account.
+          Install the MVP Affiliate extension, open the <strong>EPC</strong> section of Amazon
+          Creator Connections, select the campaigns you want, and they land here as queued posts —
+          one click each to research, write, and publish. The extension only scouts the EPC side
+          (the .zip importer on the Creator Connections tab covers the rest). Paste the token below
+          into the extension once to link it to your account.
         </p>
 
         <a
@@ -580,7 +582,7 @@ function CampaignsInner() {
             <li>Open <code className="font-mono">chrome://extensions</code> in Chrome.</li>
             <li>Turn on <strong>Developer mode</strong> (top-right toggle).</li>
             <li>Click <strong>Load unpacked</strong> and select the unzipped folder.</li>
-            <li>Pin the extension, paste the token below into it, then open Amazon Creator Connections.</li>
+            <li>Pin the extension, paste the token below into it, then open the <strong>EPC</strong> section of Amazon Creator Connections.</li>
           </ol>
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
             Chrome may show a &ldquo;disable developer-mode extensions&rdquo; notice on restart — that&apos;s normal for
