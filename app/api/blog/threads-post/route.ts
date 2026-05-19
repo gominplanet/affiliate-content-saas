@@ -4,6 +4,7 @@ import { ThreadsService } from '@/services/threads'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
+import { learnProfileToPrompt } from '@/lib/learn'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -43,6 +44,15 @@ export async function POST(request: NextRequest) {
     const p = post as any
     const ig = integration as any
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: brandRow } = await (supabase as any)
+      .from('brand_profiles')
+      .select('learn_profile')
+      .eq('user_id', user.id)
+      .single()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const brand = brandRow as any
+
     if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
     if (!dryRun && !ig?.threads_access_token) return NextResponse.json({ error: 'Threads not connected' }, { status: 400 })
     if (!dryRun && !ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing — try reconnecting Threads in Settings' }, { status: 400 })
@@ -52,12 +62,13 @@ export async function POST(request: NextRequest) {
       bodyText = overrideText
     } else {
       const anthropic = createAnthropicClient()
+      const learnBlock = learnProfileToPrompt(brand?.learn_profile)
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 300,
         messages: [{
           role: 'user',
-          content: `Write a Threads post for this blog article. Make it punchy and conversational — like a creator sharing a genuine find. Start with a hook that stops the scroll. Include the blog URL. End with 2-3 relevant hashtags. Keep the ENTIRE post under 450 characters (leave room for the disclaimer).
+          content: `Write a Threads post for this blog article. Make it punchy and conversational — like a creator sharing a genuine find. Start with a hook that stops the scroll. Include the blog URL. End with 2-3 relevant hashtags. Keep the ENTIRE post under 450 characters (leave room for the disclaimer).${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Blog title: ${p.title}
 Blog excerpt: ${p.excerpt || p.content?.substring(0, 300) || ''}

@@ -17,6 +17,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { learnProfileToPrompt } from '@/lib/learn'
 
 export const maxDuration = 60
 
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await (supabase as any)
       .from('brand_profiles')
-      .select('name,voice_summary')
+      .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
       const voiceNote = brand?.voice_summary
         ? `\n\nVoice guidance: ${brand.voice_summary}`
         : ''
+      const learnBlock = learnProfileToPrompt(brand?.learn_profile)
 
       const anthropic = createAnthropicClient()
       const msg = await anthropic.messages.create({
@@ -108,7 +110,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a single Telegram channel post for this product review article.
 
-Style: a content creator's authentic, scannable take. Strong hook in line 1, 2-3 short bullets or short lines with key takeaways, conversational. Match the voice provided.${voiceNote}
+Style: a content creator's authentic, scannable take. Strong hook in line 1, 2-3 short bullets or short lines with key takeaways, conversational. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - The post BEFORE we append the URL must be ${CAPTION_BUDGET} characters or fewer.

@@ -13,6 +13,8 @@ import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { composePin } from '@/lib/pin-compose'
+import { learnProfileToPrompt } from '@/lib/learn'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const AFFILIATE_DISCLAIMER = '📌 Disclosure: As an Amazon Associate I earn from qualifying purchases. This post may contain affiliate links — I may earn a small commission at no extra cost to you.'
 export const COMPLIANCE_TAGS = '#ad #affiliate'
@@ -40,6 +42,19 @@ export function composePinDescription(a: PinAssets): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function buildPinAssets(p: any, ctx: { userId?: string | null; tier?: string | null }): Promise<PinAssets> {
+  // Apply the user's LEARN voice profile to the pin copy too (whatever
+  // parts they filled in). Best-effort — a fetch failure must not block
+  // pin generation.
+  let learnBlock = ''
+  if (ctx.userId) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: bp } = await (createAdminClient() as any)
+        .from('brand_profiles').select('learn_profile').eq('user_id', ctx.userId).single()
+      learnBlock = learnProfileToPrompt(bp?.learn_profile)
+    } catch { /* no voice profile — generate without it */ }
+  }
+
   const anthropic = createAnthropicClient()
   const claudeMsg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -49,6 +64,7 @@ export async function buildPinAssets(p: any, ctx: { userId?: string | null; tier
       content: `You are an expert affiliate marketing content strategist. Analyze this blog post and return a JSON object.
 
 ${BANNED_RULE}
+${learnBlock}
 
 Blog post title: ${p.title}
 Blog post content (first 500 chars): ${p.excerpt || p.content?.substring(0, 500) || ''}

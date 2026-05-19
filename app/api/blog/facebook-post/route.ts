@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createFacebookService } from '@/services/facebook'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { learnProfileToPrompt } from '@/lib/learn'
 
 export const maxDuration = 60
 
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await (supabase as any)
       .from('brand_profiles')
-      .select('affiliate_disclaimer,name')
+      .select('affiliate_disclaimer,name,learn_profile')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
       reviewText = overrideText
     } else {
       const anthropic = createAnthropicClient()
+      const learnBlock = learnProfileToPrompt(brand?.learn_profile)
       const blogText = `Title: ${post.title}\n\nExcerpt: ${post.excerpt || ''}\n\nContent (first 1500 chars):\n${(post.content as string).replace(/<[^>]+>/g, '').slice(0, 1500)}`
 
       const msg = await anthropic.messages.create({
@@ -79,7 +81,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a compelling ~300-word Facebook post promoting this blog article.
 
-Write in first person, conversational tone. Include 2-3 relevant emojis naturally placed. End with a clear call to action to read the full post. Do NOT include the URL or disclaimer — those will be added separately. Do NOT use hashtags.
+Write in first person, conversational tone. Include 2-3 relevant emojis naturally placed. End with a clear call to action to read the full post. Do NOT include the URL or disclaimer — those will be added separately. Do NOT use hashtags.${learnBlock ? `\n\n${learnBlock}` : ''}
 
 ${blogText}
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { learnProfileToPrompt } from '@/lib/learn'
 import {
   createTweet,
   refreshAccessToken,
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await (supabase as any)
       .from('brand_profiles')
-      .select('name,voice_summary')
+      .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,6 +119,7 @@ export async function POST(request: NextRequest) {
       const voiceNote = brand?.voice_summary
         ? `\n\nVoice guidance: ${brand.voice_summary}`
         : ''
+      const learnBlock = learnProfileToPrompt(brand?.learn_profile)
 
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a single tweet for this product review article.
 
-Style: a content creator's authentic short take. Strong hook, one clear value bullet, one short line of curiosity. Match the voice provided.${voiceNote}
+Style: a content creator's authentic short take. Strong hook, one clear value bullet, one short line of curiosity. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - The tweet text alone (BEFORE the URL is appended) must be ${generationBudget} characters or fewer.

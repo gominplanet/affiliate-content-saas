@@ -18,6 +18,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { learnProfileToPrompt } from '@/lib/learn'
 
 const ASIN_RE = /\b([A-Z0-9]{10})\b/
 
@@ -140,12 +141,13 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await (supabase as any)
       .from('brand_profiles')
-      .select('name,voice_summary')
+      .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const brand = brandRow as any
     const voiceNote = brand?.voice_summary ? `\n\nVoice guidance: ${brand.voice_summary}` : ''
+    const learnBlock = learnProfileToPrompt(brand?.learn_profile)
 
     const results: {
       reelId?: string
@@ -177,7 +179,7 @@ export async function POST(request: NextRequest) {
             role: 'user',
             content: `Write an Instagram ${postTypeLabel} caption for this product review article.
 
-Style: a content creator's authentic, punchy take. Strong hook in line 1 (max 6 words). 2-3 short value lines below the hook. End with 15-25 hashtags optimized for Instagram SEO — mix of broad high-traffic + niche-specific + product/brand. Match the voice provided.${voiceNote}
+Style: a content creator's authentic, punchy take. Strong hook in line 1 (max 6 words). 2-3 short value lines below the hook. End with 15-25 hashtags optimized for Instagram SEO — mix of broad high-traffic + niche-specific + product/brand. Match the voice provided.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Hard rules:
 - TOTAL output (text + hashtags) must be under 2000 characters.

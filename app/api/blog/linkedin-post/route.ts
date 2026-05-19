@@ -4,6 +4,7 @@ import { createLinkedInService } from '@/services/linkedin'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
+import { learnProfileToPrompt } from '@/lib/learn'
 
 export const maxDuration = 60
 
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await (supabase as any)
       .from('brand_profiles')
-      .select('name,voice_summary')
+      .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
       const voiceNote = brand?.voice_summary
         ? `\n\nVoice guidance: ${brand.voice_summary}`
         : ''
+      const learnBlock = learnProfileToPrompt(brand?.learn_profile)
 
       const msg = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
@@ -91,7 +93,7 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a compelling LinkedIn post for this blog article.
 
-Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a call to action to read the full post. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${voiceNote}
+Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a call to action to read the full post. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Keep the ENTIRE post under 600 characters (LinkedIn sweet spot for engagement).
 
