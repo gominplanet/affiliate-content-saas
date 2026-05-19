@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
 import Header from '@/components/layout/Header'
-import { Loader2, Sparkles, ExternalLink, AlertCircle, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle } from 'lucide-react'
+import { Loader2, Sparkles, ExternalLink, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle } from 'lucide-react'
 import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
 
 interface Campaign {
@@ -189,15 +188,6 @@ const STATUS: Record<Campaign['status'], { label: string; bg: string; fg: string
 }
 
 function CampaignsInner() {
-  const params = useSearchParams()
-  // Phase 2 (extension) deep-links here with ?asin=&campaign=&epc=&ends=
-  const [asin, setAsin] = useState(params.get('asin') ?? '')
-  const [campaignName, setCampaignName] = useState(params.get('campaign') ?? '')
-  const [epc, setEpc] = useState(params.get('epc') ?? '')
-  const [endsAt, setEndsAt] = useState(params.get('ends') ?? '')
-
-  const [generating, setGenerating] = useState(false)
-  const [genError, setGenError] = useState<string | null>(null)
   const [items, setItems] = useState<Campaign[] | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [genRow, setGenRow] = useState<string | null>(null)
@@ -240,31 +230,6 @@ function CampaignsInner() {
     navigator.clipboard.writeText(extToken).then(() => {
       setCopied(true); setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})
-  }
-
-  async function generate() {
-    const clean = asin.trim().toUpperCase()
-    if (!/^[A-Z0-9]{10}$/.test(clean)) {
-      setGenError('Enter a valid 10-character Amazon ASIN.')
-      return
-    }
-    setGenerating(true)
-    setGenError(null)
-    try {
-      const res = await fetch('/api/campaigns/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ asin: clean, campaignName, epc, endsAt: endsAt || undefined }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Generation failed')
-      setAsin(''); setCampaignName(''); setEpc(''); setEndsAt('')
-      await load()
-    } catch (err) {
-      setGenError(err instanceof Error ? err.message : 'Generation failed')
-    } finally {
-      setGenerating(false)
-    }
   }
 
   async function generateRow(c: Campaign) {
@@ -339,52 +304,8 @@ function CampaignsInner() {
     <>
       <Header
         title="CC & EPC Campaign"
-        subtitle="Turn an Amazon Creator Connections campaign into a researched, SEO-optimized blog post in your voice. Paste the product ASIN — we research the web, write it, and publish."
+        subtitle="Scout Amazon Creator Connections campaigns with the browser extension — they land here as queued posts. One click each to research, write, and publish in your brand voice."
       />
-
-      {/* New campaign form */}
-      <div className="card p-5 mb-6 max-w-3xl">
-        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">New campaign post</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="sm:col-span-2">
-            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Amazon ASIN <span className="text-[#ff3b30]">*</span></label>
-            <input value={asin} onChange={e => setAsin(e.target.value)} placeholder="B0XXXXXXXX" className="input-field font-mono text-sm w-full" />
-          </div>
-          <div>
-            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Campaign name <span className="text-[#86868b]">(optional)</span></label>
-            <input value={campaignName} onChange={e => setCampaignName(e.target.value)} placeholder="e.g. Spring Kitchen Boost" className="input-field text-sm w-full" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">EPC / boost</label>
-              <input value={epc} onChange={e => setEpc(e.target.value)} placeholder="12%" className="input-field text-sm w-full" />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Ends</label>
-              <input type="date" value={endsAt} onChange={e => setEndsAt(e.target.value)} className="input-field text-sm w-full" />
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 mt-4">
-          <button
-            onClick={generate}
-            disabled={generating}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
-          >
-            {generating
-              ? <><Loader2 size={14} className="animate-spin" /> Researching + writing… (1–2 min)</>
-              : <><Sparkles size={14} /> Generate campaign post</>}
-          </button>
-          {genError && (
-            <span className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {genError}</span>
-          )}
-        </div>
-        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3 leading-relaxed">
-          Pro feature. We run web research (people-also-ask, real complaints, problems solved), write a
-          problem→solution + FAQ post in your brand voice, attach your Geniuslink so the campaign
-          commission boost applies, and publish to WordPress.
-        </p>
-      </div>
 
       {/* Browser extension connect */}
       <div className="card p-5 mb-6 max-w-3xl">
