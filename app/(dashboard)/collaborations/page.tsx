@@ -97,7 +97,7 @@ export default function CollaborationsPage() {
       const res = await fetch('/api/collaborations/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes, livestreams, livestreamLink }),
+        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes, livestreams, livestreamLink, portfolioUrl }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Save failed') }
       setTrackSaved(true); setTimeout(() => setTrackSaved(false), 2000)

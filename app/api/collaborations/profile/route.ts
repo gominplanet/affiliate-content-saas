@@ -22,9 +22,15 @@ export async function POST(request: Request) {
       extraNotes?: unknown
       livestreams?: unknown
       livestreamLink?: unknown
+      portfolioUrl?: unknown
     }
 
     const str = (v: unknown) => (typeof v === 'string' ? v : '')
+    // The portfolio/link-hub is shared with Brand Profile (linktree_url).
+    // Only overwrite it when a non-empty value is provided here, so
+    // saving the collab form with a blank field can't wipe a Linktree
+    // the user set in Brand Profile.
+    const portfolio = str(body.portfolioUrl).trim()
     const links = Array.isArray(body.exampleLinks)
       ? body.exampleLinks
           .filter((x): x is string => typeof x === 'string')
@@ -42,6 +48,7 @@ export async function POST(request: Request) {
         collab_extra_notes: str(body.extraNotes),
         collab_livestreams: !!body.livestreams,
         collab_livestream_link: str(body.livestreamLink),
+        ...(portfolio ? { linktree_url: portfolio } : {}),
       })
       .eq('user_id', user.id)
 
