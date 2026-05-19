@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
   }
   if (!userId) return NextResponse.redirect(`${appUrl}/login`)
 
+  let step = 'token_exchange'
   try {
     const redirectUri = `${appUrl}/api/auth/youtube/callback`
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -37,16 +38,24 @@ export async function GET(request: NextRequest) {
         grant_type: 'authorization_code',
       }).toString(),
     })
-    if (!tokenRes.ok) throw new Error('Token exchange failed')
+    if (!tokenRes.ok) {
+      // Surface Google's real reason (redirect_uri_mismatch,
+      // invalid_client, invalid_grant…) instead of a generic failure.
+      const raw = await tokenRes.text().catch(() => '')
+      let detail = raw
+      try { const j = JSON.parse(raw); detail = j.error_description || j.error || raw } catch { /* keep raw */ }
+      throw new Error(`Token exchange ${tokenRes.status}: ${String(detail).slice(0, 200)} (redirect_uri=${redirectUri})`)
+    }
     const tokens = await tokenRes.json() as {
       access_token: string
       refresh_token?: string
       expires_in: number
     }
 
+    step = 'save_token'
     const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    const { error: saveErr } = await (supabase as any).from('integrations').upsert(
       {
         user_id: userId,
         youtube_oauth_access_token: tokens.access_token,
@@ -55,9 +64,16 @@ export async function GET(request: NextRequest) {
       },
       { onConflict: 'user_id' },
     )
+    // Don't report false success — a failed save would leave the
+    // "Connect YouTube" banner up with no explanation.
+    if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
     return NextResponse.redirect(`${appUrl}/setup?tab=integrations&youtube_oauth_connected=1`)
-  } catch {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&youtube_error=callback_failed`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // eslint-disable-next-line no-console
+    console.error(`[youtube callback] ${step} failed:`, msg)
+    const detail = encodeURIComponent(`${step}: ${msg}`.slice(0, 300))
+    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&youtube_error=${detail}`)
   }
 }
