@@ -26,6 +26,9 @@ const H = 720
 export interface HeroImage {
   b64: string
   mime: 'image/jpeg'
+  /** Which path produced it — surfaced per-post so a silent fallback
+   *  is visible instead of a mystery. */
+  kind: 'ai' | 'product'
 }
 
 export async function buildCampaignHero(opts: {
@@ -47,7 +50,7 @@ export async function buildCampaignHero(opts: {
         .resize(W, H, { fit: 'cover', position: 'attention' })
         .jpeg({ quality: 86 })
         .toBuffer()
-      return { b64: jpeg.toString('base64'), mime: 'image/jpeg' }
+      return { b64: jpeg.toString('base64'), mime: 'image/jpeg', kind: 'ai' }
     } catch {
       /* fall through to the product-photo fallback */
     }
@@ -68,7 +71,7 @@ export async function buildCampaignHero(opts: {
           .composite([{ input: fitted, gravity: 'centre' }])
           .jpeg({ quality: 86 })
           .toBuffer()
-        return { b64: jpeg.toString('base64'), mime: 'image/jpeg' }
+        return { b64: jpeg.toString('base64'), mime: 'image/jpeg', kind: 'product' }
       }
     } catch {
       /* give up — caller publishes without a featured image */

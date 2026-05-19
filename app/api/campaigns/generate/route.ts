@@ -246,6 +246,7 @@ export async function POST(request: Request) {
     // Featured image — a 16:9 hero (AI from the hero prompt, else the
     // product photo letterboxed to 16:9). PATCH only featured_media so
     // we don't disturb the already-published title/content/categories.
+    let heroKind: 'ai' | 'product' | null = null
     try {
       const hero = await buildCampaignHero({
         heroPrompt: generated.imagePrompts?.hero,
@@ -255,6 +256,7 @@ export async function POST(request: Request) {
       if (hero) {
         const media = await wpService.uploadImageFromBase64(hero.b64, `${asin}-hero.jpg`, hero.mime)
         await wpService.updatePost(wpPost.id, { featured_media: media.id })
+        heroKind = hero.kind
       }
     } catch { /* non-fatal — post is live without a featured image */ }
 
@@ -291,6 +293,7 @@ export async function POST(request: Request) {
         blog_post_id: blogRow?.id ?? null,
         wordpress_url: wpPost.link,
         category: chosenCategory,
+        hero_kind: heroKind,
         // Surface WHY fan-out is unavailable rather than silently null.
         error_message: blogLinked ? null : `Post published, but social fan-out is unavailable: blog_posts insert failed (${blogErr?.message ?? 'unknown'}). Run migration 024 then regenerate.`,
         updated_at: new Date().toISOString(),

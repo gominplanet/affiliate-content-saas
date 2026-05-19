@@ -18,6 +18,7 @@ interface Campaign {
   wordpress_url: string | null
   blog_post_id: string | null
   category: string | null
+  hero_kind: 'ai' | 'product' | null
   created_at: string
 }
 
@@ -654,6 +655,16 @@ function CampaignsInner() {
                     {c.ends_at && (
                       <span className={`inline-flex items-center gap-1 ${expired ? 'text-[#ff3b30]' : 'text-[#1f8a3a]'}`}>
                         <Clock size={10} /> {expired ? 'expired' : 'boost until'} {new Date(c.ends_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    )}
+                    {c.hero_kind === 'ai' && (
+                      <span className="inline-flex items-center gap-1 text-[#0071e3]" title="Featured image: AI-generated 16:9 hero">
+                        <Sparkles size={10} /> AI hero
+                      </span>
+                    )}
+                    {c.hero_kind === 'product' && (
+                      <span className="inline-flex items-center gap-1 text-[#ff9500]" title="OpenAI was unavailable — used the product photo letterboxed to 16:9 instead of an AI hero">
+                        <AlertCircle size={10} /> Product photo (no AI hero)
                       </span>
                     )}
                   </div>
