@@ -516,6 +516,17 @@ export default function BrandPage() {
                   className="input-field"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Amazon storefront</label>
+                <input
+                  type="text"
+                  value={data.amazon_storefront_url}
+                  onChange={(e) => set('amazon_storefront_url', e.target.value)}
+                  placeholder="amazon.com/shop/yourstore"
+                  className="input-field"
+                />
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">Used to pre-fill the Collaborations pitch email.</p>
+              </div>
             </div>
           </div>
 
@@ -600,7 +611,6 @@ export default function BrandPage() {
                 { key: 'pinterest_url' as const,        label: 'Pinterest', placeholder: 'pinterest.com/yourprofile' },
                 { key: 'facebook_url' as const,         label: 'Facebook',  placeholder: 'facebook.com/yourpage' },
                 { key: 'threads_url' as const,          label: 'Threads',   placeholder: 'threads.net/@yourhandle' },
-                { key: 'amazon_storefront_url' as const, label: 'Amazon storefront', placeholder: 'amazon.com/shop/yourstore' },
                 { key: 'contact_email' as const,        label: 'Contact email', placeholder: 'hello@yourdomain.com' },
               ].map(({ key, label, placeholder }) => (
                 <div key={key}>
