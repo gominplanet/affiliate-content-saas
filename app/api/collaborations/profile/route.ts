@@ -20,6 +20,8 @@ export async function POST(request: Request) {
       collabsDone?: unknown
       exampleLinks?: unknown
       extraNotes?: unknown
+      livestreams?: unknown
+      livestreamLink?: unknown
     }
 
     const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -38,6 +40,8 @@ export async function POST(request: Request) {
         collab_track_record: str(body.collabsDone),
         collab_example_links: links,
         collab_extra_notes: str(body.extraNotes),
+        collab_livestreams: !!body.livestreams,
+        collab_livestream_link: str(body.livestreamLink),
       })
       .eq('user_id', user.id)
 

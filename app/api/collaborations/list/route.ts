@@ -29,7 +29,7 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('brand_profiles')
-      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes')
+      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes,collab_livestreams,collab_livestream_link')
       .eq('user_id', user.id)
       .single(),
   ])
@@ -60,6 +60,8 @@ export async function GET() {
       collabsDone: brand?.collab_track_record ?? '',
       exampleLinks: Array.isArray(brand?.collab_example_links) ? brand.collab_example_links : [],
       extraNotes: brand?.collab_extra_notes ?? '',
+      livestreams: !!brand?.collab_livestreams,
+      livestreamLink: brand?.collab_livestream_link ?? '',
     },
   })
 }

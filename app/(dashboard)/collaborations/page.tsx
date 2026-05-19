@@ -78,6 +78,8 @@ export default function CollaborationsPage() {
         setPortfolioUrl(p => p || d.prefill.portfolioUrl || '')
         setCollabsDone(p => p || d.prefill.collabsDone || '')
         setExtraNotes(p => p || d.prefill.extraNotes || '')
+        if (d.prefill.livestreams) setLivestreams(true)
+        setLivestreamLink(p => p || d.prefill.livestreamLink || '')
         const savedLinks = Array.isArray(d.prefill.exampleLinks) ? d.prefill.exampleLinks : []
         if (savedLinks.length) {
           setExampleLinks(prev =>
@@ -95,7 +97,7 @@ export default function CollaborationsPage() {
       const res = await fetch('/api/collaborations/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes }),
+        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes, livestreams, livestreamLink }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Save failed') }
       setTrackSaved(true); setTimeout(() => setTrackSaved(false), 2000)
