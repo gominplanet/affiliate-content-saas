@@ -471,12 +471,14 @@ function CampaignsInner() {
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
           On Amazon Creator Connections click <strong>Download all available campaigns</strong>, then drop
           the .zip here. We filter it in your browser (nothing huge is uploaded) and queue the matches.
+          Note: Amazon&apos;s export has no product titles — the keyword only matches brand &amp; campaign
+          name, not the product. The actual product is fetched per post when you click Generate.
         </p>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
           <div>
-            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Keyword</label>
-            <input value={impKw} onChange={e => setImpKw(e.target.value)} placeholder="brand / product / ASIN" className="input-field text-sm w-full" />
+            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Brand / campaign keyword</label>
+            <input value={impKw} onChange={e => setImpKw(e.target.value)} placeholder="brand or campaign name (not product)" className="input-field text-sm w-full" />
           </div>
           <div>
             <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Min commission %</label>
