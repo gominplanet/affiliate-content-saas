@@ -596,15 +596,19 @@ function CampaignsInner() {
 
       {/* Bulk-accept helper: copy every Campaign Id for Amazon's
           "Submit accepted campaigns" box. */}
-      {ccIds.length > 0 && (
+      {items && items.length > 0 && (
         <div className="flex items-center justify-between gap-3 mb-3 max-w-3xl">
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-            Paste these into Amazon Creator Connections → <strong>Submit accepted campaigns</strong> to
-            accept them all at once.
+            {ccIds.length > 0 ? (
+              <>Paste these into Amazon Creator Connections → <strong>Submit accepted campaigns</strong> to accept them all at once.</>
+            ) : (
+              <>No Campaign Ids yet — only campaigns imported from the <strong>.zip</strong> after this update carry them. Re-import to capture IDs.</>
+            )}
           </p>
           <button
             onClick={copyCampaignIds}
-            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 transition-colors"
+            disabled={ccIds.length === 0}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {copiedIds
               ? <><CheckCircle size={12} className="text-[#34c759]" /> Copied {ccIds.length}</>
