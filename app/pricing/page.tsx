@@ -59,6 +59,7 @@ const plans: PlanExt[] = [
     features: [
       '30 full reviews per month',
       'Everything in Free',
+      'Pinterest auto-post *',
       'Monthly cap resets on the 1st — no rollover, no surprises',
     ],
     highlight: false,
@@ -78,7 +79,6 @@ const plans: PlanExt[] = [
       'Threads auto-post',
       'Bluesky auto-post',
       'LinkedIn auto-post',
-      'Pinterest auto-post *',
       'Priority generation queue (your jobs jump the line)',
     ],
     highlight: true,
@@ -226,7 +226,7 @@ export default function PricingPage() {
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
         * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
-        It activates automatically on Growth &amp; Pro accounts once approved at no extra cost.
+        It activates automatically on Starter, Growth &amp; Pro accounts once approved at no extra cost.
       </p>
       <div className="mt-6 max-w-2xl rounded-2xl bg-[#0071e3]/5 border border-[#0071e3]/20 p-5">
         <p className="text-center text-sm font-semibold text-[#0071e3] mb-1.5">🔒 Price-lock guarantee</p>
