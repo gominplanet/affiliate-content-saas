@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
-import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle, Trash2 } from 'lucide-react'
+import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle, Trash2, Save } from 'lucide-react'
 
 interface CollabRow {
   id: string
@@ -61,6 +61,8 @@ export default function CollaborationsPage() {
   const [history, setHistory] = useState<CollabRow[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
+  const [savingTrack, setSavingTrack] = useState(false)
+  const [trackSaved, setTrackSaved] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -71,11 +73,35 @@ export default function CollaborationsPage() {
         setWebsiteUrl(p => p || d.prefill.websiteUrl || '')
         setYoutubeUrl(p => p || d.prefill.youtubeUrl || '')
         setAmazonStorefront(p => p || d.prefill.amazonStorefront || '')
+        setCollabsDone(p => p || d.prefill.collabsDone || '')
+        setExtraNotes(p => p || d.prefill.extraNotes || '')
+        const savedLinks = Array.isArray(d.prefill.exampleLinks) ? d.prefill.exampleLinks : []
+        if (savedLinks.length) {
+          setExampleLinks(prev =>
+            prev.some(Boolean) ? prev : [savedLinks[0] ?? '', savedLinks[1] ?? '', savedLinks[2] ?? ''])
+        }
       }
       setHistory((d.collaborations ?? []) as CollabRow[])
     } catch { /* ignore */ }
   }, [])
   useEffect(() => { load() }, [load])
+
+  async function saveTrackRecord() {
+    setSavingTrack(true); setTrackSaved(false)
+    try {
+      const res = await fetch('/api/collaborations/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes }),
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Save failed') }
+      setTrackSaved(true); setTimeout(() => setTrackSaved(false), 2000)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSavingTrack(false)
+    }
+  }
 
   function toggleSel(id: string) {
     setSelected(prev => {
@@ -293,6 +319,18 @@ export default function CollaborationsPage() {
             {generating
               ? <><Loader2 size={14} className="animate-spin" /> Researching + writing… (up to ~1 min)</>
               : <><Sparkles size={14} /> Generate pitch email</>}
+          </button>
+          <button
+            onClick={saveTrackRecord}
+            disabled={savingTrack}
+            title="Save your track record so it's pre-filled next time"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 disabled:opacity-60 transition-colors"
+          >
+            {savingTrack
+              ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
+              : trackSaved
+                ? <><CheckCircle size={14} className="text-[#34c759]" /> Saved</>
+                : <><Save size={14} /> Save track record</>}
           </button>
           {genError && <span className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {genError}</span>}
         </div>
