@@ -264,6 +264,8 @@ function CampaignsInner() {
       const out: M[] = []
       const now = Date.now()
       let total = 0
+      // Diagnostics so 0-match is debuggable instead of a mystery.
+      let kwHits = 0, cutComm = 0, cutDays = 0, cutBudget = 0, cutNoAsin = 0, badDate = 0
 
       for (const entry of csvs) {
         if (out.length >= COLLECT_MAX) break
@@ -274,10 +276,14 @@ function CampaignsInner() {
             idx = {}
             cols.forEach((h, k) => {
               const x = h.toLowerCase()
+              // Exact-ish matches: 'end' alone also hits "Recommended"
+              // (recomm-END-ed) and 'campaign start', which silently
+              // pointed the end-date at the wrong column → every row
+              // failed the days gate → 0 matches.
               if (x.includes('asin')) idx!.asin = k
               else if (x.includes('campaign name')) idx!.name = k
               else if (x.includes('brand')) idx!.brand = k
-              else if (x.includes('end')) idx!.end = k
+              else if (x.includes('campaign end') || x.includes('end date')) idx!.end = k
               else if (x.includes('commission')) idx!.comm = k
               else if (x.includes('remain')) idx!.budget = k
               else if (x.includes('available')) idx!.slots = k
@@ -288,24 +294,38 @@ function CampaignsInner() {
           total++
           const asinRaw = cols[idx.asin] ?? ''
           const asin = (asinRaw.match(/[A-Z0-9]{10}/) || [])[0] || ''
-          if (!asin) return true
+          if (!asin) { cutNoAsin++; return true }
           const name = (cols[idx.name] ?? '').trim()
           const brand = (cols[idx.brand] ?? '').trim()
+
+          // Keyword first (so the breakdown reflects the user's search).
+          if (kw) {
+            const hay = `${brand} ${name} ${asinRaw}`.toLowerCase()
+            if (!hay.includes(kw)) return out.length < COLLECT_MAX
+          }
+          kwHits++
+
           const comm = parseFloat((cols[idx.comm] ?? '').replace(/[^\d.]/g, '')) || 0
-          const end = (cols[idx.end] ?? '').trim()
-          const endMs = Date.parse(`${end}T00:00:00Z`)
-          const daysLeft = isNaN(endMs) ? -1 : Math.floor((endMs - now) / 86400000)
+          // Robust end-date: pull a YYYY-MM-DD anywhere in the cell.
+          const endCell = (cols[idx.end] ?? '').trim()
+          const dm = endCell.match(/(\d{4})-(\d{2})-(\d{2})/)
+          let daysLeft: number | null = null
+          if (dm) {
+            const endMs = Date.UTC(+dm[1], +dm[2] - 1, +dm[3])
+            daysLeft = Math.floor((endMs - now) / 86400000)
+          } else if (endCell) {
+            badDate++ // unparseable but present — don't silently zero everything
+          }
           const budgetRemain = parseFloat((cols[idx.budget] ?? '').replace(/[^\d.]/g, '')) || 0
           const slots = parseFloat((cols[idx.slots] ?? '').replace(/[^\d.]/g, '')) || 0
 
-          if (comm < minComm) return true
-          if (daysLeft < minDays) return true            // also enforces not-expired
-          if (impNeedBudget && (budgetRemain <= 0 || slots <= 0)) return true
-          if (kw) {
-            const hay = `${brand} ${name} ${asinRaw}`.toLowerCase()
-            if (!hay.includes(kw)) return true
-          }
-          out.push({ asin, campaignName: name || brand || asin, brand, epc: `${comm}%`, endsAt: end, commission: comm })
+          if (comm < minComm) { cutComm++; return out.length < COLLECT_MAX }
+          // Only enforce the days gate when we actually parsed a date;
+          // an unknown date shouldn't wipe out every result.
+          if (daysLeft !== null && daysLeft < minDays) { cutDays++; return out.length < COLLECT_MAX }
+          if (impNeedBudget && (budgetRemain <= 0 || slots <= 0)) { cutBudget++; return out.length < COLLECT_MAX }
+
+          out.push({ asin, campaignName: name || brand || asin, brand, epc: `${comm}%`, endsAt: dm ? `${dm[1]}-${dm[2]}-${dm[3]}` : '', commission: comm })
           setImpScanned(total)
           return out.length < COLLECT_MAX
         }, (seen) => setImpScanned(seen))
@@ -320,9 +340,18 @@ function CampaignsInner() {
       const final = [...byAsin.values()].sort((a, b) => b.commission - a.commission).slice(0, impCap)
       setImpMatches(final)
       setImpPhase('ready')
-      setImpMsg(final.length
-        ? `${final.length} campaign${final.length === 1 ? '' : 's'} match your filters (scanned ${total.toLocaleString()}).`
-        : `No matches (scanned ${total.toLocaleString()}). Loosen the filters.`)
+      const kwLabel = kw ? `"${impKw.trim()}" matched ${kwHits.toLocaleString()}` : `${kwHits.toLocaleString()} rows`
+      const cuts = [
+        cutComm ? `${cutComm.toLocaleString()} cut by commission<${minComm}%` : '',
+        cutDays ? `${cutDays.toLocaleString()} cut by <${minDays} days` : '',
+        cutBudget ? `${cutBudget.toLocaleString()} cut by no budget/slots` : '',
+        badDate ? `${badDate.toLocaleString()} had an unreadable end date (kept)` : '',
+      ].filter(Boolean).join(' · ')
+      setImpMsg(
+        `Scanned ${total.toLocaleString()} · ${kwLabel} · ${final.length} queued (capped at ${impCap})` +
+        (cuts ? ` — ${cuts}` : '') +
+        (final.length === 0 ? '. Loosen the filters above.' : '.'),
+      )
     } catch (e) {
       setImpErr(e instanceof Error ? e.message : 'Could not read that export.')
       setImpPhase('idle')
@@ -471,14 +500,14 @@ function CampaignsInner() {
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
           On Amazon Creator Connections click <strong>Download all available campaigns</strong>, then drop
           the .zip here. We filter it in your browser (nothing huge is uploaded) and queue the matches.
-          Note: Amazon&apos;s export has no product titles — the keyword only matches brand &amp; campaign
-          name, not the product. The actual product is fetched per post when you click Generate.
+          The keyword matches the campaign &amp; brand name (e.g. &quot;vacuum&quot;). Leave it blank to
+          pull everything that fits the filters.
         </p>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
           <div>
             <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Brand / campaign keyword</label>
-            <input value={impKw} onChange={e => setImpKw(e.target.value)} placeholder="brand or campaign name (not product)" className="input-field text-sm w-full" />
+            <input value={impKw} onChange={e => setImpKw(e.target.value)} placeholder="e.g. vacuum (optional)" className="input-field text-sm w-full" />
           </div>
           <div>
             <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Min commission %</label>
