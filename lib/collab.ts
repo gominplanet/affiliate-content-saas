@@ -95,6 +95,15 @@ Return a tight markdown brief under 250 words. No fluff.`,
     input.amazonStorefront ? `Amazon storefront: ${input.amazonStorefront}` : '',
     input.portfolioUrl ? `Portfolio / link hub (all channels): ${input.portfolioUrl}` : '',
     brand?.contact_email ? `Contact email (sign off with this): ${brand.contact_email}` : '',
+    // Explicit reply-to channel the creator wants brands to use. The
+    // signature should always include the email (it IS an email), but
+    // when preference=website, also direct the brand to the website
+    // for further info / portfolio.
+    (brand?.contact_preference === 'website' && (input.websiteUrl || brand?.website_url))
+      ? `Preferred follow-up channel: WEBSITE — include a line like "For full portfolio and current rates, visit ${input.websiteUrl || brand.website_url}" near the sign-off.`
+      : (brand?.contact_preference === 'email' && brand?.contact_email)
+        ? `Preferred follow-up channel: EMAIL — make the email address the primary reply channel in the sign-off.`
+        : '',
     input.productOrAsin ? `Product / ASIN they want to collaborate on: ${input.productOrAsin}` : '',
     input.collabsDone ? `Track record / accolades & wins (use these confidently in the opening): ${input.collabsDone}` : '',
     exampleLinks.length ? `Example past work to offer (links — NOT stats):\n${exampleLinks.map(l => `- ${l}`).join('\n')}` : '',

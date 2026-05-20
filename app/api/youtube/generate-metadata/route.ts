@@ -244,7 +244,7 @@ export async function POST(request: Request) {
     const [brandResult, intResult] = await Promise.all([
       supabase
         .from('brand_profiles')
-        .select('name,author_name,niches,tone,website_url,contact_email,gear_sections')
+        .select('name,author_name,niches,tone,website_url,contact_email,contact_preference,gear_sections')
         .eq('user_id', user.id)
         .single(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -264,6 +264,8 @@ export async function POST(request: Request) {
     const tone = ((brand?.tone as string[]) || []).join(', ') || 'conversational, friendly'
     const websiteUrl = (brand?.website_url as string) || ''
     const contactEmail = (brand?.contact_email as string) || ''
+    const contactPreference: 'website' | 'email' =
+      (brand?.contact_preference as string) === 'email' ? 'email' : 'website'
     const gearSections = ((brand?.gear_sections as GearSection[]) || []).filter(s => s.title && s.items.length > 0)
 
     // ── Fetch product + build affiliate URL in parallel ───────────────────────
@@ -329,11 +331,20 @@ export async function POST(request: Request) {
     }
 
     // ── Assemble description ──────────────────────────────────────────────────
-    const collabLine = websiteUrl
-      ? `Let's Work Together! Check my WEBSITE for collaborations: ${websiteUrl}`
-      : contactEmail
-        ? `Let's Work Together! Email me for collaborations: ${contactEmail}`
-        : ''
+    // Honor the creator's explicit preference (Brand Profile → Brand
+     // Outreach Contact). Fall back to whichever channel they actually
+     // filled in if the preferred one is empty.
+    const collabLine = (() => {
+      if (contactPreference === 'email' && contactEmail) {
+        return `Let's Work Together! Email me for collaborations: ${contactEmail}`
+      }
+      if (contactPreference === 'website' && websiteUrl) {
+        return `Let's Work Together! Check my WEBSITE for collaborations: ${websiteUrl}`
+      }
+      if (websiteUrl) return `Let's Work Together! Check my WEBSITE for collaborations: ${websiteUrl}`
+      if (contactEmail) return `Let's Work Together! Email me for collaborations: ${contactEmail}`
+      return ''
+    })()
 
     const gearBlock = gearSections.map(section => {
       const itemLines = section.items

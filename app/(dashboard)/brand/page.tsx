@@ -126,6 +126,10 @@ interface BrandData {
   amazon_storefront_url: string
   linktree_url: string
   contact_email: string
+  /** Channel the creator wants brands to reach them through. Drives the
+   *  "Let's Work Together" line in generated YouTube descriptions and the
+   *  reply-to channel in collab emails. */
+  contact_preference: 'website' | 'email'
   // Private — shipping details for product samples (collab emails only)
   sample_full_name: string
   sample_address: string
@@ -198,6 +202,7 @@ const DEFAULT: BrandData = {
   amazon_storefront_url: '',
   linktree_url: '',
   contact_email: '',
+  contact_preference: 'website',
   sample_full_name: '',
   sample_address: '',
   sample_phone: '',
@@ -272,6 +277,7 @@ export default function BrandPage() {
         amazon_storefront_url: row.amazon_storefront_url ?? '',
         linktree_url: row.linktree_url ?? '',
         contact_email: row.contact_email ?? '',
+        contact_preference: (row.contact_preference === 'email' ? 'email' : 'website'),
         sample_full_name: row.sample_full_name ?? '',
         sample_address: row.sample_address ?? '',
         sample_phone: row.sample_phone ?? '',
@@ -575,6 +581,56 @@ export default function BrandPage() {
 
           {/* Writing Style, About You, Target Reader and Words to Avoid
               moved to the LEARN page (single editing surface for voice). */}
+
+          {/* Brand-outreach contact preference. Drives the "Let's Work
+              Together" line in YouTube descriptions and the reply-to channel
+              the AI uses when generating collaboration emails. */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Brand Outreach Contact</h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              How should brands reach you when they want to collaborate? This is what gets put in your YouTube descriptions and collab emails.
+            </p>
+            <div className="flex flex-col gap-3">
+              <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:border-[#0071e3]/40"
+                style={{ borderColor: data.contact_preference === 'website' ? '#0071e3' : 'var(--border-2, #d2d2d7)' }}>
+                <input
+                  type="radio"
+                  name="contact_preference"
+                  checked={data.contact_preference === 'website'}
+                  onChange={() => set('contact_preference', 'website')}
+                  className="mt-1"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Send them to my website</p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                    Uses the <span className="font-mono text-[11px]">Website URL</span> field above ({data.website_url || <em className="opacity-60">not set yet</em>}).
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:border-[#0071e3]/40"
+                style={{ borderColor: data.contact_preference === 'email' ? '#0071e3' : 'var(--border-2, #d2d2d7)' }}>
+                <input
+                  type="radio"
+                  name="contact_preference"
+                  checked={data.contact_preference === 'email'}
+                  onChange={() => set('contact_preference', 'email')}
+                  className="mt-1"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Email me directly</p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                    Uses the <span className="font-mono text-[11px]">Contact email</span> field below ({data.contact_email || <em className="opacity-60">not set yet</em>}).
+                  </p>
+                </div>
+              </label>
+            </div>
+            {data.contact_preference === 'website' && !data.website_url && (
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up — set your Website URL above or generated YouTube descriptions will fall back to your email.</p>
+            )}
+            {data.contact_preference === 'email' && !data.contact_email && (
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up — set your Contact email below or generated YouTube descriptions will fall back to your website.</p>
+            )}
+          </div>
 
           {/* Social links */}
           <div className="card p-6">
