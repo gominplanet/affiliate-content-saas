@@ -32,11 +32,13 @@ import {
   DollarSign,
   Handshake,
   GraduationCap,
+  MessagesSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { resetTutorials } from '@/components/TutorialVideo'
+import { DISCORD_INVITE_URL, COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
 
 // New nav order — Setup is split into two: Blog Set Up (WordPress wizard)
 // and Integrations (3rd-party social connectors). Both routes go to /setup
@@ -221,6 +223,23 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
             </Link>
           )
         })}
+
+        {/* Discord community — hidden until DISCORD_INVITE_URL is set so
+            shipping before the server's ready is safe. */}
+        {DISCORD_INVITE_URL && (
+          <a
+            href={DISCORD_INVITE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="nav-item"
+            title={COMMUNITY_TOOLTIP}
+            style={{ color: '#5865F2' }}
+          >
+            <MessagesSquare size={16} className="flex-shrink-0" />
+            <span style={{ fontWeight: 500 }}>{COMMUNITY_LABEL}</span>
+            <ExternalLink size={11} className="opacity-60 flex-shrink-0 ml-auto" />
+          </a>
+        )}
 
         {/* Visit Blog */}
         <a
