@@ -69,7 +69,12 @@ export async function POST(request: Request) {
       livestreams: !!body.livestreams,
       livestreamLink: body.livestreamLink?.toString().trim() || '',
       productOrAsin: body.productOrAsin?.toString().trim() || '',
-      portfolioUrl: body.portfolioUrl?.toString().trim() || '',
+      // Fall back to the Brand Profile's linktree_url so the email always
+      // includes the creator's link hub when they've set one — even if
+      // they didn't re-type it into the collab form.
+      portfolioUrl: body.portfolioUrl?.toString().trim()
+        || ((brand as Record<string, unknown> | null)?.linktree_url as string | undefined)?.trim()
+        || '',
       collabsDone: body.collabsDone?.toString().trim() || '',
       exampleLinks: Array.isArray(body.exampleLinks)
         ? body.exampleLinks.map(s => String(s).trim()).filter(Boolean).slice(0, 3)
