@@ -121,11 +121,19 @@ $used_ids = [];
 
   <?php /* ─── HOMEPAGE 3-UP AD STRIP ────────────────────────────────────
        Three banner slots managed in Customize Blog → Homepage Banner
-       Strip. Empty slots render a "Your ad here" placeholder with the
-       same 16:9 shape so the layout stays consistent. */ ?>
-  <?php $homepage_ads = function_exists('mvp_affiliate_homepage_ads')
-      ? mvp_affiliate_homepage_ads()
-      : []; ?>
+       Strip. Gated by `homepageAdsEnabled` (default true). When on with
+       empty slots, the placeholder reads "Advertise here". */ ?>
+  <?php
+  $homepage_ads_data = mvp_affiliate_data();
+  // Default to true so existing installs keep the current behavior; an
+  // explicit `false` (the user toggled it off) hides the whole section.
+  $homepage_ads_enabled = !array_key_exists('homepageAdsEnabled', $homepage_ads_data)
+      || $homepage_ads_data['homepageAdsEnabled'] !== false;
+  if ($homepage_ads_enabled):
+      $homepage_ads = function_exists('mvp_affiliate_homepage_ads')
+          ? mvp_affiliate_homepage_ads()
+          : [];
+  ?>
   <section class="mvp-section mvp-ad-strip">
     <div class="mvp-container">
       <p class="mvp-ad-strip-label">Advertisement</p>
@@ -141,13 +149,14 @@ $used_ids = [];
           <?php if ($href): ?></a><?php else: ?></div><?php endif; ?>
         <?php else: ?>
           <div class="mvp-ad-slot mvp-ad-slot-empty">
-            <span class="mvp-ad-slot-label">Your ad here</span>
+            <span class="mvp-ad-slot-label">Advertise here</span>
           </div>
         <?php endif; ?>
         <?php endforeach; ?>
       </div>
     </div>
   </section>
+  <?php endif; ?>
 
   <?php /* ─── BY CATEGORY — for each category w/ ≥1 unused post, show 3 ─ */ ?>
   <?php

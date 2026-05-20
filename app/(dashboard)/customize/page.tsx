@@ -70,6 +70,10 @@ interface BlogCustomizations {
   incontent: AdBlock[]
   /** Always exactly 3 slots — the homepage shows a fixed 3-up strip. */
   homepageAds: HomepageAd[]
+  /** Master switch for the homepage 3-up strip. When false the whole
+   *  section is hidden on the homepage. When true with empty slots the
+   *  theme renders "Advertise here" placeholders. */
+  homepageAdsEnabled: boolean
   about: AboutData
   footer: FooterData
   pickOfDay: PickOfDayConfig
@@ -122,6 +126,7 @@ const defaultCustomizations: BlogCustomizations = {
   sidebar: [],
   incontent: [],
   homepageAds: defaultHomepageAds,
+  homepageAdsEnabled: true,
   about: emptyAbout,
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
@@ -403,6 +408,7 @@ export default function CustomizePage() {
         sidebar:   (bc.sidebar   ?? []).map(migrateBlock),
         incontent: (bc.incontent ?? []).map(migrateBlock),
         homepageAds: padHomepageAds(bc.homepageAds),
+        homepageAdsEnabled: typeof bc.homepageAdsEnabled === 'boolean' ? bc.homepageAdsEnabled : true,
         about,
         footer: { ...emptyFooter, ...(bc.footer ?? {}), socials },
         pickOfDay: { ...defaultPickOfDay, ...(bc.pickOfDay ?? {}) },
@@ -734,9 +740,27 @@ export default function CustomizePage() {
         {/* Homepage 3-up banner strip */}
         <Section
           title="Homepage Banner Strip"
-          description="Three banner slots that appear in a row on your homepage (where readers see a clear ad break). Upload a 16:9 image and an optional destination URL. Empty slots show a 'Your ad here' placeholder."
+          description="Three banner slots that appear in a row on your homepage (where readers see a clear ad break). Upload a 16:9 image and an optional destination URL. Empty slots show an 'Advertise here' placeholder."
         >
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Master on/off toggle. Off = the entire 3-up strip is hidden
+              on the homepage. On with empty slots = "Advertise here" tiles. */}
+          <label className="flex items-center gap-3 mb-4 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={data.homepageAdsEnabled}
+              onChange={(e) => setData(d => ({ ...d, homepageAdsEnabled: e.target.checked }))}
+              className="w-4 h-4 rounded accent-[#0071e3]"
+            />
+            <span className="text-sm font-medium text-[var(--text-1)]">
+              Show this strip on the homepage
+            </span>
+            <span className="text-xs text-[var(--text-3)]">
+              {data.homepageAdsEnabled
+                ? 'On — empty slots will show an "Advertise here" placeholder.'
+                : 'Off — strip is hidden from the homepage.'}
+            </span>
+          </label>
+          <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 transition-opacity ${data.homepageAdsEnabled ? '' : 'opacity-50 pointer-events-none'}`}>
             {data.homepageAds.map((ad, i) => (
               <div key={ad.id} className="flex flex-col gap-2.5 p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-3)]">Slot {i + 1}</p>
