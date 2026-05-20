@@ -173,6 +173,58 @@ Return ONLY the hook text. Video: "${videoTitle}"`,
   return (msg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
 }
 
+// ── Claude: PERSON-IN-SCENE prompt (used when a face LoRA is active) ────────
+// The default generateProductPrompt is hardcoded "NO faces" + "no people"
+// because it's optimized for product-only thumbnails. When a face LoRA is
+// loaded we need the opposite: an active scene with the person prominently
+// reacting to the product. The trigger token (e.g. "michelle6634") gets
+// embedded directly so Flux + LoRA knows which subject to render.
+async function generatePersonScenePrompt(opts: {
+  triggerToken: string
+  faceName: string
+  videoTitle: string
+  productTitle: string
+  productDescription: string
+  productBullets: string[]
+  channelStyle?: string | null
+}): Promise<string> {
+  const anthropic = createAnthropicClient()
+  const msg = await withAnthropicRetry(() => anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 500,
+    messages: [{
+      role: 'user',
+      content: `You are a YouTube thumbnail art director. Write a Flux image generation prompt for a creator-style thumbnail that puts a PERSON in an active scene with a product.
+
+CREATOR'S FACE TRIGGER TOKEN: ${opts.triggerToken}
+  — Use this exact token as the SUBJECT of the prompt (e.g. "${opts.triggerToken} holding the product, surprised expression"). The token is a LoRA-trained identity reference; Flux + the loaded LoRA will render the real person when it sees this token.
+
+VIDEO: "${opts.videoTitle}"
+PRODUCT: ${opts.productTitle || 'product from the video'}
+${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
+${opts.productBullets.length ? `FEATURES: ${opts.productBullets.slice(0, 4).join(' · ')}` : ''}
+${opts.channelStyle ? `CHANNEL AESTHETIC (match this): ${opts.channelStyle}` : ''}
+
+PROMPT RULES:
+1. START with "${opts.triggerToken}" — the LoRA's trigger token must appear at the start so the loaded weights activate.
+2. PERSON: describe ${opts.triggerToken} in an active reaction to the product — emotional, animated, eye-contact with camera. Strong expression: surprised, smiling, sceptical, intrigued — pick what fits the video.
+3. PRODUCT: visible clearly in the frame, held up or right next to the person.
+4. SCENE: real-world, story-driven environment (home, workspace, outdoor, kitchen — whatever fits the product). Not a studio.
+5. COMPOSITION: person CENTRE-LEFT, product CENTRE-RIGHT or held in their hands. Leave clean space TOP-LEFT for text overlay.
+6. LIGHTING: dramatic, cinematic, golden-hour or strong key light — face should pop.
+7. End with: "16:9, photorealistic, 8K, shallow depth of field, sharp focus on face, no text overlays"
+8. Under 90 words total.
+
+Return ONLY the prompt — no preamble.`,
+    }],
+  }))
+  recordAnthropicUsage(msg, {
+    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+    feature: 'yt_thumb_person_prompt', model: 'claude-sonnet-4-6',
+  })
+  return (msg.content[0] as { type: string; text: string }).text.trim()
+}
+
 // ── Claude Haiku vision: extract aesthetic from a style reference image ─────
 // User uploads any image they like the look of (a competitor thumbnail, a
 // moodboard pic, one of their own previous wins). We distill it into a
@@ -281,17 +333,17 @@ export async function POST(request: Request) {
     // model is still training or failed, we silently fall back to no-face
     // generation rather than throwing — the user already chose, and the
     // worst outcome is a thumbnail without their face this time.
-    let faceModel: { trigger_token: string; lora_url: string } | null = null
+    let faceModel: { trigger_token: string; lora_url: string; name: string } | null = null
     if (faceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fm } = await (supabase as any)
         .from('face_models')
-        .select('trigger_token,lora_url,status')
+        .select('trigger_token,lora_url,status,name')
         .eq('id', faceModelId)
         .eq('user_id', user.id)
         .single()
       if (fm?.status === 'ready' && fm?.lora_url) {
-        faceModel = { trigger_token: fm.trigger_token, lora_url: fm.lora_url }
+        faceModel = { trigger_token: fm.trigger_token, lora_url: fm.lora_url, name: fm.name }
       }
     }
 
@@ -356,8 +408,21 @@ export async function POST(request: Request) {
     console.log('[generate-thumbnail] Channel style:', channelStyle ?? 'none')
 
     // ── Generate scene prompt + hook + (optional) style brief in parallel ───
+    // When a face LoRA is selected we use the person-aware prompt generator
+    // (puts the creator IN the scene with the product); otherwise the
+    // standard product-only generator (no faces / no people by design).
     const [productPrompt, generatedHook, styleBrief] = await Promise.all([
-      generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
+      faceModel
+        ? generatePersonScenePrompt({
+            triggerToken: faceModel.trigger_token,
+            faceName: faceModel.name,
+            videoTitle,
+            productTitle,
+            productDescription,
+            productBullets,
+            channelStyle,
+          })
+        : generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
       lockedHeadline ? Promise.resolve('') : generateHook(videoTitle),
       styleReferenceUrl ? extractStyleBrief(styleReferenceUrl) : Promise.resolve(null),
     ])
@@ -443,7 +508,10 @@ export async function POST(request: Request) {
     // prompt so the model knows which subject the LoRA encodes.
     if (faceModel) {
       console.log('[generate-thumbnail] Using flux-lora with face model:', faceModel.trigger_token)
-      const facePrompt = `${faceModel.trigger_token}, ${finalScenePrompt}`
+      // The person-aware prompt already starts with the trigger token —
+      // no need to prepend. finalScenePrompt also already includes the
+      // style brief at the top if one was uploaded.
+      const facePrompt = finalScenePrompt
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const loraResult = await fal.subscribe('fal-ai/flux-lora' as any, {
         input: {
