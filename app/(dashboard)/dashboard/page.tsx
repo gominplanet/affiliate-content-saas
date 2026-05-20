@@ -40,9 +40,26 @@ export default async function DashboardPage() {
     periodEnd: (intAny?.subscription_period_end as string | null) ?? null,
   })
   const onBillingCycle = !!intAny?.subscription_period_start
-  const [{ count: postsThisPeriod }, { count: collabsThisPeriod }] = await Promise.all([
+  const [
+    { count: postsThisPeriod },
+    { count: collabsThisPeriod },
+    { count: thumbnailsThisPeriod },
+    { count: metadataGensThisPeriod },
+  ] = await Promise.all([
     sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).gte('published_at', periodStartISO),
     sb.from('collaborations').select('id', { count: 'exact', head: true }).eq('user_id', user!.id).gte('created_at', periodStartISO),
+    // Thumbnails: count the image-generation features (either path
+    // produces exactly one row per successful thumbnail).
+    sb.from('ai_usage').select('id', { count: 'exact', head: true })
+      .eq('user_id', user!.id)
+      .in('feature', ['yt_thumb_kontext_image', 'yt_thumb_flux_image'])
+      .gte('created_at', periodStartISO),
+    // Metadata generations: title_strategist runs exactly once per
+    // generation, so it's the cleanest 1:1 counter.
+    sb.from('ai_usage').select('id', { count: 'exact', head: true })
+      .eq('user_id', user!.id)
+      .eq('feature', 'yt_meta_title_strategist')
+      .gte('created_at', periodStartISO),
   ])
   // Posts: free tier is lifetime-capped; paid tiers count per billing period.
   const postsUsed = plan.lifetimeMax !== null ? (postCount ?? 0) : (postsThisPeriod ?? 0)
@@ -56,6 +73,14 @@ export default async function DashboardPage() {
     // Collab is Pro+; collabsPerMonth 0 = not on plan (hide the row).
     ...(plan.collabsPerMonth !== 0
       ? [{ label: 'Collab emails this period', used: collabsThisPeriod ?? 0, limit: plan.collabsPerMonth }]
+      : []),
+    // Thumbnail + metadata caps — same convention as collabs (0 = not on
+    // plan / hide). Every tier currently has > 0, so they always show.
+    ...(plan.thumbnailsPerMonth !== 0
+      ? [{ label: 'YT thumbnails this period', used: thumbnailsThisPeriod ?? 0, limit: plan.thumbnailsPerMonth }]
+      : []),
+    ...(plan.metadataGensPerMonth !== 0
+      ? [{ label: 'YT metadata generations', used: metadataGensThisPeriod ?? 0, limit: plan.metadataGensPerMonth }]
       : []),
   ]
 

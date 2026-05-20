@@ -5,6 +5,8 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { TIERS, type Tier } from '@/lib/tier'
+import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 
 export const maxDuration = 120
 
@@ -265,7 +267,7 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from('integrations')
-        .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,tier')
+        .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,tier,subscription_period_start,subscription_period_end')
         .eq('user_id', user.id)
         .single(),
     ])
@@ -274,7 +276,23 @@ export async function POST(request: Request) {
     const intRow = intResult.data
 
     // Populate the module-level telemetry context that runAgent reads.
-    TELEMETRY = { userId: user.id, tier: (intRow?.tier as string | undefined) ?? null }
+    const tier = (intRow?.tier as Tier) ?? 'free'
+    TELEMETRY = { userId: user.id, tier }
+
+    // Cap gate — metadata generations / billing period. Pre-flight the
+    // check so we never fire the 5-agent swarm for a user at cap.
+    const metaCap = TIERS[tier].metadataGensPerMonth
+    const capCheck = await checkUsageCap(
+      supabase, user.id, PRIMARY_FEATURE.metadata, metaCap,
+      (intRow?.subscription_period_start as string | null) ?? null,
+      (intRow?.subscription_period_end as string | null) ?? null,
+    )
+    if (capCheck?.exceeded) {
+      return NextResponse.json({
+        error: `You've hit your ${metaCap} metadata generations for this billing period on the ${TIERS[tier].label} plan. Resets ${capCheck.resetLabel}.`,
+        limitReached: true,
+      }, { status: 429 })
+    }
 
     const brandName = (brand?.name as string) || 'our channel'
     const authorName = (brand?.author_name as string) || ''

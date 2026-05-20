@@ -5,6 +5,8 @@ import { fetchAmazonProduct } from '@/services/amazon'
 import { fal } from '@fal-ai/client'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
+import { TIERS, type Tier } from '@/lib/tier'
+import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
@@ -178,10 +180,31 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Telemetry context for every Anthropic helper called below.
+    // Tier + billing window for usage-cap check + telemetry.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
-    TELEMETRY = { userId: user.id, tier: (tierRow?.tier as string | undefined) ?? null }
+    const { data: tierRow } = await (supabase as any)
+      .from('integrations')
+      .select('tier,subscription_period_start,subscription_period_end')
+      .eq('user_id', user.id)
+      .single()
+    const tier = (tierRow?.tier as Tier) ?? 'free'
+    TELEMETRY = { userId: user.id, tier }
+
+    // Cap gate — thumbnail generations / billing period. Pre-flight the
+    // check so we never charge Fal credits + waste 3 Anthropic calls on
+    // a user who's already at cap.
+    const thumbCap = TIERS[tier].thumbnailsPerMonth
+    const capCheck = await checkUsageCap(
+      supabase, user.id, PRIMARY_FEATURE.thumbnail, thumbCap,
+      (tierRow?.subscription_period_start as string | null) ?? null,
+      (tierRow?.subscription_period_end as string | null) ?? null,
+    )
+    if (capCheck?.exceeded) {
+      return NextResponse.json({
+        error: `You've hit your ${thumbCap} thumbnail generations for this billing period on the ${TIERS[tier].label} plan. Resets ${capCheck.resetLabel}.`,
+        limitReached: true,
+      }, { status: 429 })
+    }
 
     const falKey = process.env.FAL_KEY
     if (!falKey) return NextResponse.json({ error: 'FAL_KEY is not configured' }, { status: 500 })

@@ -12,6 +12,12 @@ export const TIERS = {
     /** Collaboration pitch emails / month. 0 = not on this plan (Pro+
      *  only), null = unlimited. Single source of truth for the cap. */
     collabsPerMonth: 0 as number | null,
+    /** YouTube thumbnail generations / month — billable per-image
+     *  (Fal Flux Pro). 0 = blocked, null = unlimited. */
+    thumbnailsPerMonth: 5 as number | null,
+    /** YouTube metadata generations / month — each one fires a 5-agent
+     *  swarm. 0 = blocked, null = unlimited. */
+    metadataGensPerMonth: 5 as number | null,
     /** Base posts the tier markets (used for the "60 + 20 bonus" framing). */
     basePosts: 15,
     bonusPosts: 0,
@@ -30,6 +36,8 @@ export const TIERS = {
     // Taster cap — lets Starter users try the Pro Collaborations
     // workflow so they feel the upgrade pull naturally.
     collabsPerMonth: 1 as number | null,
+    thumbnailsPerMonth: 30 as number | null,
+    metadataGensPerMonth: 30 as number | null,
     basePosts: 30,
     bonusPosts: 0,
     sites: 1,
@@ -47,6 +55,8 @@ export const TIERS = {
     // Mid-tier taster — enough to land a few brand deals but the gap to
     // Pro's 100 is wide enough to keep the upsell pressure on.
     collabsPerMonth: 5 as number | null,
+    thumbnailsPerMonth: 100 as number | null,
+    metadataGensPerMonth: 100 as number | null,
     basePosts: 60,
     bonusPosts: 20,
     sites: 1,
@@ -62,6 +72,8 @@ export const TIERS = {
     postsPerMonth: 200,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
+    thumbnailsPerMonth: 300 as number | null,
+    metadataGensPerMonth: 300 as number | null,
     basePosts: 140,
     bonusPosts: 60,
     sites: 1,
@@ -77,6 +89,8 @@ export const TIERS = {
     postsPerMonth: null as number | null,
     lifetimeMax: null as number | null,
     collabsPerMonth: null as number | null,
+    thumbnailsPerMonth: null as number | null,
+    metadataGensPerMonth: null as number | null,
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
