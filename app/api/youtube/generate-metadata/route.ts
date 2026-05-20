@@ -418,11 +418,19 @@ export async function POST(request: Request) {
           geniuslinkUsed = true
         } catch (err) {
           geniuslinkError = err instanceof Error ? err.message : String(err)
+          console.error('[generate-metadata] Geniuslink failed:', geniuslinkError)
         }
       }
       if (!geniuslinkUsed && intRow?.amazon_associates_tag) {
         affiliateUrl = `https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`
-        geniuslinkError = null
+        // Keep the Geniuslink error visible — fallback to Associates is
+        // safe revenue-wise but the user should still know their geni.us
+        // link wasn't built so they can investigate (expired keys, group
+        // not enabled, etc.). If Geniuslink wasn't configured at all,
+        // there's no error to surface and we stay quiet.
+        if (geniuslinkError) {
+          geniuslinkError = `Geniuslink call failed: ${geniuslinkError}. Used your Amazon Associates tag as fallback.`
+        }
       } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
         geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Site & Integrations'
       }
