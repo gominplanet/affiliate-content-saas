@@ -1,14 +1,41 @@
-<?php if (!defined('ABSPATH')) exit; ?>
+<?php if (!defined('ABSPATH')) exit;
+// Google Tag Manager — strict format validation. Anything else is
+// dropped silently rather than injected, so a malformed paste can't
+// produce broken <script> output on every blog page.
+$mvp_gtm_id = '';
+if (function_exists('mvp_affiliate_data')) {
+    $mvp_d = mvp_affiliate_data();
+    $mvp_candidate = trim($mvp_d['analytics']['gtmId'] ?? '');
+    if (preg_match('/^GTM-[A-Z0-9]{4,12}$/', $mvp_candidate)) {
+        $mvp_gtm_id = $mvp_candidate;
+    }
+}
+?>
 <!DOCTYPE html>
 <html <?php language_attributes(); ?>>
 <head>
   <meta charset="<?php bloginfo('charset'); ?>" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="profile" href="https://gmpg.org/xfn/11" />
+  <?php if ($mvp_gtm_id): ?>
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','<?php echo esc_js($mvp_gtm_id); ?>');</script>
+  <!-- End Google Tag Manager -->
+  <?php endif; ?>
   <?php wp_head(); ?>
 </head>
 <body <?php body_class(); ?>>
 <?php wp_body_open(); ?>
+<?php if ($mvp_gtm_id): ?>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=<?php echo esc_attr($mvp_gtm_id); ?>"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+<?php endif; ?>
 
 <?php
 $about    = mvp_affiliate_about();

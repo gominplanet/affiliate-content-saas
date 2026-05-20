@@ -77,6 +77,10 @@ interface BlogCustomizations {
    *  for Google Search Console, Pinterest, Facebook, Bing, etc. One full
    *  tag string per entry. Sanitized server-side in the WP plugin. */
   headMetaTags: string[]
+  /** Google Tag Manager container — one ID, theme injects both the
+   *  head <script> and the <body> noscript iframe. Configure GA4, Ads,
+   *  Pixel, etc. inside GTM. Format strictly validated: GTM-XXXXXXX. */
+  analytics: { gtmId: string }
 }
 
 const emptyAbout: AboutData = { bio: '', logoUrl: '', headerBg: 'black' }
@@ -122,6 +126,7 @@ const defaultCustomizations: BlogCustomizations = {
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
   headMetaTags: [],
+  analytics: { gtmId: '' },
 }
 
 function newBlock(): AdBlock {
@@ -402,6 +407,9 @@ export default function CustomizePage() {
         footer: { ...emptyFooter, ...(bc.footer ?? {}), socials },
         pickOfDay: { ...defaultPickOfDay, ...(bc.pickOfDay ?? {}) },
         headMetaTags: Array.isArray(bc.headMetaTags) ? bc.headMetaTags.filter((t: unknown): t is string => typeof t === 'string') : [],
+        analytics: {
+          gtmId: typeof bc.analytics?.gtmId === 'string' ? bc.analytics.gtmId : '',
+        },
       })
     }
     setLoading(false)
@@ -855,6 +863,30 @@ export default function CustomizePage() {
               Only <code className="bg-[var(--surface-2)] px-1 rounded">&lt;meta&gt;</code> tags are allowed —
               anything else (scripts, styles, arbitrary HTML) is stripped server-side for security. Changes
               go live on your next save.
+            </p>
+          </div>
+        </Section>
+
+        <Section
+          title="Analytics & Tracking"
+          description="Install Google Tag Manager once — then manage Google Analytics (GA4), ads pixels, Pinterest tag, Facebook Pixel, and conversion tracking inside GTM without touching code again."
+        >
+          <div className="flex flex-col gap-3">
+            <label className="text-sm font-medium text-[var(--text)]">Google Tag Manager Container ID</label>
+            <input
+              type="text"
+              value={data.analytics.gtmId}
+              onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, gtmId: e.target.value.trim() } }))}
+              placeholder="GTM-XXXXXXX"
+              spellCheck={false}
+              className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#0071e3]"
+            />
+            {data.analytics.gtmId && !/^GTM-[A-Z0-9]{4,12}$/.test(data.analytics.gtmId) && (
+              <p className="text-xs text-[#ff9500]">⚠ ID format looks off — should be <code>GTM-</code> followed by uppercase letters/numbers (e.g. <code>GTM-P9NPW64B</code>). It won&apos;t inject until the format is valid.</p>
+            )}
+            <p className="text-xs text-[var(--text-3)] leading-relaxed">
+              Get a free container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">tagmanager.google.com</a> →
+              create a new container for &quot;Web&quot; → copy the <code>GTM-XXXXXXX</code> ID from the install snippets. The theme automatically injects both code snippets (head + body); you don&apos;t need to paste them anywhere. Inside GTM, add a Google Analytics 4 Configuration tag with your measurement ID and you&apos;ll have full analytics. Leave blank to inject nothing.
             </p>
           </div>
         </Section>
