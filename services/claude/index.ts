@@ -561,7 +561,13 @@ Output only valid JSON. No explanation, no markdown.`,
      *  hit Rewrite and explained what was missing. */
     rewriteFeedback?: string | null,
   ): Promise<BlogGenerationOutput> {
-    const { url: affiliateUrl } = await resolveAffiliateUrl(video.description, video.title)
+    const { url: affiliateUrl, asin } = await resolveAffiliateUrl(video.description, video.title)
+    // If we couldn't surface an Amazon ASIN / affiliate URL anywhere, treat
+    // the video as general content rather than a product review. The
+    // system prompt still applies, but a directive at the top of the user
+    // message tells Claude to skip every affiliate-specific section so
+    // the post reads like a narrative review of the video's topic.
+    const isProduct = !!asin || !!affiliateUrl
 
     // Pass 1 — extract voice profile from transcript (fast, cheap)
     let voiceProfile = ''
@@ -575,18 +581,53 @@ Output only valid JSON. No explanation, no markdown.`,
       ? `\n\nREWRITE REQUEST — the user already received one version of this post and asked for a different angle. Make this draft materially different from a standard generation. Their feedback:\n"${rewriteFeedback.trim()}"\n\nAddress these points directly: pick a different opening hook, restructure the body around the missing angle, and avoid repeating any phrasings that would feel like the previous draft.`
       : ''
 
-    const userMessage = `Generate a blog post for this YouTube review video.
+    const generalModeOverride = isProduct
+      ? ''
+      : `
+
+═══════════════════════════════════════
+GENERAL-VIDEO MODE — overrides the structure above
+═══════════════════════════════════════
+
+This video is NOT a product review. There is no affiliate link, no ASIN, no product to rate.
+Treat the post as a narrative / story-style article ABOUT the topic of the video — the way an editorial blog would cover it.
+
+OVERRIDE the structure as follows:
+
+[1] AFFILIATE DISCLAIMER BLOCK → OMIT ENTIRELY. Do not include any disclaimer block.
+[2] YouTube embed → keep as-is (still useful to viewers).
+[3] QUICK VERDICT BOX → REPLACE with a short "What this is about" box: 2-3 sentence summary + a single bulleted list called "What you'll take away" (3-5 items). No "Buy if / Skip if" columns.
+[4] BODY SECTIONS A-G → reshape from product mechanics / performance / direct-comparison into a NARRATIVE structure:
+    A. Hook opener — pull a moment from the transcript that hooks the reader.
+    B. The setup — what's going on, who's involved, what prompted the video.
+    C. What actually happened — narrative blow-by-blow drawing from the transcript.
+    D. The most surprising part — the moment most viewers would miss.
+    E. What it means — broader implications / context.
+    F. Comparable stories or precedents (only if relevant — skip if not).
+    G. Takeaway — what the reader should remember, or what they should do next.
+    OMIT the mid-article CTA card entirely.
+[5] FAQ → keep, but reframe questions around the TOPIC of the video, not a product.
+[6] RATING BOX → OMIT ENTIRELY (no product to rate).
+[7] FINAL CTA CARD → REPLACE with a simple "Watch the full video" call-to-action (no Amazon link, no button styling — just a normal paragraph linking to the embedded video above or inviting subscription).
+[8] HASHTAG TAGS → keep, but exclude #ad / #affiliate / any sponsorship-flavoured tags.
+
+DO NOT include the {AFFILIATE_URL} or {AFFILIATE_LINK} placeholder anywhere. There is no affiliate URL for this post.
+DO NOT mention "purchase", "price", "buy", "Amazon", or "affiliate" anywhere in the body.
+The rest of the brand voice, tone, length, and formatting rules from the system prompt still apply.
+═══════════════════════════════════════`
+
+    const userMessage = `Generate a blog post for this YouTube ${isProduct ? 'review video' : 'video (general content — not a product review)'}.
 
 VIDEO ID: ${video.videoId}
 TITLE: ${video.title}
-AFFILIATE URL: ${affiliateUrl || '[AFFILIATE_LINK]'}
+${isProduct ? `AFFILIATE URL: ${affiliateUrl || '[AFFILIATE_LINK]'}` : 'AFFILIATE URL: (none — general video, no product)'}
 VIDEO TAGS: ${video.tags.join(', ')}
 
 VIDEO DESCRIPTION:
 ${video.description.slice(0, 2000)}
 
 TRANSCRIPT:
-${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}${feedbackBlock}`
+${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}${generalModeOverride}${feedbackBlock}`
 
     // Pass 2 — generate with extended thinking (streaming required for large max_tokens)
     const stream = this.client.messages.stream({

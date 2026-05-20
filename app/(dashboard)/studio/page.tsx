@@ -657,32 +657,40 @@ function VideoStudioCard({ video, userTier, playlists }: {
           </div>
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug line-clamp-2 mb-2">{video.title}</p>
           <div className="flex items-center gap-2 flex-wrap">
-            {video.detectedAsin ? (
-              generating ? (
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2 text-xs text-[#0071e3] font-medium">
-                    <Loader2 size={12} className="animate-spin" />
-                    Running AI agent swarm…
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {['🔬 Product Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Content Writer', '💬 Engagement Agent'].map(a => (
-                      <span key={a} className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] animate-pulse">{a}</span>
-                    ))}
-                  </div>
+            {generating ? (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-xs text-[#0071e3] font-medium">
+                  <Loader2 size={12} className="animate-spin" />
+                  Running AI agent swarm…
                 </div>
-              ) : (
-                <button
-                  onClick={generate}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
-                  style={{ background: 'linear-gradient(135deg, #ff9500 0%, #ff3b30 100%)' }}
-                >
-                  <Wand2 size={12} />
-                  {generated ? 'Regenerate' : 'Generate YouTube metadata'}
-                </button>
-              )
+                <div className="flex flex-wrap gap-1">
+                  {(video.detectedAsin
+                    ? ['🔬 Product Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Content Writer', '💬 Engagement Agent']
+                    : ['🔬 Video Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Description Writer', '💬 Engagement Agent']
+                  ).map(a => (
+                    <span key={a} className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] animate-pulse">{a}</span>
+                  ))}
+                </div>
+              </div>
             ) : (
-              <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">
-                No ASIN in the title — add the 10-character Amazon code (e.g. <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">B08N5WRWNW</span>) anywhere in the video title to unlock generation.
+              <button
+                onClick={generate}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: video.detectedAsin
+                  ? 'linear-gradient(135deg, #ff9500 0%, #ff3b30 100%)'
+                  : 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+              >
+                <Wand2 size={12} />
+                {generated
+                  ? 'Regenerate'
+                  : video.detectedAsin
+                    ? 'Generate YouTube metadata'
+                    : 'Generate metadata (no product)'}
+              </button>
+            )}
+            {!video.detectedAsin && !generating && (
+              <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93] italic">
+                No ASIN — we&apos;ll write title, description & tags around the video&apos;s topic. No affiliate link.
               </span>
             )}
             <a href={ytUrl} target="_blank" rel="noopener noreferrer"

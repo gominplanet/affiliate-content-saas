@@ -64,19 +64,27 @@ function parseJSON<T>(raw: string, fallback: T): T {
   try { return JSON.parse(match[0]) as T } catch { return fallback }
 }
 
-// ── AGENT 1: Product Analyst ──────────────────────────────────────────────────
+// ── AGENT 1: Product / Video Analyst ──────────────────────────────────────────
+// In product mode this analyses an Amazon product for a review video.
+// In general mode (no ASIN) this analyses the video's topic and intent
+// instead — the JSON field names are reused but semantically describe
+// the viewer rather than the buyer.
 async function productAnalystAgent(
   anthropic: Anthropic,
   productContext: string,
   videoTitle: string,
   niches: string,
+  isProduct: boolean,
 ): Promise<{ targetBuyer: string; topBenefits: string[]; painPoints: string[]; keywords: string[] }> {
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 800,
     feature: 'yt_meta_product_analyst',
-    system: 'You are a product research specialist. Analyse Amazon products for YouTube content. Return ONLY valid JSON.',
-    user: `Analyse this product for a YouTube review in the "${niches}" niche.
+    system: isProduct
+      ? 'You are a product research specialist. Analyse Amazon products for YouTube content. Return ONLY valid JSON.'
+      : 'You are a YouTube content analyst. You break down videos by topic, intent, and the viewer they serve. Return ONLY valid JSON.',
+    user: isProduct
+      ? `Analyse this product for a YouTube review in the "${niches}" niche.
 
 PRODUCT DATA:
 ${productContext}
@@ -89,6 +97,20 @@ Return JSON:
   "topBenefits": ["top 3 benefits that drive purchase decisions"],
   "painPoints": ["top 3 problems this product solves"],
   "keywords": ["10 exact search terms buyers type into YouTube/Google for this product — plain words only, no special characters"]
+}`
+      : `Analyse this YouTube video in the "${niches}" niche. It is NOT a product review — focus on the video's topic, story, and the viewer it serves.
+
+VIDEO CONTEXT:
+${productContext}
+
+VIDEO TITLE: "${videoTitle}"
+
+Return JSON (field names kept for compatibility — read them as viewer-focused):
+{
+  "targetBuyer": "one sentence describing the ideal viewer for this video",
+  "topBenefits": ["top 3 things a viewer will learn / experience / take away"],
+  "painPoints": ["top 3 questions or curiosities this video answers for the viewer"],
+  "keywords": ["10 exact search terms people would type into YouTube/Google to find this kind of video — plain words only, no special characters"]
 }`,
   })
   return parseJSON(raw, { targetBuyer: '', topBenefits: [], painPoints: [], keywords: [] })
@@ -101,26 +123,30 @@ async function titleStrategistAgent(
   videoTitle: string,
   tone: string,
   productAnalysis: { targetBuyer: string; topBenefits: string[]; painPoints: string[] },
+  isProduct: boolean,
 ): Promise<{ best: string; alternatives: string[] }> {
   const raw = await runAgent(anthropic, {
     model: 'claude-sonnet-4-6',
     maxTokens: 600,
     feature: 'yt_meta_title_strategist',
     system: 'You are a viral YouTube title strategist. You write titles that dominate search and maximise click-through rate. Return ONLY valid JSON.',
-    user: `Write 5 viral YouTube title options for this product review.
+    user: `Write 5 viral YouTube title options for this ${isProduct ? 'product review' : 'video (not a product review — it is general content)'}.
 
-PRODUCT: ${productContext}
+${isProduct ? 'PRODUCT' : 'VIDEO CONTEXT'}: ${productContext}
 ORIGINAL TITLE: "${videoTitle}"
-TARGET BUYER: ${productAnalysis.targetBuyer}
-TOP BENEFITS: ${productAnalysis.topBenefits.join(', ')}
-PAIN POINTS: ${productAnalysis.painPoints.join(', ')}
+${isProduct ? 'TARGET BUYER' : 'TARGET VIEWER'}: ${productAnalysis.targetBuyer}
+${isProduct ? 'TOP BENEFITS' : 'KEY TAKEAWAYS'}: ${productAnalysis.topBenefits.join(', ')}
+${isProduct ? 'PAIN POINTS' : 'VIEWER QUESTIONS'}: ${productAnalysis.painPoints.join(', ')}
 TONE: ${tone}
 
 TITLE RULES:
-- Lead with a power hook — choose from: "Worth It?", "Before You Buy", "I Tested", "Don't Buy Until...", "Is It Worth It?", "Real Talk:", "Watch This First", "We Tried It"
+${isProduct
+  ? `- Lead with a power hook — choose from: "Worth It?", "Before You Buy", "I Tested", "Don't Buy Until...", "Is It Worth It?", "Real Talk:", "Watch This First", "We Tried It"
+- Include the exact product name people search for`
+  : `- Lead with a curiosity / story hook — choose from: "How I…", "Here's What Happened When…", "I Tried…", "Watch This First", "The Truth About…", "Why I…", "What Nobody Tells You About…"
+- Make the topic of the video unmissable in the title`}
 - NEVER use the word "honest" anywhere in the title
-- Include the exact product name people search for
-- Add an emotional trigger or specific benefit
+- Add an emotional trigger or specific outcome
 - Under 100 characters
 - No ASIN, no hashtags, no emojis
 
@@ -140,23 +166,25 @@ async function seoResearcherAgent(
   videoTitle: string,
   niches: string,
   productKeywords: string[],
+  isProduct: boolean,
 ): Promise<{ tags: string[]; hashtags: string }> {
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 900,
     feature: 'yt_meta_seo_researcher',
     system: 'You are a YouTube SEO expert. You research high-traffic keywords and trending hashtags. Return ONLY valid JSON.',
-    user: `Generate maximum-reach YouTube tags and hashtags for this product review.
+    user: `Generate maximum-reach YouTube tags and hashtags for this ${isProduct ? 'product review' : 'video (not a product review — general content)'}.
 
-PRODUCT: ${productContext}
+${isProduct ? 'PRODUCT' : 'VIDEO CONTEXT'}: ${productContext}
 VIDEO TITLE: "${videoTitle}"
 NICHE: ${niches}
 KNOWN KEYWORDS: ${productKeywords.join(', ')}
 
 RULES:
 - Tags: plain text only, NO special characters (#"[]{}()), NO emojis, each tag under 30 words
-- Hashtags: include #ad #affiliate #productreview plus 15-19 niche-specific ones, space-separated
-- Mix: brand name, product type, use case, comparison terms, problem-solution terms, broad category
+${isProduct
+  ? '- Hashtags: include #ad #affiliate #productreview plus 15-19 niche-specific ones, space-separated\n- Mix: brand name, product type, use case, comparison terms, problem-solution terms, broad category'
+  : '- Hashtags: 18-22 niche-specific ones, space-separated. Do NOT include #ad / #affiliate / #productreview — this is not a sponsored / product video.\n- Mix: topic, audience descriptors, use case, niche category, broader content category'}
 
 Return JSON:
 {
@@ -174,24 +202,27 @@ async function contentWriterAgent(
   bestTitle: string,
   tone: string,
   niches: string,
+  isProduct: boolean,
 ): Promise<{ productDescription: string }> {
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 600,
     feature: 'yt_meta_content_writer',
     system: 'You are a YouTube content writer who optimises descriptions for AI answer engines (ChatGPT, Gemini, Perplexity). Return ONLY valid JSON.',
-    user: `Write a product description optimised for YouTube, Google, and AI search engines.
+    user: `Write a ${isProduct ? 'product' : 'video'} description optimised for YouTube, Google, and AI search engines.
 
 VIDEO TITLE: "${bestTitle}"
-TARGET BUYER: ${productAnalysis.targetBuyer}
-TOP BENEFITS: ${productAnalysis.topBenefits.join(', ')}
-PAIN POINTS SOLVED: ${productAnalysis.painPoints.join(', ')}
+${isProduct ? 'TARGET BUYER' : 'TARGET VIEWER'}: ${productAnalysis.targetBuyer}
+${isProduct ? 'TOP BENEFITS' : 'KEY TAKEAWAYS'}: ${productAnalysis.topBenefits.join(', ')}
+${isProduct ? 'PAIN POINTS SOLVED' : 'VIEWER QUESTIONS ANSWERED'}: ${productAnalysis.painPoints.join(', ')}
 TONE: ${tone}
 NICHE: ${niches}
 
 RULES:
 - 3-4 sentences maximum
-- Answer: What is it? Who is it for? What is the #1 benefit? Is it worth buying?
+- ${isProduct
+    ? 'Answer: What is it? Who is it for? What is the #1 benefit? Is it worth buying?'
+    : 'Answer: What is this video about? Who is it for? What will viewers learn or experience? Why should they keep watching?'}
 - Use natural search language — write how people TALK, not how brands write
 - Optimised for AI answer engines to feature in results
 - No hashtags, no links, no special characters
@@ -212,29 +243,31 @@ async function engagementAgent(
   affiliateUrl: string,
   tone: string,
 ): Promise<{ pinnedComment: string }> {
+  const hasLink = !!affiliateUrl
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 400,
     feature: 'yt_meta_engagement',
     system: 'You are a YouTube engagement specialist who writes high-converting pinned comments. Return ONLY valid JSON.',
-    user: `Write a pinned comment for this YouTube video that drives clicks and engagement.
+    user: `Write a pinned comment for this YouTube video that drives engagement.
 
 VIDEO TITLE: "${bestTitle}"
-TARGET BUYER: ${productAnalysis.targetBuyer}
-TOP BENEFIT: ${productAnalysis.topBenefits[0] || 'great value'}
-AFFILIATE LINK: ${affiliateUrl}
+${hasLink ? 'TARGET BUYER' : 'TARGET VIEWER'}: ${productAnalysis.targetBuyer}
+${hasLink ? 'TOP BENEFIT' : 'KEY TAKEAWAY'}: ${productAnalysis.topBenefits[0] || 'a strong takeaway'}
+${hasLink ? `AFFILIATE LINK: ${affiliateUrl}` : 'AFFILIATE LINK: (none — this is general video content, no product)'}
 TONE: ${tone}
 
 RULES:
 - 2-3 punchy sentences
 - Start with a hook or key insight from the video
-- Include the affiliate link naturally
-- End with a CTA (check price, grab yours, limited stock, etc.)
+${hasLink
+  ? '- Include the affiliate link naturally\n- End with a CTA (check price, grab yours, limited stock, etc.)'
+  : '- End with a CTA that drives engagement — invite a comment, ask a question, prompt a like or subscribe — never push a product link'}
 - Feel human and conversational — not salesy
 
 Return JSON:
 {
-  "pinnedComment": "2-3 sentence pinned comment with link..."
+  "pinnedComment": "${hasLink ? '2-3 sentence pinned comment with link' : '2-3 sentence pinned comment, no link'}..."
 }`,
   })
   return parseJSON(raw, { pinnedComment: '' })
@@ -248,13 +281,25 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { asin, videoTitle, videoDescription } = await request.json() as {
-      asin: string
+      asin?: string | null
       videoTitle: string
       videoDescription?: string
     }
 
-    if (!asin || !/^[A-Z0-9]{10}$/.test(asin)) {
-      return NextResponse.json({ error: 'Invalid ASIN' }, { status: 400 })
+    // ASIN is OPTIONAL. With a valid ASIN we treat the video as a product
+    // review (Amazon scrape + affiliate URL + product-flavoured prompts).
+    // Without one, we fall back to generic-video mode — same agent swarm,
+    // but the prompts skip product framing and the description skips the
+    // affiliate / disclosure block.
+    const trimmedAsin = (asin || '').trim().toUpperCase()
+    const isProduct = !!trimmedAsin && /^[A-Z0-9]{10}$/.test(trimmedAsin)
+    if (asin && asin.trim() && !isProduct) {
+      return NextResponse.json({
+        error: 'That looks like an ASIN but the format is wrong — Amazon ASINs are 10 chars, uppercase letters + digits.',
+      }, { status: 400 })
+    }
+    if (!videoTitle?.trim()) {
+      return NextResponse.json({ error: 'videoTitle is required' }, { status: 400 })
     }
 
     // ── Fetch brand + credentials in parallel ─────────────────────────────────
@@ -311,65 +356,79 @@ export async function POST(request: Request) {
       (brand?.contact_preference as string) === 'email' ? 'email' : 'website'
     const gearSections = ((brand?.gear_sections as GearSection[]) || []).filter(s => s.title && s.items.length > 0)
 
-    // ── Fetch product + build affiliate URL in parallel ───────────────────────
-    let product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null; imageUrl: string | null }
-    try {
-      product = await fetchAmazonProduct(asin)
-    } catch {
-      product = { asin, title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null }
+    // ── Fetch product + build affiliate URL (product mode only) ────────────────
+    let product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null; imageUrl: string | null } = {
+      asin: trimmedAsin || '', title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null,
     }
-
-    let affiliateUrl = `https://www.amazon.com/dp/${asin}`
+    let affiliateUrl = ''
     let geniuslinkUsed = false
     let geniuslinkError: string | null = null
 
-    if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+    if (isProduct) {
       try {
-        const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-        affiliateUrl = await genius.createAsinLink(asin, product.title || videoTitle)
-        geniuslinkUsed = true
-      } catch (err) {
-        geniuslinkError = err instanceof Error ? err.message : String(err)
+        product = await fetchAmazonProduct(trimmedAsin)
+      } catch {
+        product = { asin: trimmedAsin, title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null }
+      }
+
+      affiliateUrl = `https://www.amazon.com/dp/${trimmedAsin}`
+
+      if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+        try {
+          const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+          affiliateUrl = await genius.createAsinLink(trimmedAsin, product.title || videoTitle)
+          geniuslinkUsed = true
+        } catch (err) {
+          geniuslinkError = err instanceof Error ? err.message : String(err)
+        }
+      }
+      if (!geniuslinkUsed && intRow?.amazon_associates_tag) {
+        affiliateUrl = `https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`
+        geniuslinkError = null
+      } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
+        geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Site & Integrations'
       }
     }
-    if (!geniuslinkUsed && intRow?.amazon_associates_tag) {
-      affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=${intRow.amazon_associates_tag}`
-      geniuslinkError = null
-    } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
-      geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Site & Integrations'
-    }
 
-    const productContext = [
-      product.title ? `Product: ${product.title}` : '',
-      product.price ? `Price: ${product.price}` : '',
-      product.rating ? `Rating: ${product.rating}/5` : '',
-      product.bullets.length ? `Features:\n${product.bullets.map(b => `- ${b}`).join('\n')}` : '',
-      product.description ? `Description: ${product.description}` : '',
-      videoDescription ? `Video context: "${videoDescription.slice(0, 200)}"` : '',
-    ].filter(Boolean).join('\n')
+    // Build subject context for the agent swarm. In product mode this is
+    // the Amazon scrape; in general mode it's the video's own metadata.
+    const productContext = isProduct
+      ? [
+          product.title ? `Product: ${product.title}` : '',
+          product.price ? `Price: ${product.price}` : '',
+          product.rating ? `Rating: ${product.rating}/5` : '',
+          product.bullets.length ? `Features:\n${product.bullets.map(b => `- ${b}`).join('\n')}` : '',
+          product.description ? `Description: ${product.description}` : '',
+          videoDescription ? `Video context: "${videoDescription.slice(0, 200)}"` : '',
+        ].filter(Boolean).join('\n')
+      : [
+          `(General video — no Amazon product attached. Build metadata around the video's topic.)`,
+          `Video title: ${videoTitle}`,
+          videoDescription ? `Video description / notes: "${videoDescription.slice(0, 800)}"` : '',
+        ].filter(Boolean).join('\n')
 
     // ── SWARM PHASE 1: Product Analyst + SEO Researcher run in parallel ────────
     const anthropic = createAnthropicClient()
 
     const [productAnalysis, seoData] = await Promise.all([
-      productAnalystAgent(anthropic, productContext, videoTitle, niches),
-      seoResearcherAgent(anthropic, productContext, videoTitle, niches, []),
+      productAnalystAgent(anthropic, productContext, videoTitle, niches, isProduct),
+      seoResearcherAgent(anthropic, productContext, videoTitle, niches, [], isProduct),
     ])
 
     // ── SWARM PHASE 2: Title + Content + Engagement run in parallel ───────────
     // (Title strategist gets product analysis context; content + engagement agents get title)
     const titleResult = await titleStrategistAgent(
-      anthropic, productContext, videoTitle, tone, productAnalysis,
+      anthropic, productContext, videoTitle, tone, productAnalysis, isProduct,
     )
 
     const [contentResult, engagementResult] = await Promise.all([
-      contentWriterAgent(anthropic, productAnalysis, titleResult.best, tone, niches),
+      contentWriterAgent(anthropic, productAnalysis, titleResult.best, tone, niches, isProduct),
       engagementAgent(anthropic, titleResult.best, productAnalysis, affiliateUrl, tone),
     ])
 
     // ── Guarantee the affiliate URL is verbatim in the pinned comment ─────────
-    // The AI sometimes writes "link in description" or truncates the URL — fix that.
-    if (engagementResult.pinnedComment && !engagementResult.pinnedComment.includes(affiliateUrl)) {
+    // (Product mode only — general videos don't have a URL to enforce.)
+    if (isProduct && affiliateUrl && engagementResult.pinnedComment && !engagementResult.pinnedComment.includes(affiliateUrl)) {
       engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n' + affiliateUrl
     }
 
@@ -397,24 +456,41 @@ export async function POST(request: Request) {
       return `${section.title}: (Amazon affiliate links)\n${itemLines}`
     }).join('\n\n')
 
-    const descParts = [
-      `Check Today's Price and Availability on AMAZON here: ${affiliateUrl}`,
-      `(affiliate link)`,
-      `----------`,
-      `Disclosure: As an Amazon Associate and Influencer I earn commissions, at no cost to you, made out of qualifying purchases.`,
-      seoData.hashtags,
-      `----------`,
-      `Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)`,
-    ]
+    // Description assembly differs by mode. Product mode leads with the
+    // affiliate link + disclosure; general mode opens straight with the
+    // video summary and skips the affiliate / ASIN / disclaimer block.
+    const descParts: string[] = []
+    if (isProduct) {
+      descParts.push(
+        `Check Today's Price and Availability on AMAZON here: ${affiliateUrl}`,
+        `(affiliate link)`,
+        `----------`,
+        `Disclosure: As an Amazon Associate and Influencer I earn commissions, at no cost to you, made out of qualifying purchases.`,
+        seoData.hashtags,
+        `----------`,
+        `Thank you for watching! If you enjoyed this video review and found it useful, please subscribe and like for more product reviews :)`,
+      )
+    } else {
+      descParts.push(
+        contentResult.productDescription,
+        ``,
+        seoData.hashtags,
+        `----------`,
+        `Thanks for watching! If this was useful, hit subscribe + like — it really helps the channel.`,
+      )
+    }
     if (collabLine) descParts.push(`----------`, collabLine)
-    descParts.push(`----------`, `Product ASIN: ${asin}`, `----------`, `Product Description:`, contentResult.productDescription)
+    if (isProduct) {
+      descParts.push(`----------`, `Product ASIN: ${trimmedAsin}`, `----------`, `Product Description:`, contentResult.productDescription)
+    }
     if (gearBlock) descParts.push(`----------`, gearBlock)
 
     const description = descParts.join('\n')
 
     return NextResponse.json({
       ok: true,
-      asin,
+      asin: trimmedAsin || null,
+      isProduct,
       affiliateUrl,
       geniuslinkUsed,
       geniuslinkError,
