@@ -387,12 +387,17 @@ export default function BrandPage() {
       if (!user) throw new Error('Not logged in')
       const url = await uploadBrandImage(file, user.id, kind)
       set(column, url)
-      // Auto-save immediately so the upload sticks even if the user
-      // closes the tab before hitting the main Save button.
-      await supabase.from('brand_profiles').upsert(
-        { ...data, [column]: url, user_id: user.id },
-        { onConflict: 'user_id' },
-      )
+      // Auto-save immediately, surgically — only the column that
+      // changed. Don't spread the whole `data` object: if any column
+      // in it doesn't exist in the DB yet (e.g. a brand-new migration
+      // hasn't been run), the upsert is rejected and the upload
+      // silently reverts. Capture the error so we surface it instead
+      // of pretending success.
+      const { error: saveErr } = await supabase
+        .from('brand_profiles')
+        .update({ [column]: url })
+        .eq('user_id', user.id)
+      if (saveErr) throw new Error(saveErr.message)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
