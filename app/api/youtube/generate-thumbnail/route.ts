@@ -190,32 +190,12 @@ export async function POST(request: Request) {
     const tier = (tierRow?.tier as Tier) ?? 'free'
     TELEMETRY = { userId: user.id, tier }
 
-    // Cap gate — thumbnail generations / billing period. Pre-flight the
-    // check so we never charge Fal credits + waste 3 Anthropic calls on
-    // a user who's already at cap.
-    const thumbCap = TIERS[tier].thumbnailsPerMonth
-    const capCheck = await checkUsageCap(
-      supabase, user.id, PRIMARY_FEATURE.thumbnail, thumbCap,
-      (tierRow?.subscription_period_start as string | null) ?? null,
-      (tierRow?.subscription_period_end as string | null) ?? null,
-    )
-    if (capCheck?.exceeded) {
-      const next = nextTierFor(tier, 'thumbnailsPerMonth')
-      const nextHint = next
-        ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
-        : ''
-      return NextResponse.json({
-        error: `You've hit your ${thumbCap} thumbnail generations for this billing period on the ${TIERS[tier].label} plan.${nextHint} Resets ${capCheck.resetLabel}.`,
-        limitReached: true,
-        cap: 'thumbnails',
-        currentTier: tier,
-        upgrade: next ? { tier: next.tier, label: next.label, limit: next.limit } : null,
-      }, { status: 429 })
-    }
-
     const falKey = process.env.FAL_KEY
     if (!falKey) return NextResponse.json({ error: 'FAL_KEY is not configured' }, { status: 500 })
 
+    // Parse body BEFORE the cap check so the check can budget for the
+    // requested variantCount (1 or 2). Otherwise a user 1 below their cap
+    // could click "2 variants" and silently overshoot.
     const {
       quickMode = false,
       videoTitle,
@@ -224,6 +204,8 @@ export async function POST(request: Request) {
       productDescription: providedProductDescription,
       productBullets: providedProductBullets,
       style = 'review',
+      customHeadline,
+      variantCount: rawVariantCount,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -232,11 +214,54 @@ export async function POST(request: Request) {
       productDescription?: string
       productBullets?: string[]
       style?: string
+      /** Locked text overlay. When set, we skip the hook-generation
+       *  agent entirely and use this verbatim. The image prompt
+       *  explicitly tells Flux NOT to render text — overlay happens
+       *  client-side via canvas, so locked text is always crisp. */
+      customHeadline?: string
+      /** How many variants to generate in a single shot. 1 or 2 only —
+       *  clamp server-side. Each variant counts as one image against
+       *  the user's thumbnail cap + AI-cost telemetry. */
+      variantCount?: number
+    }
+
+    const variantCount = Math.min(2, Math.max(1, Number(rawVariantCount) || 1))
+    const lockedHeadline = (customHeadline || '').trim().toUpperCase()
+
+    // Cap gate — thumbnail generations / billing period. Pre-flight the
+    // check so we never charge Fal credits + waste 3 Anthropic calls on
+    // a user who's already at cap. Skips for quickMode (hook-only call
+    // is essentially free, no images generated).
+    if (!quickMode) {
+      const thumbCap = TIERS[tier].thumbnailsPerMonth
+      const capCheck = await checkUsageCap(
+        supabase, user.id, PRIMARY_FEATURE.thumbnail, thumbCap,
+        (tierRow?.subscription_period_start as string | null) ?? null,
+        (tierRow?.subscription_period_end as string | null) ?? null,
+      )
+      // capCheck.used is the count BEFORE this generation; we need room
+      // for `variantCount` more or we reject. Otherwise a user 1 below
+      // their cap could click "2 variants" and silently overshoot.
+      const wouldExceed = thumbCap !== null && capCheck && (capCheck.used + variantCount > thumbCap)
+      if (capCheck?.exceeded || wouldExceed) {
+        const next = nextTierFor(tier, 'thumbnailsPerMonth')
+        const nextHint = next
+          ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
+          : ''
+        return NextResponse.json({
+          error: `You've hit your ${thumbCap} thumbnail generations for this billing period on the ${TIERS[tier].label} plan.${nextHint} Resets ${capCheck?.resetLabel ?? ''}.`,
+          limitReached: true,
+          cap: 'thumbnails',
+          currentTier: tier,
+          upgrade: next ? { tier: next.tier, label: next.label, limit: next.limit } : null,
+        }, { status: 429 })
+      }
     }
 
     // ── Quick mode: hook text only ─────────────────────────────────────────────
     if (quickMode) {
-      const overlayHook = await generateHook(videoTitle)
+      // Locked headline short-circuits the hook agent — no AI call needed.
+      const overlayHook = lockedHeadline || (await generateHook(videoTitle))
       return NextResponse.json({ ok: true, overlayHook, quickMode: true })
     }
 
@@ -263,12 +288,14 @@ export async function POST(request: Request) {
     const channelStyle = await analyzeChannelStyle(channelThumbnailUrls)
     console.log('[generate-thumbnail] Channel style:', channelStyle ?? 'none')
 
-    // ── Generate scene prompt + hook in parallel ──────────────────────────────
-    const [productPrompt, overlayHook] = await Promise.all([
+    // ── Generate scene prompt + hook (hook skipped when headline is locked) ───
+    const [productPrompt, generatedHook] = await Promise.all([
       generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
-      generateHook(videoTitle),
+      lockedHeadline ? Promise.resolve('') : generateHook(videoTitle),
     ])
+    const overlayHook = lockedHeadline || generatedHook
     console.log('[generate-thumbnail] Scene prompt:', productPrompt)
+    console.log('[generate-thumbnail] Overlay text:', overlayHook, lockedHeadline ? '(LOCKED)' : '(AI)')
 
     // ── PATH A: Kontext — use real product image as visual reference ──────────
     // Start from the actual Amazon product photo and transform the scene around it.
@@ -291,7 +318,7 @@ export async function POST(request: Request) {
             image_url: falImageUrl,
             prompt: kontextInstruction,
             aspect_ratio: '16:9',
-            num_images: 1,
+            num_images: variantCount,
             output_format: 'jpeg',
             guidance_scale: 5,
           },
@@ -299,17 +326,25 @@ export async function POST(request: Request) {
         })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const kontextImages = (kontextResult.data as any)?.images as Array<{ url: string }> | undefined
-        const kontextUrl = kontextImages?.[0]?.url
-        if (kontextUrl) {
-          recordUsage({
-            userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-            feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
-          })
-          console.log('[generate-thumbnail] Kontext result:', kontextUrl)
+        const kontextUrls = (kontextImages ?? []).map(i => i.url).filter(Boolean)
+        if (kontextUrls.length > 0) {
+          // Record one usage row per image returned so cap counting + cost
+          // telemetry stays accurate when variantCount > 1.
+          for (let i = 0; i < kontextUrls.length; i++) {
+            recordUsage({
+              userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+              feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
+            })
+          }
+          console.log('[generate-thumbnail] Kontext results:', kontextUrls)
           return NextResponse.json({
             ok: true,
-            thumbnailUrl: kontextUrl,
+            // Primary url retained for backwards-compat with existing client
+            // code; thumbnailUrls is the full array when variantCount > 1.
+            thumbnailUrl: kontextUrls[0],
+            thumbnailUrls: kontextUrls,
             overlayHook,
+            headlineLocked: !!lockedHeadline,
             prompt: kontextInstruction,
             channelStyle: channelStyle ?? null,
             modelUsed: `kontext-${style}`,
@@ -330,7 +365,7 @@ export async function POST(request: Request) {
         image_size: 'landscape_16_9',
         num_inference_steps: 28,
         guidance_scale: 3.5,
-        num_images: 1,
+        num_images: variantCount,
         output_format: 'jpeg',
         safety_tolerance: '2',
       },
@@ -339,17 +374,21 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const images = (result.data as any)?.images as Array<{ url: string }> | undefined
-    const thumbnailUrl = images?.[0]?.url
-    if (!thumbnailUrl) throw new Error('Flux Pro did not return an image. Please try again.')
-    recordUsage({
-      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-      feature: 'yt_thumb_flux_image', model: 'fal-flux-pro-v1.1', images: 1,
-    })
+    const thumbnailUrls = (images ?? []).map(i => i.url).filter(Boolean)
+    if (thumbnailUrls.length === 0) throw new Error('Flux Pro did not return an image. Please try again.')
+    for (let i = 0; i < thumbnailUrls.length; i++) {
+      recordUsage({
+        userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+        feature: 'yt_thumb_flux_image', model: 'fal-flux-pro-v1.1', images: 1,
+      })
+    }
 
     return NextResponse.json({
       ok: true,
-      thumbnailUrl,
+      thumbnailUrl: thumbnailUrls[0],
+      thumbnailUrls,
       overlayHook,
+      headlineLocked: !!lockedHeadline,
       prompt: productPrompt,
       channelStyle: channelStyle ?? null,
       modelUsed: `flux-pro-${style}`,

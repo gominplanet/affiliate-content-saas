@@ -110,6 +110,16 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
   const [instantLoading, setInstantLoading] = useState(false)
+  /** Locked headline — when set, the AI doesn't generate a hook, and the
+   *  image prompt explicitly says "no text". We then overlay this text
+   *  client-side via canvas so it's always crisp. 2–5 words works best. */
+  const [customHeadline, setCustomHeadline] = useState('')
+  /** 1 or 2 — how many thumbnail variants to render per click. Each
+   *  variant counts against the user's thumbnail cap. */
+  const [variantCount, setVariantCount] = useState<1 | 2>(1)
+  /** All variants returned by the last generation. Used when variantCount=2
+   *  so the user can compare side-by-side and pick. */
+  const [thumbnailVariants, setThumbnailVariants] = useState<string[]>([])
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -286,20 +296,28 @@ function VideoStudioCard({ video, userTier, playlists }: {
   // ── Shared thumbnail result handler ─────────────────────────────────────────
   async function applyThumbnailResult(data: Record<string, unknown>) {
     const hook = (data.overlayHook as string) || ''
-    const rawUrl = data.thumbnailUrl as string
+    // Server may return one or many. Backwards-compat: single thumbnailUrl
+    // when older callers / older deploys. Always normalize to array first.
+    const rawList = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls.length > 0)
+      ? (data.thumbnailUrls as string[])
+      : [(data.thumbnailUrl as string)].filter(Boolean)
 
-    // Flux returns a clean image — apply canvas text overlay on top
-    let finalUrl = rawUrl
-    if (hook) {
-      try {
-        finalUrl = await addTextOverlay(rawUrl, hook)
-      } catch (overlayErr) {
+    // Run the text overlay on each variant in parallel — these are small
+    // canvas ops so it's fast. Falls back to raw URL on overlay failure
+    // so the user never gets stuck.
+    const finalUrls = await Promise.all(rawList.map(async (url) => {
+      if (!hook) return url
+      try { return await addTextOverlay(url, hook) }
+      catch (overlayErr) {
         console.warn('[thumbnail-overlay]', overlayErr)
-        // Fall back to raw image without text
+        return url
       }
-    }
+    }))
 
-    setThumbnailUrl(finalUrl)
+    // Primary thumbnail = first variant; full list goes into the variants
+    // state so the UI can render the picker when there's more than one.
+    setThumbnailUrl(finalUrls[0])
+    setThumbnailVariants(finalUrls)
     setThumbnailHook(hook)
     setThumbnailPrompt((data.prompt as string) ?? null)
     setThumbnailModel((data.modelUsed as string) ?? null)
@@ -351,6 +369,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           productDescription: product?.description ?? undefined,
           productBullets: product?.bullets ?? undefined,
           style: 'lifestyle',
+          customHeadline: customHeadline.trim() || undefined,
+          variantCount,
         }),
       })
       const data = await safeJson(res)
@@ -392,6 +412,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           productDescription: overrides.productDescription ?? undefined,
           productBullets: overrides.productBullets ?? undefined,
           style: 'lifestyle',
+          customHeadline: customHeadline.trim() || undefined,
+          variantCount,
         }),
       })
       const data = await safeJson(res)
@@ -603,6 +625,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
             videoTitle: editTitle || video.title,
             productTitle: product?.title ?? undefined,
             asin: video.detectedAsin ?? undefined,
+            // Honour the locked headline on the instant path too —
+            // the server short-circuits the hook agent when this is set.
+            customHeadline: customHeadline.trim() || undefined,
           }),
         })
         const data = await res.json() as Record<string, unknown>
@@ -928,6 +953,52 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   </div>
                 </div>
 
+                {/* Headline lock + variant count — sit above the generate
+                    buttons so the user thinks about these BEFORE clicking. */}
+                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 space-y-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                      Lock headline <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — 2-5 words work best)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={customHeadline}
+                      onChange={(e) => setCustomHeadline(e.target.value)}
+                      placeholder="e.g. WORTH IT? — leave blank to let AI pick"
+                      maxLength={40}
+                      disabled={generatingThumbnail || instantLoading}
+                      className="w-full text-xs px-2.5 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none uppercase tracking-wide"
+                    />
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                      When set, the AI generates only the background — your exact text gets overlaid crisply on top.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Variants</label>
+                    <div className="flex items-center gap-1.5">
+                      {([1, 2] as const).map(n => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setVariantCount(n)}
+                          disabled={generatingThumbnail || instantLoading}
+                          className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors border disabled:opacity-60 ${
+                            variantCount === n
+                              ? 'bg-[#0071e3] text-white border-[#0071e3]'
+                              : 'bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] border-gray-200 dark:border-white/10 hover:border-gray-300'
+                          }`}
+                        >
+                          {n} thumbnail{n > 1 ? 's' : ''}
+                        </button>
+                      ))}
+                      {variantCount === 2 && (
+                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] ml-1">Uses 2 from your monthly cap</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Generate buttons */}
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
                   <button
@@ -937,8 +1008,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
                   >
                     {generatingThumbnail
-                      ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
-                      : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate' : 'Generate Thumbnail'}</>}
+                      ? <><Loader2 size={12} className="animate-spin" /> Generating{variantCount === 2 ? ' 2 variants' : ''}…</>
+                      : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate' : `Generate Thumbnail${variantCount === 2 ? 's' : ''}`}</>}
                   </button>
 
                   {video.thumbnailUrl && (
@@ -983,6 +1054,36 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 {/* Result */}
                 {thumbnailUrl && (
                   <div className="flex flex-col gap-2">
+                    {/* Variant picker — only renders when 2+ thumbnails came
+                        back. Clicking a variant promotes it to the primary
+                        thumbnail used by Apply / Download. */}
+                    {thumbnailVariants.length > 1 && (
+                      <div>
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-1.5">
+                          Pick the one you want to keep — Apply / Download uses the selected variant.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {thumbnailVariants.map((url, i) => {
+                            const isSelected = url === thumbnailUrl
+                            return (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => setThumbnailUrl(url)}
+                                className={`rounded-lg overflow-hidden border-2 transition-all ${
+                                  isSelected
+                                    ? 'border-[#0071e3] ring-2 ring-[#0071e3]/30'
+                                    : 'border-transparent hover:border-gray-300 dark:hover:border-white/20'
+                                }`}
+                                title={isSelected ? 'Selected' : 'Pick this variant'}
+                              >
+                                <img src={url} alt={`Variant ${i + 1}`} className="w-full object-cover block" style={{ aspectRatio: '16/9' }} />
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                       <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
                     </div>
