@@ -18,6 +18,9 @@ export const TIERS = {
     /** YouTube metadata generations / month — each one fires a 5-agent
      *  swarm. 0 = blocked, null = unlimited. */
     metadataGensPerMonth: 5 as number | null,
+    /** Native Instagram AI image generations / month (4:5 portrait,
+     *  face + product). Pro-only feature — 0 = blocked. */
+    instagramAiThumbnailsPerMonth: 0 as number | null,
     /** Base posts the tier markets (used for the "60 + 20 bonus" framing). */
     basePosts: 15,
     bonusPosts: 0,
@@ -38,6 +41,7 @@ export const TIERS = {
     collabsPerMonth: 1 as number | null,
     thumbnailsPerMonth: 30 as number | null,
     metadataGensPerMonth: 30 as number | null,
+    instagramAiThumbnailsPerMonth: 0 as number | null,
     basePosts: 30,
     bonusPosts: 0,
     sites: 1,
@@ -57,6 +61,7 @@ export const TIERS = {
     collabsPerMonth: 5 as number | null,
     thumbnailsPerMonth: 100 as number | null,
     metadataGensPerMonth: 100 as number | null,
+    instagramAiThumbnailsPerMonth: 0 as number | null,
     basePosts: 60,
     bonusPosts: 20,
     sites: 1,
@@ -74,6 +79,7 @@ export const TIERS = {
     collabsPerMonth: 100 as number | null,
     thumbnailsPerMonth: 300 as number | null,
     metadataGensPerMonth: 300 as number | null,
+    instagramAiThumbnailsPerMonth: 50 as number | null,
     basePosts: 140,
     bonusPosts: 60,
     sites: 1,
@@ -91,6 +97,7 @@ export const TIERS = {
     collabsPerMonth: null as number | null,
     thumbnailsPerMonth: null as number | null,
     metadataGensPerMonth: null as number | null,
+    instagramAiThumbnailsPerMonth: null as number | null,
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
@@ -112,7 +119,7 @@ export function tierAllowsSocial(tier: Tier, social: Social): boolean {
  *  a user hits a cap. */
 export function nextTierFor(
   tier: Tier,
-  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth',
+  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth',
 ): { tier: Tier; label: string; limit: number | null } | null {
   const order: Tier[] = ['free', 'starter', 'growth', 'pro']
   const idx = order.indexOf(tier)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
@@ -611,6 +612,80 @@ function InstagramPublishModal({
   const [previewLoaded, setPreviewLoaded] = useState(false)
   const [previewedReelCaption, setPreviewedReelCaption] = useState('')
   const [previewedAffiliateUrl, setPreviewedAffiliateUrl] = useState<string | null>(null)
+  // ── AI native IG image (Pro-only) ────────────────────────────────────────
+  // Source-picker state. For horizontal videos the user can choose between
+  // the existing "compose from YT thumbnail" path (free, fast) and the new
+  // "generate native 4:5 AI image" path (Pro, slow, paid). Vertical videos
+  // are MP4-upload only and don't see any of this.
+  const [igSource, setIgSource] = useState<'compose' | 'ai'>('compose')
+  const [aiHeadline, setAiHeadline] = useState('')
+  const [aiFaceModelId, setAiFaceModelId] = useState<string | null>(null)
+  const [aiFaceModels, setAiFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string }>>([])
+  const [aiTier, setAiTier] = useState<string>('free')
+  const [aiGenerating, setAiGenerating] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+
+  // Load Pro status + face models on mount so the AI option only shows
+  // to users who can actually use it. Free-tier users see no second
+  // option (they get the existing compose flow only).
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: intRow } = await (supabase as any)
+          .from('integrations').select('tier').eq('user_id', user.id).single()
+        setAiTier((intRow?.tier as string) || 'free')
+        const fmRes = await fetch('/api/face-models')
+        if (fmRes.ok) {
+          const fm = await fmRes.json()
+          const ready = ((fm.models as Array<{ id: string; name: string; trigger_token: string; status: string }>) || [])
+            .filter(m => m.status === 'ready')
+            .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
+          setAiFaceModels(ready)
+        }
+      } catch { /* silent — picker just won't render */ }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const aiIsPro = aiTier === 'pro' || aiTier === 'admin'
+
+  /** Fire the IG-native AI image generation. On success, the returned
+   *  imageUrl is wired into existingUrl so the rest of the modal treats
+   *  it exactly like a composed image — preview, mode picker, publish all
+   *  unchanged. */
+  async function handleGenerateAIImage() {
+    setAiGenerating(true)
+    setAiError(null)
+    try {
+      const res = await fetch('/api/instagram/generate-ai-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          postId,
+          customHeadline: aiHeadline.trim() || undefined,
+          faceModelId: aiFaceModelId || undefined,
+        }),
+      })
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      if (!res.ok) {
+        if (data.limitReached) {
+          dispatchCapReached(data.error || 'Cap reached.', {
+            cap: data.cap || 'instagram_ai', currentTier: data.currentTier, upgrade: data.upgrade,
+          })
+          return
+        }
+        throw new Error(data.error || 'AI generation failed')
+      }
+      setExistingUrl(data.imageUrl as string)
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI generation failed')
+    } finally {
+      setAiGenerating(false)
+    }
+  }
 
   // Load whichever URL applies to this kind
   useEffect(() => {
@@ -818,24 +893,116 @@ function InstagramPublishModal({
                 </div>
               )
             ) : videoKind === 'horizontal' ? (
-              <button
-                onClick={handleGenerateImage}
-                disabled={generatingImage}
-                className="w-full flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#E1306C] cursor-pointer transition-colors disabled:cursor-wait"
-              >
-                {generatingImage ? (
-                  <>
-                    <Loader2 size={20} className="animate-spin text-[#E1306C] mb-2" />
-                    <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Composing image…'}</p>
-                  </>
-                ) : (
-                  <>
-                    <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
-                    <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Compose Instagram image</p>
-                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">YouTube thumbnail + title + your brand · 1080×1350</p>
-                  </>
+              <div className="space-y-3">
+                {/* Source picker — only renders for Pro users. Free/Starter/
+                    Growth see just the compose button (current behavior). */}
+                {aiIsPro && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIgSource('compose')}
+                      className={`flex-1 p-2.5 rounded-lg border text-xs font-semibold transition-colors ${
+                        igSource === 'compose'
+                          ? 'border-[#E1306C] bg-[#E1306C]/5 text-[#1d1d1f] dark:text-[#f5f5f7]'
+                          : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'
+                      }`}
+                    >
+                      Compose from YT thumbnail
+                      <span className="block text-[10px] font-normal text-[#86868b] mt-0.5">Free · 5s</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIgSource('ai')}
+                      className={`flex-1 p-2.5 rounded-lg border text-xs font-semibold transition-colors ${
+                        igSource === 'ai'
+                          ? 'border-[#5856d6] bg-[#5856d6]/5 text-[#1d1d1f] dark:text-[#f5f5f7]'
+                          : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'
+                      }`}
+                    >
+                      ✨ Generate native AI image
+                      <span className="block text-[10px] font-normal text-[#86868b] mt-0.5">Pro · 4:5 portrait · ~30s</span>
+                    </button>
+                  </div>
                 )}
-              </button>
+
+                {/* AI configuration form — face picker + headline lock */}
+                {aiIsPro && igSource === 'ai' && (
+                  <div className="p-3 rounded-lg border border-[#5856d6]/30 bg-[#5856d6]/5 space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                        Headline <span className="font-normal text-[#86868b]">(optional · leave blank for AI to pick)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={aiHeadline}
+                        onChange={(e) => setAiHeadline(e.target.value)}
+                        placeholder="e.g. GAME CHANGER!"
+                        maxLength={40}
+                        disabled={aiGenerating}
+                        className="w-full text-xs px-2.5 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#5856d6] focus:outline-none uppercase tracking-wide"
+                      />
+                    </div>
+                    {aiFaceModels.length > 0 ? (
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Face</label>
+                        <div className="flex flex-col gap-1">
+                          <label className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer text-xs ${aiFaceModelId === null ? 'border-[#5856d6] bg-white dark:bg-[#0a0a0a]' : 'border-gray-200 dark:border-white/10'}`}>
+                            <input type="radio" name="ig-face" checked={aiFaceModelId === null} onChange={() => setAiFaceModelId(null)} />
+                            <span>No face — product-only</span>
+                          </label>
+                          {aiFaceModels.map(m => (
+                            <label key={m.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border cursor-pointer text-xs ${aiFaceModelId === m.id ? 'border-[#5856d6] bg-white dark:bg-[#0a0a0a]' : 'border-gray-200 dark:border-white/10'}`}>
+                              <input type="radio" name="ig-face" checked={aiFaceModelId === m.id} onChange={() => setAiFaceModelId(m.id)} />
+                              <span className="font-medium">{m.name}</span>
+                              <span className="text-[10px] text-[#86868b]">({m.trigger_token})</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
+                        No trained faces yet — the AI will generate a product-only portrait. <Link href="/face-training" className="text-[#5856d6] hover:underline">Train your face</Link> for stronger Instagram results.
+                      </p>
+                    )}
+                    <button
+                      onClick={handleGenerateAIImage}
+                      disabled={aiGenerating}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-white disabled:opacity-60"
+                      style={{ background: 'linear-gradient(135deg, #5856d6 0%, #E1306C 100%)' }}
+                    >
+                      {aiGenerating
+                        ? <><Loader2 size={11} className="animate-spin" /> Generating (20-40s)…</>
+                        : <>✨ Generate AI image</>}
+                    </button>
+                    {aiError && <p className="text-[11px] text-[#ff3b30]">{aiError}</p>}
+                    <p className="text-[10px] text-[#86868b] italic">
+                      Each generation counts as 1 of your monthly Instagram AI credits. Re-opening this modal later re-uses the same image free.
+                    </p>
+                  </div>
+                )}
+
+                {/* Compose button — only shown when source = compose OR user is not Pro */}
+                {(!aiIsPro || igSource === 'compose') && (
+                  <button
+                    onClick={handleGenerateImage}
+                    disabled={generatingImage}
+                    className="w-full flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#E1306C] cursor-pointer transition-colors disabled:cursor-wait"
+                  >
+                    {generatingImage ? (
+                      <>
+                        <Loader2 size={20} className="animate-spin text-[#E1306C] mb-2" />
+                        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Composing image…'}</p>
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
+                        <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Compose Instagram image</p>
+                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">YouTube thumbnail + title + your brand · 1080×1350</p>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             ) : (
               <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#0071e3] cursor-pointer transition-colors">
                 <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />

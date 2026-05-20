@@ -23,6 +23,9 @@ export const PRIMARY_FEATURE = {
   /** Metadata 5-agent swarm; title_strategist runs exactly once per
    *  generation, so counting it = total successful metadata gens. */
   metadata: ['yt_meta_title_strategist'] as string[],
+  /** Native Instagram AI image — Pro-only, separately capped from
+   *  YouTube thumbnails (different surface, different aspect ratio). */
+  instagramAi: ['ig_ai_thumbnail_image'] as string[],
 }
 
 interface CapCheck {
