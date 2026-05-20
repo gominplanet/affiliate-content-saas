@@ -205,16 +205,24 @@ ${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
 ${opts.productBullets.length ? `FEATURES: ${opts.productBullets.slice(0, 4).join(' · ')}` : ''}
 ${opts.channelStyle ? `CHANNEL AESTHETIC (match this): ${opts.channelStyle}` : ''}
 
-PROMPT RULES (this is a YouTube THUMBNAIL — must look punchy and click-worthy, NOT documentary):
+PROMPT RULES (this is a YouTube THUMBNAIL — must look engaging but NATURAL, not cartoony):
+
+CALIBRATION NOTE: We've tuned away from "mouth-wide-open, eyes-bulging" expressions because they read as cartoonish and AI-generated. Aim for the energy of a great photojournalism portrait — present, alive, intriguing — NOT a meme-face reaction.
+
 1. START with "${opts.triggerToken}" — the LoRA's trigger token must appear at the very start so the loaded weights activate. Then describe what they're doing.
-2. PERSON FRAMING: ${opts.triggerToken} fills the FRAME — face takes up at least 35% of the image, MID-SHOT or CLOSER. Not a wide shot. The viewer should clearly see their eyes from across a room.
-3. EXPRESSION: BIG and EXAGGERATED — pick one that matches the video: mouth wide open with shocked eyes / huge grin with raised eyebrows / sceptical raised brow + slight smirk / "telling-you-a-secret" lean. NEVER neutral or candid. This is performance, not documentary.
-4. EYE CONTACT: looking DIRECTLY at camera. Locked in.
-5. PRODUCT: held up close to the face — at chin-height or shoulder-height, clearly visible. Not on a table in the background.
-6. SCENE: real-world setting but BLURRED/OUT-OF-FOCUS background — bokeh. Setting only hints at context; the person + product dominate.
-7. COMPOSITION: person CENTRE or CENTRE-LEFT, product near the face. Leave clean space TOP-LEFT or BOTTOM-LEFT for a giant text overlay.
-8. LIGHTING: hard key light from camera-front-right, slight rim light on hair, dramatic contrast. Skin and product POP.
-9. End with: "16:9, photorealistic, 8K, ultra-sharp face, dramatic studio-style lighting, shallow depth of field, vivid colour grading, no text overlays"
+2. PERSON FRAMING: ${opts.triggerToken} fills the frame — face takes ~30-40% of the image, MID-SHOT. Not a wide shot, not a tight close-up.
+3. EXPRESSION: NATURAL but engaging. Pick ONE that fits the video:
+   - Subtle smile + raised eyebrow ("I found something good")
+   - Slight head-tilt with knowing smirk ("you need to see this")
+   - Soft surprised look — mouth closed or slightly parted, eyes alert
+   - Genuine interested look — examining the product
+   AVOID: mouth wide open, bulging eyes, screaming face, exaggerated shock. Those read as cartoonish.
+4. EYE CONTACT: looking AT camera or AT the product. Confident, not posed.
+5. PRODUCT: held naturally near the face or shoulder, clearly visible.
+6. SCENE: real-world setting, slightly blurred background — bokeh that supports the subject, doesn't replace them. Setting should feel lived-in.
+7. COMPOSITION: person CENTRE or CENTRE-LEFT, product close to them. Leave clean space TOP-LEFT or BOTTOM-LEFT for a giant text overlay.
+8. LIGHTING: natural editorial — soft key light + slight rim light, gentle contrast. Skin looks real, NOT plastic or over-lit.
+9. End with: "16:9, photorealistic, 8K, sharp focus on face, editorial portrait lighting, shallow depth of field, natural skin tones, no text overlays"
 10. Under 110 words total.
 
 Return ONLY the prompt — no preamble.`,
@@ -518,11 +526,12 @@ export async function POST(request: Request) {
       const loraResult = await fal.subscribe('fal-ai/flux-lora' as any, {
         input: {
           prompt: facePrompt,
-          // scale 1.1 gives stronger identity preservation (face looks
-          // more like the user) at the cost of slightly less prompt
-          // adherence. 1.0 left identity drifting; 1.2+ over-fits and
-          // ignores expression direction.
-          loras: [{ path: faceModel.lora_url, scale: 1.1 }],
+          // CALIBRATION: 1.0 keeps identity strong without over-fitting.
+          // 1.1 produced cartoonish, over-rendered faces. If a user
+          // reports their face doesn't look like them, the move is to
+          // re-train with more varied source photos rather than crank
+          // the scale.
+          loras: [{ path: faceModel.lora_url, scale: 1.0 }],
           image_size: 'landscape_16_9',
           num_inference_steps: 28,
           guidance_scale: 3.5,

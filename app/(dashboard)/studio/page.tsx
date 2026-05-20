@@ -513,8 +513,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
   }
 
   // ── Thumbnail text-overlay styles ────────────────────────────────────────────
-  // 4 visually distinct presets. One is picked randomly per generation so each
+  // Visually distinct presets. One is picked randomly per generation so each
   // thumbnail looks different. Fonts are loaded from Google Fonts on demand.
+  //
+  // CALIBRATION NOTE: User feedback flagged all-white Bebas as "too plain" —
+  // we removed the single-colour low-impact styles and lean on the dual-tone
+  // / banner / massive presets so every thumbnail gets a click-worthy title.
+  // If you want neutral fallbacks back, re-add them but assign a weight < 1.
   const OVERLAY_STYLES = [
     {
       // Classic YouTube: yellow + white Impact, bottom-left, dark gradient
@@ -526,21 +531,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
       outlineColor: '#000',
       outlineW: 14,
       shadowAlpha: 0.8,
-      maxPx: 112,
-      position: 'bottom-left' as const,
-      gradient: true,
-    },
-    {
-      // Bebas Neue: all-white modern condensed, bottom-left, subtle gradient
-      id: 'bebas-white',
-      fontName: 'Bebas Neue',
-      fontStack: '"Bebas Neue", Impact, sans-serif',
-      weight: '400',
-      colors: ['#FFFFFF', '#FFFFFF'],
-      outlineColor: '#000',
-      outlineW: 10,
-      shadowAlpha: 0.9,
-      maxPx: 124,
+      maxPx: 118,
       position: 'bottom-left' as const,
       gradient: true,
     },
