@@ -572,6 +572,52 @@ function VideoStudioCard({ video, userTier, playlists }: {
       position: 'bottom-left' as const,
       gradient: true,
     },
+    {
+      // Big competitor-style: line 1 RED massive, line 2 WHITE
+      // ("DOES … / STINK?" / "WHAT FITS / ALL IN ONE"). Heaviest outlines,
+      // hardest drop-shadow — pure click-bait energy.
+      id: 'split-red-white-massive',
+      fontName: 'Anton',
+      fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+      weight: '400',
+      colors: ['#FF1F1F', '#FFFFFF'],
+      outlineColor: '#000',
+      outlineW: 18,
+      shadowAlpha: 0.95,
+      maxPx: 138,
+      position: 'bottom-left' as const,
+      gradient: false,
+    },
+    {
+      // Banner style — solid filled block behind white text. Drawn via
+      // a synthesised "blockBg" hint the renderer honours.
+      id: 'banner-block',
+      fontName: 'Anton',
+      fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+      weight: '400',
+      colors: ['#FFFFFF', '#FFFFFF'],
+      outlineColor: '#000',
+      outlineW: 6,
+      shadowAlpha: 0.6,
+      maxPx: 110,
+      position: 'bottom-left' as const,
+      gradient: false,
+      blockBg: '#FF7A00' as string | null,
+    },
+    {
+      // MrBeast-style massive yellow — top-left, huge, thick black outline.
+      id: 'mrbeast-yellow',
+      fontName: 'Anton',
+      fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+      weight: '400',
+      colors: ['#FFE034', '#FFE034'],
+      outlineColor: '#000',
+      outlineW: 20,
+      shadowAlpha: 0.9,
+      maxPx: 140,
+      position: 'top-left' as const,
+      gradient: false,
+    },
   ]
 
   // Cache so the same font isn't loaded twice across re-renders
@@ -637,7 +683,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           ? MARGIN_EDGE
           : 720 - MARGIN_EDGE - totalH
 
-        // Background gradient (bottom styles only)
+        // Background gradient (bottom styles only) — gives soft contrast
+        // so the text reads against varied backgrounds.
         if (style.gradient) {
           const gradH = totalH + MARGIN_EDGE + 20
           const gradY = style.position === 'top-left' ? 0 : 720 - gradH
@@ -651,6 +698,23 @@ function VideoStudioCard({ video, userTier, playlists }: {
           }
           ctx.fillStyle = grad
           ctx.fillRect(0, gradY, 1280, gradH)
+        }
+
+        // Solid-colour banner block behind the text (e.g. orange box with
+        // white "ALL IN ONE" inside). Sized to each line's actual width
+        // so the block hugs the text rather than running the full frame.
+        const blockBg = (style as { blockBg?: string | null }).blockBg
+        if (blockBg) {
+          // Measure each line so the block sits exactly behind it with a
+          // bit of horizontal + vertical padding.
+          ctx.font = makeFont(fs)
+          const pad = Math.round(fs * 0.18)
+          lines.forEach((line, i) => {
+            const lineW = ctx.measureText(line).width
+            const y = startY + i * lineH
+            ctx.fillStyle = blockBg
+            ctx.fillRect(MARGIN_X - pad, y - pad * 0.4, lineW + pad * 2, fs + pad * 0.8)
+          })
         }
 
         ctx.textAlign = 'left'

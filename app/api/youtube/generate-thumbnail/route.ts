@@ -205,15 +205,17 @@ ${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
 ${opts.productBullets.length ? `FEATURES: ${opts.productBullets.slice(0, 4).join(' · ')}` : ''}
 ${opts.channelStyle ? `CHANNEL AESTHETIC (match this): ${opts.channelStyle}` : ''}
 
-PROMPT RULES:
-1. START with "${opts.triggerToken}" — the LoRA's trigger token must appear at the start so the loaded weights activate.
-2. PERSON: describe ${opts.triggerToken} in an active reaction to the product — emotional, animated, eye-contact with camera. Strong expression: surprised, smiling, sceptical, intrigued — pick what fits the video.
-3. PRODUCT: visible clearly in the frame, held up or right next to the person.
-4. SCENE: real-world, story-driven environment (home, workspace, outdoor, kitchen — whatever fits the product). Not a studio.
-5. COMPOSITION: person CENTRE-LEFT, product CENTRE-RIGHT or held in their hands. Leave clean space TOP-LEFT for text overlay.
-6. LIGHTING: dramatic, cinematic, golden-hour or strong key light — face should pop.
-7. End with: "16:9, photorealistic, 8K, shallow depth of field, sharp focus on face, no text overlays"
-8. Under 90 words total.
+PROMPT RULES (this is a YouTube THUMBNAIL — must look punchy and click-worthy, NOT documentary):
+1. START with "${opts.triggerToken}" — the LoRA's trigger token must appear at the very start so the loaded weights activate. Then describe what they're doing.
+2. PERSON FRAMING: ${opts.triggerToken} fills the FRAME — face takes up at least 35% of the image, MID-SHOT or CLOSER. Not a wide shot. The viewer should clearly see their eyes from across a room.
+3. EXPRESSION: BIG and EXAGGERATED — pick one that matches the video: mouth wide open with shocked eyes / huge grin with raised eyebrows / sceptical raised brow + slight smirk / "telling-you-a-secret" lean. NEVER neutral or candid. This is performance, not documentary.
+4. EYE CONTACT: looking DIRECTLY at camera. Locked in.
+5. PRODUCT: held up close to the face — at chin-height or shoulder-height, clearly visible. Not on a table in the background.
+6. SCENE: real-world setting but BLURRED/OUT-OF-FOCUS background — bokeh. Setting only hints at context; the person + product dominate.
+7. COMPOSITION: person CENTRE or CENTRE-LEFT, product near the face. Leave clean space TOP-LEFT or BOTTOM-LEFT for a giant text overlay.
+8. LIGHTING: hard key light from camera-front-right, slight rim light on hair, dramatic contrast. Skin and product POP.
+9. End with: "16:9, photorealistic, 8K, ultra-sharp face, dramatic studio-style lighting, shallow depth of field, vivid colour grading, no text overlays"
+10. Under 110 words total.
 
 Return ONLY the prompt — no preamble.`,
     }],
@@ -516,7 +518,11 @@ export async function POST(request: Request) {
       const loraResult = await fal.subscribe('fal-ai/flux-lora' as any, {
         input: {
           prompt: facePrompt,
-          loras: [{ path: faceModel.lora_url, scale: 1.0 }],
+          // scale 1.1 gives stronger identity preservation (face looks
+          // more like the user) at the cost of slightly less prompt
+          // adherence. 1.0 left identity drifting; 1.2+ over-fits and
+          // ignores expression direction.
+          loras: [{ path: faceModel.lora_url, scale: 1.1 }],
           image_size: 'landscape_16_9',
           num_inference_steps: 28,
           guidance_scale: 3.5,
