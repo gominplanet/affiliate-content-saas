@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
-import { Save, Check, Loader2 } from 'lucide-react'
+import { Save, Check, Loader2, Sparkles } from 'lucide-react'
 import {
   VOICE_QUESTIONS, STYLE_AXES, SPEECH_PATTERNS, THOUGHT_PROCESS,
   emptyLearnProfile, type LearnProfile,
@@ -39,6 +39,8 @@ export default function LearnPage() {
   const [data, setData] = useState<State>(DEFAULT)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [evolving, setEvolving] = useState(false)
+  const [evolveResult, setEvolveResult] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -78,6 +80,26 @@ export default function LearnPage() {
       setError(e instanceof Error ? e.message : 'Save failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function refreshFromPosts() {
+    setEvolving(true); setEvolveResult(null)
+    try {
+      const res = await fetch('/api/learn/evolve', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || 'Refresh failed')
+      if (d.evolved) {
+        setEvolveResult(`AI filled ${d.fieldsFilled} empty field${d.fieldsFilled === 1 ? '' : 's'} based on your published posts. Reloading…`)
+        setTimeout(() => load(), 800)
+      } else {
+        setEvolveResult(d.reason || 'Nothing to add right now.')
+      }
+    } catch (e) {
+      setEvolveResult(e instanceof Error ? e.message : 'Refresh failed')
+    } finally {
+      setEvolving(false)
+      setTimeout(() => setEvolveResult(null), 6000)
     }
   }
 
@@ -121,6 +143,34 @@ export default function LearnPage() {
       />
 
       <TutorialVideo sectionKey="learning" />
+
+      <div className="max-w-3xl mb-4">
+        <div className="card p-4 flex items-start gap-3" style={{ background: 'linear-gradient(180deg, rgba(88,86,214,0.05) 0%, transparent 100%)', borderColor: 'rgba(88,86,214,0.25)' }}>
+          <div className="w-8 h-8 rounded-full bg-[#5856d6]/15 flex items-center justify-center flex-shrink-0">
+            <Sparkles size={16} className="text-[#5856d6]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Let the AI fill in the gaps</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+              Once you&apos;ve published a few posts, the AI can read them and suggest answers for the fields you haven&apos;t filled in yet. Your existing answers are never overwritten — gaps only.
+            </p>
+            <div className="flex items-center gap-3 mt-3 flex-wrap">
+              <button
+                onClick={refreshFromPosts}
+                disabled={evolving}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#5856d6] text-white hover:opacity-90 disabled:opacity-60 transition-opacity"
+              >
+                {evolving
+                  ? <><Loader2 size={11} className="animate-spin" /> Reading your posts…</>
+                  : <><Sparkles size={11} /> Refresh AI suggestions</>}
+              </button>
+              {evolveResult && (
+                <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{evolveResult}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="max-w-3xl space-y-6 pb-28">
 

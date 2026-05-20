@@ -8,6 +8,7 @@ import { scrubBanned } from '@/lib/scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin } from '@/services/amazon'
+import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
 // Images are generated separately via /api/blog/images
@@ -429,6 +430,13 @@ async function handleGenerate(request: Request) {
       .single()
     savedPost = data
   }
+
+  // Fire-and-forget LEARN-profile evolution. Reads the user's last 5
+  // posts + current profile, fills empty slots with AI-inferred
+  // suggestions (never overwrites manual entries). Debounced 6h so a
+  // burst of publishes doesn't hammer Haiku. No await — request keeps
+  // moving so the user's blog-publish flow stays fast.
+  void maybeEvolveLearnProfile(supabase, { userId: user.id, tier: (wp?.tier as string) ?? null })
 
   // ── 10. Purge LiteSpeed cache so new post appears on homepage immediately ──
   try {

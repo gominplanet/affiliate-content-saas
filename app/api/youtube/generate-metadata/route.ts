@@ -125,7 +125,13 @@ async function titleStrategistAgent(
   tone: string,
   productAnalysis: { targetBuyer: string; topBenefits: string[]; painPoints: string[] },
   isProduct: boolean,
+  /** The user's most recent generated titles — used as voice anchors
+   *  so the title cadence matches their channel over time. */
+  priorTitles?: string[] | null,
 ): Promise<{ best: string; alternatives: string[] }> {
+  const voiceAnchor = (priorTitles && priorTitles.length > 0)
+    ? `\n\nUSER'S RECENT TITLES (match this cadence + hook style; do NOT copy):\n${priorTitles.map(t => `- "${t}"`).join('\n')}\n`
+    : ''
   const raw = await runAgent(anthropic, {
     model: 'claude-sonnet-4-6',
     maxTokens: 600,
@@ -155,7 +161,7 @@ Return JSON:
 {
   "best": "the single strongest title",
   "alternatives": ["4 other strong options"]
-}`,
+}${voiceAnchor}`,
   })
   return parseJSON(raw, { best: videoTitle, alternatives: [] })
 }
@@ -204,7 +210,13 @@ async function contentWriterAgent(
   tone: string,
   niches: string,
   isProduct: boolean,
+  /** The user's most recent generated descriptions — voice anchors
+   *  so each new description sounds more like their channel's. */
+  priorDescriptions?: string[] | null,
 ): Promise<{ productDescription: string }> {
+  const voiceAnchor = (priorDescriptions && priorDescriptions.length > 0)
+    ? `\n\nUSER'S RECENT DESCRIPTIONS (match the cadence + voice, do NOT copy):\n${priorDescriptions.map((d, i) => `── EXAMPLE ${i + 1} ──\n${d.slice(0, 400)}`).join('\n\n')}\n`
+    : ''
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 600,
@@ -231,7 +243,7 @@ RULES:
 Return JSON:
 {
   "productDescription": "3-4 sentences..."
-}`,
+}${voiceAnchor}`,
   })
   return parseJSON(raw, { productDescription: '' })
 }
@@ -243,8 +255,14 @@ async function engagementAgent(
   productAnalysis: { targetBuyer: string; topBenefits: string[] },
   affiliateUrl: string,
   tone: string,
+  /** The user's most recent pinned comments — voice anchors so the
+   *  pinned-comment voice matches their channel. */
+  priorPinnedComments?: string[] | null,
 ): Promise<{ pinnedComment: string }> {
   const hasLink = !!affiliateUrl
+  const voiceAnchor = (priorPinnedComments && priorPinnedComments.length > 0)
+    ? `\n\nUSER'S RECENT PINNED COMMENTS (match the voice + hook style, do NOT copy):\n${priorPinnedComments.map((c, i) => `── EXAMPLE ${i + 1} ──\n${c.slice(0, 350)}`).join('\n\n')}\n`
+    : ''
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 400,
@@ -269,7 +287,7 @@ ${hasLink
 Return JSON:
 {
   "pinnedComment": "${hasLink ? '2-3 sentence pinned comment with link' : '2-3 sentence pinned comment, no link'}..."
-}`,
+}${voiceAnchor}`,
   })
   return parseJSON(raw, { pinnedComment: '' })
 }
@@ -281,10 +299,14 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { asin, videoTitle, videoDescription } = await request.json() as {
+    const { asin, videoTitle, videoDescription, youtubeVideoId } = await request.json() as {
       asin?: string | null
       videoTitle: string
       videoDescription?: string
+      /** YouTube native ID (e.g. dQw4w9WgXcQ). Used to persist
+       *  generated metadata back to youtube_videos for the voice-
+       *  anchor loop. Optional — generation still works without it. */
+      youtubeVideoId?: string | null
     }
 
     // ASIN is OPTIONAL. With a valid ASIN we treat the video as a product
@@ -423,6 +445,28 @@ export async function POST(request: Request) {
           videoDescription ? `Video description / notes: "${videoDescription.slice(0, 800)}"` : '',
         ].filter(Boolean).join('\n')
 
+    // ── Voice anchors: pull this user's 2 most-recently-generated YT
+    // metadata blocks so the title / description / pinned-comment
+    // agents below match their channel voice over time. Excludes the
+    // current video (would self-mirror on re-runs).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: priorMetaRows } = await (supabase as any)
+      .from('youtube_videos')
+      .select('generated_title,generated_description,generated_pinned_comment,youtube_video_id')
+      .eq('user_id', user.id)
+      .not('metadata_generated_at', 'is', null)
+      .neq('youtube_video_id', youtubeVideoId ?? '__none__')
+      .order('metadata_generated_at', { ascending: false })
+      .limit(2)
+    const priorRows = (priorMetaRows as Array<{
+      generated_title: string | null
+      generated_description: string | null
+      generated_pinned_comment: string | null
+    }> | null) ?? []
+    const priorTitles = priorRows.map(r => r.generated_title || '').filter(Boolean)
+    const priorDescriptions = priorRows.map(r => r.generated_description || '').filter(Boolean)
+    const priorPinnedComments = priorRows.map(r => r.generated_pinned_comment || '').filter(Boolean)
+
     // ── SWARM PHASE 1: Product Analyst + SEO Researcher run in parallel ────────
     const anthropic = createAnthropicClient()
 
@@ -434,12 +478,12 @@ export async function POST(request: Request) {
     // ── SWARM PHASE 2: Title + Content + Engagement run in parallel ───────────
     // (Title strategist gets product analysis context; content + engagement agents get title)
     const titleResult = await titleStrategistAgent(
-      anthropic, productContext, videoTitle, tone, productAnalysis, isProduct,
+      anthropic, productContext, videoTitle, tone, productAnalysis, isProduct, priorTitles,
     )
 
     const [contentResult, engagementResult] = await Promise.all([
-      contentWriterAgent(anthropic, productAnalysis, titleResult.best, tone, niches, isProduct),
-      engagementAgent(anthropic, titleResult.best, productAnalysis, affiliateUrl, tone),
+      contentWriterAgent(anthropic, productAnalysis, titleResult.best, tone, niches, isProduct, priorDescriptions),
+      engagementAgent(anthropic, titleResult.best, productAnalysis, affiliateUrl, tone, priorPinnedComments),
     ])
 
     // ── Guarantee the affiliate URL is verbatim in the pinned comment ─────────
@@ -502,6 +546,25 @@ export async function POST(request: Request) {
     if (gearBlock) descParts.push(`----------`, gearBlock)
 
     const description = descParts.join('\n')
+
+    // ── Persist generated metadata for the voice-anchor loop ─────────────────
+    // Best-effort write — telemetry-style, never fails the request.
+    if (youtubeVideoId) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('youtube_videos')
+          .update({
+            generated_title: titleResult.best,
+            generated_description: description,
+            generated_pinned_comment: engagementResult.pinnedComment,
+            generated_tags: seoData.tags,
+            metadata_generated_at: new Date().toISOString(),
+          })
+          .eq('user_id', user.id)
+          .eq('youtube_video_id', youtubeVideoId)
+      } catch { /* non-fatal */ }
+    }
 
     return NextResponse.json({
       ok: true,

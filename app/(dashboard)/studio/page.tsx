@@ -152,6 +152,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
           asin: video.detectedAsin,
           videoTitle: video.title,
           videoDescription: video.description,
+          // Used server-side to persist the generated metadata back to
+          // the youtube_videos row so future generations can use it as
+          // a voice anchor.
+          youtubeVideoId: video.youtubeVideoId,
         }),
       })
 
