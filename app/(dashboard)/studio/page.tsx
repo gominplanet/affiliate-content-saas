@@ -387,7 +387,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
       const { data: { user } } = await sb.auth.getUser()
       if (!user) throw new Error('Not signed in')
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-      const path = `style-references/${user.id}/${crypto.randomUUID()}.${ext}`
+      // user.id MUST be the first folder so the bucket's per-user RLS policy
+      // ((storage.foldername)[1] = auth.uid()) lets the insert through.
+      const path = `${user.id}/style-references/${crypto.randomUUID()}.${ext}`
       const { error: upErr } = await sb.storage
         .from('headshots').upload(path, file, { upsert: false, cacheControl: '31536000' })
       if (upErr) throw new Error(upErr.message)

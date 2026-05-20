@@ -123,11 +123,11 @@ export default function FaceTrainingPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
 
-      // Upload each image to storage. We use a fresh per-upload folder so
-      // delete cleanly removes the set later. Sequential uploads keep the
-      // progress bar readable; total time is dominated by training (10min)
-      // not upload, so concurrency doesn't matter much.
-      const folder = `face-training/${user.id}/${crypto.randomUUID()}`
+      // Upload each image to storage. Path starts with the user.id so the
+      // bucket's per-user RLS policy ((storage.foldername)[1] = auth.uid())
+      // accepts the insert. The face-training/ prefix sits one level deeper
+      // so delete-cleanup can still target the whole training set.
+      const folder = `${user.id}/face-training/${crypto.randomUUID()}`
       const imagePaths: string[] = []
       for (let i = 0; i < files.length; i++) {
         const f = files[i]
