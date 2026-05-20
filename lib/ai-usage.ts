@@ -42,6 +42,12 @@ export const PRICING: Record<string, Pricing> = {
   // ── Fal.ai — image generation (per-image flat rates) ──────────────────
   'fal-flux-pro-v1.1': { in: 0, out: 0, imageCost: 0.04 },
   'fal-flux-pro-kontext': { in: 0, out: 0, imageCost: 0.04 },
+  // flux-lora is flux-dev + LoRA support. Slightly cheaper than Pro on
+  // Fal's listed pricing; used when a user-trained face LoRA is loaded.
+  'fal-flux-lora': { in: 0, out: 0, imageCost: 0.05 },
+  // One-time LoRA training run — billed by Fal at a fixed per-job rate
+  // regardless of how many images the job ingests.
+  'fal-flux-lora-fast-training': { in: 0, out: 0, imageCost: 1.5 },
 
   // ── Google Gemini ──────────────────────────────────────────────────────
   'gemini-2.5-flash-image': { in: 0,     out: 0,    imageCost: 0.039 },

@@ -244,6 +244,7 @@ export async function POST(request: Request) {
       customHeadline,
       variantCount: rawVariantCount,
       styleReferenceUrl,
+      faceModelId,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -266,10 +267,33 @@ export async function POST(request: Request) {
        *  a short style brief that gets folded into the image prompt.
        *  Works alongside the product-image path — they don't conflict. */
       styleReferenceUrl?: string
+      /** Optional face_models.id — when set we load the user's trained
+       *  LoRA + trigger token and route generation through the LoRA-
+       *  capable flux-lora endpoint so their actual face appears. */
+      faceModelId?: string
     }
 
     const variantCount = Math.min(2, Math.max(1, Number(rawVariantCount) || 1))
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
+
+    // ── Load the user's face model if they picked one ─────────────────────────
+    // Only honored when status='ready' and lora_url is populated. If the
+    // model is still training or failed, we silently fall back to no-face
+    // generation rather than throwing — the user already chose, and the
+    // worst outcome is a thumbnail without their face this time.
+    let faceModel: { trigger_token: string; lora_url: string } | null = null
+    if (faceModelId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: fm } = await (supabase as any)
+        .from('face_models')
+        .select('trigger_token,lora_url,status')
+        .eq('id', faceModelId)
+        .eq('user_id', user.id)
+        .single()
+      if (fm?.status === 'ready' && fm?.lora_url) {
+        faceModel = { trigger_token: fm.trigger_token, lora_url: fm.lora_url }
+      }
+    }
 
     // Cap gate — thumbnail generations / billing period. Pre-flight the
     // check so we never charge Fal credits + waste 3 Anthropic calls on
@@ -351,7 +375,11 @@ export async function POST(request: Request) {
     // ── PATH A: Kontext — use real product image as visual reference ──────────
     // Start from the actual Amazon product photo and transform the scene around it.
     // This guarantees the product looks exactly right without relying on text descriptions.
-    if (productImageUrl) {
+    //
+    // Skipped when a face model is selected — Kontext is a closed Flux Pro
+    // variant that doesn't accept LoRA weights, so we route through the
+    // LoRA-capable open-source flux-lora endpoint below instead.
+    if (productImageUrl && !faceModel) {
       try {
         // fal.ai cannot reach Supabase/Amazon URLs directly — re-host first
         const imgRes = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
@@ -408,7 +436,53 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── PATH B: Flux Pro fallback — no product image available ────────────────
+    // ── PATH B: Face-LoRA — user picked a trained face ────────────────────────
+    // flux-lora is the open-source flux-dev base with LoRA loading. Slightly
+    // less polished than flux-pro/v1.1 on raw aesthetics but the only path
+    // that respects a custom LoRA. The trigger token gets prepended to the
+    // prompt so the model knows which subject the LoRA encodes.
+    if (faceModel) {
+      console.log('[generate-thumbnail] Using flux-lora with face model:', faceModel.trigger_token)
+      const facePrompt = `${faceModel.trigger_token}, ${finalScenePrompt}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const loraResult = await fal.subscribe('fal-ai/flux-lora' as any, {
+        input: {
+          prompt: facePrompt,
+          loras: [{ path: faceModel.lora_url, scale: 1.0 }],
+          image_size: 'landscape_16_9',
+          num_inference_steps: 28,
+          guidance_scale: 3.5,
+          num_images: variantCount,
+          output_format: 'jpeg',
+        },
+        pollInterval: 3000,
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const loraImages = (loraResult.data as any)?.images as Array<{ url: string }> | undefined
+      const loraUrls = (loraImages ?? []).map(i => i.url).filter(Boolean)
+      if (loraUrls.length === 0) throw new Error('Face-LoRA path returned no image. Please try again.')
+      for (let i = 0; i < loraUrls.length; i++) {
+        recordUsage({
+          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+          feature: 'yt_thumb_flux_lora_image', model: 'fal-flux-lora', images: 1,
+        })
+      }
+      return NextResponse.json({
+        ok: true,
+        thumbnailUrl: loraUrls[0],
+        thumbnailUrls: loraUrls,
+        overlayHook,
+        headlineLocked: !!lockedHeadline,
+        prompt: facePrompt,
+        styleBriefApplied: !!styleBrief,
+        channelStyle: channelStyle ?? null,
+        modelUsed: `flux-lora-${style}`,
+        faceModelUsed: faceModel.trigger_token,
+        headshotUsed: true,
+      })
+    }
+
+    // ── PATH C: Flux Pro fallback — no product image, no face model ───────────
     console.log('[generate-thumbnail] Using Flux Pro fallback (no product image)')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {

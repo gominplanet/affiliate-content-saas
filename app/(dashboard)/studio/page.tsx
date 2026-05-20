@@ -130,6 +130,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  URL from Supabase storage. */
   const [styleReferenceUrl, setStyleReferenceUrl] = useState<string | null>(null)
   const [styleRefUploading, setStyleRefUploading] = useState(false)
+  /** User's READY face models — pulled from /api/face-models on mount.
+   *  When the user picks one, faceModelId gets passed to the generate
+   *  request and the server routes through the LoRA-capable Flux endpoint. */
+  const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string }>>([])
+  const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -141,6 +146,21 @@ function VideoStudioCard({ video, userTier, playlists }: {
       setExpanded(true)
     }
   }, [generated])
+
+  // Load the user's READY face models so the headline modal can offer
+  // them as options. Pulls all models, filters client-side. Falls back
+  // to an empty list on any error — face picker simply doesn't render.
+  useEffect(() => {
+    fetch('/api/face-models')
+      .then(r => r.ok ? r.json() : { models: [] })
+      .then(d => {
+        const ready = ((d.models as Array<{ id: string; name: string; trigger_token: string; status: string }>) || [])
+          .filter(m => m.status === 'ready')
+          .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
+        setFaceModels(ready)
+      })
+      .catch(() => setFaceModels([]))
+  }, [])
 
   // Safe JSON parse — if server returns plain text / HTML on error, show that instead
   async function safeJson(res: Response): Promise<Record<string, unknown>> {
@@ -214,14 +234,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
       setProductDiscoverySource((data.productDiscoverySource ?? null) as typeof productDiscoverySource)
       setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
 
-      // ── Auto-generate thumbnail immediately after metadata ─────────────────
-      // Fire-and-forget — pass product text data directly, no re-fetch needed
-      generateThumbnailWithData({
-        productTitle: productData?.title ?? undefined,
-        productDescription: productDescription ?? undefined,
-        productBullets: productBullets ?? undefined,
-        title: generatedMeta.title,
-      })
+      // ── Thumbnail no longer auto-fires after metadata generation ─────────
+      // The thumbnail flow now opens a modal asking the user about the
+      // headline (and, soon, the face model). Auto-firing here would skip
+      // that decision and just produce whatever the defaults are. The
+      // user clicks "Generate Thumbnail" explicitly when they're ready.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate')
     } finally {
@@ -419,6 +436,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
+          faceModelId: selectedFaceModelId || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -463,6 +481,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
+          faceModelId: selectedFaceModelId || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -966,7 +985,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 {/* Pinned comment */}
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1. Pinned comment</label>
+                    <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned comment</label>
                     <button onClick={() => copy(generated.pinnedComment, 'pin')} className="text-[10px] text-[#0071e3] hover:underline flex items-center gap-0.5">
                       <Copy size={10} /> {copied === 'pin' ? 'Copied!' : 'Copy'}
                     </button>
@@ -977,19 +996,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">After the video is public: post this as a comment, then click the three-dot menu → <strong>Pin</strong>.</p>
                 </div>
 
-                {/* End-screen checklist */}
-                <div>
-                  <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] block mb-1.5">2. End screen (last 5–20 seconds)</label>
-                  <div className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-[#d2d2d7] dark:border-[#3a3a3c] leading-relaxed">
-                    <p className="font-semibold mb-1.5">Recommended layout — three elements:</p>
-                    <ul className="list-disc list-inside flex flex-col gap-1 text-[#3a3a3c] dark:text-[#ebebf0]">
-                      <li><strong>Subscribe button</strong> — bottom-right corner</li>
-                      <li><strong>Video element</strong> — bottom-left, set to &quot;Best for viewer&quot; (YouTube picks your top related video automatically)</li>
-                      <li><strong>Playlist or video</strong> — top-right, link to a related review or your channel&apos;s top playlist</li>
-                    </ul>
-                  </div>
-                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5">In Studio: open the video → <strong>Editor</strong> → <strong>End screen</strong> → add elements at the timestamp of your outro.</p>
-                </div>
               </div>
 
               {/* Thumbnail Generator */}
@@ -1446,6 +1452,48 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 </div>
               </label>
             </div>
+
+            {/* Face model picker — only renders when the user has at
+                least one ready trained face. "None" is the default. */}
+            {faceModels.length > 0 && (
+              <div className="mb-4 pt-4 border-t border-gray-100 dark:border-white/10">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Use a trained face?</p>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2">
+                  Picks the LoRA model trained on your headshots. The thumbnail will include the person, not a stock-photo lookalike.
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs ${
+                    selectedFaceModelId === null
+                      ? 'border-[#0071e3] bg-[#0071e3]/5'
+                      : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="face-model"
+                      checked={selectedFaceModelId === null}
+                      onChange={() => setSelectedFaceModelId(null)}
+                    />
+                    <span className="font-medium">No face — let the AI handle it</span>
+                  </label>
+                  {faceModels.map(m => (
+                    <label key={m.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs ${
+                      selectedFaceModelId === m.id
+                        ? 'border-[#0071e3] bg-[#0071e3]/5'
+                        : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="face-model"
+                        checked={selectedFaceModelId === m.id}
+                        onChange={() => setSelectedFaceModelId(m.id)}
+                      />
+                      <span className="font-medium">{m.name}</span>
+                      <span className="text-[10px] text-[#86868b]">({m.trigger_token})</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-2">
               <button

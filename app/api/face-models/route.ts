@@ -151,9 +151,11 @@ export async function POST(request: Request) {
 
   // Telemetry — training is a one-time fixed cost (~$1-2). Tag it so
   // /admin/costs reflects face-training spend separately from inference.
+  // images:1 charges the fixed-rate training cost (~$1.50/run) defined
+  // in lib/ai-usage.ts PRICING['fal-flux-lora-fast-training'].
   recordUsage({
     userId: user.id, tier,
-    feature: 'face_lora_training', model: 'fal-flux-lora-fast-training', images: 0,
+    feature: 'face_lora_training', model: 'fal-flux-lora-fast-training', images: 1,
   })
 
   // ── Persist the face_models row ───────────────────────────────────────────
