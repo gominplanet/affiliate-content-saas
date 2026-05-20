@@ -889,10 +889,13 @@ function InstagramPublishModal({
               videoKind === 'horizontal' ? (
                 <div className="rounded-lg bg-[#34c759]/5 border border-[#34c759]/30 p-3">
                   <div className="flex items-start gap-3">
+                    {/* Bigger preview — 200px wide, 4:5 ratio. Big enough
+                        to actually evaluate the headline + face before
+                        publishing, without dominating the modal. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={existingUrl} alt="Composed Instagram image" className="w-20 h-25 rounded-md object-cover border border-gray-200 dark:border-white/10" style={{ aspectRatio: '4/5' }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5 mb-1">
+                    <img src={existingUrl} alt="Composed Instagram image" className="w-44 rounded-md object-cover border border-gray-200 dark:border-white/10 flex-shrink-0" style={{ aspectRatio: '4/5' }} />
+                    <div className="flex-1 min-w-0 flex flex-col gap-2">
+                      <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
                         <CheckCircle size={12} className="text-[#34c759]" /> Image ready
                       </p>
                       {/* Regenerate routes to whichever source the user
@@ -903,15 +906,32 @@ function InstagramPublishModal({
                         <button
                           onClick={() => handleGenerateAIImage({ force: true })}
                           disabled={aiGenerating}
-                          className="text-[11px] text-[#5856d6] hover:underline inline-flex items-center gap-1 disabled:opacity-60"
+                          className="text-[11px] text-[#5856d6] hover:underline inline-flex items-center gap-1 disabled:opacity-60 self-start"
                         >
                           {aiGenerating ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate AI image
                         </button>
                       ) : (
-                        <button onClick={handleGenerateImage} disabled={generatingImage} className="text-[11px] text-[#0071e3] hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+                        <button onClick={handleGenerateImage} disabled={generatingImage} className="text-[11px] text-[#0071e3] hover:underline inline-flex items-center gap-1 disabled:opacity-60 self-start">
                           {generatingImage ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate
                         </button>
                       )}
+                      {/* Reset / Discard — clears existingUrl so the source
+                          picker (Compose vs AI) reappears. Lets the user
+                          switch paths without closing the whole modal. */}
+                      <button
+                        onClick={() => {
+                          setExistingUrl(null)
+                          setUploadError(null)
+                          setAiError(null)
+                          // Reset preview state so old caption draft
+                          // doesn't carry across the source switch.
+                          resetPreview()
+                        }}
+                        disabled={generatingImage || aiGenerating}
+                        className="text-[11px] text-[#ff3b30] hover:underline inline-flex items-center gap-1 disabled:opacity-60 self-start"
+                      >
+                        <X size={10} /> Discard &amp; pick a different source
+                      </button>
                     </div>
                   </div>
                 </div>
