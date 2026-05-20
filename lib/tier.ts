@@ -164,11 +164,14 @@ export function billingWindow(opts: {
   return { startISO, resetLabel: fmt(reset) }
 }
 
-// Returns { allowed: true } or { allowed: false, reason, tier }
+// Returns { allowed: true } or { allowed: false, reason, tier, upgrade? }
 export async function checkUsageLimit(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createServerClient>>,
   userId: string,
-): Promise<{ allowed: true } | { allowed: false; reason: string; tier: Tier }> {
+): Promise<
+  | { allowed: true }
+  | { allowed: false; reason: string; tier: Tier; upgrade: ReturnType<typeof nextTierFor> }
+> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ig } = await (supabase as any)
     .from('integrations')
@@ -199,6 +202,7 @@ export async function checkUsageLimit(
         allowed: false,
         reason: `You've used all ${limits.lifetimeMax} free posts.${nextHint}`,
         tier,
+        upgrade: next,
       }
     }
     return { allowed: true }
@@ -225,6 +229,7 @@ export async function checkUsageLimit(
         allowed: false,
         reason: `You've reached your ${limits.postsPerMonth} posts limit on the ${limits.label} plan for this billing period.${nextHint} Resets ${resetLabel}.`,
         tier,
+        upgrade: next,
       }
     }
   }

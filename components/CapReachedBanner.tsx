@@ -13,12 +13,51 @@
  */
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { Sparkles, X } from 'lucide-react'
 
-interface CapInfo {
+export interface CapInfo {
   cap: 'thumbnails' | 'metadata' | 'collabs' | 'posts' | string
   currentTier?: string
   upgrade?: { tier: string; label: string; limit: number | null } | null
+}
+
+const EVENT = 'mvp:cap-reached'
+
+/** Fire from anywhere on the page (including a child component) to
+ *  surface the global banner. The page must mount <CapBannerHost />
+ *  at the top to listen. */
+export function dispatchCapReached(message: string, info: CapInfo) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent(EVENT, { detail: { message, info } }))
+}
+
+/** Drop one of these at the top of any dashboard page where a child
+ *  component might hit a cap. Listens for dispatchCapReached events
+ *  and renders the banner with auto-dismiss. */
+export function CapBannerHost() {
+  const [state, setState] = useState<{ message: string; info: CapInfo } | null>(null)
+  useEffect(() => {
+    function onCap(e: Event) {
+      const detail = (e as CustomEvent).detail as { message: string; info: CapInfo }
+      setState(detail)
+      // Smooth-scroll the banner into view so an at-cap user doesn't
+      // miss it when the trigger happened lower on the page.
+      requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+    }
+    window.addEventListener(EVENT, onCap)
+    return () => window.removeEventListener(EVENT, onCap)
+  }, [])
+  if (!state) return null
+  return (
+    <div className="mb-4">
+      <CapReachedBanner
+        message={state.message}
+        info={state.info}
+        onDismiss={() => setState(null)}
+      />
+    </div>
+  )
 }
 
 const FEATURE_LABEL: Record<string, string> = {

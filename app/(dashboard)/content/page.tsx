@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
+import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save,
@@ -297,7 +298,15 @@ function GenerateButton({
       try { data = await res.json() } catch { throw new Error(`Server error (${res.status}) — check Vercel logs`) }
       if (!res.ok) {
         if (data.limitReached) {
-          window.location.href = '/pricing'
+          dispatchCapReached(
+            (data.error as string) || 'You\'ve hit your posts cap for this period.',
+            {
+              cap: (data.cap as string) || 'posts',
+              currentTier: data.currentTier as string | undefined,
+              upgrade: data.upgrade as { tier: string; label: string; limit: number | null } | null | undefined,
+            },
+          )
+          setStatus('idle')
           return
         }
         throw new Error((data.error as string) || 'Generation failed')
@@ -937,7 +946,17 @@ function VideoCard({
         })
         const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
         if (!res.ok) {
-          if (data.limitReached) { window.location.href = '/pricing'; return }
+          if (data.limitReached) {
+            dispatchCapReached(
+              data.error || 'You\'ve hit your posts cap for this period.',
+              {
+                cap: data.cap || 'posts',
+                currentTier: data.currentTier,
+                upgrade: data.upgrade,
+              },
+            )
+            return
+          }
           throw new Error(data.error || 'Blog generation failed')
         }
         currentPostId = data.postId as string
@@ -2205,6 +2224,7 @@ export default function ContentPage() {
       />
 
       <TutorialVideo sectionKey="library" />
+      <CapBannerHost />
 
       {/* Preview-before-publish toggle. When checked, clicking a social pill
           on a video card opens an editable modal with the AI-generated text

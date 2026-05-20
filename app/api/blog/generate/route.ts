@@ -40,7 +40,13 @@ async function handleGenerate(request: Request) {
   if (!existingForLimit) {
     const usage = await checkUsageLimit(supabase, user.id)
     if (!usage.allowed) {
-      return NextResponse.json({ error: usage.reason, limitReached: true }, { status: 403 })
+      return NextResponse.json({
+        error: usage.reason,
+        limitReached: true,
+        cap: 'posts',
+        currentTier: usage.tier,
+        upgrade: usage.upgrade,
+      }, { status: 403 })
     }
   }
 
