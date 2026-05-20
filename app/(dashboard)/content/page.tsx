@@ -7,6 +7,7 @@ import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
 import { SOCIAL_CAP } from '@/lib/social-cap'
+import { renderThumbnailOverlay } from '@/lib/thumbnail-overlay'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save,
@@ -656,7 +657,7 @@ function InstagramPublishModal({
    *  imageUrl is wired into existingUrl so the rest of the modal treats
    *  it exactly like a composed image — preview, mode picker, publish all
    *  unchanged. */
-  async function handleGenerateAIImage() {
+  async function handleGenerateAIImage(opts: { force?: boolean } = {}) {
     setAiGenerating(true)
     setAiError(null)
     try {
@@ -667,6 +668,10 @@ function InstagramPublishModal({
           postId,
           customHeadline: aiHeadline.trim() || undefined,
           faceModelId: aiFaceModelId || undefined,
+          // Explicit Regenerate click bypasses the server-side cache and
+          // burns a fresh credit. First-time generations leave this off
+          // so re-opening the modal re-uses the previous result for free.
+          force: opts.force === true,
         }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
@@ -679,7 +684,21 @@ function InstagramPublishModal({
         }
         throw new Error(data.error || 'AI generation failed')
       }
-      setExistingUrl(data.imageUrl as string)
+      // Draw the headline overlay onto the Fal-returned image so the
+      // user gets a viral-looking IG post, not a clean portrait with
+      // no caption. 4:5 canvas (1080×1350). Falls back to the raw URL
+      // if canvas/CORS fails so we never end up worse than before.
+      const rawUrl = data.imageUrl as string
+      const overlayHook = (data.overlayHook as string) || ''
+      let finalUrl = rawUrl
+      if (overlayHook) {
+        try {
+          finalUrl = await renderThumbnailOverlay(rawUrl, overlayHook, { width: 1080, height: 1350 })
+        } catch (overlayErr) {
+          console.warn('[ig-ai-overlay]', overlayErr)
+        }
+      }
+      setExistingUrl(finalUrl)
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'AI generation failed')
     } finally {
@@ -876,9 +895,23 @@ function InstagramPublishModal({
                       <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5 mb-1">
                         <CheckCircle size={12} className="text-[#34c759]" /> Image ready
                       </p>
-                      <button onClick={handleGenerateImage} disabled={generatingImage} className="text-[11px] text-[#0071e3] hover:underline inline-flex items-center gap-1 disabled:opacity-60">
-                        {generatingImage ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate
-                      </button>
+                      {/* Regenerate routes to whichever source the user
+                          picked. AI path forces a fresh generation server-
+                          side so the user actually gets a NEW image (not
+                          the cached one). */}
+                      {aiIsPro && igSource === 'ai' ? (
+                        <button
+                          onClick={() => handleGenerateAIImage({ force: true })}
+                          disabled={aiGenerating}
+                          className="text-[11px] text-[#5856d6] hover:underline inline-flex items-center gap-1 disabled:opacity-60"
+                        >
+                          {aiGenerating ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate AI image
+                        </button>
+                      ) : (
+                        <button onClick={handleGenerateImage} disabled={generatingImage} className="text-[11px] text-[#0071e3] hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+                          {generatingImage ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -965,7 +998,7 @@ function InstagramPublishModal({
                       </p>
                     )}
                     <button
-                      onClick={handleGenerateAIImage}
+                      onClick={() => handleGenerateAIImage()}
                       disabled={aiGenerating}
                       className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-white disabled:opacity-60"
                       style={{ background: 'linear-gradient(135deg, #5856d6 0%, #E1306C 100%)' }}

@@ -98,19 +98,28 @@ ${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
 ${opts.productBullets.length ? `FEATURES: ${opts.productBullets.slice(0, 4).join(' · ')}` : ''}
 ${hasFace ? `CREATOR'S FACE TRIGGER TOKEN: ${opts.triggerToken} — must appear at the very start of the prompt so the loaded LoRA activates.` : ''}
 
-PROMPT RULES (Instagram-tuned):
-${hasFace ? `1. START with "${opts.triggerToken}" — LoRA trigger word.
-2. PORTRAIT FRAMING: ${opts.triggerToken} is the focal point — face takes up roughly 30-40% of the upper portion of the frame, product held in their hands at chest/shoulder height. This is a 4:5 PORTRAIT, so use vertical composition — person centred, product just below their face.
-3. EXPRESSION: DEFAULT to a warm genuine smile — friendly, inviting. ONLY use other expressions if the video tone demands it (sceptical for scams/warnings, surprised for shocking reveals). When in doubt: smile.
-4. EYE CONTACT: looking at camera. Natural.` : `1. PORTRAIT FRAMING: product is the focal point, dominantly visible centred in the frame's upper-middle.
-2. SCENE: real-world setting that fits the product (kitchen if it's a food gadget, bedroom if it's bedding, etc.). Lived-in, NOT a studio.
-3. COMPOSITION: this is a 4:5 PORTRAIT, vertical orientation. Product centred top-third, scene context below.`}
-5. PRODUCT: clearly visible, ${hasFace ? 'held near their chest or shoulder' : 'centred and prominent'}. Look real, not photoshopped.
-6. SCENE: real-world setting (kitchen, bedroom, living room, outdoor — whatever fits the product). Lived-in. Blurred background bokeh that supports the subject.
-7. COMPOSITION: leave clean space at the TOP for a giant text overlay headline (Instagram users see the top first). Most of the visual energy lives in the lower 60-70% of the frame.
-8. LIGHTING: editorial portrait — soft key light, gentle contrast, natural skin tones. NOT plastic, NOT over-processed.
-9. End with: "4:5 portrait orientation, photorealistic, 8K, sharp focus on ${hasFace ? 'face and product' : 'product'}, editorial Instagram photography, natural skin tones, no text overlays"
-10. Under 110 words.
+PROMPT RULES (Instagram-tuned, 4:5 portrait):
+
+${hasFace ? `1. START with "${opts.triggerToken}" — LoRA trigger word, must be first.
+2. **CRITICAL — FRAMING IS A BUST SHOT, NOT MID-BODY.**
+   - The frame crops just below the shoulders.
+   - The HEAD AND UPPER CHEST fill the frame.
+   - Face occupies roughly the TOP HALF of the image.
+   - The viewer should see: hair, full face, neck, shoulders, top of chest. NOTHING ELSE.
+   - DO NOT show: the waist, hips, legs, full torso, full body, or any "standing in a room" wide shots.
+   - Imagine a passport photo zoom level — but with attitude and lifestyle context behind them.
+3. PRODUCT: held UP close to the face — beside the cheek, at jawline, or in front of the chest. The hand holding it is visible but the rest of the arm is OUT OF FRAME or cropped at the elbow.
+4. EXPRESSION: DEFAULT to a warm genuine smile — friendly, inviting. ONLY use other expressions if the video tone demands it (sceptical for scams/warnings, surprised for shocking reveals). When in doubt: SMILE.
+5. EYE CONTACT: looking directly at camera. Confident.` : `1. **CRITICAL — PRODUCT-FOCUSED CLOSE-UP.**
+   - Product fills the upper-middle of the frame.
+   - Hero shot — product centred, large, dominant.
+   - DO NOT show wide environments — only enough background to give context.
+2. SCENE: lived-in setting that fits the product. Blurred background.`}
+${hasFace ? '6. ' : '3. '}SCENE: real-world setting (kitchen, bedroom, living room, outdoor — whatever fits the product). Background heavily BLURRED bokeh so it doesn't distract from the subject.
+${hasFace ? '7. ' : '4. '}COMPOSITION: leave clean space at the TOP-LEFT or BOTTOM for a giant text overlay (we render text in post — your image must have negative space for it).
+${hasFace ? '8. ' : '5. '}LIGHTING: editorial portrait lighting — soft key light, gentle rim light, natural skin tones. NOT plastic, NOT over-processed, NOT studio-flat.
+${hasFace ? '9. ' : '6. '}End with: "4:5 portrait orientation, BUST SHOT (head and upper chest only — no torso or full body), photorealistic, 8K, sharp focus on ${hasFace ? 'face and product' : 'product'}, editorial Instagram photography, natural skin tones, blurred background bokeh, no text overlays"
+${hasFace ? '10. ' : '7. '}Under 120 words.
 
 Return ONLY the prompt — no preamble.`,
     }],
