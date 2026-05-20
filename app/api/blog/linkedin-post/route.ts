@@ -5,6 +5,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 60
 
@@ -105,6 +106,10 @@ Return ONLY the post text, no extra commentary.`,
         }],
       })
       rawText = (msg.content[0] as { type: string; text: string }).text
+      recordAnthropicUsage(msg, {
+        userId: user.id, tier,
+        feature: 'social_linkedin_caption', model: 'claude-haiku-4-5-20251001',
+      })
     }
 
     // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap.

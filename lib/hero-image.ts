@@ -44,7 +44,8 @@ export async function buildCampaignHero(opts: {
       const b64 = await createOpenAIService().generateHeroImage(heroPrompt)
       recordUsage({
         userId: ctx?.userId, tier: ctx?.tier,
-        feature: 'campaign_hero_image', model: 'dall-e-3', images: 1,
+        // 1792x1024 standard quality — priced at $0.08 in PRICING.
+        feature: 'campaign_hero_image', model: 'dall-e-3-1792', images: 1,
       })
       const jpeg = await sharp(Buffer.from(b64, 'base64'))
         .resize(W, H, { fit: 'cover', position: 'attention' })

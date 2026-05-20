@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createFacebookService } from '@/services/facebook'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 60
 
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)
       .from('integrations')
-      .select('facebook_page_id,facebook_page_access_token')
+      .select('facebook_page_id,facebook_page_access_token,tier')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -90,6 +91,10 @@ Return ONLY the post text, nothing else.`,
       })
 
       reviewText = (msg.content[0] as { type: string; text: string }).text.trim()
+      recordAnthropicUsage(msg, {
+        userId: user.id, tier: integration?.tier,
+        feature: 'social_facebook_caption', model: 'claude-sonnet-4-6',
+      })
     }
 
     // ── 6. Build image URL ────────────────────────────────────────────────────

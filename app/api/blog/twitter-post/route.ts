@@ -7,6 +7,7 @@ import {
   refreshAccessToken,
 } from '@/services/twitter'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 60
 
@@ -145,6 +146,10 @@ Return ONLY the tweet text.`,
       })
 
       tweetText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+      recordAnthropicUsage(msg, {
+        userId: user.id, tier,
+        feature: 'social_twitter_caption', model: 'claude-haiku-4-5-20251001',
+      })
     }
 
     // Defensive trim — protects against AI drift AND user-edited overshoot

@@ -5,6 +5,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -78,6 +79,10 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
         }],
       })
       bodyText = (msg.content[0] as { type: string; text: string }).text
+      recordAnthropicUsage(msg, {
+        userId: user.id, tier,
+        feature: 'social_threads_caption', model: 'claude-haiku-4-5-20251001',
+      })
     }
 
     // Threads API hard caps body text at 500 chars. Cap defensively then append disclaimer.

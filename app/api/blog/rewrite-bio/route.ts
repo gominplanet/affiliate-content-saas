@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
@@ -45,6 +46,14 @@ Write a polished "About Me" bio based on this. Keep it natural and personal. Do 
       }],
     })
     bio = (message.content[0] as { type: string; text: string }).text.trim()
+    // tier is fetched ad-hoc here — no integrations query in this route's
+    // happy path, and a single extra select beats leaving the call un-tagged.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: intRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+    recordAnthropicUsage(message, {
+      userId: user.id, tier: intRow?.tier,
+      feature: 'rewrite_bio', model: 'claude-sonnet-4-6',
+    })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Claude API error'
     return NextResponse.json({ error: msg }, { status: 500 })

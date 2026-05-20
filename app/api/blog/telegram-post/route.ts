@@ -18,6 +18,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 60
 
@@ -127,6 +128,10 @@ Return ONLY the post text.`,
         }],
       })
       captionText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+      recordAnthropicUsage(msg, {
+        userId: user.id, tier,
+        feature: 'social_telegram_caption', model: 'claude-haiku-4-5-20251001',
+      })
     }
 
     if (captionText.length > CAPTION_BUDGET) {

@@ -9,16 +9,50 @@
  */
 import { createAdminClient } from '@/lib/supabase/admin'
 
-type Pricing = { in: number; out: number } // $ per 1M tokens
+interface Pricing {
+  /** USD per 1M input tokens (text/chat models). */
+  in: number
+  /** USD per 1M output tokens (text/chat models). */
+  out: number
+  /** USD per generated image (image models). Falls back to
+   *  IMAGE_COST_FALLBACK if a model with images > 0 isn't in PRICING. */
+  imageCost?: number
+}
 
+// All pricing is approximate list price. Update here when a vendor
+// changes prices; historical rows keep their raw token counts so
+// re-pricing is just recomputation against the new map.
 export const PRICING: Record<string, Pricing> = {
-  'claude-sonnet-4-6': { in: 3, out: 15 },
-  'claude-haiku-4-5-20251001': { in: 1, out: 5 },
-  'claude-opus-4-7': { in: 15, out: 75 },
-  'dall-e-3': { in: 0, out: 0 },
+  // ── Anthropic ──────────────────────────────────────────────────────────
+  'claude-sonnet-4-6':         { in: 3,  out: 15 },
+  'claude-haiku-4-5-20251001': { in: 1,  out: 5  },
+  'claude-opus-4-7':           { in: 15, out: 75 },
+
+  // ── OpenAI — image generation (per-image flat rates) ──────────────────
+  // dall-e-3 standard 1024x1024 = $0.04, 1024x1792 / 1792x1024 = $0.08
+  'dall-e-3':      { in: 0, out: 0, imageCost: 0.04 },
+  'dall-e-3-1792': { in: 0, out: 0, imageCost: 0.08 },
+
+  // ── OpenAI — text/chat (for fallbacks / future swaps) ─────────────────
+  'gpt-4o':       { in: 2.5, out: 10  },
+  'gpt-4o-mini':  { in: 0.15, out: 0.6 },
+  'gpt-4.1':      { in: 2,   out: 8   },
+  'gpt-4.1-mini': { in: 0.4, out: 1.6 },
+
+  // ── Fal.ai — image generation (per-image flat rates) ──────────────────
+  'fal-flux-pro-v1.1': { in: 0, out: 0, imageCost: 0.04 },
+  'fal-flux-pro-kontext': { in: 0, out: 0, imageCost: 0.04 },
+
+  // ── Google Gemini ──────────────────────────────────────────────────────
+  'gemini-2.5-flash-image': { in: 0,     out: 0,    imageCost: 0.039 },
+  'gemini-2.5-flash':       { in: 0.3,   out: 2.5  },
+  'gemini-2.5-pro':         { in: 1.25,  out: 10   },
+  'gemini-1.5-flash':       { in: 0.075, out: 0.3  },
+  'gemini-1.5-pro':         { in: 1.25,  out: 5    },
 }
 export const WEB_SEARCH_COST = 0.01 // $ per search (Anthropic server tool)
-export const IMAGE_COST = 0.04      // $ per generated image (Gemini Flash Image / DALL·E ≈)
+/** Fallback per-image cost when an image model isn't in PRICING. */
+export const IMAGE_COST_FALLBACK = 0.04
 
 export interface UsageRow {
   model: string
@@ -30,11 +64,12 @@ export interface UsageRow {
 
 export function costOf(r: UsageRow): number {
   const p = PRICING[r.model] ?? { in: 0, out: 0 }
+  const perImage = p.imageCost ?? (r.images > 0 ? IMAGE_COST_FALLBACK : 0)
   return (
     (r.input_tokens / 1e6) * p.in +
     (r.output_tokens / 1e6) * p.out +
     r.web_searches * WEB_SEARCH_COST +
-    r.images * IMAGE_COST
+    r.images * perImage
   )
 }
 
@@ -57,6 +92,25 @@ export interface RecordOpts {
   output?: number
   webSearches?: number
   images?: number
+}
+
+/** Convenience wrapper for the common Anthropic case — pulls token /
+ *  web-search counts off a message and records them in one call. */
+export function recordAnthropicUsage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  msg: any,
+  opts: { userId?: string | null; tier?: string | null; feature: string; model: string },
+): void {
+  const u = usageFromAnthropic(msg)
+  recordUsage({
+    userId: opts.userId,
+    tier: opts.tier,
+    feature: opts.feature,
+    model: opts.model,
+    input: u.input,
+    output: u.output,
+    webSearches: u.webSearches,
+  })
 }
 
 /** Fire-and-forget. Never throws — a logging failure must not affect

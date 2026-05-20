@@ -4,6 +4,11 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { fal } from '@fal-ai/client'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
+import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
+
+// Telemetry context — populated at request start, read by the three
+// Anthropic helpers below so each call is tagged with the right user/tier.
+let TELEMETRY: { userId: string | null; tier: string | null } = { userId: null, tier: null }
 
 export const maxDuration = 120
 
@@ -80,6 +85,10 @@ Ignore any text overlays. Focus only on consistent patterns across thumbnails. B
         ],
       }],
     }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_channel_style', model: 'claude-haiku-4-5-20251001',
+    })
     return (msg.content[0] as { type: string; text: string }).text.trim()
   } catch {
     return null  // non-fatal
@@ -132,6 +141,10 @@ YOUR TASK:
 Return ONLY the prompt.`,
     }],
   }))
+  recordAnthropicUsage(msg, {
+    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+    feature: 'yt_thumb_product_prompt', model: 'claude-sonnet-4-6',
+  })
   return (msg.content[0] as { type: string; text: string }).text.trim()
 }
 
@@ -151,6 +164,10 @@ Examples: "WORTH IT?", "DON'T BUY!", "ACTUALLY WORKS?", "BIG MISTAKE?", "MUST HA
 Return ONLY the hook text. Video: "${videoTitle}"`,
     }],
   }))
+  recordAnthropicUsage(msg, {
+    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+    feature: 'yt_thumb_hook', model: 'claude-haiku-4-5-20251001',
+  })
   return (msg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
 }
 
@@ -160,6 +177,11 @@ export async function POST(request: Request) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Telemetry context for every Anthropic helper called below.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tierRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+    TELEMETRY = { userId: user.id, tier: (tierRow?.tier as string | undefined) ?? null }
 
     const falKey = process.env.FAL_KEY
     if (!falKey) return NextResponse.json({ error: 'FAL_KEY is not configured' }, { status: 500 })
@@ -249,6 +271,10 @@ export async function POST(request: Request) {
         const kontextImages = (kontextResult.data as any)?.images as Array<{ url: string }> | undefined
         const kontextUrl = kontextImages?.[0]?.url
         if (kontextUrl) {
+          recordUsage({
+            userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+            feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
+          })
           console.log('[generate-thumbnail] Kontext result:', kontextUrl)
           return NextResponse.json({
             ok: true,
@@ -285,6 +311,10 @@ export async function POST(request: Request) {
     const images = (result.data as any)?.images as Array<{ url: string }> | undefined
     const thumbnailUrl = images?.[0]?.url
     if (!thumbnailUrl) throw new Error('Flux Pro did not return an image. Please try again.')
+    recordUsage({
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_flux_image', model: 'fal-flux-pro-v1.1', images: 1,
+    })
 
     return NextResponse.json({
       ok: true,

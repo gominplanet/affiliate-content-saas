@@ -19,6 +19,7 @@ import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 const ASIN_RE = /\b([A-Z0-9]{10})\b/
 
@@ -197,6 +198,10 @@ Return ONLY the caption text + hashtags.`,
         })
         feedCaption = ((msg.content[0] as { type: string; text: string }).text || '').trim()
         feedCaption = feedCaption.replace(/https?:\/\/\S+/g, '').trim()
+        recordAnthropicUsage(msg, {
+          userId: user.id, tier,
+          feature: 'social_instagram_caption', model: 'claude-haiku-4-5-20251001',
+        })
         if (feedCaption.length > 2200) feedCaption = feedCaption.slice(0, 2199) + '…'
       }
     }

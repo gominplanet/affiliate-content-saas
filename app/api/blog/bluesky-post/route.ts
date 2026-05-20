@@ -4,6 +4,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { createSession, createPost } from '@/services/bluesky'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 60
 
@@ -117,6 +118,10 @@ Return ONLY the post text.`,
       })
 
       postText = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+      recordAnthropicUsage(msg, {
+        userId: user.id, tier,
+        feature: 'social_bluesky_caption', model: 'claude-haiku-4-5-20251001',
+      })
     }
 
     // Always defensively cap, even user-edited (they could paste over the limit)

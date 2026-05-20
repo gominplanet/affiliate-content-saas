@@ -4,6 +4,7 @@ import { fetchAmazonProduct } from '@/services/amazon'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 120
 
@@ -33,9 +34,14 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 8): Promise<T> {
 }
 
 // ── Agent runner helper ───────────────────────────────────────────────────────
+// Telemetry context — set once at the top of POST and consumed by every
+// runAgent call below, so each of the 5 swarm agents gets recorded with
+// the right user/tier instead of bucketing as "unknown".
+let TELEMETRY: { userId: string | null; tier: string | null } = { userId: null, tier: null }
+
 async function runAgent(
   anthropic: Anthropic,
-  opts: { model: string; system: string; user: string; maxTokens?: number }
+  opts: { model: string; system: string; user: string; maxTokens?: number; feature: string }
 ): Promise<string> {
   const msg = await withRetry(() => anthropic.messages.create({
     model: opts.model,
@@ -43,6 +49,10 @@ async function runAgent(
     system: opts.system,
     messages: [{ role: 'user', content: opts.user }],
   }))
+  recordAnthropicUsage(msg, {
+    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+    feature: opts.feature, model: opts.model,
+  })
   return (msg.content[0] as { type: string; text: string }).text.trim()
 }
 
@@ -62,6 +72,7 @@ async function productAnalystAgent(
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 800,
+    feature: 'yt_meta_product_analyst',
     system: 'You are a product research specialist. Analyse Amazon products for YouTube content. Return ONLY valid JSON.',
     user: `Analyse this product for a YouTube review in the "${niches}" niche.
 
@@ -92,6 +103,7 @@ async function titleStrategistAgent(
   const raw = await runAgent(anthropic, {
     model: 'claude-sonnet-4-6',
     maxTokens: 600,
+    feature: 'yt_meta_title_strategist',
     system: 'You are a viral YouTube title strategist. You write titles that dominate search and maximise click-through rate. Return ONLY valid JSON.',
     user: `Write 5 viral YouTube title options for this product review.
 
@@ -130,6 +142,7 @@ async function seoResearcherAgent(
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 900,
+    feature: 'yt_meta_seo_researcher',
     system: 'You are a YouTube SEO expert. You research high-traffic keywords and trending hashtags. Return ONLY valid JSON.',
     user: `Generate maximum-reach YouTube tags and hashtags for this product review.
 
@@ -163,6 +176,7 @@ async function contentWriterAgent(
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 600,
+    feature: 'yt_meta_content_writer',
     system: 'You are a YouTube content writer who optimises descriptions for AI answer engines (ChatGPT, Gemini, Perplexity). Return ONLY valid JSON.',
     user: `Write a product description optimised for YouTube, Google, and AI search engines.
 
@@ -199,6 +213,7 @@ async function engagementAgent(
   const raw = await runAgent(anthropic, {
     model: 'claude-haiku-4-5-20251001',
     maxTokens: 400,
+    feature: 'yt_meta_engagement',
     system: 'You are a YouTube engagement specialist who writes high-converting pinned comments. Return ONLY valid JSON.',
     user: `Write a pinned comment for this YouTube video that drives clicks and engagement.
 
@@ -250,13 +265,16 @@ export async function POST(request: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any)
         .from('integrations')
-        .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
+        .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,tier')
         .eq('user_id', user.id)
         .single(),
     ])
 
     const brand = brandResult.data as Record<string, unknown> | null
     const intRow = intResult.data
+
+    // Populate the module-level telemetry context that runAgent reads.
+    TELEMETRY = { userId: user.id, tier: (intRow?.tier as string | undefined) ?? null }
 
     const brandName = (brand?.name as string) || 'our channel'
     const authorName = (brand?.author_name as string) || ''

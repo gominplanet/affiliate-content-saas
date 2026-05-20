@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { recordAnthropicUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 300
 
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: integration } = await (supabase as any)
       .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
+      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,tier')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -152,6 +153,10 @@ ${titlesList}`,
       }],
     })
 
+    recordAnthropicUsage(response, {
+      userId: user.id, tier: wp?.tier,
+      feature: 'bulk_categorize', model: 'claude-haiku-4-5-20251001',
+    })
     const raw = (response.content[0] as { type: string; text: string }).text.trim()
     const jsonMatch = raw.match(/\[[\s\S]*\]/)
     if (!jsonMatch) {
