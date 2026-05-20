@@ -125,6 +125,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  let MVP do it, before any AI work fires. */
   const [headlinePromptOpen, setHeadlinePromptOpen] = useState(false)
   const [headlinePromptChoice, setHeadlinePromptChoice] = useState<'auto' | 'manual'>('auto')
+  /** Optional style-reference image URL — Haiku vision distills it
+   *  into a style brief that gets folded into the Flux prompt. Public
+   *  URL from Supabase storage. */
+  const [styleReferenceUrl, setStyleReferenceUrl] = useState<string | null>(null)
+  const [styleRefUploading, setStyleRefUploading] = useState(false)
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -360,6 +365,41 @@ function VideoStudioCard({ video, userTier, playlists }: {
     reader.readAsDataURL(file)
   }
 
+  /**
+   * Optional style-reference upload. Uploads to Supabase storage and
+   * stores the public URL — the server uses it as an aesthetic anchor
+   * (Haiku vision → style brief → prompt). Cleared on remove. 5 MB cap
+   * since these images are reference-only and don't need to be huge.
+   */
+  async function handleStyleReferenceUpload(file: File) {
+    setThumbnailError(null)
+    if (!file.type.startsWith('image/')) {
+      setThumbnailError('Style reference must be an image (JPG, PNG, or WebP).')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setThumbnailError(`Style reference is ${(file.size / 1024 / 1024).toFixed(1)} MB. Keep it under 5 MB.`)
+      return
+    }
+    setStyleRefUploading(true)
+    try {
+      const sb = createBrowserClient()
+      const { data: { user } } = await sb.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      const path = `style-references/${user.id}/${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await sb.storage
+        .from('headshots').upload(path, file, { upsert: false, cacheControl: '31536000' })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = sb.storage.from('headshots').getPublicUrl(path)
+      setStyleReferenceUrl(data.publicUrl)
+    } catch (err) {
+      setThumbnailError(err instanceof Error ? err.message : 'Style reference upload failed')
+    } finally {
+      setStyleRefUploading(false)
+    }
+  }
+
   async function generateThumbnail() {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
@@ -376,6 +416,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           style: 'lifestyle',
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
+          styleReferenceUrl: styleReferenceUrl || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -419,6 +460,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           style: 'lifestyle',
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
+          styleReferenceUrl: styleReferenceUrl || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -958,29 +1000,76 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   </div>
                 </div>
 
-                {/* Variant count — small inline control. The headline
-                    question is asked via modal at click-time so users
-                    consciously decide before any AI work fires. */}
-                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">
-                  <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Variants</label>
-                  <div className="flex items-center gap-1.5">
-                    {([1, 2] as const).map(n => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setVariantCount(n)}
-                        disabled={generatingThumbnail || instantLoading}
-                        className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors border disabled:opacity-60 ${
-                          variantCount === n
-                            ? 'bg-[#0071e3] text-white border-[#0071e3]'
-                            : 'bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] border-gray-200 dark:border-white/10 hover:border-gray-300'
-                        }`}
-                      >
-                        {n} thumbnail{n > 1 ? 's' : ''}
-                      </button>
-                    ))}
-                    {variantCount === 2 && (
-                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] ml-1">Uses 2 from your monthly cap</span>
+                {/* Variant count + optional style reference — small inline
+                    controls. The headline question is asked via modal at
+                    click-time so users consciously decide before any AI work fires. */}
+                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Variants</label>
+                    <div className="flex items-center gap-1.5">
+                      {([1, 2] as const).map(n => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setVariantCount(n)}
+                          disabled={generatingThumbnail || instantLoading}
+                          className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors border disabled:opacity-60 ${
+                            variantCount === n
+                              ? 'bg-[#0071e3] text-white border-[#0071e3]'
+                              : 'bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] border-gray-200 dark:border-white/10 hover:border-gray-300'
+                          }`}
+                        >
+                          {n} thumbnail{n > 1 ? 's' : ''}
+                        </button>
+                      ))}
+                      {variantCount === 2 && (
+                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] ml-1">Uses 2 from your monthly cap</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Style reference (optional) — drag-or-click upload.
+                      When set, the AI mimics the aesthetic (palette, lighting,
+                      composition) of the uploaded image. */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                      Style reference <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — upload a thumbnail whose look you want to match)</span>
+                    </label>
+                    {styleReferenceUrl ? (
+                      <div className="flex items-center gap-2">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={styleReferenceUrl} alt="Style reference" className="w-16 h-9 object-cover rounded-md border border-gray-200 dark:border-white/10" />
+                        <span className="text-[11px] text-[#34c759] flex items-center gap-1">
+                          <CheckCircle size={11} /> Style locked in
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setStyleReferenceUrl(null)}
+                          disabled={generatingThumbnail || instantLoading}
+                          className="text-[11px] text-[#86868b] hover:text-[#ff3b30] ml-1"
+                          title="Remove style reference"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${styleRefUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#0071e3]'}`}
+                        style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          disabled={generatingThumbnail || instantLoading || styleRefUploading}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0]
+                            if (f) handleStyleReferenceUpload(f)
+                            e.target.value = ''
+                          }}
+                        />
+                        {styleRefUploading
+                          ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
+                          : <><Upload size={11} /> Upload style reference</>}
+                      </label>
                     )}
                   </div>
                 </div>

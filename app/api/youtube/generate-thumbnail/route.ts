@@ -173,6 +173,43 @@ Return ONLY the hook text. Video: "${videoTitle}"`,
   return (msg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
 }
 
+// ── Claude Haiku vision: extract aesthetic from a style reference image ─────
+// User uploads any image they like the look of (a competitor thumbnail, a
+// moodboard pic, one of their own previous wins). We distill it into a
+// short style brief that gets folded into the scene prompt — color
+// palette, lighting, composition, mood. Cheap (~$0.005/call) and works
+// alongside the product-image Kontext path without conflicting.
+async function extractStyleBrief(referenceUrl: string): Promise<string | null> {
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 180,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image' as const, source: { type: 'url' as const, url: referenceUrl } },
+          {
+            type: 'text' as const,
+            text: `Analyse this thumbnail's VISUAL STYLE only — ignore the subject matter and any text overlays.
+Describe in 2 short sentences:
+1. Color palette + lighting (e.g. "warm sunset orange / teal shadow split, hard rim light")
+2. Composition + mood (e.g. "subject hard-left, blurred busy background, high-contrast cinematic")
+Be specific. No filler words. Return only the description, no preamble.`,
+          },
+        ],
+      }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_style_brief', model: 'claude-haiku-4-5-20251001',
+    })
+    return (msg.content[0] as { type: string; text: string }).text.trim()
+  } catch {
+    return null
+  }
+}
+
 // ── Main route ────────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
@@ -206,6 +243,7 @@ export async function POST(request: Request) {
       style = 'review',
       customHeadline,
       variantCount: rawVariantCount,
+      styleReferenceUrl,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -223,6 +261,11 @@ export async function POST(request: Request) {
        *  clamp server-side. Each variant counts as one image against
        *  the user's thumbnail cap + AI-cost telemetry. */
       variantCount?: number
+      /** Optional public image URL the user uploaded as an aesthetic
+       *  anchor. Haiku vision distills color/lighting/composition into
+       *  a short style brief that gets folded into the image prompt.
+       *  Works alongside the product-image path — they don't conflict. */
+      styleReferenceUrl?: string
     }
 
     const variantCount = Math.min(2, Math.max(1, Number(rawVariantCount) || 1))
@@ -288,14 +331,22 @@ export async function POST(request: Request) {
     const channelStyle = await analyzeChannelStyle(channelThumbnailUrls)
     console.log('[generate-thumbnail] Channel style:', channelStyle ?? 'none')
 
-    // ── Generate scene prompt + hook (hook skipped when headline is locked) ───
-    const [productPrompt, generatedHook] = await Promise.all([
+    // ── Generate scene prompt + hook + (optional) style brief in parallel ───
+    const [productPrompt, generatedHook, styleBrief] = await Promise.all([
       generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
       lockedHeadline ? Promise.resolve('') : generateHook(videoTitle),
+      styleReferenceUrl ? extractStyleBrief(styleReferenceUrl) : Promise.resolve(null),
     ])
     const overlayHook = lockedHeadline || generatedHook
-    console.log('[generate-thumbnail] Scene prompt:', productPrompt)
+    // Fold the style brief into the prompt as a high-priority directive so
+    // Flux respects color / lighting / composition while still rendering
+    // the product or scene we asked for.
+    const finalScenePrompt = styleBrief
+      ? `VISUAL STYLE (high priority — follow this aesthetic exactly): ${styleBrief}\n\nSCENE: ${productPrompt}`
+      : productPrompt
+    console.log('[generate-thumbnail] Scene prompt:', finalScenePrompt)
     console.log('[generate-thumbnail] Overlay text:', overlayHook, lockedHeadline ? '(LOCKED)' : '(AI)')
+    if (styleBrief) console.log('[generate-thumbnail] Style brief:', styleBrief)
 
     // ── PATH A: Kontext — use real product image as visual reference ──────────
     // Start from the actual Amazon product photo and transform the scene around it.
@@ -310,7 +361,7 @@ export async function POST(request: Request) {
         console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
 
         // Kontext: preserve the product, replace background with scene
-        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${productPrompt}. The product should sit naturally in the scene with realistic shadows and lighting. No white background. No people. No text.`
+        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. No white background. No people. No text.`
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
@@ -346,6 +397,7 @@ export async function POST(request: Request) {
             overlayHook,
             headlineLocked: !!lockedHeadline,
             prompt: kontextInstruction,
+            styleBriefApplied: !!styleBrief,
             channelStyle: channelStyle ?? null,
             modelUsed: `kontext-${style}`,
             headshotUsed: false,
@@ -361,7 +413,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
       input: {
-        prompt: productPrompt,
+        prompt: finalScenePrompt,
         image_size: 'landscape_16_9',
         num_inference_steps: 28,
         guidance_scale: 3.5,
@@ -389,7 +441,8 @@ export async function POST(request: Request) {
       thumbnailUrls,
       overlayHook,
       headlineLocked: !!lockedHeadline,
-      prompt: productPrompt,
+      prompt: finalScenePrompt,
+      styleBriefApplied: !!styleBrief,
       channelStyle: channelStyle ?? null,
       modelUsed: `flux-pro-${style}`,
       headshotUsed: false,
