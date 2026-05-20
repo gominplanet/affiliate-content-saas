@@ -146,20 +146,31 @@ function VideoStudioCard({ video, userTier, playlists }: {
     }
   }, [generated])
 
-  // Load the user's READY face models so the headline modal can offer
-  // them as options. Pulls all models, filters client-side. Falls back
-  // to an empty list on any error — face picker simply doesn't render.
-  useEffect(() => {
-    fetch('/api/face-models')
-      .then(r => r.ok ? r.json() : { models: [] })
-      .then(d => {
-        const ready = ((d.models as Array<{ id: string; name: string; trigger_token: string; status: string }>) || [])
-          .filter(m => m.status === 'ready')
-          .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
-        setFaceModels(ready)
-      })
-      .catch(() => setFaceModels([]))
+  /** Pulls READY face models. Wrapped in a callback because we re-fetch
+   *  every time the headline modal opens — face models trained in
+   *  another tab while the Studio page was already open would otherwise
+   *  never show up until a hard reload. */
+  const loadFaceModels = useCallback(async () => {
+    try {
+      const r = await fetch('/api/face-models')
+      if (!r.ok) return setFaceModels([])
+      const d = await r.json()
+      const ready = ((d.models as Array<{ id: string; name: string; trigger_token: string; status: string }>) || [])
+        .filter(m => m.status === 'ready')
+        .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
+      setFaceModels(ready)
+    } catch { setFaceModels([]) }
   }, [])
+
+  // Load once on mount.
+  useEffect(() => { loadFaceModels() }, [loadFaceModels])
+
+  // Re-fetch every time the headline modal opens, so a face trained in
+  // another tab (or one that just finished training in the background)
+  // shows up immediately without forcing a page reload.
+  useEffect(() => {
+    if (headlinePromptOpen) loadFaceModels()
+  }, [headlinePromptOpen, loadFaceModels])
 
   // Safe JSON parse — if server returns plain text / HTML on error, show that instead
   async function safeJson(res: Response): Promise<Record<string, unknown>> {
