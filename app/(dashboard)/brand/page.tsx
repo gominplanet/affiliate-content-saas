@@ -13,21 +13,20 @@ async function uploadBrandImage(
 ): Promise<string> {
   const supabase = createBrowserClient()
   const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
-  // Different basename per asset so they don't overwrite each other in
-  // the same storage bucket (one logo, one banner, one headshot per user).
-  const path = `${userId}/${kind}.${ext}`
+  // Unique path per upload, not a stable overwrite — Supabase Storage's
+  // CDN (Cloudflare) caches by path and typically ignores query strings,
+  // so reusing the path keeps serving the old image for up to a year
+  // (cacheControl: 31536000) no matter what cache-buster we append.
+  // A fresh path = fresh CDN entry, no stale image. The previous file
+  // becomes an orphan (negligible cost for small brand assets).
+  const path = `${userId}/${kind}-${Date.now()}.${ext}`
   const { error } = await supabase.storage.from('headshots').upload(path, file, {
     cacheControl: '31536000',
-    upsert: true,
+    upsert: false,
   })
   if (error) throw new Error(error.message)
   const { data } = supabase.storage.from('headshots').getPublicUrl(path)
-  // Cache-buster: we overwrite the same storage path so the public URL
-  // is byte-identical to the old one, which means the browser (and any
-  // CDN) keeps serving the cached previous image. Appending a versioned
-  // query string forces a fresh fetch without invalidating the long
-  // cacheControl for unchanged assets.
-  return `${data.publicUrl}?v=${Date.now()}`
+  return data.publicUrl
 }
 
 interface GearItem { name: string; url: string }
