@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
@@ -1394,6 +1395,34 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 </div>
               </label>
             </div>
+
+            {/* Discoverability — when the user has NO trained faces, show
+                a small purple banner inside the modal so they know face
+                training exists without having to find /face-training in the
+                sidebar. One-tap link to start. */}
+            {faceModels.length === 0 && (
+              <div className="mb-4 pt-4 border-t border-gray-100 dark:border-white/10">
+                <Link
+                  href="/face-training"
+                  onClick={() => setHeadlinePromptOpen(false)}
+                  className="flex items-start gap-3 p-3 rounded-lg border border-[#5856d6]/30 hover:border-[#5856d6] transition-colors"
+                  style={{ background: 'linear-gradient(180deg, rgba(88,86,214,0.06) 0%, transparent 100%)' }}
+                >
+                  <div className="w-7 h-7 rounded-full bg-[#5856d6]/15 flex items-center justify-center flex-shrink-0">
+                    <Sparkles size={13} className="text-[#5856d6]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Put YOUR face in the thumbnail</p>
+                    <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                      Train MVP on 10-20 of your headshots once (Pro feature). After that, every thumbnail can include the real you.
+                    </p>
+                  </div>
+                  <span className="text-[11px] text-[#5856d6] font-semibold flex-shrink-0 self-center">
+                    Train →
+                  </span>
+                </Link>
+              </div>
+            )}
 
             {/* Face model picker — only renders when the user has at
                 least one ready trained face. "None" is the default. */}
