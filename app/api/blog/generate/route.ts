@@ -178,6 +178,50 @@ async function handleGenerate(request: Request) {
     }
   }
 
+  // ── Persistent feedback: every "what was missing" note this user
+  // has ever typed into the Rewrite modal. These accumulate over time
+  // and apply to every new generation — the AI keeps learning what
+  // this user actually wants.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: feedbackRows } = await (supabase as any)
+    .from('blog_posts')
+    .select('last_rewrite_feedback,published_at')
+    .eq('user_id', user.id)
+    .not('last_rewrite_feedback', 'is', null)
+    .order('published_at', { ascending: false })
+    .limit(8)
+  const persistentFeedback = (feedbackRows as Array<{ last_rewrite_feedback: string | null }> | null)
+    ?.map(r => (r.last_rewrite_feedback || '').trim())
+    .filter(s => s.length > 0)
+    .slice(0, 8) ?? []
+
+  // ── Voice anchors: pull the user's 2 most-recently-published posts
+  // so Claude can match their voice on every new generation. This is
+  // the feedback loop — the more they ship, the more "them" each new
+  // draft sounds. Excluded: the post being rewritten (would self-
+  // mirror) and posts without content. Shortened to ~1200 chars each
+  // to keep the prompt budget reasonable.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: priorRows } = await (supabase as any)
+    .from('blog_posts')
+    .select('title,content,video_id')
+    .eq('user_id', user.id)
+    .eq('status', 'published')
+    .neq('video_id', videoId)
+    .order('published_at', { ascending: false })
+    .limit(2)
+  const priorExamples = (priorRows as Array<{ title: string; content: string }> | null)?.map(p => ({
+    title: p.title,
+    // Strip WP blocks + HTML tags so the example reads as the prose
+    // Claude originally produced, not a wall of markup.
+    excerpt: (p.content || '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 1200),
+  })).filter(ex => ex.excerpt.length > 100) ?? []
+
   // ── 6. Generate blog post with Claude ─────────────────────────────────────
   const claude = createClaudeService()
   let generated
@@ -210,6 +254,8 @@ async function handleGenerate(request: Request) {
       },
       { userId: user.id, tier: (wp?.tier as string) ?? null },
       isRewrite ? (rewriteFeedback?.trim() || null) : null,
+      priorExamples,
+      persistentFeedback,
     )
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Claude generation failed'

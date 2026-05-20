@@ -567,6 +567,16 @@ Output only valid JSON. No explanation, no markdown.`,
      *  than whatever's currently live — feedback from a Pro user who
      *  hit Rewrite and explained what was missing. */
     rewriteFeedback?: string | null,
+    /** Recently-published posts from THIS user, used as in-context
+     *  voice anchors so each new generation sounds more like them.
+     *  Passed as { title, excerpt } — excerpt should be first ~1200 chars
+     *  of plain-text body. The route pulls 2-3 most recent published
+     *  posts (excluding the one being rewritten, if any). */
+    priorExamples?: Array<{ title: string; excerpt: string }> | null,
+    /** Persistent feedback — every "what was missing" note the user
+     *  has typed into the Rewrite modal across all their posts. The
+     *  AI treats these as standing rules for THIS user's voice. */
+    persistentFeedback?: string[] | null,
   ): Promise<BlogGenerationOutput> {
     // Caller may pre-resolve an ASIN (e.g. by running Amazon search on
     // the title) when the video doesn't carry one. Honor that override
@@ -598,6 +608,45 @@ Output only valid JSON. No explanation, no markdown.`,
 
     const feedbackBlock = rewriteFeedback?.trim()
       ? `\n\nREWRITE REQUEST — the user already received one version of this post and asked for a different angle. Make this draft materially different from a standard generation. Their feedback:\n"${rewriteFeedback.trim()}"\n\nAddress these points directly: pick a different opening hook, restructure the body around the missing angle, and avoid repeating any phrasings that would feel like the previous draft.`
+      : ''
+
+    // Persistent feedback — each note the user has typed when hitting
+    // Rewrite stays in their voice profile forever and applies to every
+    // future generation. They told us once, we shouldn't repeat the
+    // mistake on the next post.
+    const persistentFeedbackBlock = (persistentFeedback && persistentFeedback.length > 0)
+      ? `\n\n═══════════════════════════════════════
+STANDING USER FEEDBACK — apply to every generation
+═══════════════════════════════════════
+These are notes the user has left on previous rewrites. Treat them as PERMANENT rules for their voice — never break them on a new draft.
+
+${persistentFeedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}
+═══════════════════════════════════════\n`
+      : ''
+
+    // In-context voice anchors — the user's own most-recent published
+    // posts. The model treats these as the ground truth for their
+    // rhythm, sentence length, signature phrases, and structural
+    // preferences. Crucially: borrow VOICE, never copy content.
+    const voiceExamplesBlock = (priorExamples && priorExamples.length > 0)
+      ? `\n\n═══════════════════════════════════════
+YOUR PRIOR PUBLISHED WORK — voice reference
+═══════════════════════════════════════
+These are the user's most recent published posts. Use them as VOICE / RHYTHM / STRUCTURAL anchors — match the cadence, sentence length, opener style, transition habits, and characteristic phrases.
+
+DO:
+- Mirror the sentence-length mix
+- Mirror the opener style (do they start with a scene? a question? a one-line declaration?)
+- Reuse their characteristic transitional moves and connective phrases
+- Match the level of formality / contractions / asides
+
+DO NOT:
+- Copy whole sentences or paragraphs from these posts
+- Reuse the same product, same hook, or same anecdotes
+- Reproduce specific facts/quotes — those belong only to their original posts
+
+${priorExamples.map((ex, i) => `── EXAMPLE ${i + 1}: "${ex.title}" ──\n${ex.excerpt}`).join('\n\n')}
+═══════════════════════════════════════\n`
       : ''
 
     const generalModeOverride = isProduct
@@ -676,7 +725,7 @@ VIDEO DESCRIPTION:
 ${video.description.slice(0, 2000)}
 
 TRANSCRIPT:
-${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}${generalModeOverride}${feedbackBlock}`
+${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
 
     // Pass 2 — generate with extended thinking (streaming required for large max_tokens)
     const stream = this.client.messages.stream({
