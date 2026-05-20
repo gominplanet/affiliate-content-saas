@@ -516,24 +516,32 @@ function VideoStudioCard({ video, userTier, playlists }: {
   // Visually distinct presets. One is picked randomly per generation so each
   // thumbnail looks different. Fonts are loaded from Google Fonts on demand.
   //
-  // CALIBRATION NOTE: User feedback flagged all-white Bebas as "too plain" —
-  // we removed the single-colour low-impact styles and lean on the dual-tone
-  // / banner / massive presets so every thumbnail gets a click-worthy title.
-  // If you want neutral fallbacks back, re-add them but assign a weight < 1.
+  // CALIBRATION (2026-05-20):
+  //   1. User flagged all-white Bebas as "too plain" — removed.
+  //   2. Titles must be VIRAL/PUNCHY, not subdued — every preset now uses
+  //      bigger fonts (≥130px max), thicker outlines (≥16px), and a
+  //      chunky "sticker" hardShadow (solid offset, no blur) on top of
+  //      the soft blurry shadow for the splat-on-the-image look.
+  //   3. New highlight-strip variant draws a yellow neon bar behind one
+  //      line for the "MUST WATCH" / "GAME CHANGER" emphasis pop.
+  //   4. If you tone these down later, re-read the memory file
+  //      feedback_thumbnail_calibration.md first.
   const OVERLAY_STYLES = [
     {
-      // Classic YouTube: yellow + white Impact, bottom-left, dark gradient
+      // Classic YouTube: yellow + white Impact, bottom-left, dark gradient.
+      // Beefed up — bigger font + thicker outline + sticker shadow.
       id: 'impact-classic',
       fontName: null as string | null,          // system font — no load needed
       fontStack: 'Impact, "Arial Black", sans-serif',
       weight: '900',
       colors: ['#FFE034', '#FFFFFF'],
       outlineColor: '#000',
-      outlineW: 14,
-      shadowAlpha: 0.8,
-      maxPx: 118,
+      outlineW: 18,
+      shadowAlpha: 0.85,
+      maxPx: 134,
       position: 'bottom-left' as const,
       gradient: true,
+      hardShadow: { dx: 8, dy: 8, color: '#000' } as { dx: number; dy: number; color: string } | null,
     },
     {
       // Bangers: orange + white, energetic, top-left
@@ -543,11 +551,12 @@ function VideoStudioCard({ video, userTier, playlists }: {
       weight: '400',
       colors: ['#FF6B00', '#FFFFFF'],
       outlineColor: '#000',
-      outlineW: 13,
-      shadowAlpha: 0.85,
-      maxPx: 118,
+      outlineW: 16,
+      shadowAlpha: 0.9,
+      maxPx: 134,
       position: 'top-left' as const,
       gradient: false,
+      hardShadow: { dx: 7, dy: 7, color: '#000' } as { dx: number; dy: number; color: string } | null,
     },
     {
       // Oswald: red + white, bold & authoritative, bottom-left
@@ -557,11 +566,12 @@ function VideoStudioCard({ video, userTier, playlists }: {
       weight: '700',
       colors: ['#FF3B30', '#FFFFFF'],
       outlineColor: '#000',
-      outlineW: 12,
-      shadowAlpha: 0.8,
-      maxPx: 108,
+      outlineW: 16,
+      shadowAlpha: 0.85,
+      maxPx: 128,
       position: 'bottom-left' as const,
       gradient: true,
+      hardShadow: { dx: 6, dy: 6, color: '#000' } as { dx: number; dy: number; color: string } | null,
     },
     {
       // Big competitor-style: line 1 RED massive, line 2 WHITE
@@ -573,27 +583,28 @@ function VideoStudioCard({ video, userTier, playlists }: {
       weight: '400',
       colors: ['#FF1F1F', '#FFFFFF'],
       outlineColor: '#000',
-      outlineW: 18,
-      shadowAlpha: 0.95,
-      maxPx: 138,
+      outlineW: 22,
+      shadowAlpha: 1,
+      maxPx: 150,
       position: 'bottom-left' as const,
       gradient: false,
+      hardShadow: { dx: 10, dy: 10, color: '#000' } as { dx: number; dy: number; color: string } | null,
     },
     {
-      // Banner style — solid filled block behind white text. Drawn via
-      // a synthesised "blockBg" hint the renderer honours.
+      // Banner style — solid filled block behind white text.
       id: 'banner-block',
       fontName: 'Anton',
       fontStack: '"Anton", Impact, "Arial Black", sans-serif',
       weight: '400',
       colors: ['#FFFFFF', '#FFFFFF'],
       outlineColor: '#000',
-      outlineW: 6,
+      outlineW: 8,
       shadowAlpha: 0.6,
-      maxPx: 110,
+      maxPx: 120,
       position: 'bottom-left' as const,
       gradient: false,
       blockBg: '#FF7A00' as string | null,
+      hardShadow: { dx: 6, dy: 6, color: '#000' } as { dx: number; dy: number; color: string } | null,
     },
     {
       // MrBeast-style massive yellow — top-left, huge, thick black outline.
@@ -603,11 +614,49 @@ function VideoStudioCard({ video, userTier, playlists }: {
       weight: '400',
       colors: ['#FFE034', '#FFE034'],
       outlineColor: '#000',
-      outlineW: 20,
-      shadowAlpha: 0.9,
-      maxPx: 140,
+      outlineW: 22,
+      shadowAlpha: 0.95,
+      maxPx: 150,
       position: 'top-left' as const,
       gradient: false,
+      hardShadow: { dx: 9, dy: 9, color: '#000' } as { dx: number; dy: number; color: string } | null,
+    },
+    {
+      // NEW: yellow highlight strip behind LAST line — emphasis pop.
+      // Renders a neon-yellow rectangle behind the second line so the
+      // payoff word ("CHANGER!", "WORKS?", "DESTROYED") screams.
+      id: 'highlight-strip-yellow',
+      fontName: 'Anton',
+      fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+      weight: '400',
+      colors: ['#FFFFFF', '#1d1d1f'],          // line1 white, line2 dark (on yellow)
+      outlineColor: '#000',
+      outlineW: 8,
+      shadowAlpha: 0.7,
+      maxPx: 140,
+      position: 'bottom-left' as const,
+      gradient: false,
+      highlightLineIdx: 1 as number | null,
+      highlightColor: '#FFE034' as string | null,
+      hardShadow: { dx: 7, dy: 7, color: '#000' } as { dx: number; dy: number; color: string } | null,
+    },
+    {
+      // NEW: red-yellow combo (Mr. Beast collab / Markiplier shock vibe).
+      // Line 1 yellow, line 2 RED on yellow strip — maximum chroma punch.
+      id: 'red-on-yellow-strip',
+      fontName: 'Anton',
+      fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+      weight: '400',
+      colors: ['#FFE034', '#E10600'],
+      outlineColor: '#000',
+      outlineW: 14,
+      shadowAlpha: 0.85,
+      maxPx: 144,
+      position: 'bottom-left' as const,
+      gradient: false,
+      highlightLineIdx: 1 as number | null,
+      highlightColor: '#FFE034' as string | null,
+      hardShadow: { dx: 9, dy: 9, color: '#000' } as { dx: number; dy: number; color: string } | null,
     },
   ]
 
@@ -691,13 +740,12 @@ function VideoStudioCard({ video, userTier, playlists }: {
           ctx.fillRect(0, gradY, 1280, gradH)
         }
 
-        // Solid-colour banner block behind the text (e.g. orange box with
-        // white "ALL IN ONE" inside). Sized to each line's actual width
-        // so the block hugs the text rather than running the full frame.
+        // Solid-colour banner block behind ALL text lines (e.g. orange box
+        // with white "ALL IN ONE" inside). Sized to each line's actual
+        // width so the block hugs the text rather than running the full
+        // frame.
         const blockBg = (style as { blockBg?: string | null }).blockBg
         if (blockBg) {
-          // Measure each line so the block sits exactly behind it with a
-          // bit of horizontal + vertical padding.
           ctx.font = makeFont(fs)
           const pad = Math.round(fs * 0.18)
           lines.forEach((line, i) => {
@@ -708,24 +756,60 @@ function VideoStudioCard({ video, userTier, playlists }: {
           })
         }
 
+        // Highlight strip behind ONE specific line (e.g. yellow neon bar
+        // behind "CHANGER!" — emphasis on the payoff word). Different from
+        // blockBg which colours every line.
+        const highlightLineIdx = (style as { highlightLineIdx?: number | null }).highlightLineIdx
+        const highlightColor = (style as { highlightColor?: string | null }).highlightColor
+        if (typeof highlightLineIdx === 'number' && highlightColor && lines[highlightLineIdx]) {
+          ctx.font = makeFont(fs)
+          const pad = Math.round(fs * 0.16)
+          const line = lines[highlightLineIdx]
+          const lineW = ctx.measureText(line).width
+          const y = startY + highlightLineIdx * lineH
+          ctx.fillStyle = highlightColor
+          ctx.fillRect(MARGIN_X - pad, y - pad * 0.3, lineW + pad * 2, fs + pad * 0.7)
+        }
+
         ctx.textAlign = 'left'
         ctx.textBaseline = 'top'
         ctx.lineJoin = 'round'
+
+        const hardShadow = (style as { hardShadow?: { dx: number; dy: number; color: string } | null }).hardShadow
 
         lines.forEach((line, i) => {
           const x = MARGIN_X
           const y = startY + i * lineH
 
           ctx.font = makeFont(fs)
+
+          // PASS 1 — hard "sticker" offset shadow. Solid colour, no blur,
+          // big offset. Gives the splat-on-the-image look that punchy
+          // YouTube thumbs use. Drawn as a thick black stroke + fill at
+          // an offset so it stays solid even at large sizes.
+          if (hardShadow) {
+            ctx.shadowBlur = 0
+            ctx.shadowOffsetX = 0
+            ctx.shadowOffsetY = 0
+            ctx.lineWidth = OUTLINE
+            ctx.strokeStyle = hardShadow.color
+            ctx.strokeText(line, x + hardShadow.dx, y + hardShadow.dy)
+            ctx.fillStyle = hardShadow.color
+            ctx.fillText(line, x + hardShadow.dx, y + hardShadow.dy)
+          }
+
+          // PASS 2 — soft blurred drop-shadow for depth under the outline.
           ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
           ctx.shadowBlur = 10
           ctx.shadowOffsetX = 4
           ctx.shadowOffsetY = 4
 
+          // PASS 3 — black outline (stroked).
           ctx.lineWidth = OUTLINE
           ctx.strokeStyle = outlineColor
           ctx.strokeText(line, x, y)
 
+          // PASS 4 — fill the text on top.
           ctx.shadowBlur = 0
           ctx.shadowOffsetX = 0
           ctx.shadowOffsetY = 0

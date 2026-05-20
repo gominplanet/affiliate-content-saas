@@ -211,12 +211,12 @@ CALIBRATION NOTE: We've tuned away from "mouth-wide-open, eyes-bulging" expressi
 
 1. START with "${opts.triggerToken}" — the LoRA's trigger token must appear at the very start so the loaded weights activate. Then describe what they're doing.
 2. PERSON FRAMING: ${opts.triggerToken} fills the frame — face takes ~30-40% of the image, MID-SHOT. Not a wide shot, not a tight close-up.
-3. EXPRESSION: NATURAL but engaging. Pick ONE that fits the video:
-   - Subtle smile + raised eyebrow ("I found something good")
-   - Slight head-tilt with knowing smirk ("you need to see this")
-   - Soft surprised look — mouth closed or slightly parted, eyes alert
-   - Genuine interested look — examining the product
-   AVOID: mouth wide open, bulging eyes, screaming face, exaggerated shock. Those read as cartoonish.
+3. EXPRESSION: DEFAULT to a WARM GENUINE SMILE — friendly, inviting, slightly raised eyebrows like someone sharing a good find. People click on creators who look happy + trustworthy. ONLY use a different expression if the video's tone clearly demands it:
+   - Sceptical / unimpressed look → ONLY if video title says "scam", "warning", "don't buy", "ripoff", "review fail"
+   - Soft surprised (mouth slightly parted, eyes alert) → ONLY if video title says "shocked", "I didn't expect", "you won't believe"
+   - Interested / examining look → ONLY if video is testing/measuring something analytical
+   When uncertain, USE THE SMILE. Smile is the safe high-CTR default.
+   AVOID: mouth wide open, bulging eyes, screaming face, forced grimace, exaggerated shock. Those read as cartoonish.
 4. EYE CONTACT: looking AT camera or AT the product. Confident, not posed.
 5. PRODUCT: held naturally near the face or shoulder, clearly visible.
 6. SCENE: real-world setting, slightly blurred background — bokeh that supports the subject, doesn't replace them. Setting should feel lived-in.
