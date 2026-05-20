@@ -480,13 +480,7 @@ export default function BrandPage() {
         </div>
       )}
 
-      {/* TODO: replace videoId with the real Brand-Profile walkthrough on YouTube. */}
-      <TutorialVideo
-        sectionKey="brand-profile"
-        videoId="dQw4w9WgXcQ"
-        title="Brand Profile — what every field does and why it matters"
-        description="3-minute walkthrough. Fill these out once and every generated post sounds like you."
-      />
+      <TutorialVideo sectionKey="brand-profile" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left — identity */}

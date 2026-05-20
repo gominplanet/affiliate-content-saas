@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Header from '@/components/layout/Header'
+import { TutorialVideo } from '@/components/TutorialVideo'
 import { Save, Check, Loader2 } from 'lucide-react'
 import {
   VOICE_QUESTIONS, STYLE_AXES, SPEECH_PATTERNS, THOUGHT_PROCESS,
@@ -118,6 +119,8 @@ export default function LearnPage() {
         title="Learning"
         subtitle="Train the blog writer in your voice. Every field here is read by the AI on every post — be specific."
       />
+
+      <TutorialVideo sectionKey="learning" />
 
       <div className="max-w-3xl space-y-6 pb-28">
 

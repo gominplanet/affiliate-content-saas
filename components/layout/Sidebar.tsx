@@ -53,6 +53,7 @@ const nav = [
   { href: '/campaigns', label: 'Creator Campaigns', icon: Megaphone, matchKind: 'prefix' as const },
   { href: '/collaborations', label: 'Collaborations', icon: Handshake, matchKind: 'prefix' as const },
   { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' as const },
+  { href: '/tutorials', label: 'Tutorials', icon: GraduationCap, matchKind: 'prefix' as const },
 ]
 
 const secondaryNav = [

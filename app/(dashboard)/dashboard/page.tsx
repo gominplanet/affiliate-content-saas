@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { createServerClient } from '@/lib/supabase/server'
 import Header from '@/components/layout/Header'
+import { TutorialVideo } from '@/components/TutorialVideo'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import WhatsNew from '@/components/dashboard/WhatsNew'
@@ -102,6 +103,8 @@ export default async function DashboardPage() {
           </Link>
         }
       />
+
+      <TutorialVideo sectionKey="dashboard" />
 
       {/* Welcome card — shown until user generates their first post */}
       {isNewUser && (

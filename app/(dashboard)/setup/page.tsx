@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Suspense } from 'react'
+import { TutorialVideo } from '@/components/TutorialVideo'
 
 type Mode = 'existing' | 'new' | null
 type Step = 1 | 2 | 3 | 4 | 5
@@ -1895,6 +1896,7 @@ function SetupPageInner() {
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Site & Integrations</h1>
         </div>
         <TabBar />
+        <TutorialVideo sectionKey="integrations" />
         <IntegrationsPanel onLoad={() => {}} />
       </div>
     )
@@ -1908,6 +1910,7 @@ function SetupPageInner() {
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Site & Integrations</h1>
         </div>
         <TabBar />
+        <TutorialVideo sectionKey="blog-setup" />
         <div className="card p-6">
           <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
             <div className="w-9 h-9 rounded-full bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
@@ -1948,6 +1951,7 @@ function SetupPageInner() {
           <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Connect your affiliate blog to start publishing from YouTube.</p>
         </div>
         <TabBar />
+        <TutorialVideo sectionKey="blog-setup" />
         <div className="card p-7">
           <ModePicker onSelect={setMode} />
         </div>
@@ -1963,6 +1967,7 @@ function SetupPageInner() {
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Site & Integrations</h1>
         </div>
         <TabBar />
+        <TutorialVideo sectionKey="blog-setup" />
         <div className="card p-7">
           <ExistingConnect
             onBack={() => setMode(null)}
@@ -1984,6 +1989,7 @@ function SetupPageInner() {
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in minutes.</p>
       </div>
       <TabBar />
+      <TutorialVideo sectionKey="blog-setup" />
 
       <div className="flex items-center justify-between mb-2">
         <StepIndicator current={step} />

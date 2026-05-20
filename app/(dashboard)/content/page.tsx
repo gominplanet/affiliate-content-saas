@@ -2204,13 +2204,7 @@ export default function ContentPage() {
         }
       />
 
-      {/* TODO: replace videoId with the real Library walkthrough. */}
-      <TutorialVideo
-        sectionKey="library"
-        videoId="dQw4w9WgXcQ"
-        title="Library — sync, filter, generate, and push to socials"
-        description="How to bulk-generate blog posts and fan content out to every connected platform."
-      />
+      <TutorialVideo sectionKey="library" />
 
       {/* Preview-before-publish toggle. When checked, clicking a social pill
           on a video card opens an editable modal with the AI-generated text

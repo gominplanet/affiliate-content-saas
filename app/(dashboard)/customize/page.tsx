@@ -550,13 +550,7 @@ export default function CustomizePage() {
 
       <div className="flex flex-col gap-6 max-w-2xl">
 
-        {/* TODO: replace videoId with the real Customize Blog tutorial. */}
-        <TutorialVideo
-          sectionKey="customize"
-          videoId="dQw4w9WgXcQ"
-          title="Customize Blog — banner strip, in-content ads, analytics"
-          description="Where every blog visual setting lives and what each one does."
-        />
+        <TutorialVideo sectionKey="customize" />
 
         {/* Cross-link banner */}
         <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 px-4 py-3 flex items-start gap-3">

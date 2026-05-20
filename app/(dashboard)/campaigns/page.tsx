@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, Suspense } from 'react'
 import Header from '@/components/layout/Header'
+import { TutorialVideo } from '@/components/TutorialVideo'
 import { Loader2, Sparkles, ExternalLink, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle, AlertCircle } from 'lucide-react'
 import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -529,6 +530,8 @@ function CampaignsInner() {
         title="Creator Campaigns"
         subtitle="Bring Amazon Creator Connections campaigns in two ways — they land in one queue. One click each to research, write, and publish in your brand voice."
       />
+
+      <TutorialVideo sectionKey="campaigns" />
 
       {/* Intake method tabs — both feed the same queue below */}
       <div className="flex items-center gap-1 mb-6 border-b border-gray-200 dark:border-white/10 max-w-3xl">

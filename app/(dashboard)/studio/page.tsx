@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
+import { TutorialVideo } from '@/components/TutorialVideo'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
@@ -1204,6 +1205,8 @@ export default function StudioPage() {
         title="YouTube Studio"
         subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to Studio in one click."
       />
+
+      <TutorialVideo sectionKey="studio" />
 
       {/* Connect YouTube OAuth banner */}
       {needsAuth && (

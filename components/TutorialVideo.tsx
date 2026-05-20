@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from 'react'
 import { X, GraduationCap } from 'lucide-react'
+import { getTutorial } from '@/lib/tutorials'
 
 const STORAGE_KEY = 'mvp_tutorial_dismissed'
 const RESET_EVENT = 'mvp:tutorial-reset'
@@ -36,15 +37,24 @@ export function resetTutorials() {
 }
 
 interface Props {
-  /** Unique key for localStorage. Use kebab-case, e.g. "brand-profile". */
+  /** Unique key for localStorage. Use kebab-case, e.g. "brand-profile".
+   *  If the key matches one in lib/tutorials.ts, videoId/title/description
+   *  can be omitted — they'll be looked up from the registry. */
   sectionKey: string
-  /** YouTube video ID (the part after v= or in the /embed/ URL). */
-  videoId: string
+  /** YouTube video ID. Optional if registered in lib/tutorials.ts. */
+  videoId?: string
   title?: string
   description?: string
 }
 
 export function TutorialVideo({ sectionKey, videoId, title, description }: Props) {
+  // Fall back to the registry so pages can write <TutorialVideo sectionKey="brand-profile" />
+  // and stay in sync with the all-in-one /tutorials page.
+  const reg = getTutorial(sectionKey)
+  const resolvedVideoId = videoId || reg?.videoId
+  const resolvedTitle = title || reg?.title
+  const resolvedDescription = description || reg?.description
+  if (!resolvedVideoId) return null
   // null while hydrating so we don't flash the embed for users who dismissed it
   const [dismissed, setDismissed] = useState<boolean | null>(null)
 
@@ -65,17 +75,17 @@ export function TutorialVideo({ sectionKey, videoId, title, description }: Props
   }
 
   return (
-    <div className="card p-4 mb-4 relative" style={{ background: 'linear-gradient(180deg, rgba(0,113,227,0.04) 0%, transparent 100%)' }}>
+    <div className="card p-4 mb-6 relative max-w-3xl mx-auto" style={{ background: 'linear-gradient(180deg, rgba(0,113,227,0.04) 0%, transparent 100%)' }}>
       <div className="flex items-start gap-3 mb-3">
         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#0071e3]/10 flex items-center justify-center">
           <GraduationCap size={16} className="text-[#0071e3]" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-            {title || 'Quick tutorial'}
+            {resolvedTitle || 'Quick tutorial'}
           </p>
-          {description && (
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">{description}</p>
+          {resolvedDescription && (
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">{resolvedDescription}</p>
           )}
         </div>
         <button
@@ -87,10 +97,10 @@ export function TutorialVideo({ sectionKey, videoId, title, description }: Props
           <X size={15} />
         </button>
       </div>
-      <div className="aspect-video w-full max-w-2xl rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 bg-black">
+      <div className="aspect-video w-full rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 bg-black">
         <iframe
-          src={`https://www.youtube.com/embed/${videoId}`}
-          title={title || 'Tutorial video'}
+          src={`https://www.youtube.com/embed/${resolvedVideoId}`}
+          title={resolvedTitle || 'Tutorial video'}
           frameBorder={0}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen

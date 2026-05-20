@@ -195,13 +195,7 @@ export default function CollaborationsPage() {
         subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work — ready to copy and send. Pro feature."
       />
 
-      {/* TODO: replace videoId with the real Collaborations walkthrough. */}
-      <TutorialVideo
-        sectionKey="collaborations"
-        videoId="dQw4w9WgXcQ"
-        title="Collaborations — pitch emails that actually land"
-        description="The exact workflow used to land brand collabs. Fill the form, hit Generate, copy the email."
-      />
+      <TutorialVideo sectionKey="collaborations" />
 
       <div className="card p-5 mb-5 max-w-3xl">
         <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">1 · Your channels & the brand</p>
