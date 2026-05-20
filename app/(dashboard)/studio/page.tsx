@@ -114,12 +114,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  image prompt explicitly says "no text". We then overlay this text
    *  client-side via canvas so it's always crisp. 2–5 words works best. */
   const [customHeadline, setCustomHeadline] = useState('')
-  /** 1 or 2 — how many thumbnail variants to render per click. Each
-   *  variant counts against the user's thumbnail cap. */
-  const [variantCount, setVariantCount] = useState<1 | 2>(1)
-  /** All variants returned by the last generation. Used when variantCount=2
-   *  so the user can compare side-by-side and pick. */
-  const [thumbnailVariants, setThumbnailVariants] = useState<string[]>([])
+  /** Always 1 — variant generation was removed to save tokens. We keep
+   *  the variant-aware response handling for backwards-compat with any
+   *  older clients still in the wild. */
+  const variantCount = 1 as const
   /** Pre-generation prompt — opens when the user clicks Generate Thumbnail
    *  so they consciously decide whether to write their own headline or
    *  let MVP do it, before any AI work fires. */
@@ -341,10 +339,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
       }
     }))
 
-    // Primary thumbnail = first variant; full list goes into the variants
-    // state so the UI can render the picker when there's more than one.
+    // Variant generation was removed — server always returns one image —
+    // but the response handling stays array-aware in case an older client
+    // race somehow asked for more.
     setThumbnailUrl(finalUrls[0])
-    setThumbnailVariants(finalUrls)
     setThumbnailHook(hook)
     setThumbnailPrompt((data.prompt as string) ?? null)
     setThumbnailModel((data.modelUsed as string) ?? null)
@@ -1008,37 +1006,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   </div>
                 </div>
 
-                {/* Variant count + optional style reference — small inline
-                    controls. The headline question is asked via modal at
-                    click-time so users consciously decide before any AI work fires. */}
-                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 space-y-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Variants</label>
-                    <div className="flex items-center gap-1.5">
-                      {([1, 2] as const).map(n => (
-                        <button
-                          key={n}
-                          type="button"
-                          onClick={() => setVariantCount(n)}
-                          disabled={generatingThumbnail || instantLoading}
-                          className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors border disabled:opacity-60 ${
-                            variantCount === n
-                              ? 'bg-[#0071e3] text-white border-[#0071e3]'
-                              : 'bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] border-gray-200 dark:border-white/10 hover:border-gray-300'
-                          }`}
-                        >
-                          {n} thumbnail{n > 1 ? 's' : ''}
-                        </button>
-                      ))}
-                      {variantCount === 2 && (
-                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] ml-1">Uses 2 from your monthly cap</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Style reference (optional) — drag-or-click upload.
-                      When set, the AI mimics the aesthetic (palette, lighting,
-                      composition) of the uploaded image. */}
+                {/* Optional style reference — inline control. Variants
+                    were removed; we always generate one thumbnail to keep
+                    token spend predictable. The headline question is asked
+                    via modal at click-time. */}
+                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
                       Style reference <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — upload a thumbnail whose look you want to match)</span>
@@ -1096,8 +1068,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
                   >
                     {generatingThumbnail
-                      ? <><Loader2 size={12} className="animate-spin" /> Generating{variantCount === 2 ? ' 2 variants' : ''}…</>
-                      : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate' : `Generate Thumbnail${variantCount === 2 ? 's' : ''}`}</>}
+                      ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
+                      : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate' : 'Generate Thumbnail'}</>}
                   </button>
 
                   {video.thumbnailUrl && (
@@ -1142,36 +1114,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 {/* Result */}
                 {thumbnailUrl && (
                   <div className="flex flex-col gap-2">
-                    {/* Variant picker — only renders when 2+ thumbnails came
-                        back. Clicking a variant promotes it to the primary
-                        thumbnail used by Apply / Download. */}
-                    {thumbnailVariants.length > 1 && (
-                      <div>
-                        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-1.5">
-                          Pick the one you want to keep — Apply / Download uses the selected variant.
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {thumbnailVariants.map((url, i) => {
-                            const isSelected = url === thumbnailUrl
-                            return (
-                              <button
-                                key={i}
-                                type="button"
-                                onClick={() => setThumbnailUrl(url)}
-                                className={`rounded-lg overflow-hidden border-2 transition-all ${
-                                  isSelected
-                                    ? 'border-[#0071e3] ring-2 ring-[#0071e3]/30'
-                                    : 'border-transparent hover:border-gray-300 dark:hover:border-white/20'
-                                }`}
-                                title={isSelected ? 'Selected' : 'Pick this variant'}
-                              >
-                                <img src={url} alt={`Variant ${i + 1}`} className="w-full object-cover block" style={{ aspectRatio: '16/9' }} />
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
                     <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                       <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
                     </div>
