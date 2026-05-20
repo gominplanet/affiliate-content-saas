@@ -92,9 +92,12 @@ async function describeProductVisually(opts: {
     const b64 = Buffer.from(buf).toString('base64')
     const mediaType = (imgRes.headers.get('content-type') || 'image/jpeg').split(';')[0]
     const anthropic = createAnthropicClient()
+    // Sonnet (not Haiku) — the description quality directly determines
+    // how well flux-lora renders the product, since LoRA can't accept an
+    // image reference. Worth the extra cost.
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
       messages: [{
         role: 'user',
         content: [
@@ -102,7 +105,17 @@ async function describeProductVisually(opts: {
           { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } } as any,
           {
             type: 'text',
-            text: `Describe this product's VISUAL appearance in ONE rich sentence for an image-generation prompt. Cover: form factor (handheld? freestanding? wearable?), dominant colours, material (plastic/metal/wood/fabric), shape, any distinctive visual feature (display screen, buttons, lens, handle, etc.). Do NOT name the brand. Do NOT mention text or logos. Keep it under 40 words.
+            text: `You are writing a short visual reference for an AI image generator that CANNOT see this image. Your description determines whether the product gets rendered correctly or as a generic blob.
+
+Describe this product's VISUAL appearance in TWO precise sentences:
+  - Sentence 1: form factor + overall shape + size cue (handheld / counter-top / wearable / etc.) + dominant colours + material (plastic / brushed metal / wood / fabric / glass).
+  - Sentence 2: distinctive visual features — display screens, buttons, lens, knobs, handles, grilles, stand, fabric texture, anything that makes the SHAPE recognisable. Be CONCRETE: "a single round black knob in the centre", "a vertical strip of three buttons on the right", "a circular LCD display showing dashes".
+
+Rules:
+  - 60 words MAX.
+  - Do NOT name the brand or use brand-specific language.
+  - Do NOT mention any text, letters, or logos visible on the product.
+  - Write so a stranger could SKETCH the product from your description.
 
 Product title (context only — don't quote): "${opts.productTitle}"`,
           },
@@ -111,7 +124,7 @@ Product title (context only — don't quote): "${opts.productTitle}"`,
     }))
     recordAnthropicUsage(msg, {
       userId: opts.ctx.userId, tier: opts.ctx.tier,
-      feature: 'ig_ai_product_vision', model: 'claude-haiku-4-5-20251001',
+      feature: 'ig_ai_product_vision', model: 'claude-sonnet-4-6',
     })
     return (msg.content[0] as { type: string; text: string }).text.trim()
   } catch {
@@ -202,27 +215,29 @@ ${hasFace ? `CREATOR'S FACE TRIGGER TOKEN: ${opts.triggerToken} — must appear 
 PROMPT RULES (Instagram-tuned, 4:5 portrait):
 
 ${hasFace ? `1. START with "${opts.triggerToken}" — LoRA trigger word, must be first.
-2. **CRITICAL — FRAMING IS A BUST SHOT, ABOVE THE WAIST.**
-   - The frame crops at or just above the waist.
-   - The HEAD, NECK, SHOULDERS, and UPPER TORSO fill the frame.
-   - Face occupies roughly the TOP THIRD of the image.
-   - DO NOT show: hips, legs, full body, or wide "standing in a room" shots.
-3. **PRODUCT MUST APPEAR IN THE SCENE.** ${opts.requireProductInScene ? 'NON-NEGOTIABLE — a clear render of the product is required.' : 'Strongly preferred.'} Place it either:
-   - FOREGROUND: held in hand at chest height, presented to camera, OR
-   - BACKGROUND: sitting on a counter / shelf / table behind the subject, clearly visible over the shoulder.
-   ${opts.productVisual ? `Render the product to match this exact visual: "${opts.productVisual}". Get the shape, colour, and material right.` : ''}
-4. EXPRESSION: DEFAULT to a warm genuine smile — friendly, inviting. Other expressions only when the video tone demands it (sceptical for scams/warnings, surprised for shocking reveals).
-5. EYE CONTACT: looking directly at camera. Confident.` : `1. **CRITICAL — PRODUCT-FOCUSED CLOSE-UP.**
+2. **CRITICAL — TIGHT HEAD-AND-SHOULDERS PORTRAIT. The face dominates the frame.**
+   - The frame crops at the upper chest / collarbone — NOT at the waist.
+   - The FACE fills roughly **the TOP 55-65% of the image**.
+   - The viewer sees: forehead, full face (eyes, nose, mouth must be large and clear), neck, top of shoulders. That is ALL.
+   - DO NOT show: the waist, hips, legs, full torso, both full arms, t-shirt covering the chest, or any "standing in a room" wide framing.
+   - Think LinkedIn headshot zoom — not full-body portrait. The face is the hero of the composition.
+3. **EXPRESSION IS THE STAR.** Eyes wide open and engaged, eyebrows expressive, mouth conveying the emotion clearly. The face must feel ALIVE — not posed, not flat.
+4. **PRODUCT MUST APPEAR IN THE SCENE.** ${opts.requireProductInScene ? 'NON-NEGOTIABLE — a clear, accurate render of the product is required.' : 'Strongly preferred.'} Place it either:
+   - FOREGROUND: held up CLOSE TO THE FACE — beside the cheek, at the jawline, or just below the chin. The hand holding it is barely visible, just enough to grip. NEVER at belly height with both arms extended.
+   - BACKGROUND: sitting on a counter or shelf behind the subject, slightly out of focus but recognisable.
+   ${opts.productVisual ? `**RENDER THE PRODUCT EXACTLY TO MATCH THIS VISUAL DESCRIPTION:** "${opts.productVisual}". Get the form factor, dominant colours, material, and distinctive features RIGHT — this is non-negotiable. If the description says it's a black handheld device with a circular display, that is what must appear — not a generic random object.` : ''}
+5. EXPRESSION: DEFAULT to a warm genuine smile — friendly, inviting. Other expressions only when the video tone demands it (sceptical for scams/warnings, surprised for shocking reveals).
+6. EYE CONTACT: looking directly at camera. Confident, present.` : `1. **CRITICAL — PRODUCT-FOCUSED CLOSE-UP.**
    - Product fills the upper-middle of the frame.
    - Hero shot — product centred, large, dominant.
    ${opts.productVisual ? `Render the product to match this exact visual: "${opts.productVisual}".` : ''}
 2. SCENE: lived-in setting that fits the product. Blurred background.`}
-${hasFace ? '6. ' : '3. '}SCENE: real-world setting (kitchen, bedroom, living room, outdoor — whatever fits the product). Background heavily BLURRED bokeh so it doesn't distract from the subject.
-${hasFace ? '7. ' : '4. '}COMPOSITION: leave clean space at the TOP-LEFT or BOTTOM for a giant text overlay (we render text in post — your image must have negative space for it).
-${hasFace ? '8. ' : '5. '}LIGHTING: editorial portrait lighting — soft key light, gentle rim light, natural skin tones. NOT plastic, NOT over-processed, NOT studio-flat.
-${hasFace ? '9. ' : '6. '}**ABSOLUTELY NO TEXT, LETTERS, WORDS, LABELS, LOGOS, BRAND NAMES, NUMBERS, OR WRITING OF ANY KIND ANYWHERE IN THE IMAGE.** Product packaging must appear blank/unbranded. Clothing must be plain. Background signs, posters, books — all blank. The model is notoriously bad at rendering legible text, so the cleanest option is ZERO TEXT.
-${hasFace ? '10. ' : '7. '}End with: "4:5 portrait orientation, BUST SHOT above the waist, photorealistic, 8K, sharp focus on ${hasFace ? 'face and product' : 'product'}, editorial Instagram photography, natural skin tones, blurred background bokeh, no text, no letters, no logos, no labels, no writing anywhere"
-${hasFace ? '11. ' : '8. '}Under 130 words.
+${hasFace ? '7. ' : '3. '}SCENE: real-world setting (kitchen, bedroom, living room, outdoor — whatever fits the product). Background **heavily BLURRED bokeh** — visible enough to give context but never sharp. The face stays in crisp focus.
+${hasFace ? '8. ' : '4. '}COMPOSITION: leave clean space at the TOP-LEFT or BOTTOM for a giant text overlay (we render text in post — your image must have negative space for it).
+${hasFace ? '9. ' : '5. '}LIGHTING: editorial portrait lighting — soft key light, gentle rim light, natural skin tones. NOT plastic, NOT over-processed, NOT studio-flat.
+${hasFace ? '10. ' : '6. '}**ABSOLUTELY NO TEXT, LETTERS, WORDS, LABELS, LOGOS, BRAND NAMES, NUMBERS, OR WRITING OF ANY KIND ANYWHERE IN THE IMAGE.** Product packaging must appear blank/unbranded. Clothing must be plain. Background signs, posters, books — all blank. The model is notoriously bad at rendering legible text, so the cleanest option is ZERO TEXT.
+${hasFace ? '11. ' : '7. '}End with: "4:5 portrait orientation, tight HEAD-AND-SHOULDERS portrait, face dominates the frame, photorealistic, 8K, sharp focus on ${hasFace ? 'face and product, face is the hero' : 'product'}, editorial Instagram photography, natural skin tones, blurred background bokeh, no text, no letters, no logos, no labels, no writing anywhere"
+${hasFace ? '12. ' : '8. '}Under 140 words.
 
 Return ONLY the prompt — no preamble.`,
     }],
@@ -406,8 +421,12 @@ export async function POST(request: Request) {
           prompt: scenePrompt,
           loras: [{ path: faceModel.lora_url, scale: 1.0 }],
           image_size: 'portrait_4_3',
-          num_inference_steps: 28,
-          guidance_scale: 3.5,
+          num_inference_steps: 32,
+          // Higher guidance pushes the model to follow the prompt more
+          // tightly — especially the tight-portrait framing + product
+          // visual description. Was 3.5; reports of generic products and
+          // loose framing prompted the bump to 5.0.
+          guidance_scale: 5.0,
           num_images: 1,
           output_format: 'jpeg',
         },
