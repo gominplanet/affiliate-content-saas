@@ -123,7 +123,15 @@ export default async function CommunityPage() {
             <ul className="flex flex-col gap-2.5 text-xs text-[#6e6e73] dark:text-[#ebebf0]">
               <li className="flex items-start gap-2">
                 <span className="text-[#5865F2] mt-0.5">●</span>
+                <span><span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">#what-is-mvp</span> — start here. What MVP Affiliate is, what it does, current tiers.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-[#5865F2] mt-0.5">●</span>
                 <span><span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">#announcements</span> — new features, model swaps, planned downtime.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-[#5865F2] mt-0.5">●</span>
+                <span><span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">#general-chat</span> — say hi, intros, anything that doesn&apos;t fit elsewhere.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-[#5865F2] mt-0.5">●</span>
