@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
+import { TutorialVideo } from '@/components/TutorialVideo'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save,
@@ -2201,6 +2202,14 @@ export default function ContentPage() {
             )}
           </div>
         }
+      />
+
+      {/* TODO: replace videoId with the real Library walkthrough. */}
+      <TutorialVideo
+        sectionKey="library"
+        videoId="dQw4w9WgXcQ"
+        title="Library — sync, filter, generate, and push to socials"
+        description="How to bulk-generate blog posts and fan content out to every connected platform."
       />
 
       {/* Preview-before-publish toggle. When checked, clicking a social pill

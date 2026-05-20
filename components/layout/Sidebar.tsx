@@ -36,6 +36,7 @@ import {
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { resetTutorials } from '@/components/TutorialVideo'
 
 // New nav order — Setup is split into two: Blog Set Up (WordPress wizard)
 // and Integrations (3rd-party social connectors). Both routes go to /setup
@@ -80,6 +81,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   // Mobile drawer state — sidebar is hidden offscreen below lg and slides in
   // when this is true. Auto-closes on every route change.
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [tutorialsRestored, setTutorialsRestored] = useState(false)
   useEffect(() => { setMobileOpen(false) }, [pathname, searchParams])
 
   async function purgeCache() {
@@ -349,6 +351,15 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
               AI Cost (admin)
             </Link>
           )}
+          {/* Re-show every dismissed in-page tutorial video. */}
+          <button
+            onClick={() => { resetTutorials(); setTutorialsRestored(true); setTimeout(() => setTutorialsRestored(false), 2000) }}
+            className="nav-item w-full"
+            title="Bring back every dismissed in-page tutorial video"
+          >
+            <GraduationCap size={16} className="flex-shrink-0" />
+            <span className="flex-1 text-left">{tutorialsRestored ? 'Tutorials restored ✓' : 'Show tutorials'}</span>
+          </button>
         </div>
       </nav>
 

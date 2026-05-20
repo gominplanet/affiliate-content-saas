@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
+import { TutorialVideo } from '@/components/TutorialVideo'
 import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle, Trash2, Save } from 'lucide-react'
 
 interface CollabRow {
@@ -192,6 +193,14 @@ export default function CollaborationsPage() {
       <Header
         title="Collaborations"
         subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work — ready to copy and send. Pro feature."
+      />
+
+      {/* TODO: replace videoId with the real Collaborations walkthrough. */}
+      <TutorialVideo
+        sectionKey="collaborations"
+        videoId="dQw4w9WgXcQ"
+        title="Collaborations — pitch emails that actually land"
+        description="The exact workflow used to land brand collabs. Fill the form, hit Generate, copy the email."
       />
 
       <div className="card p-5 mb-5 max-w-3xl">

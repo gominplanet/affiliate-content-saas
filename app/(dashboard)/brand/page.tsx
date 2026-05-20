@@ -5,6 +5,7 @@ import Header from '@/components/layout/Header'
 import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
+import { TutorialVideo } from '@/components/TutorialVideo'
 
 async function uploadBrandImage(
   file: File,
@@ -478,6 +479,14 @@ export default function BrandPage() {
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{wpPushNote}</p>
         </div>
       )}
+
+      {/* TODO: replace videoId with the real Brand-Profile walkthrough on YouTube. */}
+      <TutorialVideo
+        sectionKey="brand-profile"
+        videoId="dQw4w9WgXcQ"
+        title="Brand Profile — what every field does and why it matters"
+        description="3-minute walkthrough. Fill these out once and every generated post sounds like you."
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left — identity */}
