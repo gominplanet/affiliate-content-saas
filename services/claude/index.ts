@@ -32,6 +32,13 @@ export interface VideoInput {
   tags: string[]
   transcript: string
   categoryId?: number
+  /** Pre-resolved ASIN (e.g. discovered via Amazon search when the
+   *  title didn't carry one). When set, generateBlogPost skips its
+   *  own affiliate-URL resolution and uses this + affiliateUrlOverride. */
+  asinOverride?: string | null
+  /** Pre-built affiliate URL paired with asinOverride. Caller should
+   *  wrap with Geniuslink / Associates tag before passing. */
+  affiliateUrlOverride?: string | null
 }
 
 export interface BlogGenerationOutput {
@@ -561,7 +568,19 @@ Output only valid JSON. No explanation, no markdown.`,
      *  hit Rewrite and explained what was missing. */
     rewriteFeedback?: string | null,
   ): Promise<BlogGenerationOutput> {
-    const { url: affiliateUrl, asin } = await resolveAffiliateUrl(video.description, video.title)
+    // Caller may pre-resolve an ASIN (e.g. by running Amazon search on
+    // the title) when the video doesn't carry one. Honor that override
+    // first so we don't run our own URL resolution and then ignore it.
+    let affiliateUrl: string
+    let asin: string | null
+    if (video.asinOverride) {
+      asin = video.asinOverride
+      affiliateUrl = video.affiliateUrlOverride || `https://www.amazon.com/dp/${video.asinOverride}`
+    } else {
+      const resolved = await resolveAffiliateUrl(video.description, video.title)
+      affiliateUrl = resolved.url
+      asin = resolved.asin
+    }
     // If we couldn't surface an Amazon ASIN / affiliate URL anywhere, treat
     // the video as general content rather than a product review. The
     // system prompt still applies, but a directive at the top of the user

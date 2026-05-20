@@ -5,6 +5,9 @@ import { createWordPressService } from '@/services/wordpress'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
+import { discoverProductForVideo } from '@/lib/product-detect'
+import { createGeniuslinkService } from '@/services/geniuslink'
+import { extractAsin } from '@/services/amazon'
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
 // Images are generated separately via /api/blog/images
@@ -146,9 +149,37 @@ async function handleGenerate(request: Request) {
     }
   }
 
-  // ── 5. Generate blog post with Claude ─────────────────────────────────────
-  const claude = createClaudeService()
+  // ── 5. Recover an ASIN when the title doesn't carry one ───────────────────
+  // If the title doesn't have a 10-char ASIN and the description has no
+  // resolvable Amazon link, ask the detector whether the video is about
+  // a buyable product. If yes, search Amazon for the match and wrap it
+  // with Geniuslink / Associates so the blog post still gets affiliate
+  // links. Failure is silent — falls back to general-mode blog.
   const v = video as Record<string, unknown>
+  const rawTitle = v.title as string
+  const rawDescription = (v.description as string) || ''
+  let asinOverride: string | null = null
+  let affiliateUrlOverride: string | null = null
+  if (!extractAsin(rawTitle.toUpperCase()) && !/\/(?:dp|gp\/product)\/[A-Z0-9]{10}/.test(rawDescription)) {
+    const discovered = await discoverProductForVideo(rawTitle, rawDescription, { userId: user.id, tier: (wp?.tier as string) ?? null })
+    if (discovered.asin) {
+      asinOverride = discovered.asin
+      // Build affiliate URL using user's Geniuslink → Associates → bare.
+      let url = `https://www.amazon.com/dp/${discovered.asin}`
+      if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
+        try {
+          const genius = createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
+          url = await genius.createAsinLink(discovered.asin, discovered.productQuery || rawTitle)
+        } catch { /* fall through to Associates / bare */ }
+      } else if (wp?.amazon_associates_tag) {
+        url = `https://www.amazon.com/dp/${discovered.asin}?tag=${wp.amazon_associates_tag}`
+      }
+      affiliateUrlOverride = url
+    }
+  }
+
+  // ── 6. Generate blog post with Claude ─────────────────────────────────────
+  const claude = createClaudeService()
   let generated
   try {
     generated = await claude.generateBlogPost(
@@ -170,10 +201,12 @@ async function handleGenerate(request: Request) {
       },
       {
         videoId: v.youtube_video_id as string,
-        title: v.title as string,
-        description: (v.description as string) || '',
+        title: rawTitle,
+        description: rawDescription,
         tags: (v as Record<string, string[]>).tags || [],
         transcript,
+        asinOverride,
+        affiliateUrlOverride,
       },
       { userId: user.id, tier: (wp?.tier as string) ?? null },
       isRewrite ? (rewriteFeedback?.trim() || null) : null,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchAmazonProduct } from '@/services/amazon'
+import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -291,8 +292,9 @@ export async function POST(request: Request) {
     // Without one, we fall back to generic-video mode — same agent swarm,
     // but the prompts skip product framing and the description skips the
     // affiliate / disclosure block.
-    const trimmedAsin = (asin || '').trim().toUpperCase()
-    const isProduct = !!trimmedAsin && /^[A-Z0-9]{10}$/.test(trimmedAsin)
+    let trimmedAsin = (asin || '').trim().toUpperCase()
+    let isProduct = !!trimmedAsin && /^[A-Z0-9]{10}$/.test(trimmedAsin)
+    let productDiscoverySource: 'title' | 'caller' | 'search' | 'none' = isProduct ? 'caller' : 'none'
     if (asin && asin.trim() && !isProduct) {
       return NextResponse.json({
         error: 'That looks like an ASIN but the format is wrong — Amazon ASINs are 10 chars, uppercase letters + digits.',
@@ -355,6 +357,20 @@ export async function POST(request: Request) {
     const contactPreference: 'website' | 'email' =
       (brand?.contact_preference as string) === 'email' ? 'email' : 'website'
     const gearSections = ((brand?.gear_sections as GearSection[]) || []).filter(s => s.title && s.items.length > 0)
+
+    // ── Discovery: try to recover an ASIN when caller didn't pass one ─────────
+    // A "Bose QC Ultra review" video without an ASIN in the title still
+    // deserves the product treatment. Haiku decides if the video is
+    // about a buyable product, then we scrape Amazon search for the
+    // matching ASIN. Failures silently fall back to general mode.
+    if (!isProduct) {
+      const discovered = await discoverProductForVideo(videoTitle, videoDescription || '', { userId: user.id, tier })
+      if (discovered.asin) {
+        trimmedAsin = discovered.asin
+        isProduct = true
+        productDiscoverySource = discovered.source === 'search' ? 'search' : discovered.source
+      }
+    }
 
     // ── Fetch product + build affiliate URL (product mode only) ────────────────
     let product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null; imageUrl: string | null } = {
@@ -491,6 +507,7 @@ export async function POST(request: Request) {
       ok: true,
       asin: trimmedAsin || null,
       isProduct,
+      productDiscoverySource,
       affiliateUrl,
       geniuslinkUsed,
       geniuslinkError,

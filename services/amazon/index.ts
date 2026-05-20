@@ -14,6 +14,42 @@ export function extractAsin(text: string): string | null {
   return match ? match[1] : null
 }
 
+/**
+ * Search Amazon by free-text query and return the first product's
+ * ASIN, or null if nothing reasonable came back / Amazon blocked us.
+ *
+ * Used to recover an affiliate link when a video title mentions a
+ * product by name but doesn't carry the 10-char ASIN code. Cheap
+ * fallback — if it fails, callers should treat the video as general
+ * content rather than break the whole generation.
+ */
+export async function searchAmazonForAsin(query: string): Promise<string | null> {
+  const q = (query || '').trim()
+  if (!q) return null
+  const url = `https://www.amazon.com/s?k=${encodeURIComponent(q)}`
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+      },
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+    // Match the first /dp/ASIN/ link inside a search-result tile, which
+    // is what Amazon's organic results use. Sponsored slots also use
+    // /dp/ but tend to appear first; we accept either since we still
+    // map to a real product the brand sells.
+    const match = html.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/)
+    return match ? match[1] : null
+  } catch {
+    return null
+  }
+}
+
 // Scrape basic product data from Amazon product page
 export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
   const url = `https://www.amazon.com/dp/${asin}`
