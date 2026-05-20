@@ -27,7 +27,9 @@ export const TIERS = {
     regularPrice: 99,
     postsPerMonth: 30,
     lifetimeMax: null as number | null,
-    collabsPerMonth: 0 as number | null,
+    // Taster cap — lets Starter users try the Pro Collaborations
+    // workflow so they feel the upgrade pull naturally.
+    collabsPerMonth: 1 as number | null,
     basePosts: 30,
     bonusPosts: 0,
     sites: 1,
@@ -42,7 +44,9 @@ export const TIERS = {
     regularPrice: 199,
     postsPerMonth: 80,
     lifetimeMax: null as number | null,
-    collabsPerMonth: 0 as number | null,
+    // Mid-tier taster — enough to land a few brand deals but the gap to
+    // Pro's 100 is wide enough to keep the upsell pressure on.
+    collabsPerMonth: 5 as number | null,
     basePosts: 60,
     bonusPosts: 20,
     sites: 1,
@@ -55,10 +59,10 @@ export const TIERS = {
     label: 'Pro',
     price: 199,
     regularPrice: 499,
-    postsPerMonth: 150,
+    postsPerMonth: 200,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
-    basePosts: 90,
+    basePosts: 140,
     bonusPosts: 60,
     sites: 1,
     socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram'] as readonly Social[],

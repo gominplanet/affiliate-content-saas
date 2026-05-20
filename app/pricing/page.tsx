@@ -28,7 +28,7 @@ type Plan = {
   ctaLabel: string
 }
 
-type PlanExt = Plan & { bonus?: string }
+type PlanExt = Plan & { bonus?: string; badge?: string }
 
 const plans: PlanExt[] = [
   {
@@ -56,11 +56,12 @@ const plans: PlanExt[] = [
     price: 49,
     regularPrice: 99,
     limit: '30 posts / month',
-    description: 'Replace your "I\'ll do it this weekend" — and actually ship a few reviews a week.',
+    description: 'Ship a few reviews a week — and try the Pro brand-pitch workflow that lands deals.',
     features: [
       '30 full reviews per month',
       'Everything in Free',
       'Pinterest auto-post *',
+      '1 brand-collab pitch email / month (try the Pro feature)',
       'Monthly cap resets on the 1st — no rollover, no surprises',
     ],
     highlight: false,
@@ -73,16 +74,16 @@ const plans: PlanExt[] = [
     regularPrice: 199,
     limit: '80 posts / month',
     bonus: '60 + 20 bonus posts',
-    description: 'Daily publishers + creators clearing a backlog. Fan-out to every major social, every time.',
+    description: 'Best for ramp-up. Ship daily on every major social — and start pitching brands at a real cadence.',
     features: [
       '80 full reviews per month (60 + 20 bonus)',
       'Everything in Starter',
-      'Threads auto-post',
-      'Bluesky auto-post',
-      'LinkedIn auto-post',
-      'Priority generation queue (your jobs jump the line)',
+      'Threads + Bluesky + LinkedIn auto-post',
+      '5 brand-collab pitch emails / month',
+      'Priority generation queue — your jobs jump the line',
     ],
-    highlight: true,
+    highlight: false,
+    badge: 'Best for ramp-up',
     ctaLabel: 'Get Growth',
   },
   {
@@ -90,20 +91,18 @@ const plans: PlanExt[] = [
     label: 'Pro',
     price: 199,
     regularPrice: 499,
-    limit: '150 posts / month',
-    bonus: '90 + 60 bonus posts',
-    description: 'Run an affiliate channel like a media company. One-click everything — YouTube settings included.',
+    limit: '200 posts / month',
+    bonus: '140 + 60 bonus posts',
+    description: 'Become the creator brands want. One video becomes a YouTube description, a blog review, and a post on every major social — so when a brand asks "where will this go?", your answer is a list, not a sentence.',
     features: [
+      '100 brand-collab pitch emails / month — your direct lever for deal flow',
+      '200 full reviews per month (140 + 60 bonus)',
+      'Reach on every supported platform: Facebook, Pinterest, Threads, Bluesky, LinkedIn, X, Telegram (+ Instagram Reels & Stories, included while we keep polishing)',
       'One-click Apply to YouTube — playlist, schedule, paid-promotion disclosure, made-for-kids, notify-off, all batched',
-      '150 full reviews per month (90 + 60 bonus)',
-      'Everything in Growth',
-      'X (Twitter) auto-post',
-      'Telegram channel auto-post',
-      'Instagram Reels + Stories auto-publish',
       'One-click Publish All — site + every social in one shot',
-      'Priority human support',
+      'Priority queue + priority human support',
     ],
-    highlight: false,
+    highlight: true,
     ctaLabel: 'Get Pro',
   },
 ]
@@ -188,6 +187,12 @@ export default function PricingPage() {
               <div className="flex items-center gap-1.5 mb-4">
                 <Zap size={14} className="text-yellow-300" />
                 <span className="text-xs font-semibold text-yellow-300 uppercase tracking-wide">Most Popular</span>
+              </div>
+            )}
+            {!plan.highlight && plan.badge && (
+              <div className="flex items-center gap-1.5 mb-4">
+                <Zap size={14} className="text-[#0071e3]" />
+                <span className="text-xs font-semibold text-[#0071e3] uppercase tracking-wide">{plan.badge}</span>
               </div>
             )}
             <p className={`text-sm font-semibold mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>{plan.label}</p>
