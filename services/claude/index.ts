@@ -552,7 +552,15 @@ Output only valid JSON. No explanation, no markdown.`,
     }
   }
 
-  async generateBlogPost(brand: BrandProfile, video: VideoInput, ctx?: UsageCtx): Promise<BlogGenerationOutput> {
+  async generateBlogPost(
+    brand: BrandProfile,
+    video: VideoInput,
+    ctx?: UsageCtx,
+    /** When set, the prompt nudges Claude to produce a different post
+     *  than whatever's currently live — feedback from a Pro user who
+     *  hit Rewrite and explained what was missing. */
+    rewriteFeedback?: string | null,
+  ): Promise<BlogGenerationOutput> {
     const { url: affiliateUrl } = await resolveAffiliateUrl(video.description, video.title)
 
     // Pass 1 — extract voice profile from transcript (fast, cheap)
@@ -562,6 +570,10 @@ Output only valid JSON. No explanation, no markdown.`,
     }
 
     const systemPrompt = buildSystemPrompt(brand, voiceProfile || undefined)
+
+    const feedbackBlock = rewriteFeedback?.trim()
+      ? `\n\nREWRITE REQUEST — the user already received one version of this post and asked for a different angle. Make this draft materially different from a standard generation. Their feedback:\n"${rewriteFeedback.trim()}"\n\nAddress these points directly: pick a different opening hook, restructure the body around the missing angle, and avoid repeating any phrasings that would feel like the previous draft.`
+      : ''
 
     const userMessage = `Generate a blog post for this YouTube review video.
 
@@ -574,7 +586,7 @@ VIDEO DESCRIPTION:
 ${video.description.slice(0, 2000)}
 
 TRANSCRIPT:
-${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}`
+${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}${feedbackBlock}`
 
     // Pass 2 — generate with extended thinking (streaming required for large max_tokens)
     const stream = this.client.messages.stream({

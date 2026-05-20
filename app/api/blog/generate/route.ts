@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { YoutubeTranscript } from 'youtube-transcript'
-import { checkUsageLimit } from '@/lib/tier'
+import { checkUsageLimit, TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
@@ -24,20 +24,55 @@ async function handleGenerate(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { videoId } = await request.json()
+  const body = (await request.json()) as { videoId?: string; rewriteFeedback?: string }
+  const { videoId, rewriteFeedback } = body
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
-  // ── Usage limit check (skip for rewrites — existing post detected) ─────────
+  // ── Detect rewrite vs fresh generation ────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existingForLimit } = await (supabase as any)
     .from('blog_posts')
-    .select('id')
+    .select('id, rewrite_count')
     .eq('user_id', user.id)
     .eq('video_id', videoId)
     .limit(1)
     .maybeSingle()
 
-  if (!existingForLimit) {
+  const isRewrite = !!existingForLimit
+
+  if (isRewrite) {
+    // ── Rewrite gate (Pro-only, once per post) ──────────────────────────────
+    // Manual editing in WordPress is always available; this gate stops the
+    // expensive AI rewrite path from being triggered by non-Pro tiers.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: intRow } = await (supabase as any)
+      .from('integrations')
+      .select('tier')
+      .eq('user_id', user.id)
+      .single()
+    const tier = (intRow?.tier as Tier) ?? 'free'
+    if (tier !== 'pro' && tier !== 'admin') {
+      const next = nextTierFor(tier, 'postsPerMonth')
+      return NextResponse.json({
+        error: `Rewrite is a Pro feature. You can still manually edit the post in WordPress.${next ? ` Upgrade to ${next.label} to unlock AI rewrites.` : ''}`,
+        limitReached: true,
+        cap: 'rewrites',
+        currentTier: tier,
+        upgrade: next,
+      }, { status: 403 })
+    }
+    const usedRewrites = (existingForLimit.rewrite_count as number) ?? 0
+    if (usedRewrites >= 1) {
+      return NextResponse.json({
+        error: `This post has already been rewritten once. Pro plans allow one AI rewrite per post — further edits should be made manually in WordPress.`,
+        limitReached: true,
+        cap: 'rewrites',
+        currentTier: tier,
+        upgrade: null,
+      }, { status: 403 })
+    }
+  } else {
+    // Fresh generation — check the monthly post cap as before.
     const usage = await checkUsageLimit(supabase, user.id)
     if (!usage.allowed) {
       return NextResponse.json({
@@ -49,6 +84,8 @@ async function handleGenerate(request: Request) {
       }, { status: 403 })
     }
   }
+  // Hide-warning for unused references — used below for the prompt.
+  void TIERS
 
   // ── 1. Fetch video ────────────────────────────────────────────────────────
   const { data: video, error: videoErr } = await supabase
@@ -139,6 +176,7 @@ async function handleGenerate(request: Request) {
         transcript,
       },
       { userId: user.id, tier: (wp?.tier as string) ?? null },
+      isRewrite ? (rewriteFeedback?.trim() || null) : null,
     )
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Claude generation failed'
@@ -279,6 +317,16 @@ async function handleGenerate(request: Request) {
     published_at: new Date().toISOString(),
     image_prompts: generated.imagePrompts,
     ...(geniuslinkCode ? { geniuslink_code: geniuslinkCode } : {}),
+    // Track rewrite usage so the next attempt on the same post can be
+    // blocked (Pro gets one AI rewrite per post). Only mutate these
+    // fields when this *is* a rewrite — fresh generations leave them
+    // at the defaults (0 / null).
+    ...(isRewrite
+      ? {
+          rewrite_count: 1,
+          last_rewrite_feedback: rewriteFeedback?.trim() || null,
+        }
+      : {}),
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

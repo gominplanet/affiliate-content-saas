@@ -19,6 +19,7 @@ import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 
 export const maxDuration = 60
 
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,youtube_videos(thumbnail_url)')
+      .select('id,title,excerpt,content,wordpress_url,social_publish_counts,youtube_videos(thumbnail_url)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -75,6 +76,16 @@ export async function POST(request: NextRequest) {
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
     if (!post.wordpress_url) {
       return NextResponse.json({ error: 'Post has no published URL' }, { status: 400 })
+    }
+
+    const tgSocialCount = readSocialCount(post, 'telegram')
+    const tgCap = evaluateSocialCap(tgSocialCount)
+    if (!dryRun && tgCap.exceeded) {
+      return NextResponse.json({
+        error: `You've published this post to Telegram ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        socialCapReached: true,
+        platform: 'telegram',
+      }, { status: 429 })
     }
 
     const imageUrl = post.youtube_videos?.thumbnail_url as string | null
@@ -163,11 +174,14 @@ Return ONLY the post text.`,
       .from('blog_posts')
       .update({ telegram_message_id: String(result.messageId) })
       .eq('id', postId)
+    await incrementSocialCount(supabase, postId!, 'telegram')
 
     return NextResponse.json({
       ok: true,
       messageId: result.messageId,
       url: result.channelPostUrl ?? null,
+      publishCount: tgSocialCount + 1,
+      isLastAllowed: tgCap.willBeLast,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

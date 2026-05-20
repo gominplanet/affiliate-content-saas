@@ -6,6 +6,7 @@ import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 
 export const maxDuration = 60
 
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id')
+      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -48,6 +49,16 @@ export async function POST(request: NextRequest) {
     const post = postRow as any
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
     if (!post.wordpress_url) return NextResponse.json({ error: 'Post has no published URL' }, { status: 400 })
+
+    const liSocialCount = readSocialCount(post, 'linkedin')
+    const liCap = evaluateSocialCap(liSocialCount)
+    if (!dryRun && liCap.exceeded) {
+      return NextResponse.json({
+        error: `You've published this post to LinkedIn ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        socialCapReached: true,
+        platform: 'linkedin',
+      }, { status: 429 })
+    }
 
     // ── 2. Fetch brand voice ──────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,8 +149,14 @@ Return ONLY the post text, no extra commentary.`,
       .from('blog_posts')
       .update({ linkedin_post_id: result.id })
       .eq('id', postId)
+    await incrementSocialCount(supabase, postId!, 'linkedin')
 
-    return NextResponse.json({ ok: true, linkedInPostId: result.id })
+    return NextResponse.json({
+      ok: true,
+      linkedInPostId: result.id,
+      publishCount: liSocialCount + 1,
+      isLastAllowed: liCap.willBeLast,
+    })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

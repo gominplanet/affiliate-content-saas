@@ -35,3 +35,69 @@ export const SOCIAL_LIMITS = {
   facebook: 63206, // effectively unlimited for our content
   telegram: 4096,
 } as const
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Per-post per-platform RE-PUBLISH cap
+ *
+ * Each blog_posts row carries a JSONB social_publish_counts map
+ * tracking how many times the same post has been (re)published to
+ * each platform. Hard-cap at SOCIAL_CAP to stop runaway re-publish
+ * cost (each publish fires a fresh AI caption generation).
+ * ────────────────────────────────────────────────────────────────── */
+
+export const SOCIAL_CAP = 10
+/** Warn the client one publish in advance so the 10th doesn't surprise. */
+export const SOCIAL_WARN_AT = SOCIAL_CAP - 1
+
+export type SocialPlatform =
+  | 'facebook' | 'threads' | 'twitter' | 'linkedin'
+  | 'bluesky' | 'telegram' | 'instagram' | 'pinterest'
+
+/** Read the current count for `platform` off a blog_posts row. */
+export function readSocialCount(
+  row: { social_publish_counts?: Record<string, number> | null } | null | undefined,
+  platform: SocialPlatform,
+): number {
+  const map = row?.social_publish_counts || {}
+  const n = (map as Record<string, number>)[platform]
+  return typeof n === 'number' && n >= 0 ? n : 0
+}
+
+/** Bump the slot by 1 after a successful publish. Fire-and-forget. */
+export async function incrementSocialCount(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  blogPostId: string,
+  platform: SocialPlatform,
+): Promise<void> {
+  try {
+    const { data: row } = await supabase
+      .from('blog_posts')
+      .select('social_publish_counts')
+      .eq('id', blogPostId)
+      .single()
+    const existing = (row?.social_publish_counts as Record<string, number> | null) || {}
+    const next = { ...existing, [platform]: (existing[platform] || 0) + 1 }
+    await supabase
+      .from('blog_posts')
+      .update({ social_publish_counts: next })
+      .eq('id', blogPostId)
+  } catch { /* never fail the publish on telemetry errors */ }
+}
+
+export interface SocialCapCheck {
+  /** Current count BEFORE the publish about to happen. */
+  count: number
+  /** True if the user has already hit the cap (block the publish). */
+  exceeded: boolean
+  /** True when the upcoming publish will be the last allowed one. */
+  willBeLast: boolean
+}
+
+export function evaluateSocialCap(currentCount: number): SocialCapCheck {
+  return {
+    count: currentCount,
+    exceeded: currentCount >= SOCIAL_CAP,
+    willBeLast: currentCount === SOCIAL_CAP - 1,
+  }
+}

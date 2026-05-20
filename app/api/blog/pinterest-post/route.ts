@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishPinForPost, PinPublishError } from '@/lib/pin-publish'
+import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 
 export const maxDuration = 60
 
@@ -32,10 +33,20 @@ export async function POST(request: NextRequest) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    (supabase as any).from('blog_posts').select('id,title,wordpress_url,wordpress_post_id').eq('id', postId).single(),
+    (supabase as any).from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,social_publish_counts').eq('id', postId).single(),
     (supabase as any).from('integrations').select('pinterest_access_token,pinterest_board_id,wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token').eq('user_id', user.id).single(),
   ])
   if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+
+  const pinSocialCount = readSocialCount(post, 'pinterest')
+  const pinCap = evaluateSocialCap(pinSocialCount)
+  if (pinCap.exceeded) {
+    return NextResponse.json({
+      error: `You've published this post to Pinterest ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+      socialCapReached: true,
+      platform: 'pinterest',
+    }, { status: 429 })
+  }
 
   try {
     const { pinId } = await publishPinForPost({
@@ -43,7 +54,13 @@ export async function POST(request: NextRequest) {
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)
-    return NextResponse.json({ ok: true, pinId })
+    await incrementSocialCount(supabase, postId, 'pinterest')
+    return NextResponse.json({
+      ok: true,
+      pinId,
+      publishCount: pinSocialCount + 1,
+      isLastAllowed: pinCap.willBeLast,
+    })
   } catch (e) {
     if (e instanceof PinPublishError) return NextResponse.json({ error: e.message }, { status: e.status })
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Pinterest pin failed' }, { status: 500 })

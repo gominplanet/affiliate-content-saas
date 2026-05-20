@@ -5,6 +5,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
+import { SOCIAL_CAP } from '@/lib/social-cap'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save,
@@ -220,6 +221,69 @@ type GenStatus = 'idle' | 'generating' | 'done' | 'error'
 
 const GEN_STEPS = ['Reading transcript…', 'Generating blog post…', 'Publishing to WordPress…']
 
+/** Pro-only modal that collects "what was missing" feedback before
+ *  the one-shot AI rewrite fires. Submit is disabled until the user
+ *  has typed something — the whole point of capturing the feedback
+ *  is to steer the second draft, so a blank submission would just
+ *  reproduce the original. */
+function RewriteFeedbackModal({
+  value,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onCancel: () => void
+  onSubmit: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+          Rewrite this post
+        </h3>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Pro plans include <span className="font-semibold">one AI rewrite per post</span>.
+          Tell us what was missing so the second draft is actually different.
+        </p>
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={5}
+          autoFocus
+          placeholder="e.g. The post focused too much on price — I wanted more on the build quality and a stronger opening hook. Also missing: comparison to the model I mentioned at minute 4."
+          className="w-full text-sm p-3 rounded-lg bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none leading-relaxed"
+        />
+        <div className="flex items-center justify-end gap-2 mt-4">
+          <button
+            onClick={onCancel}
+            className="px-3 py-2 rounded-lg text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSubmit}
+            disabled={value.trim().length === 0}
+            className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Rewrite now
+          </button>
+        </div>
+        <p className="text-[10px] text-[#86868b] mt-3">
+          Heads up — this counts as your one rewrite for this post. After this, further changes must be made manually in WordPress.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // Unified social pill used in the per-video card. Same shape for every
 // platform — brand color is applied to the icon only when unposted, and
 // fills the whole pill when posted. Keeps the row visually coherent
@@ -267,16 +331,23 @@ function SocialPill({
 }
 
 function GenerateButton({
-  videoId, existingPost, onDone,
+  videoId, existingPost, userTier, onDone,
 }: {
   videoId: string
   existingPost?: { url: string; title: string; postId?: string } | null
+  /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
+  userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
   onDone: (url: string, title: string, postId: string) => void
 }) {
   const [status, setStatus] = useState<GenStatus>(existingPost ? 'done' : 'idle')
   const [stepIdx, setStepIdx] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState(existingPost || null)
+  // Rewrite modal — opens when a Pro user hits the Rewrite button on a
+  // published post. Captures the "what's missing" feedback before
+  // firing the regeneration so the second draft is actually different.
+  const [rewriteOpen, setRewriteOpen] = useState(false)
+  const [rewriteFeedback, setRewriteFeedback] = useState('')
 
   useEffect(() => {
     if (status !== 'generating') return
@@ -284,7 +355,7 @@ function GenerateButton({
     return () => clearInterval(interval)
   }, [status])
 
-  async function generate() {
+  async function generate(opts?: { rewriteFeedback?: string }) {
     setStatus('generating')
     setStepIdx(0)
     setError(null)
@@ -292,7 +363,10 @@ function GenerateButton({
       const res = await fetch('/api/blog/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId }),
+        body: JSON.stringify({
+          videoId,
+          ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
+        }),
       })
       let data: Record<string, unknown> = {}
       try { data = await res.json() } catch { throw new Error(`Server error (${res.status}) — check Vercel logs`) }
@@ -320,19 +394,38 @@ function GenerateButton({
     }
   }
 
+  const isPro = userTier === 'pro' || userTier === 'admin'
+
   if (status === 'done' && result) {
     return (
       <div className="flex items-center gap-2">
         <a href={result.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline">
           <CheckCircle size={13} /> View post <ExternalLink size={11} />
         </a>
-        <button
-          onClick={generate}
-          className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors"
-          title="Rewrite this post with fresh AI content"
-        >
-          <RefreshCw size={11} /> Rewrite
-        </button>
+        {/* Rewrite is Pro-only and one-shot per post. Non-Pro users
+            see no button — they manually edit the post in WordPress. */}
+        {isPro && (
+          <button
+            onClick={() => { setRewriteFeedback(''); setRewriteOpen(true) }}
+            className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors"
+            title="Rewrite this post once with fresh AI content based on your feedback"
+          >
+            <RefreshCw size={11} /> Rewrite
+          </button>
+        )}
+        {rewriteOpen && (
+          <RewriteFeedbackModal
+            value={rewriteFeedback}
+            onChange={setRewriteFeedback}
+            onCancel={() => setRewriteOpen(false)}
+            onSubmit={() => {
+              const fb = rewriteFeedback.trim()
+              setRewriteOpen(false)
+              if (fb.length === 0) return
+              generate({ rewriteFeedback: fb })
+            }}
+          />
+        )}
       </div>
     )
   }
@@ -348,12 +441,12 @@ function GenerateButton({
     return (
       <div className="flex flex-col gap-1">
         <p className="text-xs text-[#ff3b30] line-clamp-3">{error}</p>
-        <button onClick={generate} className="text-xs text-[#0071e3] hover:underline text-left">Retry →</button>
+        <button onClick={() => generate()} className="text-xs text-[#0071e3] hover:underline text-left">Retry →</button>
       </div>
     )
   }
   return (
-    <button onClick={generate} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
+    <button onClick={() => generate()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
       <Wand2 size={12} /> Generate post
     </button>
   )
@@ -1024,6 +1117,40 @@ function VideoCard({
   // per-post setup (vertical video upload + Reel/Story choice). Users
   // trigger it explicitly via the Instagram pill on each card.
   const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected, blueskyConnected, telegramConnected].filter(Boolean).length
+
+  /** Shared response handler for every per-platform Publish button.
+   *  - 429 + socialCapReached → fire the global cap banner.
+   *  - 200 + isLastAllowed    → toast/alert so the user knows the
+   *    *next* attempt on this platform for this post will be blocked.
+   *  - Anything else falls through to the platform's own handling. */
+  async function handleSocialResponse(
+    res: Response,
+    platformLabel: string,
+    onOk: () => void,
+  ): Promise<void> {
+    const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    if (res.status === 429 && d.socialCapReached) {
+      dispatchCapReached(
+        d.error || `${platformLabel} re-publish cap reached.`,
+        { cap: 'social-republish', currentTier: undefined, upgrade: null },
+      )
+      return
+    }
+    if (!res.ok) {
+      alert(d.error || `${platformLabel} post failed`)
+      return
+    }
+    onOk()
+    // Two-step warning so users aren't surprised when the cap hits.
+    // After publish #(CAP-1) → "your next will be the last".
+    // After publish #CAP    → "that was the last; future blocked".
+    const newCount = typeof d.publishCount === 'number' ? d.publishCount : null
+    if (newCount === SOCIAL_CAP) {
+      alert(`Heads up: that was your last allowed re-publish to ${platformLabel} for this post. The next attempt will be blocked.`)
+    } else if (newCount === SOCIAL_CAP - 1) {
+      alert(`Heads up: your next re-publish to ${platformLabel} for this post will be the last allowed. After that, ${platformLabel} pushes will be blocked.`)
+    }
+  }
   const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted) || (blueskyConnected && !bsPosted) || (telegramConnected && !tgPosted)
   const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost)
 
@@ -1037,9 +1164,7 @@ function VideoCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId: post.postId }),
       })
-      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (res.ok) setBsPosted(true)
-      else alert(d.error || 'Bluesky post failed')
+      await handleSocialResponse(res, 'Bluesky', () => setBsPosted(true))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Bluesky post failed')
     } finally { setBsPosting(false) }
@@ -1055,9 +1180,7 @@ function VideoCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId: post.postId }),
       })
-      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (res.ok) setTgPosted(true)
-      else alert(d.error || 'Telegram post failed')
+      await handleSocialResponse(res, 'Telegram', () => setTgPosted(true))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Telegram post failed')
     } finally { setTgPosting(false) }
@@ -1073,9 +1196,7 @@ function VideoCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId: post.postId }),
       })
-      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (res.ok) setTwPosted(true)
-      else alert(d.error || 'X post failed')
+      await handleSocialResponse(res, 'X', () => setTwPosted(true))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'X post failed')
     } finally { setTwPosting(false) }
@@ -1091,9 +1212,7 @@ function VideoCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId: post.postId }),
       })
-      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (res.ok) setLiPosted(true)
-      else alert(d.error || 'LinkedIn post failed')
+      await handleSocialResponse(res, 'LinkedIn', () => setLiPosted(true))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'LinkedIn post failed')
     } finally { setLiPosting(false) }
@@ -1109,8 +1228,7 @@ function VideoCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId: post.postId }),
       })
-      if (res.ok) setFbPosted(true)
-      else { const d = await res.json(); alert(d.error || 'Facebook post failed') }
+      await handleSocialResponse(res, 'Facebook', () => setFbPosted(true))
     } finally { setFbPosting(false) }
   }
 
@@ -1124,9 +1242,7 @@ function VideoCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId: post.postId }),
       })
-      const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-      if (res.ok) setThPosted(true)
-      else alert(d.error || 'Threads post failed')
+      await handleSocialResponse(res, 'Threads', () => setThPosted(true))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Threads post failed')
     } finally { setThPosting(false) }
@@ -1214,7 +1330,7 @@ function VideoCard({
           {/* Manage row — Generate / View / Rewrite (via GenerateButton),
               Edit in WP, Delete or Ignore. Text-link styling, low emphasis. */}
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
-            <GenerateButton videoId={id} existingPost={post} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <GenerateButton videoId={id} existingPost={post} userTier={userTier} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             <CategoryPicker
               videoId={id}
               initial={(video.selected_category as string | null) ?? null}
@@ -1571,6 +1687,11 @@ export default function ContentPage() {
   const [scheduledError, setScheduledError] = useState<string | null>(null)
   const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null }[]>([])
   const [rewritingPostId, setRewritingPostId] = useState<number | null>(null)
+  // Row-level Rewrite modal (Posts tab). Tracks the post we're about
+  // to rewrite + the feedback typed by the Pro user. Modal renders at
+  // the bottom of the page.
+  const [rewriteModal, setRewriteModal] = useState<{ wpPostId: number; videoId: string } | null>(null)
+  const [rewriteModalFeedback, setRewriteModalFeedback] = useState('')
   const [postsLoading, setPostsLoading] = useState(false)
   const [postsLoaded, setPostsLoaded] = useState(false)
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null)
@@ -1808,17 +1929,28 @@ export default function ContentPage() {
     }
   }
 
-  async function rewritePost(wpPostId: number, videoId: string) {
+  async function rewritePost(wpPostId: number, videoId: string, rewriteFeedback?: string) {
     setRewritingPostId(wpPostId)
     try {
       const res = await fetch('/api/blog/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId }),
+        body: JSON.stringify({
+          videoId,
+          ...(rewriteFeedback?.trim() ? { rewriteFeedback: rewriteFeedback.trim() } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
-        setFixCatResult(`Rewrite failed: ${data.error || res.status}`)
+        if (data.limitReached) {
+          dispatchCapReached(data.error || 'Rewrite limit reached.', {
+            cap: data.cap || 'rewrites',
+            currentTier: data.currentTier,
+            upgrade: data.upgrade,
+          })
+        } else {
+          setFixCatResult(`Rewrite failed: ${data.error || res.status}`)
+        }
       } else {
         setFixCatResult(`Rewritten: "${data.title}"`)
         setAllBlogPosts(prev => prev.map(p =>
@@ -2323,16 +2455,20 @@ export default function ContentPage() {
                   >
                     Clear ({selectedPostIds.size})
                   </button>
-                  <button
-                    onClick={bulkRewriteSelected}
-                    disabled={bulkRewriting || bulkDeleting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0071e3] text-white rounded-lg hover:bg-[#0071e3]/90 disabled:opacity-60 transition-colors"
-                  >
-                    {bulkRewriting
-                      ? <><Loader2 size={11} className="animate-spin" /> Rewriting {bulkRewriteProgress?.done ?? 0}/{bulkRewriteProgress?.total ?? 0}…</>
-                      : <><RefreshCw size={11} /> Rewrite {selectedPostIds.size} selected</>
-                    }
-                  </button>
+                  {/* Bulk Rewrite is Pro-only. Server still enforces
+                      the one-rewrite-per-post rule per row. */}
+                  {(userTier === 'pro' || userTier === 'admin') && (
+                    <button
+                      onClick={bulkRewriteSelected}
+                      disabled={bulkRewriting || bulkDeleting}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0071e3] text-white rounded-lg hover:bg-[#0071e3]/90 disabled:opacity-60 transition-colors"
+                    >
+                      {bulkRewriting
+                        ? <><Loader2 size={11} className="animate-spin" /> Rewriting {bulkRewriteProgress?.done ?? 0}/{bulkRewriteProgress?.total ?? 0}…</>
+                        : <><RefreshCw size={11} /> Rewrite {selectedPostIds.size} selected</>
+                      }
+                    </button>
+                  )}
                   <button
                     onClick={bulkDeleteSelected}
                     disabled={bulkDeleting || bulkRewriting}
@@ -2374,9 +2510,11 @@ export default function ContentPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {post.videoId && (
+                {/* Rewrite is Pro-only and one-shot per post. Hide for
+                    everyone else — they manually edit in WordPress. */}
+                {post.videoId && (userTier === 'pro' || userTier === 'admin') && (
                   <button
-                    onClick={() => rewritePost(post.id, post.videoId!)}
+                    onClick={() => { setRewriteModalFeedback(''); setRewriteModal({ wpPostId: post.id, videoId: post.videoId! }) }}
                     disabled={rewritingPostId === post.id}
                     className="text-xs text-[#86868b] hover:text-[#0071e3] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                   >
@@ -2730,6 +2868,23 @@ export default function ContentPage() {
           />
         )
       })()}
+
+      {/* Posts-tab row-level Rewrite modal. Captures the Pro user's
+          feedback before triggering the one-shot AI rewrite. */}
+      {rewriteModal && (
+        <RewriteFeedbackModal
+          value={rewriteModalFeedback}
+          onChange={setRewriteModalFeedback}
+          onCancel={() => setRewriteModal(null)}
+          onSubmit={() => {
+            const fb = rewriteModalFeedback.trim()
+            const target = rewriteModal
+            setRewriteModal(null)
+            if (!target || fb.length === 0) return
+            rewritePost(target.wpPostId, target.videoId, fb)
+          }}
+        />
+      )}
     </>
   )
 }

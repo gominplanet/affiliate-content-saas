@@ -5,6 +5,7 @@ import { createSession, createPost } from '@/services/bluesky'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 
 export const maxDuration = 60
 
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url')
+      .select('id,title,excerpt,content,wordpress_url,social_publish_counts')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -51,6 +52,16 @@ export async function POST(request: NextRequest) {
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
     if (!post.wordpress_url) {
       return NextResponse.json({ error: 'Post has no published URL' }, { status: 400 })
+    }
+
+    const bsSocialCount = readSocialCount(post, 'bluesky')
+    const bsCap = evaluateSocialCap(bsSocialCount)
+    if (!dryRun && bsCap.exceeded) {
+      return NextResponse.json({
+        error: `You've published this post to Bluesky ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        socialCapReached: true,
+        platform: 'bluesky',
+      }, { status: 429 })
     }
 
     // ── 2. Fetch brand voice ───────────────────────────────────────────────
@@ -151,8 +162,14 @@ Return ONLY the post text.`,
       .from('blog_posts')
       .update({ bluesky_post_uri: result.uri })
       .eq('id', postId)
+    await incrementSocialCount(supabase, postId!, 'bluesky')
 
-    return NextResponse.json({ ok: true, uri: result.uri })
+    return NextResponse.json({
+      ok: true,
+      uri: result.uri,
+      publishCount: bsSocialCount + 1,
+      isLastAllowed: bsCap.willBeLast,
+    })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

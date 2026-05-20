@@ -20,6 +20,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 
 const ASIN_RE = /\b([A-Z0-9]{10})\b/
 
@@ -92,13 +93,23 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id,youtube_videos(instagram_video_url,instagram_image_url,instagram_story_image_url,thumbnail_url,title)')
+      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts,youtube_videos(instagram_video_url,instagram_image_url,instagram_story_image_url,thumbnail_url,title)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const post = postRow as any
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+
+    const igSocialCount = readSocialCount(post, 'instagram')
+    const igCap = evaluateSocialCap(igSocialCount)
+    if (!dryRun && igCap.exceeded) {
+      return NextResponse.json({
+        error: `You've published this post to Instagram ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        socialCapReached: true,
+        platform: 'instagram',
+      }, { status: 429 })
+    }
 
     const videoUrl = post.youtube_videos?.instagram_video_url as string | null
     const imageUrl = post.youtube_videos?.instagram_image_url as string | null
@@ -296,7 +307,15 @@ Return ONLY the caption text + hashtags.`,
     if (!anySuccess) {
       return NextResponse.json({ ok: false, ...results }, { status: 502 })
     }
-    return NextResponse.json({ ok: true, ...results })
+    // Count one increment per successful publish session, regardless of
+    // mode — Reel + Story together still = 1 use of the cap on this post.
+    await incrementSocialCount(supabase, postId!, 'instagram')
+    return NextResponse.json({
+      ok: true,
+      ...results,
+      publishCount: igSocialCount + 1,
+      isLastAllowed: igCap.willBeLast,
+    })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

@@ -4,6 +4,7 @@ import { createFacebookService } from '@/services/facebook'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 
 export const maxDuration = 60
 
@@ -23,13 +24,25 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,video_id')
+      .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const post = postRow as any
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+
+    // Per-post re-publish cap (10 / platform). Pre-flight before any
+    // AI caption work so an at-cap user doesn't burn a Sonnet call.
+    const fbSocialCount = readSocialCount(post, 'facebook')
+    const fbCap = evaluateSocialCap(fbSocialCount)
+    if (!body.dryRun && fbCap.exceeded) {
+      return NextResponse.json({
+        error: `You've published this post to Facebook ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        socialCapReached: true,
+        platform: 'facebook',
+      }, { status: 429 })
+    }
 
     // ── 2. Fetch video for thumbnail ──────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -130,7 +143,19 @@ Return ONLY the post text, nothing else.`,
       .update({ facebook_post_id: result.id })
       .eq('id', postId)
 
-    return NextResponse.json({ ok: true, facebookPostId: result.id })
+    // Bump the per-post re-publish counter so the cap holds across
+    // subsequent re-publishes of the same post.
+    await incrementSocialCount(supabase, postId, 'facebook')
+    const newCount = fbSocialCount + 1
+
+    return NextResponse.json({
+      ok: true,
+      facebookPostId: result.id,
+      publishCount: newCount,
+      // Tell the client when this was the user's last allowed publish
+      // so they can show a one-time warning ("next one will fail").
+      isLastAllowed: fbCap.willBeLast,
+    })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

@@ -8,6 +8,7 @@ import {
 } from '@/services/twitter'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 
 export const maxDuration = 60
 
@@ -44,13 +45,24 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url')
+      .select('id,title,excerpt,content,wordpress_url,social_publish_counts')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const post = postRow as any
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+
+    const twSocialCount = readSocialCount(post, 'twitter')
+    const twCap = evaluateSocialCap(twSocialCount)
+    if (!dryRun && twCap.exceeded) {
+      return NextResponse.json({
+        error: `You've published this post to X ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        socialCapReached: true,
+        platform: 'twitter',
+      }, { status: 429 })
+    }
+
     if (!post.wordpress_url) {
       return NextResponse.json({ error: 'Post has no published URL' }, { status: 400 })
     }
@@ -172,8 +184,14 @@ Return ONLY the tweet text.`,
       .from('blog_posts')
       .update({ twitter_post_id: tweet.id })
       .eq('id', postId)
+    await incrementSocialCount(supabase, postId!, 'twitter')
 
-    return NextResponse.json({ ok: true, tweetId: tweet.id })
+    return NextResponse.json({
+      ok: true,
+      tweetId: tweet.id,
+      publishCount: twSocialCount + 1,
+      isLastAllowed: twCap.willBeLast,
+    })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

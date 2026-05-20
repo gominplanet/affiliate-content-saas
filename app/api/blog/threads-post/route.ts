@@ -6,6 +6,7 @@ import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -55,6 +56,17 @@ export async function POST(request: NextRequest) {
     const brand = brandRow as any
 
     if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+
+    const thSocialCount = readSocialCount(p, 'threads')
+    const thCap = evaluateSocialCap(thSocialCount)
+    if (!dryRun && thCap.exceeded) {
+      return NextResponse.json({
+        error: `You've published this post to Threads ${SOCIAL_CAP} times — that's the per-post cap on re-publishing. Edit the post or use a different post.`,
+        socialCapReached: true,
+        platform: 'threads',
+      }, { status: 429 })
+    }
+
     if (!dryRun && !ig?.threads_access_token) return NextResponse.json({ error: 'Threads not connected' }, { status: 400 })
     if (!dryRun && !ig?.threads_user_id) return NextResponse.json({ error: 'Threads user ID missing — try reconnecting Threads in Settings' }, { status: 400 })
 
@@ -101,8 +113,14 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('blog_posts').update({ threads_post_id: result.id }).eq('id', postId)
+    await incrementSocialCount(supabase, postId!, 'threads')
 
-    return NextResponse.json({ ok: true, postId: result.id })
+    return NextResponse.json({
+      ok: true,
+      postId: result.id,
+      publishCount: thSocialCount + 1,
+      isLastAllowed: thCap.willBeLast,
+    })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: msg }, { status: 500 })
