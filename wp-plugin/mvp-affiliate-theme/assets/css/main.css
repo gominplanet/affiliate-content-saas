@@ -1024,6 +1024,13 @@ a.mvp-ad-slot-filled:hover {
 }
 .mvp-footer-bottom-inner {
   display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  flex-wrap: wrap;
+}
+.mvp-footer-logo-link { display: inline-flex; align-items: center; line-height: 0; }
+.mvp-footer-logo {
+  height: 36px; width: auto; max-width: 200px;
+  object-fit: contain;
+  opacity: 0.85;
 }
 .mvp-footer-copyright {
   margin: 0;

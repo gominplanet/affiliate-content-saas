@@ -1,12 +1,14 @@
 <?php if (!defined('ABSPATH')) exit;
 $profile = mvp_affiliate_profile();
 $footer  = mvp_affiliate_footer_data();
+$about   = mvp_affiliate_about();
 $bio     = mvp_affiliate_bio();
 $author  = trim($profile['authorName'] ?? '');
 $headshot = trim($profile['headshotUrl'] ?? '');
 $socials = mvp_affiliate_socials();
 $links   = is_array($footer['links'] ?? null) ? $footer['links'] : [];
 $brand   = get_bloginfo('name');
+$logo_url = trim($about['logoUrl'] ?? '');
 $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
 ?>
 
@@ -111,6 +113,11 @@ $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
 
   <div class="mvp-footer-bottom">
     <div class="mvp-container mvp-footer-bottom-inner">
+      <?php if ($logo_url): ?>
+      <a href="<?php echo esc_url(home_url('/')); ?>" class="mvp-footer-logo-link" aria-label="<?php echo esc_attr($brand); ?>">
+        <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr($brand); ?>" class="mvp-footer-logo" loading="lazy" />
+      </a>
+      <?php endif; ?>
       <p class="mvp-footer-copyright">© <?php echo esc_html(date('Y')); ?> <?php echo esc_html($brand); ?>. All rights reserved.</p>
     </div>
   </div>
