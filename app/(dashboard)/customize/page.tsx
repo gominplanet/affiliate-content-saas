@@ -558,43 +558,16 @@ export default function CustomizePage() {
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Brand stuff lives in Brand Profile</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-              Your logo, bio, social links, brand name, tagline, fonts, and colors are managed in <a href="/brand" className="text-[#0071e3] hover:underline font-medium">Brand Profile</a>. This page is for blog-specific layout: how the logo banner looks, sidebar/in-content ads, Pick of the Day, and custom footer links.
+              Your logo, header banner, bio, social links, brand name, tagline, fonts, and colors are all managed in <a href="/brand" className="text-[#0071e3] hover:underline font-medium">Brand Profile</a>. This page is for blog-specific layout: sidebar/in-content ads, Pick of the Day, and custom footer links.
             </p>
           </div>
         </div>
 
-        {/* Logo banner background (display choice for the logo from Brand Profile) */}
-        <Section
-          title="Logo Banner"
-          description="The logo from your Brand Profile appears as a full-width strip at the top of every page. Pick the background color."
-        >
-          {data.about.logoUrl ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit">
-                {(['black', 'white'] as const).map(bg => (
-                  <button
-                    key={bg}
-                    onClick={() => updateAbout({ headerBg: bg })}
-                    className={`px-4 py-1.5 text-xs font-medium transition-colors capitalize ${data.about.headerBg === bg ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
-                  >
-                    {bg}
-                  </button>
-                ))}
-              </div>
-              <div
-                className="rounded-lg overflow-hidden border border-[var(--border-2)] flex items-center justify-center py-3 px-6"
-                style={{ background: data.about.headerBg === 'white' ? '#ffffff' : '#000000' }}
-              >
-                <img src={data.about.logoUrl} alt="Banner preview" className="h-10 object-contain" />
-              </div>
-              <p className="text-[11px] text-[var(--text-3)]">Preview of how the banner will look on your site.</p>
-            </div>
-          ) : (
-            <p className="text-xs text-[var(--text-3)]">
-              Upload your logo in <a href="/brand" className="text-[#0071e3] hover:underline font-medium">Brand Profile</a> first, then come back here to choose the background color.
-            </p>
-          )}
-        </Section>
+        {/* Logo Banner section removed from the UI — the live header is now
+            driven by Brand Profile's Header Banner image (full-width wide
+            asset). headerBg + logo fallback still persisted in
+            data.about for backwards compat with users who haven't
+            uploaded a header banner yet. */}
 
         {/* Pick of the Day */}
         <Section

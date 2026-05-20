@@ -7,7 +7,7 @@ import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
 import { SOCIAL_CAP } from '@/lib/social-cap'
-import { renderThumbnailOverlay } from '@/lib/thumbnail-overlay'
+import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save,
@@ -625,6 +625,14 @@ function InstagramPublishModal({
   const [aiTier, setAiTier] = useState<string>('free')
   const [aiGenerating, setAiGenerating] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
+  // Track which overlay style was used on the current AI image so the
+  // 👍 / 👎 feedback row can attribute the reaction to a style. Cleared
+  // whenever we leave the AI path or reset the preview.
+  const [aiStyleId, setAiStyleId] = useState<string | null>(null)
+  const [aiFeedbackSent, setAiFeedbackSent] = useState<'like' | 'dislike' | null>(null)
+  // Aggregated feedback summary used to bias the random style picker.
+  // Re-fetched on mount + after every reaction so weights stay fresh.
+  const [styleWeights, setStyleWeights] = useState<{ liked: Record<string, number>; disliked: Record<string, number> }>({ liked: {}, disliked: {} })
 
   // Load Pro status + face models on mount so the AI option only shows
   // to users who can actually use it. Free-tier users see no second
@@ -646,6 +654,15 @@ function InstagramPublishModal({
             .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
           setAiFaceModels(ready)
         }
+        // Pull aggregated 👍/👎 history for the IG surface so the random
+        // style picker biases toward styles this user has rewarded.
+        try {
+          const fbRes = await fetch('/api/thumbnail-feedback?surface=instagram')
+          if (fbRes.ok) {
+            const fb = await fbRes.json()
+            setStyleWeights({ liked: fb.liked || {}, disliked: fb.disliked || {} })
+          }
+        } catch { /* silent — picker just goes uniform */ }
       } catch { /* silent — picker just won't render */ }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -691,18 +708,59 @@ function InstagramPublishModal({
       const rawUrl = data.imageUrl as string
       const overlayHook = (data.overlayHook as string) || ''
       let finalUrl = rawUrl
+      let styleId: string | null = null
       if (overlayHook) {
         try {
-          finalUrl = await renderThumbnailOverlay(rawUrl, overlayHook, { width: 1080, height: 1350 })
+          const styleIndex = pickWeightedStyleIndex(styleWeights.liked, styleWeights.disliked)
+          const overlayed = await renderThumbnailOverlay(rawUrl, overlayHook, { width: 1080, height: 1350, styleIndex })
+          finalUrl = overlayed.url
+          styleId = overlayed.styleId
         } catch (overlayErr) {
           console.warn('[ig-ai-overlay]', overlayErr)
         }
       }
+      setAiStyleId(styleId)
+      setAiFeedbackSent(null)
       setExistingUrl(finalUrl)
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'AI generation failed')
     } finally {
       setAiGenerating(false)
+    }
+  }
+
+  /** Record a 👍 / 👎 reaction on the current AI image. Best-effort — we
+   *  don't surface errors because feedback shouldn't block publishing. */
+  async function submitAiFeedback(reaction: 'like' | 'dislike') {
+    if (!existingUrl) return
+    setAiFeedbackSent(reaction)
+    try {
+      await fetch('/api/thumbnail-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          thumbnailUrl: existingUrl,
+          reaction,
+          // styleId may be null on legacy cached images that pre-date the
+          // hook persistence — still record the surface-level signal.
+          styleId: aiStyleId,
+          surface: 'instagram',
+          modelUsed: aiFaceModelId ? 'fal-flux-lora' : 'fal-flux-pro-v1.1',
+          videoId: videoDbId,
+        }),
+      })
+      // Optimistically bump local weights so the next regen reflects the
+      // signal without waiting on a round-trip.
+      if (aiStyleId) {
+        setStyleWeights(prev => {
+          const next = { liked: { ...prev.liked }, disliked: { ...prev.disliked } }
+          const bucket = reaction === 'like' ? next.liked : next.disliked
+          bucket[aiStyleId] = (bucket[aiStyleId] || 0) + 1
+          return next
+        })
+      }
+    } catch (e) {
+      console.warn('[ig-ai-feedback]', e)
     }
   }
 
@@ -923,6 +981,8 @@ function InstagramPublishModal({
                           setExistingUrl(null)
                           setUploadError(null)
                           setAiError(null)
+                          setAiStyleId(null)
+                          setAiFeedbackSent(null)
                           // Reset preview state so old caption draft
                           // doesn't carry across the source switch.
                           resetPreview()
@@ -932,6 +992,35 @@ function InstagramPublishModal({
                       >
                         <X size={10} /> Discard &amp; pick a different source
                       </button>
+                      {/* 👍 / 👎 feedback — only on AI images where we
+                          captured a styleId. The picker on the next gen
+                          biases toward 'like' styles + away from 'dislike'
+                          styles, so this is the user training their own
+                          random generator. */}
+                      {aiIsPro && igSource === 'ai' && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-[10px] text-[#86868b]">Train the AI:</span>
+                          <button
+                            onClick={() => submitAiFeedback('like')}
+                            disabled={aiFeedbackSent !== null}
+                            className={`text-[11px] px-2 py-0.5 rounded border transition ${aiFeedbackSent === 'like' ? 'bg-[#34c759]/20 border-[#34c759] text-[#34c759]' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]'} disabled:opacity-60`}
+                            title="I'd use this thumbnail"
+                          >
+                            👍
+                          </button>
+                          <button
+                            onClick={() => submitAiFeedback('dislike')}
+                            disabled={aiFeedbackSent !== null}
+                            className={`text-[11px] px-2 py-0.5 rounded border transition ${aiFeedbackSent === 'dislike' ? 'bg-[#ff3b30]/20 border-[#ff3b30] text-[#ff3b30]' : 'border-gray-200 dark:border-white/10 hover:border-[#ff3b30]'} disabled:opacity-60`}
+                            title="Not this style"
+                          >
+                            👎
+                          </button>
+                          {aiFeedbackSent && (
+                            <span className="text-[10px] text-[#86868b]">Thanks — saved.</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

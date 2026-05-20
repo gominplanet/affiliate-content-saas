@@ -6,6 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
+import { pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
@@ -111,6 +112,14 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
   const [instantLoading, setInstantLoading] = useState(false)
+  // Which overlay style was applied to the current thumbnail. Drives the
+  // 👍 / 👎 row so reactions attribute to a styleId.
+  const [thumbnailStyleId, setThumbnailStyleId] = useState<string | null>(null)
+  const [thumbnailFeedbackSent, setThumbnailFeedbackSent] = useState<'like' | 'dislike' | null>(null)
+  // Aggregated 👍/👎 history (YouTube surface) — fed to the weighted
+  // picker so styles the user keeps rewarding get more shots, and
+  // styles they keep rejecting get fewer.
+  const [ytStyleWeights, setYtStyleWeights] = useState<{ liked: Record<string, number>; disliked: Record<string, number> }>({ liked: {}, disliked: {} })
   /** Locked headline — when set, the AI doesn't generate a hook, and the
    *  image prompt explicitly says "no text". We then overlay this text
    *  client-side via canvas so it's always crisp. 2–5 words works best. */
@@ -164,6 +173,52 @@ function VideoStudioCard({ video, userTier, playlists }: {
 
   // Load once on mount.
   useEffect(() => { loadFaceModels() }, [loadFaceModels])
+
+  // Pull aggregated 👍/👎 history for the YouTube surface so the random
+  // style picker biases toward styles this user has rewarded.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/thumbnail-feedback?surface=youtube')
+        if (res.ok) {
+          const fb = await res.json()
+          setYtStyleWeights({ liked: fb.liked || {}, disliked: fb.disliked || {} })
+        }
+      } catch { /* silent — picker just goes uniform */ }
+    })()
+  }, [])
+
+  /** Record a 👍 / 👎 reaction on the current YouTube thumbnail. */
+  async function submitYtThumbnailFeedback(reaction: 'like' | 'dislike') {
+    if (!thumbnailUrl) return
+    setThumbnailFeedbackSent(reaction)
+    try {
+      await fetch('/api/thumbnail-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          thumbnailUrl,
+          reaction,
+          // styleId may be null if overlay didn't run (e.g. cached path
+          // before hook persistence) — surface signal still useful.
+          styleId: thumbnailStyleId,
+          surface: 'youtube',
+          modelUsed: thumbnailModel ?? null,
+        }),
+      })
+      if (thumbnailStyleId) {
+        const sid = thumbnailStyleId
+        setYtStyleWeights(prev => {
+          const next = { liked: { ...prev.liked }, disliked: { ...prev.disliked } }
+          const bucket = reaction === 'like' ? next.liked : next.disliked
+          bucket[sid] = (bucket[sid] || 0) + 1
+          return next
+        })
+      }
+    } catch (e) {
+      console.warn('[yt-thumb-feedback]', e)
+    }
+  }
 
   // Re-fetch every time the headline modal opens, so a face trained in
   // another tab (or one that just finished training in the background)
@@ -342,9 +397,16 @@ function VideoStudioCard({ video, userTier, playlists }: {
     // Run the text overlay on each variant in parallel — these are small
     // canvas ops so it's fast. Falls back to raw URL on overlay failure
     // so the user never gets stuck.
+    // Bias style picker by the user's 👍/👎 history (YouTube surface).
+    const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
+    let pickedStyleId: string | null = null
     const finalUrls = await Promise.all(rawList.map(async (url) => {
       if (!hook) return url
-      try { return await addTextOverlay(url, hook) }
+      try {
+        const overlayed = await addTextOverlay(url, hook, styleIndex)
+        pickedStyleId = overlayed.styleId
+        return overlayed.url
+      }
       catch (overlayErr) {
         console.warn('[thumbnail-overlay]', overlayErr)
         return url
@@ -354,6 +416,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
     // Variant generation was removed — server always returns one image —
     // but the response handling stays array-aware in case an older client
     // race somehow asked for more.
+    setThumbnailStyleId(pickedStyleId)
+    setThumbnailFeedbackSent(null)
     setThumbnailUrl(finalUrls[0])
     setThumbnailHook(hook)
     setThumbnailPrompt((data.prompt as string) ?? null)
@@ -674,11 +738,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
   }
 
   // ── addTextOverlay — picks a random style, loads the font, draws the canvas ──
-  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number): Promise<string> {
+  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number): Promise<{ url: string; styleId: string }> {
     const style = OVERLAY_STYLES[styleIndex ?? Math.floor(Math.random() * OVERLAY_STYLES.length)]
     await loadOverlayFont(style.fontName)
 
-    return new Promise((resolve, reject) => {
+    return new Promise<{ url: string; styleId: string }>((resolve, reject) => {
       const canvas = document.createElement('canvas')
       canvas.width = 1280
       canvas.height = 720
@@ -817,7 +881,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           ctx.fillText(line, x, y)
         })
 
-        resolve(canvas.toDataURL('image/jpeg', 0.95))
+        resolve({ url: canvas.toDataURL('image/jpeg', 0.95), styleId: style.id })
       }
       img.onerror = () => reject(new Error('Failed to load image for overlay'))
       img.src = rawUrl.startsWith('data:') ? rawUrl : `/api/proxy-image?url=${encodeURIComponent(rawUrl)}`
@@ -861,12 +925,18 @@ function VideoStudioCard({ video, userTier, playlists }: {
       }
 
       let finalUrl: string = video.thumbnailUrl
+      let pickedStyleId: string | null = null
       try {
-        finalUrl = await addTextOverlay(video.thumbnailUrl, hook)
+        const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
+        const overlayed = await addTextOverlay(video.thumbnailUrl, hook, styleIndex)
+        finalUrl = overlayed.url
+        pickedStyleId = overlayed.styleId
       } catch (overlayErr) {
         console.warn('[instant-overlay]', overlayErr)
         // Fall back to raw YouTube thumbnail — hook still saved for display
       }
+      setThumbnailStyleId(pickedStyleId)
+      setThumbnailFeedbackSent(null)
       setThumbnailUrl(finalUrl)
       setSceneAnalysis(null)
       setThumbnailModel('instant')
@@ -1306,6 +1376,34 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       {/* "Copy prompt" button removed — internal AI prompt
                           shouldn't be exposed to users. */}
                     </div>
+                    {/* 👍 / 👎 feedback row — only when we have a styleId
+                        (i.e. the overlay actually ran on this thumbnail).
+                        Uploads and raw video frames without overlay skip
+                        this. Drives the weighted style picker. */}
+                    {thumbnailModel !== 'upload' && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className="text-[10px] text-[#86868b]">Train the AI:</span>
+                        <button
+                          onClick={() => submitYtThumbnailFeedback('like')}
+                          disabled={thumbnailFeedbackSent !== null}
+                          className={`text-[11px] px-2 py-0.5 rounded border transition ${thumbnailFeedbackSent === 'like' ? 'bg-[#34c759]/20 border-[#34c759] text-[#34c759]' : 'border-gray-200 dark:border-white/10 hover:border-[#34c759]'} disabled:opacity-60`}
+                          title="I'd use this style"
+                        >
+                          👍
+                        </button>
+                        <button
+                          onClick={() => submitYtThumbnailFeedback('dislike')}
+                          disabled={thumbnailFeedbackSent !== null}
+                          className={`text-[11px] px-2 py-0.5 rounded border transition ${thumbnailFeedbackSent === 'dislike' ? 'bg-[#ff3b30]/20 border-[#ff3b30] text-[#ff3b30]' : 'border-gray-200 dark:border-white/10 hover:border-[#ff3b30]'} disabled:opacity-60`}
+                          title="Not this style"
+                        >
+                          👎
+                        </button>
+                        {thumbnailFeedbackSent && (
+                          <span className="text-[10px] text-[#86868b]">Thanks — saved.</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

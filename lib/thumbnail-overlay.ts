@@ -153,6 +153,34 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
   },
 ]
 
+/**
+ * Pick a style index biased by per-user 👍 / 👎 feedback.
+ *
+ * Weight per style: `max(0.1, 1 + likes*0.3 - dislikes*0.5)`. A style
+ * the user dislikes 2× and likes 0× scores 0.1 (still has a tiny shot,
+ * never zeroed-out — we never know when their taste shifts). A style
+ * they like 3× scores 1.9 — almost double the default.
+ *
+ * Pass empty objects to fall back to uniform random.
+ */
+export function pickWeightedStyleIndex(
+  liked: Record<string, number> = {},
+  disliked: Record<string, number> = {},
+): number {
+  const weights = OVERLAY_STYLES.map(s => {
+    const l = liked[s.id] || 0
+    const d = disliked[s.id] || 0
+    return Math.max(0.1, 1 + l * 0.3 - d * 0.5)
+  })
+  const total = weights.reduce((a, b) => a + b, 0)
+  let r = Math.random() * total
+  for (let i = 0; i < weights.length; i++) {
+    r -= weights[i]
+    if (r <= 0) return i
+  }
+  return weights.length - 1
+}
+
 const loadedFonts = new Set<string>()
 
 async function loadOverlayFont(fontName: string | null): Promise<void> {
@@ -185,13 +213,13 @@ export async function renderThumbnailOverlay(
   rawUrl: string,
   hookText: string,
   opts: OverlayOpts = {},
-): Promise<string> {
+): Promise<{ url: string; styleId: string }> {
   const width = opts.width ?? 1280
   const height = opts.height ?? 720
   const style = OVERLAY_STYLES[opts.styleIndex ?? Math.floor(Math.random() * OVERLAY_STYLES.length)]
   await loadOverlayFont(style.fontName)
 
-  return new Promise((resolve, reject) => {
+  return new Promise<{ url: string; styleId: string }>((resolve, reject) => {
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
@@ -316,7 +344,7 @@ export async function renderThumbnailOverlay(
       })
 
       try {
-        resolve(canvas.toDataURL('image/jpeg', 0.92))
+        resolve({ url: canvas.toDataURL('image/jpeg', 0.92), styleId: style.id })
       } catch (e) {
         reject(e instanceof Error ? e : new Error('toDataURL failed'))
       }

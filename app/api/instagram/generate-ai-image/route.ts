@@ -189,6 +189,12 @@ export async function POST(request: Request) {
       return NextResponse.json({
         ok: true,
         imageUrl: video.instagram_ai_thumbnail_url,
+        // Return the cached hook too so the client can re-run the canvas
+        // overlay (picks a fresh style index biased by current 👍/👎
+        // history — that's how the feedback row gets a styleId on cache
+        // hits, otherwise the thumbs row would never appear after a
+        // re-open).
+        overlayHook: (video as { instagram_ai_thumbnail_hook?: string | null }).instagram_ai_thumbnail_hook ?? '',
         cached: true,
       })
     }
@@ -335,6 +341,7 @@ export async function POST(request: Request) {
       .from('youtube_videos')
       .update({
         instagram_ai_thumbnail_url: imageUrl,
+        instagram_ai_thumbnail_hook: overlayHook,
         instagram_ai_thumbnail_generated_at: new Date().toISOString(),
       })
       .eq('id', video.id)

@@ -24,7 +24,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
         {/* pt-16 on mobile leaves room for the fixed hamburger button; px-4 keeps
             content from kissing the screen edge on phones. lg: restores the
             generous desktop padding. */}
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 lg:pt-8 pb-8">
+        {/* max-w-6xl kept so long copy doesn't run to absurd line lengths
+            on ultra-wide monitors, but mx-auto dropped so the content
+            sits flush against the sidebar instead of floating in the
+            middle of the viewport. */}
+        <div className="max-w-6xl px-4 sm:px-6 lg:px-8 pt-16 lg:pt-8 pb-8">
           {children}
         </div>
       </main>
