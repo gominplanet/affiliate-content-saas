@@ -224,21 +224,19 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
           )
         })}
 
-        {/* Discord community — hidden until DISCORD_INVITE_URL is set so
-            shipping before the server's ready is safe. */}
+        {/* Discord community — internal page that renders the live widget
+            + a fresh invite. Hidden until the server ID is set so the
+            link can't 404. */}
         {DISCORD_INVITE_URL && (
-          <a
-            href={DISCORD_INVITE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="nav-item"
+          <Link
+            href="/community"
+            className={cn('nav-item', isActive('/community') && 'active')}
             title={COMMUNITY_TOOLTIP}
-            style={{ color: '#5865F2' }}
+            style={!isActive('/community') ? { color: '#5865F2' } : undefined}
           >
             <MessagesSquare size={16} className="flex-shrink-0" />
-            <span style={{ fontWeight: 500 }}>{COMMUNITY_LABEL}</span>
-            <ExternalLink size={11} className="opacity-60 flex-shrink-0 ml-auto" />
-          </a>
+            <span style={!isActive('/community') ? { fontWeight: 500 } : undefined}>{COMMUNITY_LABEL}</span>
+          </Link>
         )}
 
         {/* Visit Blog */}

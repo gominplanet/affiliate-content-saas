@@ -7,7 +7,7 @@ import ChannelStats from '@/components/dashboard/ChannelStats'
 import WhatsNew from '@/components/dashboard/WhatsNew'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
-import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers, Gauge, MessagesSquare, ExternalLink } from 'lucide-react'
+import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers, Gauge, MessagesSquare } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
 import { DISCORD_INVITE_URL } from '@/lib/community'
@@ -132,12 +132,11 @@ export default async function DashboardPage() {
 
       <TutorialVideo sectionKey="dashboard" />
 
-      {/* Discord community invite — only renders once the env var is set. */}
+      {/* Discord community card — lands on /community which embeds the
+          live presence widget and pulls a fresh invite. */}
       {DISCORD_INVITE_URL && (
-        <a
-          href={DISCORD_INVITE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          href="/community"
           className="card p-4 mb-6 max-w-3xl mx-auto flex items-center gap-3 hover:border-[#5865F2]/40 transition-colors"
           style={{ borderColor: 'rgba(88,101,242,0.2)', background: 'linear-gradient(180deg, rgba(88,101,242,0.04) 0%, transparent 100%)' }}
         >
@@ -149,9 +148,9 @@ export default async function DashboardPage() {
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Hang out with other creators, ask questions, share what works, give us feedback.</p>
           </div>
           <span className="text-xs font-semibold text-[#5865F2] flex items-center gap-1 flex-shrink-0">
-            Join <ExternalLink size={11} />
+            Open <ArrowRight size={11} />
           </span>
-        </a>
+        </Link>
       )}
 
       {/* Welcome card — shown until user generates their first post */}
