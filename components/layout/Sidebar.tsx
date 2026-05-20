@@ -34,6 +34,7 @@ import {
   GraduationCap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SALES_PAUSED } from '@/lib/sales-paused'
 import { createBrowserClient } from '@/lib/supabase/client'
 
 // New nav order — Setup is split into two: Blog Set Up (WordPress wizard)
@@ -55,8 +56,12 @@ const nav = [
 
 const secondaryNav = [
   { href: '/billing', label: 'Plan & Billing', icon: CreditCard },
-  // Rewardful-hosted affiliate dashboard — opens in a new tab.
-  { href: 'https://mvp-affiliate.getrewardful.com/signup', label: 'Earn 10% — Refer', icon: HandCoins, external: true as const, accent: '#34c759' },
+  // Rewardful-hosted affiliate dashboard — opens in a new tab. Hidden
+  // while sales are paused (no point recruiting new affiliates when
+  // their referrals can't actually buy).
+  ...(SALES_PAUSED
+    ? []
+    : [{ href: 'https://mvp-affiliate.getrewardful.com/signup', label: 'Earn 10% — Refer', icon: HandCoins, external: true as const, accent: '#34c759' }]),
   { href: '/admin/users', label: 'Users (admin)', icon: UserCog, danger: false },
   { href: '/admin/failures', label: 'Failures', icon: AlertTriangle, danger: true },
 ]

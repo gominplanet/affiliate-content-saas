@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStripe, PRICE_IDS } from '@/lib/stripe'
 import type { Tier } from '@/lib/tier'
+import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 
 export async function POST(request: NextRequest) {
+  // Hard stop: bulletproof gate that runs no matter how the user got
+  // here (homepage CTA, direct /pricing URL, stale referrer link).
+  if (SALES_PAUSED) {
+    return NextResponse.json({ error: SALES_PAUSED_MESSAGE }, { status: 503 })
+  }
+
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

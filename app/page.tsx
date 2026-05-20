@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
+import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import {
   CheckCircle,
   ArrowRight,
@@ -148,9 +149,15 @@ export default function LandingPage() {
           <Link href="/login" className="hidden sm:block text-sm text-[#6e6e73] hover:text-[#1d1d1f] transition-colors px-3 py-2">
             Sign in
           </Link>
-          <Link href="/signup" className="text-sm font-semibold bg-[#0071e3] hover:bg-[#0062c4] text-white px-4 py-2 rounded-xl transition-colors">
-            Start free
-          </Link>
+          {SALES_PAUSED ? (
+            <span className="text-sm font-semibold bg-gray-200 dark:bg-white/10 text-[#86868b] px-4 py-2 rounded-xl cursor-not-allowed" title={SALES_PAUSED_MESSAGE}>
+              Sign-ups paused
+            </span>
+          ) : (
+            <Link href="/signup" className="text-sm font-semibold bg-[#0071e3] hover:bg-[#0062c4] text-white px-4 py-2 rounded-xl transition-colors">
+              Start free
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -193,10 +200,22 @@ export default function LandingPage() {
             <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. ~2 hours of unpaid post-production per video → gone.</span>
           </p>
 
+          {SALES_PAUSED && (
+            <div className="mx-auto mb-5 max-w-2xl rounded-2xl bg-[#ff9500]/10 border border-[#ff9500]/30 px-5 py-3 text-center">
+              <p className="text-sm font-semibold text-[#1d1d1f] mb-0.5">Sign-ups & purchases temporarily paused</p>
+              <p className="text-xs text-[#6e6e73] leading-relaxed">{SALES_PAUSED_MESSAGE}</p>
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
-              Start free — 15 posts <ArrowRight size={17} />
-            </Link>
+            {SALES_PAUSED ? (
+              <span className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gray-200 text-[#86868b] font-semibold px-7 py-3.5 rounded-2xl text-base cursor-not-allowed">
+                Sign-ups paused — back soon
+              </span>
+            ) : (
+              <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
+                Start free — 15 posts <ArrowRight size={17} />
+              </Link>
+            )}
             <Link href="/pricing" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-[#1d1d1f] font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors">
               See pricing
             </Link>
@@ -495,9 +514,15 @@ export default function LandingPage() {
               <FeatureLine>Logo banner, social icons, brand colors + fonts</FeatureLine>
               <FeatureLine>Mobile-first layout, fast page loads, clean URLs</FeatureLine>
             </ul>
-            <Link href="/signup" className="inline-flex items-center gap-2 text-[#0071e3] font-semibold hover:gap-3 transition-all">
-              Start with the themed site free <ArrowRight size={16} />
-            </Link>
+            {SALES_PAUSED ? (
+              <span className="inline-flex items-center gap-2 text-[#86868b] font-semibold cursor-not-allowed">
+                Sign-ups paused — back soon
+              </span>
+            ) : (
+              <Link href="/signup" className="inline-flex items-center gap-2 text-[#0071e3] font-semibold hover:gap-3 transition-all">
+                Start with the themed site free <ArrowRight size={16} />
+              </Link>
+            )}
           </div>
 
           <SitePreviewFrame />
@@ -816,12 +841,18 @@ export default function LandingPage() {
             One YouTube draft → a full review site, an optimized YouTube package, and social posts
             on every platform. 15 free posts. No card. Cancel anytime.
           </p>
-          <Link
-            href="/signup"
-            className="inline-flex items-center justify-center gap-2 bg-white hover:bg-blue-50 text-[#0071e3] font-semibold px-8 py-4 rounded-2xl text-base transition-colors shadow-2xl"
-          >
-            Start free <ArrowRight size={17} />
-          </Link>
+          {SALES_PAUSED ? (
+            <span className="inline-flex items-center justify-center gap-2 bg-white/40 text-white font-semibold px-8 py-4 rounded-2xl text-base shadow-2xl cursor-not-allowed">
+              Sign-ups paused — back soon
+            </span>
+          ) : (
+            <Link
+              href="/signup"
+              className="inline-flex items-center justify-center gap-2 bg-white hover:bg-blue-50 text-[#0071e3] font-semibold px-8 py-4 rounded-2xl text-base transition-colors shadow-2xl"
+            >
+              Start free <ArrowRight size={17} />
+            </Link>
+          )}
           <p className="mt-5 text-sm text-blue-100/80 flex items-center justify-center gap-1.5">
             <Clock size={13} /> Most users publish their first review within 15 minutes of signing up.
           </p>

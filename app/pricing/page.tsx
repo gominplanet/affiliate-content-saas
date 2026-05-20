@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { CheckCircle, Zap } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 
 // Rewardful injects a global `Rewardful` object once the script is ready.
 // Declared here so TypeScript stops complaining about the access below.
@@ -166,6 +167,13 @@ export default function PricingPage() {
         <p className="mt-2 text-sm font-semibold text-[#34c759]">Early access pricing — locked in for life on the tier you subscribe to.</p>
       </div>
 
+      {SALES_PAUSED && (
+        <div className="w-full max-w-3xl mb-8 rounded-2xl bg-[#ff9500]/10 border border-[#ff9500]/30 p-5 text-center">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Sign-ups & purchases temporarily paused</p>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">{SALES_PAUSED_MESSAGE}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl">
         {plans.map((plan) => (
           <div
@@ -211,14 +219,14 @@ export default function PricingPage() {
 
             <button
               onClick={() => handleCheckout(plan.tier)}
-              disabled={loading === plan.tier}
-              className={`w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-60 ${
+              disabled={loading === plan.tier || SALES_PAUSED}
+              className={`w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 plan.highlight
                   ? 'bg-white dark:bg-[#1c1c1e] text-[#0071e3] hover:bg-blue-50'
                   : 'bg-[#0071e3] text-white hover:bg-[#0062c4]'
               }`}
             >
-              {loading === plan.tier ? 'Redirecting…' : plan.ctaLabel}
+              {SALES_PAUSED ? 'Sales paused' : loading === plan.tier ? 'Redirecting…' : plan.ctaLabel}
             </button>
           </div>
         ))}

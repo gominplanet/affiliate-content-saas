@@ -4,10 +4,27 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 
 export default function SignupForm() {
   const router = useRouter()
   const supabase = createBrowserClient()
+
+  // Hard stop: no new accounts during a pause. Existing users sign in
+  // via /login as normal. Also recommended to flip Supabase Auth's
+  // "Allow new users to sign up" off as a belt-and-suspenders measure.
+  if (SALES_PAUSED) {
+    return (
+      <div className="card p-8 text-center">
+        <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Sign-ups paused</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">{SALES_PAUSED_MESSAGE}</p>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
+          Already have an account?{' '}
+          <Link href="/login" className="text-[#0071e3] hover:underline font-medium">Sign in</Link>
+        </p>
+      </div>
+    )
+  }
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
