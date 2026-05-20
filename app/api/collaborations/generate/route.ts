@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsPublishAll, TIERS, billingWindow, type Tier } from '@/lib/tier'
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
+import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 
 export const maxDuration = 120
 
@@ -54,6 +55,30 @@ export async function POST(request: Request) {
     const brandName = (body.brandName ?? '').trim()
     if (!brandName) return NextResponse.json({ error: 'Brand name is required' }, { status: 400 })
 
+    // If the creator typed an ASIN (or pasted an Amazon URL containing
+    // one), look the product up so the email can reference it by name,
+    // price, and 1–2 actual features. Scrape failures are non-fatal —
+    // we just fall back to the raw string the user typed.
+    const productOrAsinRaw = body.productOrAsin?.toString().trim() || ''
+    const asin = productOrAsinRaw ? extractAsin(productOrAsinRaw.toUpperCase()) : null
+    let productData: CollabInput['productData'] = null
+    if (asin) {
+      try {
+        const p = await fetchAmazonProduct(asin)
+        if (p.title) {
+          productData = {
+            asin: p.asin,
+            title: p.title,
+            bullets: p.bullets,
+            price: p.price,
+            rating: p.rating,
+          }
+        }
+      } catch (e) {
+        console.warn('[collab] amazon lookup failed for', asin, e instanceof Error ? e.message : e)
+      }
+    }
+
     const input: CollabInput = {
       brandName,
       amazonStorefront: body.amazonStorefront?.toString().trim() || '',
@@ -68,7 +93,8 @@ export async function POST(request: Request) {
       shareAddress: !!body.shareAddress,
       livestreams: !!body.livestreams,
       livestreamLink: body.livestreamLink?.toString().trim() || '',
-      productOrAsin: body.productOrAsin?.toString().trim() || '',
+      productOrAsin: productOrAsinRaw,
+      productData,
       // Fall back to the Brand Profile's linktree_url so the email always
       // includes the creator's link hub when they've set one — even if
       // they didn't re-type it into the collab form.

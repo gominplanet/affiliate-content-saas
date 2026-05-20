@@ -23,6 +23,16 @@ export interface CollabInput {
   livestreamLink?: string
   shareAddress: boolean
   productOrAsin?: string
+  /** Optional resolved Amazon product, populated by the API route when
+   *  productOrAsin contains a valid ASIN. Lets the email focus on the
+   *  actual product (real title, bullets, price) instead of a code. */
+  productData?: {
+    asin: string
+    title: string
+    bullets: string[]
+    price: string | null
+    rating: string | null
+  } | null
   portfolioUrl?: string
   collabsDone?: string
   exampleLinks?: string[]
@@ -104,7 +114,23 @@ Return a tight markdown brief under 250 words. No fluff.`,
       : (brand?.contact_preference === 'email' && brand?.contact_email)
         ? `Preferred follow-up channel: EMAIL — make the email address the primary reply channel in the sign-off.`
         : '',
-    input.productOrAsin ? `Product / ASIN they want to collaborate on: ${input.productOrAsin}` : '',
+    // When the creator provides a real ASIN, the API route resolves it on
+    // Amazon and hands us back the product title + bullets so the email
+    // can reference the actual product by name and highlight 1–2 features
+    // the brand will recognize.
+    input.productData?.title
+      ? [
+          `Product to collaborate on (resolved from ASIN ${input.productData.asin}):`,
+          `  Name: ${input.productData.title}`,
+          input.productData.price ? `  Price: ${input.productData.price}` : '',
+          input.productData.rating ? `  Rating: ${input.productData.rating}/5` : '',
+          input.productData.bullets.length
+            ? `  Key features (use these by name in the email — at most 2, pick the most relevant to a buyer):\n${input.productData.bullets.slice(0, 5).map(b => `    - ${b}`).join('\n')}`
+            : '',
+        ].filter(Boolean).join('\n')
+      : input.productOrAsin
+        ? `Product / ASIN they want to collaborate on: ${input.productOrAsin}`
+        : '',
     input.collabsDone ? `Track record / accolades & wins (use these confidently in the opening): ${input.collabsDone}` : '',
     exampleLinks.length ? `Example past work to offer (links — NOT stats):\n${exampleLinks.map(l => `- ${l}`).join('\n')}` : '',
     input.livestreams
@@ -194,7 +220,11 @@ ${profile || '(minimal profile — lean on the channels offered and professional
 
 WHAT THE CREATOR OFFERS / WANTS:
 - Promotion platforms offered: ${offered}
-${input.productOrAsin ? `- Product / ASIN to collaborate on: ${input.productOrAsin}` : ''}
+${input.productData?.title
+  ? `- Product to collaborate on: ${input.productData.title} (ASIN ${input.productData.asin})\n  Reference it by name in step 5 and weave 1–2 of its key features into the pitch — do NOT list raw bullets.`
+  : input.productOrAsin
+    ? `- Product / ASIN to collaborate on: ${input.productOrAsin}`
+    : ''}
 - Asks: ${asks.length ? asks.join('; ') : 'open to a mutually beneficial arrangement'}
 ${exampleLinks.length ? `- Offer to share these example past collaborations: ${exampleLinks.join(' , ')}` : ''}
 ${input.extraNotes ? `- Extra context from the creator: ${input.extraNotes}` : ''}
