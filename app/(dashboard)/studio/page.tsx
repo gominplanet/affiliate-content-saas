@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
+import { CapReachedBanner } from '@/components/CapReachedBanner'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
@@ -102,6 +103,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
   const [instantLoading, setInstantLoading] = useState(false)
+  // Tier-cap-reached state — keyed separately from the red error toast
+  // so we can render an amber upgrade banner with a /pricing CTA instead.
+  const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
 
   useEffect(() => {
     if (generated) {
@@ -154,8 +158,17 @@ function VideoStudioCard({ video, userTier, playlists }: {
         res = await callOnce()
         data = await safeJson(res)
       }
+      if (data.limitReached) {
+        setCapError({
+          message: (data.error as string) || 'You\'ve hit your usage cap for this period.',
+          info: { cap: (data.cap as string) || 'metadata', currentTier: data.currentTier as string | undefined, upgrade: data.upgrade as { tier: string; label: string; limit: number | null } | null | undefined },
+        })
+        setError(null)
+        return
+      }
       if (!res.ok) throw new Error((data.error as string) || 'Generation failed')
       setError(null)
+      setCapError(null)
 
       const generatedMeta = data.generated as GeneratedMetadata
       const productData = data.product as ProductInfo
@@ -329,7 +342,15 @@ function VideoStudioCard({ video, userTier, playlists }: {
         }),
       })
       const data = await safeJson(res)
+      if (data.limitReached) {
+        setCapError({
+          message: (data.error as string) || 'You\'ve hit your thumbnail cap for this period.',
+          info: { cap: (data.cap as string) || 'thumbnails', currentTier: data.currentTier as string | undefined, upgrade: data.upgrade as { tier: string; label: string; limit: number | null } | null | undefined },
+        })
+        return
+      }
       if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
+      setCapError(null)
       await applyThumbnailResult(data)
     } catch (err) {
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
@@ -362,7 +383,15 @@ function VideoStudioCard({ video, userTier, playlists }: {
         }),
       })
       const data = await safeJson(res)
+      if (data.limitReached) {
+        setCapError({
+          message: (data.error as string) || 'You\'ve hit your thumbnail cap for this period.',
+          info: { cap: (data.cap as string) || 'thumbnails', currentTier: data.currentTier as string | undefined, upgrade: data.upgrade as { tier: string; label: string; limit: number | null } | null | undefined },
+        })
+        return
+      }
       if (!res.ok) throw new Error((data.error as string) || 'Thumbnail generation failed')
+      setCapError(null)
       await applyThumbnailResult(data)
     } catch (err) {
       setThumbnailError(err instanceof Error ? err.message : 'Failed to generate thumbnail')
@@ -565,6 +594,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
           }),
         })
         const data = await res.json() as Record<string, unknown>
+        if (data.limitReached) {
+          setCapError({
+            message: (data.error as string) || 'You\'ve hit your thumbnail cap for this period.',
+            info: { cap: (data.cap as string) || 'thumbnails', currentTier: data.currentTier as string | undefined, upgrade: data.upgrade as { tier: string; label: string; limit: number | null } | null | undefined },
+          })
+          return
+        }
         if (!res.ok) throw new Error((data.error as string) || 'Hook generation failed')
         hook = (data.overlayHook as string) || ''
         setThumbnailHook(hook)
@@ -655,6 +691,15 @@ function VideoStudioCard({ video, userTier, playlists }: {
             </a>
           </div>
           {error && <p className="text-xs text-[#ff3b30] mt-2">{error}</p>}
+          {capError && (
+            <div className="mt-3">
+              <CapReachedBanner
+                message={capError.message}
+                info={capError.info}
+                onDismiss={() => setCapError(null)}
+              />
+            </div>
+          )}
         </div>
       </div>
 

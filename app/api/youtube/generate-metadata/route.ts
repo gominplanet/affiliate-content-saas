@@ -5,7 +5,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { TIERS, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 
 export const maxDuration = 120
@@ -288,9 +288,16 @@ export async function POST(request: Request) {
       (intRow?.subscription_period_end as string | null) ?? null,
     )
     if (capCheck?.exceeded) {
+      const next = nextTierFor(tier, 'metadataGensPerMonth')
+      const nextHint = next
+        ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
+        : ''
       return NextResponse.json({
-        error: `You've hit your ${metaCap} metadata generations for this billing period on the ${TIERS[tier].label} plan. Resets ${capCheck.resetLabel}.`,
+        error: `You've hit your ${metaCap} metadata generations for this billing period on the ${TIERS[tier].label} plan.${nextHint} Resets ${capCheck.resetLabel}.`,
         limitReached: true,
+        cap: 'metadata',
+        currentTier: tier,
+        upgrade: next ? { tier: next.tier, label: next.label, limit: next.limit } : null,
       }, { status: 429 })
     }
 

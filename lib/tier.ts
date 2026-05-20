@@ -106,6 +106,30 @@ export function tierAllowsSocial(tier: Tier, social: Social): boolean {
   return TIERS[tier].socials.includes(social)
 }
 
+/** Next-tier upgrade hint for capped actions. Returns null when the
+ *  user is already on Pro / Admin (no upward path). Used by routes to
+ *  build a "Upgrade to Pro → 300 thumbnails / mo" call-to-action when
+ *  a user hits a cap. */
+export function nextTierFor(
+  tier: Tier,
+  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth',
+): { tier: Tier; label: string; limit: number | null } | null {
+  const order: Tier[] = ['free', 'starter', 'growth', 'pro']
+  const idx = order.indexOf(tier)
+  if (idx < 0 || idx === order.length - 1) return null
+  // Find the next tier that actually offers MORE of this cap (or unlimited).
+  for (let i = idx + 1; i < order.length; i++) {
+    const next = order[i]
+    const currentLimit = TIERS[tier][cap]
+    const nextLimit = TIERS[next][cap]
+    // Unlimited (null) beats any number; a higher cap beats a lower one.
+    if (nextLimit === null || (currentLimit !== null && nextLimit > currentLimit)) {
+      return { tier: next, label: TIERS[next].label, limit: nextLimit }
+    }
+  }
+  return null
+}
+
 /** Whether a given tier can use the one-click Publish All flow. */
 export function tierAllowsPublishAll(tier: Tier): boolean {
   return TIERS[tier].publishAll
@@ -167,9 +191,13 @@ export async function checkUsageLimit(
       .eq('user_id', userId)
 
     if ((count ?? 0) >= limits.lifetimeMax) {
+      const next = nextTierFor(tier, 'postsPerMonth')
+      const nextHint = next
+        ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} posts / month`}.`
+        : ''
       return {
         allowed: false,
-        reason: `You've used all ${limits.lifetimeMax} free posts. Upgrade to keep publishing.`,
+        reason: `You've used all ${limits.lifetimeMax} free posts.${nextHint}`,
         tier,
       }
     }
@@ -189,9 +217,13 @@ export async function checkUsageLimit(
       .gte('published_at', startISO)
 
     if ((count ?? 0) >= limits.postsPerMonth) {
+      const next = nextTierFor(tier, 'postsPerMonth')
+      const nextHint = next
+        ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
+        : ''
       return {
         allowed: false,
-        reason: `You've reached your ${limits.postsPerMonth} posts limit on the ${limits.label} plan for this billing period. Resets ${resetLabel}.`,
+        reason: `You've reached your ${limits.postsPerMonth} posts limit on the ${limits.label} plan for this billing period.${nextHint} Resets ${resetLabel}.`,
         tier,
       }
     }

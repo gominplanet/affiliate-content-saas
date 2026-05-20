@@ -5,7 +5,7 @@ import { fetchAmazonProduct } from '@/services/amazon'
 import { fal } from '@fal-ai/client'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
-import { TIERS, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 
 // Telemetry context — populated at request start, read by the three
@@ -200,9 +200,16 @@ export async function POST(request: Request) {
       (tierRow?.subscription_period_end as string | null) ?? null,
     )
     if (capCheck?.exceeded) {
+      const next = nextTierFor(tier, 'thumbnailsPerMonth')
+      const nextHint = next
+        ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
+        : ''
       return NextResponse.json({
-        error: `You've hit your ${thumbCap} thumbnail generations for this billing period on the ${TIERS[tier].label} plan. Resets ${capCheck.resetLabel}.`,
+        error: `You've hit your ${thumbCap} thumbnail generations for this billing period on the ${TIERS[tier].label} plan.${nextHint} Resets ${capCheck.resetLabel}.`,
         limitReached: true,
+        cap: 'thumbnails',
+        currentTier: tier,
+        upgrade: next ? { tier: next.tier, label: next.label, limit: next.limit } : null,
       }, { status: 429 })
     }
 

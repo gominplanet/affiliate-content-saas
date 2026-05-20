@@ -6,7 +6,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsPublishAll, TIERS, billingWindow, type Tier } from '@/lib/tier'
+import { tierAllowsPublishAll, TIERS, billingWindow, nextTierFor, type Tier } from '@/lib/tier'
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 
@@ -45,8 +45,16 @@ export async function POST(request: Request) {
         .eq('user_id', user.id)
         .gte('created_at', startISO)
       if ((count ?? 0) >= collabCap) {
+        const next = nextTierFor(tier, 'collabsPerMonth')
+        const nextHint = next
+          ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
+          : ''
         return NextResponse.json({
-          error: `You've reached your ${collabCap} collaboration emails for this billing period on the ${TIERS[tier].label} plan. Resets ${resetLabel}.`,
+          error: `You've reached your ${collabCap} collaboration emails for this billing period on the ${TIERS[tier].label} plan.${nextHint} Resets ${resetLabel}.`,
+          limitReached: true,
+          cap: 'collabs',
+          currentTier: tier,
+          upgrade: next ? { tier: next.tier, label: next.label, limit: next.limit } : null,
         }, { status: 429 })
       }
     }

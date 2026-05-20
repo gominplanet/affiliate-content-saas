@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
+import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle, Trash2, Save } from 'lucide-react'
 
 interface CollabRow {
@@ -58,6 +59,7 @@ export default function CollaborationsPage() {
 
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
+  const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
   const [subject, setSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
   const [copied, setCopied] = useState<'subject' | 'body' | null>(null)
@@ -169,7 +171,15 @@ export default function CollaborationsPage() {
         }),
       })
       const d = await res.json().catch(() => ({}))
+      if (d.limitReached) {
+        setCapError({
+          message: d.error || 'You\'ve hit your collaboration emails cap for this period.',
+          info: { cap: d.cap || 'collabs', currentTier: d.currentTier, upgrade: d.upgrade },
+        })
+        return
+      }
       if (!res.ok) throw new Error(d.error || 'Generation failed')
+      setCapError(null)
       setSubject(d.subject || '')
       setEmailBody(d.body || '')
       load()
@@ -353,6 +363,15 @@ export default function CollaborationsPage() {
           </button>
           {genError && <span className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {genError}</span>}
         </div>
+        {capError && (
+          <div className="mt-3">
+            <CapReachedBanner
+              message={capError.message}
+              info={capError.info}
+              onDismiss={() => setCapError(null)}
+            />
+          </div>
+        )}
       </div>
 
       {(subject || emailBody) && (
