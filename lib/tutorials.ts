@@ -66,7 +66,7 @@ export const TUTORIALS: Tutorial[] = [
   },
   {
     sectionKey: 'studio',
-    title: 'YouTube Studio',
+    title: 'YouTube Co-Pilot',
     description: 'Generate titles, descriptions, tags, and pinned comments for new videos before you upload.',
     videoId: '-d06O5SWUhU',
     href: '/studio',

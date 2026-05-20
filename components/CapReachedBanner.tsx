@@ -7,7 +7,7 @@
  * a dead-end into an upgrade moment.
  *
  * Pages that consume this:
- * - YouTube Studio (thumbnail + metadata caps)
+ * - YouTube Co-Pilot (thumbnail + metadata caps)
  * - Library / content (anywhere blog posts get capped)
  * - Collaborations (collab email cap)
  */

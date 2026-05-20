@@ -40,7 +40,7 @@ const plans: PlanExt[] = [
     description: 'A real trial — not a teaser. Run the full YouTube workflow on 15 real reviews before paying a cent.',
     features: [
       '15 full reviews (lifetime)',
-      'YouTube Studio autopilot — description, tags, hashtags & thumbnail pushed back',
+      'YouTube Co-Pilot — description, tags, hashtags & thumbnail pushed back to YouTube Studio',
       'Branded WordPress review site (theme + plugin auto-installed)',
       'One-click publish to your site',
       'Facebook auto-post',
@@ -160,7 +160,7 @@ export default function PricingPage() {
       <div className="text-center mb-12 max-w-2xl">
         <h1 className="text-4xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Pricing built for how often you ship</h1>
         <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0]">
-          Every plan — even Free — includes the full agent pipeline, the YouTube Studio autopilot,
+          Every plan — even Free — includes the full agent pipeline, the YouTube Co-Pilot,
           and a branded review site. Pick a tier by how many reviews you actually publish.
         </p>
         <p className="mt-2 text-sm font-semibold text-[#34c759]">Early access pricing — locked in for life on the tier you subscribe to.</p>

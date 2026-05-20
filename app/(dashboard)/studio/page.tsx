@@ -1236,7 +1236,7 @@ export default function StudioPage() {
   if (loading) {
     return (
       <div>
-        <Header title="YouTube Studio" subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to Studio in one click." />
+        <Header title="YouTube Co-Pilot" subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to YouTube Studio in one click." />
         <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" /> Loading your videos…
         </div>
@@ -1247,8 +1247,8 @@ export default function StudioPage() {
   return (
     <div>
       <Header
-        title="YouTube Studio"
-        subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to Studio in one click."
+        title="YouTube Co-Pilot"
+        subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to YouTube Studio in one click."
       />
 
       <TutorialVideo sectionKey="studio" />

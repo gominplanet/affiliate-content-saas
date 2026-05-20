@@ -1666,14 +1666,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="#ff0000"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
             </div>
             <div>
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube Studio</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube Co-Pilot</p>
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Read draft videos and auto-generate metadata from ASINs</p>
             </div>
           </div>
           {youtubeOAuthConnected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-          Click <strong>Connect YouTube</strong> and sign in with the Google account that owns your channel. This grants read access to your private and draft videos so the YouTube Studio tool can show them here, and write access to push generated titles, descriptions, and tags back to YouTube — saving you from copy-pasting manually.
+          Click <strong>Connect YouTube</strong> and sign in with the Google account that owns your channel. This grants read access to your private and draft videos so the YouTube Co-Pilot can show them here, and write access to push generated titles, descriptions, and tags back to YouTube — saving you from copy-pasting manually.
         </p>
         <div className="rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 px-3 py-2">
           <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
@@ -1687,7 +1687,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         {youtubeOAuthConnected ? (
           <div className="flex flex-col gap-2">
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-              Your Google account is connected. Visit <a href="/studio" className="text-[#0071e3] hover:underline">YouTube Studio</a> to generate metadata for your draft videos.
+              Your Google account is connected. Visit <a href="/studio" className="text-[#0071e3] hover:underline">YouTube Co-Pilot</a> to generate metadata for your draft videos.
             </p>
             <button onClick={disconnectYoutube} disabled={ytDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {ytDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect YouTube
@@ -1715,7 +1715,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-create smart affiliate links from ASINs in YouTube Studio</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-create smart affiliate links from ASINs in YouTube Co-Pilot</p>
           </div>
           {geniuslinkKey && geniuslinkSecret && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
