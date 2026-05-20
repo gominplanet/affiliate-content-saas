@@ -249,15 +249,16 @@ Use exactly this structure with {VIDEO_ID} replaced:
 .gr-cta-link{display:inline-flex;align-items:center;gap:8px;background:#FFC200;color:#111;font-size:13px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:14px 24px;border-radius:3px;text-decoration:none;margin:8px 0}
 .gr-cta-link:hover{background:#111;color:#FFC200}
 .gr-cta-card{background:#f8f9fa;border:2px solid #111;border-radius:4px;padding:24px 28px;margin:32px 0;display:flex;flex-direction:column;gap:14px}
-.gr-cta-card:has(.gr-cta-thumb-link){display:grid;grid-template-columns:1fr 220px;gap:24px;align-items:center}
+.gr-cta-card:has(.gr-cta-thumb-wrap){display:grid;grid-template-columns:1fr 220px;gap:24px;align-items:center}
 .gr-cta-card .gr-cta-body{display:flex;flex-direction:column;gap:14px;min-width:0}
 .gr-cta-card .gr-cta-eyebrow{font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#111;margin:0;padding-bottom:12px;border-bottom:2px solid #FFC200}
 .gr-cta-card .gr-cta-product-name{font-size:20px;font-weight:800;color:#111;margin:0;line-height:1.3;letter-spacing:-.3px}
 .gr-cta-card .gr-cta-btn{display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box}
 .gr-cta-card .gr-cta-btn:hover{background:#111;color:#FFC200}
-.gr-cta-card .gr-cta-thumb-link{display:block;line-height:0;border-radius:4px;overflow:hidden;border:2px solid #111}
+.gr-cta-card .gr-cta-thumb-wrap{line-height:0;border-radius:4px;overflow:hidden;border:2px solid #111}
 .gr-cta-card .gr-cta-thumb{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;display:block}
-@media(max-width:600px){.gr-cta-card:has(.gr-cta-thumb-link){grid-template-columns:1fr}.gr-cta-card .gr-cta-thumb-link{order:-1;max-width:320px;margin:0 auto}}
+.gr-cta-card .gr-cta-disclaimer{font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic}
+@media(max-width:600px){.gr-cta-card:has(.gr-cta-thumb-wrap){grid-template-columns:1fr}.gr-cta-card .gr-cta-thumb-wrap{order:-1;max-width:320px;margin:0 auto}}
 .wp-post-image,.post-thumbnail img,.entry-thumbnail img{width:100%!important;height:auto!important;aspect-ratio:16/9;object-fit:cover}
 @media(max-width:600px){.gr-verdict-cols{grid-template-columns:1fr}.gr-rating-box{flex-direction:column;align-items:flex-start}}
 .gr-tags{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
@@ -318,13 +319,14 @@ Use exactly this structure with {VIDEO_ID} replaced:
     <div class="gr-cta-body">
       <p class="gr-cta-eyebrow">Get it now</p>
       <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
-      <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn">
+      <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
         🛒 See Today's Price on Amazon →
       </a>
+      <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
     </div>
-    <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-thumb-link" aria-label="See on Amazon">
+    <div class="gr-cta-thumb-wrap">
       <img src="https://i.ytimg.com/vi/{VIDEO_ID}/mqdefault.jpg" alt="" loading="lazy" class="gr-cta-thumb" />
-    </a>
+    </div>
   </div>
   <!-- /wp:html -->
 
@@ -357,13 +359,14 @@ Use the exact same product name string here as in the mid-article CTA from [4]:
   <div class="gr-cta-body">
     <p class="gr-cta-eyebrow">Get it now</p>
     <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
-    <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn">
+    <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
       🛒 See Today's Price on Amazon →
     </a>
+    <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
   </div>
-  <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-thumb-link" aria-label="See on Amazon">
+  <div class="gr-cta-thumb-wrap">
     <img src="https://i.ytimg.com/vi/{VIDEO_ID}/mqdefault.jpg" alt="" loading="lazy" class="gr-cta-thumb" />
-  </a>
+  </div>
 </div>
 
 [8] HASHTAG TAGS (HTML block — immediately after [7], no gap)
