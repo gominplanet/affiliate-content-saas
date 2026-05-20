@@ -22,7 +22,12 @@ async function uploadBrandImage(
   })
   if (error) throw new Error(error.message)
   const { data } = supabase.storage.from('headshots').getPublicUrl(path)
-  return data.publicUrl
+  // Cache-buster: we overwrite the same storage path so the public URL
+  // is byte-identical to the old one, which means the browser (and any
+  // CDN) keeps serving the cached previous image. Appending a versioned
+  // query string forces a fresh fetch without invalidating the long
+  // cacheControl for unchanged assets.
+  return `${data.publicUrl}?v=${Date.now()}`
 }
 
 interface GearItem { name: string; url: string }
