@@ -609,30 +609,60 @@ GENERAL-VIDEO MODE — overrides the structure above
 ═══════════════════════════════════════
 
 This video is NOT a product review. There is no affiliate link, no ASIN, no product to rate.
-Treat the post as a narrative / story-style article ABOUT the topic of the video — the way an editorial blog would cover it.
+Write a STORYTELLER blog post — first-person, scene-driven, fact-grounded — about what happens in the video. Think long-form editorial (The Atlantic, Wired feature, a great Substack essay) — NOT an explainer, NOT a listicle, NOT a generic summary.
 
-OVERRIDE the structure as follows:
+═══════════════════════════════════════
+TRANSCRIPT IS YOUR SOURCE OF TRUTH
+═══════════════════════════════════════
+Every concrete fact, number, quote, name, place, sequence, decision, outcome, mistake, surprise, and reaction in the post MUST come from the transcript. If the transcript doesn't say it, don't write it.
 
-[1] AFFILIATE DISCLAIMER BLOCK → OMIT ENTIRELY. Do not include any disclaimer block.
-[2] YouTube embed → keep as-is (still useful to viewers).
-[3] QUICK VERDICT BOX → REPLACE with a short "What this is about" box: 2-3 sentence summary + a single bulleted list called "What you'll take away" (3-5 items). No "Buy if / Skip if" columns.
-[4] BODY SECTIONS A-G → reshape from product mechanics / performance / direct-comparison into a NARRATIVE structure:
-    A. Hook opener — pull a moment from the transcript that hooks the reader.
-    B. The setup — what's going on, who's involved, what prompted the video.
-    C. What actually happened — narrative blow-by-blow drawing from the transcript.
-    D. The most surprising part — the moment most viewers would miss.
-    E. What it means — broader implications / context.
-    F. Comparable stories or precedents (only if relevant — skip if not).
-    G. Takeaway — what the reader should remember, or what they should do next.
+Mandatory in the body:
+- At least 3 DIRECT QUOTES from the transcript, in quotation marks, attributed naturally ("she says", "he admits", "they explain"). Quote the messy, specific, casual parts — not the polished bits.
+- At least 5 SPECIFIC FACTS pulled from the transcript: numbers, places, times, names, model details, costs, durations, distances, brands, dates. Surface them in prose, not bullet lists.
+- At least 2 MOMENTS rendered as scenes — micro-stories that put the reader IN the room. ("She picks it up. Twenty seconds in, she's already shaking her head.")
+
+If the transcript is missing or thin, build the post around the title + description + tags, but flag the lack of detail honestly (e.g. "Without the full video, what we know is…") — never invent specifics.
+
+═══════════════════════════════════════
+VOICE
+═══════════════════════════════════════
+- First person where natural ("I watched this video and…", "what struck me was…"). Otherwise close third-person observer.
+- Sentence rhythm: mostly short, occasionally long. Mix punchy with flowing. Read like a writer, not a content mill.
+- Show, don't summarize. "She refused to plug it in for three days" beats "She was hesitant to use it."
+- Opinions are welcome — your reaction to what happened, what surprised you, what you'd push back on — but ground them in the transcript.
+- No "In conclusion", no "Furthermore", no "In today's fast-paced world". No corporate fluff.
+
+═══════════════════════════════════════
+STRUCTURE OVERRIDE (replaces the product-review template above)
+═══════════════════════════════════════
+
+[1] AFFILIATE DISCLAIMER BLOCK → OMIT ENTIRELY.
+[2] YouTube embed → keep as-is.
+[3] QUICK VERDICT BOX → REPLACE with a short "What this is about" panel: 2-3 sentence framing of the story (NOT a summary — set the scene), then a 3-5 bullet "What you'll take away" list of concrete things the reader will learn / see / understand.
+[4] BODY SECTIONS A-G → reshape into a NARRATIVE arc. Use H2/H3 headings naturally — they should sound like chapter titles or evocative scene markers, not "Section A".
+    A. SCENE-IN — open ON a specific moment from the transcript. No throat-clearing, no "In this video, X explains…". Drop the reader straight into something happening.
+    B. THE BACKSTORY — who is this about, what led up to it, why is it happening now? Specific names, places, dates. From the transcript.
+    C. WHAT ACTUALLY HAPPENS — blow-by-blow of the video's main arc, drawing direct quotes and concrete details from the transcript. Multiple paragraphs, paced like a story.
+    D. THE PART NOBODY ELSE WILL TELL YOU — the surprising / overlooked / counterintuitive moment. Quote it directly.
+    E. WHAT IT MEANS — your read on the broader implication. Be specific. Avoid generic life lessons.
+    F. (OPTIONAL) COMPARABLE STORIES — only if you genuinely have one. Otherwise skip.
+    G. WHAT TO DO WITH THIS — what the reader walks away with: a recommendation, a question to sit with, a thing to try, a perspective shift.
     OMIT the mid-article CTA card entirely.
-[5] FAQ → keep, but reframe questions around the TOPIC of the video, not a product.
-[6] RATING BOX → OMIT ENTIRELY (no product to rate).
-[7] FINAL CTA CARD → REPLACE with a simple "Watch the full video" call-to-action (no Amazon link, no button styling — just a normal paragraph linking to the embedded video above or inviting subscription).
+[5] FAQ → keep, but reframe around the TOPIC / story / claims of the video. Answer with transcript-backed specifics.
+[6] RATING BOX → OMIT ENTIRELY.
+[7] FINAL CTA CARD → REPLACE with a simple "Watch it for yourself" paragraph pointing back to the embedded video (and a soft subscribe nudge if it fits). No button styling, no Amazon language.
 [8] HASHTAG TAGS → keep, but exclude #ad / #affiliate / any sponsorship-flavoured tags.
 
-DO NOT include the {AFFILIATE_URL} or {AFFILIATE_LINK} placeholder anywhere. There is no affiliate URL for this post.
-DO NOT mention "purchase", "price", "buy", "Amazon", or "affiliate" anywhere in the body.
-The rest of the brand voice, tone, length, and formatting rules from the system prompt still apply.
+═══════════════════════════════════════
+HARD BANS for general-video mode
+═══════════════════════════════════════
+- No {AFFILIATE_URL} / {AFFILIATE_LINK} placeholders anywhere.
+- No "purchase", "price", "buy", "Amazon", "affiliate", "best deal", "today's price", "in stock".
+- No fake quotes, fake names, fake numbers, fake "studies show".
+- No generic life-coach platitudes — every paragraph must earn its place with specifics from the transcript.
+- No bulleted summary at the bottom. Land the ending with a sentence that lingers.
+
+The rest of the brand voice, tone, length, learn-profile rules, and formatting from the system prompt still apply.
 ═══════════════════════════════════════`
 
     const userMessage = `Generate a blog post for this YouTube ${isProduct ? 'review video' : 'video (general content — not a product review)'}.

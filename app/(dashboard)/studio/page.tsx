@@ -86,6 +86,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const [product, setProduct] = useState<ProductInfo | null>(null)
   const [affiliateUrl, setAffiliateUrl] = useState<string | null>(null)
   const [geniuslinkUsed, setGeniuslinkUsed] = useState<boolean | null>(null)
+  /** Where the product attached to this generation came from:
+   *  'caller' = user dropped an ASIN in the YT title themselves
+   *  'title'  = same (server detected the ASIN in the title)
+   *  'search' = no ASIN, we asked Haiku to extract the product name
+   *             and scraped Amazon search for the match
+   *  'none'   = general video, no product attached */
+  const [productDiscoverySource, setProductDiscoverySource] = useState<'caller' | 'title' | 'search' | 'none' | null>(null)
   const [proSettings, setProSettings] = useState<ProPublishSettings>(defaultProSettings)
   const [geniuslinkError, setGeniuslinkError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -180,6 +187,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
       setProduct({ ...productData, bullets: productBullets, description: productDescription })
       setAffiliateUrl(data.affiliateUrl as string)
       setGeniuslinkUsed((data.geniuslinkUsed ?? false) as boolean)
+      setProductDiscoverySource((data.productDiscoverySource ?? null) as typeof productDiscoverySource)
       setGeniuslinkError((data.geniuslinkError ?? null) as string | null)
 
       // ── Auto-generate thumbnail immediately after metadata ─────────────────
@@ -721,7 +729,20 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 <img src={product.imageUrl} alt={product.title} className="w-10 h-10 object-contain rounded" />
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{product.title}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{product.title}</p>
+                  {/* When we found the product via Amazon search (no ASIN
+                      in title), flag it so the user can sanity-check the
+                      match before publishing. */}
+                  {productDiscoverySource === 'search' && (
+                    <span
+                      title="No ASIN was in your YouTube title — we identified this product from your title text and found it on Amazon. Double-check it's the right match before publishing."
+                      className="flex-shrink-0 inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] border border-[#5856d6]/30"
+                    >
+                      <Sparkles size={9} /> Auto-discovered
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">
                   {product.price && <span>{product.price}</span>}
                   {product.rating && <span>★ {product.rating}/5</span>}
