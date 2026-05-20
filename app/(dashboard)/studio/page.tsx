@@ -120,6 +120,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
   /** All variants returned by the last generation. Used when variantCount=2
    *  so the user can compare side-by-side and pick. */
   const [thumbnailVariants, setThumbnailVariants] = useState<string[]>([])
+  /** Pre-generation prompt — opens when the user clicks Generate Thumbnail
+   *  so they consciously decide whether to write their own headline or
+   *  let MVP do it, before any AI work fires. */
+  const [headlinePromptOpen, setHeadlinePromptOpen] = useState(false)
+  const [headlinePromptChoice, setHeadlinePromptChoice] = useState<'auto' | 'manual'>('auto')
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -953,56 +958,42 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   </div>
                 </div>
 
-                {/* Headline lock + variant count — sit above the generate
-                    buttons so the user thinks about these BEFORE clicking. */}
-                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 space-y-2.5">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-                      Lock headline <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — 2-5 words work best)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={customHeadline}
-                      onChange={(e) => setCustomHeadline(e.target.value)}
-                      placeholder="e.g. WORTH IT? — leave blank to let AI pick"
-                      maxLength={40}
-                      disabled={generatingThumbnail || instantLoading}
-                      className="w-full text-xs px-2.5 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none uppercase tracking-wide"
-                    />
-                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1">
-                      When set, the AI generates only the background — your exact text gets overlaid crisply on top.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Variants</label>
-                    <div className="flex items-center gap-1.5">
-                      {([1, 2] as const).map(n => (
-                        <button
-                          key={n}
-                          type="button"
-                          onClick={() => setVariantCount(n)}
-                          disabled={generatingThumbnail || instantLoading}
-                          className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors border disabled:opacity-60 ${
-                            variantCount === n
-                              ? 'bg-[#0071e3] text-white border-[#0071e3]'
-                              : 'bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] border-gray-200 dark:border-white/10 hover:border-gray-300'
-                          }`}
-                        >
-                          {n} thumbnail{n > 1 ? 's' : ''}
-                        </button>
-                      ))}
-                      {variantCount === 2 && (
-                        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] ml-1">Uses 2 from your monthly cap</span>
-                      )}
-                    </div>
+                {/* Variant count — small inline control. The headline
+                    question is asked via modal at click-time so users
+                    consciously decide before any AI work fires. */}
+                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">
+                  <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Variants</label>
+                  <div className="flex items-center gap-1.5">
+                    {([1, 2] as const).map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setVariantCount(n)}
+                        disabled={generatingThumbnail || instantLoading}
+                        className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors border disabled:opacity-60 ${
+                          variantCount === n
+                            ? 'bg-[#0071e3] text-white border-[#0071e3]'
+                            : 'bg-white dark:bg-[#0a0a0a] text-[#1d1d1f] dark:text-[#f5f5f7] border-gray-200 dark:border-white/10 hover:border-gray-300'
+                        }`}
+                      >
+                        {n} thumbnail{n > 1 ? 's' : ''}
+                      </button>
+                    ))}
+                    {variantCount === 2 && (
+                      <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] ml-1">Uses 2 from your monthly cap</span>
+                    )}
                   </div>
                 </div>
 
                 {/* Generate buttons */}
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
                   <button
-                    onClick={generateThumbnail}
+                    onClick={() => {
+                      // Open the headline-decision modal first — generation
+                      // only fires once the user explicitly picks auto/manual.
+                      setHeadlinePromptChoice(customHeadline.trim() ? 'manual' : 'auto')
+                      setHeadlinePromptOpen(true)
+                    }}
                     disabled={generatingThumbnail || instantLoading}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
                     style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
@@ -1286,6 +1277,109 @@ function VideoStudioCard({ video, userTier, playlists }: {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Pre-generation headline prompt — pops when the user clicks
+          Generate Thumbnail so they consciously decide whether to lock
+          a headline before any AI work fires. */}
+      {headlinePromptOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setHeadlinePromptOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-md w-full p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+              Who writes the thumbnail headline?
+            </h3>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              The headline is the text that gets overlaid on top of the thumbnail. Pick now so the AI knows whether to leave you negative space.
+            </p>
+
+            <div className="flex flex-col gap-2 mb-4">
+              <label
+                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  headlinePromptChoice === 'auto'
+                    ? 'border-[#0071e3] bg-[#0071e3]/5'
+                    : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="headline-choice"
+                  checked={headlinePromptChoice === 'auto'}
+                  onChange={() => setHeadlinePromptChoice('auto')}
+                  className="mt-1"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Let MVP write it</p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                    AI generates a 2-3 word punchy hook based on your video title.
+                  </p>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  headlinePromptChoice === 'manual'
+                    ? 'border-[#0071e3] bg-[#0071e3]/5'
+                    : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="headline-choice"
+                  checked={headlinePromptChoice === 'manual'}
+                  onChange={() => setHeadlinePromptChoice('manual')}
+                  className="mt-1"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">I&apos;ll write my own title</p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-2">
+                    Type the exact text. We&apos;ll overlay it crisply on the AI-generated background.
+                  </p>
+                  {headlinePromptChoice === 'manual' && (
+                    <input
+                      type="text"
+                      value={customHeadline}
+                      onChange={(e) => setCustomHeadline(e.target.value)}
+                      placeholder="e.g. WORTH IT?"
+                      maxLength={40}
+                      autoFocus
+                      className="w-full text-xs px-2.5 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none uppercase tracking-wide"
+                    />
+                  )}
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setHeadlinePromptOpen(false)}
+                className="px-3 py-2 rounded-lg text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  // Apply the choice: blank headline if "auto", or whatever
+                  // the user typed if "manual". Then fire the existing
+                  // generate flow which already reads customHeadline state.
+                  if (headlinePromptChoice === 'auto') setCustomHeadline('')
+                  setHeadlinePromptOpen(false)
+                  // Defer the fetch so the customHeadline state update lands first.
+                  setTimeout(() => { generateThumbnail() }, 0)
+                }}
+                disabled={headlinePromptChoice === 'manual' && customHeadline.trim().length === 0}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <Sparkles size={11} /> Start generation
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

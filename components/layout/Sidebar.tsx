@@ -33,6 +33,7 @@ import {
   Handshake,
   GraduationCap,
   MessagesSquare,
+  UserCircle2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -51,6 +52,7 @@ const nav = [
   { href: '/learn', label: 'Learning', icon: GraduationCap, matchKind: 'prefix' as const },
   { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' as const },
   { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' as const },
+  { href: '/face-training', label: 'Face Training', icon: UserCircle2, matchKind: 'prefix' as const },
   { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' as const },
   { href: '/campaigns', label: 'Creator Campaigns', icon: Megaphone, matchKind: 'prefix' as const },
   { href: '/collaborations', label: 'Collaborations', icon: Handshake, matchKind: 'prefix' as const },
