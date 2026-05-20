@@ -1568,6 +1568,11 @@ export default function ContentPage() {
   const [bulkCategoryProgress, setBulkCategoryProgress] = useState<{ done: number; total: number } | null>(null)
   // Bulk Schedule — modal opens with date picker + platform multi-select
   const [bulkScheduleOpen, setBulkScheduleOpen] = useState(false)
+  // Library filters/sort (applied to the current videos tab — horizontal or vertical)
+  const [videoSort, setVideoSort] = useState<'newest' | 'oldest' | 'views' | 'title'>('newest')
+  const [videoSearch, setVideoSearch] = useState('')
+  const [videoChannel, setVideoChannel] = useState<string>('') // '' = all channels
+  const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated'>('all')
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
   // Hydrate the preview-before-publish toggle from localStorage
@@ -2078,6 +2083,44 @@ export default function ContentPage() {
   const currentTabVideos = activeTab === 'vertical' ? verticalVideos : horizontalVideos
   const generatedCount = Object.keys(posts).length
 
+  // Unique channel list, derived from the current tab's videos — drives the
+  // channel filter dropdown. Sorted alphabetically for stable UI.
+  const tabChannels = Array.from(new Set(
+    currentTabVideos.map(v => (v.channel_title as string) || '').filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b))
+
+  // Apply search + channel + generated filter, then sort. Pure derivation —
+  // the underlying `videos` array is never mutated.
+  const search = videoSearch.trim().toLowerCase()
+  const displayVideos = currentTabVideos
+    .filter(v => {
+      if (videoChannel && (v.channel_title as string) !== videoChannel) return false
+      if (videoGenFilter !== 'all') {
+        const has = !!posts[v.id as string]
+        if (videoGenFilter === 'generated' && !has) return false
+        if (videoGenFilter === 'ungenerated' && has) return false
+      }
+      if (search) {
+        const hay = `${v.title || ''} ${v.channel_title || ''} ${v.description || ''}`.toLowerCase()
+        if (!hay.includes(search)) return false
+      }
+      return true
+    })
+    .sort((a, b) => {
+      switch (videoSort) {
+        case 'oldest':
+          return new Date(a.published_at as string).getTime() - new Date(b.published_at as string).getTime()
+        case 'views':
+          return ((b.view_count as number) || 0) - ((a.view_count as number) || 0)
+        case 'title':
+          return ((a.title as string) || '').localeCompare((b.title as string) || '')
+        case 'newest':
+        default:
+          return new Date(b.published_at as string).getTime() - new Date(a.published_at as string).getTime()
+      }
+    })
+  const filtersActive = !!(search || videoChannel || videoGenFilter !== 'all' || videoSort !== 'newest')
+
   return (
     <>
       <Header
@@ -2320,19 +2363,72 @@ export default function ContentPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
+          {/* Filter + sort bar — operates on the active video tab */}
+          <div className="flex items-center gap-2 flex-wrap p-2 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e]">
+            <input
+              type="search"
+              value={videoSearch}
+              onChange={e => setVideoSearch(e.target.value)}
+              placeholder="Search title, channel, description…"
+              className="flex-1 min-w-[180px] text-xs px-3 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+            />
+            {tabChannels.length > 1 && (
+              <select
+                value={videoChannel}
+                onChange={e => setVideoChannel(e.target.value)}
+                className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none max-w-[200px]"
+                title="Filter by YouTube channel"
+              >
+                <option value="">All channels ({tabChannels.length})</option>
+                {tabChannels.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+            <select
+              value={videoGenFilter}
+              onChange={e => setVideoGenFilter(e.target.value as 'all' | 'ungenerated' | 'generated')}
+              className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+              title="Filter by post status"
+            >
+              <option value="all">All status</option>
+              <option value="ungenerated">Not yet posted</option>
+              <option value="generated">Already posted</option>
+            </select>
+            <select
+              value={videoSort}
+              onChange={e => setVideoSort(e.target.value as 'newest' | 'oldest' | 'views' | 'title')}
+              className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+              title="Sort videos"
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="views">Most viewed</option>
+              <option value="title">Title A–Z</option>
+            </select>
+            {filtersActive && (
+              <button
+                onClick={() => { setVideoSearch(''); setVideoChannel(''); setVideoGenFilter('all'); setVideoSort('newest') }}
+                className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline px-1"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div className="flex items-center gap-2 text-sm">
               <Sparkles size={14} className="text-[#0071e3]" />
               <span className="text-[#6e6e73] dark:text-[#ebebf0]">
-                {activeTab === 'vertical'
-                  ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} — source for Instagram Reels & Stories`
-                  : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts (each can also become an Instagram image post)`}
+                {filtersActive
+                  ? `Showing ${displayVideos.length} of ${currentTabVideos.length} videos`
+                  : activeTab === 'vertical'
+                    ? `${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''} — source for Instagram Reels & Stories`
+                    : `${generatedCount} of ${horizontalVideos.length} long-form videos published as blog posts (each can also become an Instagram image post)`}
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {activeTab === 'horizontal' && selectedVideoIds.size === 0 && currentTabVideos.some(v => !posts[v.id as string]) && (
+              {activeTab === 'horizontal' && selectedVideoIds.size === 0 && displayVideos.some(v => !posts[v.id as string]) && (
                 <button
-                  onClick={() => setSelectedVideoIds(new Set(currentTabVideos.filter(v => !posts[v.id as string]).map(v => v.id as string)))}
+                  onClick={() => setSelectedVideoIds(new Set(displayVideos.filter(v => !posts[v.id as string]).map(v => v.id as string)))}
                   className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
                 >
                   Select all ungenerated
@@ -2421,7 +2517,7 @@ export default function ContentPage() {
               })()}
             </div>
           </div>
-          {currentTabVideos.map((video) => {
+          {displayVideos.map((video) => {
             const isSelected = selectedVideoIds.has(video.id as string)
             return (
               <div key={video.id as string} className="flex items-start gap-2">
