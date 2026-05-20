@@ -6,13 +6,19 @@ import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2 
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
 
-async function uploadLogo(file: File, userId: string): Promise<string> {
+async function uploadBrandImage(
+  file: File,
+  userId: string,
+  kind: 'logo' | 'header-banner' | 'about-photo',
+): Promise<string> {
   const supabase = createBrowserClient()
   const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
-  const path = `${userId}/logo.${ext}`
+  // Different basename per asset so they don't overwrite each other in
+  // the same storage bucket (one logo, one banner, one headshot per user).
+  const path = `${userId}/${kind}.${ext}`
   const { error } = await supabase.storage.from('headshots').upload(path, file, {
     cacheControl: '31536000',
-    upsert: true,  // overwrite — only one logo per user
+    upsert: true,
   })
   if (error) throw new Error(error.message)
   const { data } = supabase.storage.from('headshots').getPublicUrl(path)
@@ -102,6 +108,8 @@ interface BrandData {
   // live on the LEARN page (single editing surface for voice).
   gear_sections: GearSection[]
   logo_url: string
+  header_banner_url: string
+  headshot_url: string
   font_theme: string
   // Social URLs — moved here from Customize Blog (single source of truth)
   youtube_channel_url: string
@@ -173,6 +181,8 @@ const DEFAULT: BrandData = {
   secondary_color: '#34c759',
   gear_sections: [],
   logo_url: '',
+  header_banner_url: '',
+  headshot_url: '',
   font_theme: 'editorial',
   youtube_channel_url: '',
   instagram_url: '',
@@ -198,6 +208,8 @@ export default function BrandPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [wpPushNote, setWpPushNote] = useState<string | null>(null)
   const [logoUploading, setLogoUploading] = useState(false)
+  const [bannerUploading, setBannerUploading] = useState(false)
+  const [headshotUploading, setHeadshotUploading] = useState(false)
   const [purging, setPurging] = useState(false)
   const [purged, setPurged] = useState(false)
 
@@ -243,6 +255,8 @@ export default function BrandPage() {
         secondary_color: row.secondary_color ?? '#34c759',
         gear_sections: row.gear_sections ?? [],
         logo_url: row.logo_url ?? '',
+        header_banner_url: row.header_banner_url ?? '',
+        headshot_url: row.headshot_url ?? '',
         font_theme: row.font_theme ?? 'editorial',
         youtube_channel_url: row.youtube_channel_url ?? '',
         instagram_url: row.instagram_url ?? '',
@@ -321,6 +335,8 @@ export default function BrandPage() {
           secondaryColor: normalized.secondary_color,
           fontTheme:      normalized.font_theme,
           logoUrl:        normalized.logo_url,
+          headerBannerUrl: normalized.header_banner_url,
+          headshotUrl:    normalized.headshot_url,
           youtubeUrl:     normalized.youtube_channel_url,
           instagramUrl:   normalized.instagram_url,
           tiktokUrl:      normalized.tiktok_url,
@@ -356,27 +372,33 @@ export default function BrandPage() {
     setData((prev) => ({ ...prev, [key]: value }))
   }
 
-  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageUpload(
+    e: React.ChangeEvent<HTMLInputElement>,
+    kind: 'logo' | 'header-banner' | 'about-photo',
+    column: 'logo_url' | 'header_banner_url' | 'headshot_url',
+    setBusy: (b: boolean) => void,
+  ) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    setLogoUploading(true)
+    setBusy(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not logged in')
-      const url = await uploadLogo(file, user.id)
-      set('logo_url', url)
-      // Auto-save immediately
+      const url = await uploadBrandImage(file, user.id, kind)
+      set(column, url)
+      // Auto-save immediately so the upload sticks even if the user
+      // closes the tab before hitting the main Save button.
       await supabase.from('brand_profiles').upsert(
-        { ...data, logo_url: url, user_id: user.id },
+        { ...data, [column]: url, user_id: user.id },
         { onConflict: 'user_id' },
       )
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Logo upload failed')
+      alert(err instanceof Error ? err.message : 'Upload failed')
     } finally {
-      setLogoUploading(false)
+      setBusy(false)
     }
   }
 
@@ -746,12 +768,81 @@ export default function BrandPage() {
               )}
               <div className="flex flex-col gap-2">
                 <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${logoUploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={handleLogoUpload} />
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={e => handleImageUpload(e, 'logo', 'logo_url', setLogoUploading)} />
                   {logoUploading
                     ? <><Upload size={13} className="animate-pulse" /> Uploading…</>
                     : <><Upload size={13} /> {data.logo_url ? 'Replace logo' : 'Upload logo'}</>}
                 </label>
                 <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">PNG, JPG, SVG or WebP · Auto-saved on upload</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Header Banner — wide top strip on the blog */}
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Header Banner <span className="text-[#86868b] font-normal">(optional)</span></h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              The wide image at the top of every blog page. Recommended <strong>1920×240 px</strong> (8:1).
+              Falls back to the Brand Logo if you don&apos;t upload one. Center your logo + tagline — narrow viewports letterbox, never crop.
+            </p>
+            <div className="flex items-center gap-4">
+              {data.header_banner_url ? (
+                <div className="relative group w-48 h-14 rounded-lg border border-gray-200 dark:border-white/10 bg-black flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <img src={data.header_banner_url} alt="Header banner" className="w-full h-full object-contain" />
+                  <button
+                    onClick={() => set('header_banner_url', '')}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-48 h-14 rounded-lg border-2 border-dashed border-gray-200 dark:border-white/20 flex items-center justify-center flex-shrink-0 bg-gray-50 dark:bg-white/5">
+                  <span className="text-[10px] text-[#86868b]">No banner</span>
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${bannerUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => handleImageUpload(e, 'header-banner', 'header_banner_url', setBannerUploading)} />
+                  {bannerUploading
+                    ? <><Upload size={13} className="animate-pulse" /> Uploading…</>
+                    : <><Upload size={13} /> {data.header_banner_url ? 'Replace banner' : 'Upload banner'}</>}
+                </label>
+                <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">PNG, JPG or WebP · Auto-saved · Theme update (1.3.8+) required</p>
+              </div>
+            </div>
+          </div>
+
+          {/* About Us Photo — round image in the footer About band */}
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">About Us Photo <span className="text-[#86868b] font-normal">(optional)</span></h2>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              A round headshot (or your logo) shown next to your &quot;About us&quot; bio in the blog footer. Recommended <strong>500×500 px</strong> square — it&apos;s displayed circular.
+            </p>
+            <div className="flex items-center gap-4">
+              {data.headshot_url ? (
+                <div className="relative group w-20 h-20 rounded-full border border-gray-200 dark:border-white/10 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <img src={data.headshot_url} alt="About us photo" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => set('headshot_url', '')}
+                    className="absolute top-0 right-0 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-20 h-20 rounded-full border-2 border-dashed border-gray-200 dark:border-white/20 flex items-center justify-center flex-shrink-0 bg-gray-50 dark:bg-white/5">
+                  <span className="text-[10px] text-[#86868b] text-center leading-tight px-1">No photo</span>
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${headshotUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => handleImageUpload(e, 'about-photo', 'headshot_url', setHeadshotUploading)} />
+                  {headshotUploading
+                    ? <><Upload size={13} className="animate-pulse" /> Uploading…</>
+                    : <><Upload size={13} /> {data.headshot_url ? 'Replace photo' : 'Upload photo'}</>}
+                </label>
+                <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">PNG, JPG or WebP · Auto-saved</p>
               </div>
             </div>
           </div>

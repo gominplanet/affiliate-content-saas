@@ -23,6 +23,8 @@ export async function POST(request: Request) {
     secondaryColor?: string
     fontTheme?: string
     logoUrl?: string
+    headerBannerUrl?: string
+    headshotUrl?: string
     youtubeUrl?: string
     instagramUrl?: string
     tiktokUrl?: string
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
   const {
     authorName, brandName, tagline, authorBio,
     primaryColor, secondaryColor, fontTheme, logoUrl,
+    headerBannerUrl, headshotUrl,
     youtubeUrl, instagramUrl, tiktokUrl, twitterUrl,
     pinterestUrl, facebookUrl, threadsUrl, contactEmail,
     niches,
@@ -134,11 +137,16 @@ export async function POST(request: Request) {
         ...(facebookUrl    ? { facebookUrl }  : {}),
         ...(threadsUrl     ? { threadsUrl }   : {}),
         ...(contactEmail   ? { contactEmail } : {}),
+        // Round About-Us photo (theme reads profile.headshotUrl).
+        ...(headshotUrl    ? { headshotUrl } : {}),
       },
-      // Logo URL goes into about.logoUrl so the theme renders the logo banner
       about: {
         ...existingAbout,
+        // logo_url stays the favicon/footer/legacy banner fallback.
         ...(logoUrl ? { logoUrl } : {}),
+        // Wide top banner — theme renders this in place of the small
+        // centered logo when present (falls back to logoUrl otherwise).
+        ...(headerBannerUrl ? { headerBannerUrl } : {}),
       },
     }
 

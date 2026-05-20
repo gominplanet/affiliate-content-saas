@@ -111,6 +111,10 @@ p { margin: 0 0 1em; }
   position: relative;
   z-index: 50;
 }
+/* Banner mode: tighter padding so a wide header banner fills the strip
+   without a chunky frame around it. */
+.mvp-logobanner.mvp-logobanner--banner { padding: 0; }
+.mvp-logobanner--banner .mvp-logobanner-link { display: block; }
 .mvp-logobanner-link { display: inline-block; line-height: 0; }
 .mvp-logobanner-img {
   height: 80px;
@@ -118,9 +122,23 @@ p { margin: 0 0 1em; }
   max-width: 100%;
   object-fit: contain;
 }
+/* When a wide header banner is uploaded (--banner variant), let it
+   actually span the strip up to a cap — height is intrinsic, capped so
+   it can't dominate the page. The image still contains (never crops),
+   so a centered logo with margin still looks intentional. */
+.mvp-logobanner-img--banner {
+  height: auto;
+  width: 100%;
+  max-width: 1600px;
+  max-height: 240px;
+  margin: 0 auto;
+  display: block;
+}
 @media (max-width: 640px) {
   .mvp-logobanner { padding: 14px 16px; }
+  .mvp-logobanner.mvp-logobanner--banner { padding: 0; }
   .mvp-logobanner-img { height: 60px; }
+  .mvp-logobanner-img--banner { height: auto; max-height: 120px; }
 }
 
 /* ─── Main header ────────────────────────────────────────────────────────── */

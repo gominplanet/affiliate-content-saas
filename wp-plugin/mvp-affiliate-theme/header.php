@@ -14,6 +14,11 @@
 $about    = mvp_affiliate_about();
 $profile  = mvp_affiliate_profile();
 $logo_url = $about['logoUrl'] ?? '';
+// Optional wide top banner. When set, replaces the small centered logo
+// so creators can run a real header image (recommended 1920x240).
+$banner_url = trim($about['headerBannerUrl'] ?? '');
+$top_img    = $banner_url !== '' ? $banner_url : $logo_url;
+$is_banner  = $banner_url !== '';
 $bg       = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
 $brand    = get_bloginfo('name');
 $socials  = mvp_affiliate_socials();
@@ -44,11 +49,11 @@ if ($disclaimer === '') {
   </div>
 </div>
 
-<!-- Logo banner -->
-<?php if ($logo_url): ?>
-<div class="mvp-logobanner" style="background:<?php echo $bg; ?>;">
+<!-- Logo banner (small centered logo, or full wide banner if uploaded) -->
+<?php if ($top_img): ?>
+<div class="mvp-logobanner<?php echo $is_banner ? ' mvp-logobanner--banner' : ''; ?>" style="background:<?php echo $bg; ?>;">
   <a href="<?php echo esc_url(home_url('/')); ?>" class="mvp-logobanner-link" aria-label="<?php echo esc_attr($brand); ?>">
-    <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr($brand); ?>" class="mvp-logobanner-img" />
+    <img src="<?php echo esc_url($top_img); ?>" alt="<?php echo esc_attr($brand); ?>" class="mvp-logobanner-img<?php echo $is_banner ? ' mvp-logobanner-img--banner' : ''; ?>" />
   </a>
 </div>
 <?php endif; ?>
