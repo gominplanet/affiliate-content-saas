@@ -1530,6 +1530,7 @@ export default function ContentPage() {
   const [previewBeforePublish, setPreviewBeforePublish] = useState(false)
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<{ pulled: number; pages: number } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [nextPageToken, setNextPageToken] = useState<string | null>(null)
@@ -1585,11 +1586,34 @@ export default function ContentPage() {
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+    const uid = user.id
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
-    const [{ data: vids }, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
-      sb.from('youtube_videos').select('*').eq('user_id', user.id).order('published_at', { ascending: false }),
+
+    // Supabase caps a single .select() at 1,000 rows. Channels with more
+    // synced videos than that would silently get truncated, so we page
+    // through with .range() until we've pulled everything.
+    async function fetchAllVideos(): Promise<Record<string, unknown>[]> {
+      const PAGE = 1000
+      const all: Record<string, unknown>[] = []
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await sb
+          .from('youtube_videos')
+          .select('*')
+          .eq('user_id', uid)
+          .order('published_at', { ascending: false })
+          .range(from, from + PAGE - 1)
+        if (error) break
+        const chunk = (data as Record<string, unknown>[]) ?? []
+        all.push(...chunk)
+        if (chunk.length < PAGE) break
+      }
+      return all
+    }
+
+    const [vids, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
+      fetchAllVideos(),
       sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tier').eq('user_id', user.id).single(),
       sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
@@ -1601,7 +1625,7 @@ export default function ContentPage() {
     setChecks({
       brandReady: !!(b?.name && (b.niches as string[] || []).length > 0),
       wpReady: !!(i?.wordpress_url && i?.wordpress_username),
-      videosReady: (vids?.length ?? 0) > 0,
+      videosReady: vids.length > 0,
     })
     setWpSiteUrl((i?.wordpress_url as string) || '')
     setFbConnected(!!(i as Record<string, unknown>)?.facebook_page_id)
@@ -1615,7 +1639,7 @@ export default function ContentPage() {
     setUserTier(((i as Record<string, unknown>)?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free')
     setBrandNiches(((b?.niches as string[] | null) ?? []))
     setCustomCategories(((b?.custom_categories as string[] | null) ?? []))
-    setVideos((vids as Record<string, unknown>[]) ?? [])
+    setVideos(vids)
 
     const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
@@ -1978,13 +2002,34 @@ export default function ContentPage() {
 
   async function syncVideos() {
     setSyncing(true)
+    setSyncProgress({ pulled: 0, pages: 0 })
     try {
-      const res = await fetch('/api/youtube/sync', { method: 'POST' })
-      const data = await res.json().catch(() => ({}))
-      setNextPageToken(data.nextPageToken ?? null)
+      // Loop through every page of the channel feed so large channels
+      // (1,000+ videos) come down in one click instead of needing the
+      // user to click "Load more" 20 times. Hard cap at 100 pages
+      // (~5,000 videos) as a safety belt.
+      let token: string | null = null
+      let pulled = 0
+      let pages = 0
+      do {
+        const res: Response = await fetch('/api/youtube/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(token ? { pageToken: token } : {}),
+        })
+        const data: { synced?: number; nextPageToken?: string | null; error?: string } =
+          await res.json().catch(() => ({}))
+        if (data.error) throw new Error(data.error)
+        pulled += Number(data.synced || 0)
+        pages += 1
+        setSyncProgress({ pulled, pages })
+        token = data.nextPageToken ?? null
+      } while (token && pages < 100)
+      setNextPageToken(null)
       await load()
     } catch { /* non-fatal */ } finally {
       setSyncing(false)
+      setSyncProgress(null)
     }
   }
 
@@ -2151,7 +2196,7 @@ export default function ContentPage() {
             </button>
             {(activeTab === 'horizontal' || activeTab === 'vertical') && (
               <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
-                {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : <><RefreshCw size={14} /> Sync videos</>}
+                {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing {syncProgress ? `(${syncProgress.pulled})` : ''}…</> : <><RefreshCw size={14} /> Sync videos</>}
               </button>
             )}
           </div>
@@ -2344,7 +2389,7 @@ export default function ContentPage() {
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">One click and we pull every public, unlisted, and draft video from your channel. ASIN-tagged videos become instant generation candidates.</p>
           </div>
           <button onClick={syncVideos} disabled={syncing} className="btn-primary text-sm">
-            {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing…</> : 'Sync now'}
+            {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing {syncProgress ? `(${syncProgress.pulled})` : ''}…</> : 'Sync now'}
           </button>
         </div>
       ) : currentTabVideos.length === 0 ? (
@@ -2358,7 +2403,7 @@ export default function ContentPage() {
               : 'All your synced videos look like Shorts. Hit Sync again to refresh, or open the Vertical Videos tab to publish them as Reels.'}
           </p>
           <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-xs">
-            {syncing ? <><Loader2 size={11} className="animate-spin" /> Syncing…</> : <><RefreshCw size={11} /> Re-sync videos</>}
+            {syncing ? <><Loader2 size={11} className="animate-spin" /> Syncing {syncProgress ? `(${syncProgress.pulled})` : ''}…</> : <><RefreshCw size={11} /> Re-sync videos</>}
           </button>
         </div>
       ) : (
