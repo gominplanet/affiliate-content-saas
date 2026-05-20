@@ -409,6 +409,25 @@ export default function BrandPage() {
         .update({ [column]: url })
         .eq('user_id', user.id)
       if (saveErr) throw new Error(saveErr.message)
+
+      // Push the new image to WordPress immediately. Without this the
+      // affiliateos_customizations option keeps the previous URL until
+      // the user clicks the big Save button, so the live theme keeps
+      // rendering the old banner/logo/headshot.
+      const wpPayloadKey =
+        column === 'logo_url'          ? 'logoUrl' :
+        column === 'header_banner_url' ? 'headerBannerUrl' :
+                                         'headshotUrl'
+      await fetch('/api/wordpress/sync-brand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [wpPayloadKey]: url }),
+      }).catch(() => { /* non-fatal — full Save will reconcile */ })
+
+      // Purge the LiteSpeed/CDN cache so visitors see the new image on
+      // the next request instead of the cached page with the old URL.
+      fetch('/api/wordpress/purge-cache', { method: 'POST' }).catch(() => {})
+
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
