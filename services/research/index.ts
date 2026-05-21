@@ -128,6 +128,8 @@ export async function researchProductFromUrl(
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
       redirect: 'follow',
+      // Don't let a slow/hanging product page block the generation pipeline.
+      signal: AbortSignal.timeout(12000),
     })
     if (!res.ok) return ''
     const html = await res.text()

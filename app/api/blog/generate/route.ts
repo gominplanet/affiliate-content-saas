@@ -81,6 +81,17 @@ async function resolveFinalUrl(url: string): Promise<string> {
   }
 }
 
+/** Race a promise against a timeout, resolving to `fallback` if it doesn't
+ *  settle in time. Used to keep best-effort enrichment (web research) from
+ *  consuming the generation function's limited time budget. The underlying
+ *  work keeps running but its result is ignored once we've moved on. */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
+  ])
+}
+
 /** Resolve a Geniuslink (or any short URL) to its TRUE product destination,
  *  unwrapping the affiliate redirectors Geniuslink routes through (Sovrn
  *  go.redirectingat.com, Skimlinks, VigLink) which carry the real target in
@@ -526,12 +537,22 @@ async function handleGenerate(request: Request) {
   if (tier === 'creator' || tier === 'pro' || tier === 'admin') {
     const pUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
     if (pUrl) {
-      productResearch = (await researchProductFromUrl(pUrl, rawTitle, { userId: user.id, tier })) || null
-      // Direct fetch came back empty (JS-rendered / scraper-blocked page).
-      // Fall back to web search by product name. Pricier, so only here.
-      if (!productResearch) {
-        productResearch = (await researchProductByWebSearch(rawTitle, pUrl, { userId: user.id, tier })) || null
-      }
+      // HARD TIME BUDGET: research is best-effort enrichment, but the
+      // fallback web_search can run 60–90s with no cap. Left unbounded it
+      // starves the main generation of the function's 300s budget, so the
+      // streamed Claude call gets cut off mid-flight ("terminated"). Cap the
+      // whole research step; on timeout we proceed transcript-only.
+      productResearch = await withTimeout(
+        (async () => {
+          let r = (await researchProductFromUrl(pUrl, rawTitle, { userId: user.id, tier })) || null
+          // Direct fetch came back empty (JS-rendered / scraper-blocked page).
+          // Fall back to web search by product name. Pricier, so only here.
+          if (!r) r = (await researchProductByWebSearch(rawTitle, pUrl, { userId: user.id, tier })) || null
+          return r
+        })(),
+        55000,
+        null,
+      )
     }
   }
 
