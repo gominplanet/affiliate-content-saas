@@ -279,8 +279,10 @@ async function handleGenerate(request: Request) {
         upgrade: next,
       }, { status: 403 })
     }
+    // Admin (the owner) is unlimited — never capped at one rewrite per post.
+    // Pro still gets a single AI rewrite per post.
     const usedRewrites = (existingForLimit.rewrite_count as number) ?? 0
-    if (usedRewrites >= 1) {
+    if (tier !== 'admin' && usedRewrites >= 1) {
       return NextResponse.json({
         error: `This post has already been rewritten once. Pro plans allow one AI rewrite per post — further edits should be made manually in WordPress.`,
         limitReached: true,
