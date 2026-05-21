@@ -100,12 +100,27 @@ Return ONLY a JSON array of ${opts.count} strings, nothing else.`,
 // Images are generated separately via /api/blog/images
 export const maxDuration = 300
 
+/** Turn anything thrown into a human-readable string. Plain objects used
+ *  to stringify as "[object Object]" via String(err), hiding the real
+ *  cause (e.g. Fal / fetch rejections that aren't Error instances). */
+function errToMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  if (err && typeof err === 'object') {
+    const maybe = err as { message?: unknown; error?: unknown; detail?: unknown }
+    if (typeof maybe.message === 'string') return maybe.message
+    if (typeof maybe.error === 'string') return maybe.error
+    if (typeof maybe.detail === 'string') return maybe.detail
+    try { return JSON.stringify(err) } catch { /* fall through */ }
+  }
+  return 'Unknown server error'
+}
+
 export async function POST(request: Request) {
   try {
     return await handleGenerate(request)
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return NextResponse.json({ error: errToMessage(err) }, { status: 500 })
   }
 }
 
@@ -348,7 +363,7 @@ async function handleGenerate(request: Request) {
       persistentFeedback,
     )
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Claude generation failed'
+    const msg = err instanceof Error ? err.message : (errToMessage(err) || 'Claude generation failed')
     await logFailure(supabase, user.id, videoId, 'blog_generation', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
@@ -550,7 +565,7 @@ async function handleGenerate(request: Request) {
       ping_status: 'closed',
     })
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'WordPress publish failed'
+    const msg = err instanceof Error ? err.message : (errToMessage(err) || 'WordPress publish failed')
     await logFailure(supabase, user.id, videoId, 'wp_publish', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }

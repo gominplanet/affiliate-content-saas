@@ -83,6 +83,20 @@ const ALL_CATEGORIES = [
   'Arts & Crafts', 'Musical Instruments', 'Software & Apps', 'Finance & Investing',
 ] as const
 
+/** Coerce an API `error` field (which may be a string OR an object) into a
+ *  readable string. Prevents the "[object Object]" UI bug when a route
+ *  serializes a non-string error. */
+function errText(e: unknown): string {
+  if (typeof e === 'string') return e
+  if (e && typeof e === 'object') {
+    const m = e as { message?: unknown; error?: unknown }
+    if (typeof m.message === 'string') return m.message
+    if (typeof m.error === 'string') return m.error
+    try { return JSON.stringify(e) } catch { /* ignore */ }
+  }
+  return ''
+}
+
 /**
  * Per-video category dropdown shown next to "Generate post".
  *
@@ -390,7 +404,7 @@ function GenerateButton({
           setStatus('idle')
           return
         }
-        throw new Error((data.error as string) || 'Generation failed')
+        throw new Error(errText(data.error) || 'Generation failed')
       }
       setResult({ url: data.wordpressUrl as string, title: data.title as string })
       setStatus('done')
@@ -1378,7 +1392,7 @@ function VideoCard({
             )
             return
           }
-          throw new Error(data.error || 'Blog generation failed')
+          throw new Error(errText(data.error) || 'Blog generation failed')
         }
         currentPostId = data.postId as string
         onGenerated(id, data.wordpressUrl as string, data.title as string, data.postId as string)
