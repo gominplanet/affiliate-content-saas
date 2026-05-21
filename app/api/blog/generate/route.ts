@@ -37,7 +37,12 @@ const SHOT_PERSPECTIVES = [
  *  first random link (which is often a collaborations/website link).
  *  Returns null when nothing product-like is linked. */
 function firstProductUrl(description: string, ownSite?: string | null): string | null {
-  const skip = /(amazon\.|amzn\.to|geni\.us|youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|alexmediacreations)/i
+  // NOTE: geni.us / amzn.to are NOT skipped here — a creator's product link
+  // may BE a Geniuslink (any destination) or an Amazon short link, and we
+  // want to recognize + resolve those. Full amazon.com links are handled by
+  // the ASIN path before this runs. We only skip socials, payments, link
+  // hubs, and the creator's own collaboration/site links.
+  const skip = /(youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|alexmediacreations)/i
   const own = ownSite ? ownSite.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
   const candidate = (raw: string): string | null => {
     const clean = raw.replace(/[.,;:)\]>"']+$/, '')
@@ -53,6 +58,25 @@ function firstProductUrl(description: string, ownSite?: string | null): string |
     const c = candidate(raw); if (c) return c
   }
   return null
+}
+
+/** Follow a short link / redirect to its FINAL destination URL. Used to
+ *  "look up" links before assuming what they are — a geni.us or amzn.to
+ *  could resolve to Amazon OR to any store. Best-effort; returns the
+ *  original URL on failure. */
+async function resolveFinalUrl(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' } })
+    return res.url || url
+  } catch {
+    try {
+      // Some hosts reject HEAD — retry with a ranged GET (1 byte).
+      const res = await fetch(url, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0', Range: 'bytes=0-0' } })
+      return res.url || url
+    } catch {
+      return url
+    }
+  }
 }
 
 /** Plain-text word count of Gutenberg block markup (strips wp comments,
@@ -325,10 +349,26 @@ async function handleGenerate(request: Request) {
   } else {
     const directProductUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
     if (directProductUrl) {
-      // The creator's own store / product page (any domain). Don't
-      // Amazon-search for a lookalike.
-      destination = directProductUrl
-      alreadyGeniuslink = /(?:geni\.us|\bgnz\.)/i.test(directProductUrl)
+      if (/(?:geni\.us|\bgnz\.)/i.test(directProductUrl)) {
+        // Already a Geniuslink (could point anywhere) — keep it as-is.
+        destination = directProductUrl
+        alreadyGeniuslink = true
+      } else if (/(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(directProductUrl)) {
+        // A short link — LOOK IT UP before assuming. If it lands on an
+        // Amazon product, treat it as Amazon (extract the ASIN); otherwise
+        // use whatever store it actually points to.
+        const finalUrl = await resolveFinalUrl(directProductUrl)
+        const asinFromFinal = finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]
+        if (asinFromFinal) {
+          asinOverride = asinFromFinal.toUpperCase()
+          destination = `https://www.amazon.com/dp/${asinOverride}`
+        } else {
+          destination = finalUrl
+        }
+      } else {
+        // The creator's direct store / product page (any domain).
+        destination = directProductUrl
+      }
     } else {
       // No usable link anywhere → last-resort Amazon product discovery.
       const discovered = await discoverProductForVideo(rawTitle, rawDescription, { userId: user.id, tier: (wp?.tier as string) ?? null })
