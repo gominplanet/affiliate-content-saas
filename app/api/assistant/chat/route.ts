@@ -154,15 +154,25 @@ export async function POST(request: Request) {
         if (full.trim()) {
           await sb.from('assistant_messages').insert({ conversation_id: convId, user_id: user.id, role: 'assistant', content: full })
           await sb.from('assistant_conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
-          // Roll this exchange into the user's long-term memory so future
-          // chats stay continuous. Cheap Haiku merge; best-effort.
-          const updated = await mergeAssistantMemory({
-            existing: memory,
-            newMaterial: `User: ${message}\nAssistant: ${full}`,
-            kind: 'chat',
-            ctx: { userId: user.id, tier },
-          })
-          if (updated && updated !== memory) await saveAssistantMemory(sb, user.id, updated)
+
+          // Roll the recent exchange into long-term memory — but THROTTLED:
+          // memory only matters cross-conversation (the current thread already
+          // re-feeds its own history), so we don't need to pay for a merge
+          // every turn. Update on the 1st reply (capture early facts) then
+          // every 4th. Counts assistant replies in this conversation.
+          const { count: replyCount } = await sb.from('assistant_messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('conversation_id', convId).eq('role', 'assistant')
+          const n = replyCount ?? 0
+          if (n === 1 || n % 4 === 0) {
+            const updated = await mergeAssistantMemory({
+              existing: memory,
+              newMaterial: priorMsgs.slice(-6).map(m => `${m.role}: ${m.content}`).join('\n') + `\nuser: ${message}\nassistant: ${full}`,
+              kind: 'chat',
+              ctx: { userId: user.id, tier },
+            })
+            if (updated && updated !== memory) await saveAssistantMemory(sb, user.id, updated)
+          }
         }
         controller.close()
       }
