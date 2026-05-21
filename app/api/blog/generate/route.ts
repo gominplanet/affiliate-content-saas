@@ -9,6 +9,7 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin } from '@/services/amazon'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
+import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
 // Images are generated separately via /api/blog/images
@@ -276,8 +277,9 @@ async function handleGenerate(request: Request) {
     setting: scrubBanned(generated.imagePrompts.setting),
   }
 
-  // ── 6. Strip image placeholders (images added later via /api/blog/images) ─
-  const content = generated.content
+  // ── 6. Clean any vestigial placeholders (the prompt no longer emits
+  //        these, but strip defensively in case an old prompt variant does) ─
+  let content = generated.content
     .replace('{{LIFESTYLE_IMAGE}}', '')
     .replace('{{SETTING_IMAGE}}', '')
 
@@ -290,6 +292,40 @@ async function handleGenerate(request: Request) {
     wp.wordpress_app_password,
     wp.wordpress_api_token || undefined,
   )
+
+  // ── 7.05. Auto in-body images — real YouTube frames spliced into the
+  //          body so the post isn't a wall of text. We use the hi-res
+  //          frame grabs YouTube auto-extracts (hq1 ≈ 25%, hq2 ≈ 50% of
+  //          the runtime). Free (no Fal), authentic stills from the video.
+  //          The in-body image editor (separate) lets the user later swap
+  //          these for AI-generated images, manual uploads, or other frames.
+  //          Non-fatal: on any failure we publish the text-only post.
+  const ytIdForFrames = (v as Record<string, unknown>).youtube_video_id as string
+  if (ytIdForFrames) {
+    try {
+      const frameSpecs = [
+        { url: `https://img.youtube.com/vi/${ytIdForFrames}/hq1.jpg`, alt: `${generated.title} — in use` },
+        { url: `https://img.youtube.com/vi/${ytIdForFrames}/hq2.jpg`, alt: `${generated.title} — closer look` },
+      ]
+      const uploaded: Array<{ url: string; alt: string }> = []
+      for (let i = 0; i < frameSpecs.length; i++) {
+        try {
+          const media = await wpService.uploadImageFromUrl(frameSpecs[i].url, `${ytIdForFrames}-frame${i + 1}.jpg`)
+          if (media?.source_url) uploaded.push({ url: media.source_url, alt: frameSpecs[i].alt })
+        } catch { /* skip this frame */ }
+      }
+      if (uploaded.length > 0) {
+        const slots = autoPlacementIndices(content, uploaded.length)
+        content = insertImagesAtHeadings(
+          content,
+          uploaded.map((img, i) => ({
+            beforeHeadingIndex: slots[i] ?? (i + 1),
+            block: gutenbergImageBlock(img.url, img.alt),
+          })),
+        )
+      }
+    } catch { /* non-fatal — text-only post still publishes */ }
+  }
 
   let tagIds: number[] = []
   try {
