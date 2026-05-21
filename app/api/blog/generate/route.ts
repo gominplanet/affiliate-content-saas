@@ -481,9 +481,10 @@ async function handleGenerate(request: Request) {
         }
 
         // Scale image count with article length — roughly one image per
-        // 500 words, min 2, capped at 6 to bound Fal cost + latency.
+        // ~550 words, min 2, capped at 4 to keep Fal cost + latency down
+        // (was 6; lowered for margin — typical reviews land at 3-4).
         const words = bodyWordCount(content)
-        const imageCount = Math.max(2, Math.min(6, Math.round(words / 500)))
+        const imageCount = Math.max(2, Math.min(4, Math.round(words / 550)))
         const prompts = await generateBodyImagePrompts({
           count: imageCount,
           productTitle: productTitleForPrompts,
