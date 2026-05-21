@@ -29,8 +29,11 @@ async function handleGenerate(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = (await request.json()) as { videoId?: string; rewriteFeedback?: string }
+  const body = (await request.json()) as { videoId?: string; rewriteFeedback?: string; includeImages?: boolean }
   const { videoId, rewriteFeedback } = body
+  // Default ON when omitted (older callers / bulk triggers) — the Content
+  // page sends the explicit per-generation choice.
+  const includeImages = body.includeImages !== false
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
   // ── Detect rewrite vs fresh generation ────────────────────────────────────
@@ -301,7 +304,7 @@ async function handleGenerate(request: Request) {
   //          these for AI-generated images, manual uploads, or other frames.
   //          Non-fatal: on any failure we publish the text-only post.
   const ytIdForFrames = (v as Record<string, unknown>).youtube_video_id as string
-  if (ytIdForFrames) {
+  if (includeImages && ytIdForFrames) {
     try {
       const frameSpecs = [
         { url: `https://img.youtube.com/vi/${ytIdForFrames}/hq1.jpg`, alt: `${generated.title} — in use` },

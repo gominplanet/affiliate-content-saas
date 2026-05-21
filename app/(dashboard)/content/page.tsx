@@ -350,6 +350,10 @@ function GenerateButton({
   // firing the regeneration so the second draft is actually different.
   const [rewriteOpen, setRewriteOpen] = useState(false)
   const [rewriteFeedback, setRewriteFeedback] = useState('')
+  // Per-generation choice: drop real video frames into the post body, or
+  // ship a text-only post. Defaults ON (richer posts), user can opt out
+  // before hitting Generate. Rewrites keep the same preference.
+  const [includeImages, setIncludeImages] = useState(true)
 
   useEffect(() => {
     if (status !== 'generating') return
@@ -367,6 +371,7 @@ function GenerateButton({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoId,
+          includeImages,
           ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
         }),
       })
@@ -448,9 +453,23 @@ function GenerateButton({
     )
   }
   return (
-    <button onClick={() => generate()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
-      <Wand2 size={12} /> Generate post
-    </button>
+    <div className="flex items-center gap-2.5">
+      <button onClick={() => generate()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
+        <Wand2 size={12} /> Generate post
+      </button>
+      <label
+        className="flex items-center gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer select-none"
+        title="Drop real frames from your video into the post body. Uncheck for a text-only post."
+      >
+        <input
+          type="checkbox"
+          checked={includeImages}
+          onChange={(e) => setIncludeImages(e.target.checked)}
+          className="accent-[#0071e3] w-3.5 h-3.5"
+        />
+        Include images
+      </label>
+    </div>
   )
 }
 
