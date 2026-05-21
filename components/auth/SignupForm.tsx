@@ -61,7 +61,7 @@ export default function SignupForm() {
         </div>
         <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Check your inbox</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          We sent a confirmation link to <strong>{email}</strong>. Click it to unlock your 15 free
+          We sent a confirmation link to <strong>{email}</strong>. Click it to unlock your 5 free
           reviews — no card required. (Check spam if it doesn&apos;t show in a minute.)
         </p>
       </div>
@@ -70,7 +70,7 @@ export default function SignupForm() {
 
   return (
     <div className="card p-8">
-      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Start free — 15 reviews on the house</h2>
+      <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Start free — 5 reviews on the house</h2>
       <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">No credit card. The full agent pipeline, the YouTube autopilot, and a branded review site — unlocked the moment you confirm your email.</p>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -121,7 +121,7 @@ export default function SignupForm() {
           {loading ? 'Creating account…' : 'Create my free account'}
         </button>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center mt-1">
-          No credit card · Cancel anytime · 15 free reviews to try the full workflow
+          No credit card · Cancel anytime · 5 free reviews to try the full workflow
         </p>
       </form>
 
