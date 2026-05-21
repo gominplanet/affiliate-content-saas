@@ -345,6 +345,16 @@ export default function LandingPage() {
             Every agent feeds the next. The result lands in your Studio, ready for you to review and publish.
             You always have the final say before anything goes live.
           </p>
+
+          {/* Fact-grounded trust line */}
+          <div className="mt-8 max-w-2xl mx-auto rounded-2xl border border-[#34c759]/30 bg-[#34c759]/5 px-6 py-5 text-center">
+            <p className="text-sm font-semibold text-white mb-1.5 flex items-center justify-center gap-2">
+              <ShieldCheck size={16} className="text-[#34c759]" /> Fact-grounded — never made up
+            </p>
+            <p className="text-sm text-gray-300 leading-relaxed">
+              Every quote, number, and claim traces back to your actual video transcript and the real product page. The agents won&apos;t invent a personal story you never told or specs that don&apos;t exist — unlike a generic AI writer that hallucinates to fill space. Your reviews stay true to what you actually said.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -701,6 +711,7 @@ export default function LandingPage() {
                 <CompareRow label="Native AI Instagram image — your face + the product" us="check" gen="cross" free="cross" diy="cross" />
                 <CompareRow label="Brand-collab pitch emails to land deals" us="check" gen="cross" free="cross" diy="cross" />
                 <CompareRow label="Stays in your brand voice across posts" us="check" gen="manual" free="manual" diy="manual" />
+                <CompareRow label="Only writes what's actually in your video — no invented stories" us="check" gen="cross" free="manual" diy="manual" />
                 <CompareRow label="Cost per 30 reviews / month" us="$49" gen="$30–80" free="$600–3000" diy="Your time" />
               </tbody>
             </table>

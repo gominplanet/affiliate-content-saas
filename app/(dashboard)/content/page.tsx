@@ -825,9 +825,18 @@ function InstagramPublishModal({
           setAiFaceModels(ready)
         }
         // Pull aggregated 👍/👎 history for the IG surface so the random
-        // style picker biases toward styles this user has rewarded.
+        // style picker biases toward styles this user has rewarded —
+        // niche-aware: weights styles that worked on this video's category.
         try {
-          const fbRes = await fetch('/api/thumbnail-feedback?surface=instagram')
+          let nicheParam = ''
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: catRow } = await (supabase as any).from('youtube_videos')
+              .select('selected_category').eq('id', videoDbId).single()
+            const cat = (catRow?.selected_category as string | null)?.trim()
+            if (cat) nicheParam = `&niche=${encodeURIComponent(cat)}`
+          } catch { /* overall weights */ }
+          const fbRes = await fetch(`/api/thumbnail-feedback?surface=instagram${nicheParam}`)
           if (fbRes.ok) {
             const fb = await fbRes.json()
             setStyleWeights({ liked: fb.liked || {}, disliked: fb.disliked || {} })

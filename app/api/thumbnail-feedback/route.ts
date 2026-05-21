@@ -36,13 +36,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "surface must be 'youtube' or 'instagram'" }, { status: 400 })
   }
 
-  // Pull niche off brand_profiles so we can join feedback to niche
-  // later — copying it onto the row keeps that join stable even if the
-  // user changes their niches afterwards.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: brand } = await (supabase as any)
-    .from('brand_profiles').select('niches').eq('user_id', user.id).single()
-  const niche = (brand?.niches as string[] | null)?.[0] ?? null
+  // Record the niche this feedback belongs to so style learning can be
+  // PER-NICHE (e.g. punchy banners win on tools, cleaner styles on
+  // beauty). Prefer the specific video's category; fall back to the
+  // user's primary brand niche when the video has none.
+  let niche: string | null = null
+  if (body.videoId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: vid } = await (supabase as any)
+      .from('youtube_videos').select('selected_category').eq('id', body.videoId).eq('user_id', user.id).single()
+    niche = (vid?.selected_category as string | null)?.trim() || null
+  }
+  if (!niche) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: brand } = await (supabase as any)
+      .from('brand_profiles').select('niches').eq('user_id', user.id).single()
+    niche = (brand?.niches as string[] | null)?.[0] ?? null
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
@@ -69,27 +79,37 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url)
   const surface = url.searchParams.get('surface') // optional filter
+  const niche = url.searchParams.get('niche')?.trim() || null // optional: bias to this niche
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = (supabase as any)
     .from('thumbnail_feedback')
-    .select('reaction,style_id,surface')
+    .select('reaction,style_id,surface,niche')
     .eq('user_id', user.id)
   if (surface === 'youtube' || surface === 'instagram') q = q.eq('surface', surface)
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // NICHE-AWARE WEIGHTING: every row counts once (overall taste), and rows
+  // matching the requested niche count an EXTRA 2× — so styles that won/
+  // lost on this kind of video dominate the pick, while still falling back
+  // gracefully to overall taste when niche-specific data is thin.
   const liked: Record<string, number> = {}
   const disliked: Record<string, number> = {}
-  for (const r of (data || []) as Array<{ reaction: string; style_id: string | null }>) {
+  let nicheRows = 0
+  for (const r of (data || []) as Array<{ reaction: string; style_id: string | null; niche: string | null }>) {
     if (!r.style_id) continue
     const bucket = r.reaction === 'like' ? liked : disliked
-    bucket[r.style_id] = (bucket[r.style_id] || 0) + 1
+    const weight = (niche && r.niche && r.niche.toLowerCase() === niche.toLowerCase()) ? 3 : 1
+    if (weight > 1) nicheRows++
+    bucket[r.style_id] = (bucket[r.style_id] || 0) + weight
   }
 
   return NextResponse.json({
     liked,
     disliked,
     total: (data?.length ?? 0),
+    niche: niche || null,
+    nicheSamples: nicheRows,
   })
 }

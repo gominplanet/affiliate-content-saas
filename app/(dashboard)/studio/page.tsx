@@ -180,7 +180,19 @@ function VideoStudioCard({ video, userTier, playlists }: {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/thumbnail-feedback?surface=youtube')
+        // Niche-aware: bias the picker toward styles that worked on THIS
+        // kind of video. Look up the video's category (RLS-scoped) and
+        // pass it so the feedback endpoint weights matching-niche rows 3×.
+        let nicheParam = ''
+        try {
+          const sb = createBrowserClient()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data } = await (sb as any).from('youtube_videos')
+            .select('selected_category').eq('youtube_video_id', video.youtubeVideoId).single()
+          const cat = (data?.selected_category as string | null)?.trim()
+          if (cat) nicheParam = `&niche=${encodeURIComponent(cat)}`
+        } catch { /* no category — overall weights */ }
+        const res = await fetch(`/api/thumbnail-feedback?surface=youtube${nicheParam}`)
         if (res.ok) {
           const fb = await res.json()
           setYtStyleWeights({ liked: fb.liked || {}, disliked: fb.disliked || {} })
