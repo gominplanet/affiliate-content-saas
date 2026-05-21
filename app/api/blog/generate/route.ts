@@ -14,6 +14,18 @@ import { fal } from '@fal-ai/client'
 import { recordUsage, recordAnthropicUsage } from '@/lib/ai-usage'
 import { createAnthropicClient } from '@/lib/anthropic'
 
+/** Distinct camera perspectives cycled across a post's in-body images so
+ *  no two shots look alike — each Kontext/flux call gets a different angle
+ *  + framing even though the product reference is the same. */
+const SHOT_PERSPECTIVES = [
+  'extreme close-up macro detail shot, shallow depth of field, product fills the frame',
+  'wide environmental shot — the product small within a full real-room setting, lots of context',
+  'overhead top-down flat-lay on a clean surface, styled with a few relevant props',
+  'in-hand point-of-view shot — the product held and actively being used',
+  'three-quarter angle on a wooden table with soft directional side lighting',
+  'low hero angle looking slightly up at the product against a softly blurred lifestyle background',
+]
+
 /** Plain-text word count of Gutenberg block markup (strips wp comments,
  *  HTML tags, and collapses whitespace). Used to scale image count. */
 function bodyWordCount(content: string): number {
@@ -484,11 +496,16 @@ async function handleGenerate(request: Request) {
         for (let i = 0; i < prompts.length; i++) {
           const prompt = prompts[i]
           if (!prompt || !prompt.trim()) continue
+          // Force a DISTINCT perspective per image + a unique seed so no two
+          // body images repeat. The reference product stays identical; only
+          // the angle, framing, and scene change.
+          const perspective = SHOT_PERSPECTIVES[i % SHOT_PERSPECTIVES.length]
+          const seed = Math.floor(Math.random() * 1_000_000_000) + i
           try {
             let falUrl: string | undefined
             if (falProductImageUrl) {
               // Kontext — the real product photo anchors the render.
-              const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene. Landscape 4:3 editorial product photography.`
+              const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details — but show it from a NEW, DISTINCT perspective: ${perspective}. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. This image MUST look clearly different from the other photos in the article — different angle, different framing, different surroundings. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene. Landscape 4:3 editorial product photography.`
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
                 input: {
@@ -498,6 +515,7 @@ async function handleGenerate(request: Request) {
                   num_images: 1,
                   output_format: 'jpeg',
                   guidance_scale: 5,
+                  seed,
                 },
                 pollInterval: 3000,
               })
@@ -510,13 +528,14 @@ async function handleGenerate(request: Request) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
                 input: {
-                  prompt: `${prompt}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`,
+                  prompt: `${prompt}. Shown as a ${perspective}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`,
                   image_size: 'landscape_4_3',
                   num_inference_steps: 28,
                   guidance_scale: 3.5,
                   num_images: 1,
                   output_format: 'jpeg',
                   safety_tolerance: '2',
+                  seed,
                 },
                 pollInterval: 3000,
               })
