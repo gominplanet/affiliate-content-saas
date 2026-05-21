@@ -10,6 +10,8 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin } from '@/services/amazon'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
+import { fal } from '@fal-ai/client'
+import { recordUsage } from '@/lib/ai-usage'
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
 // Images are generated separately via /api/blog/images
@@ -296,36 +298,61 @@ async function handleGenerate(request: Request) {
     wp.wordpress_api_token || undefined,
   )
 
-  // ── 7.05. Auto in-body images — real YouTube frames spliced into the
-  //          body so the post isn't a wall of text. We use the hi-res
-  //          frame grabs YouTube auto-extracts (hq1 ≈ 25%, hq2 ≈ 50% of
-  //          the runtime). Free (no Fal), authentic stills from the video.
-  //          The in-body image editor (separate) lets the user later swap
-  //          these for AI-generated images, manual uploads, or other frames.
+  // ── 7.05. Auto in-body images — clean AI-generated lifestyle + setting
+  //          shots spliced into the body so the post isn't a wall of text.
+  //          We use the lifestyle/setting image prompts the generator
+  //          already produced (landscape 4:3, no text, on-brand). This
+  //          replaced raw YouTube frame grabs, which letterboxed with
+  //          black bars, were low-res (480×360), and caught the creator's
+  //          burned-in overlays. The in-body image editor (separate) lets
+  //          the user later swap these for manual uploads or video frames.
   //          Non-fatal: on any failure we publish the text-only post.
-  const ytIdForFrames = (v as Record<string, unknown>).youtube_video_id as string
-  if (includeImages && ytIdForFrames) {
+  if (includeImages) {
     try {
-      const frameSpecs = [
-        { url: `https://img.youtube.com/vi/${ytIdForFrames}/hq1.jpg`, alt: `${generated.title} — in use` },
-        { url: `https://img.youtube.com/vi/${ytIdForFrames}/hq2.jpg`, alt: `${generated.title} — closer look` },
-      ]
-      const uploaded: Array<{ url: string; alt: string }> = []
-      for (let i = 0; i < frameSpecs.length; i++) {
-        try {
-          const media = await wpService.uploadImageFromUrl(frameSpecs[i].url, `${ytIdForFrames}-frame${i + 1}.jpg`)
-          if (media?.source_url) uploaded.push({ url: media.source_url, alt: frameSpecs[i].alt })
-        } catch { /* skip this frame */ }
-      }
-      if (uploaded.length > 0) {
-        const slots = autoPlacementIndices(content, uploaded.length)
-        content = insertImagesAtHeadings(
-          content,
-          uploaded.map((img, i) => ({
-            beforeHeadingIndex: slots[i] ?? (i + 1),
-            block: gutenbergImageBlock(img.url, img.alt),
-          })),
-        )
+      const falKey = process.env.FAL_KEY
+      if (falKey) {
+        fal.config({ credentials: falKey })
+        const imgSpecs = [
+          { prompt: generated.imagePrompts.lifestyle, alt: `${generated.title} — in use` },
+          { prompt: generated.imagePrompts.setting, alt: `${generated.title} — closer look` },
+        ].filter(s => s.prompt && s.prompt.trim().length > 0)
+
+        const uploaded: Array<{ url: string; alt: string }> = []
+        for (let i = 0; i < imgSpecs.length; i++) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+              input: {
+                prompt: `${imgSpecs[i].prompt}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`,
+                image_size: 'landscape_4_3',
+                num_inference_steps: 28,
+                guidance_scale: 3.5,
+                num_images: 1,
+                output_format: 'jpeg',
+                safety_tolerance: '2',
+              },
+              pollInterval: 3000,
+            })
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const falUrl = ((result.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+            if (!falUrl) continue
+            recordUsage({ userId: user.id, tier: (wp?.tier as string) ?? null, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
+            // Re-host on the WP media library so the image is permanent
+            // (Fal URLs expire) and served from the user's own domain.
+            const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
+            if (media?.source_url) uploaded.push({ url: media.source_url, alt: imgSpecs[i].alt })
+          } catch { /* skip this image */ }
+        }
+        if (uploaded.length > 0) {
+          const slots = autoPlacementIndices(content, uploaded.length)
+          content = insertImagesAtHeadings(
+            content,
+            uploaded.map((img, i) => ({
+              beforeHeadingIndex: slots[i] ?? (i + 1),
+              block: gutenbergImageBlock(img.url, img.alt),
+            })),
+          )
+        }
       }
     } catch { /* non-fatal — text-only post still publishes */ }
   }

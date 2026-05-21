@@ -459,7 +459,7 @@ function GenerateButton({
       </button>
       <label
         className="flex items-center gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer select-none"
-        title="Drop real frames from your video into the post body. Uncheck for a text-only post."
+        title="Generate clean AI photos for the post body. Uncheck for a text-only post."
       >
         <input
           type="checkbox"
