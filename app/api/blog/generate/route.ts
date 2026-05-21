@@ -79,6 +79,38 @@ async function resolveFinalUrl(url: string): Promise<string> {
   }
 }
 
+/** Resolve a Geniuslink (or any short URL) to its TRUE product destination,
+ *  unwrapping the affiliate redirectors Geniuslink routes through (Sovrn
+ *  go.redirectingat.com, Skimlinks, VigLink) which carry the real target in
+ *  a `url=`/`u=` query param. Used to VERIFY a freshly-created Geniuslink
+ *  actually points where we intended before we publish it. */
+async function resolveTrueDestination(url: string): Promise<string> {
+  const final = await resolveFinalUrl(url)
+  try {
+    const u = new URL(final)
+    if (/(?:go\.redirectingat\.com|go\.skimresources\.com|redirect\.viglink\.com)$/i.test(u.hostname)) {
+      const inner = u.searchParams.get('url') || u.searchParams.get('u')
+      if (inner) return decodeURIComponent(inner)
+    }
+  } catch { /* not parseable — fall through */ }
+  return final
+}
+
+/** Does `resolved` point at the same product we `intended`? For Amazon we
+ *  accept any Amazon locale (geni.us localizes amazon.com → amazon.co.uk
+ *  etc.); for a direct store link we require the same registrable host. */
+function pointsToIntendedProduct(intended: string, resolved: string, isAmazon: boolean): boolean {
+  try {
+    const host = (s: string) => new URL(s).hostname.replace(/^www\./i, '').toLowerCase()
+    const ih = host(intended)
+    const rh = host(resolved)
+    if (isAmazon) return /(?:^|\.)amazon\.[a-z.]+$/.test(rh)
+    return rh === ih || rh.endsWith('.' + ih) || ih.endsWith('.' + rh)
+  } catch {
+    return false
+  }
+}
+
 /** Plain-text word count of Gutenberg block markup (strips wp comments,
  *  HTML tags, and collapses whitespace). Used to scale image count. */
 function bodyWordCount(content: string): number {
@@ -390,7 +422,22 @@ async function handleGenerate(request: Request) {
     } else if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
-        affiliateUrlOverride = await genius.createLink(destination, rawTitle)
+        const wrapped = await genius.createLink(destination, rawTitle)
+        // GUARDRAIL: a misconfigured/duplicate Geniuslink can resolve to an
+        // UNRELATED destination (e.g. the account's default Hostinger promo
+        // link) instead of this product. Verify the created link actually
+        // points at the product we intended before publishing it — if it
+        // doesn't, never use it; fall back to the real product URL so the
+        // post can't link readers somewhere irrelevant.
+        const trueDest = await resolveTrueDestination(wrapped)
+        if (pointsToIntendedProduct(destination, trueDest, !!asinOverride)) {
+          affiliateUrlOverride = wrapped
+        } else {
+          console.warn(`[blog/generate] Geniuslink ${wrapped} resolved to "${trueDest}", not the intended product "${destination}" — falling back to the raw product URL.`)
+          affiliateUrlOverride = (asinOverride && wp?.amazon_associates_tag)
+            ? `https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`
+            : destination
+        }
       } catch {
         affiliateUrlOverride = destination
       }

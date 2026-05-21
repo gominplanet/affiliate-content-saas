@@ -69,7 +69,15 @@ export interface BlogGenerationOutput {
 const PROMPT_VERSION = 'v3.2'
 export { PROMPT_VERSION }
 
-function buildSystemPrompt(brand: BrandProfile, voiceProfile?: string): string {
+function buildSystemPrompt(
+  brand: BrandProfile,
+  voiceProfile?: string,
+  /** Whether the resolved affiliate destination is Amazon. Drives the CTA
+   *  button/eyebrow copy and the default disclaimer. Defaults to true so
+   *  the Amazon-product path is unchanged; non-Amazon (direct store/brand
+   *  links) get neutral "Find Out More" copy instead of "...on Amazon". */
+  isAmazon: boolean = true,
+): string {
   const authorLine = brand.author_name
     ? `the review blog of ${brand.author_name}`
     : 'an affiliate review blog'
@@ -104,7 +112,16 @@ function buildSystemPrompt(brand: BrandProfile, voiceProfile?: string): string {
   const targetLength = lengthMap[brand.post_length] || '9,000–13,000 characters'
 
   const disclaimer = brand.affiliate_disclaimer
-    || 'This post contains affiliate links. As an Amazon Associate, we earn from qualifying purchases at no extra cost to you.'
+    || (isAmazon
+      ? 'This post contains affiliate links. As an Amazon Associate, we earn from qualifying purchases at no extra cost to you.'
+      : 'This post contains affiliate links. We may earn a commission on purchases made through links on this site, at no extra cost to you.')
+
+  // CTA card copy — only say "Amazon" when the product is actually on
+  // Amazon. For a creator's direct store/brand link, a generic, accurate
+  // label ("Find Out More") avoids sending readers to a non-existent
+  // Amazon listing.
+  const ctaEyebrow = isAmazon ? 'Get it now' : 'Learn more'
+  const ctaButton  = isAmazon ? "${ctaButton}" : 'Find Out More →'
 
   // The LEARN voice profile — the writer's own taste/style training.
   // High priority: it encodes what THIS user finds fake vs trustworthy.
@@ -337,10 +354,10 @@ Use exactly this structure with {VIDEO_ID} replaced:
   <!-- wp:html -->
   <div class="gr-cta-card">
     <div class="gr-cta-body">
-      <p class="gr-cta-eyebrow">Get it now</p>
+      <p class="gr-cta-eyebrow">${ctaEyebrow}</p>
       <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
       <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
-        🛒 See Today's Price on Amazon →
+        ${ctaButton}
       </a>
       <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
     </div>
@@ -377,10 +394,10 @@ Each Q: <!-- wp:heading {"level":3} --><h3>{question}</h3><!-- /wp:heading -->
 Use the exact same product name string here as in the mid-article CTA from [4]:
 <div class="gr-cta-card">
   <div class="gr-cta-body">
-    <p class="gr-cta-eyebrow">Get it now</p>
+    <p class="gr-cta-eyebrow">${ctaEyebrow}</p>
     <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
     <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
-      🛒 See Today's Price on Amazon →
+      ${ctaButton}
     </a>
     <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
   </div>
@@ -622,7 +639,10 @@ Output only valid JSON. No explanation, no markdown.`,
       voiceProfile = await this.extractVoiceProfile(video.transcript, video.title)
     }
 
-    const systemPrompt = buildSystemPrompt(brand, voiceProfile || undefined)
+    // CTA copy follows the destination: Amazon ASIN/URL → "...on Amazon";
+    // a direct store/brand link → neutral "Find Out More".
+    const ctaIsAmazon = !!asin || /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(affiliateUrl)
+    const systemPrompt = buildSystemPrompt(brand, voiceProfile || undefined, ctaIsAmazon)
 
     const feedbackBlock = rewriteFeedback?.trim()
       ? `\n\nREWRITE REQUEST — the user already received one version of this post and asked for a different angle. Make this draft materially different from a standard generation. Their feedback:\n"${rewriteFeedback.trim()}"\n\nAddress these points directly: pick a different opening hook, restructure the body around the missing angle, and avoid repeating any phrasings that would feel like the previous draft.`
