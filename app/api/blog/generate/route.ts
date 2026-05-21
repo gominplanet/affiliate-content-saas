@@ -11,7 +11,90 @@ import { extractAsin } from '@/services/amazon'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { fal } from '@fal-ai/client'
-import { recordUsage } from '@/lib/ai-usage'
+import { recordUsage, recordAnthropicUsage } from '@/lib/ai-usage'
+import { createAnthropicClient } from '@/lib/anthropic'
+
+/** Plain-text word count of Gutenberg block markup (strips wp comments,
+ *  HTML tags, and collapses whitespace). Used to scale image count. */
+function bodyWordCount(content: string): number {
+  const text = content
+    .replace(/<!--[\s\S]*?-->/g, ' ')   // wp block comments
+    .replace(/<[^>]+>/g, ' ')           // html tags
+    .replace(/&[a-z]+;/gi, ' ')         // entities
+    .trim()
+  if (!text) return 0
+  return text.split(/\s+/).filter(Boolean).length
+}
+
+/** Pull the H2/H3 heading texts from the body, in order — used as context
+ *  so each generated image relates to the section it sits above. */
+function sectionHeadings(content: string): string[] {
+  const out: string[] = []
+  const re = /<h[23][^>]*>([\s\S]*?)<\/h[23]>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(content)) !== null) {
+    const t = m[1].replace(/<[^>]+>/g, '').trim()
+    if (t) out.push(t)
+  }
+  return out
+}
+
+/**
+ * Produce `count` distinct image-generation prompts for the post body.
+ * One Haiku call returns scene prompts tied to the article's sections so
+ * the photos feel relevant rather than generic. Falls back to cycling the
+ * base lifestyle/setting/hero prompts if the call fails.
+ */
+async function generateBodyImagePrompts(opts: {
+  count: number
+  productTitle: string
+  headings: string[]
+  base: { hero: string; lifestyle: string; setting: string }
+  ctx: { userId: string | null; tier: string | null }
+}): Promise<string[]> {
+  const cycle = (n: number): string[] => {
+    const pool = [opts.base.lifestyle, opts.base.setting, opts.base.hero].filter(Boolean)
+    if (pool.length === 0) return []
+    return Array.from({ length: n }, (_, i) => pool[i % pool.length])
+  }
+  if (opts.count <= 2) return cycle(opts.count)
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      messages: [{
+        role: 'user',
+        content: `Write exactly ${opts.count} distinct image-generation prompts for photos placed throughout a product review article.
+
+PRODUCT: ${opts.productTitle || 'the reviewed product'}
+ARTICLE SECTIONS (one image sits above each — match the scene to the section):
+${opts.headings.slice(0, opts.count).map((h, i) => `${i + 1}. ${h}`).join('\n')}
+
+RULES:
+- Each prompt: a clean, realistic editorial product photo. Vary the angle/scene (in-use lifestyle, close-up detail, flat-lay, in-situ environment).
+- Show the EXACT product. No packaging, no boxes.
+- NO text, letters, logos, or watermarks in the image.
+- Each under 35 words.
+Return ONLY a JSON array of ${opts.count} strings, nothing else.`,
+      }],
+    })
+    recordAnthropicUsage(msg, { userId: opts.ctx.userId, tier: opts.ctx.tier, feature: 'blog_body_image_prompts', model: 'claude-haiku-4-5-20251001' })
+    const raw = (msg.content[0] as { type: string; text: string }).text.trim()
+    const jsonStart = raw.indexOf('[')
+    const jsonEnd = raw.lastIndexOf(']')
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      const arr = JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as string[]
+      const cleaned = arr.map(s => (s || '').trim()).filter(Boolean)
+      if (cleaned.length > 0) {
+        // Pad with cycled prompts if Haiku returned fewer than asked.
+        while (cleaned.length < opts.count) cleaned.push(cycle(opts.count)[cleaned.length])
+        return cleaned.slice(0, opts.count)
+      }
+    }
+  } catch { /* fall through to cycle */ }
+  return cycle(opts.count)
+}
 
 // Phase 1: Claude generation + WordPress text publish only (~30-40s)
 // Images are generated separately via /api/blog/images
@@ -312,18 +395,27 @@ async function handleGenerate(request: Request) {
       const falKey = process.env.FAL_KEY
       if (falKey) {
         fal.config({ credentials: falKey })
-        const imgSpecs = [
-          { prompt: generated.imagePrompts.lifestyle, alt: `${generated.title} — in use` },
-          { prompt: generated.imagePrompts.setting, alt: `${generated.title} — closer look` },
-        ].filter(s => s.prompt && s.prompt.trim().length > 0)
+        // Scale image count with article length — roughly one image per
+        // 500 words, min 2, capped at 6 to bound Fal cost + latency.
+        const words = bodyWordCount(content)
+        const imageCount = Math.max(2, Math.min(6, Math.round(words / 500)))
+        const prompts = await generateBodyImagePrompts({
+          count: imageCount,
+          productTitle: generated.title,
+          headings: sectionHeadings(content),
+          base: generated.imagePrompts,
+          ctx: { userId: user.id, tier: (wp?.tier as string) ?? null },
+        })
 
         const uploaded: Array<{ url: string; alt: string }> = []
-        for (let i = 0; i < imgSpecs.length; i++) {
+        for (let i = 0; i < prompts.length; i++) {
+          const prompt = prompts[i]
+          if (!prompt || !prompt.trim()) continue
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
               input: {
-                prompt: `${imgSpecs[i].prompt}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`,
+                prompt: `${prompt}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`,
                 image_size: 'landscape_4_3',
                 num_inference_steps: 28,
                 guidance_scale: 3.5,
@@ -340,7 +432,7 @@ async function handleGenerate(request: Request) {
             // Re-host on the WP media library so the image is permanent
             // (Fal URLs expire) and served from the user's own domain.
             const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
-            if (media?.source_url) uploaded.push({ url: media.source_url, alt: imgSpecs[i].alt })
+            if (media?.source_url) uploaded.push({ url: media.source_url, alt: `${generated.title} — ${i + 1}` })
           } catch { /* skip this image */ }
         }
         if (uploaded.length > 0) {
