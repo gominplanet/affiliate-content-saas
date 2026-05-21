@@ -468,13 +468,13 @@ async function handleGenerate(request: Request) {
       .slice(0, 1200),
   })).filter(ex => ex.excerpt.length > 100) ?? []
 
-  // ── 5.9. Pro web product research — scrape the product/brand site the
+  // ── 5.9. Web product research — scrape the product/brand site the
   //         creator linked in the description for factual product info,
   //         the open-web equivalent of an Amazon scrape. The transcript
   //         still drives the voice; this just gives the writer real
-  //         product facts. Pro/Admin only (bounds cost); best-effort.
+  //         product facts. Creator/Pro/Admin (not Trial); best-effort.
   let productResearch: string | null = null
-  if (tier === 'pro' || tier === 'admin') {
+  if (tier === 'creator' || tier === 'pro' || tier === 'admin') {
     const pUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
     if (pUrl) {
       productResearch = (await researchProductFromUrl(pUrl, rawTitle, { userId: user.id, tier })) || null

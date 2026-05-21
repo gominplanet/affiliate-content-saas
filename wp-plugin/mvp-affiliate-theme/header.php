@@ -97,25 +97,26 @@ if ($disclaimer === '') {
 
     <nav class="mvp-header-nav" aria-label="<?php esc_attr_e('Primary', 'mvp-affiliate'); ?>">
       <?php
-      if (has_nav_menu('primary')) {
-          wp_nav_menu([
-              'theme_location' => 'primary',
-              'container'      => false,
-              'menu_class'     => 'mvp-nav-menu',
-              'depth'          => 2,
-          ]);
-      } else {
-          // Fallback: list categories (wrap in <ul> so they render as a row,
-          // not as bare <li>s collapsed onto one line)
-          echo '<ul class="mvp-nav-menu">';
-          wp_list_categories([
-              'title_li' => '',
-              'orderby'  => 'count',
-              'order'    => 'DESC',
-              'number'   => 5,
-          ]);
-          echo '</ul>';
+      // ALWAYS build the nav from the site's own content: "All Reviews"
+      // (home) → the category hubs → "About". We deliberately ignore any
+      // assigned 'primary' WP menu, because leftover/sample menus from a
+      // previous theme (e.g. "Blog / Review Videos / Contact") would
+      // otherwise hijack the header. This keeps every MVP site's nav
+      // consistent — review categories, nothing stray.
+      echo '<ul class="mvp-nav-menu">';
+      echo '<li class="menu-item"><a href="' . esc_url(home_url('/')) . '">' . esc_html__('All Reviews', 'mvp-affiliate') . '</a></li>';
+      wp_list_categories([
+          'title_li'   => '',
+          'orderby'    => 'count',
+          'order'      => 'DESC',
+          'number'     => 7,
+          'hide_empty' => true,
+      ]);
+      $mvp_about = get_page_by_path('about');
+      if ($mvp_about) {
+          echo '<li class="menu-item"><a href="' . esc_url(get_permalink($mvp_about)) . '">' . esc_html__('About', 'mvp-affiliate') . '</a></li>';
       }
+      echo '</ul>';
       ?>
     </nav>
 
