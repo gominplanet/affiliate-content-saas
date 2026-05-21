@@ -895,6 +895,11 @@ export default function BrandPage() {
                     ? <><Upload size={13} className="animate-pulse" /> Uploading…</>
                     : <><Upload size={13} /> {data.header_banner_url ? 'Replace banner' : 'Upload banner'}</>}
                 </label>
+                {data.header_banner_url && !bannerUploading && (
+                  <p className="text-[11px] font-medium text-[#34c759] flex items-center gap-1">
+                    <Check size={12} /> Saved — stays on your blog until you replace it
+                  </p>
+                )}
                 <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">PNG, JPG or WebP · Auto-saved · Theme update (1.3.8+) required</p>
               </div>
             </div>
