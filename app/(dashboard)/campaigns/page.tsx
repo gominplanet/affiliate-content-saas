@@ -7,6 +7,7 @@ import { Loader2, Sparkles, ExternalLink, CheckCircle, Clock, Send, Trash2, Copy
 import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
 import { ProLock } from '@/components/ProLock'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { effectiveTier } from '@/lib/view-as'
 
 interface Campaign {
   id: string
@@ -248,7 +249,7 @@ function CampaignsInner() {
         if (!user) return
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
-        const t = (data?.tier as string) || 'trial'
+        const t = effectiveTier(data?.tier as string)
         setIsPro(t === 'pro' || t === 'admin')
       } catch { /* stay locked */ }
     })()

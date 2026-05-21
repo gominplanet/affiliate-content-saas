@@ -5,6 +5,7 @@ import Header from '@/components/layout/Header'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { TIERS, type Tier } from '@/lib/tier'
+import { effectiveTier } from '@/lib/view-as'
 
 export default function BillingPage() {
   const supabase = createBrowserClient()
@@ -27,7 +28,7 @@ export default function BillingPage() {
       .eq('user_id', user.id)
       .single()
 
-    const userTier = (data?.tier as Tier) ?? 'trial'
+    const userTier = effectiveTier(data?.tier as string)
     setTier(userTier)
 
     // Count posts used — lifetime for free, current month for paid

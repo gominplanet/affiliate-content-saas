@@ -8,6 +8,7 @@ import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
 import { SOCIAL_CAP } from '@/lib/social-cap'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
+import { effectiveTier } from '@/lib/view-as'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload,
@@ -814,7 +815,7 @@ function InstagramPublishModal({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: intRow } = await (supabase as any)
           .from('integrations').select('tier').eq('user_id', user.id).single()
-        setAiTier((intRow?.tier as string) || 'trial')
+        setAiTier(effectiveTier(intRow?.tier as string))
         const fmRes = await fetch('/api/face-models')
         if (fmRes.ok) {
           const fm = await fmRes.json()
@@ -2284,7 +2285,7 @@ export default function ContentPage() {
     setBlueskyConnected(!!(i as Record<string, unknown>)?.bluesky_handle && !!(i as Record<string, unknown>)?.bluesky_app_password)
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
     setInstagramConnected(!!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
-    setUserTier(((i as Record<string, unknown>)?.tier as 'trial' | 'creator' | 'pro' | 'admin') ?? 'trial')
+    setUserTier(effectiveTier((i as Record<string, unknown>)?.tier as string))
     setBrandNiches(((b?.niches as string[] | null) ?? []))
     setCustomCategories(((b?.custom_categories as string[] | null) ?? []))
     setVideos(vids)

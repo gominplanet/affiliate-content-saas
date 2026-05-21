@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { effectiveTier } from '@/lib/view-as'
 import {
   UserCircle2,
   Upload,
@@ -64,7 +65,7 @@ export default function FaceTrainingPage() {
       })(),
       fetch('/api/face-models').then(r => r.json()),
     ])
-    setTier(tierRes || 'trial')
+    setTier(effectiveTier(tierRes))
     setModels((modelsRes.models || []) as FaceModel[])
     setLoading(false)
   }, [supabase])

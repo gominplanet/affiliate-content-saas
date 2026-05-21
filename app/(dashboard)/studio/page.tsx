@@ -7,6 +7,7 @@ import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
+import { effectiveTier } from '@/lib/view-as'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
@@ -1768,7 +1769,7 @@ export default function StudioPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const intResult = await (supabase as any).from('integrations').select('geniuslink_api_key,tier').eq('user_id', user.id).single()
         setHasGeniuslink(!!intResult.data?.geniuslink_api_key)
-        const tier = (intResult.data?.tier as 'trial' | 'creator' | 'pro' | 'admin') ?? 'trial'
+        const tier = effectiveTier(intResult.data?.tier as string)
         setUserTier(tier)
         // Fetch playlists for Pro/admin so the batch-apply panel can populate
         if (tier === 'pro' || tier === 'admin') {

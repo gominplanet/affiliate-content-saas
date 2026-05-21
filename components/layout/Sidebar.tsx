@@ -38,6 +38,7 @@ import {
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { resetTutorials } from '@/components/TutorialVideo'
 import { DISCORD_INVITE_URL, COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
 
@@ -80,6 +81,9 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const supabase = createBrowserClient()
   const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
   const [isAdmin, setIsAdmin] = useState(false)
+  // Admin-only "view as tier" preview. 'admin' = your real view (no override).
+  const [viewAs, setViewAs] = useState<'admin' | 'pro' | 'creator' | 'trial'>('admin')
+  useEffect(() => { setViewAs(getViewAsTier() ?? 'admin') }, [])
   const [geniusConnected, setGeniusConnected] = useState(false)
   const [purging, setPurging] = useState(false)
   const [purged, setPurged] = useState(false)
@@ -370,6 +374,31 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
               <DollarSign size={16} className="flex-shrink-0" />
               AI Cost (admin)
             </Link>
+          )}
+          {isAdmin && (
+            <div className="px-3 py-2">
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-[#86868b] mb-1">View as tier</label>
+              <select
+                value={viewAs}
+                onChange={(e) => {
+                  const v = e.target.value as 'admin' | 'pro' | 'creator' | 'trial'
+                  setViewAs(v)
+                  setViewAsTier(v === 'admin' ? null : v)
+                  // Reload so every page re-reads tier through effectiveTier().
+                  window.location.reload()
+                }}
+                className="w-full text-xs rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] px-2 py-1.5"
+                title="Preview the UI as each tier sees it. Visual only — your real admin access is unchanged."
+              >
+                <option value="admin">My view (Admin)</option>
+                <option value="pro">Pro</option>
+                <option value="creator">Creator</option>
+                <option value="trial">Free Trial</option>
+              </select>
+              {viewAs !== 'admin' && (
+                <p className="text-[10px] text-[#ff9500] mt-1">Previewing as {viewAs} · visual only</p>
+              )}
+            </div>
           )}
           {/* Re-show every dismissed in-page tutorial video. */}
           <button
