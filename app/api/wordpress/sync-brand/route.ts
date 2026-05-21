@@ -55,6 +55,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, wordpress: 'not_connected' })
   }
 
+  // Stored banner + logo from OUR source of truth (brand_profiles). We
+  // always seed the `about` merge with these so a partial sync (e.g. a
+  // logo-only upload) or a failed customizations-GET can never drop the
+  // header banner the user already saved.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: brandRow } = await (supabase as any)
+    .from('brand_profiles')
+    .select('header_banner_url, logo_url')
+    .eq('user_id', user.id)
+    .single()
+  const storedBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
+  const storedLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null
+
   const wpBase = intRow.wordpress_url.replace(/\/$/, '')
   const cleanPw = intRow.wordpress_app_password.replace(/\s+/g, '')
   const authHeader = `Basic ${Buffer.from(`${intRow.wordpress_username}:${cleanPw}`).toString('base64')}`
@@ -142,7 +155,12 @@ export async function POST(request: Request) {
       },
       about: {
         ...existingAbout,
-        // logo_url stays the favicon/footer/legacy banner fallback.
+        // Seed from our stored source of truth FIRST so the banner/logo
+        // persist even if the live customizations GET failed (existingAbout
+        // empty) or this sync's payload omits them (e.g. logo-only upload).
+        ...(storedLogoUrl ? { logoUrl: storedLogoUrl } : {}),
+        ...(storedBannerUrl ? { headerBannerUrl: storedBannerUrl } : {}),
+        // Then let an explicit value in THIS request win (a fresh upload).
         ...(logoUrl ? { logoUrl } : {}),
         // Wide top banner — theme renders this in place of the small
         // centered logo when present (falls back to logoUrl otherwise).

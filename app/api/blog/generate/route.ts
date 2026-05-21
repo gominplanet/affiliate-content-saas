@@ -753,23 +753,27 @@ async function handleGenerate(request: Request) {
   void maybeEvolveLearnProfile(supabase, { userId: user.id, tier: (wp?.tier as string) ?? null })
 
   // ── 10. Purge LiteSpeed cache so new post appears on homepage immediately ──
+  // Re-POST the LIVE WP customizations back to themselves to trigger the
+  // plugin's cache purge. CRITICAL: only ever re-post the exact object we
+  // just fetched from WP — never a local fallback blob. The header banner
+  // (about.headerBannerUrl) and other settings live ONLY in the live WP
+  // option; posting a stale local copy that lacks them would wipe the
+  // banner and make the theme fall back to the small logo. If the GET
+  // fails, we skip the re-post entirely (the post still publishes; the
+  // cache refreshes on its own TTL).
   try {
     const wpBase = wp.wordpress_url.replace(/\/$/, '')
-    // GET existing WP customizations first, re-POST same data to trigger purge
-    // without ever overwriting stored WP data with an empty object.
-    let existing: unknown = {}
-    try {
-      const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`)
-      if (getRes.ok) existing = await getRes.json()
-    } catch { /* ignore */ }
-    const payload = (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing as object).length > 0)
-      ? existing
-      : ((integration as Record<string, unknown>).blog_customizations ?? {})
-    await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
+    const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`)
+    if (getRes.ok) {
+      const existing = await getRes.json()
+      if (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing as object).length > 0) {
+        await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(existing),
+        })
+      }
+    }
   } catch { /* non-fatal — post is published regardless */ }
 
 
