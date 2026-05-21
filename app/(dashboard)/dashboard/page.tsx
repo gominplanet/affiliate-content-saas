@@ -7,6 +7,7 @@ import ChannelStats from '@/components/dashboard/ChannelStats'
 import WhatsNew from '@/components/dashboard/WhatsNew'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
+import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
 import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers, Gauge, MessagesSquare } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
@@ -195,6 +196,7 @@ export default async function DashboardPage() {
       )}
 
       <WpUpdateBanner />
+      {int?.wordpress_url ? <AmazonSitesReminder siteUrl={int.wordpress_url as string} /> : null}
       <WhatsNew />
       <ReferralBanner />
       <SetupChecklist />
