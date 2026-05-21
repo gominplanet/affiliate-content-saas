@@ -98,6 +98,26 @@ function errText(e: unknown): string {
 }
 
 /**
+ * Best product link to surface for a video. Prefers the URL the generate
+ * route resolved + persisted (product_url), else derives one live from an
+ * ASIN in the title or description so the link shows before/without
+ * generating. Conservative on the title (B0-prefixed) to avoid matching
+ * random 10-char words; the description /dp/ pattern is always safe.
+ */
+function deriveProductUrl(video: Record<string, unknown>): string | null {
+  const stored = (video.product_url as string | null)?.trim()
+  if (stored) return stored
+  const title = (video.title as string) || ''
+  const desc = (video.description as string) || ''
+  const asin =
+    desc.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() ||
+    title.toUpperCase().match(/\b(B0[A-Z0-9]{8})\b/)?.[1] ||
+    desc.toUpperCase().match(/\b(B0[A-Z0-9]{8})\b/)?.[1] ||
+    null
+  return asin ? `https://www.amazon.com/dp/${asin}` : null
+}
+
+/**
  * Optional per-video product reference photo. When set, the blog in-body
  * image generator (and IG image, later) uses it as the Kontext reference
  * so the rendered product matches the real thing — more reliable than
@@ -1773,17 +1793,21 @@ function VideoCard({
               videoId={id}
               initialUrl={(video.product_image_url as string | null) ?? null}
             />
-            {(video.product_url as string | null) && (
-              <a
-                href={video.product_url as string}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] transition-colors"
-                title="Open the resolved product page — confirm it's the right product"
-              >
-                <ExternalLink size={11} /> Visit product
-              </a>
-            )}
+            {(() => {
+              const link = deriveProductUrl(video)
+              if (!link) return null
+              return (
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] transition-colors"
+                  title="Open the resolved product page — confirm it's the right product"
+                >
+                  <ExternalLink size={11} /> Visit product
+                </a>
+              )
+            })()}
             {post ? (
               <>
                 <ManualEdit postId={post.postId} />
