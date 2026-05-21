@@ -32,7 +32,7 @@ export async function POST() {
   const sb = supabase as any
 
   const [{ data: brand }, { data: intRow }, { count }] = await Promise.all([
-    sb.from('brand_profiles').select('learn_profile').eq('user_id', user.id).single(),
+    sb.from('brand_profiles').select('learn_profile,author_bio,target_audience').eq('user_id', user.id).single(),
     sb.from('integrations').select('tier').eq('user_id', user.id).single(),
     sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'published'),
   ])
@@ -46,7 +46,14 @@ export async function POST() {
   }
 
   const lp = normalizeLearnProfile(brand?.learn_profile)
-  if (!hasEmptySlots(lp)) {
+  // Top-level narrative fields the Learning page also exposes. These are
+  // separate columns from learn_profile — the evolve used to ignore them,
+  // so "Target Reader" / "About You" never got filled. Now we infer them
+  // too (additively — only when empty).
+  const needBio = !((brand?.author_bio as string | null)?.trim())
+  const needAudience = !((brand?.target_audience as string | null)?.trim())
+
+  if (!hasEmptySlots(lp) && !needBio && !needAudience) {
     return NextResponse.json({
       ok: true,
       evolved: false,
@@ -66,30 +73,81 @@ export async function POST() {
     ?.map(p => `── "${p.title}" ──\n${stripMarkup(p.content).slice(0, 1500)}`)
     .join('\n\n') ?? ''
 
-  const filled = await fillGaps(lp, examples, { userId: user.id, tier: (intRow?.tier as string) ?? null })
-  if (!filled) {
+  const ctx = { userId: user.id, tier: (intRow?.tier as string) ?? null }
+
+  // Run both inferences in parallel: the structured voice/style profile
+  // and the narrative text fields.
+  const [learnFilled, textFilled] = await Promise.all([
+    hasEmptySlots(lp) ? fillGaps(lp, examples, ctx) : Promise.resolve(null),
+    (needBio || needAudience) ? fillTextFields(examples, { author_bio: needBio, target_audience: needAudience }, ctx) : Promise.resolve({} as { author_bio?: string; target_audience?: string }),
+  ])
+
+  const merged = learnFilled ? mergeAdditive(lp, learnFilled) : lp
+  let changed = countChanges(lp, merged)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const update: Record<string, any> = {}
+  if (changed > 0) update.learn_profile = merged
+  if (needBio && textFilled.author_bio) { update.author_bio = textFilled.author_bio; changed++ }
+  if (needAudience && textFilled.target_audience) { update.target_audience = textFilled.target_audience; changed++ }
+
+  if (changed === 0) {
     return NextResponse.json({
       ok: true,
       evolved: false,
-      reason: 'The AI couldn\'t infer anything confidently from your posts yet. Try again after a few more publishes.',
+      reason: 'The AI couldn\'t infer anything new confidently from your posts yet. Try again after a few more publishes.',
     })
   }
 
-  const merged = mergeAdditive(lp, filled)
-  const changed = countChanges(lp, merged)
-  if (changed === 0) {
-    return NextResponse.json({ ok: true, evolved: false, reason: 'No new fields could be filled.' })
-  }
-
-  await sb
-    .from('brand_profiles')
-    .update({
-      learn_profile: merged,
-      learn_profile_evolved_at: new Date().toISOString(),
-    })
-    .eq('user_id', user.id)
+  update.learn_profile_evolved_at = new Date().toISOString()
+  await sb.from('brand_profiles').update(update).eq('user_id', user.id)
 
   return NextResponse.json({ ok: true, evolved: true, fieldsFilled: changed })
+}
+
+/** Infer the empty narrative text fields (About You / Target Reader) from
+ *  the writer's published posts. Additive: only returns fields requested
+ *  and confidently inferable. */
+async function fillTextFields(
+  examples: string,
+  need: { author_bio: boolean; target_audience: boolean },
+  ctx: { userId: string; tier: string | null },
+): Promise<{ author_bio?: string; target_audience?: string }> {
+  if (!need.author_bio && !need.target_audience) return {}
+  const fields: string[] = []
+  if (need.author_bio) fields.push('  "author_bio": "<2-4 sentences: who is writing — background, credibility, perspective — inferred from the posts, written in their voice>"')
+  if (need.target_audience) fields.push('  "target_audience": "<2-3 sentences: who these posts are written for, what they care about, what they already know>"')
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 600,
+      system: 'You infer a writer/brand\'s "About You" and "Target Reader" from their published posts. Return ONLY valid JSON. Omit a field you cannot infer confidently — never invent.',
+      messages: [{
+        role: 'user',
+        content: `Read these recent posts by ONE writer/brand and infer the requested fields.
+
+POSTS:
+${examples}
+
+Return JSON (omit any key you can't confidently infer):
+{
+${fields.join(',\n')}
+}`,
+      }],
+    })
+    recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier, feature: 'learn_textfield_evolve', model: 'claude-haiku-4-5-20251001' })
+    const raw = (msg.content[0] as { type: string; text: string }).text
+    const match = raw.match(/\{[\s\S]*\}/)
+    if (!match) return {}
+    const parsed = JSON.parse(match[0]) as { author_bio?: unknown; target_audience?: unknown }
+    const out: { author_bio?: string; target_audience?: string } = {}
+    if (need.author_bio && typeof parsed.author_bio === 'string' && parsed.author_bio.trim()) out.author_bio = parsed.author_bio.trim()
+    if (need.target_audience && typeof parsed.target_audience === 'string' && parsed.target_audience.trim()) out.target_audience = parsed.target_audience.trim()
+    return out
+  } catch {
+    return {}
+  }
 }
 
 function hasEmptySlots(lp: LearnProfile): boolean {
