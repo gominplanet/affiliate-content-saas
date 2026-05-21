@@ -36,7 +36,19 @@ export class GeniuslinkService {
   }
 
   async createAsinLinkWithCode(asin: string, label: string): Promise<{ url: string; code: string | null }> {
-    const destination = `https://www.amazon.com/dp/${asin}`
+    return this.createLinkWithCode(`https://www.amazon.com/dp/${asin}`, label)
+  }
+
+  /** Wrap ANY destination URL (store, brand site, Amazon, anything) into a
+   *  Geniuslink. Geniuslink is NOT Amazon-only — it redirects/tracks any
+   *  destination. Returns just the short URL. */
+  async createLink(destinationUrl: string, label: string): Promise<string> {
+    const { url } = await this.createLinkWithCode(destinationUrl, label)
+    return url
+  }
+
+  /** Wrap any destination URL and return the short URL + code (for analytics). */
+  async createLinkWithCode(destination: string, label: string): Promise<{ url: string; code: string | null }> {
     const groupId = await this.getDefaultGroupId()
 
     const params = new URLSearchParams({

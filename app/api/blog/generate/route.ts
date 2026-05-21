@@ -313,29 +313,51 @@ async function handleGenerate(request: Request) {
   const rawDescription = (v.description as string) || ''
   let asinOverride: string | null = null
   let affiliateUrlOverride: string | null = null
-  const hasAmazon = !!extractAsin(rawTitle.toUpperCase()) || /\/(?:dp|gp\/product)\/[A-Z0-9]{10}/.test(rawDescription)
-  if (!hasAmazon) {
+
+  // Step 1 — find the RAW destination the creator points buyers to.
+  const titleAsin = extractAsin(rawTitle.toUpperCase())
+  const descAsin = rawDescription.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase()
+  let destination: string | null = null
+  let alreadyGeniuslink = false
+  if (titleAsin || descAsin) {
+    asinOverride = titleAsin || descAsin || null
+    destination = `https://www.amazon.com/dp/${asinOverride}`
+  } else {
     const directProductUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
     if (directProductUrl) {
-      // The creator's own store / product page — link the post straight to
-      // it. No Amazon search, no Geniuslink wrap (Geniuslink is Amazon-only).
-      affiliateUrlOverride = directProductUrl
+      // The creator's own store / product page (any domain). Don't
+      // Amazon-search for a lookalike.
+      destination = directProductUrl
+      alreadyGeniuslink = /(?:geni\.us|\bgnz\.)/i.test(directProductUrl)
     } else {
-      // No direct product link anywhere → last-resort Amazon discovery.
+      // No usable link anywhere → last-resort Amazon product discovery.
       const discovered = await discoverProductForVideo(rawTitle, rawDescription, { userId: user.id, tier: (wp?.tier as string) ?? null })
       if (discovered.asin) {
         asinOverride = discovered.asin
-        let url = `https://www.amazon.com/dp/${discovered.asin}`
-        if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
-          try {
-            const genius = createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
-            url = await genius.createAsinLink(discovered.asin, discovered.productQuery || rawTitle)
-          } catch { /* fall through to Associates / bare */ }
-        } else if (wp?.amazon_associates_tag) {
-          url = `https://www.amazon.com/dp/${discovered.asin}?tag=${wp.amazon_associates_tag}`
-        }
-        affiliateUrlOverride = url
+        destination = `https://www.amazon.com/dp/${discovered.asin}`
       }
+    }
+  }
+
+  // Step 2 — turn the destination into the link used throughout the post.
+  // If the user has Geniuslink connected, wrap ANY destination with it
+  // (Geniuslink is NOT Amazon-only — it tracks/redirects any URL). If the
+  // creator's link is already a Geniuslink, keep it. Else fall back to the
+  // Amazon Associates tag (Amazon only) or the raw URL.
+  if (destination) {
+    if (alreadyGeniuslink) {
+      affiliateUrlOverride = destination
+    } else if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
+      try {
+        const genius = createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
+        affiliateUrlOverride = await genius.createLink(destination, rawTitle)
+      } catch {
+        affiliateUrlOverride = destination
+      }
+    } else if (asinOverride && wp?.amazon_associates_tag) {
+      affiliateUrlOverride = `https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`
+    } else {
+      affiliateUrlOverride = destination
     }
   }
 
