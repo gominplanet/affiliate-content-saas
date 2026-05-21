@@ -283,6 +283,29 @@ async function handleGenerate(request: Request) {
     }
   }
 
+  // ── 5.1. Resolve the product URL we'll surface in the dashboard so the
+  //         creator can click through and confirm it's the right product
+  //         (this same ASIN drives the in-body image rendering). Prefer the
+  //         discovery-built affiliate URL; otherwise build a plain Amazon
+  //         /dp link with the Associates tag when set. No extra Geniuslink
+  //         call here — this is a "visit the product" link, not a tracked
+  //         click target.
+  const effectiveAsin =
+    extractAsin(rawTitle.toUpperCase()) ||
+    rawDescription.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() ||
+    asinOverride ||
+    null
+  let productUrl: string | null = affiliateUrlOverride
+  if (!productUrl && effectiveAsin) {
+    productUrl = wp?.amazon_associates_tag
+      ? `https://www.amazon.com/dp/${effectiveAsin}?tag=${wp.amazon_associates_tag}`
+      : `https://www.amazon.com/dp/${effectiveAsin}`
+  }
+  if (productUrl) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('youtube_videos').update({ product_url: productUrl }).eq('id', videoId)
+  }
+
   // ── Persistent feedback: every "what was missing" note this user
   // has ever typed into the Rewrite modal. These accumulate over time
   // and apply to every new generation — the AI keeps learning what
@@ -432,12 +455,8 @@ async function handleGenerate(request: Request) {
           } catch { /* fall through to Amazon */ }
         }
 
-        // Priority 2 — auto-fetch the Amazon catalog photo by ASIN.
-        const effectiveAsin =
-          extractAsin(rawTitle.toUpperCase()) ||
-          rawDescription.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() ||
-          asinOverride ||
-          null
+        // Priority 2 — auto-fetch the Amazon catalog photo by ASIN
+        // (effectiveAsin resolved earlier in section 5.1).
         if (effectiveAsin) {
           try {
             const p = await fetchAmazonProduct(effectiveAsin)
@@ -701,6 +720,7 @@ async function handleGenerate(request: Request) {
     wordpressPostId: wpPost.id,
     wordpressUrl: wpPost.link,
     title: generated.title,
+    productUrl,
     hasImages: false,
   })
 }

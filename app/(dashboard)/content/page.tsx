@@ -1773,6 +1773,17 @@ function VideoCard({
               videoId={id}
               initialUrl={(video.product_image_url as string | null) ?? null}
             />
+            {(video.product_url as string | null) && (
+              <a
+                href={video.product_url as string}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] transition-colors"
+                title="Open the resolved product page — confirm it's the right product"
+              >
+                <ExternalLink size={11} /> Visit product
+              </a>
+            )}
             {post ? (
               <>
                 <ManualEdit postId={post.postId} />
