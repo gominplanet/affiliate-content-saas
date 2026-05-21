@@ -8,7 +8,7 @@ import { scrubBanned } from '@/lib/scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
-import { researchProductFromUrl } from '@/services/research'
+import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { fal } from '@fal-ai/client'
@@ -393,6 +393,11 @@ async function handleGenerate(request: Request) {
     const pUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
     if (pUrl) {
       productResearch = (await researchProductFromUrl(pUrl, rawTitle, { userId: user.id, tier })) || null
+      // Direct fetch came back empty (JS-rendered / scraper-blocked page).
+      // Fall back to web search by product name. Pricier, so only here.
+      if (!productResearch) {
+        productResearch = (await researchProductByWebSearch(rawTitle, pUrl, { userId: user.id, tier })) || null
+      }
     }
   }
 

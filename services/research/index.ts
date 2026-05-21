@@ -180,3 +180,58 @@ Rules: do NOT invent anything not on the page. If the page is thin or clearly no
     return ''
   }
 }
+
+/**
+ * Fallback for when researchProductFromUrl() comes back empty — e.g. the
+ * linked page is JS-rendered or blocks scrapers. Uses Claude's web_search
+ * to identify the product (from the video title + the linked URL) and
+ * pull a factual spec-sheet brief from the open web. Pricier than the
+ * direct fetch (Sonnet + a few searches), so only call it when the cheap
+ * path returns nothing. Returns '' on failure / no confident product.
+ */
+export async function researchProductByWebSearch(
+  productHint: string,
+  sourceUrl: string,
+  ctx?: { userId?: string | null; tier?: string | null },
+): Promise<string> {
+  try {
+    const client = createAnthropicClient()
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 800,
+      tools: [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { type: 'web_search_20250305', name: 'web_search', max_uses: 3 } as any,
+      ],
+      messages: [{
+        role: 'user',
+        content: `Identify the specific product reviewed in a YouTube video, then pull a FACTUAL spec sheet from the web.
+
+VIDEO TITLE: ${productHint}
+LINKED PRODUCT PAGE (often JS-only / blocked, so search for it instead): ${sourceUrl}
+
+Use web search to find the product's real specs. If you cannot confidently identify ONE specific product, reply with exactly "NO_PRODUCT_INFO".
+
+Otherwise return markdown with only web-supported facts:
+## Product
+One line: what it is + who it's for.
+## Key specs & features
+Concrete specs/features (dimensions, materials, capacity, modes, compatibility, battery, etc.).
+## Price
+Approx price if found; else "not listed".
+## Notable claims
+Standout manufacturer claims worth citing (warranty, certifications, performance numbers).
+
+Rules: ground every fact in search results — do NOT invent. Under 250 words.`,
+      }],
+    })
+    const u = usageFromAnthropic(msg)
+    recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_web_product_search', model: 'claude-sonnet-4-6', input: u.input, output: u.output, webSearches: u.webSearches })
+
+    const out = msg.content.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('').trim()
+    if (!out || out.includes('NO_PRODUCT_INFO')) return ''
+    return out
+  } catch {
+    return ''
+  }
+}
