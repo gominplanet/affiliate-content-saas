@@ -2258,6 +2258,9 @@ export default function ContentPage() {
   const [videoSearch, setVideoSearch] = useState('')
   const [videoChannel, setVideoChannel] = useState<string>('') // '' = all channels
   const [videoGenFilter, setVideoGenFilter] = useState<'all' | 'ungenerated' | 'generated'>('all')
+  // When on, dismissed (hidden) videos are revealed so they can be brought
+  // back — otherwise a dismissed video is invisible with no way to recover it.
+  const [showHidden, setShowHidden] = useState(false)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
   // Hydrate the preview-before-publish toggle from localStorage
@@ -2812,8 +2815,16 @@ export default function ContentPage() {
     saveDismissed(next)
   }
 
+  function unhideAllVideos() {
+    setDismissed(new Set())
+    saveDismissed(new Set())
+    setShowHidden(false)
+  }
+
   const allReady = checks?.brandReady && checks?.wpReady
-  const visibleVideos = videos.filter(v => !dismissed.has(v.id as string))
+  // When "Show hidden" is on, include dismissed videos so they can be found
+  // and brought back; otherwise hide them as before.
+  const visibleVideos = videos.filter(v => showHidden || !dismissed.has(v.id as string))
   // Split videos by orientation. is_vertical comes from YouTube sync (duration
   // ≤ 180s OR #Shorts in title). For backwards-compat rows where is_vertical
   // is null, default to horizontal (the existing behavior pre-migration).
@@ -3175,6 +3186,24 @@ export default function ContentPage() {
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              {dismissed.size > 0 && (
+                <>
+                  <button
+                    onClick={() => setShowHidden(s => !s)}
+                    className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
+                    title="Reveal videos you've hidden with Dismiss"
+                  >
+                    {showHidden ? 'Hide hidden' : `Show hidden (${dismissed.size})`}
+                  </button>
+                  <button
+                    onClick={unhideAllVideos}
+                    className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
+                    title="Bring every hidden video back"
+                  >
+                    Unhide all
+                  </button>
+                </>
+              )}
               {activeTab === 'horizontal' && selectedVideoIds.size === 0 && displayVideos.some(v => !posts[v.id as string]) && (
                 <button
                   onClick={() => setSelectedVideoIds(new Set(displayVideos.filter(v => !posts[v.id as string]).map(v => v.id as string)))}
