@@ -7,7 +7,7 @@ import { checkUsageLimit, TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { extractAsin } from '@/services/amazon'
+import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { fal } from '@fal-ai/client'
@@ -395,13 +395,41 @@ async function handleGenerate(request: Request) {
       const falKey = process.env.FAL_KEY
       if (falKey) {
         fal.config({ credentials: falKey })
+
+        // ── Resolve the REAL product image so the rendered photos match
+        //    the actual product, not a generic guess. Effective ASIN comes
+        //    from the title, the description's Amazon URL, or the discovery
+        //    override. We fetch the Amazon product photo and re-host it on
+        //    Fal storage once, then feed it into Kontext as a visual
+        //    reference for every body image. Kontext keeps the product's
+        //    exact shape / colour / branding while recomposing the scene.
+        const effectiveAsin =
+          extractAsin(rawTitle.toUpperCase()) ||
+          rawDescription.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() ||
+          asinOverride ||
+          null
+        let falProductImageUrl: string | null = null
+        let productTitleForPrompts = generated.title
+        if (effectiveAsin) {
+          try {
+            const p = await fetchAmazonProduct(effectiveAsin)
+            if (p.title) productTitleForPrompts = p.title
+            if (p.imageUrl) {
+              const imgRes = await fetch(p.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+              if (imgRes.ok) {
+                falProductImageUrl = await fal.storage.upload(await imgRes.blob())
+              }
+            }
+          } catch { /* fall back to text-only prompts */ }
+        }
+
         // Scale image count with article length — roughly one image per
         // 500 words, min 2, capped at 6 to bound Fal cost + latency.
         const words = bodyWordCount(content)
         const imageCount = Math.max(2, Math.min(6, Math.round(words / 500)))
         const prompts = await generateBodyImagePrompts({
           count: imageCount,
-          productTitle: generated.title,
+          productTitle: productTitleForPrompts,
           headings: sectionHeadings(content),
           base: generated.imagePrompts,
           ctx: { userId: user.id, tier: (wp?.tier as string) ?? null },
@@ -412,23 +440,46 @@ async function handleGenerate(request: Request) {
           const prompt = prompts[i]
           if (!prompt || !prompt.trim()) continue
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
-              input: {
-                prompt: `${prompt}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`,
-                image_size: 'landscape_4_3',
-                num_inference_steps: 28,
-                guidance_scale: 3.5,
-                num_images: 1,
-                output_format: 'jpeg',
-                safety_tolerance: '2',
-              },
-              pollInterval: 3000,
-            })
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const falUrl = ((result.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+            let falUrl: string | undefined
+            if (falProductImageUrl) {
+              // Kontext — the real product photo anchors the render.
+              const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene. Landscape 4:3 editorial product photography.`
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
+                input: {
+                  image_url: falProductImageUrl,
+                  prompt: kontextInstruction,
+                  aspect_ratio: '4:3',
+                  num_images: 1,
+                  output_format: 'jpeg',
+                  guidance_scale: 5,
+                },
+                pollInterval: 3000,
+              })
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              falUrl = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+              if (falUrl) recordUsage({ userId: user.id, tier: (wp?.tier as string) ?? null, feature: 'blog_body_image', model: 'fal-flux-pro-kontext', images: 1 })
+            }
+            if (!falUrl) {
+              // No product image (or Kontext failed) — plain text-prompt gen.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+                input: {
+                  prompt: `${prompt}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`,
+                  image_size: 'landscape_4_3',
+                  num_inference_steps: 28,
+                  guidance_scale: 3.5,
+                  num_images: 1,
+                  output_format: 'jpeg',
+                  safety_tolerance: '2',
+                },
+                pollInterval: 3000,
+              })
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              falUrl = ((result.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+              if (falUrl) recordUsage({ userId: user.id, tier: (wp?.tier as string) ?? null, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
+            }
             if (!falUrl) continue
-            recordUsage({ userId: user.id, tier: (wp?.tier as string) ?? null, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
             // Re-host on the WP media library so the image is permanent
             // (Fal URLs expire) and served from the user's own domain.
             const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
