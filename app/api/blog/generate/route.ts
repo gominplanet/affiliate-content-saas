@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
@@ -635,121 +635,14 @@ async function handleGenerate(request: Request) {
     wp.wordpress_api_token || undefined,
   )
 
-  // ── 7.05. Auto in-body images — clean AI-generated lifestyle + setting
-  //          shots spliced into the body so the post isn't a wall of text.
-  //          We use the lifestyle/setting image prompts the generator
-  //          already produced (landscape 4:3, no text, on-brand). This
-  //          replaced raw YouTube frame grabs, which letterboxed with
-  //          black bars, were low-res (480×360), and caught the creator's
-  //          burned-in overlays. The in-body image editor (separate) lets
-  //          the user later swap these for manual uploads or video frames.
-  //          Non-fatal: on any failure we publish the text-only post.
-  if (includeImages) {
-    try {
-      const falKey = process.env.FAL_KEY
-      if (falKey) {
-        fal.config({ credentials: falKey })
-
-        // ── Resolve the REAL product image so the rendered photos match
-        //    the actual product, not a generic guess. Effective ASIN comes
-        //    from the title, the description's Amazon URL, or the discovery
-        //    override. We fetch the Amazon product photo and re-host it on
-        //    Fal storage once, then feed it into Kontext as a visual
-        //    reference for every body image. Kontext keeps the product's
-        //    exact shape / colour / branding while recomposing the scene.
-        let falProductImageUrl: string | null = null
-        let productTitleForPrompts = generated.title
-
-        // Priority 1 — a product photo the user uploaded for this video.
-        // More reliable + higher quality than scraping Amazon. Re-hosted
-        // on Fal storage so Kontext can read it.
-        const uploadedProductImage = (v.product_image_url as string | null)?.trim() || null
-        if (uploadedProductImage) {
-          try {
-            const imgRes = await fetch(uploadedProductImage, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-            if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
-          } catch { /* fall through to Amazon */ }
-        }
-
-        // Priority 2 — auto-fetch the Amazon catalog photo by ASIN
-        // (effectiveAsin resolved earlier in section 5.1).
-        if (effectiveAsin) {
-          try {
-            const p = await fetchAmazonProduct(effectiveAsin)
-            if (p.title) productTitleForPrompts = p.title
-            if (!falProductImageUrl && p.imageUrl) {
-              const imgRes = await fetch(p.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-              if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
-            }
-          } catch { /* fall back to text-only prompts */ }
-        }
-
-        // Image count scales with length (~1 per 500 words) and is clamped
-        // to the tier's per-post ceiling — single source of truth in
-        // lib/tier.ts (trial 2, creator 3, pro 4, admin 6).
-        const words = bodyWordCount(content)
-        const imageCount = allowedBlogImages(tier, words)
-        const prompts = await generateBodyImagePrompts({
-          count: imageCount,
-          productTitle: productTitleForPrompts,
-          headings: sectionHeadings(content),
-          base: generated.imagePrompts,
-          ctx: { userId: user.id, tier: (wp?.tier as string) ?? null },
-        })
-
-        // Generate every body image IN PARALLEL (was sequential, which
-        // stacked 2-6 × ~10-15s Fal calls and pushed the whole request past
-        // the function timeout → 504s). Promise.all preserves order, so
-        // placement stays correct; failed images drop out.
-        const tier2 = (wp?.tier as string) ?? null
-        const results = await Promise.all(prompts.map(async (prompt, i) => {
-          if (!prompt || !prompt.trim()) return null
-          // Distinct perspective + unique seed so no two body images repeat.
-          const perspective = SHOT_PERSPECTIVES[i % SHOT_PERSPECTIVES.length]
-          const seed = Math.floor(Math.random() * 1_000_000_000) + i
-          try {
-            let falUrl: string | undefined
-            if (falProductImageUrl) {
-              const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details — but show it from a NEW, DISTINCT perspective: ${perspective}. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. This image MUST look clearly different from the other photos in the article — different angle, different framing, different surroundings. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene. Landscape 4:3 editorial product photography.`
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
-                input: { image_url: falProductImageUrl, prompt: kontextInstruction, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed },
-                pollInterval: 3000,
-              })
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              falUrl = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
-              if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-kontext', images: 1 })
-            }
-            if (!falUrl) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
-                input: { prompt: `${prompt}. Shown as a ${perspective}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed },
-                pollInterval: 3000,
-              })
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              falUrl = ((result.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
-              if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
-            }
-            if (!falUrl) return null
-            // Re-host on the WP media library so the image is permanent.
-            const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
-            return media?.source_url ? { url: media.source_url, alt: `${generated.title} — ${i + 1}` } : null
-          } catch { return null }
-        }))
-        const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
-        if (uploaded.length > 0) {
-          const slots = autoPlacementIndices(content, uploaded.length)
-          content = insertImagesAtHeadings(
-            content,
-            uploaded.map((img, i) => ({
-              beforeHeadingIndex: slots[i] ?? (i + 1),
-              block: gutenbergImageBlock(img.url, img.alt),
-            })),
-          )
-        }
-      }
-    } catch { /* non-fatal — text-only post still publishes */ }
-  }
+  // ── 7.05. Auto in-body images are generated AFTER the response is sent
+  //          (see the `after()` block near the end). They used to run here,
+  //          on the critical path before publish — a deep post + several Fal
+  //          images + WordPress media uploads could push the request past
+  //          the 300s function limit (504). Now we publish the text post
+  //          immediately with correct links, then splice images in via a
+  //          follow-up updatePost, so a slow image stage can never fail the
+  //          whole generation.
 
   let tagIds: number[] = []
   try {
@@ -898,31 +791,128 @@ async function handleGenerate(request: Request) {
   // moving so the user's blog-publish flow stays fast.
   void maybeEvolveLearnProfile(supabase, { userId: user.id, tier: (wp?.tier as string) ?? null })
 
-  // ── 10. Purge LiteSpeed cache so new post appears on homepage immediately ──
-  // Re-POST the LIVE WP customizations back to themselves to trigger the
-  // plugin's cache purge. CRITICAL: only ever re-post the exact object we
-  // just fetched from WP — never a local fallback blob. The header banner
-  // (about.headerBannerUrl) and other settings live ONLY in the live WP
-  // option; posting a stale local copy that lacks them would wipe the
-  // banner and make the theme fall back to the small logo. If the GET
-  // fails, we skip the re-post entirely (the post still publishes; the
-  // cache refreshes on its own TTL).
-  try {
-    const wpBase = wp.wordpress_url.replace(/\/$/, '')
-    const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`)
-    if (getRes.ok) {
-      const existing = await getRes.json()
-      if (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing as object).length > 0) {
-        await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(existing),
-        })
-      }
+  // ── 10. Body images + cache purge — DEFERRED to after the response ────────
+  // The text post is already published (correct links) and saved, so the user
+  // gets it immediately. Next.js `after()` runs this within the same
+  // function's remaining time budget; if image generation is slow or the
+  // function is cut off, the published post simply keeps its text — the
+  // request can NEVER 504 on the user because of images.
+  after(async () => {
+    let finalContent = content
+    if (includeImages) {
+      try {
+        const falKey = process.env.FAL_KEY
+        if (falKey) {
+          fal.config({ credentials: falKey })
+
+          // Resolve the REAL product image (uploaded photo → Amazon catalog
+          // photo by ASIN) so Kontext renders the actual product.
+          let falProductImageUrl: string | null = null
+          let productTitleForPrompts = generated.title
+
+          const uploadedProductImage = (v.product_image_url as string | null)?.trim() || null
+          if (uploadedProductImage) {
+            try {
+              const imgRes = await fetch(uploadedProductImage, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+              if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
+            } catch { /* fall through to Amazon */ }
+          }
+          if (effectiveAsin) {
+            try {
+              const p = await fetchAmazonProduct(effectiveAsin)
+              if (p.title) productTitleForPrompts = p.title
+              if (!falProductImageUrl && p.imageUrl) {
+                const imgRes = await fetch(p.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+                if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
+              }
+            } catch { /* fall back to text-only prompts */ }
+          }
+
+          // Image count scales ~1 per 500 words, clamped to the tier ceiling.
+          const words = bodyWordCount(content)
+          const imageCount = allowedBlogImages(tier, words)
+          const prompts = await generateBodyImagePrompts({
+            count: imageCount,
+            productTitle: productTitleForPrompts,
+            headings: sectionHeadings(content),
+            base: generated.imagePrompts,
+            ctx: { userId: user.id, tier: (wp?.tier as string) ?? null },
+          })
+
+          const tier2 = (wp?.tier as string) ?? null
+          const results = await Promise.all(prompts.map(async (prompt, i) => {
+            if (!prompt || !prompt.trim()) return null
+            const perspective = SHOT_PERSPECTIVES[i % SHOT_PERSPECTIVES.length]
+            const seed = Math.floor(Math.random() * 1_000_000_000) + i
+            try {
+              let falUrl: string | undefined
+              if (falProductImageUrl) {
+                const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details — but show it from a NEW, DISTINCT perspective: ${perspective}. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. This image MUST look clearly different from the other photos in the article — different angle, different framing, different surroundings. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene. Landscape 4:3 editorial product photography.`
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
+                  input: { image_url: falProductImageUrl, prompt: kontextInstruction, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed },
+                  pollInterval: 3000,
+                })
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                falUrl = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+                if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-kontext', images: 1 })
+              }
+              if (!falUrl) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+                  input: { prompt: `${prompt}. Shown as a ${perspective}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed },
+                  pollInterval: 3000,
+                })
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                falUrl = ((result.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+                if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
+              }
+              if (!falUrl) return null
+              const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
+              return media?.source_url ? { url: media.source_url, alt: `${generated.title} — ${i + 1}` } : null
+            } catch { return null }
+          }))
+          const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
+          if (uploaded.length > 0) {
+            const slots = autoPlacementIndices(content, uploaded.length)
+            finalContent = insertImagesAtHeadings(
+              content,
+              uploaded.map((img, i) => ({
+                beforeHeadingIndex: slots[i] ?? (i + 1),
+                block: gutenbergImageBlock(img.url, img.alt),
+              })),
+            )
+            // Push the image-enriched body into the live WP post + our DB.
+            // updatePost with only `content` leaves the featured image / tags
+            // / status untouched (WP REST partial update).
+            try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch { /* keep text-only post */ }
+            if (savedPost?.id) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              try { await (supabase as any).from('blog_posts').update({ content: finalContent }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            }
+          }
+        }
+      } catch { /* non-fatal — the published text post stands */ }
     }
-  } catch { /* non-fatal — post is published regardless */ }
 
-
+    // Purge LiteSpeed cache LAST so the cached page reflects the images we
+    // just added. Re-POST the EXACT live customizations (never a stale local
+    // blob — that would wipe about.headerBannerUrl). Skip on GET failure.
+    try {
+      const wpBase = wp.wordpress_url.replace(/\/$/, '')
+      const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`)
+      if (getRes.ok) {
+        const existing = await getRes.json()
+        if (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing as object).length > 0) {
+          await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(existing),
+          })
+        }
+      }
+    } catch { /* non-fatal — post is published regardless */ }
+  })
 
   return NextResponse.json({
     success: true,
@@ -931,7 +921,7 @@ async function handleGenerate(request: Request) {
     wordpressUrl: wpPost.link,
     title: generated.title,
     productUrl,
-    hasImages: false,
+    hasImages: includeImages,
   })
 }
 
