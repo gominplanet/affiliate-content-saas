@@ -78,8 +78,46 @@ export async function POST(req: Request) {
       // Never touch `profile.*` either — that's Brand Profile territory.
       delete stripped.profile
 
-      // Merge with existing so we preserve whatever Brand Profile wrote.
-      const payload = { ...existing, ...stripped }
+      // Source-of-truth banner/logo from brand_profiles (same as
+      // sync-brand). Customize Blog's `about` only carries {logoUrl,
+      // headerBg} — it has NO headerBannerUrl field — so a shallow merge
+      // would silently drop the wide header banner the user set in Brand
+      // Profile. We seed + re-assert it here so no Customize save can ever
+      // revert the banner to the small logo again.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: brandRow } = await (supabase as any)
+        .from('brand_profiles')
+        .select('header_banner_url, logo_url')
+        .eq('user_id', user.id)
+        .single()
+      const storedBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
+      const storedLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null
+
+      // DEEP-merge `about` and `footer` so a partial client payload can never
+      // DROP keys that live in the WP option (most importantly
+      // about.headerBannerUrl). A shallow {...existing, ...stripped} replaces
+      // the whole sub-object and wipes anything the client didn't resend.
+      const existingAbout = (existing.about as Record<string, unknown>) ?? {}
+      const existingFooter = (existing.footer as Record<string, unknown>) ?? {}
+      const strippedAbout = (stripped.about as Record<string, unknown>) ?? {}
+      const strippedFooter = (stripped.footer as Record<string, unknown>) ?? {}
+      delete stripped.about
+      delete stripped.footer
+
+      const payload = {
+        ...existing,
+        ...stripped,
+        about: {
+          ...existingAbout,
+          ...(storedLogoUrl ? { logoUrl: storedLogoUrl } : {}),
+          ...(storedBannerUrl ? { headerBannerUrl: storedBannerUrl } : {}),
+          ...strippedAbout,
+          // Re-assert the banner LAST so a client `about` (which lacks the
+          // field entirely) can never overwrite/clear it.
+          ...(storedBannerUrl ? { headerBannerUrl: storedBannerUrl } : {}),
+        },
+        footer: { ...existingFooter, ...strippedFooter },
+      }
 
       // Push to WordPress — direct Basic Auth, no wp-login.php fallback (Hostinger blocks it)
       const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
