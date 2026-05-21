@@ -98,19 +98,40 @@ function errText(e: unknown): string {
 }
 
 /**
- * Best product link to surface for a video. Prefers the URL the generate
- * route resolved + persisted (product_url), else derives one live from an
- * ASIN in the title or description so the link shows before/without
- * generating. Conservative on the title (B0-prefixed) to avoid matching
- * random 10-char words; the description /dp/ pattern is always safe.
+ * The link to open when the user clicks "Visit Link or Product".
+ *
+ * Reads the video's metadata and returns the FIRST real affiliate /
+ * product link the creator is talking about, in priority order:
+ *   1. First Geniuslink (geni.us) in the description — the creator's own.
+ *   2. First Amazon short link (amzn.to) in the description.
+ *   3. First full Amazon product URL (/dp/ or /gp/product/) in the
+ *      description.
+ *   4. The product_url the generate route already resolved + persisted.
+ *   5. A bare Amazon /dp link derived from an ASIN in the title/desc
+ *      (B0-prefixed to avoid matching random 10-char words).
+ * Returns null when nothing product-like is found (general videos).
  */
 function deriveProductUrl(video: Record<string, unknown>): string | null {
+  const desc = (video.description as string) || ''
+  const title = (video.title as string) || ''
+  // Trim trailing punctuation/brackets the regex may grab off a URL.
+  const clean = (u: string) => u.replace(/[.,;:)\]>"']+$/, '')
+
+  const patterns = [
+    /https?:\/\/(?:www\.)?geni\.us\/[^\s)>\]"']+/i,
+    /https?:\/\/(?:www\.)?amzn\.to\/[^\s)>\]"']+/i,
+    /https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^\s)>\]"']*/i,
+  ]
+  for (const re of patterns) {
+    const m = desc.match(re)
+    if (m) return clean(m[0])
+  }
+
   const stored = (video.product_url as string | null)?.trim()
   if (stored) return stored
-  const title = (video.title as string) || ''
-  const desc = (video.description as string) || ''
+
   const asin =
-    desc.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() ||
+    desc.toUpperCase().match(/\/(?:DP|GP\/PRODUCT)\/([A-Z0-9]{10})/)?.[1] ||
     title.toUpperCase().match(/\b(B0[A-Z0-9]{8})\b/)?.[1] ||
     desc.toUpperCase().match(/\b(B0[A-Z0-9]{8})\b/)?.[1] ||
     null
@@ -1742,9 +1763,9 @@ function VideoCard({
         <div className="flex flex-col gap-2">
           {/* Publish All — shown when ≥1 social platform is connected and unpublished.
               Locked behind Pro tier; non-Pro users see the button but it links to /pricing. */}
-          {showPublishAll && (
+          {(showPublishAll || deriveProductUrl(video)) && (
             <div className="flex items-center gap-2 flex-wrap">
-              {publishingAll ? (
+              {showPublishAll && (publishingAll ? (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#0071e3] to-[#5856d6] text-white opacity-80">
                   <Loader2 size={12} className="animate-spin" />
                   {publishAllStep || 'Working…'}
@@ -1770,7 +1791,27 @@ function VideoCard({
                   {post ? 'Publish to all' : 'Generate + publish all'}
                   <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-yellow-300 text-[#1d1d1f]">Pro</span>
                 </a>
-              )}
+              ))}
+              {/* Visit Link or Product — opens the first affiliate / product
+                  link found in the video's description (Geniuslink, amzn.to,
+                  Amazon URL, or an ASIN-derived link). Lets the creator
+                  confirm what's being promoted before publishing. */}
+              {(() => {
+                const link = deriveProductUrl(video)
+                if (!link) return null
+                return (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#1d1d1f] transition-opacity hover:opacity-90"
+                    style={{ background: '#FFC200' }}
+                    title="Open the first product / affiliate link from the video description"
+                  >
+                    <ExternalLink size={12} /> Visit Link or Product
+                  </a>
+                )
+              })()}
               {publishAllError && (
                 <span className="text-xs text-[#ff3b30] line-clamp-1">{publishAllError}</span>
               )}
@@ -1793,21 +1834,6 @@ function VideoCard({
               videoId={id}
               initialUrl={(video.product_image_url as string | null) ?? null}
             />
-            {(() => {
-              const link = deriveProductUrl(video)
-              if (!link) return null
-              return (
-                <a
-                  href={link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] transition-colors"
-                  title="Open the resolved product page — confirm it's the right product"
-                >
-                  <ExternalLink size={11} /> Visit product
-                </a>
-              )
-            })()}
             {post ? (
               <>
                 <ManualEdit postId={post.postId} />
