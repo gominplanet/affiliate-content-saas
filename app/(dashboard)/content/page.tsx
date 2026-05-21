@@ -10,7 +10,7 @@ import { SOCIAL_CAP } from '@/lib/social-cap'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload,
 } from 'lucide-react'
 import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
 import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
@@ -95,6 +95,94 @@ function errText(e: unknown): string {
     try { return JSON.stringify(e) } catch { /* ignore */ }
   }
   return ''
+}
+
+/**
+ * Optional per-video product reference photo. When set, the blog in-body
+ * image generator (and IG image, later) uses it as the Kontext reference
+ * so the rendered product matches the real thing — more reliable than
+ * scraping Amazon. Uploads to the product-images bucket (migration 051)
+ * at {user_id}/{videoId}.{ext} and persists the URL on youtube_videos.
+ */
+function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialUrl: string | null }) {
+  const supabase = createBrowserClient()
+  const [url, setUrl] = useState<string | null>(initialUrl)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  async function handleFile(file: File) {
+    if (!file.type.startsWith('image/')) { setErr('Pick an image file'); return }
+    if (file.size > 10 * 1024 * 1024) { setErr('Max 10 MB'); return }
+    setBusy(true); setErr(null)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const path = `${user.id}/${videoId}.${ext}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (supabase.storage as any).from('product-images').upload(path, file, {
+        cacheControl: '3600', upsert: true, contentType: file.type || 'image/jpeg',
+      })
+      if (upErr) throw new Error(upErr.message || 'Upload failed')
+      const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(path)
+      // Cache-bust so a replaced photo (same path) refreshes in the UI.
+      const publicUrl = `${urlData.publicUrl}?v=${Date.now()}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: updErr } = await (supabase as any).from('youtube_videos').update({ product_image_url: publicUrl }).eq('id', videoId)
+      if (updErr) throw new Error(updErr.message || 'Save failed')
+      setUrl(publicUrl)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    setBusy(true); setErr(null)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('youtube_videos').update({ product_image_url: null }).eq('id', videoId)
+      setUrl(null)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Remove failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
+      />
+      {url ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt="Product reference" className="w-6 h-6 rounded object-cover border border-gray-200 dark:border-white/10" />
+          <button onClick={() => inputRef.current?.click()} disabled={busy} className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] disabled:opacity-60">
+            {busy ? '…' : 'Replace photo'}
+          </button>
+          <button onClick={remove} disabled={busy} className="text-[11px] text-[#86868b] hover:text-[#ff3b30] disabled:opacity-60">Remove</button>
+        </>
+      ) : (
+        <button
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          className="inline-flex items-center gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] disabled:opacity-60"
+          title="Upload a clean product photo so the in-body AI images render the exact product"
+        >
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />} Product photo
+        </button>
+      )}
+      {err && <span className="text-[10px] text-[#ff3b30]">{err}</span>}
+    </div>
+  )
 }
 
 /**
@@ -1680,6 +1768,10 @@ function VideoCard({
               customCategories={customCategories}
               onCustomCategoryAdded={onCustomCategoryAdded}
               hasPublishedPost={!!post}
+            />
+            <ProductPhotoUpload
+              videoId={id}
+              initialUrl={(video.product_image_url as string | null) ?? null}
             />
             {post ? (
               <>

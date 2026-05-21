@@ -418,22 +418,33 @@ async function handleGenerate(request: Request) {
         //    Fal storage once, then feed it into Kontext as a visual
         //    reference for every body image. Kontext keeps the product's
         //    exact shape / colour / branding while recomposing the scene.
+        let falProductImageUrl: string | null = null
+        let productTitleForPrompts = generated.title
+
+        // Priority 1 — a product photo the user uploaded for this video.
+        // More reliable + higher quality than scraping Amazon. Re-hosted
+        // on Fal storage so Kontext can read it.
+        const uploadedProductImage = (v.product_image_url as string | null)?.trim() || null
+        if (uploadedProductImage) {
+          try {
+            const imgRes = await fetch(uploadedProductImage, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+            if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
+          } catch { /* fall through to Amazon */ }
+        }
+
+        // Priority 2 — auto-fetch the Amazon catalog photo by ASIN.
         const effectiveAsin =
           extractAsin(rawTitle.toUpperCase()) ||
           rawDescription.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() ||
           asinOverride ||
           null
-        let falProductImageUrl: string | null = null
-        let productTitleForPrompts = generated.title
         if (effectiveAsin) {
           try {
             const p = await fetchAmazonProduct(effectiveAsin)
             if (p.title) productTitleForPrompts = p.title
-            if (p.imageUrl) {
+            if (!falProductImageUrl && p.imageUrl) {
               const imgRes = await fetch(p.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-              if (imgRes.ok) {
-                falProductImageUrl = await fal.storage.upload(await imgRes.blob())
-              }
+              if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
             }
           } catch { /* fall back to text-only prompts */ }
         }
