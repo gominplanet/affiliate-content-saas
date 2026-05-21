@@ -775,7 +775,11 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     const runGeneration = () => this.client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 32000,
-      thinking: { type: 'enabled', budget_tokens: 10000 },
+      // Trimmed from 10k → 6k: extended thinking added ~40s of latency up
+      // front, and on a deep post + body images the whole pipeline was
+      // tipping past the 300s function limit (504). 6k still gives solid
+      // planning headroom without the timeout risk.
+      thinking: { type: 'enabled', budget_tokens: 6000 },
       system: [
         {
           type: 'text',
