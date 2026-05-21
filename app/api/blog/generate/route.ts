@@ -540,64 +540,46 @@ async function handleGenerate(request: Request) {
           ctx: { userId: user.id, tier: (wp?.tier as string) ?? null },
         })
 
-        const uploaded: Array<{ url: string; alt: string }> = []
-        for (let i = 0; i < prompts.length; i++) {
-          const prompt = prompts[i]
-          if (!prompt || !prompt.trim()) continue
-          // Force a DISTINCT perspective per image + a unique seed so no two
-          // body images repeat. The reference product stays identical; only
-          // the angle, framing, and scene change.
+        // Generate every body image IN PARALLEL (was sequential, which
+        // stacked 2-6 × ~10-15s Fal calls and pushed the whole request past
+        // the function timeout → 504s). Promise.all preserves order, so
+        // placement stays correct; failed images drop out.
+        const tier2 = (wp?.tier as string) ?? null
+        const results = await Promise.all(prompts.map(async (prompt, i) => {
+          if (!prompt || !prompt.trim()) return null
+          // Distinct perspective + unique seed so no two body images repeat.
           const perspective = SHOT_PERSPECTIVES[i % SHOT_PERSPECTIVES.length]
           const seed = Math.floor(Math.random() * 1_000_000_000) + i
           try {
             let falUrl: string | undefined
             if (falProductImageUrl) {
-              // Kontext — the real product photo anchors the render.
               const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details — but show it from a NEW, DISTINCT perspective: ${perspective}. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. This image MUST look clearly different from the other photos in the article — different angle, different framing, different surroundings. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene. Landscape 4:3 editorial product photography.`
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
-                input: {
-                  image_url: falProductImageUrl,
-                  prompt: kontextInstruction,
-                  aspect_ratio: '4:3',
-                  num_images: 1,
-                  output_format: 'jpeg',
-                  guidance_scale: 5,
-                  seed,
-                },
+                input: { image_url: falProductImageUrl, prompt: kontextInstruction, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed },
                 pollInterval: 3000,
               })
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               falUrl = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
-              if (falUrl) recordUsage({ userId: user.id, tier: (wp?.tier as string) ?? null, feature: 'blog_body_image', model: 'fal-flux-pro-kontext', images: 1 })
+              if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-kontext', images: 1 })
             }
             if (!falUrl) {
-              // No product image (or Kontext failed) — plain text-prompt gen.
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
-                input: {
-                  prompt: `${prompt}. Shown as a ${perspective}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`,
-                  image_size: 'landscape_4_3',
-                  num_inference_steps: 28,
-                  guidance_scale: 3.5,
-                  num_images: 1,
-                  output_format: 'jpeg',
-                  safety_tolerance: '2',
-                  seed,
-                },
+                input: { prompt: `${prompt}. Shown as a ${perspective}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed },
                 pollInterval: 3000,
               })
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               falUrl = ((result.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
-              if (falUrl) recordUsage({ userId: user.id, tier: (wp?.tier as string) ?? null, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
+              if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
             }
-            if (!falUrl) continue
-            // Re-host on the WP media library so the image is permanent
-            // (Fal URLs expire) and served from the user's own domain.
+            if (!falUrl) return null
+            // Re-host on the WP media library so the image is permanent.
             const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
-            if (media?.source_url) uploaded.push({ url: media.source_url, alt: `${generated.title} — ${i + 1}` })
-          } catch { /* skip this image */ }
-        }
+            return media?.source_url ? { url: media.source_url, alt: `${generated.title} — ${i + 1}` } : null
+          } catch { return null }
+        }))
+        const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
         if (uploaded.length > 0) {
           const slots = autoPlacementIndices(content, uploaded.length)
           content = insertImagesAtHeadings(
