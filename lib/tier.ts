@@ -24,6 +24,8 @@ export const TIERS = {
     instagramAiThumbnailsPerMonth: 0 as number | null,
     /** In-body blog images per post (hard ceiling — COGS guard). */
     blogImagesPerPost: 2,
+    /** AI assistant chat messages / month (product help + coach). */
+    assistantMessagesPerMonth: 20 as number | null,
     /** LoRA face-training jobs / month (0 = feature off). */
     faceTrainJobs: 0 as number | null,
     basePosts: 5,
@@ -48,6 +50,7 @@ export const TIERS = {
     metadataGensPerMonth: 60 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
     blogImagesPerPost: 3,
+    assistantMessagesPerMonth: 200 as number | null,
     faceTrainJobs: 0 as number | null,
     basePosts: 40,
     bonusPosts: 0,
@@ -68,6 +71,7 @@ export const TIERS = {
     metadataGensPerMonth: 300 as number | null,
     instagramAiThumbnailsPerMonth: 50 as number | null,
     blogImagesPerPost: 4,
+    assistantMessagesPerMonth: 2000 as number | null,
     // 3 LoRA training jobs / month — bounded ($1.50/job has no natural
     // ceiling, so it's explicitly capped rather than uncapped).
     faceTrainJobs: 3 as number | null,
@@ -90,6 +94,7 @@ export const TIERS = {
     metadataGensPerMonth: null as number | null,
     instagramAiThumbnailsPerMonth: null as number | null,
     blogImagesPerPost: 6,
+    assistantMessagesPerMonth: null as number | null,
     faceTrainJobs: null as number | null,
     basePosts: 0,
     bonusPosts: 0,

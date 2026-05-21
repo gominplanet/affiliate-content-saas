@@ -26,6 +26,8 @@ export const PRIMARY_FEATURE = {
   /** Native Instagram AI image — Pro-only, separately capped from
    *  YouTube thumbnails (different surface, different aspect ratio). */
   instagramAi: ['ig_ai_thumbnail_image'] as string[],
+  /** AI assistant — one row per user message turn. */
+  assistant: ['assistant_message'] as string[],
 }
 
 interface CapCheck {

@@ -1,0 +1,201 @@
+'use client'
+
+import { useState, useEffect, useRef, useCallback } from 'react'
+import Header from '@/components/layout/Header'
+import { Loader2, Send, Plus, Trash2, MessageSquare, Sparkles } from 'lucide-react'
+
+interface Conversation { id: string; title: string; updated_at: string }
+interface Msg { role: 'user' | 'assistant'; content: string }
+
+const STARTERS = [
+  'How do I get my first review published?',
+  'What niche converts best for Amazon affiliates?',
+  'Why isn\'t my YouTube thumbnail generating?',
+  'How do I land my first brand collaboration?',
+]
+
+export default function AssistantPage() {
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Msg[]>([])
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [streaming, setStreaming] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const threadRef = useRef<HTMLDivElement>(null)
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const res = await fetch('/api/assistant/conversations')
+      const d = await res.json()
+      setConversations(d.conversations ?? [])
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => { loadConversations() }, [loadConversations])
+
+  useEffect(() => {
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, streaming])
+
+  async function openConversation(id: string) {
+    setActiveId(id)
+    setError(null)
+    setStreaming('')
+    try {
+      const res = await fetch(`/api/assistant/conversations/${id}`)
+      const d = await res.json()
+      setMessages((d.messages ?? []).map((m: Msg) => ({ role: m.role, content: m.content })))
+    } catch { setMessages([]) }
+  }
+
+  function newChat() {
+    setActiveId(null)
+    setMessages([])
+    setStreaming('')
+    setError(null)
+  }
+
+  async function deleteConversation(id: string) {
+    await fetch(`/api/assistant/conversations/${id}`, { method: 'DELETE' }).catch(() => {})
+    if (activeId === id) newChat()
+    loadConversations()
+  }
+
+  async function send(text: string) {
+    const msg = text.trim()
+    if (!msg || sending) return
+    setError(null)
+    setInput('')
+    setMessages(prev => [...prev, { role: 'user', content: msg }])
+    setSending(true)
+    setStreaming('')
+    try {
+      const res = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: activeId, message: msg }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setError(d.error || `Error ${res.status}`)
+        setMessages(prev => prev.slice(0, -1)) // roll back the optimistic user msg
+        setSending(false)
+        return
+      }
+      const convId = res.headers.get('X-Conversation-Id')
+      if (convId && !activeId) setActiveId(convId)
+
+      const reader = res.body?.getReader()
+      const decoder = new TextDecoder()
+      let acc = ''
+      if (reader) {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          acc += decoder.decode(value, { stream: true })
+          setStreaming(acc)
+        }
+      }
+      setMessages(prev => [...prev, { role: 'assistant', content: acc }])
+      setStreaming('')
+      loadConversations()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <>
+      <Header title="AI Assistant" subtitle="Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche." />
+
+      <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[480px]">
+        {/* Conversation list */}
+        <div className="w-56 flex-shrink-0 flex flex-col gap-2">
+          <button onClick={newChat} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]">
+            <Plus size={13} /> New chat
+          </button>
+          <div className="flex-1 overflow-y-auto flex flex-col gap-1">
+            {conversations.map(c => (
+              <div key={c.id} className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer text-xs ${activeId === c.id ? 'bg-[#0071e3]/10 text-[#0071e3]' : 'hover:bg-gray-100 dark:hover:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
+                <MessageSquare size={12} className="flex-shrink-0 opacity-60" />
+                <button onClick={() => openConversation(c.id)} className="flex-1 text-left truncate">{c.title}</button>
+                <button onClick={() => deleteConversation(c.id)} className="opacity-0 group-hover:opacity-100 text-[#86868b] hover:text-[#ff3b30]" title="Delete">
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+            {conversations.length === 0 && (
+              <p className="text-[11px] text-[#86868b] px-2 py-2">No chats yet.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Thread */}
+        <div className="flex-1 flex flex-col rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#0a0a0a] overflow-hidden">
+          <div ref={threadRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+            {messages.length === 0 && !streaming && (
+              <div className="m-auto max-w-md text-center">
+                <div className="w-12 h-12 rounded-2xl bg-[#0071e3]/10 flex items-center justify-center mx-auto mb-3">
+                  <Sparkles size={22} className="text-[#0071e3]" />
+                </div>
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">How can I help?</p>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Ask about using MVP Affiliate, or affiliate strategy for your niche.</p>
+                <div className="flex flex-col gap-2">
+                  {STARTERS.map(s => (
+                    <button key={s} onClick={() => send(s)} className="text-left text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {messages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${m.role === 'user' ? 'bg-[#0071e3] text-white' : 'bg-gray-100 dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {streaming && (
+              <div className="flex justify-start">
+                <div className="max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed bg-gray-100 dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  {streaming}
+                </div>
+              </div>
+            )}
+            {sending && !streaming && (
+              <div className="flex justify-start"><Loader2 size={16} className="animate-spin text-[#86868b]" /></div>
+            )}
+          </div>
+
+          {error && (
+            <p className="px-4 py-2 text-xs text-[#ff3b30] border-t border-[#ff3b30]/20 bg-[#ff3b30]/5">{error}</p>
+          )}
+
+          {/* Composer */}
+          <div className="border-t border-gray-200 dark:border-white/10 p-3 flex items-end gap-2">
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
+              placeholder="Ask anything…"
+              rows={1}
+              className="flex-1 resize-none input-field text-sm max-h-32"
+            />
+            <button
+              onClick={() => send(input)}
+              disabled={sending || !input.trim()}
+              className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-50 flex-shrink-0"
+            >
+              {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}

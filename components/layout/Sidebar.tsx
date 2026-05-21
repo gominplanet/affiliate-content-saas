@@ -34,6 +34,7 @@ import {
   GraduationCap,
   MessagesSquare,
   UserCircle2,
+  Bot,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -47,6 +48,7 @@ import { DISCORD_INVITE_URL, COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/co
 // with different ?tab= values; active highlighting uses the query param.
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, matchKind: 'exact' as const },
+  { href: '/assistant', label: 'AI Assistant', icon: Bot, matchKind: 'prefix' as const },
   { href: '/setup', label: 'Blog Set Up', icon: Wrench, matchKind: 'setup-wp' as const },
   { href: '/setup?tab=integrations', label: 'Integrations', icon: Plug, matchKind: 'setup-int' as const },
   { href: '/brand', label: 'Brand Profile', icon: Palette, matchKind: 'prefix' as const },
