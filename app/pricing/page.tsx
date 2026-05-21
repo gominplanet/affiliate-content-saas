@@ -17,7 +17,7 @@ declare global {
 }
 
 type Plan = {
-  tier: 'free' | 'starter' | 'growth' | 'pro'
+  tier: 'trial' | 'creator' | 'pro'
   label: string
   price: number
   regularPrice: number
@@ -32,14 +32,14 @@ type PlanExt = Plan & { bonus?: string; badge?: string }
 
 const plans: PlanExt[] = [
   {
-    tier: 'free',
-    label: 'Free',
+    tier: 'trial',
+    label: 'Free Trial',
     price: 0,
     regularPrice: 0,
-    limit: '15 posts lifetime',
-    description: 'A real trial — not a teaser. Run the full YouTube workflow on 15 real reviews before paying a cent.',
+    limit: '5 posts — no card',
+    description: 'A real trial, not a teaser. Run the full YouTube workflow on 5 real reviews before paying a cent. No card, no time limit.',
     features: [
-      '15 full reviews (lifetime)',
+      '5 full reviews (lifetime — no time limit)',
       'YouTube Co-Pilot — description, tags, hashtags & thumbnail pushed back to YouTube Studio',
       'Branded WordPress review site (theme + plugin auto-installed)',
       'One-click publish to your site',
@@ -51,40 +51,22 @@ const plans: PlanExt[] = [
     ctaLabel: 'Start free',
   },
   {
-    tier: 'starter',
-    label: 'Starter',
+    tier: 'creator',
+    label: 'Creator',
     price: 49,
     regularPrice: 99,
-    limit: '30 posts / month',
-    description: 'Ship a few reviews a week — and try the Pro brand-pitch workflow that lands deals.',
+    limit: '40 posts / month',
+    description: 'For creators shipping a few reviews a week across the major socials — and trying the Pro brand-pitch workflow that lands deals.',
     features: [
-      '30 full reviews per month',
-      'Everything in Free',
-      'Pinterest auto-post *',
-      '1 brand-collab pitch email / month (try the Pro feature)',
-      'Monthly cap resets on the 1st — no rollover, no surprises',
+      '40 full reviews per month',
+      'Everything in the trial, uncapped monthly',
+      'Auto-post to Facebook, Threads, Bluesky, LinkedIn, Pinterest *',
+      'In-body AI product images (up to 3 per post)',
+      '5 brand-collab pitch emails / month (try the Pro feature)',
+      'Monthly cap resets on your billing date — no rollover, no surprises',
     ],
     highlight: false,
-    ctaLabel: 'Get Starter',
-  },
-  {
-    tier: 'growth',
-    label: 'Growth',
-    price: 99,
-    regularPrice: 199,
-    limit: '80 posts / month',
-    bonus: '60 + 20 bonus posts',
-    description: 'Best for ramp-up. Ship daily on every major social — and start pitching brands at a real cadence.',
-    features: [
-      '80 full reviews per month (60 + 20 bonus)',
-      'Everything in Starter',
-      'Threads + Bluesky + LinkedIn auto-post',
-      '5 brand-collab pitch emails / month',
-      'Priority generation queue — your jobs jump the line',
-    ],
-    highlight: false,
-    badge: 'Best for ramp-up',
-    ctaLabel: 'Get Growth',
+    ctaLabel: 'Get Creator',
   },
   {
     tier: 'pro',
@@ -93,14 +75,14 @@ const plans: PlanExt[] = [
     regularPrice: 499,
     limit: '200 posts / month',
     bonus: '140 + 60 bonus posts',
-    description: 'Become the creator brands want. One video becomes a YouTube description, a blog review, and a post on every major social — so when a brand asks "where will this go?", your answer is a list, not a sentence.',
+    description: 'Become the creator brands want. One video becomes a YouTube package, a blog review, and a post on every major social — so when a brand asks "where will this go?", your answer is a list, not a sentence.',
     features: [
-      '100 brand-collab pitch emails / month — your direct lever for deal flow',
       '200 full reviews per month (140 + 60 bonus)',
+      '100 brand-collab pitch emails / month — your direct lever for deal flow',
       'Native AI Instagram image — your trained face + the actual product, 4:5 (50 / month)',
       'Custom face training for AI thumbnails & IG images',
-      'Reach on every supported platform: Facebook, Pinterest, Threads, Bluesky, LinkedIn, X, Telegram (+ Instagram Reels & Stories, included while we keep polishing)',
-      'One-click Apply to YouTube — playlist, schedule, paid-promotion disclosure, made-for-kids, notify-off, all batched',
+      'Adds Instagram, X & Telegram on top of Creator’s platforms',
+      'One-click Apply to YouTube — playlist, schedule, paid-promotion, made-for-kids, notify-off, all batched',
       'One-click Publish All — site + every social in one shot',
       'Priority queue + priority human support',
     ],
@@ -124,9 +106,9 @@ export default function PricingPage() {
   }, [])
 
   async function handleCheckout(tier: Plan['tier']) {
-    if (tier === 'free') {
+    if (tier === 'trial') {
       // No checkout needed — just send them to signup. After signup they land
-      // on /dashboard with the default free tier.
+      // on /dashboard with the default trial tier.
       router.push('/signup?next=/dashboard')
       return
     }
@@ -175,7 +157,7 @@ export default function PricingPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-7xl">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
         {plans.map((plan) => (
           <div
             key={plan.tier}
@@ -241,7 +223,7 @@ export default function PricingPage() {
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
         * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
-        It activates automatically on Starter, Growth &amp; Pro accounts once approved at no extra cost.
+        It activates automatically on Creator &amp; Pro accounts once approved at no extra cost.
       </p>
       <div className="mt-6 max-w-2xl rounded-2xl bg-[#0071e3]/5 border border-[#0071e3]/20 p-5">
         <p className="text-center text-sm font-semibold text-[#0071e3] mb-1.5">🔒 Price-lock guarantee</p>

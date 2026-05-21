@@ -24,7 +24,7 @@ import {
 // "ship today" platforms on the top row.
 const platforms = [
   // Top row — live integrations (WordPress + Facebook are on every plan;
-  // Threads / Bluesky / LinkedIn unlock on Growth — see pricing).
+  // Threads / Bluesky / LinkedIn unlock on Creator — see pricing).
   { label: 'WordPress',    status: 'live'    as const, color: '#21759b', logo: 'wordpress' },
   { label: 'Facebook',     status: 'live'    as const, color: '#1877f2', logo: 'facebook' },
   { label: 'Threads',      status: 'live'    as const, color: '#000000', logo: 'threads' },
@@ -47,37 +47,26 @@ const statusBadge: Record<typeof platforms[number]['status'], { text: string; bg
 
 const plans = [
   {
-    tier: 'Free',
+    tier: 'Free Trial',
     price: 0,
     regular: 0,
-    limit: '15 posts lifetime',
+    limit: '5 posts — no card',
     bonus: '',
-    features: ['Free themed review site', 'YouTube Co-Pilot autopilot', 'Facebook auto-post'],
+    features: ['Free themed review site', 'YouTube Co-Pilot autopilot', 'Facebook auto-post', 'No card · no time limit'],
     cta: 'Start free',
     href: '/signup',
     highlight: false,
   },
   {
-    tier: 'Starter',
+    tier: 'Creator',
     price: 49,
     regular: 99,
-    limit: '30 posts / month',
+    limit: '40 posts / month',
     bonus: '',
-    features: ['Free themed review site', '1 connected WordPress site', 'Facebook auto-post', 'Pinterest auto-post *'],
-    cta: 'Get Starter',
+    features: ['Free themed review site', 'Facebook, Threads, Bluesky, LinkedIn, Pinterest *', 'In-body AI product images (up to 3 / post)', '5 brand-collab pitch emails / month'],
+    cta: 'Get Creator',
     href: '/pricing',
     highlight: false,
-  },
-  {
-    tier: 'Growth',
-    price: 99,
-    regular: 199,
-    limit: '80 posts / month',
-    bonus: '60 + 20 bonus posts',
-    features: ['Everything in Starter', '+ Threads, Bluesky, LinkedIn', 'Priority generation queue'],
-    cta: 'Get Growth',
-    href: '/pricing',
-    highlight: true,
   },
   {
     tier: 'Pro',
@@ -85,10 +74,10 @@ const plans = [
     regular: 499,
     limit: '200 posts / month',
     bonus: '140 + 60 bonus posts',
-    features: ['Everything in Growth', '100 brand-collab pitch emails / month', 'Native AI Instagram image — your face + the product, 4:5', 'Custom face training for AI thumbnails', 'X (Twitter) + Telegram + Instagram Reels & Stories', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off)', 'One-click Publish All to socials', 'Priority support'],
+    features: ['Everything in Creator', '100 brand-collab pitch emails / month', 'Native AI Instagram image — your face + the product, 4:5', 'Custom face training for AI thumbnails', 'Adds Instagram, X & Telegram', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off)', 'One-click Publish All to socials', 'Priority support'],
     cta: 'Get Pro',
     href: '/pricing',
-    highlight: false,
+    highlight: true,
   },
 ]
 
@@ -107,15 +96,15 @@ const faqs = [
   },
   {
     q: 'What are the brand-collab pitch emails?',
-    a: 'A Pro feature for landing brand deals. Name a brand or product you want to work with and we generate a personalized outreach email — built on your real storefront, Linktree and channel stats, with a brand-specific angle and your full cross-platform reach as proof of distribution. Pro includes up to 100 pitches a month; Starter and Growth get a taster (1 and 5 respectively).',
+    a: 'A Pro feature for landing brand deals. Name a brand or product you want to work with and we generate a personalized outreach email — built on your real storefront, Linktree and channel stats, with a brand-specific angle and your full cross-platform reach as proof of distribution. Pro includes up to 100 pitches a month; Creator gets a taster of 5 / month.',
   },
   {
     q: 'Do I own the content?',
     a: 'You own everything generated for your account. We don\'t reuse, resell, or train models on your content.',
   },
   {
-    q: 'What happens after my 15 free posts?',
-    a: 'You can upgrade to a paid plan or pause. Your existing posts and connected site stay exactly as they are — nothing gets taken down.',
+    q: 'What happens after my 5 free posts?',
+    a: 'You can upgrade to Creator or Pro to keep going — no time limit on the trial, so upgrade whenever you\'re ready. Your existing posts and connected site stay exactly as they are; nothing gets taken down.',
   },
   {
     q: 'Can I cancel anytime?',
@@ -174,7 +163,7 @@ export default function LandingPage() {
           {/* Free-posts pill */}
           <div className="inline-flex items-center gap-2 bg-white border border-[#0071e3]/20 rounded-full px-3 py-1.5 text-xs sm:text-sm text-[#0071e3] font-medium mb-6 shadow-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
-            15 free posts. No card. No catch.
+            5 free posts. No card. No catch.
           </div>
 
           {/* Main title */}
@@ -218,7 +207,7 @@ export default function LandingPage() {
               </span>
             ) : (
               <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
-                Start free — 15 posts <ArrowRight size={17} />
+                Start free — 5 posts <ArrowRight size={17} />
               </Link>
             )}
             <Link href="/pricing" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-[#1d1d1f] font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors">
@@ -647,17 +636,17 @@ export default function LandingPage() {
               <div className="relative flex flex-col gap-3">
                 <StackPerk label="Affiliate link mgmt + branded WordPress site" />
                 <StackPerk label="AI-written reviews in your brand voice" />
-                <StackPerk label="Fan-out to 8 socials, one click" />
+                <StackPerk label="Auto-post to Facebook, Threads, Bluesky, LinkedIn, Pinterest" />
                 <StackPerk label="YouTube metadata + tags + click-magnet thumbnail" />
-                <StackPerk label="Native AI Instagram image — your face + the product" />
+                <StackPerk label="In-body AI product images on every review" />
                 <StackPerk label="Affiliate disclaimer + Geniuslink routing built in" />
               </div>
               <div className="relative mt-5 pt-5 border-t border-white/20 flex items-baseline justify-between">
-                <span className="text-sm font-semibold">Growth plan</span>
-                <span className="text-3xl font-bold">$99<span className="text-base font-medium">/mo</span></span>
+                <span className="text-sm font-semibold">Creator plan</span>
+                <span className="text-3xl font-bold">$49<span className="text-base font-medium">/mo</span></span>
               </div>
               <p className="relative text-[11px] text-white/80 mt-2 leading-relaxed">
-                Pro at $199 unlocks Instagram + LinkedIn + Telegram + X. Starter at $49 covers Facebook + Pinterest + WP.
+                Pro at $199 adds Instagram, X &amp; Telegram, the native AI Instagram image (your face + the product), face training, and one-click Publish All.
               </p>
             </div>
           </div>
@@ -665,8 +654,8 @@ export default function LandingPage() {
           {/* Bottom savings callout */}
           <div className="mt-10 rounded-2xl bg-[#34c759]/10 border border-[#34c759]/30 px-6 py-5 max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-[#1d1d1f] mb-1">Save $124/month switching to Growth.</p>
-              <p className="text-xs text-[#3a3a3c]">That&apos;s $1,488/year — plus the time you stop spending integrating five dashboards.</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] mb-1">Save $174/month switching to Creator.</p>
+              <p className="text-xs text-[#3a3a3c]">That&apos;s $2,088/year — plus the time you stop spending integrating five dashboards.</p>
             </div>
             <Link
               href="/pricing"
@@ -733,7 +722,7 @@ export default function LandingPage() {
             <p className="text-[#6e6e73] text-base sm:text-lg">Every paid plan includes a free themed review site. Cancel anytime.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {plans.map((plan) => (
               <div
                 key={plan.tier}
@@ -795,7 +784,7 @@ export default function LandingPage() {
 
           <p className="mt-8 text-center text-sm text-[#86868b]">
             * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
-            Included on Starter, Growth &amp; Pro at no extra cost once approved.
+            Included on Creator &amp; Pro at no extra cost once approved.
           </p>
           <div className="mt-6 max-w-2xl mx-auto rounded-2xl bg-[#0071e3]/5 border border-[#0071e3]/20 p-5">
             <p className="text-center text-sm font-semibold text-[#0071e3] mb-1.5">🔒 Price-lock guarantee</p>
@@ -901,7 +890,7 @@ export default function LandingPage() {
           <h2 className="text-3xl sm:text-5xl font-bold mb-4 leading-[1.1]">Stop writing descriptions. Start shipping reviews.</h2>
           <p className="text-blue-100 text-base sm:text-lg mb-8 max-w-xl mx-auto">
             One YouTube draft → a full review site, an optimized YouTube package, and social posts
-            on every platform. 15 free posts. No card. Cancel anytime.
+            on every platform. 5 free posts. No card. Cancel anytime.
           </p>
           {SALES_PAUSED ? (
             <span className="inline-flex items-center justify-center gap-2 bg-white/40 text-white font-semibold px-8 py-4 rounded-2xl text-base shadow-2xl cursor-not-allowed">
