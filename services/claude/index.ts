@@ -591,14 +591,19 @@ Output only valid JSON. No explanation, no markdown.`,
      *  AI treats these as standing rules for THIS user's voice. */
     persistentFeedback?: string[] | null,
   ): Promise<BlogGenerationOutput> {
-    // Caller may pre-resolve an ASIN (e.g. by running Amazon search on
-    // the title) when the video doesn't carry one. Honor that override
-    // first so we don't run our own URL resolution and then ignore it.
+    // Caller pre-resolves the link and passes it as affiliateUrlOverride —
+    // this may be an Amazon link (with asinOverride) OR a direct store /
+    // brand product page the creator linked (no ASIN). Honor it verbatim
+    // either way so we never re-resolve and accidentally grab an unrelated
+    // link (e.g. a "gear I use" amzn.to link buried in the description).
     let affiliateUrl: string
     let asin: string | null
-    if (video.asinOverride) {
+    if (video.affiliateUrlOverride) {
+      affiliateUrl = video.affiliateUrlOverride
+      asin = video.asinOverride ?? null
+    } else if (video.asinOverride) {
       asin = video.asinOverride
-      affiliateUrl = video.affiliateUrlOverride || `https://www.amazon.com/dp/${video.asinOverride}`
+      affiliateUrl = `https://www.amazon.com/dp/${video.asinOverride}`
     } else {
       const resolved = await resolveAffiliateUrl(video.description, video.title)
       affiliateUrl = resolved.url

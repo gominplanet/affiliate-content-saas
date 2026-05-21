@@ -27,19 +27,30 @@ const SHOT_PERSPECTIVES = [
   'low hero angle looking slightly up at the product against a softly blurred lifestyle background',
 ]
 
-/** First non-Amazon, non-social product/brand URL in a description — the
- *  page we scrape for product facts (Pro tier). Amazon/geni.us links are
- *  handled by the affiliate path; socials + the creator's own site are
- *  skipped. Returns null when nothing product-like is linked. */
+/** The product/store URL a creator links in the description — used both as
+ *  the affiliate link (when there's no Amazon product) and as the page we
+ *  scrape for product facts. Amazon/geni.us links are handled by the
+ *  Amazon path; socials, payment, and the creator's own site are skipped.
+ *
+ *  Prefers a URL that follows a buy/price CTA ("Check Today's Price and
+ *  Availability here: <url>") — that's the actual product link — over the
+ *  first random link (which is often a collaborations/website link).
+ *  Returns null when nothing product-like is linked. */
 function firstProductUrl(description: string, ownSite?: string | null): string | null {
-  const urls = description.match(/https?:\/\/[^\s)>\]"']+/gi) || []
-  const skip = /(amazon\.|amzn\.to|geni\.us|youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.)/i
+  const skip = /(amazon\.|amzn\.to|geni\.us|youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|alexmediacreations)/i
   const own = ownSite ? ownSite.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
-  for (const raw of urls) {
+  const candidate = (raw: string): string | null => {
     const clean = raw.replace(/[.,;:)\]>"']+$/, '')
-    if (skip.test(clean)) continue
-    if (own && clean.includes(own)) continue
+    if (skip.test(clean)) return null
+    if (own && clean.includes(own)) return null
     return clean
+  }
+  // 1. URL right after a buy/price/availability cue — the product link.
+  const cta = description.match(/(?:today'?s price|price|availability|buy(?:\s+it)?|shop|purchase|order|get yours|grab|available (?:here|at)|here)\b[:\s]*[\s\S]{0,40}?(https?:\/\/[^\s)>\]"']+)/i)
+  if (cta) { const c = candidate(cta[1]); if (c) return c }
+  // 2. Else the first non-excluded URL anywhere.
+  for (const raw of description.match(/https?:\/\/[^\s)>\]"']+/gi) || []) {
+    const c = candidate(raw); if (c) return c
   }
   return null
 }
@@ -287,32 +298,44 @@ async function handleGenerate(request: Request) {
     }
   }
 
-  // ── 5. Recover an ASIN when the title doesn't carry one ───────────────────
-  // If the title doesn't have a 10-char ASIN and the description has no
-  // resolvable Amazon link, ask the detector whether the video is about
-  // a buyable product. If yes, search Amazon for the match and wrap it
-  // with Geniuslink / Associates so the blog post still gets affiliate
-  // links. Failure is silent — falls back to general-mode blog.
+  // ── 5. Resolve the product / affiliate link ───────────────────────────────
+  // Priority:
+  //   1. Amazon ASIN in the title or an Amazon product URL in the
+  //      description → Amazon path (Geniuslink/Associates).
+  //   2. NO Amazon link, but the creator linked the product directly on a
+  //      store/brand site (e.g. "Check Today's Price and Availability here:
+  //      <store URL>") → USE THAT LINK. Do NOT blindly search Amazon for a
+  //      lookalike — the creator isn't selling it on Amazon.
+  //   3. Only when there's no usable link at all → fall back to Amazon
+  //      product discovery (search by name).
   const v = video as Record<string, unknown>
   const rawTitle = v.title as string
   const rawDescription = (v.description as string) || ''
   let asinOverride: string | null = null
   let affiliateUrlOverride: string | null = null
-  if (!extractAsin(rawTitle.toUpperCase()) && !/\/(?:dp|gp\/product)\/[A-Z0-9]{10}/.test(rawDescription)) {
-    const discovered = await discoverProductForVideo(rawTitle, rawDescription, { userId: user.id, tier: (wp?.tier as string) ?? null })
-    if (discovered.asin) {
-      asinOverride = discovered.asin
-      // Build affiliate URL using user's Geniuslink → Associates → bare.
-      let url = `https://www.amazon.com/dp/${discovered.asin}`
-      if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
-        try {
-          const genius = createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
-          url = await genius.createAsinLink(discovered.asin, discovered.productQuery || rawTitle)
-        } catch { /* fall through to Associates / bare */ }
-      } else if (wp?.amazon_associates_tag) {
-        url = `https://www.amazon.com/dp/${discovered.asin}?tag=${wp.amazon_associates_tag}`
+  const hasAmazon = !!extractAsin(rawTitle.toUpperCase()) || /\/(?:dp|gp\/product)\/[A-Z0-9]{10}/.test(rawDescription)
+  if (!hasAmazon) {
+    const directProductUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
+    if (directProductUrl) {
+      // The creator's own store / product page — link the post straight to
+      // it. No Amazon search, no Geniuslink wrap (Geniuslink is Amazon-only).
+      affiliateUrlOverride = directProductUrl
+    } else {
+      // No direct product link anywhere → last-resort Amazon discovery.
+      const discovered = await discoverProductForVideo(rawTitle, rawDescription, { userId: user.id, tier: (wp?.tier as string) ?? null })
+      if (discovered.asin) {
+        asinOverride = discovered.asin
+        let url = `https://www.amazon.com/dp/${discovered.asin}`
+        if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
+          try {
+            const genius = createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
+            url = await genius.createAsinLink(discovered.asin, discovered.productQuery || rawTitle)
+          } catch { /* fall through to Associates / bare */ }
+        } else if (wp?.amazon_associates_tag) {
+          url = `https://www.amazon.com/dp/${discovered.asin}?tag=${wp.amazon_associates_tag}`
+        }
+        affiliateUrlOverride = url
       }
-      affiliateUrlOverride = url
     }
   }
 
