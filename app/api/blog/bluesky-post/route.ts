@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Bluesky auto-publish is Growth+ (free for us to run, but gives Growth
+    // Bluesky auto-publish is Creator+ (free for us to run, but gives Creator
     // a meaningful extra channel over Starter).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await (supabase as any)
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'bluesky')) {
       return NextResponse.json(
-        { error: 'Bluesky auto-publish is a Growth plan feature. Upgrade to Growth or Pro to post to Bluesky.' },
+        { error: 'Bluesky auto-publish is a Creator plan feature. Upgrade to Creator or Pro to post to Bluesky.' },
         { status: 403 },
       )
     }

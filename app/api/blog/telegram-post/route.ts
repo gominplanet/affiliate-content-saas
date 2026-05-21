@@ -9,7 +9,7 @@
  *   - User stores their channel ID (e.g. "@mvpreviews" or "-100…") in
  *     integrations.telegram_channel_id
  *
- * Gated to Growth+ tier. Free / Starter get 403.
+ * Gated to Pro tier. Trial / Creator get 403.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   const tier = (tierRow?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'pinterest')) {
     return NextResponse.json(
-      { error: 'Pinterest auto-publish is a Growth plan feature. Upgrade to Growth or Pro to pin to Pinterest.' },
+      { error: 'Pinterest auto-publish is a Creator plan feature. Upgrade to Creator or Pro to pin to Pinterest.' },
       { status: 403 },
     )
   }

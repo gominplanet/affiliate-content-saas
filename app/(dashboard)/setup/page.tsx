@@ -1537,7 +1537,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         )}
       </div>
 
-      {/* Telegram — Growth+ */}
+      {/* Telegram — Pro */}
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#229ED9' }}>

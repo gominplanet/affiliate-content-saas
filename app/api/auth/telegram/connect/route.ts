@@ -5,7 +5,7 @@
  * the user pasted (via getChat), then saves the channel ID + title to
  * integrations.telegram_channel_id / telegram_channel_title.
  *
- * Gated to Growth+ since Telegram fan-out is a Growth-tier feature.
+ * Gated to Pro since Telegram fan-out is a Pro-tier feature.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

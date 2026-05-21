@@ -1205,8 +1205,8 @@ function InstagramPublishModal({
               )
             ) : videoKind === 'horizontal' ? (
               <div className="space-y-3">
-                {/* Source picker — only renders for Pro users. Free/Starter/
-                    Growth see just the compose button (current behavior). */}
+                {/* Source picker — only renders for Pro users. Trial/Creator —
+                    see just the compose button (current behavior). */}
                 {aiIsPro && (
                   <div className="flex gap-2">
                     <button

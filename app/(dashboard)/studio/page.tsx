@@ -349,7 +349,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
         return
       }
 
-      // Free / Starter / Growth — metadata + thumbnail only (no batch settings)
+      // Trial / Creator — metadata + thumbnail only (no batch settings)
       const res = await fetch('/api/youtube/update-metadata', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

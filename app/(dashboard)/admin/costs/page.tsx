@@ -95,7 +95,7 @@ export default function AdminCostsPage() {
             <div className="card p-5">
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-1">Currently paying users</p>
               <p className="text-3xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                {(['starter', 'growth', 'pro'] as const).reduce((s, t) => s + (data.payingByTier[t] || 0), 0)}
+                {(['creator', 'pro'] as const).reduce((s, t) => s + (data.payingByTier[t] || 0), 0)}
               </p>
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">
                 Across all paid tiers
@@ -103,7 +103,7 @@ export default function AdminCostsPage() {
             </div>
           </div>
 
-          {/* Unit economics — answers "what's my margin per Pro/Growth/Starter user?" */}
+          {/* Unit economics — answers "what's my margin per Pro/Creator user?" */}
           <div className="card p-5 mb-6">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Unit economics · last {data.days}d</p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4">

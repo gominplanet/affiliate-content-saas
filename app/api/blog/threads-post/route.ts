@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Threads auto-publish is Growth+ (Growth, Pro, Admin).
+    // Threads auto-publish is Creator+ (Creator, Pro, Admin).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await (supabase as any)
       .from('integrations')
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'threads')) {
       return NextResponse.json(
-        { error: 'Threads auto-publish is a Growth plan feature. Upgrade to Growth or Pro to post to Threads.' },
+        { error: 'Threads auto-publish is a Creator plan feature. Upgrade to Creator or Pro to post to Threads.' },
         { status: 403 },
       )
     }
