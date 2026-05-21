@@ -438,8 +438,15 @@ async function handleGenerate(request: Request) {
       persistentFeedback,
     )
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : (errToMessage(err) || 'Claude generation failed')
-    await logFailure(supabase, user.id, videoId, 'blog_generation', msg)
+    const rawMsg = err instanceof Error ? err.message : (errToMessage(err) || 'Claude generation failed')
+    await logFailure(supabase, user.id, videoId, 'blog_generation', rawMsg)
+    // Translate low-level stream/network errors (undici "terminated",
+    // "fetch failed", socket resets, timeouts) into something a user can
+    // act on instead of a cryptic one-word error.
+    const transient = /terminated|fetch failed|socket|ECONNRESET|aborted|network|timeout|overloaded|52\d|50[23]/i.test(rawMsg)
+    const msg = transient
+      ? 'The AI connection dropped partway through generating this post. This is usually temporary — please hit Retry.'
+      : rawMsg
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 

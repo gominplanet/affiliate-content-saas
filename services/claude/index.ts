@@ -742,8 +742,12 @@ ${video.productResearch ? `\nPRODUCT INFO (scraped from the product/brand site l
 TRANSCRIPT:
 ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
 
-    // Pass 2 — generate with extended thinking (streaming required for large max_tokens)
-    const stream = this.client.messages.stream({
+    // Pass 2 — generate with extended thinking (streaming required for large
+    // max_tokens). Retry once on transient stream drops: a long streamed
+    // response can be cut off by the network/edge, which surfaces as an
+    // undici "terminated" / "fetch failed" / socket error. One clean retry
+    // recovers the common case rather than failing the whole generation.
+    const runGeneration = () => this.client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 32000,
       thinking: { type: 'enabled', budget_tokens: 10000 },
@@ -755,9 +759,23 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
         },
       ],
       messages: [{ role: 'user', content: userMessage }],
-    })
+    }).finalMessage()
 
-    const message = await stream.finalMessage()
+    let message: Anthropic.Message
+    let genAttempt = 0
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        message = await runGeneration()
+        break
+      } catch (err) {
+        genAttempt++
+        const m = err instanceof Error ? err.message : String(err)
+        const transient = /terminated|fetch failed|socket|ECONNRESET|ECONNRESET|network|aborted|overloaded|529|503|502|timeout/i.test(m)
+        if (!transient || genAttempt >= 2) throw err
+        await new Promise(r => setTimeout(r, 2500))
+      }
+    }
     {
       const u = usageFromAnthropic(message)
       recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_generate', model: 'claude-sonnet-4-6', input: u.input, output: u.output })
