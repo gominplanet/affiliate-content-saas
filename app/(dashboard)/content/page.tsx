@@ -205,9 +205,15 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
       {url ? (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt="Product reference" className="w-6 h-6 rounded object-cover border border-gray-200 dark:border-white/10" />
-          <button onClick={() => inputRef.current?.click()} disabled={busy} className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] disabled:opacity-60">
-            {busy ? '…' : 'Replace photo'}
+          <img src={url} alt="Product reference" className="w-7 h-7 rounded object-cover border border-gray-200 dark:border-white/10" />
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={busy}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            style={{ background: '#FF2D78' }}
+            title="Replace the product photo the AI uses to render the exact product"
+          >
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Replace photo
           </button>
           <button onClick={remove} disabled={busy} className="text-[11px] text-[#86868b] hover:text-[#ff3b30] disabled:opacity-60">Remove</button>
         </>
@@ -215,10 +221,11 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
         <button
           onClick={() => inputRef.current?.click()}
           disabled={busy}
-          className="inline-flex items-center gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] disabled:opacity-60"
-          title="Upload a clean product photo so the in-body AI images render the exact product"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+          style={{ background: '#FF2D78' }}
+          title="Upload a clean product photo so the AI builds an exact representation of the product"
         >
-          {busy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />} Product photo
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload product photo
         </button>
       )}
       {err && <span className="text-[10px] text-[#ff3b30]">{err}</span>}
@@ -1763,7 +1770,10 @@ function VideoCard({
         <div className="flex flex-col gap-2">
           {/* Publish All — shown when ≥1 social platform is connected and unpublished.
               Locked behind Pro tier; non-Pro users see the button but it links to /pricing. */}
-          {(showPublishAll || deriveProductUrl(video)) && (
+          {/* Action row — Publish all (when relevant) + the yellow Visit
+              and pink Upload-product-photo buttons. Always rendered so the
+              product-photo upload is available on every video. */}
+          {(
             <div className="flex items-center gap-2 flex-wrap">
               {showPublishAll && (publishingAll ? (
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#0071e3] to-[#5856d6] text-white opacity-80">
@@ -1812,6 +1822,12 @@ function VideoCard({
                   </a>
                 )
               })()}
+              {/* Pink — upload the exact product photo the AI uses as a
+                  visual reference so in-body images match the real product. */}
+              <ProductPhotoUpload
+                videoId={id}
+                initialUrl={(video.product_image_url as string | null) ?? null}
+              />
               {publishAllError && (
                 <span className="text-xs text-[#ff3b30] line-clamp-1">{publishAllError}</span>
               )}
@@ -1829,10 +1845,6 @@ function VideoCard({
               customCategories={customCategories}
               onCustomCategoryAdded={onCustomCategoryAdded}
               hasPublishedPost={!!post}
-            />
-            <ProductPhotoUpload
-              videoId={id}
-              initialUrl={(video.product_image_url as string | null) ?? null}
             />
             {post ? (
               <>
