@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
     .from('integrations').select('tier').eq('user_id', user.id).single()
-  const tier = (intRow?.tier as Tier) ?? 'free'
+  const tier = (intRow?.tier as Tier) ?? 'trial'
   if (tier !== 'pro' && tier !== 'admin') {
     return NextResponse.json({
       error: `Face training is a Pro feature. Upgrade to ${TIERS.pro.label} to train your face for thumbnails.`,

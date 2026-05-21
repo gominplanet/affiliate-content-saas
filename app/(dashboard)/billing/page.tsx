@@ -8,7 +8,7 @@ import { TIERS, type Tier } from '@/lib/tier'
 
 export default function BillingPage() {
   const supabase = createBrowserClient()
-  const [tier, setTier] = useState<Tier>('free')
+  const [tier, setTier] = useState<Tier>('trial')
   const [postsUsed, setPostsUsed] = useState(0)
   const [socialCounts, setSocialCounts] = useState({ facebook: 0, threads: 0, pinterest: 0 })
   const [loading, setLoading] = useState(true)
@@ -27,7 +27,7 @@ export default function BillingPage() {
       .eq('user_id', user.id)
       .single()
 
-    const userTier = (data?.tier as Tier) ?? 'free'
+    const userTier = (data?.tier as Tier) ?? 'trial'
     setTier(userTier)
 
     // Count posts used — lifetime for free, current month for paid
@@ -72,7 +72,7 @@ export default function BillingPage() {
   }, [])
 
   const currentTier = TIERS[tier]
-  const isPaid = tier !== 'free' && tier !== 'admin'
+  const isPaid = tier !== 'trial' && tier !== 'admin'
   const limit = currentTier.postsPerMonth ?? currentTier.lifetimeMax ?? null
   const usagePct = limit ? Math.min((postsUsed / limit) * 100, 100) : 0
   const usageLabel = currentTier.lifetimeMax

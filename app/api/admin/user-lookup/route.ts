@@ -59,7 +59,7 @@ export async function POST(request: Request) {
         email: target.email,
         createdAt: target.created_at,
         lastSignInAt: target.last_sign_in_at,
-        tier: integration?.tier ?? 'free',
+        tier: integration?.tier ?? 'trial',
         wordpressUrl: integration?.wordpress_url ?? null,
         brandName: profile?.name ?? null,
         authorName: profile?.author_name ?? null,

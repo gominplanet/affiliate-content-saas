@@ -18,8 +18,8 @@ interface CostData {
   payingByTier: Record<string, number>
 }
 
-const TIER_ORDER = ['admin', 'pro', 'growth', 'starter', 'free', 'unknown']
-const PAID_TIERS = ['starter', 'growth', 'pro'] as const
+const TIER_ORDER = ['admin', 'pro', 'creator', 'trial', 'unknown']
+const PAID_TIERS = ['creator', 'pro'] as const
 
 export default function AdminCostsPage() {
   const [days, setDays] = useState(30)

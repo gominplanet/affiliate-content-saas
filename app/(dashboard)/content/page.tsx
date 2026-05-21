@@ -488,7 +488,7 @@ function GenerateButton({
   videoId: string
   existingPost?: { url: string; title: string; postId?: string } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
-  userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
+  userTier: 'trial' | 'creator' | 'pro' | 'admin'
   onDone: (url: string, title: string, postId: string) => void
 }) {
   const [status, setStatus] = useState<GenStatus>(existingPost ? 'done' : 'idle')
@@ -791,7 +791,7 @@ function InstagramPublishModal({
   const [aiHeadline, setAiHeadline] = useState('')
   const [aiFaceModelId, setAiFaceModelId] = useState<string | null>(null)
   const [aiFaceModels, setAiFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string }>>([])
-  const [aiTier, setAiTier] = useState<string>('free')
+  const [aiTier, setAiTier] = useState<string>('trial')
   const [aiGenerating, setAiGenerating] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   // Track which overlay style was used on the current AI image so the
@@ -814,7 +814,7 @@ function InstagramPublishModal({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: intRow } = await (supabase as any)
           .from('integrations').select('tier').eq('user_id', user.id).single()
-        setAiTier((intRow?.tier as string) || 'free')
+        setAiTier((intRow?.tier as string) || 'trial')
         const fmRes = await fetch('/api/face-models')
         if (fmRes.ok) {
           const fm = await fmRes.json()
@@ -1454,7 +1454,7 @@ function VideoCard({
   blueskyConnected: boolean
   telegramConnected: boolean
   instagramConnected: boolean
-  userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
+  userTier: 'trial' | 'creator' | 'pro' | 'admin'
   brandNiches: string[]
   customCategories: string[]
   previewBeforePublish: boolean
@@ -2165,7 +2165,7 @@ export default function ContentPage() {
   const [blueskyConnected, setBlueskyConnected] = useState(false)
   const [telegramConnected, setTelegramConnected] = useState(false)
   const [instagramConnected, setInstagramConnected] = useState(false)
-  const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
+  const [userTier, setUserTier] = useState<'trial' | 'creator' | 'pro' | 'admin'>('trial')
   const [brandNiches, setBrandNiches] = useState<string[]>([])
   const [customCategories, setCustomCategories] = useState<string[]>([])
   /** When true, social pill clicks open a preview/edit modal instead of one-click publishing.
@@ -2284,7 +2284,7 @@ export default function ContentPage() {
     setBlueskyConnected(!!(i as Record<string, unknown>)?.bluesky_handle && !!(i as Record<string, unknown>)?.bluesky_app_password)
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
     setInstagramConnected(!!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
-    setUserTier(((i as Record<string, unknown>)?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free')
+    setUserTier(((i as Record<string, unknown>)?.tier as 'trial' | 'creator' | 'pro' | 'admin') ?? 'trial')
     setBrandNiches(((b?.niches as string[] | null) ?? []))
     setCustomCategories(((b?.custom_categories as string[] | null) ?? []))
     setVideos(vids)

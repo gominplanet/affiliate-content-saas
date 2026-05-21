@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: tierRow } = await (supabase as any)
     .from('integrations').select('tier').eq('user_id', user.id).single()
-  const tier = (tierRow?.tier as Tier) ?? 'free'
+  const tier = (tierRow?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'pinterest')) {
     return NextResponse.json(
       { error: 'Pinterest auto-publish is a Growth plan feature. Upgrade to Growth or Pro to pin to Pinterest.' },

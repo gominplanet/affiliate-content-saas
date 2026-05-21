@@ -44,7 +44,7 @@ export async function GET(request: Request) {
       // cost-per-active-user and per-tier margin.
       sb.from('integrations')
         .select('user_id,tier')
-        .in('tier', ['starter', 'growth', 'pro']),
+        .in('tier', ['creator', 'pro']),
     ])
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

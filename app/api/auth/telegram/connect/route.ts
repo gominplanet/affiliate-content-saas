@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       .select('tier')
       .eq('user_id', user.id)
       .single()
-    const tier = (tierRow?.tier as Tier) ?? 'free'
+    const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'telegram')) {
       return NextResponse.json(
         { error: 'Telegram is a Pro plan feature. Upgrade to Pro to connect a Telegram channel.' },

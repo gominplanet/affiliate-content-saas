@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       .select('tier,telegram_channel_id')
       .eq('user_id', user.id)
       .single()
-    const tier = (tierRow?.tier as Tier) ?? 'free'
+    const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'telegram')) {
       return NextResponse.json(
         { error: 'Telegram auto-publish is a Pro plan feature. Upgrade to Pro to post reviews to your Telegram channel.' },

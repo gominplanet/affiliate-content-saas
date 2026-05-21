@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await (supabase as any)
       .from('integrations').select('tier').eq('user_id', user.id).single()
-    const tier = (tierRow?.tier as Tier) ?? 'free'
+    const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, platform)) {
       return NextResponse.json(
         { error: `${platform} auto-publish is not available on your plan.` },

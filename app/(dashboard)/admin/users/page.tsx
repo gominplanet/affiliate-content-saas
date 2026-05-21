@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Header from '@/components/layout/Header'
 import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon } from 'lucide-react'
 
-type Tier = 'free' | 'starter' | 'growth' | 'pro' | 'admin'
+type Tier = 'trial' | 'creator' | 'pro' | 'admin'
 
 interface TargetUser {
   id: string
@@ -19,9 +19,8 @@ interface TargetUser {
 }
 
 const TIER_BADGE: Record<Tier, string> = {
-  free:    'bg-gray-100 text-[#6e6e73]',
-  starter: 'bg-[#0071e3]/10 text-[#0071e3]',
-  growth:  'bg-purple-50 text-purple-600',
+  trial:   'bg-gray-100 text-[#6e6e73]',
+  creator: 'bg-[#0071e3]/10 text-[#0071e3]',
   pro:     'bg-[#34c759]/10 text-[#34c759]',
   admin:   'bg-[#ff9500]/10 text-[#ff9500]',
 }
@@ -152,9 +151,8 @@ export default function AdminUsersPage() {
                 disabled={saving}
                 className="input-field text-sm w-auto"
               >
-                <option value="free">Free</option>
-                <option value="starter">Starter — $49/mo</option>
-                <option value="growth">Growth — $99/mo</option>
+                <option value="trial">Free Trial</option>
+                <option value="creator">Creator — $49/mo</option>
                 <option value="pro">Pro — $199/mo</option>
                 <option value="admin">Admin (god mode)</option>
               </select>

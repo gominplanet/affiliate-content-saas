@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       .select('tier')
       .eq('user_id', user.id)
       .single()
-    const tier = (tierRow?.tier as Tier) ?? 'free'
+    const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'threads')) {
       return NextResponse.json(
         { error: 'Threads auto-publish is a Growth plan feature. Upgrade to Growth or Pro to post to Threads.' },

@@ -76,7 +76,7 @@ const defaultProSettings: ProPublishSettings = {
 
 function VideoStudioCard({ video, userTier, playlists }: {
   video: DraftVideo
-  userTier: 'free' | 'starter' | 'growth' | 'pro' | 'admin'
+  userTier: 'trial' | 'creator' | 'pro' | 'admin'
   playlists: Array<{ id: string; title: string }>
 }) {
   const isPro = userTier === 'pro' || userTier === 'admin'
@@ -1751,7 +1751,7 @@ export default function StudioPage() {
   const [needsAuth, setNeedsAuth] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasGeniuslink, setHasGeniuslink] = useState(false)
-  const [userTier, setUserTier] = useState<'free' | 'starter' | 'growth' | 'pro' | 'admin'>('free')
+  const [userTier, setUserTier] = useState<'trial' | 'creator' | 'pro' | 'admin'>('trial')
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([])
   // Pagination
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
@@ -1768,7 +1768,7 @@ export default function StudioPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const intResult = await (supabase as any).from('integrations').select('geniuslink_api_key,tier').eq('user_id', user.id).single()
         setHasGeniuslink(!!intResult.data?.geniuslink_api_key)
-        const tier = (intResult.data?.tier as 'free' | 'starter' | 'growth' | 'pro' | 'admin') ?? 'free'
+        const tier = (intResult.data?.tier as 'trial' | 'creator' | 'pro' | 'admin') ?? 'trial'
         setUserTier(tier)
         // Fetch playlists for Pro/admin so the batch-apply panel can populate
         if (tier === 'pro' || tier === 'admin') {

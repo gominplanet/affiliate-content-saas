@@ -40,7 +40,7 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 export default function FaceTrainingPage() {
   const supabase = createBrowserClient()
-  const [tier, setTier] = useState<string>('free')
+  const [tier, setTier] = useState<string>('trial')
   const [models, setModels] = useState<FaceModel[]>([])
   const [loading, setLoading] = useState(true)
   const [newFaceOpen, setNewFaceOpen] = useState(false)
@@ -59,11 +59,11 @@ export default function FaceTrainingPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data } = await (supabase as any)
           .from('integrations').select('tier').eq('user_id', user.id).single()
-        return (data?.tier as string) || 'free'
+        return (data?.tier as string) || 'trial'
       })(),
       fetch('/api/face-models').then(r => r.json()),
     ])
-    setTier(tierRes || 'free')
+    setTier(tierRes || 'trial')
     setModels((modelsRes.models || []) as FaceModel[])
     setLoading(false)
   }, [supabase])

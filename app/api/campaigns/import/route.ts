@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)
       .from('integrations').select('tier').eq('user_id', user.id).single()
-    const tier = (intRow?.tier as Tier) ?? 'free'
+    const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'instagram')) {
       return NextResponse.json({ error: 'CC Campaigns is a Pro plan feature.' }, { status: 403 })
     }

@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid ingest token' }, { status: 401, headers: CORS })
     }
     const userId = intRow.user_id as string
-    const tier = (intRow.tier as Tier) ?? 'free'
+    const tier = (intRow.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'instagram')) {
       return NextResponse.json(
         { error: 'CC Campaigns is a Pro plan feature.' },

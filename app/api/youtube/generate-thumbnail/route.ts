@@ -286,7 +286,7 @@ export async function POST(request: Request) {
       .select('tier,subscription_period_start,subscription_period_end')
       .eq('user_id', user.id)
       .single()
-    const tier = (tierRow?.tier as Tier) ?? 'free'
+    const tier = (tierRow?.tier as Tier) ?? 'trial'
     TELEMETRY = { userId: user.id, tier }
 
     const falKey = process.env.FAL_KEY

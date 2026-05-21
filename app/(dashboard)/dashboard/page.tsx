@@ -34,8 +34,8 @@ export default async function DashboardPage() {
   // Window honors the user's Stripe billing cycle when known; falls back
   // to calendar month for free / pre-Stripe / legacy rows.
   const intAny = integration as Record<string, unknown> | null
-  const tier = ((intAny?.tier as Tier) ?? 'free')
-  const plan = TIERS[tier] ?? TIERS.free
+  const tier = ((intAny?.tier as Tier) ?? 'trial')
+  const plan = TIERS[tier] ?? TIERS.trial
   const { startISO: periodStartISO, resetLabel: resetsOn } = billingWindow({
     periodStart: (intAny?.subscription_period_start as string | null) ?? null,
     periodEnd: (intAny?.subscription_period_end as string | null) ?? null,

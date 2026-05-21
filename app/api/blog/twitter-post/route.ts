@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       .select('tier')
       .eq('user_id', user.id)
       .single()
-    const tier = (tierRow?.tier as Tier) ?? 'free'
+    const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'twitter')) {
       return NextResponse.json(
         { error: 'X (Twitter) posting is a Pro plan feature. Upgrade to Pro to publish to X.' },

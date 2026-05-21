@@ -23,7 +23,7 @@ export async function GET() {
       .select('tier,youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
       .eq('user_id', user.id)
       .single()
-    const tier = ((intRow as Record<string, unknown> | null)?.tier as Tier) ?? 'free'
+    const tier = ((intRow as Record<string, unknown> | null)?.tier as Tier) ?? 'trial'
     if (!tierAllowsPublishAll(tier)) {
       return NextResponse.json({ error: 'YouTube batch-apply is a Pro plan feature.' }, { status: 403 })
     }

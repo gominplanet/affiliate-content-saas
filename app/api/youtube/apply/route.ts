@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .single()
     const intData = (intRow as Record<string, unknown> | null) ?? {}
-    const tier = (intData.tier as Tier) ?? 'free'
+    const tier = (intData.tier as Tier) ?? 'trial'
     if (!tierAllowsPublishAll(tier)) {
       return NextResponse.json(
         { error: 'One-click YouTube apply is a Pro plan feature. Upgrade to Pro to unlock it.' },

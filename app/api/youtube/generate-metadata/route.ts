@@ -345,7 +345,7 @@ export async function POST(request: Request) {
     const intRow = intResult.data
 
     // Populate the module-level telemetry context that runAgent reads.
-    const tier = (intRow?.tier as Tier) ?? 'free'
+    const tier = (intRow?.tier as Tier) ?? 'trial'
     TELEMETRY = { userId: user.id, tier }
 
     // Cap gate — metadata generations / billing period. Pre-flight the

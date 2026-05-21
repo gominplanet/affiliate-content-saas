@@ -5,9 +5,10 @@ import type { Tier } from '@/lib/tier'
 
 export const config = { api: { bodyParser: false } }
 
+// $49 Creator price = the existing STRIPE_PRICE_STARTER (renamable via
+// STRIPE_PRICE_CREATOR). $99 Growth is archived. $199 = Pro.
 const PRICE_TO_TIER: Record<string, Tier> = {
-  [process.env.STRIPE_PRICE_STARTER!]: 'starter',
-  [process.env.STRIPE_PRICE_GROWTH!]: 'growth',
+  [(process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER)!]: 'creator',
   [process.env.STRIPE_PRICE_PRO!]: 'pro',
 }
 
@@ -84,11 +85,11 @@ export async function POST(request: NextRequest) {
 
   if (event.type === 'customer.subscription.deleted') {
     const sub = event.data.object as { customer: string }
-    // Downgrade to free when subscription cancelled
+    // Downgrade to the free Trial when subscription cancelled
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (admin as any).from('integrations')
       .update({
-        tier: 'free',
+        tier: 'trial',
         stripe_subscription_id: null,
         subscription_status: 'canceled',
         subscription_period_start: null,

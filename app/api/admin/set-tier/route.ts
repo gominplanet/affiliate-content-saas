@@ -5,14 +5,14 @@
  * to bypass RLS so we can upsert the integrations row regardless of
  * whether the target user has visited Setup yet.
  *
- * Body: { userId: string, tier: 'free' | 'starter' | 'growth' | 'pro' | 'admin' }
+ * Body: { userId: string, tier: 'trial' | 'creator' | 'pro' | 'admin' }
  */
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const VALID_TIERS = ['free', 'starter', 'growth', 'pro', 'admin'] as const
+const VALID_TIERS = ['trial', 'creator', 'pro', 'admin'] as const
 type Tier = typeof VALID_TIERS[number]
 
 export async function POST(request: Request) {

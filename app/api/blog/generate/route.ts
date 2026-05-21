@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { YoutubeTranscript } from 'youtube-transcript'
-import { checkUsageLimit, TIERS, nextTierFor, type Tier } from '@/lib/tier'
+import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
@@ -170,7 +170,7 @@ async function handleGenerate(request: Request) {
       .select('tier')
       .eq('user_id', user.id)
       .single()
-    const tier = (intRow?.tier as Tier) ?? 'free'
+    const tier = (intRow?.tier as Tier) ?? 'trial'
     if (tier !== 'pro' && tier !== 'admin') {
       const next = nextTierFor(tier, 'postsPerMonth')
       return NextResponse.json({
@@ -241,6 +241,9 @@ async function handleGenerate(request: Request) {
     .single()
 
   const wp = integration as Record<string, string> | null
+  // Function-scope tier (the rewrite gate above has its own narrow copy).
+  // Drives the per-tier in-body image ceiling via allowedBlogImages.
+  const tier = ((wp?.tier as Tier) ?? 'trial')
   if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
     return NextResponse.json(
       { error: 'WordPress not connected. Add your WordPress credentials in Settings.' },
@@ -480,11 +483,11 @@ async function handleGenerate(request: Request) {
           } catch { /* fall back to text-only prompts */ }
         }
 
-        // Scale image count with article length — roughly one image per
-        // ~550 words, min 2, capped at 4 to keep Fal cost + latency down
-        // (was 6; lowered for margin — typical reviews land at 3-4).
+        // Image count scales with length (~1 per 500 words) and is clamped
+        // to the tier's per-post ceiling — single source of truth in
+        // lib/tier.ts (trial 2, creator 3, pro 4, admin 6).
         const words = bodyWordCount(content)
-        const imageCount = Math.max(2, Math.min(4, Math.round(words / 550)))
+        const imageCount = allowedBlogImages(tier, words)
         const prompts = await generateBodyImagePrompts({
           count: imageCount,
           productTitle: productTitleForPrompts,

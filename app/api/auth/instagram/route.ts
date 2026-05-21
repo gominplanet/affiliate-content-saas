@@ -27,7 +27,7 @@ export async function GET() {
     .select('tier')
     .eq('user_id', user.id)
     .single()
-  const tier = (tierRow?.tier as Tier) ?? 'free'
+  const tier = (tierRow?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'instagram')) {
     return NextResponse.redirect(`${appUrl}/pricing?reason=instagram_requires_pro`)
   }

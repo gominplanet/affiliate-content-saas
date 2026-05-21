@@ -279,7 +279,7 @@ export async function POST(request: Request) {
     ])
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
-    const tier = (intRow?.tier as Tier) ?? 'free'
+    const tier = (intRow?.tier as Tier) ?? 'trial'
     if (tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({
         error: `Native Instagram AI thumbnails are a ${TIERS.pro.label} feature.`,

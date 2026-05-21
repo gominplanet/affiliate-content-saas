@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       .select('tier,instagram_user_id,instagram_access_token,instagram_token_expiry,instagram_username,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
       .eq('user_id', user.id)
       .single()
-    const tier = (intRow?.tier as Tier) ?? 'free'
+    const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'instagram')) {
       return NextResponse.json(
         { error: 'Instagram auto-publish is a Pro plan feature. Upgrade to Pro to post to Instagram.' },

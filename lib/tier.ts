@@ -1,72 +1,59 @@
-export type Tier = 'free' | 'starter' | 'growth' | 'pro' | 'admin'
+// Plan set: trial (free, 5 posts lifetime, no card) / creator $49 / pro $199
+// / admin (internal, unlimited). Field names preserved from the previous
+// 5-tier model so every cap + social consumer keeps working unchanged.
+export type Tier = 'trial' | 'creator' | 'pro' | 'admin'
+
+/** Default tier for a brand-new account (no Stripe subscription yet). */
+export const DEFAULT_TIER: Tier = 'trial'
 
 export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky' | 'telegram' | 'instagram'
 
 export const TIERS = {
-  free:    {
-    label: 'Free',
+  trial:   {
+    label: 'Free Trial',
     price: 0,
     regularPrice: 0,
     postsPerMonth: null as number | null,
-    lifetimeMax: 15 as number | null,
-    /** Collaboration pitch emails / month. 0 = not on this plan (Pro+
-     *  only), null = unlimited. Single source of truth for the cap. */
+    /** 5 posts LIFETIME (not monthly) — hard wall after the 5th, no card,
+     *  no time limit. The "aha" run. */
+    lifetimeMax: 5 as number | null,
     collabsPerMonth: 0 as number | null,
-    /** YouTube thumbnail generations / month — billable per-image
-     *  (Fal Flux Pro). 0 = blocked, null = unlimited. */
+    /** Tied to the 5 Co-Pilot videos the trial covers. */
     thumbnailsPerMonth: 5 as number | null,
-    /** YouTube metadata generations / month — each one fires a 5-agent
-     *  swarm. 0 = blocked, null = unlimited. */
     metadataGensPerMonth: 5 as number | null,
-    /** Native Instagram AI image generations / month (4:5 portrait,
-     *  face + product). Pro-only feature — 0 = blocked. */
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    /** Base posts the tier markets (used for the "60 + 20 bonus" framing). */
-    basePosts: 15,
+    /** In-body blog images per post (hard ceiling — COGS guard). */
+    blogImagesPerPost: 2,
+    /** LoRA face-training jobs / month (0 = feature off). */
+    faceTrainJobs: 0 as number | null,
+    basePosts: 5,
     bonusPosts: 0,
     sites: 1,
+    // Facebook + WordPress only on the trial; every other pill is locked.
     socials: ['facebook'] as readonly Social[],
     priorityQueue: false,
     prioritySupport: false,
     publishAll: false,
   },
-  starter: {
-    label: 'Starter',
+  creator: {
+    label: 'Creator',
     price: 49,
     regularPrice: 99,
-    postsPerMonth: 30,
+    postsPerMonth: 40,
     lifetimeMax: null as number | null,
-    // Taster cap — lets Starter users try the Pro Collaborations
+    // Taster cap — lets Creator users try the Pro Collaborations
     // workflow so they feel the upgrade pull naturally.
-    collabsPerMonth: 1 as number | null,
-    thumbnailsPerMonth: 30 as number | null,
-    metadataGensPerMonth: 30 as number | null,
+    collabsPerMonth: 5 as number | null,
+    thumbnailsPerMonth: 40 as number | null,
+    metadataGensPerMonth: 60 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    basePosts: 30,
+    blogImagesPerPost: 3,
+    faceTrainJobs: 0 as number | null,
+    basePosts: 40,
     bonusPosts: 0,
     sites: 1,
-    socials: ['facebook', 'pinterest'] as readonly Social[],
-    priorityQueue: false,
-    prioritySupport: false,
-    publishAll: false,
-  },
-  growth:  {
-    label: 'Growth',
-    price: 99,
-    regularPrice: 199,
-    postsPerMonth: 80,
-    lifetimeMax: null as number | null,
-    // Mid-tier taster — enough to land a few brand deals but the gap to
-    // Pro's 100 is wide enough to keep the upsell pressure on.
-    collabsPerMonth: 5 as number | null,
-    thumbnailsPerMonth: 100 as number | null,
-    metadataGensPerMonth: 100 as number | null,
-    instagramAiThumbnailsPerMonth: 0 as number | null,
-    basePosts: 60,
-    bonusPosts: 20,
-    sites: 1,
     socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'bluesky'] as readonly Social[],
-    priorityQueue: true,
+    priorityQueue: false,
     prioritySupport: false,
     publishAll: false,
   },
@@ -80,6 +67,10 @@ export const TIERS = {
     thumbnailsPerMonth: 300 as number | null,
     metadataGensPerMonth: 300 as number | null,
     instagramAiThumbnailsPerMonth: 50 as number | null,
+    blogImagesPerPost: 4,
+    // 3 LoRA training jobs / month — bounded ($1.50/job has no natural
+    // ceiling, so it's explicitly capped rather than uncapped).
+    faceTrainJobs: 3 as number | null,
     basePosts: 140,
     bonusPosts: 60,
     sites: 1,
@@ -98,6 +89,8 @@ export const TIERS = {
     thumbnailsPerMonth: null as number | null,
     metadataGensPerMonth: null as number | null,
     instagramAiThumbnailsPerMonth: null as number | null,
+    blogImagesPerPost: 6,
+    faceTrainJobs: null as number | null,
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
@@ -107,6 +100,15 @@ export const TIERS = {
     publishAll: true,
   },
 } as const
+
+/** In-body blog image ceiling for a post, scaled ~1 per 500 words and
+ *  clamped to the tier's blogImagesPerPost. Single source of truth for
+ *  the blog generator's image count. */
+export function allowedBlogImages(tier: Tier, wordCount: number): number {
+  const ceiling = TIERS[tier].blogImagesPerPost
+  const byLength = Math.round(wordCount / 500)
+  return Math.max(2, Math.min(ceiling, byLength))
+}
 
 /** Whether a given tier can publish to a specific social platform. */
 export function tierAllowsSocial(tier: Tier, social: Social): boolean {
@@ -121,7 +123,7 @@ export function nextTierFor(
   tier: Tier,
   cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth',
 ): { tier: Tier; label: string; limit: number | null } | null {
-  const order: Tier[] = ['free', 'starter', 'growth', 'pro']
+  const order: Tier[] = ['trial', 'creator', 'pro']
   const idx = order.indexOf(tier)
   if (idx < 0 || idx === order.length - 1) return null
   // Find the next tier that actually offers MORE of this cap (or unlimited).
@@ -186,7 +188,7 @@ export async function checkUsageLimit(
     .eq('user_id', userId)
     .single()
 
-  const tier = (ig?.tier as Tier) ?? 'free'
+  const tier = (ig?.tier as Tier) ?? 'trial'
   const limits = TIERS[tier]
 
   // Admin — unlimited

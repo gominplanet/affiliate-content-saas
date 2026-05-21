@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       (supabase as any).from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).single(),
       (supabase as any).from('brand_profiles').select('*').eq('user_id', user.id).single(),
     ])
-    const tier = (intRow?.tier as Tier) ?? 'free'
+    const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsPublishAll(tier)) {
       return NextResponse.json({ error: 'Collaborations is a Pro plan feature.' }, { status: 403 })
     }

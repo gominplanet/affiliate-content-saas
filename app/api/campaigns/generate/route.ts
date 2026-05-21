@@ -53,7 +53,7 @@ export async function POST(request: Request) {
       .select('tier,wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
       .eq('user_id', user.id)
       .single()
-    const tier = (intRow?.tier as Tier) ?? 'free'
+    const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, 'instagram')) {
       return NextResponse.json({ error: 'Campaign content is a Pro plan feature.' }, { status: 403 })
     }
