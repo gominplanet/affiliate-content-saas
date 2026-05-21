@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import Header from '@/components/layout/Header'
-import { Loader2, Send, Plus, Trash2, MessageSquare, Sparkles } from 'lucide-react'
+import { Loader2, Send, Plus, Trash2, MessageSquare, Sparkles, Brain, X, Upload } from 'lucide-react'
 
 interface Conversation { id: string; title: string; updated_at: string }
 interface Msg { role: 'user' | 'assistant'; content: string }
@@ -23,6 +23,49 @@ export default function AssistantPage() {
   const [streaming, setStreaming] = useState('')
   const [error, setError] = useState<string | null>(null)
   const threadRef = useRef<HTMLDivElement>(null)
+  // Memory panel
+  const [memoryOpen, setMemoryOpen] = useState(false)
+  const [memory, setMemory] = useState('')
+  const [importText, setImportText] = useState('')
+  const [memoryBusy, setMemoryBusy] = useState(false)
+  const [memoryMsg, setMemoryMsg] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  async function openMemory() {
+    setMemoryOpen(true); setMemoryMsg(null)
+    try {
+      const res = await fetch('/api/assistant/memory')
+      const d = await res.json()
+      setMemory(d.memory || '')
+    } catch { /* ignore */ }
+  }
+
+  async function importToMemory() {
+    const text = importText.trim()
+    if (!text || memoryBusy) return
+    setMemoryBusy(true); setMemoryMsg(null)
+    try {
+      const res = await fetch('/api/assistant/memory', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+      const d = await res.json()
+      if (!res.ok) { setMemoryMsg(d.error || 'Import failed'); return }
+      setMemory(d.memory || '')
+      setImportText('')
+      setMemoryMsg(d.note || 'Added to your assistant\'s memory ✓')
+    } catch { setMemoryMsg('Import failed') }
+    finally { setMemoryBusy(false) }
+  }
+
+  async function clearMemory() {
+    setMemoryBusy(true)
+    try {
+      await fetch('/api/assistant/memory', { method: 'DELETE' })
+      setMemory(''); setMemoryMsg('Memory cleared.')
+    } catch { /* ignore */ }
+    finally { setMemoryBusy(false) }
+  }
 
   const loadConversations = useCallback(async () => {
     try {
@@ -118,6 +161,9 @@ export default function AssistantPage() {
           <button onClick={newChat} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]">
             <Plus size={13} /> New chat
           </button>
+          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40" title="What the assistant remembers about you — view, import from ChatGPT/others, or clear">
+            <Brain size={13} /> Memory
+          </button>
           <div className="flex-1 overflow-y-auto flex flex-col gap-1">
             {conversations.map(c => (
               <div key={c.id} className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer text-xs ${activeId === c.id ? 'bg-[#0071e3]/10 text-[#0071e3]' : 'hover:bg-gray-100 dark:hover:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
@@ -196,6 +242,48 @@ export default function AssistantPage() {
           </div>
         </div>
       </div>
+
+      {/* Memory panel */}
+      {memoryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setMemoryOpen(false)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#1c1c1e] p-6 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Brain size={18} className="text-[#0071e3]" />
+                <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Assistant memory</h3>
+              </div>
+              <button onClick={() => setMemoryOpen(false)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"><X size={16} /></button>
+            </div>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">This is what your assistant remembers about you across all chats. It updates itself as you talk — and you can seed it by importing your history from ChatGPT, Claude, or anywhere else.</p>
+
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#86868b] mb-1">Current memory</label>
+            <div className="rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#0a0a0a] p-3 text-xs text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap min-h-[60px] mb-4">
+              {memory || <span className="text-[#86868b]">Nothing yet — chat a bit, or import below.</span>}
+            </div>
+
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#86868b] mb-1">Import knowledge</label>
+            <p className="text-[11px] text-[#86868b] mb-2">Paste anything you want it to know — or upload a text/markdown/JSON export from another AI tool. We distill the durable facts and merge them in (we don&apos;t store the raw dump).</p>
+            <textarea
+              value={importText}
+              onChange={e => setImportText(e.target.value)}
+              rows={5}
+              placeholder="Paste your ChatGPT/Claude export or notes here…"
+              className="input-field w-full text-xs mb-2"
+            />
+            <input ref={fileRef} type="file" accept=".txt,.md,.json,.csv,text/plain" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const t = await f.text(); setImportText(prev => (prev ? prev + '\n\n' : '') + t.slice(0, 200000)) } e.target.value = '' }} />
+            <div className="flex items-center gap-2 mb-3">
+              <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40">
+                <Upload size={12} /> Upload file
+              </button>
+              <button onClick={importToMemory} disabled={memoryBusy || !importText.trim()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-50">
+                {memoryBusy ? <Loader2 size={12} className="animate-spin" /> : <Brain size={12} />} Import to memory
+              </button>
+            </div>
+            {memoryMsg && <p className="text-[11px] text-[#34c759] mb-3">{memoryMsg}</p>}
+            <button onClick={clearMemory} disabled={memoryBusy} className="text-[11px] text-[#86868b] hover:text-[#ff3b30] disabled:opacity-50">Clear all memory</button>
+          </div>
+        </div>
+      )}
     </>
   )
 }

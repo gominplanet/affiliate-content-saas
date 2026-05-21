@@ -17,6 +17,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { TIERS, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { getAssistantMemory, saveAssistantMemory, mergeAssistantMemory } from '@/lib/assistant-memory'
 
 export const maxDuration = 60
 
@@ -26,6 +27,7 @@ function buildSystemPrompt(
   brand: Record<string, unknown> | null,
   recentPostTitles: string[],
   recentCampaigns: string[],
+  memory: string,
 ): string {
   const name = (brand?.author_name as string) || (brand?.name as string) || ''
   const niches = ((brand?.niches as string[]) || []).join(', ')
@@ -51,7 +53,7 @@ HOW TO BEHAVE:
 - For affiliate strategy questions, give concrete, experienced guidance (niches, what converts, posting cadence, how to land brand deals).
 - Never invent features the platform doesn't have. If something isn't possible in MVP Affiliate, say so plainly and suggest the closest real workflow.
 - Never use the word "honest". Don't fabricate stats.
-${name || niches || recentPostTitles.length ? `\nABOUT THIS USER (use it to personalize — this is what makes you better than a generic chatbot):\n${name ? `- Name: ${name}\n` : ''}${niches ? `- Niches: ${niches}\n` : ''}${tone ? `- Brand tone: ${tone}\n` : ''}${recentPostTitles.length ? `- Recent reviews they've published: ${recentPostTitles.slice(0, 10).map(t => `"${t}"`).join('; ')}\n` : ''}${recentCampaigns.length ? `- Recent Creator Connections campaigns: ${recentCampaigns.slice(0, 8).join('; ')}\n` : ''}\nWhen they ask things like "what should I review next" or "what's working", reason from this real context — their niches, the products they've already covered, gaps and adjacent opportunities.` : ''}`
+${name || niches || recentPostTitles.length ? `\nABOUT THIS USER (use it to personalize — this is what makes you better than a generic chatbot):\n${name ? `- Name: ${name}\n` : ''}${niches ? `- Niches: ${niches}\n` : ''}${tone ? `- Brand tone: ${tone}\n` : ''}${recentPostTitles.length ? `- Recent reviews they've published: ${recentPostTitles.slice(0, 10).map(t => `"${t}"`).join('; ')}\n` : ''}${recentCampaigns.length ? `- Recent Creator Connections campaigns: ${recentCampaigns.slice(0, 8).join('; ')}\n` : ''}\nWhen they ask things like "what should I review next" or "what's working", reason from this real context — their niches, the products they've already covered, gaps and adjacent opportunities.` : ''}${memory ? `\n\nLONG-TERM MEMORY (what you've learned about this user across past chats + anything they imported — treat as known background, don't recite it back verbatim):\n${memory}` : ''}`
 }
 
 export async function POST(request: Request) {
@@ -115,12 +117,13 @@ export async function POST(request: Request) {
   // ── Personalization context — brand + the user's real activity. This is
   //    the edge a generic $20 chatbot can't have: it knows their niches,
   //    what they've already reviewed, and their live campaigns. ──────────────
-  const [{ data: brand }, { data: posts }, { data: campaigns }] = await Promise.all([
+  const [{ data: brand }, { data: posts }, { data: campaigns }, memory] = await Promise.all([
     sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
     sb.from('blog_posts').select('title').eq('user_id', user.id).eq('status', 'published')
       .order('published_at', { ascending: false }).limit(10),
     sb.from('campaigns').select('product_title,campaign_name').eq('user_id', user.id)
       .order('created_at', { ascending: false }).limit(8),
+    getAssistantMemory(sb, user.id),
   ])
   const recentPostTitles = ((posts as Array<{ title: string }> | null) || []).map(p => p.title).filter(Boolean)
   const recentCampaigns = ((campaigns as Array<{ product_title: string | null; campaign_name: string | null }> | null) || [])
@@ -137,7 +140,7 @@ export async function POST(request: Request) {
         const stream = anthropic.messages.stream({
           model: MODEL,
           max_tokens: 1200,
-          system: buildSystemPrompt(brand as Record<string, unknown> | null, recentPostTitles, recentCampaigns),
+          system: buildSystemPrompt(brand as Record<string, unknown> | null, recentPostTitles, recentCampaigns, memory),
           messages: [...priorMsgs, { role: 'user', content: message }],
         })
         stream.on('text', (t: string) => { full += t; controller.enqueue(encoder.encode(t)) })
@@ -151,6 +154,15 @@ export async function POST(request: Request) {
         if (full.trim()) {
           await sb.from('assistant_messages').insert({ conversation_id: convId, user_id: user.id, role: 'assistant', content: full })
           await sb.from('assistant_conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
+          // Roll this exchange into the user's long-term memory so future
+          // chats stay continuous. Cheap Haiku merge; best-effort.
+          const updated = await mergeAssistantMemory({
+            existing: memory,
+            newMaterial: `User: ${message}\nAssistant: ${full}`,
+            kind: 'chat',
+            ctx: { userId: user.id, tier },
+          })
+          if (updated && updated !== memory) await saveAssistantMemory(sb, user.id, updated)
         }
         controller.close()
       }
