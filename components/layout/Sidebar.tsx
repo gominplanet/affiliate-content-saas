@@ -69,8 +69,8 @@ const secondaryNav = [
   ...(SALES_PAUSED
     ? []
     : [{ href: 'https://mvp-affiliate.getrewardful.com/signup', label: 'Earn 10% — Refer', icon: HandCoins, external: true as const, accent: '#34c759' }]),
-  { href: '/admin/users', label: 'Users (admin)', icon: UserCog, danger: false },
-  { href: '/admin/failures', label: 'Failures', icon: AlertTriangle, danger: true },
+  // Admin-only links (Users, Failures, AI Cost) live in the isAdmin block
+  // in the render — NOT here — so non-admins never see them.
 ]
 
 export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: string; wpSiteUrl?: string | null }) {
@@ -330,7 +330,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
           <p className="section-label px-2 mb-2">System</p>
           {secondaryNav.map((item) => {
             const { href, label, icon: Icon } = item
-            const danger = 'danger' in item && item.danger
+            const danger = 'danger' in item && (item as { danger?: boolean }).danger === true
             const external = 'external' in item && item.external
             const accent = 'accent' in item ? item.accent : undefined
 
@@ -367,13 +367,29 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
             )
           })}
           {isAdmin && (
-            <Link
-              href="/admin/costs"
-              className={cn('nav-item', isActive('/admin/costs') && 'active')}
-            >
-              <DollarSign size={16} className="flex-shrink-0" />
-              AI Cost (admin)
-            </Link>
+            <>
+              <Link
+                href="/admin/users"
+                className={cn('nav-item', isActive('/admin/users') && 'active')}
+              >
+                <UserCog size={16} className="flex-shrink-0" />
+                Users (admin)
+              </Link>
+              <Link
+                href="/admin/failures"
+                className={cn('nav-item', isActive('/admin/failures') && 'active', !isActive('/admin/failures') && 'hover:!text-[#ff3b30]')}
+              >
+                <AlertTriangle size={16} className="flex-shrink-0" />
+                Failures
+              </Link>
+              <Link
+                href="/admin/costs"
+                className={cn('nav-item', isActive('/admin/costs') && 'active')}
+              >
+                <DollarSign size={16} className="flex-shrink-0" />
+                AI Cost (admin)
+              </Link>
+            </>
           )}
           {isAdmin && (
             <div className="px-3 py-2">
