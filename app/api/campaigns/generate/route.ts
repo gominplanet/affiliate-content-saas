@@ -24,7 +24,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { researchProduct } from '@/services/research'
-import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 import { buildCampaignHero } from '@/lib/hero-image'
 
@@ -54,8 +54,8 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
       .single()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (!tierAllowsSocial(tier, 'instagram')) {
-      return NextResponse.json({ error: 'Campaign content is a Pro plan feature.' }, { status: 403 })
+    if (!tierAllowsCampaigns(tier)) {
+      return NextResponse.json({ error: 'Creator Campaigns is a Pro feature.' }, { status: 403 })
     }
     if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
       return NextResponse.json({ error: 'WordPress not connected. Connect it in Setup first.' }, { status: 400 })

@@ -9,7 +9,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
 
 export const maxDuration = 60
 
@@ -33,8 +33,8 @@ export async function POST(request: Request) {
     const { data: intRow } = await (supabase as any)
       .from('integrations').select('tier').eq('user_id', user.id).single()
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (!tierAllowsSocial(tier, 'instagram')) {
-      return NextResponse.json({ error: 'CC Campaigns is a Pro plan feature.' }, { status: 403 })
+    if (!tierAllowsCampaigns(tier)) {
+      return NextResponse.json({ error: 'Creator Campaigns is a Pro feature.' }, { status: 403 })
     }
 
     const body = await request.json().catch(() => ({})) as { campaigns?: Incoming[] }

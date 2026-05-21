@@ -16,7 +16,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -58,9 +58,9 @@ export async function POST(request: Request) {
     }
     const userId = intRow.user_id as string
     const tier = (intRow.tier as Tier) ?? 'trial'
-    if (!tierAllowsSocial(tier, 'instagram')) {
+    if (!tierAllowsCampaigns(tier)) {
       return NextResponse.json(
-        { error: 'CC Campaigns is a Pro plan feature.' },
+        { error: 'Creator Campaigns is a Pro feature.' },
         { status: 403, headers: CORS },
       )
     }

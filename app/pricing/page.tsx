@@ -79,7 +79,7 @@ const plans: PlanExt[] = [
     features: [
       '200 full reviews per month (140 + 60 bonus)',
       '100 brand-collab pitch emails / month — your direct lever for deal flow',
-      'Amazon Creator Connections — scout campaigns by EPC, then one-click research, write & publish',
+      'For Amazon influencers & associates: scout Creator Connections campaigns by commission & EPC, then one-click research, write & publish',
       'Native AI Instagram image — your trained face + the actual product, 4:5 (50 / month)',
       'Custom face training for AI thumbnails & IG images',
       'Adds Instagram, X & Telegram on top of Creator’s platforms',

@@ -74,7 +74,7 @@ const plans = [
     regular: 499,
     limit: '200 posts / month',
     bonus: '140 + 60 bonus posts',
-    features: ['Everything in Creator', '100 brand-collab pitch emails / month', 'Amazon Creator Connections — scout campaigns by EPC, one-click research + publish', 'Native AI Instagram image — your face + the product, 4:5', 'Custom face training for AI thumbnails', 'Adds Instagram, X & Telegram', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids)', 'One-click Publish All to socials', 'Priority support'],
+    features: ['Everything in Creator', '100 brand-collab pitch emails / month', 'For Amazon influencers & associates — scout Creator Connections campaigns by commission & EPC, publish in one click', 'Native AI Instagram image — your face + the product, 4:5', 'Custom face training for AI thumbnails', 'Adds Instagram, X & Telegram', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids)', 'One-click Publish All to socials', 'Priority support'],
     cta: 'Get Pro',
     href: '/pricing',
     highlight: true,

@@ -144,6 +144,13 @@ export function tierAllowsPublishAll(tier: Tier): boolean {
   return TIERS[tier].publishAll
 }
 
+/** Whether a tier can use Creator Campaigns (Amazon Creator Connections +
+ *  EPC scouting → research/write/publish). Pro-only. Explicit gate — do
+ *  NOT proxy this off a social-platform check. */
+export function tierAllowsCampaigns(tier: Tier): boolean {
+  return tier === 'pro' || tier === 'admin'
+}
+
 /**
  * The user's current quota window. Paid subscribers get their actual
  * Stripe billing cycle (period_start → period_end), so a user who
