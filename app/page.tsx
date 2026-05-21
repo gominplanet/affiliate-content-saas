@@ -74,7 +74,7 @@ const plans = [
     regular: 499,
     limit: '200 posts / month',
     bonus: '140 + 60 bonus posts',
-    features: ['Everything in Creator', '100 brand-collab pitch emails / month', 'Native AI Instagram image — your face + the product, 4:5', 'Custom face training for AI thumbnails', 'Adds Instagram, X & Telegram', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off)', 'One-click Publish All to socials', 'Priority support'],
+    features: ['Everything in Creator', '100 brand-collab pitch emails / month', 'Native AI Instagram image — your face + the product, 4:5', 'Custom face training for AI thumbnails', 'Adds Instagram, X & Telegram', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids)', 'One-click Publish All to socials', 'Priority support'],
     cta: 'Get Pro',
     href: '/pricing',
     highlight: true,
@@ -84,7 +84,7 @@ const plans = [
 const faqs = [
   {
     q: 'How does the YouTube workflow actually work?',
-    a: 'Upload an unlisted draft to YouTube Studio with the Amazon ASIN in the title — that\'s all you need to do. MVP detects the ASIN, scrapes the product on Amazon, and the agent team generates the YouTube description (with affiliate links), 10 SEO video tags, 5 hashtags, and a click-magnet thumbnail. One click pushes everything back into your YouTube draft. Pro adds one-click batch settings: playlist, schedule, paid-promotion disclosure, made-for-kids flag, and notify-subscribers control.',
+    a: 'Upload an unlisted draft to YouTube Studio with the Amazon ASIN in the title — that\'s all you need to do. MVP detects the ASIN, scrapes the product on Amazon, and the agent team generates the YouTube description (with affiliate links), 10 SEO video tags, 5 hashtags, and a click-magnet thumbnail. One click pushes everything back into your YouTube draft. Pro adds one-click batch settings: playlist, schedule, paid-promotion disclosure, and made-for-kids flag.',
   },
   {
     q: 'Do I need my own WordPress site?',

@@ -82,7 +82,7 @@ const plans: PlanExt[] = [
       'Native AI Instagram image — your trained face + the actual product, 4:5 (50 / month)',
       'Custom face training for AI thumbnails & IG images',
       'Adds Instagram, X & Telegram on top of Creator’s platforms',
-      'One-click Apply to YouTube — playlist, schedule, paid-promotion, made-for-kids, notify-off, all batched',
+      'One-click Apply to YouTube — playlist, schedule, paid-promotion, made-for-kids, all batched',
       'One-click Publish All — site + every social in one shot',
       'Priority queue + priority human support',
     ],
