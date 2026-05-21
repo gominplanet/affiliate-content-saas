@@ -71,7 +71,9 @@ export const TIERS = {
     metadataGensPerMonth: 300 as number | null,
     instagramAiThumbnailsPerMonth: 50 as number | null,
     blogImagesPerPost: 4,
-    assistantMessagesPerMonth: 2000 as number | null,
+    // High enough to feel unlimited for normal daily use (~160/day) while
+    // still bounding worst-case Haiku cost (~$25/mo at the ceiling).
+    assistantMessagesPerMonth: 5000 as number | null,
     // 3 LoRA training jobs / month — bounded ($1.50/job has no natural
     // ceiling, so it's explicitly capped rather than uncapped).
     faceTrainJobs: 3 as number | null,

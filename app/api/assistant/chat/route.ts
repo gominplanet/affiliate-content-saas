@@ -22,7 +22,11 @@ export const maxDuration = 60
 
 const MODEL = 'claude-haiku-4-5-20251001'
 
-function buildSystemPrompt(brand: Record<string, unknown> | null): string {
+function buildSystemPrompt(
+  brand: Record<string, unknown> | null,
+  recentPostTitles: string[],
+  recentCampaigns: string[],
+): string {
   const name = (brand?.author_name as string) || (brand?.name as string) || ''
   const niches = ((brand?.niches as string[]) || []).join(', ')
   const tone = ((brand?.tone as string[]) || []).join(', ')
@@ -47,7 +51,7 @@ HOW TO BEHAVE:
 - For affiliate strategy questions, give concrete, experienced guidance (niches, what converts, posting cadence, how to land brand deals).
 - Never invent features the platform doesn't have. If something isn't possible in MVP Affiliate, say so plainly and suggest the closest real workflow.
 - Never use the word "honest". Don't fabricate stats.
-${name ? `\nABOUT THIS USER (personalize your advice):\n- Name: ${name}${niches ? `\n- Niches: ${niches}` : ''}${tone ? `\n- Brand tone: ${tone}` : ''}` : ''}`
+${name || niches || recentPostTitles.length ? `\nABOUT THIS USER (use it to personalize — this is what makes you better than a generic chatbot):\n${name ? `- Name: ${name}\n` : ''}${niches ? `- Niches: ${niches}\n` : ''}${tone ? `- Brand tone: ${tone}\n` : ''}${recentPostTitles.length ? `- Recent reviews they've published: ${recentPostTitles.slice(0, 10).map(t => `"${t}"`).join('; ')}\n` : ''}${recentCampaigns.length ? `- Recent Creator Connections campaigns: ${recentCampaigns.slice(0, 8).join('; ')}\n` : ''}\nWhen they ask things like "what should I review next" or "what's working", reason from this real context — their niches, the products they've already covered, gaps and adjacent opportunities.` : ''}`
 }
 
 export async function POST(request: Request) {
@@ -108,9 +112,19 @@ export async function POST(request: Request) {
   await sb.from('assistant_messages').insert({ conversation_id: conversationId, user_id: user.id, role: 'user', content: message })
   await sb.from('assistant_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId)
 
-  // ── Brand profile for personalization ──────────────────────────────────────
-  const { data: brand } = await sb.from('brand_profiles')
-    .select('name,author_name,niches,tone').eq('user_id', user.id).single()
+  // ── Personalization context — brand + the user's real activity. This is
+  //    the edge a generic $20 chatbot can't have: it knows their niches,
+  //    what they've already reviewed, and their live campaigns. ──────────────
+  const [{ data: brand }, { data: posts }, { data: campaigns }] = await Promise.all([
+    sb.from('brand_profiles').select('name,author_name,niches,tone').eq('user_id', user.id).single(),
+    sb.from('blog_posts').select('title').eq('user_id', user.id).eq('status', 'published')
+      .order('published_at', { ascending: false }).limit(10),
+    sb.from('campaigns').select('product_title,campaign_name').eq('user_id', user.id)
+      .order('created_at', { ascending: false }).limit(8),
+  ])
+  const recentPostTitles = ((posts as Array<{ title: string }> | null) || []).map(p => p.title).filter(Boolean)
+  const recentCampaigns = ((campaigns as Array<{ product_title: string | null; campaign_name: string | null }> | null) || [])
+    .map(c => c.product_title || c.campaign_name || '').filter(Boolean)
 
   const anthropic = createAnthropicClient()
   const convId = conversationId
@@ -123,7 +137,7 @@ export async function POST(request: Request) {
         const stream = anthropic.messages.stream({
           model: MODEL,
           max_tokens: 1200,
-          system: buildSystemPrompt(brand as Record<string, unknown> | null),
+          system: buildSystemPrompt(brand as Record<string, unknown> | null, recentPostTitles, recentCampaigns),
           messages: [...priorMsgs, { role: 'user', content: message }],
         })
         stream.on('text', (t: string) => { full += t; controller.enqueue(encoder.encode(t)) })
