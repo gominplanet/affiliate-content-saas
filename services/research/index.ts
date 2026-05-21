@@ -108,3 +108,75 @@ Return ONLY the markdown brief.`
 
   return { brief, citations: Array.from(citations).slice(0, 20) }
 }
+
+/**
+ * Fetch the product/brand page a creator linked in their YouTube
+ * description and extract a factual product brief — the open-web
+ * equivalent of an Amazon scrape. The transcript still drives the
+ * voice; this just gives the writer accurate product facts when there's
+ * no Amazon ASIN to scrape.
+ *
+ * Best-effort: returns '' on any failure (unreachable page, JS-only
+ * site, extraction miss) so the caller falls back to transcript-only.
+ */
+export async function researchProductFromUrl(
+  url: string,
+  productHint: string,
+  ctx?: { userId?: string | null; tier?: string | null },
+): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+      redirect: 'follow',
+    })
+    if (!res.ok) return ''
+    const html = await res.text()
+    // Strip scripts/styles/tags → readable text. Cap so we don't blow the
+    // token budget on a bloated page.
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 12000)
+    if (text.length < 200) return ''
+
+    const client = createAnthropicClient()
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 700,
+      messages: [{
+        role: 'user',
+        content: `Below is the readable text scraped from a product page a creator linked. Extract a FACTUAL product brief the review writer can rely on — like a spec sheet, NOT marketing copy.
+
+PRODUCT (from the video, for context): ${productHint || '(unknown)'}
+SOURCE URL: ${url}
+
+PAGE TEXT:
+${text}
+
+Return markdown with only what's actually supported by the page:
+## Product
+One line: what it is + who it's for.
+## Key specs & features
+Bullet list of concrete specs/features stated on the page (dimensions, materials, capacity, modes, compatibility, etc.).
+## Price
+If a price is shown, state it; else "not listed".
+## Notable claims
+Any standout manufacturer claims worth citing (warranty, certifications, performance numbers).
+
+Rules: do NOT invent anything not on the page. If the page is thin or clearly not a product page, return exactly "NO_PRODUCT_INFO". Under 250 words.`,
+      }],
+    })
+    const u = usageFromAnthropic(msg)
+    recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_web_product_research', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
+
+    const out = msg.content.filter(b => b.type === 'text').map(b => (b as { text: string }).text).join('').trim()
+    if (!out || out.includes('NO_PRODUCT_INFO')) return ''
+    return out
+  } catch {
+    return ''
+  }
+}

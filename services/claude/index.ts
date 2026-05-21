@@ -39,6 +39,10 @@ export interface VideoInput {
   /** Pre-built affiliate URL paired with asinOverride. Caller should
    *  wrap with Geniuslink / Associates tag before passing. */
   affiliateUrlOverride?: string | null
+  /** Factual product brief scraped from the website linked in the
+   *  description (Pro tier). Treated like an Amazon spec sheet — gives
+   *  the writer real product facts. The transcript still drives voice. */
+  productResearch?: string | null
 }
 
 export interface BlogGenerationOutput {
@@ -734,7 +738,7 @@ VIDEO TAGS: ${video.tags.join(', ')}
 
 VIDEO DESCRIPTION:
 ${video.description.slice(0, 2000)}
-
+${video.productResearch ? `\nPRODUCT INFO (scraped from the product/brand site linked in the description — use these as FACTUAL product details; the transcript still governs the voice, tone, and the reviewer's actual opinions):\n${video.productResearch.slice(0, 2500)}\n` : ''}
 TRANSCRIPT:
 ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
 

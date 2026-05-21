@@ -8,6 +8,7 @@ import { scrubBanned } from '@/lib/scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
+import { researchProductFromUrl } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { fal } from '@fal-ai/client'
@@ -25,6 +26,23 @@ const SHOT_PERSPECTIVES = [
   'three-quarter angle on a wooden table with soft directional side lighting',
   'low hero angle looking slightly up at the product against a softly blurred lifestyle background',
 ]
+
+/** First non-Amazon, non-social product/brand URL in a description — the
+ *  page we scrape for product facts (Pro tier). Amazon/geni.us links are
+ *  handled by the affiliate path; socials + the creator's own site are
+ *  skipped. Returns null when nothing product-like is linked. */
+function firstProductUrl(description: string, ownSite?: string | null): string | null {
+  const urls = description.match(/https?:\/\/[^\s)>\]"']+/gi) || []
+  const skip = /(amazon\.|amzn\.to|geni\.us|youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.)/i
+  const own = ownSite ? ownSite.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
+  for (const raw of urls) {
+    const clean = raw.replace(/[.,;:)\]>"']+$/, '')
+    if (skip.test(clean)) continue
+    if (own && clean.includes(own)) continue
+    return clean
+  }
+  return null
+}
 
 /** Plain-text word count of Gutenberg block markup (strips wp comments,
  *  HTML tags, and collapses whitespace). Used to scale image count. */
@@ -365,6 +383,19 @@ async function handleGenerate(request: Request) {
       .slice(0, 1200),
   })).filter(ex => ex.excerpt.length > 100) ?? []
 
+  // ── 5.9. Pro web product research — scrape the product/brand site the
+  //         creator linked in the description for factual product info,
+  //         the open-web equivalent of an Amazon scrape. The transcript
+  //         still drives the voice; this just gives the writer real
+  //         product facts. Pro/Admin only (bounds cost); best-effort.
+  let productResearch: string | null = null
+  if (tier === 'pro' || tier === 'admin') {
+    const pUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
+    if (pUrl) {
+      productResearch = (await researchProductFromUrl(pUrl, rawTitle, { userId: user.id, tier })) || null
+    }
+  }
+
   // ── 6. Generate blog post with Claude ─────────────────────────────────────
   const claude = createClaudeService()
   let generated
@@ -394,6 +425,7 @@ async function handleGenerate(request: Request) {
         transcript,
         asinOverride,
         affiliateUrlOverride,
+        productResearch,
       },
       { userId: user.id, tier: (wp?.tier as string) ?? null },
       isRewrite ? (rewriteFeedback?.trim() || null) : null,
