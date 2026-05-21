@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Header from '@/components/layout/Header'
+import { TutorialVideo } from '@/components/TutorialVideo'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   UserCircle2,
@@ -173,6 +174,11 @@ export default function FaceTrainingPage() {
         title="Face Training"
         subtitle="Train MVP on your own face so generated thumbnails put YOU in the picture — not a stock-photo lookalike."
       />
+
+      {/* Tutorial stays usable for non-Pro users (above the lock).
+          Renders nothing until a 'face-training' entry with a videoId is
+          added to lib/tutorials.ts. */}
+      <TutorialVideo sectionKey="face-training" />
 
       {!isPro && (
         <div className="card p-5 mb-6 flex items-start gap-3" style={{ background: 'linear-gradient(180deg, rgba(0,113,227,0.05) 0%, transparent 100%)', borderColor: 'rgba(0,113,227,0.25)' }}>

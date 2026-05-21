@@ -5,6 +5,8 @@ import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { Loader2, Sparkles, ExternalLink, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle, AlertCircle } from 'lucide-react'
 import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
+import { ProLock } from '@/components/ProLock'
+import { createBrowserClient } from '@/lib/supabase/client'
 
 interface Campaign {
   id: string
@@ -206,6 +208,11 @@ function CampaignsInner() {
   })
   const [categoryOptions, setCategoryOptions] = useState<string[]>([])
   const [catBusy, setCatBusy] = useState<string | null>(null)
+  // Creator Campaigns is Pro-only. Non-Pro users see the whole page but
+  // greyed + non-interactive (ProLock). Default locked until tier loads
+  // so we never flash interactive controls to a non-Pro user.
+  const supabase = createBrowserClient()
+  const [isPro, setIsPro] = useState(false)
 
   // ── Amazon CC export (.zip) importer ───────────────────────────────
   const [impKw, setImpKw] = useState('')
@@ -234,6 +241,18 @@ function CampaignsInner() {
     fetch('/api/campaigns/ingest-token')
       .then(r => r.json()).then(d => d.token && setExtToken(d.token)).catch(() => {})
   }, [])
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+        const t = (data?.tier as string) || 'trial'
+        setIsPro(t === 'pro' || t === 'admin')
+      } catch { /* stay locked */ }
+    })()
+  }, [supabase])
 
   async function regenToken() {
     setTokenBusy(true)
@@ -532,6 +551,12 @@ function CampaignsInner() {
       />
 
       <TutorialVideo sectionKey="campaigns" />
+
+      <ProLock
+        locked={!isPro}
+        title="Creator Campaigns is a Pro feature"
+        description="Built for Amazon influencers & associates: pull your Amazon Creator Connections campaigns, scout them by commission & EPC, and turn the best ones into published reviews in one click. Upgrade to Pro to unlock it."
+      >
 
       {/* Intake method tabs — both feed the same queue below */}
       <div className="flex items-center gap-1 mb-6 border-b border-gray-200 dark:border-white/10 max-w-3xl">
@@ -870,6 +895,7 @@ function CampaignsInner() {
           })}
         </div>
       )}
+      </ProLock>
     </>
   )
 }
