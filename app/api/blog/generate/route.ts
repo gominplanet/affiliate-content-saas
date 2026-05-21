@@ -65,13 +65,15 @@ function firstProductUrl(description: string, ownSite?: string | null): string |
  *  could resolve to Amazon OR to any store. Best-effort; returns the
  *  original URL on failure. */
 async function resolveFinalUrl(url: string): Promise<string> {
+  // Hard timeouts so a slow/hanging redirect host can never stall the
+  // generation request (which runs close to the function's time budget).
   try {
-    const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' } })
+    const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) })
     return res.url || url
   } catch {
     try {
       // Some hosts reject HEAD — retry with a ranged GET (1 byte).
-      const res = await fetch(url, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0', Range: 'bytes=0-0' } })
+      const res = await fetch(url, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0', Range: 'bytes=0-0' }, signal: AbortSignal.timeout(5000) })
       return res.url || url
     } catch {
       return url
