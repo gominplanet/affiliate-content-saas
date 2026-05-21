@@ -23,15 +23,16 @@ import {
 // With 10 platforms we render as a 5x2 grid for a clean split, with the
 // "ship today" platforms on the top row.
 const platforms = [
-  // Top row — live and free to use
+  // Top row — live integrations (WordPress + Facebook are on every plan;
+  // Threads / Bluesky / LinkedIn unlock on Growth — see pricing).
   { label: 'WordPress',    status: 'live'    as const, color: '#21759b', logo: 'wordpress' },
   { label: 'Facebook',     status: 'live'    as const, color: '#1877f2', logo: 'facebook' },
   { label: 'Threads',      status: 'live'    as const, color: '#000000', logo: 'threads' },
-  { label: 'Twitter / X',  status: 'live'    as const, color: '#000000', logo: 'x' },
   { label: 'Bluesky',      status: 'live'    as const, color: '#1185fe', logo: 'bluesky' },
+  { label: 'LinkedIn',     status: 'live'    as const, color: '#0a66c2', logo: 'linkedin' },
   // Bottom row — Pro-gated, coming soon, roadmap
   { label: 'Instagram',    status: 'pro'     as const, color: '#E1306C', logo: 'instagram' },
-  { label: 'LinkedIn',     status: 'pro'     as const, color: '#0a66c2', logo: 'linkedin' },
+  { label: 'Twitter / X',  status: 'pro'     as const, color: '#000000', logo: 'x' },
   { label: 'Telegram',     status: 'pro'     as const, color: '#229ED9', logo: 'telegram' },
   { label: 'Pinterest',    status: 'soon'    as const, color: '#e60023', logo: 'pinterest' },
   { label: 'Email digest', status: 'roadmap' as const, color: '#34c759', logo: 'email' },
@@ -82,9 +83,9 @@ const plans = [
     tier: 'Pro',
     price: 199,
     regular: 499,
-    limit: '150 posts / month',
-    bonus: '90 + 60 bonus posts',
-    features: ['One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off)', 'Everything in Growth', 'X (Twitter) auto-post', 'Telegram channel auto-post', 'Instagram Reels + Stories auto-publish', 'One-click Publish All to socials', 'Priority support'],
+    limit: '200 posts / month',
+    bonus: '140 + 60 bonus posts',
+    features: ['Everything in Growth', '100 brand-collab pitch emails / month', 'Native AI Instagram image — your face + the product, 4:5', 'Custom face training for AI thumbnails', 'X (Twitter) + Telegram + Instagram Reels & Stories', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids, notify off)', 'One-click Publish All to socials', 'Priority support'],
     cta: 'Get Pro',
     href: '/pricing',
     highlight: false,
@@ -103,6 +104,10 @@ const faqs = [
   {
     q: 'Is the content AI-generated?',
     a: 'Yes — but not by a single chatbot. We orchestrate an army of specialized agents: one researches the product, one designs the outline for SEO, one matches your voice from your Brand Profile, one drafts the body section by section, one writes the verdict + Buy/Skip block, one inserts affiliate links cleanly, one writes the FAQ, one tags and categorizes. The output is reviewed in Studio before publish — you always have the final say.',
+  },
+  {
+    q: 'What are the brand-collab pitch emails?',
+    a: 'A Pro feature for landing brand deals. Name a brand or product you want to work with and we generate a personalized outreach email — built on your real storefront, Linktree and channel stats, with a brand-specific angle and your full cross-platform reach as proof of distribution. Pro includes up to 100 pitches a month; Starter and Growth get a taster (1 and 5 respectively).',
   },
   {
     q: 'Do I own the content?',
@@ -401,13 +406,13 @@ export default function LandingPage() {
                 </div>
                 <p className="text-xs font-bold uppercase tracking-wider text-[#bc1888]">Long-form videos</p>
               </div>
-              <h3 className="text-xl font-bold text-[#1d1d1f] mb-2 leading-tight">Your long-form video → an auto-composed Instagram post</h3>
+              <h3 className="text-xl font-bold text-[#1d1d1f] mb-2 leading-tight">Your long-form video → a native AI Instagram image</h3>
               <p className="text-sm text-[#3a3a3c] leading-relaxed mb-4">
-                We build a 1080×1350 feed image from your YouTube thumbnail, blog title, excerpt and brand colors — plus a 1080×1920 Story variant that fits IG&apos;s safe zones. Zero design work.
+                Generate a fresh 1080×1350 feed image built for Instagram — your trained face holding the product, a punchy headline overlay, brand-tuned. Or auto-compose one from your thumbnail + brand colors. Either way: zero Canva, zero design work.
               </p>
               <ul className="text-[13px] text-[#3a3a3c] space-y-2">
-                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Brand-color background, your logo + name</li>
-                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Separate Story image (no zoom-crop)</li>
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> AI image with your real face + the actual product</li>
+                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> 👍 / 👎 the result — the style picker learns your taste</li>
                 <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Regenerate any time, no Canva subscription</li>
               </ul>
             </div>
@@ -425,6 +430,61 @@ export default function LandingPage() {
             <Link href="/pricing" className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' }}>
               See Pro pricing <ArrowRight size={15} />
             </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Collaborations / brand deals (Pro) ─────────────────────────────── */}
+      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14 max-w-3xl mx-auto">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-[#34c759]/10 text-[#1f8a3a]">
+              Pro flagship · Brand collaborations
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">
+              Don&apos;t just publish reviews. Land the brand deals.
+            </h2>
+            <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
+              The hardest part of affiliate income isn&apos;t the content — it&apos;s getting brands to
+              say yes. Pro generates personalized brand-collab pitch emails built on a method that
+              actually lands partnerships: your real numbers, your platforms, a specific angle for
+              each brand. Up to 100 pitches a month.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+            <StepCard
+              n="01"
+              icon={<Wand2 size={20} />}
+              title="Tell us the brand"
+              desc="Drop in the brand or product you want to work with. We pull your storefront, Linktree and channel stats to build your pitch from real data."
+              accent="#34c759"
+            />
+            <StepCard
+              n="02"
+              icon={<Sparkles size={20} />}
+              title="We write the pitch"
+              desc="A personalized outreach email with a brand-specific angle, your reach across every platform, and a clean ask — written in your voice, not a generic template."
+              accent="#0071e3"
+            />
+            <StepCard
+              n="03"
+              icon={<ArrowRight size={20} />}
+              title="Send + track"
+              desc="Copy, tweak, send. When a brand asks 'where will this go?', your answer is a list of live placements across YouTube, your site, and 8 socials — not a promise."
+              accent="#5856d6"
+            />
+          </div>
+
+          <div className="rounded-2xl bg-gradient-to-br from-[#f0fff4] to-[#fff] border border-[#34c759]/20 p-6 sm:p-8 text-center max-w-3xl mx-auto">
+            <p className="text-sm font-semibold text-[#1f8a3a] mb-2 uppercase tracking-wider">Why it works</p>
+            <p className="text-xl sm:text-2xl font-bold text-[#1d1d1f] leading-tight mb-2">
+              Brands fund creators who can prove distribution.
+            </p>
+            <p className="text-sm sm:text-base text-[#3a3a3c]">
+              Every review you ship already fans out to YouTube, your branded site, and every connected
+              social. That footprint IS your pitch — and Pro turns it into outreach that converts.
+            </p>
           </div>
         </div>
       </section>
@@ -589,7 +649,7 @@ export default function LandingPage() {
                 <StackPerk label="AI-written reviews in your brand voice" />
                 <StackPerk label="Fan-out to 8 socials, one click" />
                 <StackPerk label="YouTube metadata + tags + click-magnet thumbnail" />
-                <StackPerk label="Auto-composed 4:5 Instagram image + 9:16 Story" />
+                <StackPerk label="Native AI Instagram image — your face + the product" />
                 <StackPerk label="Affiliate disclaimer + Geniuslink routing built in" />
               </div>
               <div className="relative mt-5 pt-5 border-t border-white/20 flex items-baseline justify-between">
@@ -649,6 +709,8 @@ export default function LandingPage() {
                 <CompareRow label="Affiliate disclaimer auto-inserted" us="check" gen="cross" free="manual" diy="manual" />
                 <CompareRow label="One-click publish to WordPress" us="check" gen="cross" free="manual" diy="manual" />
                 <CompareRow label="Fan-out to FB / Threads / LI / Pinterest / X / Bluesky / Telegram / Instagram" us="check" gen="manual" free="manual" diy="cross" />
+                <CompareRow label="Native AI Instagram image — your face + the product" us="check" gen="cross" free="cross" diy="cross" />
+                <CompareRow label="Brand-collab pitch emails to land deals" us="check" gen="cross" free="cross" diy="cross" />
                 <CompareRow label="Stays in your brand voice across posts" us="check" gen="manual" free="manual" diy="manual" />
                 <CompareRow label="Cost per 30 reviews / month" us="$49" gen="$30–80" free="$600–3000" diy="Your time" />
               </tbody>

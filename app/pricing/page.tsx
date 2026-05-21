@@ -97,6 +97,8 @@ const plans: PlanExt[] = [
     features: [
       '100 brand-collab pitch emails / month — your direct lever for deal flow',
       '200 full reviews per month (140 + 60 bonus)',
+      'Native AI Instagram image — your trained face + the actual product, 4:5 (50 / month)',
+      'Custom face training for AI thumbnails & IG images',
       'Reach on every supported platform: Facebook, Pinterest, Threads, Bluesky, LinkedIn, X, Telegram (+ Instagram Reels & Stories, included while we keep polishing)',
       'One-click Apply to YouTube — playlist, schedule, paid-promotion disclosure, made-for-kids, notify-off, all batched',
       'One-click Publish All — site + every social in one shot',
