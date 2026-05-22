@@ -516,6 +516,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
         body: JSON.stringify({
           videoTitle: editTitle || video.title,
           asin: video.detectedAsin ?? undefined,
+          videoDescription: video.description,
           productTitle: product?.title ?? undefined,
           productDescription: product?.description ?? undefined,
           productBullets: product?.bullets ?? undefined,
@@ -561,6 +562,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
         body: JSON.stringify({
           videoTitle: overrides.title || video.title,
           asin: video.detectedAsin ?? undefined,
+          videoDescription: video.description,
           productTitle: overrides.productTitle ?? undefined,
           productDescription: overrides.productDescription ?? undefined,
           productBullets: overrides.productBullets ?? undefined,

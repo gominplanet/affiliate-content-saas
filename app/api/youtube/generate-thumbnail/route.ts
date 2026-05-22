@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
+import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
+import { fetchProductImageFromPage } from '@/services/research'
 import { fal } from '@fal-ai/client'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
@@ -307,10 +309,14 @@ export async function POST(request: Request) {
       variantCount: rawVariantCount,
       styleReferenceUrl,
       faceModelId,
+      videoDescription,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
       asin?: string
+      /** The YouTube description — used to find the product link for a real
+       *  product photo when there's no Amazon ASIN (non-Amazon products). */
+      videoDescription?: string
       productTitle?: string
       productDescription?: string
       productBullets?: string[]
@@ -408,6 +414,20 @@ export async function POST(request: Request) {
         if (!productDescription) productDescription = p.description
         if (!productBullets.length) productBullets = p.bullets
       } catch { /* fall through */ }
+    }
+
+    // NON-AMAZON products: grab the real product photo off the store/brand page
+    // the creator linked in the description, so the Kontext path can render the
+    // ACTUAL product (mirrors the blog pipeline). Without this, non-Amazon
+    // thumbnails fell back to a text-only guess of the product.
+    if (!productImageUrl && videoDescription) {
+      let pageUrl = firstProductUrl(videoDescription)
+      if (pageUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
+        pageUrl = await resolveFinalUrl(pageUrl)
+      }
+      if (pageUrl) {
+        productImageUrl = await fetchProductImageFromPage(pageUrl)
+      }
     }
 
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
