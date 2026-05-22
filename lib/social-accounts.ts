@@ -155,13 +155,26 @@ export async function syncFacebookAccounts(
   await supabase.from('social_accounts').upsert(rows, { onConflict: 'user_id,platform,external_id' })
 }
 
-/** Upsert the user's single Instagram account into social_accounts. */
+/**
+ * Upsert an Instagram account into social_accounts and make it the default.
+ *
+ * Multiple IG accounts accumulate here (one row each) as the user connects
+ * them via Instagram Login. The most recently connected becomes the default,
+ * so we clear the flag on the others first. token_expiry (epoch ms) is stashed
+ * in `extra` so the post route can refresh the right account's token.
+ */
 export async function syncInstagramAccount(
   supabase: any,
   userId: string,
-  account: { externalId: string; username: string | null; accessToken: string },
+  account: { externalId: string; username: string | null; accessToken: string; tokenExpiry?: number | null },
 ): Promise<void> {
   if (!account.externalId || !account.accessToken) return
+  // This account becomes the new default — clear the flag on the others.
+  await supabase
+    .from('social_accounts')
+    .update({ is_default: false })
+    .eq('user_id', userId)
+    .eq('platform', 'instagram')
   await supabase.from('social_accounts').upsert(
     {
       user_id: userId,
@@ -170,6 +183,7 @@ export async function syncInstagramAccount(
       display_name: account.username,
       kind: 'account',
       access_token: account.accessToken,
+      extra: account.tokenExpiry ? { token_expiry: account.tokenExpiry } : {},
       is_default: true,
       updated_at: new Date().toISOString(),
     },

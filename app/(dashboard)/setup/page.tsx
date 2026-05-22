@@ -1661,9 +1661,20 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
               Connected as <strong>@{instagram.username}</strong>
             </p>
-            <button onClick={disconnectInstagram} disabled={igDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
-              {igDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
-            </button>
+            <div className="flex items-center gap-4">
+              <a
+                href="/api/auth/instagram"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#bc1888] hover:underline self-start"
+              >
+                + Connect another account
+              </a>
+              <button onClick={disconnectInstagram} disabled={igDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+                {igDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+              </button>
+            </div>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+              Manage several Instagram accounts? Connect each one — you&apos;ll pick which to post to per review. Tip: on the Instagram screen, use &ldquo;Switch account&rdquo; to add a different one. The most recently connected becomes your default.
+            </p>
           </div>
         ) : (
           <a

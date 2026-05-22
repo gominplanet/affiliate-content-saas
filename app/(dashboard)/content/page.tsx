@@ -763,6 +763,7 @@ function InstagramPublishModal({
   videoKind,
   alreadyReeled,
   alreadyStoried,
+  igAccounts,
   onClose,
   onPublishStart,
   onPublishEnd,
@@ -775,6 +776,8 @@ function InstagramPublishModal({
   videoKind: 'horizontal' | 'vertical'
   alreadyReeled: boolean
   alreadyStoried: boolean
+  /** Connected IG accounts (Pro multi-account) for the per-post picker. */
+  igAccounts: Array<{ id: string; displayName: string | null; isDefault: boolean }>
   onClose: () => void
   onPublishStart: () => void
   onPublishEnd: () => void
@@ -782,6 +785,14 @@ function InstagramPublishModal({
   onStoryPosted: (affiliateUrl: string) => void
 }) {
   const supabase = createBrowserClient()
+  // Which IG account to publish to (Pro multi-account). Defaults to the last
+  // choice, then the default account. Persisted across sessions.
+  const [selectedIgAccountId, setSelectedIgAccountId] = useState<string>(() => {
+    let saved: string | null = null
+    try { saved = localStorage.getItem('mvp_ig_account_choice') } catch { /* ignore */ }
+    if (saved && igAccounts.some(a => a.id === saved)) return saved
+    return igAccounts.find(a => a.isDefault)?.id ?? igAccounts[0]?.id ?? ''
+  })
   // Media-ready URL — instagram_video_url for vertical, instagram_image_url for horizontal
   const [existingUrl, setExistingUrl] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -1055,7 +1066,7 @@ function InstagramPublishModal({
       const res = await fetch('/api/blog/instagram-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, kind: apiKind, mode, dryRun: true }),
+        body: JSON.stringify({ postId, kind: apiKind, mode, dryRun: true, socialAccountId: selectedIgAccountId || undefined }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       if (!res.ok) throw new Error(data.error || 'Preview failed')
@@ -1088,6 +1099,7 @@ function InstagramPublishModal({
           kind: apiKind,
           mode,
           caption: sendsFeedCaption ? previewedReelCaption : undefined,
+          socialAccountId: selectedIgAccountId || undefined,
         }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
@@ -1132,6 +1144,26 @@ function InstagramPublishModal({
               <X size={16} />
             </button>
           </div>
+
+          {/* Account picker — only when the user has more than one IG account. */}
+          {igAccounts.length > 1 && (
+            <div className="mb-5">
+              <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5 block">Publish to account</label>
+              <select
+                value={selectedIgAccountId}
+                onChange={e => {
+                  const v = e.target.value
+                  setSelectedIgAccountId(v)
+                  try { localStorage.setItem('mvp_ig_account_choice', v) } catch { /* ignore */ }
+                }}
+                className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#0071e3] focus:outline-none"
+              >
+                {igAccounts.map(a => (
+                  <option key={a.id} value={a.id}>{a.displayName || 'Instagram account'}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Step 1 — Media source (video upload for vertical, auto-image for horizontal) */}
           <div className="mb-5">
@@ -1468,7 +1500,7 @@ function InstagramPublishModal({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, fbAccounts, userTier, brandNiches, customCategories, previewBeforePublish, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, previewBeforePublish, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -1483,6 +1515,7 @@ function VideoCard({
   telegramConnected: boolean
   instagramConnected: boolean
   fbAccounts: Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>
+  igAccounts: Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>
   userTier: 'trial' | 'creator' | 'pro' | 'admin'
   brandNiches: string[]
   customCategories: string[]
@@ -2046,6 +2079,7 @@ function VideoCard({
               videoKind={video.is_vertical === true ? 'vertical' : 'horizontal'}
               alreadyReeled={igReelPosted}
               alreadyStoried={igStoryPosted}
+              igAccounts={igAccounts}
               onClose={() => setIgModalOpen(false)}
               onPublishStart={() => setIgPosting(true)}
               onPublishEnd={() => setIgPosting(false)}
@@ -2241,6 +2275,7 @@ export default function ContentPage() {
    *  for non-Pro users or those with a single page — the picker only shows
    *  when there's a real choice to make. */
   const [fbAccounts, setFbAccounts] = useState<Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>>([])
+  const [igAccounts, setIgAccounts] = useState<Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>>([])
   const [userTier, setUserTier] = useState<'trial' | 'creator' | 'pro' | 'admin'>('trial')
   const [brandNiches, setBrandNiches] = useState<string[]>([])
   const [customCategories, setCustomCategories] = useState<string[]>([])
@@ -2365,12 +2400,16 @@ export default function ContentPage() {
     setInstagramConnected(!!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
     const resolvedTier = effectiveTier((i as Record<string, unknown>)?.tier as string)
     setUserTier(resolvedTier)
-    // Pro multi-account: load connected Facebook Pages so the per-post picker
-    // can offer a choice. Token-stripped endpoint; best-effort.
+    // Pro multi-account: load connected Facebook Pages + Instagram accounts so
+    // the per-post pickers can offer a choice. Token-stripped; best-effort.
     if (resolvedTier === 'pro' || resolvedTier === 'admin') {
       fetch('/api/social-accounts?platform=facebook')
         .then(r => r.json())
         .then(d => { if (Array.isArray(d?.accounts)) setFbAccounts(d.accounts) })
+        .catch(() => {})
+      fetch('/api/social-accounts?platform=instagram')
+        .then(r => r.json())
+        .then(d => { if (Array.isArray(d?.accounts)) setIgAccounts(d.accounts) })
         .catch(() => {})
     }
     setBrandNiches(((b?.niches as string[] | null) ?? []))
@@ -3369,6 +3408,7 @@ export default function ContentPage() {
                     telegramConnected={telegramConnected}
                     instagramConnected={instagramConnected}
                     fbAccounts={fbAccounts}
+                    igAccounts={igAccounts}
                     userTier={userTier}
                     brandNiches={brandNiches}
                     customCategories={customCategories}
