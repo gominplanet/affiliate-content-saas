@@ -270,15 +270,15 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
       >
       {/* Logo */}
       <div className="px-4 pt-5 pb-4" style={{ borderBottom: '1px solid var(--border-2)' }}>
-        <div className="flex items-center gap-2.5">
+        <Link href="/dashboard" className="flex items-center gap-3 group">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/mvp-affiliate-logo.png"
             alt="MVP Affiliate"
-            className="w-7 h-7 rounded-lg object-contain mix-blend-multiply dark:mix-blend-screen flex-shrink-0"
+            className="w-12 h-12 rounded-xl object-contain mix-blend-multiply dark:mix-blend-screen flex-shrink-0 group-hover:opacity-90 transition-opacity"
           />
-          <span className="font-semibold text-sm tracking-tight" style={{ color: 'var(--text)' }}>MVP Affiliate</span>
-        </div>
+          <span className="font-bold text-[17px] tracking-tight leading-none" style={{ color: 'var(--text)' }}>MVP Affiliate</span>
+        </Link>
       </div>
 
       {/* Primary nav */}
