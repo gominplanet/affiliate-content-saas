@@ -824,7 +824,8 @@ a.mvp-ad-slot-filled:hover {
   grid-column: 2;
   grid-row: 1 / span 3;
   margin: 0;
-  aspect-ratio: 16/10;
+  /* 16:9 to match the YouTube thumbnail source — no side cropping. */
+  aspect-ratio: 16/9;
 }
 .mvp-pick-homepage .mvp-pick-title {
   font-size: clamp(24px, 3.2vw, 36px);
