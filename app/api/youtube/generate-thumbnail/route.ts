@@ -307,6 +307,7 @@ export async function POST(request: Request) {
       variantCount: rawVariantCount,
       styleReferenceUrl,
       faceModelId,
+      engine,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -333,6 +334,13 @@ export async function POST(request: Request) {
        *  LoRA + trigger token and route generation through the LoRA-
        *  capable flux-lora endpoint so their actual face appears. */
       faceModelId?: string
+      /** EXPERIMENT (A/B): face-rendering engine.
+       *  - 'lora'  → current flux-lora path (trained LoRA).
+       *  - 'pulid' → flux-PuLID: identity injected from a reference photo,
+       *              cheaper per image and no training needed.
+       *  Defaults to 'lora'. Can also be forced globally via the
+       *  FAL_THUMBNAIL_PULID=1 env flag. Only meaningful with a face model. */
+      engine?: 'lora' | 'pulid'
     }
 
     const variantCount = Math.min(2, Math.max(1, Number(rawVariantCount) || 1))
@@ -354,6 +362,30 @@ export async function POST(request: Request) {
         .single()
       if (fm?.status === 'ready' && fm?.lora_url) {
         faceModel = { trigger_token: fm.trigger_token, lora_url: fm.lora_url, name: fm.name }
+      }
+    }
+
+    // ── PuLID experiment toggle (A/B vs flux-lora) ────────────────────────────
+    // PuLID injects the real face from a REFERENCE PHOTO (no trained LoRA),
+    // is cheaper per image, and is generally crisper on identity. Flag it on
+    // per-request (engine:'pulid') or globally (FAL_THUMBNAIL_PULID=1). Only
+    // engages when a face model is selected AND we can find a reference photo.
+    const usePulid = (engine === 'pulid') || process.env.FAL_THUMBNAIL_PULID === '1'
+    let referenceFaceUrl: string | null = null
+    if (usePulid && faceModel && faceModelId) {
+      // Prefer the face model's own source photos (if stored as full URLs),
+      // else fall back to the brand headshot the user already uploaded.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: fmRef } = await (supabase as any)
+        .from('face_models').select('source_images').eq('id', faceModelId).eq('user_id', user.id).single()
+      const srcs = Array.isArray(fmRef?.source_images) ? (fmRef.source_images as unknown[]) : []
+      referenceFaceUrl = (srcs.find((s): s is string => typeof s === 'string' && s.startsWith('http')) as string | undefined) ?? null
+      if (!referenceFaceUrl) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: bp } = await (supabase as any)
+          .from('brand_profiles').select('headshot_url,headshot_urls').eq('user_id', user.id).single()
+        const arr = Array.isArray(bp?.headshot_urls) ? (bp.headshot_urls as string[]) : []
+        referenceFaceUrl = ((bp?.headshot_url as string | null)?.trim() || arr.find(u => typeof u === 'string' && u.startsWith('http'))) ?? null
       }
     }
 
@@ -512,6 +544,63 @@ export async function POST(request: Request) {
     }
 
     // ── PATH B: Face-LoRA — user picked a trained face ────────────────────────
+    // ── PATH B-PuLID (experiment): identity from a reference photo ───────────
+    // When the PuLID flag is on and we have a reference face, inject the real
+    // face via fal-ai/flux-pulid instead of a trained LoRA. No trigger token
+    // (identity comes from the photo), so we describe the subject generically.
+    // PuLID is single-image, so we loop for variants with distinct seeds.
+    if (faceModel && usePulid && referenceFaceUrl) {
+      console.log('[generate-thumbnail] PuLID experiment path, reference:', referenceFaceUrl)
+      const pulidPrompt = finalScenePrompt.split(faceModel.trigger_token).join('the creator')
+      const pulidResults = await Promise.all(
+        Array.from({ length: variantCount }, async (_, i) => {
+          const seed = Math.floor(Math.random() * 1_000_000_000) + i
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const r = await fal.subscribe('fal-ai/flux-pulid' as any, {
+              input: {
+                prompt: pulidPrompt,
+                reference_image_url: referenceFaceUrl,
+                image_size: 'landscape_16_9',
+                id_weight: 1,
+                guidance_scale: 4,
+                num_inference_steps: 20,
+                seed,
+              },
+              pollInterval: 3000,
+            })
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const imgs = (r.data as any)?.images as Array<{ url: string }> | undefined
+            return imgs?.[0]?.url ?? null
+          } catch (err) {
+            console.error('[generate-thumbnail] PuLID variant failed:', err instanceof Error ? err.message : err)
+            return null
+          }
+        }),
+      )
+      const pulidUrls = pulidResults.filter((u): u is string => !!u)
+      if (pulidUrls.length === 0) throw new Error('PuLID path returned no image. Please try again.')
+      for (let i = 0; i < pulidUrls.length; i++) {
+        recordUsage({
+          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+          feature: 'yt_thumb_flux_pulid_image', model: 'fal-flux-pulid', images: 1,
+        })
+      }
+      return NextResponse.json({
+        ok: true,
+        thumbnailUrl: pulidUrls[0],
+        thumbnailUrls: pulidUrls,
+        overlayHook,
+        headlineLocked: !!lockedHeadline,
+        prompt: pulidPrompt,
+        styleBriefApplied: !!styleBrief,
+        channelStyle: channelStyle ?? null,
+        modelUsed: `flux-pulid-${style}`,
+        faceModelUsed: faceModel.trigger_token,
+        headshotUsed: true,
+      })
+    }
+
     // flux-lora is the open-source flux-dev base with LoRA loading. Slightly
     // less polished than flux-pro/v1.1 on raw aesthetics but the only path
     // that respects a custom LoRA. The trigger token gets prepended to the
