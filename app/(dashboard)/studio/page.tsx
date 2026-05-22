@@ -650,12 +650,18 @@ function VideoStudioCard({ video, userTier, playlists }: {
     ctx.drawImage(productImg, 0, 0, 1280, 720)
 
     // Composite the creator cut-out into the bottom-right corner (transparent
-    // PNG over the product scene), anchored to the bottom edge.
+    // PNG over the product scene), anchored to the bottom edge. Capped to ~46%
+    // of the width / 96% of the height so it can never cover the whole scene
+    // regardless of the cut-out's aspect ratio.
     if (cutoutUrl) {
       const cut = await loadImg(cutoutUrl)
-      if (cut) {
-        const ch = 720                                   // full height, bottom-anchored
-        const cw = Math.round(ch * (cut.width / cut.height))
+      if (cut && cut.naturalWidth > 0) {
+        const ar = cut.width / cut.height
+        const maxW = 1280 * 0.46
+        const maxH = 720 * 0.96
+        let cw = maxW
+        let ch = cw / ar
+        if (ch > maxH) { ch = maxH; cw = ch * ar }
         ctx.drawImage(cut, 1280 - cw, 720 - ch, cw, ch)
       }
     }
