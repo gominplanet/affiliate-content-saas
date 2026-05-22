@@ -9,8 +9,9 @@
  * headline overlay in the browser via canvas so the text is always crisp.
  *
  * STYLE: viral-YouTube / MrBeast lettering — bold uppercase, thick black
- * outline + hard drop shadow, NO background blocks or strips. Top-centered.
- * Colour variations (white, yellow, two-tone accent) give natural variety.
+ * outline + hard drop shadow, NO background blocks or strips. TOP-LEFT,
+ * left-aligned (the image keeps the subject right + product bottom-left, so
+ * the title never overlaps them). Colour variations give natural variety.
  */
 
 export interface OverlayStyle {
@@ -47,7 +48,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     outlineW: 20,
     shadowAlpha: 0.9,
     maxPx: 150,
-    position: 'top-center',
+    position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 8, color: '#000' },
     baseWeight: 1.4,
@@ -62,7 +63,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     outlineW: 20,
     shadowAlpha: 0.9,
     maxPx: 150,
-    position: 'top-center',
+    position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 8, color: '#000' },
     baseWeight: 1.2,
@@ -77,7 +78,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     outlineW: 20,
     shadowAlpha: 0.9,
     maxPx: 152,
-    position: 'top-center',
+    position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 8, color: '#000' },
     baseWeight: 1.6,
@@ -92,7 +93,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     outlineW: 20,
     shadowAlpha: 0.9,
     maxPx: 152,
-    position: 'top-center',
+    position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 8, color: '#000' },
     baseWeight: 1.4,
@@ -107,7 +108,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     outlineW: 18,
     shadowAlpha: 0.85,
     maxPx: 144,
-    position: 'top-center',
+    position: 'top-left',
     gradient: false,
     hardShadow: { dx: 6, dy: 7, color: '#000' },
     baseWeight: 0.8,

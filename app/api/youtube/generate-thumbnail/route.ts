@@ -502,13 +502,17 @@ export async function POST(request: Request) {
 
         const sceneDir = STYLE_SCENES[style] ?? STYLE_SCENES.review
         const gptPrompt = `Professional YouTube thumbnail, 16:9, photorealistic, high click-through-rate.
-SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Frame as a WAIST-UP / CHEST-UP shot, positioned CENTER to CENTER-RIGHT. CRITICAL FRAMING: the TOP OF THEIR HEAD must sit roughly ONE-THIRD (30-35%) DOWN from the top edge — leave the ENTIRE TOP THIRD of the frame as clean, empty background ABOVE the person (no head, no face, no hair in the top third). The face belongs in the MIDDLE of the frame, never near the top. Relaxed, natural friendly smile (not a forced wide open-mouth grin), looking toward camera.
+SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Chest-up shot, positioned on the RIGHT side of the frame (occupying roughly the right 55-60%). They can be large and prominent. Keep them entirely OUT of the top-LEFT corner. Relaxed, natural friendly smile (not a forced wide open-mouth grin), looking toward camera.
 VIDEO TITLE: "${videoTitle}"
 PRODUCT: ${hasProductRef
-          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding). Place it on the LEFT side of the frame, held UP around chest height, FULLY visible and not cropped by any edge.'
-          : `${productTitle || 'the product from the video'}, on the LEFT side of the frame, held up around chest height, fully visible and not cropped.`}
+          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding). Place it in the BOTTOM-LEFT area of the frame, held up or resting, FULLY visible and not cropped by any edge.'
+          : `${productTitle || 'the product from the video'}, in the BOTTOM-LEFT area of the frame, fully visible and not cropped.`}
 SCENE: ${sceneDir}${channelStyle ? ` Channel aesthetic: ${channelStyle}.` : ''}${styleBrief ? ` Visual style: ${styleBrief}.` : ''}
-COMPOSITION: the TOP THIRD of the frame is reserved for a title — keep it clean, simple background, no part of the person there. Person's face/torso fill the middle and lower portion (center to center-right); product fully in frame on the LEFT. Nothing important touches the top or bottom edges.
+COMPOSITION (strict): three zones, nothing overlapping —
+• TOP-LEFT quadrant: clean, simple, slightly darker EMPTY background (a title goes here — no person, no product, nothing important).
+• RIGHT side: the person (center-right).
+• BOTTOM-LEFT: the product.
+Keep faces and the product clear of the top-left. Nothing important touches the frame edges.
 LIGHTING: editorial studio lighting — soft key + subtle rim light, realistic skin texture, shallow depth of field.
 Do NOT render any text, captions, watermarks, or logos in the image.`
 
