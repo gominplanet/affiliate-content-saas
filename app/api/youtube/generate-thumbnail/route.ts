@@ -502,13 +502,13 @@ export async function POST(request: Request) {
 
         const sceneDir = STYLE_SCENES[style] ?? STYLE_SCENES.review
         const gptPrompt = `Professional YouTube thumbnail, 16:9, photorealistic, high click-through-rate.
-SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Large and prominent in the FOREGROUND, positioned CENTER to CENTER-RIGHT of the frame, close to camera (chest-up). Friendly, confident expression (warm genuine smile unless the video title clearly implies skepticism), looking toward camera.
+SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Frame as a CHEST-UP MID-SHOT, positioned CENTER to CENTER-RIGHT. IMPORTANT: do NOT crop so close that the face fills the frame — show head and shoulders with clear HEADROOM above the head and a little space below. Relaxed, natural friendly smile (not a forced wide open-mouth grin), looking toward camera.
 VIDEO TITLE: "${videoTitle}"
 PRODUCT: ${hasProductRef
-          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding). Place it on the LEFT side of the frame, clearly visible (held out in the left hand, or resting on a surface to the person\'s side).'
-          : `${productTitle || 'the product from the video'}, placed on the LEFT side of the frame, clearly visible.`}
+          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding). Place it on the LEFT side of the frame, held UP near chest height, FULLY visible and not cropped by any edge.'
+          : `${productTitle || 'the product from the video'}, on the LEFT side of the frame, held up near chest height, fully visible and not cropped.`}
 SCENE: ${sceneDir}${channelStyle ? ` Channel aesthetic: ${channelStyle}.` : ''}${styleBrief ? ` Visual style: ${styleBrief}.` : ''}
-COMPOSITION: the person dominates the foreground (center to center-right); the product sits on the LEFT. Keep the TOP ~25% of the frame relatively simple/uncluttered (and not too bright) so a bold title across the TOP-CENTER reads clearly over it. Leave headroom above the person.
+COMPOSITION: chest-up framing with breathing room — person center to center-right, product fully in frame on the LEFT. Keep the TOP ~25% of the frame simple/uncluttered (and not too bright) so a bold title across the TOP-CENTER reads clearly. Nothing important should touch the top or bottom edges.
 LIGHTING: editorial studio lighting — soft key + subtle rim light, realistic skin texture, shallow depth of field.
 Do NOT render any text, captions, watermarks, or logos in the image.`
 
