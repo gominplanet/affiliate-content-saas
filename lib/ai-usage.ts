@@ -48,6 +48,9 @@ export const PRICING: Record<string, Pricing> = {
   // One-time LoRA training run — billed by Fal at a fixed per-job rate
   // regardless of how many images the job ingests.
   'fal-flux-lora-fast-training': { in: 0, out: 0, imageCost: 1.5 },
+  // AuraSR 4x super-resolution — billed per compute-second ($0.001/s); a
+  // single hero upscale runs ~10-15s, so ~$0.012/image (approximate).
+  'fal-aura-sr': { in: 0, out: 0, imageCost: 0.012 },
 
   // ── Google Gemini ──────────────────────────────────────────────────────
   'gemini-2.5-flash-image': { in: 0,     out: 0,    imageCost: 0.039 },

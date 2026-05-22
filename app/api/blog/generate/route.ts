@@ -839,6 +839,25 @@ async function handleGenerate(request: Request) {
                 if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-v1.1', images: 1 })
               }
               if (!falUrl) return null
+              // HERO ONLY (i === 0): 4x super-resolution for a crisp lead image.
+              // AuraSR is cheap (~$0.012) and runs once per post; the rest of
+              // the in-body images stay at base resolution to bound cost.
+              if (i === 0) {
+                try {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const up = await fal.subscribe('fal-ai/aura-sr' as any, {
+                    input: { image_url: falUrl, checkpoint: 'v2' },
+                    pollInterval: 3000,
+                  })
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const d = up.data as any
+                  const upUrl = (d?.image?.url as string | undefined) || (d?.images?.[0]?.url as string | undefined) || null
+                  if (upUrl) {
+                    falUrl = upUrl
+                    recordUsage({ userId: user.id, tier: tier2, feature: 'blog_hero_upscale', model: 'fal-aura-sr', images: 1 })
+                  }
+                } catch { /* keep the un-upscaled hero */ }
+              }
               const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
               return media?.source_url ? { url: media.source_url, alt: `${generated.title} — ${i + 1}` } : null
             } catch { return null }
