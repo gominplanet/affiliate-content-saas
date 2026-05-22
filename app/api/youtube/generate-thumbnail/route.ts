@@ -253,19 +253,40 @@ async function generateFaceCutout(supabase: any, opts: {
     if (refImages.length === 0) return null
     const outfit = pick(CUTOUT_OUTFITS)
     const expression = pick(CUTOUT_EXPRESSIONS)
-    const prompt = `A clean head-and-shoulders CUT-OUT portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, looking toward the camera. Flattering studio lighting, sharp focus, realistic skin. The background must be FULLY TRANSPARENT — just the person cut out, nothing behind them. No text, no logos.`
+    // 1. Generate a head-and-shoulders portrait on a plain backdrop (same call
+    //    Photobooth uses — reliable). We remove the background next.
+    const prompt = `A clean head-and-shoulders studio portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, looking toward the camera. Flattering studio lighting, sharp focus, realistic skin. Plain, evenly-lit solid light-grey studio background behind them (so it can be cleanly removed). No text, no logos.`
     const openai = createOpenAIService()
     const b64 = await openai.generateWithReferences({
-      prompt, images: refImages, size: '1024x1536', quality: 'high',
-      background: 'transparent', model: opts.imageModel,
+      prompt, images: refImages, size: '1024x1536', quality: 'high', model: opts.imageModel,
     })
-    const blob = new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' })
-    const url = await fal.storage.upload(blob)
+    const headshotUrl = await fal.storage.upload(new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' }))
     recordUsage({
       userId: opts.userId, tier: TELEMETRY.tier,
       feature: 'yt_thumb_face_cutout', model: opts.imageModel, images: 1,
     })
-    return url
+
+    // 2. Remove the background → clean transparent PNG to composite.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rembg = await fal.subscribe('fal-ai/imageutils/rembg' as any, {
+        input: { image_url: headshotUrl },
+        pollInterval: 2000,
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cutUrl = (rembg.data as any)?.image?.url as string | undefined
+      if (cutUrl) {
+        recordUsage({
+          userId: opts.userId, tier: TELEMETRY.tier,
+          feature: 'yt_thumb_cutout_rembg', model: 'fal-rembg', images: 1,
+        })
+        return cutUrl
+      }
+    } catch (e) {
+      console.warn('[generateFaceCutout] rembg failed, using opaque headshot:', e)
+    }
+    // Fallback: opaque headshot (composites as a small portrait, still shows the person).
+    return headshotUrl
   } catch (err) {
     console.warn('[generateFaceCutout] failed:', err)
     return null

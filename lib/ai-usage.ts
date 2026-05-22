@@ -61,6 +61,8 @@ export const PRICING: Record<string, Pricing> = {
   // AuraSR 4x super-resolution — billed per compute-second ($0.001/s); a
   // single hero upscale runs ~10-15s, so ~$0.012/image (approximate).
   'fal-aura-sr': { in: 0, out: 0, imageCost: 0.012 },
+  // Background removal (rembg) for the thumbnail creator cut-out. Cheap.
+  'fal-rembg': { in: 0, out: 0, imageCost: 0.01 },
 
   // ── Google Gemini ──────────────────────────────────────────────────────
   'gemini-2.5-flash-image': { in: 0,     out: 0,    imageCost: 0.039 },
