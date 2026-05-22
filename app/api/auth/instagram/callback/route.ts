@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { exchangeCodeForTokens } from '@/services/instagram'
+import { syncInstagramAccount } from '@/lib/social-accounts'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -56,6 +57,17 @@ export async function GET(request: NextRequest) {
       },
       { onConflict: 'user_id' },
     )
+
+    // Mirror into social_accounts (single IG account, always default).
+    try {
+      await syncInstagramAccount(supabase, user.id, {
+        externalId: tokens.userId,
+        username: tokens.username,
+        accessToken: tokens.accessToken,
+      })
+    } catch (e) {
+      console.warn('[instagram/callback] syncInstagramAccount failed:', e)
+    }
 
     return NextResponse.redirect(`${appUrl}/setup?tab=integrations&instagram_connected=1`)
   } catch (err) {

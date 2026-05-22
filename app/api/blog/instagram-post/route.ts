@@ -21,6 +21,7 @@ import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
+import { resolveSocialAccount } from '@/lib/social-accounts'
 
 const ASIN_RE = /\b([A-Z0-9]{10})\b/
 
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
       mode?: string
       dryRun?: boolean
       caption?: string
+      socialAccountId?: string
     }
     const postId = body.postId
     const kind = body.kind === 'image' ? 'image' : 'video'
@@ -70,14 +72,30 @@ export async function POST(request: NextRequest) {
         { status: 403 },
       )
     }
-    const igUserId = intRow?.instagram_user_id as string | null
-    let igToken = intRow?.instagram_access_token as string | null
-    const tokenExpiry = intRow?.instagram_token_expiry as number | null
-    if (!igUserId || !igToken) {
+    // Resolve WHICH Instagram account to post to. IG is Pro-only (gated
+    // above), so selection is always allowed here. Falls back to the legacy
+    // integrations columns when social_accounts is empty.
+    const igAccount = await resolveSocialAccount(supabase, user.id, 'instagram', {
+      socialAccountId: body.socialAccountId,
+      allowSelection: true,
+      legacy: {
+        externalId: intRow?.instagram_user_id,
+        accessToken: intRow?.instagram_access_token,
+        displayName: intRow?.instagram_username,
+      },
+    })
+    if (!igAccount) {
       return NextResponse.json({ error: 'Instagram not connected. Visit Setup → Integrations to connect your Instagram account.' }, { status: 400 })
     }
+    const igUserId = igAccount.externalId
+    let igToken = igAccount.accessToken
 
-    if (!dryRun && tokenExpiry && tokenExpiry - Date.now() < SEVEN_DAYS_MS) {
+    // Token-expiry refresh only applies to the legacy/default account — that's
+    // the one whose expiry we track on `integrations`. (IG is single-account
+    // in practice today; a selected non-default account skips this.)
+    const isLegacyDefault = !igAccount.id || igAccount.externalId === (intRow?.instagram_user_id as string | null)
+    const tokenExpiry = intRow?.instagram_token_expiry as number | null
+    if (!dryRun && isLegacyDefault && tokenExpiry && tokenExpiry - Date.now() < SEVEN_DAYS_MS) {
       try {
         const refreshed = await refreshLongLivedToken(igToken)
         igToken = refreshed.accessToken
@@ -86,6 +104,12 @@ export async function POST(request: NextRequest) {
           .from('integrations')
           .update({ instagram_access_token: refreshed.accessToken, instagram_token_expiry: refreshed.expiresAt })
           .eq('user_id', user.id)
+        // Keep the mirrored social_accounts row's token fresh too.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('social_accounts')
+          .update({ access_token: refreshed.accessToken, updated_at: new Date().toISOString() })
+          .eq('user_id', user.id).eq('platform', 'instagram').eq('external_id', igUserId)
       } catch { /* fall through with existing token */ }
     }
 

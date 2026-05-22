@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { exchangeCodeForToken, getLongLivedToken, getPages } from '@/services/facebook'
+import { syncFacebookAccounts } from '@/lib/social-accounts'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -43,6 +44,14 @@ export async function GET(request: NextRequest) {
       },
       { onConflict: 'user_id' },
     )
+
+    // Mirror ALL pages into social_accounts for the multi-account picker,
+    // marking the active one as default. Best-effort — never block connect.
+    try {
+      await syncFacebookAccounts(supabase, user.id, pages, page.id)
+    } catch (e) {
+      console.warn('[facebook/callback] syncFacebookAccounts failed:', e)
+    }
 
     return NextResponse.redirect(`${setupUrl}&fb_connected=1`)
   } catch (err) {

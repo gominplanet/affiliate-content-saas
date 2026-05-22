@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { deleteSocialAccountsForPlatform } from '@/lib/social-accounts'
 
 export async function POST() {
   const supabase = await createServerClient()
@@ -17,6 +18,12 @@ export async function POST() {
     },
     { onConflict: 'user_id' },
   )
+
+  try {
+    await deleteSocialAccountsForPlatform(supabase, user.id, 'facebook')
+  } catch (e) {
+    console.warn('[facebook/disconnect] social_accounts cleanup failed:', e)
+  }
 
   return NextResponse.json({ ok: true })
 }

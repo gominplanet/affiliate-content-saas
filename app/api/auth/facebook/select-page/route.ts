@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { syncFacebookAccounts, setDefaultSocialAccount } from '@/lib/social-accounts'
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerClient()
@@ -26,6 +27,16 @@ export async function POST(request: NextRequest) {
     { user_id: user.id, facebook_page_id: page.id, facebook_page_name: page.name, facebook_page_access_token: page.access_token },
     { onConflict: 'user_id' },
   )
+
+  // Keep social_accounts in sync: ensure all pages exist, then make the
+  // selected one the default so the legacy "active page" and the
+  // multi-account default agree.
+  try {
+    await syncFacebookAccounts(supabase, user.id, pages, page.id)
+    await setDefaultSocialAccount(supabase, user.id, 'facebook', page.id)
+  } catch (e) {
+    console.warn('[facebook/select-page] social_accounts sync failed:', e)
+  }
 
   return NextResponse.json({ ok: true, page: { id: page.id, name: page.name } })
 }

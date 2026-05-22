@@ -10,6 +10,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { deleteSocialAccountsForPlatform } from '@/lib/social-accounts'
 
 export async function POST() {
   try {
@@ -28,6 +29,12 @@ export async function POST() {
       })
       .eq('user_id', user.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    try {
+      await deleteSocialAccountsForPlatform(supabase, user.id, 'instagram')
+    } catch (e) {
+      console.warn('[instagram/disconnect] social_accounts cleanup failed:', e)
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err) {

@@ -5,6 +5,8 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
+import { normalizeTier } from '@/lib/tier'
+import { resolveSocialAccount } from '@/lib/social-accounts'
 
 export const maxDuration = 60
 
@@ -14,10 +16,11 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
+    const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string; socialAccountId?: string }
     const postId = body.postId
     const dryRun = body.dryRun === true
     const overrideText = body.text?.trim()
+    const socialAccountId = body.socialAccountId
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // ── 1. Fetch blog post ────────────────────────────────────────────────────
@@ -75,7 +78,21 @@ export async function POST(request: NextRequest) {
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const integration = intRow as any
-    if (!dryRun && (!integration?.facebook_page_id || !integration?.facebook_page_access_token)) {
+
+    // Resolve WHICH Facebook Page to post to. Picking a specific page (vs the
+    // default) is a Pro feature — non-Pro users always post to their default.
+    // Falls back to the legacy single columns when social_accounts is empty.
+    const isPro = ['pro', 'admin'].includes(normalizeTier(integration?.tier))
+    const fbAccount = await resolveSocialAccount(supabase, user.id, 'facebook', {
+      socialAccountId,
+      allowSelection: isPro,
+      legacy: {
+        externalId: integration?.facebook_page_id,
+        accessToken: integration?.facebook_page_access_token,
+        displayName: integration?.facebook_page_name,
+      },
+    })
+    if (!dryRun && !fbAccount) {
       return NextResponse.json({ error: 'Facebook not connected' }, { status: 400 })
     }
 
@@ -125,8 +142,8 @@ Return ONLY the post text, nothing else.`,
 
     // ── 8. Post to Facebook ───────────────────────────────────────────────────
     const fbService = createFacebookService(
-      integration.facebook_page_access_token,
-      integration.facebook_page_id,
+      fbAccount!.accessToken,
+      fbAccount!.externalId,
     )
 
     let result
