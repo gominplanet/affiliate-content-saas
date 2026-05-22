@@ -82,10 +82,14 @@ interface BlogCustomizations {
    *  for Google Search Console, Pinterest, Facebook, Bing, etc. One full
    *  tag string per entry. Sanitized server-side in the WP plugin. */
   headMetaTags: string[]
-  /** Google Tag Manager container — one ID, theme injects both the
-   *  head <script> and the <body> noscript iframe. Configure GA4, Ads,
-   *  Pixel, etc. inside GTM. Format strictly validated: GTM-XXXXXXX. */
-  analytics: { gtmId: string }
+  /** Analytics IDs the theme injects:
+   *  - ga4Id:  a GA4 Measurement ID (G-XXXXXXXX) → theme injects gtag.js
+   *            directly. The simple, one-step path; no GTM needed.
+   *  - gtmId:  a Google Tag Manager container (GTM-XXXXXXX) → theme injects
+   *            the GTM head <script> + <body> noscript. Advanced path for
+   *            users who want multiple pixels / custom events.
+   *  Both are strictly format-validated before injection. */
+  analytics: { gtmId: string; ga4Id: string }
 }
 
 const emptyAbout: AboutData = { bio: '', logoUrl: '', headerBg: 'black' }
@@ -132,7 +136,7 @@ const defaultCustomizations: BlogCustomizations = {
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
   headMetaTags: [],
-  analytics: { gtmId: '' },
+  analytics: { gtmId: '', ga4Id: '' },
 }
 
 function newBlock(): AdBlock {
@@ -416,6 +420,7 @@ export default function CustomizePage() {
         headMetaTags: Array.isArray(bc.headMetaTags) ? bc.headMetaTags.filter((t: unknown): t is string => typeof t === 'string') : [],
         analytics: {
           gtmId: typeof bc.analytics?.gtmId === 'string' ? bc.analytics.gtmId : '',
+          ga4Id: typeof bc.analytics?.ga4Id === 'string' ? bc.analytics.ga4Id : '',
         },
       })
     }
@@ -869,25 +874,64 @@ export default function CustomizePage() {
 
         <Section
           title="Analytics & Tracking"
-          description="Install Google Tag Manager once — then manage Google Analytics (GA4), ads pixels, Pinterest tag, Facebook Pixel, and conversion tracking inside GTM without touching code again."
+          description="See your blog traffic in Google Analytics. Most people only need the simple GA4 path below — paste one ID and you're done. No code to copy anywhere."
         >
-          <div className="flex flex-col gap-3">
-            <label className="text-sm font-medium text-[var(--text)]">Google Tag Manager Container ID</label>
-            <input
-              type="text"
-              value={data.analytics.gtmId}
-              onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, gtmId: e.target.value.trim() } }))}
-              placeholder="GTM-XXXXXXX"
-              spellCheck={false}
-              className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#0071e3]"
-            />
-            {data.analytics.gtmId && !/^GTM-[A-Z0-9]{4,12}$/.test(data.analytics.gtmId) && (
-              <p className="text-xs text-[#ff9500]">⚠ ID format looks off — should be <code>GTM-</code> followed by uppercase letters/numbers (e.g. <code>GTM-P9NPW64B</code>). It won&apos;t inject until the format is valid.</p>
-            )}
-            <p className="text-xs text-[var(--text-3)] leading-relaxed">
-              Get a free container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">tagmanager.google.com</a> →
-              create a new container for &quot;Web&quot; → copy the <code>GTM-XXXXXXX</code> ID from the install snippets. The theme automatically injects both code snippets (head + body); you don&apos;t need to paste them anywhere. Inside GTM, add a Google Analytics 4 Configuration tag with your measurement ID and you&apos;ll have full analytics. Leave blank to inject nothing.
-            </p>
+          <div className="flex flex-col gap-6">
+
+            {/* ── Easy path: GA4 Measurement ID (injects gtag.js directly) ── */}
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium text-[var(--text)] flex items-center gap-2">
+                Google Analytics 4 — Measurement ID
+                <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#34c759]/15 text-[#1c7a35]">Recommended</span>
+              </label>
+              <input
+                type="text"
+                value={data.analytics.ga4Id}
+                onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, ga4Id: e.target.value.trim() } }))}
+                placeholder="G-XXXXXXXXXX"
+                spellCheck={false}
+                className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#0071e3]"
+              />
+              {data.analytics.ga4Id && !/^G-[A-Z0-9]{4,12}$/.test(data.analytics.ga4Id) && (
+                <p className="text-xs text-[#ff9500]">⚠ That doesn&apos;t look like a GA4 Measurement ID — it should be <code>G-</code> followed by letters/numbers (e.g. <code>G-ABC123XYZ</code>). A <code>GTM-</code> ID goes in the box below instead. It won&apos;t inject until the format is valid.</p>
+              )}
+
+              <details className="mt-1 rounded-lg border border-[var(--border-2)] bg-[var(--surface-2)] p-3 text-xs text-[var(--text-2)] leading-relaxed">
+                <summary className="cursor-pointer font-medium text-[var(--text)] select-none">How do I find my GA4 Measurement ID? (step by step)</summary>
+                <ol className="list-decimal ml-4 mt-3 flex flex-col gap-2">
+                  <li>Go to <a href="https://analytics.google.com" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">analytics.google.com</a> and sign in with the Google account you want to own your stats.</li>
+                  <li><b>First time using Analytics?</b> Click <b>Start measuring</b>, then create an <b>Account</b> (your name or brand) and a <b>Property</b> (your blog) — set your country, currency, and time zone.</li>
+                  <li>When it asks what you want to measure, choose <b>Web</b>. Enter your blog&apos;s full URL (e.g. <code>https://yourblog.com</code>) and a stream name, then click <b>Create stream</b>.</li>
+                  <li>You&apos;ll land on <b>Web stream details</b>. Your <b>Measurement ID</b> is at the top right — it looks like <code>G-XXXXXXXXXX</code>. Copy it.</li>
+                  <li><b>Already had Analytics set up?</b> Click the <b>gear ⚙ (Admin)</b> at the bottom-left → under <b>Property</b> click <b>Data streams</b> → click your web stream → copy the <b>Measurement ID</b> at the top.</li>
+                  <li>Paste it into the box above and click <b>Save</b> at the top of this page.</li>
+                  <li><b>Check it works:</b> open your blog in a new tab, then in Analytics go to <b>Reports → Realtime</b>. Within ~30 seconds you should see <b>1 active user</b> (that&apos;s you). Full reports (sessions, top pages, traffic sources) fill in over the next 24–48 hours.</li>
+                </ol>
+                <p className="mt-3 text-[var(--text-3)]">No code to paste anywhere — the theme injects Google&apos;s official tag for you the moment a valid <code>G-</code> ID is saved.</p>
+              </details>
+            </div>
+
+            {/* ── Advanced path: Google Tag Manager ── */}
+            <div className="flex flex-col gap-2 border-t border-[var(--border-2)] pt-5">
+              <label className="text-sm font-medium text-[var(--text)] flex items-center gap-2">
+                Google Tag Manager — Container ID
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[var(--surface-2)] text-[var(--text-3)]">Advanced · optional</span>
+              </label>
+              <input
+                type="text"
+                value={data.analytics.gtmId}
+                onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, gtmId: e.target.value.trim() } }))}
+                placeholder="GTM-XXXXXXX"
+                spellCheck={false}
+                className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#0071e3]"
+              />
+              {data.analytics.gtmId && !/^GTM-[A-Z0-9]{4,12}$/.test(data.analytics.gtmId) && (
+                <p className="text-xs text-[#ff9500]">⚠ ID format looks off — should be <code>GTM-</code> followed by uppercase letters/numbers (e.g. <code>GTM-P9NPW64B</code>). It won&apos;t inject until the format is valid.</p>
+              )}
+              <p className="text-xs text-[var(--text-3)] leading-relaxed">
+                Only needed if you want to manage <b>several</b> tags in one place (Google Ads, Facebook/Meta Pixel, Pinterest tag, custom conversions). Create a free <b>Web</b> container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">tagmanager.google.com</a>, copy the <code>GTM-XXXXXXX</code> ID, and paste it here — the theme injects both GTM snippets (head + body) automatically. You&apos;d then add your GA4 tag inside GTM. <b>If you just want Google Analytics, use the GA4 box above and leave this blank.</b>
+              </p>
+            </div>
           </div>
         </Section>
 

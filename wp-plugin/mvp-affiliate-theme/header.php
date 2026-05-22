@@ -3,11 +3,18 @@
 // dropped silently rather than injected, so a malformed paste can't
 // produce broken <script> output on every blog page.
 $mvp_gtm_id = '';
+$mvp_ga4_id = '';
 if (function_exists('mvp_affiliate_data')) {
     $mvp_d = mvp_affiliate_data();
     $mvp_candidate = trim($mvp_d['analytics']['gtmId'] ?? '');
     if (preg_match('/^GTM-[A-Z0-9]{4,12}$/', $mvp_candidate)) {
         $mvp_gtm_id = $mvp_candidate;
+    }
+    // Direct GA4 (gtag.js) — the simple path: paste a G-XXXXXXXX Measurement
+    // ID, no GTM container required. Same strict-validate-or-drop approach.
+    $mvp_ga4_candidate = trim($mvp_d['analytics']['ga4Id'] ?? '');
+    if (preg_match('/^G-[A-Z0-9]{4,12}$/', $mvp_ga4_candidate)) {
+        $mvp_ga4_id = $mvp_ga4_candidate;
     }
 }
 ?>
@@ -25,6 +32,17 @@ if (function_exists('mvp_affiliate_data')) {
   'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
   })(window,document,'script','dataLayer','<?php echo esc_js($mvp_gtm_id); ?>');</script>
   <!-- End Google Tag Manager -->
+  <?php endif; ?>
+  <?php if ($mvp_ga4_id): ?>
+  <!-- Google tag (gtag.js) — direct GA4, no GTM needed -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=<?php echo esc_attr($mvp_ga4_id); ?>"></script>
+  <script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', '<?php echo esc_js($mvp_ga4_id); ?>');
+  </script>
+  <!-- End Google tag (gtag.js) -->
   <?php endif; ?>
   <?php wp_head(); ?>
 </head>
