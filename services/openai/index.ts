@@ -54,6 +54,8 @@ export class OpenAIService {
     images: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
     size?: '1024x1024' | '1536x1024' | '1024x1536'
     quality?: 'low' | 'medium' | 'high' | 'auto'
+    /** 'transparent' returns a PNG with alpha (for cut-outs to composite). */
+    background?: 'transparent' | 'opaque' | 'auto'
     /** Image model id. Defaults to OPENAI_IMAGE_MODEL env, else gpt-image-1.
      *  Set OPENAI_IMAGE_MODEL=gpt-image-2 to use the newer model. */
     model?: string
@@ -70,8 +72,10 @@ export class OpenAIService {
       prompt: opts.prompt,
       size: opts.size ?? '1536x1024',
       quality: opts.quality ?? 'high',
+      ...(opts.background ? { background: opts.background, output_format: 'png' } : {}),
       n: 1,
-    })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
     const b64 = res.data?.[0]?.b64_json
     if (!b64) throw new Error(`${model} returned no image data`)
     return b64

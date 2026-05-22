@@ -216,6 +216,62 @@ Be specific. No filler words. Return only the description, no preamble.`,
   }
 }
 
+// ── Generate a transparent-background cut-out of the creator ──────────────────
+// Head-and-shoulders PNG with alpha, generated FRESH each time from the
+// uploaded photos (gpt-image, face-only — no product, so no identity blending).
+// We deliberately do NOT cache/reuse it: each thumbnail gets a different OUTFIT
+// and expression (same person) so a channel's thumbnails feel varied, not
+// copy-pasted. The client composites this into the bottom-right corner.
+// Best-effort: returns null on any failure (thumbnail still renders, no person).
+const CUTOUT_OUTFITS = [
+  'a casual button-up shirt', 'a plain crew-neck t-shirt', 'a smart blazer over a tee',
+  'a polo shirt', 'a cozy knit sweater', 'a denim shirt', 'a simple hoodie',
+]
+const CUTOUT_EXPRESSIONS = [
+  'a warm friendly smile', 'a confident slight smile', 'an intrigued raised-eyebrow look',
+  'a curious, pleasantly-surprised expression', 'an approachable grin', 'a relaxed natural smile',
+]
+function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function generateFaceCutout(supabase: any, opts: {
+  userId: string
+  sourceImages: string[]
+  imageModel: string
+}): Promise<string | null> {
+  if (!opts.sourceImages.length) return null
+  try {
+    const refImages: Array<{ data: Uint8Array; filename: string; mime: string }> = []
+    for (const path of opts.sourceImages.slice(0, 5)) {
+      const { data: file } = await supabase.storage.from('headshots').download(path)
+      if (file) {
+        const buf = new Uint8Array(await file.arrayBuffer())
+        const ext = (path.split('.').pop() || 'jpg').toLowerCase()
+        refImages.push({ data: buf, filename: `face_${refImages.length}.${ext}`, mime: ext === 'png' ? 'image/png' : 'image/jpeg' })
+      }
+    }
+    if (refImages.length === 0) return null
+    const outfit = pick(CUTOUT_OUTFITS)
+    const expression = pick(CUTOUT_EXPRESSIONS)
+    const prompt = `A clean head-and-shoulders CUT-OUT portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, looking toward the camera. Flattering studio lighting, sharp focus, realistic skin. The background must be FULLY TRANSPARENT — just the person cut out, nothing behind them. No text, no logos.`
+    const openai = createOpenAIService()
+    const b64 = await openai.generateWithReferences({
+      prompt, images: refImages, size: '1024x1536', quality: 'high',
+      background: 'transparent', model: opts.imageModel,
+    })
+    const blob = new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' })
+    const url = await fal.storage.upload(blob)
+    recordUsage({
+      userId: opts.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_face_cutout', model: opts.imageModel, images: 1,
+    })
+    return url
+  } catch (err) {
+    console.warn('[generateFaceCutout] failed:', err)
+    return null
+  }
+}
+
 // ── Main route ────────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
   try {
@@ -291,20 +347,18 @@ export async function POST(request: Request) {
     // model is still training or failed, we silently fall back to no-face
     // generation rather than throwing — the user already chose, and the
     // worst outcome is a thumbnail without their face this time.
-    let faceModel: { trigger_token: string; lora_url: string | null; name: string; source_images: string[] } | null = null
+    let faceModel: { name: string; source_images: string[] } | null = null
     if (faceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fm } = await (supabase as any)
         .from('face_models')
-        .select('trigger_token,lora_url,status,name,source_images')
+        .select('name,source_images')
         .eq('id', faceModelId)
         .eq('user_id', user.id)
         .single()
-      // gpt-image-1 needs the source headshots (no LoRA); the legacy flux-lora
-      // fallback needs lora_url. Accept the model if EITHER is available.
       const srcImages: string[] = Array.isArray(fm?.source_images) ? fm.source_images : []
-      if (fm && (fm.lora_url || srcImages.length > 0)) {
-        faceModel = { trigger_token: fm.trigger_token, lora_url: fm.lora_url ?? null, name: fm.name, source_images: srcImages }
+      if (fm && srcImages.length > 0) {
+        faceModel = { name: fm.name, source_images: srcImages }
       }
     }
 
@@ -401,103 +455,25 @@ export async function POST(request: Request) {
     console.log('[generate-thumbnail] Overlay text:', overlayHook, lockedHeadline ? '(LOCKED)' : '(AI)')
     if (styleBrief) console.log('[generate-thumbnail] Style brief:', styleBrief)
 
-    // ── PATH G: gpt-image-1 reference-based (PREFERRED face path) ─────────────
-    // Uses the creator's uploaded headshots as identity references (NO LoRA)
-    // plus the real product photo, so both the person AND the product come out
-    // right — the thing the flux-lora + Kontext two-stage couldn't nail. Falls
-    // through to the legacy flux-lora path on any failure.
-    if (faceModel && faceModel.source_images.length > 0) {
-      try {
-        const refImages: Array<{ data: Uint8Array; filename: string; mime: string }> = []
-        for (const path of faceModel.source_images.slice(0, 4)) {
-          const { data: file } = await supabase.storage.from('headshots').download(path)
-          if (file) {
-            const buf = new Uint8Array(await file.arrayBuffer())
-            const ext = (path.split('.').pop() || 'jpg').toLowerCase()
-            refImages.push({ data: buf, filename: `face_${refImages.length}.${ext}`, mime: ext === 'png' ? 'image/png' : 'image/jpeg' })
-          }
-        }
-        // Real product photo as the LAST reference, when we have one.
-        let hasProductRef = false
-        if (productImageUrl) {
-          try {
-            const pr = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-            if (pr.ok) {
-              refImages.push({ data: new Uint8Array(await pr.arrayBuffer()), filename: 'product.jpg', mime: 'image/jpeg' })
-              hasProductRef = true
-            }
-          } catch { /* product ref optional */ }
-        }
-        if (refImages.length === 0) throw new Error('No reference images downloaded')
-
-        const sceneDir = STYLE_SCENES[style] ?? STYLE_SCENES.review
-        const faceRefCount = refImages.length - (hasProductRef ? 1 : 0)
-        const gptPrompt = `Professional YouTube thumbnail, 16:9, photorealistic, high click-through-rate.
-
-REFERENCE IMAGES — read carefully:
-- The FIRST ${faceRefCount} reference image${faceRefCount !== 1 ? 's are' : ' is'} the PERSON. They are all the SAME ONE individual. Use them ONLY to capture that person's facial identity, hair, and likeness.
-${hasProductRef ? '- The LAST reference image is the PRODUCT OBJECT only. Use it ONLY for the product\'s shape/colour/label/branding. If it contains any human, face, hand, or model, IGNORE that person completely — they are NOT the subject.' : ''}
-IDENTITY (critical): render EXACTLY ONE person — the individual from the PERSON reference photos. Do NOT blend, merge, average, or mix in any other face (including anyone appearing in the product image). The face must clearly be that single person, not a hybrid.
-
-SUBJECT: that person — preserve their exact facial identity, hair, and likeness. Relaxed, natural friendly smile (not a forced wide open-mouth grin), looking toward camera.
-VIDEO TITLE: "${videoTitle}"
-PRODUCT: ${hasProductRef
-          ? 'the product object from the LAST reference image — reproduce it accurately (shape, colour, label text, branding).'
-          : `${productTitle || 'the product from the video'}.`}
-SCENE: ${sceneDir}${channelStyle ? ` Channel aesthetic: ${channelStyle}.` : ''}${styleBrief ? ` Visual style: ${styleBrief}.` : ''}
-LAYOUT — follow this placement EXACTLY (this is the most important instruction):
-• The PERSON is on the RIGHT HALF of the frame. Their face and body sit clearly to the RIGHT of center. DO NOT place the person in the middle. Chest-up.
-• The PRODUCT is on the LEFT, in the LOWER-LEFT area — the person extends it toward the left with one hand (arm reaching across to their left), or it rests on a surface lower-left. The product must be clearly LEFT of center and BELOW the title.
-• The person and the product are SEPARATED horizontally: person on the right, product on the left. They are NOT clustered together in the center.
-• The TOP-LEFT region stays clean, simple, slightly darker EMPTY background — no person, no product, nothing important there (a title overlay goes on top of it).
-Nothing important touches the frame edges.
-LIGHTING: editorial studio lighting — soft key + subtle rim light, realistic skin texture, shallow depth of field.
-Do NOT render any text, captions, watermarks, or logos in the image.`
-
-        const imageModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
-        const openai = createOpenAIService()
-        const b64 = await openai.generateWithReferences({
-          prompt: gptPrompt,
-          images: refImages,
-          size: '1536x1024',
-          quality: 'high',
-          model: imageModel,
-        })
-        const gptBlob = new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' })
-        const gptUrl = await fal.storage.upload(gptBlob)
-        // Telemetry: cap-counted under the stable 'yt_thumb_gptimage' feature;
-        // model column records the actual model (gpt-image-1 or gpt-image-2).
-        recordUsage({
-          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-          feature: 'yt_thumb_gptimage', model: imageModel, images: 1,
-        })
-        console.log('[generate-thumbnail]', imageModel, 'result:', gptUrl, `(refs: ${refImages.length}, product: ${hasProductRef})`)
-        return NextResponse.json({
-          ok: true,
-          thumbnailUrl: gptUrl,
-          thumbnailUrls: [gptUrl],
-          overlayHook,
-          headlineLocked: !!lockedHeadline,
-          prompt: gptPrompt,
-          styleBriefApplied: !!styleBrief,
-          channelStyle: channelStyle ?? null,
-          modelUsed: `${imageModel}-${style}`,
-          faceModelUsed: faceModel.name,
-          headshotUsed: true,
-        })
-      } catch (err) {
-        console.warn('[generate-thumbnail] gpt-image-1 path failed, falling back to flux-lora:', err)
-      }
+    // ── Creator cut-out (composited bottom-right, client-side) ────────────────
+    // When a face is selected we DON'T render the person into the scene (that
+    // caused identity blending + fought the product). Instead we generate the
+    // product scene clean (below) and composite a cached transparent cut-out of
+    // the creator into the bottom-right corner in the browser.
+    let personCutoutUrl: string | null = null
+    if (faceModel) {
+      personCutoutUrl = await generateFaceCutout(supabase, {
+        userId: user.id,
+        sourceImages: faceModel.source_images,
+        imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+      })
+      console.log('[generate-thumbnail] Person cut-out:', personCutoutUrl ?? 'none')
     }
 
     // ── PATH A: Kontext — use real product image as visual reference ──────────
-    // Start from the actual Amazon product photo and transform the scene around it.
-    // This guarantees the product looks exactly right without relying on text descriptions.
-    //
-    // Skipped when a face model is selected — Kontext is a closed Flux Pro
-    // variant that doesn't accept LoRA weights, so we route through the
-    // LoRA-capable open-source flux-lora endpoint below instead.
-    if (productImageUrl && !faceModel) {
+    // Start from the actual product photo and transform the scene around it.
+    // Always product-only (no person) — the creator is composited separately.
+    if (productImageUrl) {
       try {
         // fal.ai cannot reach Supabase/Amazon URLs directly — re-host first
         const imgRes = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
@@ -546,7 +522,8 @@ Do NOT render any text, captions, watermarks, or logos in the image.`
             styleBriefApplied: !!styleBrief,
             channelStyle: channelStyle ?? null,
             modelUsed: `kontext-${style}`,
-            headshotUsed: false,
+            headshotUsed: !!personCutoutUrl,
+            personCutoutUrl,
           })
         }
       } catch (err) {
@@ -594,7 +571,8 @@ Do NOT render any text, captions, watermarks, or logos in the image.`
       styleBriefApplied: !!styleBrief,
       channelStyle: channelStyle ?? null,
       modelUsed: `flux-pro-${style}`,
-      headshotUsed: false,
+      headshotUsed: !!personCutoutUrl,
+      personCutoutUrl,
     })
   } catch (err) {
     // fal.ai ApiError has a .body property with the full validation detail

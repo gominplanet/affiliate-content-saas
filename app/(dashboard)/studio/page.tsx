@@ -412,11 +412,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
     // so the user never gets stuck.
     // Bias style picker by the user's 👍/👎 history (YouTube surface).
     const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
+    // Optional creator cut-out to composite into the bottom-right corner.
+    const cutoutUrl = (data.personCutoutUrl as string) || undefined
     let pickedStyleId: string | null = null
     const finalUrls = await Promise.all(rawList.map(async (url) => {
-      if (!hook) return url
+      if (!hook && !cutoutUrl) return url
       try {
-        const overlayed = await addTextOverlay(url, hook, styleIndex)
+        const overlayed = await addTextOverlay(url, hook, styleIndex, cutoutUrl)
         pickedStyleId = overlayed.styleId
         return overlayed.url
       }
@@ -623,38 +625,52 @@ function VideoStudioCard({ video, userTier, playlists }: {
   }
 
   // ── addTextOverlay — picks a random style, loads the font, draws the canvas ──
-  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number): Promise<{ url: string; styleId: string }> {
+  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number, cutoutUrl?: string): Promise<{ url: string; styleId: string }> {
     const style = OVERLAY_STYLES[styleIndex ?? Math.floor(Math.random() * OVERLAY_STYLES.length)]
     await loadOverlayFont(style.fontName)
 
-    return new Promise<{ url: string; styleId: string }>((resolve, reject) => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 1280
-      canvas.height = 720
-      const ctx = canvas.getContext('2d')
-      if (!ctx) { reject(new Error('Canvas not supported')); return }
-
-      const text = hookText.replace(/\bhonest\b/gi, '').replace(/\s{2,}/g, ' ').trim().toUpperCase()
-      const words = text.split(' ')
-      let lines: string[]
-      if (words.length === 1) {
-        lines = [words[0]]
-      } else {
-        const split = Math.ceil(words.length / 2)
-        lines = [words.slice(0, split).join(' '), words.slice(split).join(' ')].filter(Boolean)
-      }
-
-      const img = new window.Image()
-      img.crossOrigin = 'anonymous'
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, 1280, 720)
-        // Shared renderer — MrBeast-style top-centred bold lettering, no boxes.
-        drawHeadline(ctx, lines, style, 1280, 720)
-        resolve({ url: canvas.toDataURL('image/jpeg', 0.95), styleId: style.id })
-      }
-      img.onerror = () => reject(new Error('Failed to load image for overlay'))
-      img.src = rawUrl.startsWith('data:') ? rawUrl : `/api/proxy-image?url=${encodeURIComponent(rawUrl)}`
+    // Canvas needs crossOrigin images; proxy non-data URLs. Resolves null on
+    // failure so a missing cut-out never blocks the thumbnail.
+    const loadImg = (u: string) => new Promise<HTMLImageElement | null>((res) => {
+      const im = new window.Image()
+      im.crossOrigin = 'anonymous'
+      im.onload = () => res(im)
+      im.onerror = () => res(null)
+      im.src = u.startsWith('data:') ? u : `/api/proxy-image?url=${encodeURIComponent(u)}`
     })
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 1280
+    canvas.height = 720
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas not supported')
+
+    const productImg = await loadImg(rawUrl)
+    if (!productImg) throw new Error('Failed to load image for overlay')
+    ctx.drawImage(productImg, 0, 0, 1280, 720)
+
+    // Composite the creator cut-out into the bottom-right corner (transparent
+    // PNG over the product scene), anchored to the bottom edge.
+    if (cutoutUrl) {
+      const cut = await loadImg(cutoutUrl)
+      if (cut) {
+        const ch = 720                                   // full height, bottom-anchored
+        const cw = Math.round(ch * (cut.width / cut.height))
+        ctx.drawImage(cut, 1280 - cw, 720 - ch, cw, ch)
+      }
+    }
+
+    const text = hookText.replace(/\bhonest\b/gi, '').replace(/\s{2,}/g, ' ').trim().toUpperCase()
+    if (text) {
+      const words = text.split(' ')
+      const lines = words.length === 1
+        ? [words[0]]
+        : (() => { const s = Math.ceil(words.length / 2); return [words.slice(0, s).join(' '), words.slice(s).join(' ')].filter(Boolean) })()
+      // Shared renderer — MrBeast-style top-left bold lettering, no boxes.
+      drawHeadline(ctx, lines, style, 1280, 720)
+    }
+
+    return { url: canvas.toDataURL('image/jpeg', 0.95), styleId: style.id }
   }
 
   // ── ⚡ Instant thumbnail — real video frame + AI hook, no generation wait ────
