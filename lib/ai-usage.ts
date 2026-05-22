@@ -42,10 +42,6 @@ export const PRICING: Record<string, Pricing> = {
   // ── Fal.ai — image generation (per-image flat rates) ──────────────────
   'fal-flux-pro-v1.1': { in: 0, out: 0, imageCost: 0.04 },
   'fal-flux-pro-kontext': { in: 0, out: 0, imageCost: 0.04 },
-  // Kontext Max multi-image — composites the real product into a LoRA face
-  // thumbnail (stage 2 of the two-stage face path). Pricier than base
-  // Kontext; ~$0.08/image on Fal's listed pricing.
-  'fal-flux-pro-kontext-max-multi': { in: 0, out: 0, imageCost: 0.08 },
   // flux-lora is flux-dev + LoRA support. Slightly cheaper than Pro on
   // Fal's listed pricing; used when a user-trained face LoRA is loaded.
   'fal-flux-lora': { in: 0, out: 0, imageCost: 0.05 },

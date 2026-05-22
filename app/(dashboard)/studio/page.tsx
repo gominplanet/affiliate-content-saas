@@ -134,11 +134,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  let MVP do it, before any AI work fires. */
   const [headlinePromptOpen, setHeadlinePromptOpen] = useState(false)
   const [headlinePromptChoice, setHeadlinePromptChoice] = useState<'auto' | 'manual'>('auto')
-  /** Thumbnail mode: 'generate' composes a brand-new AI scene; 'enhance'
-   *  starts from the creator's OWN video frame (real product/face/room) and
-   *  only adds cleanup + title — the accurate path for "I filmed myself
-   *  holding the product" thumbnails. */
-  const [thumbnailMode, setThumbnailMode] = useState<'generate' | 'enhance'>('generate')
   /** Optional style-reference image URL — Haiku vision distills it
    *  into a style brief that gets folded into the Flux prompt. Public
    *  URL from Supabase storage. */
@@ -417,14 +412,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
     // so the user never gets stuck.
     // Bias style picker by the user's 👍/👎 history (YouTube surface).
     const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
-    // Enhance-frame mode: apply a light non-AI colour-pop + vignette to the
-    // real frame so it looks finished without altering the product/face.
-    const enhance = data.enhanceFrame === true
     let pickedStyleId: string | null = null
     const finalUrls = await Promise.all(rawList.map(async (url) => {
-      if (!hook && !enhance) return url
+      if (!hook) return url
       try {
-        const overlayed = await addTextOverlay(url, hook, styleIndex, enhance)
+        const overlayed = await addTextOverlay(url, hook, styleIndex)
         pickedStyleId = overlayed.styleId
         return overlayed.url
       }
@@ -525,8 +517,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
           videoTitle: editTitle || video.title,
           asin: video.detectedAsin ?? undefined,
           videoDescription: video.description,
-          videoThumbnailUrl: video.thumbnailUrl ?? undefined,
-          enhanceFrame: thumbnailMode === 'enhance',
           productTitle: product?.title ?? undefined,
           productDescription: product?.description ?? undefined,
           productBullets: product?.bullets ?? undefined,
@@ -573,7 +563,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
           videoTitle: overrides.title || video.title,
           asin: video.detectedAsin ?? undefined,
           videoDescription: video.description,
-          videoThumbnailUrl: video.thumbnailUrl ?? undefined,
           productTitle: overrides.productTitle ?? undefined,
           productDescription: overrides.productDescription ?? undefined,
           productBullets: overrides.productBullets ?? undefined,
@@ -764,7 +753,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
   }
 
   // ── addTextOverlay — picks a random style, loads the font, draws the canvas ──
-  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number, enhance = false): Promise<{ url: string; styleId: string }> {
+  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number): Promise<{ url: string; styleId: string }> {
     const style = OVERLAY_STYLES[styleIndex ?? Math.floor(Math.random() * OVERLAY_STYLES.length)]
     await loadOverlayFont(style.fontName)
 
@@ -776,7 +765,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
       if (!ctx) { reject(new Error('Canvas not supported')); return }
 
       const text = hookText.replace(/\bhonest\b/gi, '').replace(/\s{2,}/g, ' ').trim().toUpperCase()
-      const hasText = text.length > 0
       const words = text.split(' ')
       let lines: string[]
       if (words.length === 1) {
@@ -789,35 +777,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
       const img = new window.Image()
       img.crossOrigin = 'anonymous'
       img.onload = () => {
-        // ENHANCE mode: light non-AI cleanup on the real frame. A subtle
-        // saturation/contrast/brightness pop makes a flat phone-camera frame
-        // read like a finished thumbnail, WITHOUT altering the product, face,
-        // or label (it's a colour filter, not regeneration). Followed by a
-        // soft vignette to pull focus to the centre.
-        if (enhance) {
-          // VERY gentle, non-AI cleanup only — must not push skin to neon or
-          // add a heavy vignette. Light saturation + a touch of contrast.
-          ctx.filter = 'saturate(1.06) contrast(1.03)'
-          ctx.drawImage(img, 0, 0, 1280, 720)
-          ctx.filter = 'none'
-          const vg = ctx.createRadialGradient(640, 360, 420, 640, 360, 820)
-          vg.addColorStop(0, 'rgba(0,0,0,0)')
-          vg.addColorStop(1, 'rgba(0,0,0,0.10)')
-          ctx.fillStyle = vg
-          ctx.fillRect(0, 0, 1280, 720)
-        } else {
-          ctx.drawImage(img, 0, 0, 1280, 720)
-        }
-
-        // No headline → enhance-only pass: return the cleaned frame as-is.
-        if (!hasText) {
-          try {
-            resolve({ url: canvas.toDataURL('image/jpeg', 0.92), styleId: 'enhance-frame' })
-          } catch (e) {
-            reject(e instanceof Error ? e : new Error('toDataURL failed'))
-          }
-          return
-        }
+        ctx.drawImage(img, 0, 0, 1280, 720)
 
         const MARGIN_X = 48
         const MARGIN_EDGE = 52   // bottom or top margin
@@ -1635,49 +1595,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
             className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-md w-full p-5"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Mode toggle — the FIRST decision. "Enhance my real frame" is
-                the accurate path when the creator filmed themselves with the
-                product; "Generate a scene" composes a brand-new AI image. */}
-            <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-              How should we make the thumbnail?
-            </h3>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-              If you filmed yourself holding the product, &quot;Enhance my real frame&quot; keeps it 100% accurate.
-            </p>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <button
-                onClick={() => setThumbnailMode('enhance')}
-                className={`text-left p-3 rounded-lg border transition-colors ${
-                  thumbnailMode === 'enhance'
-                    ? 'border-[#0071e3] bg-[#0071e3]/5'
-                    : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
-                }`}
-              >
-                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Enhance my real frame</p>
-                <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                  Real product, face &amp; room from your video + cleanup &amp; title. Most accurate.
-                </p>
-              </button>
-              <button
-                onClick={() => setThumbnailMode('generate')}
-                className={`text-left p-3 rounded-lg border transition-colors ${
-                  thumbnailMode === 'generate'
-                    ? 'border-[#0071e3] bg-[#0071e3]/5'
-                    : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
-                }`}
-              >
-                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Generate a scene</p>
-                <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                  AI composes a new background. Best for shots you couldn&apos;t film.
-                </p>
-              </button>
-            </div>
-
             <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
               Who writes the thumbnail headline?
             </h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              The headline is the text overlaid on the thumbnail.{thumbnailMode === 'generate' ? ' Pick now so the AI knows whether to leave you negative space.' : ''}
+              The headline is the text that gets overlaid on top of the thumbnail. Pick now so the AI knows whether to leave you negative space.
             </p>
 
             <div className="flex flex-col gap-2 mb-4">
@@ -1741,7 +1663,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 a small purple banner inside the modal so they know face
                 training exists without having to find /face-training in the
                 sidebar. One-tap link to start. */}
-            {thumbnailMode === 'generate' && faceModels.length === 0 && (
+            {faceModels.length === 0 && (
               <div className="mb-4 pt-4 border-t border-gray-100 dark:border-white/10">
                 <Link
                   href="/face-training"
@@ -1767,7 +1689,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
 
             {/* Face model picker — only renders when the user has at
                 least one ready trained face. "None" is the default. */}
-            {thumbnailMode === 'generate' && faceModels.length > 0 && (
+            {faceModels.length > 0 && (
               <div className="mb-4 pt-4 border-t border-gray-100 dark:border-white/10">
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Use a trained face?</p>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2">
@@ -1827,7 +1749,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 disabled={headlinePromptChoice === 'manual' && customHeadline.trim().length === 0}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                <Sparkles size={11} /> {thumbnailMode === 'enhance' ? 'Enhance my frame' : 'Start generation'}
+                <Sparkles size={11} /> Start generation
               </button>
             </div>
           </div>
