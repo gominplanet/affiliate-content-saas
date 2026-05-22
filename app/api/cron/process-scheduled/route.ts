@@ -43,6 +43,9 @@ interface ScheduledRow {
   blog_post_id: string
   platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
   body_text: string
+  /** Optional chosen destination (multi-account). Null = use the user's
+   *  default / legacy integrations credentials. */
+  social_account_id?: string | null
 }
 
 interface BlogPostRow {
@@ -90,7 +93,7 @@ export async function GET(request: Request) {
     .update({ status: 'processing', claimed_at: nowIso, last_attempt_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,blog_post_id,platform,body_text')
+    .select('id,user_id,blog_post_id,platform,body_text,social_account_id')
     .limit(MAX_PER_TICK)
 
   if (claimErr) {
@@ -248,7 +251,24 @@ async function publishOne(
 
     // ─────────────────────────── FACEBOOK ─────────────────────────────────
     case 'facebook': {
-      if (!integration.facebook_page_id || !integration.facebook_page_access_token) {
+      // Resolve the target Page: a chosen social_accounts row (if the
+      // schedule carried one) or the legacy default integrations columns.
+      let fbPageId = integration.facebook_page_id
+      let fbPageToken = integration.facebook_page_access_token
+      if (row.social_account_id) {
+        const { data: acct } = await admin
+          .from('social_accounts')
+          .select('external_id,access_token')
+          .eq('id', row.social_account_id)
+          .eq('user_id', row.user_id)
+          .eq('platform', 'facebook')
+          .maybeSingle()
+        if (acct?.external_id && acct?.access_token) {
+          fbPageId = acct.external_id
+          fbPageToken = acct.access_token
+        }
+      }
+      if (!fbPageId || !fbPageToken) {
         throw new Error('Facebook not connected')
       }
       // Pull the disclaimer from the brand profile (same as the manual endpoint)
@@ -266,7 +286,7 @@ async function publishOne(
         ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`
         : ((post as any).youtube_videos?.thumbnail_url ?? '')
       const caption = `${row.body_text}\n\n🔗 Read the full post: ${url}\n\n${disclaimer}`
-      const fb = createFacebookService(integration.facebook_page_access_token, integration.facebook_page_id)
+      const fb = createFacebookService(fbPageToken, fbPageId)
       const result = imageUrl
         ? await fb.postPhoto({ imageUrl, caption })
         : await fb.postLink({ message: caption, link: url })
