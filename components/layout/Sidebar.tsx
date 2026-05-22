@@ -32,6 +32,7 @@ import {
   TrendingUp,
   Megaphone,
   Newspaper,
+  Camera,
   DollarSign,
   Handshake,
   GraduationCap,
@@ -80,6 +81,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' },
       { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' },
+      { href: '/photobooth', label: 'Photobooth', icon: Camera, matchKind: 'prefix' },
     ],
   },
   {
