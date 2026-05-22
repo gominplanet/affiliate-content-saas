@@ -38,6 +38,10 @@ export const PRICING: Record<string, Pricing> = {
   'gpt-image-1':        { in: 0, out: 0, imageCost: 0.19 },
   'gpt-image-1-medium': { in: 0, out: 0, imageCost: 0.06 },
   'gpt-image-1-low':    { in: 0, out: 0, imageCost: 0.02 },
+  // gpt-image-2 — newer/most-capable image model. Approximate; update when
+  // OpenAI publishes exact token rates. Falls back to IMAGE_COST_FALLBACK if
+  // an unmapped variant is recorded.
+  'gpt-image-2':        { in: 0, out: 0, imageCost: 0.19 },
 
   // ── OpenAI — text/chat (for fallbacks / future swaps) ─────────────────
   'gpt-4o':       { in: 2.5, out: 10  },

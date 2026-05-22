@@ -512,20 +512,24 @@ COMPOSITION: person + product occupy the RIGHT ~55-60%. Keep the LEFT THIRD clea
 LIGHTING: editorial studio lighting — soft key + subtle rim light, realistic skin texture, shallow depth of field.
 Do NOT render any text, captions, watermarks, or logos in the image.`
 
+        const imageModel = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
         const openai = createOpenAIService()
         const b64 = await openai.generateWithReferences({
           prompt: gptPrompt,
           images: refImages,
           size: '1536x1024',
           quality: 'high',
+          model: imageModel,
         })
         const gptBlob = new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' })
         const gptUrl = await fal.storage.upload(gptBlob)
+        // Telemetry: cap-counted under the stable 'yt_thumb_gptimage' feature;
+        // model column records the actual model (gpt-image-1 or gpt-image-2).
         recordUsage({
           userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-          feature: 'yt_thumb_gptimage', model: 'gpt-image-1', images: 1,
+          feature: 'yt_thumb_gptimage', model: imageModel, images: 1,
         })
-        console.log('[generate-thumbnail] gpt-image-1 result:', gptUrl, `(refs: ${refImages.length}, product: ${hasProductRef})`)
+        console.log('[generate-thumbnail]', imageModel, 'result:', gptUrl, `(refs: ${refImages.length}, product: ${hasProductRef})`)
         return NextResponse.json({
           ok: true,
           thumbnailUrl: gptUrl,
@@ -535,7 +539,7 @@ Do NOT render any text, captions, watermarks, or logos in the image.`
           prompt: gptPrompt,
           styleBriefApplied: !!styleBrief,
           channelStyle: channelStyle ?? null,
-          modelUsed: `gpt-image-1-${style}`,
+          modelUsed: `${imageModel}-${style}`,
           faceModelUsed: faceModel.name,
           headshotUsed: true,
         })

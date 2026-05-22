@@ -47,13 +47,18 @@ export class OpenAIService {
     images: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
     size?: '1024x1024' | '1536x1024' | '1024x1536'
     quality?: 'low' | 'medium' | 'high' | 'auto'
+    /** Image model id. Defaults to OPENAI_IMAGE_MODEL env, else gpt-image-1.
+     *  Set OPENAI_IMAGE_MODEL=gpt-image-2 to use the newer model. */
+    model?: string
   }): Promise<string> {
     if (!opts.images.length) throw new Error('generateWithReferences needs at least one reference image')
+    const model = opts.model || process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
     const files = await Promise.all(
       opts.images.map(i => toFile(Buffer.from(i.data), i.filename, { type: i.mime })),
     )
     const res = await this.client.images.edit({
-      model: 'gpt-image-1',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      model: model as any,
       image: files,
       prompt: opts.prompt,
       size: opts.size ?? '1536x1024',
@@ -61,8 +66,13 @@ export class OpenAIService {
       n: 1,
     })
     const b64 = res.data?.[0]?.b64_json
-    if (!b64) throw new Error('gpt-image-1 returned no image data')
+    if (!b64) throw new Error(`${model} returned no image data`)
     return b64
+  }
+
+  /** Resolve which image model is in effect (env-overridable). */
+  static imageModel(): string {
+    return process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
   }
 
   async generateImageSet(prompts: {
