@@ -5,6 +5,7 @@ import { TutorialVideo } from '@/components/TutorialVideo'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import WhatsNew from '@/components/dashboard/WhatsNew'
+import NewsBanner from '@/components/dashboard/NewsBanner'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
@@ -153,6 +154,11 @@ export default async function DashboardPage() {
           </span>
         </Link>
       )}
+
+      {/* News / announcement banner — red-tinted, dismissible. Sits between
+          the Discord card and the channel/YouTube stats. Edit the message in
+          components/dashboard/NewsBanner.tsx. */}
+      <NewsBanner />
 
       {/* Welcome card — shown until user generates their first post */}
       {isNewUser && (
