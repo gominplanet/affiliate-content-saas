@@ -308,6 +308,7 @@ export async function POST(request: Request) {
       styleReferenceUrl,
       faceModelId,
       engine,
+      swapGender,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -339,8 +340,13 @@ export async function POST(request: Request) {
        *  - 'pulid' → flux-PuLID: identity injected from a reference photo,
        *              cheaper per image and no training needed.
        *  Defaults to 'lora'. Can also be forced globally via the
-       *  FAL_THUMBNAIL_PULID=1 env flag. Only meaningful with a face model. */
-      engine?: 'lora' | 'pulid'
+       *  FAL_THUMBNAIL_PULID=1 env flag. Only meaningful with a face model.
+       *  - 'faceswap' → generate the scene on flux-pro, then swap the real
+       *    face on (Easel advanced face-swap, 2x upscale). Highest fidelity,
+       *    highest cost (~$0.09/image). */
+      engine?: 'lora' | 'pulid' | 'faceswap'
+      /** Required for the 'faceswap' engine (Easel needs the source gender). */
+      swapGender?: 'male' | 'female' | 'non-binary'
     }
 
     const variantCount = Math.min(2, Math.max(1, Number(rawVariantCount) || 1))
@@ -365,14 +371,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── PuLID experiment toggle (A/B vs flux-lora) ────────────────────────────
-    // PuLID injects the real face from a REFERENCE PHOTO (no trained LoRA),
-    // is cheaper per image, and is generally crisper on identity. Flag it on
-    // per-request (engine:'pulid') or globally (FAL_THUMBNAIL_PULID=1). Only
-    // engages when a face model is selected AND we can find a reference photo.
-    const usePulid = (engine === 'pulid') || process.env.FAL_THUMBNAIL_PULID === '1'
+    // ── Experiment engines (admin A/B vs flux-lora) ──────────────────────────
+    // 'pulid'    → identity injected from a reference photo (cheaper, no LoRA).
+    // 'faceswap' → flux-pro scene, then swap the real face on (highest fidelity).
+    // Both need a REFERENCE PHOTO. Default engine 'lora' (current). The global
+    // FAL_THUMBNAIL_PULID=1 env still maps to PuLID for convenience.
+    const engineSel: 'lora' | 'pulid' | 'faceswap' =
+      engine ?? (process.env.FAL_THUMBNAIL_PULID === '1' ? 'pulid' : 'lora')
+    const needsReference = !!faceModel && (engineSel === 'pulid' || engineSel === 'faceswap')
     let referenceFaceUrl: string | null = null
-    if (usePulid && faceModel && faceModelId) {
+    if (needsReference && faceModelId) {
       // Prefer the face model's own source photos (if stored as full URLs),
       // else fall back to the brand headshot the user already uploaded.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -549,7 +557,7 @@ export async function POST(request: Request) {
     // face via fal-ai/flux-pulid instead of a trained LoRA. No trigger token
     // (identity comes from the photo), so we describe the subject generically.
     // PuLID is single-image, so we loop for variants with distinct seeds.
-    if (faceModel && usePulid && referenceFaceUrl) {
+    if (faceModel && engineSel === 'pulid' && referenceFaceUrl) {
       console.log('[generate-thumbnail] PuLID experiment path, reference:', referenceFaceUrl)
       const pulidPrompt = finalScenePrompt.split(faceModel.trigger_token).join('the creator')
       const pulidResults = await Promise.all(
@@ -596,6 +604,77 @@ export async function POST(request: Request) {
         styleBriefApplied: !!styleBrief,
         channelStyle: channelStyle ?? null,
         modelUsed: `flux-pulid-${style}`,
+        faceModelUsed: faceModel.trigger_token,
+        headshotUsed: true,
+      })
+    }
+
+    // ── PATH B-FaceSwap (experiment): flux-pro scene + real face swapped on ──
+    // Generate the polished scene on flux-pro (no LoRA, generic person), then
+    // swap the user's real face onto it via Easel advanced face-swap (2x
+    // upscale, keeps the user's hair). Highest fidelity + best base aesthetics,
+    // highest cost (~$0.09/image).
+    if (faceModel && engineSel === 'faceswap' && referenceFaceUrl) {
+      console.log('[generate-thumbnail] Face-swap experiment path, reference:', referenceFaceUrl)
+      const scenePrompt = finalScenePrompt.split(faceModel.trigger_token).join('a creator')
+      // 1. Generate the scene(s) with a person on flux-pro (so there's a face to swap).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sceneResult = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+        input: {
+          prompt: scenePrompt,
+          image_size: 'landscape_16_9',
+          num_inference_steps: 28,
+          guidance_scale: 3.5,
+          num_images: variantCount,
+          output_format: 'jpeg',
+        },
+        pollInterval: 3000,
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sceneImgs = (sceneResult.data as any)?.images as Array<{ url: string }> | undefined
+      const sceneUrls = (sceneImgs ?? []).map(i => i.url).filter(Boolean)
+      if (sceneUrls.length === 0) throw new Error('Face-swap path: scene generation returned no image. Please try again.')
+      for (let i = 0; i < sceneUrls.length; i++) {
+        recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_faceswap_scene', model: 'fal-flux-pro-v1.1', images: 1 })
+      }
+      // 2. Swap the user's real face onto each scene (parallel).
+      const gender = swapGender ?? 'male'
+      const swapResults = await Promise.all(sceneUrls.map(async (targetUrl) => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sr = await fal.subscribe('easel-ai/advanced-face-swap' as any, {
+            input: {
+              face_image_0: referenceFaceUrl,
+              gender_0: gender,
+              target_image: targetUrl,
+              workflow_type: 'user_hair',
+              upscale: true,
+            },
+            pollInterval: 3000,
+          })
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const img = (sr.data as any)?.image as { url?: string } | undefined
+          return img?.url ?? null
+        } catch (err) {
+          console.error('[generate-thumbnail] face-swap failed:', err instanceof Error ? err.message : err)
+          return null
+        }
+      }))
+      const swapUrls = swapResults.filter((u): u is string => !!u)
+      if (swapUrls.length === 0) throw new Error('Face-swap returned no image. Please try again.')
+      for (let i = 0; i < swapUrls.length; i++) {
+        recordUsage({ userId: TELEMETRY.userId, tier: TELEMETRY.tier, feature: 'yt_thumb_faceswap_image', model: 'easel-advanced-face-swap', images: 1 })
+      }
+      return NextResponse.json({
+        ok: true,
+        thumbnailUrl: swapUrls[0],
+        thumbnailUrls: swapUrls,
+        overlayHook,
+        headlineLocked: !!lockedHeadline,
+        prompt: scenePrompt,
+        styleBriefApplied: !!styleBrief,
+        channelStyle: channelStyle ?? null,
+        modelUsed: `faceswap-${style}`,
         faceModelUsed: faceModel.trigger_token,
         headshotUsed: true,
       })

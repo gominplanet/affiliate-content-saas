@@ -145,9 +145,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string }>>([])
   const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
   // EXPERIMENT (admin-only A/B): face-render engine. 'lora' = current trained
-  // LoRA path; 'pulid' = identity from a reference photo (cheaper, no training).
+  // LoRA path; 'pulid' = identity from a reference photo; 'faceswap' = flux-pro
+  // scene + real face swapped on (highest fidelity, ~$0.09/img).
   // Scoped to admin so the live test never affects real users' thumbnails.
-  const [thumbEngine, setThumbEngine] = useState<'lora' | 'pulid'>('lora')
+  const [thumbEngine, setThumbEngine] = useState<'lora' | 'pulid' | 'faceswap'>('lora')
+  const [swapGender, setSwapGender] = useState<'male' | 'female' | 'non-binary'>('male')
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -528,7 +530,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
           faceModelId: selectedFaceModelId || undefined,
-          engine: thumbEngine === 'pulid' ? 'pulid' : undefined,
+          engine: thumbEngine !== 'lora' ? thumbEngine : undefined,
+          swapGender: thumbEngine === 'faceswap' ? swapGender : undefined,
         }),
       })
       const data = await safeJson(res)
@@ -574,7 +577,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
           faceModelId: selectedFaceModelId || undefined,
-          engine: thumbEngine === 'pulid' ? 'pulid' : undefined,
+          engine: thumbEngine !== 'lora' ? thumbEngine : undefined,
+          swapGender: thumbEngine === 'faceswap' ? swapGender : undefined,
         }),
       })
       const data = await safeJson(res)
@@ -1740,10 +1744,33 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       </button>
                       <button type="button" onClick={() => setThumbEngine('pulid')}
                         className={thumbEngine === 'pulid' ? 'px-3 py-1.5 bg-[#5856d6] text-white font-semibold' : 'px-3 py-1.5 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-50 dark:hover:bg-white/5'}>
-                        PuLID (beta)
+                        PuLID
+                      </button>
+                      <button type="button" onClick={() => setThumbEngine('faceswap')}
+                        className={thumbEngine === 'faceswap' ? 'px-3 py-1.5 bg-[#34c759] text-white font-semibold' : 'px-3 py-1.5 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-50 dark:hover:bg-white/5'}>
+                        Face-swap (beta)
                       </button>
                     </div>
-                    <p className="text-[10px] text-[#86868b] mt-1.5">PuLID injects your face from a reference photo (cheaper, no training). Generate one of each to compare. Admin-only — doesn&apos;t affect other users.</p>
+                    {thumbEngine === 'faceswap' && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-[10px] text-[#86868b]">Your gender (for the swap):</span>
+                        <select
+                          value={swapGender}
+                          onChange={e => setSwapGender(e.target.value as 'male' | 'female' | 'non-binary')}
+                          className="text-[11px] px-2 py-1 rounded border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e]"
+                        >
+                          <option value="male">Male</option>
+                          <option value="female">Female</option>
+                          <option value="non-binary">Non-binary</option>
+                        </select>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-[#86868b] mt-1.5">
+                      {thumbEngine === 'faceswap'
+                        ? 'Face-swap: flux-pro scene + your real face swapped on (2x upscale). Highest fidelity, ~$0.09/img.'
+                        : 'PuLID injects your face from one reference photo (~$0.033/img). Generate one of each to compare.'}
+                      {' '}Admin-only — doesn&apos;t affect other users.
+                    </p>
                   </div>
                 )}
               </div>

@@ -49,6 +49,10 @@ export const PRICING: Record<string, Pricing> = {
   // $0.0333/megapixel; a 16:9 thumbnail rounds up to ~1MP, so ~$0.033/image.
   // Cheaper per image than flux-lora AND needs no $1.50 training job.
   'fal-flux-pulid': { in: 0, out: 0, imageCost: 0.0333 },
+  // Easel advanced face-swap — swaps the real face onto a flux-pro render
+  // (2x upscale built in). $0.05/generation; paired with a $0.04 flux-pro
+  // scene it's ~$0.09 total per thumbnail (a quality bet, not a cost play).
+  'easel-advanced-face-swap': { in: 0, out: 0, imageCost: 0.05 },
   // One-time LoRA training run — billed by Fal at a fixed per-job rate
   // regardless of how many images the job ingests.
   'fal-flux-lora-fast-training': { in: 0, out: 0, imageCost: 1.5 },
