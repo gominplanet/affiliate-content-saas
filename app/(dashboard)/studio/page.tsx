@@ -1027,7 +1027,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
             )}
             {!video.detectedAsin && !generating && (
               <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93] italic">
-                No ASIN — we&apos;ll write title, description & tags around the video&apos;s topic. No affiliate link.
+                No ASIN in the title — we&apos;ll use a product link from your description if there is one (Amazon or a direct store link, wrapped with your Geniuslink), otherwise we write everything around the video&apos;s topic.
               </span>
             )}
             <a href={ytUrl} target="_blank" rel="noopener noreferrer"

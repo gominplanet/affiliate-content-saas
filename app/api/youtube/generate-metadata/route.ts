@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { discoverProductForVideo } from '@/lib/product-detect'
+import { resolveProductLink } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -380,17 +381,34 @@ export async function POST(request: Request) {
       (brand?.contact_preference as string) === 'email' ? 'email' : 'website'
     const gearSections = ((brand?.gear_sections as GearSection[]) || []).filter(s => s.title && s.items.length > 0)
 
-    // ── Discovery: try to recover an ASIN when caller didn't pass one ─────────
-    // A "Bose QC Ultra review" video without an ASIN in the title still
-    // deserves the product treatment. Haiku decides if the video is
-    // about a buyable product, then we scrape Amazon search for the
-    // matching ASIN. Failures silently fall back to general mode.
+    // ── Resolve what to promote when the caller didn't pass an ASIN ───────────
+    // Priority (mirrors the blog pipeline; HARD RULE = never blindly Amazon-
+    // search when the creator linked the product directly):
+    //   1. An Amazon /dp ASIN in the description → Amazon product treatment.
+    //   2. A direct store / brand / Geniuslink in the description → promote
+    //      THAT link (creators often sell off-Amazon). No Amazon search.
+    //   3. Nothing usable → last-resort Amazon discovery by product name.
+    let storeUrl: string | null = null          // a non-Amazon product link to promote
+    let storeAlreadyGenius = false               // already a geni.us link → keep as-is
     if (!isProduct) {
-      const discovered = await discoverProductForVideo(videoTitle, videoDescription || '', { userId: user.id, tier })
-      if (discovered.asin) {
-        trimmedAsin = discovered.asin
+      const link = await resolveProductLink(videoTitle, videoDescription || '')
+      if (link.kind === 'amazon') {
+        trimmedAsin = link.asin
         isProduct = true
-        productDiscoverySource = discovered.source === 'search' ? 'search' : discovered.source
+        productDiscoverySource = 'search'
+      } else if (link.kind === 'store') {
+        storeUrl = link.url
+        storeAlreadyGenius = link.alreadyGeniuslink
+      } else {
+        // A "Bose QC Ultra review" with no link anywhere still deserves the
+        // product treatment — Haiku decides if it's a buyable product, then
+        // we scrape Amazon search for the ASIN. Failures fall back to general.
+        const discovered = await discoverProductForVideo(videoTitle, videoDescription || '', { userId: user.id, tier })
+        if (discovered.asin) {
+          trimmedAsin = discovered.asin
+          isProduct = true
+          productDiscoverySource = discovered.source === 'search' ? 'search' : discovered.source
+        }
       }
     }
 
@@ -433,6 +451,26 @@ export async function POST(request: Request) {
         }
       } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
         geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Site & Integrations'
+      }
+    } else if (storeUrl) {
+      // Non-Amazon direct store / brand link the creator put in the
+      // description. Geniuslink wraps ANY destination (not Amazon-only), so
+      // we still get tracking. If it's already a geni.us link, keep it.
+      if (storeAlreadyGenius) {
+        affiliateUrl = storeUrl
+        geniuslinkUsed = true
+      } else if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+        try {
+          const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
+          affiliateUrl = await genius.createLink(storeUrl, videoTitle)
+          geniuslinkUsed = true
+        } catch (err) {
+          geniuslinkError = err instanceof Error ? err.message : String(err)
+          console.error('[generate-metadata] Geniuslink (store link) failed:', geniuslinkError)
+          affiliateUrl = storeUrl // still promote the real product link
+        }
+      } else {
+        affiliateUrl = storeUrl
       }
     }
 
@@ -496,7 +534,7 @@ export async function POST(request: Request) {
 
     // ── Guarantee the affiliate URL is verbatim in the pinned comment ─────────
     // (Product mode only — general videos don't have a URL to enforce.)
-    if (isProduct && affiliateUrl && engagementResult.pinnedComment && !engagementResult.pinnedComment.includes(affiliateUrl)) {
+    if (affiliateUrl && engagementResult.pinnedComment && !engagementResult.pinnedComment.includes(affiliateUrl)) {
       engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n' + affiliateUrl
     }
 
