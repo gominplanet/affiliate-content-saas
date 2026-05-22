@@ -502,13 +502,13 @@ export async function POST(request: Request) {
 
         const sceneDir = STYLE_SCENES[style] ?? STYLE_SCENES.review
         const gptPrompt = `Professional YouTube thumbnail, 16:9, photorealistic, high click-through-rate.
-SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Friendly, confident expression (warm genuine smile unless the video title clearly implies skepticism). Mid-shot (head and shoulders), positioned on the RIGHT side of the frame.
+SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Large and prominent in the FOREGROUND, positioned CENTER to CENTER-RIGHT of the frame, close to camera (chest-up). Friendly, confident expression (warm genuine smile unless the video title clearly implies skepticism), looking toward camera.
 VIDEO TITLE: "${videoTitle}"
 PRODUCT: ${hasProductRef
-          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding), held naturally in the hand near the chest or shoulder, clearly visible.'
-          : `${productTitle || 'the product from the video'}, held near the chest, clearly visible.`}
+          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding). Place it on the LEFT side of the frame, clearly visible (held out in the left hand, or resting on a surface to the person\'s side).'
+          : `${productTitle || 'the product from the video'}, placed on the LEFT side of the frame, clearly visible.`}
 SCENE: ${sceneDir}${channelStyle ? ` Channel aesthetic: ${channelStyle}.` : ''}${styleBrief ? ` Visual style: ${styleBrief}.` : ''}
-COMPOSITION: person + product occupy the RIGHT ~55-60%. Keep the LEFT THIRD clean and uncluttered (simple background) for a text overlay added later.
+COMPOSITION: the person dominates the foreground (center to center-right); the product sits on the LEFT. Keep the TOP ~25% of the frame relatively simple/uncluttered (and not too bright) so a bold title across the TOP-CENTER reads clearly over it. Leave headroom above the person.
 LIGHTING: editorial studio lighting — soft key + subtle rim light, realistic skin texture, shallow depth of field.
 Do NOT render any text, captions, watermarks, or logos in the image.`
 

@@ -5,14 +5,12 @@
  *   - YouTube Co-Pilot (16:9, 1280×720)
  *   - Instagram modal (4:5, 1080×1350)
  *
- * The Flux backend always returns a clean image (no text), and we draw
- * the headline overlay in the browser via canvas so the text is always
- * crisp regardless of model drift. Styles defined once here keep both
- * surfaces visually consistent.
+ * The image backend always returns a clean image (no text), and we draw the
+ * headline overlay in the browser via canvas so the text is always crisp.
  *
- * Style presets are tuned for viral / punchy YouTube + IG thumbnails
- * (see memory/feedback_thumbnail_calibration.md for why we don't have
- * "subtle" presets — the user explicitly wants high-impact every time).
+ * STYLE: viral-YouTube / MrBeast lettering — bold uppercase, thick black
+ * outline + hard drop shadow, NO background blocks or strips. Top-centered.
+ * Colour variations (white, yellow, two-tone accent) give natural variety.
  */
 
 export interface OverlayStyle {
@@ -20,148 +18,105 @@ export interface OverlayStyle {
   fontName: string | null
   fontStack: string
   weight: string
+  /** Per-line fill colours. colors[0] = line 1, colors[1] = line 2 (accent). */
   colors: string[]
   outlineColor: string
   outlineW: number
   shadowAlpha: number
   maxPx: number
-  position: 'bottom-left' | 'top-left'
+  position: 'top-center' | 'bottom-center' | 'top-left' | 'bottom-left'
   gradient: boolean
   blockBg?: string | null
   highlightLineIdx?: number | null
   highlightColor?: string | null
   hardShadow?: { dx: number; dy: number; color: string } | null
+  /** Selection weight before per-user feedback. Default 1. */
+  baseWeight?: number
 }
 
+// MrBeast-style: bold Anton/Impact, heavy outline + offset shadow, centred at
+// the top. No boxes, gradients, or strips. Variations are colour-only.
 export const OVERLAY_STYLES: OverlayStyle[] = [
   {
-    id: 'impact-classic',
-    fontName: null,
-    fontStack: 'Impact, "Arial Black", sans-serif',
-    weight: '900',
-    colors: ['#FFE034', '#FFFFFF'],
-    outlineColor: '#000',
-    outlineW: 18,
-    shadowAlpha: 0.85,
-    maxPx: 134,
-    position: 'bottom-left',
-    gradient: true,
-    hardShadow: { dx: 8, dy: 8, color: '#000' },
-  },
-  {
-    id: 'bangers-orange',
-    fontName: 'Bangers',
-    fontStack: '"Bangers", Impact, sans-serif',
-    weight: '400',
-    colors: ['#FF6B00', '#FFFFFF'],
-    outlineColor: '#000',
-    outlineW: 16,
-    shadowAlpha: 0.9,
-    maxPx: 134,
-    position: 'top-left',
-    gradient: false,
-    hardShadow: { dx: 7, dy: 7, color: '#000' },
-  },
-  {
-    id: 'oswald-red',
-    fontName: 'Oswald',
-    fontStack: '"Oswald", Impact, sans-serif',
-    weight: '700',
-    colors: ['#FF3B30', '#FFFFFF'],
-    outlineColor: '#000',
-    outlineW: 16,
-    shadowAlpha: 0.85,
-    maxPx: 128,
-    position: 'bottom-left',
-    gradient: true,
-    hardShadow: { dx: 6, dy: 6, color: '#000' },
-  },
-  {
-    id: 'split-red-white-massive',
-    fontName: 'Anton',
-    fontStack: '"Anton", Impact, "Arial Black", sans-serif',
-    weight: '400',
-    colors: ['#FF1F1F', '#FFFFFF'],
-    outlineColor: '#000',
-    outlineW: 22,
-    shadowAlpha: 1,
-    maxPx: 150,
-    position: 'bottom-left',
-    gradient: false,
-    hardShadow: { dx: 10, dy: 10, color: '#000' },
-  },
-  {
-    id: 'banner-block',
+    id: 'bold-white-center',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
     colors: ['#FFFFFF', '#FFFFFF'],
     outlineColor: '#000',
-    outlineW: 8,
-    shadowAlpha: 0.6,
-    maxPx: 120,
-    position: 'bottom-left',
+    outlineW: 20,
+    shadowAlpha: 0.9,
+    maxPx: 150,
+    position: 'top-center',
     gradient: false,
-    blockBg: '#FF7A00',
-    hardShadow: { dx: 6, dy: 6, color: '#000' },
+    hardShadow: { dx: 7, dy: 8, color: '#000' },
+    baseWeight: 1.4,
   },
   {
-    id: 'mrbeast-yellow',
+    id: 'bold-yellow-center',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
     colors: ['#FFE034', '#FFE034'],
     outlineColor: '#000',
-    outlineW: 22,
-    shadowAlpha: 0.95,
+    outlineW: 20,
+    shadowAlpha: 0.9,
     maxPx: 150,
-    position: 'top-left',
+    position: 'top-center',
     gradient: false,
-    hardShadow: { dx: 9, dy: 9, color: '#000' },
+    hardShadow: { dx: 7, dy: 8, color: '#000' },
+    baseWeight: 1.2,
   },
   {
-    id: 'highlight-strip-yellow',
+    id: 'bold-white-yellow-accent',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
-    colors: ['#FFFFFF', '#1d1d1f'],
+    colors: ['#FFFFFF', '#FFE034'], // 2nd line pops yellow
     outlineColor: '#000',
-    outlineW: 8,
-    shadowAlpha: 0.7,
-    maxPx: 140,
-    position: 'bottom-left',
+    outlineW: 20,
+    shadowAlpha: 0.9,
+    maxPx: 152,
+    position: 'top-center',
     gradient: false,
-    highlightLineIdx: 1,
-    highlightColor: '#FFE034',
-    hardShadow: { dx: 7, dy: 7, color: '#000' },
+    hardShadow: { dx: 7, dy: 8, color: '#000' },
+    baseWeight: 1.6,
   },
   {
-    id: 'red-on-yellow-strip',
+    id: 'bold-white-red-accent',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
-    colors: ['#FFE034', '#E10600'],
+    colors: ['#FFFFFF', '#FF2D2D'], // 2nd line pops red
     outlineColor: '#000',
-    outlineW: 14,
+    outlineW: 20,
+    shadowAlpha: 0.9,
+    maxPx: 152,
+    position: 'top-center',
+    gradient: false,
+    hardShadow: { dx: 7, dy: 8, color: '#000' },
+    baseWeight: 1.4,
+  },
+  {
+    id: 'impact-white-center',
+    fontName: null,
+    fontStack: 'Impact, "Arial Black", sans-serif',
+    weight: '900',
+    colors: ['#FFFFFF', '#FFFFFF'],
+    outlineColor: '#000',
+    outlineW: 18,
     shadowAlpha: 0.85,
     maxPx: 144,
-    position: 'bottom-left',
+    position: 'top-center',
     gradient: false,
-    highlightLineIdx: 1,
-    highlightColor: '#FFE034',
-    hardShadow: { dx: 9, dy: 9, color: '#000' },
+    hardShadow: { dx: 6, dy: 7, color: '#000' },
+    baseWeight: 0.8,
   },
 ]
 
 /**
- * Pick a style index biased by per-user 👍 / 👎 feedback.
- *
- * Weight per style: `max(0.1, 1 + likes*0.3 - dislikes*0.5)`. A style
- * the user dislikes 2× and likes 0× scores 0.1 (still has a tiny shot,
- * never zeroed-out — we never know when their taste shifts). A style
- * they like 3× scores 1.9 — almost double the default.
- *
- * Pass empty objects to fall back to uniform random.
+ * Pick a style index biased by each preset's baseWeight and per-user 👍 / 👎
+ * feedback: `max(0.1, baseWeight + likes*0.3 - dislikes*0.5)`.
  */
 export function pickWeightedStyleIndex(
   liked: Record<string, number> = {},
@@ -170,7 +125,7 @@ export function pickWeightedStyleIndex(
   const weights = OVERLAY_STYLES.map(s => {
     const l = liked[s.id] || 0
     const d = disliked[s.id] || 0
-    return Math.max(0.1, 1 + l * 0.3 - d * 0.5)
+    return Math.max(0.1, (s.baseWeight ?? 1) + l * 0.3 - d * 0.5)
   })
   const total = weights.reduce((a, b) => a + b, 0)
   let r = Math.random() * total
@@ -187,7 +142,6 @@ async function loadOverlayFont(fontName: string | null, weight = '400'): Promise
   if (!fontName || typeof window === 'undefined') return
   const key = `${fontName}:${weight}`
   if (loadedFonts.has(key)) return
-  // Inject the stylesheet once per font.
   if (!document.querySelector(`link[data-overlay-font="${fontName}"]`)) {
     const link = document.createElement('link')
     link.rel = 'stylesheet'
@@ -195,10 +149,6 @@ async function loadOverlayFont(fontName: string | null, weight = '400'): Promise
     link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700;900&display=swap`
     document.head.appendChild(link)
   }
-  // CRITICAL: document.fonts.ready alone resolves BEFORE a freshly-added font
-  // finishes downloading, so canvas would draw with the Impact fallback (the
-  // "bland" look). Explicitly load THIS font+weight and wait for it (with a
-  // timeout so we never hang). Then the punchy fonts actually render.
   try {
     await Promise.race([
       (async () => {
@@ -207,25 +157,19 @@ async function loadOverlayFont(fontName: string | null, weight = '400'): Promise
       })(),
       new Promise<void>(r => setTimeout(r, 4000)),
     ])
-  } catch { /* fall back to the fontStack (system Impact) */ }
+  } catch { /* fall back to the fontStack */ }
   loadedFonts.add(key)
 }
 
 export interface OverlayOpts {
-  /** Output canvas width. 1280 for YouTube 16:9, 1080 for IG 4:5. */
   width?: number
-  /** Output canvas height. 720 for YouTube 16:9, 1350 for IG 4:5. */
   height?: number
-  /** Force a specific style; omit for random pick. */
   styleIndex?: number
 }
 
 /**
  * Draws `hookText` onto `rawUrl` using one of the OVERLAY_STYLES presets.
  * Returns a data: URL of the composited JPEG (quality 0.92).
- *
- * Throws if Canvas isn't supported or the image fails to load (the
- * caller should fall back to the un-overlaid URL in that case).
  */
 export async function renderThumbnailOverlay(
   rawUrl: string,
@@ -248,9 +192,8 @@ export async function renderThumbnailOverlay(
     if (!text) { reject(new Error('Empty hook text')); return }
     const words = text.split(' ')
     let lines: string[]
-    if (words.length === 1) {
-      lines = [words[0]]
-    } else {
+    if (words.length === 1) lines = [words[0]]
+    else {
       const split = Math.ceil(words.length / 2)
       lines = [words.slice(0, split).join(' '), words.slice(split).join(' ')].filter(Boolean)
     }
@@ -259,108 +202,7 @@ export async function renderThumbnailOverlay(
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       ctx.drawImage(img, 0, 0, width, height)
-
-      // Margins scale with canvas size so layouts look balanced at
-      // either YT or IG aspect ratios.
-      const MARGIN_X = Math.round(width * 0.045)
-      const MARGIN_EDGE = Math.round(height * 0.07)
-      // Text zone: ~70% of width for 16:9, more for 4:5 (text wraps better there).
-      const ZONE_W = Math.round(width * (width >= height ? 0.55 : 0.85))
-      const { outlineW: OUTLINE, colors: LINE_COLORS, outlineColor, shadowAlpha } = style
-      // Cap font size to height as well so 4:5 vertical doesn't overflow.
-      const maxPxScaled = Math.min(style.maxPx, Math.round(height * 0.13))
-
-      const makeFont = (s: number) => `${style.weight} ${s}px ${style.fontStack}`
-      let fs = maxPxScaled
-      ctx.font = makeFont(fs)
-      while (fs > 36) {
-        const maxW = Math.max(...lines.map(l => ctx.measureText(l).width))
-        if (maxW <= ZONE_W - OUTLINE * 2) break
-        fs -= 4
-        ctx.font = makeFont(fs)
-      }
-
-      const lineH = fs * 1.18
-      const totalH = lines.length * lineH
-      const startY = style.position === 'top-left'
-        ? MARGIN_EDGE
-        : height - MARGIN_EDGE - totalH
-
-      if (style.gradient) {
-        const gradH = totalH + MARGIN_EDGE + 20
-        const gradY = style.position === 'top-left' ? 0 : height - gradH
-        const grad = ctx.createLinearGradient(0, gradY, 0, gradY + gradH)
-        if (style.position === 'top-left') {
-          grad.addColorStop(0, `rgba(0,0,0,0.6)`)
-          grad.addColorStop(1, 'rgba(0,0,0,0)')
-        } else {
-          grad.addColorStop(0, 'rgba(0,0,0,0)')
-          grad.addColorStop(1, `rgba(0,0,0,0.65)`)
-        }
-        ctx.fillStyle = grad
-        ctx.fillRect(0, gradY, width, gradH)
-      }
-
-      const blockBg = style.blockBg
-      if (blockBg) {
-        ctx.font = makeFont(fs)
-        const pad = Math.round(fs * 0.18)
-        lines.forEach((line, i) => {
-          const lineW = ctx.measureText(line).width
-          const y = startY + i * lineH
-          ctx.fillStyle = blockBg
-          ctx.fillRect(MARGIN_X - pad, y - pad * 0.4, lineW + pad * 2, fs + pad * 0.8)
-        })
-      }
-
-      if (typeof style.highlightLineIdx === 'number' && style.highlightColor && lines[style.highlightLineIdx]) {
-        ctx.font = makeFont(fs)
-        const pad = Math.round(fs * 0.16)
-        const line = lines[style.highlightLineIdx]
-        const lineW = ctx.measureText(line).width
-        const y = startY + style.highlightLineIdx * lineH
-        ctx.fillStyle = style.highlightColor
-        ctx.fillRect(MARGIN_X - pad, y - pad * 0.3, lineW + pad * 2, fs + pad * 0.7)
-      }
-
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'top'
-      ctx.lineJoin = 'round'
-
-      const hardShadow = style.hardShadow
-      lines.forEach((line, i) => {
-        const x = MARGIN_X
-        const y = startY + i * lineH
-
-        ctx.font = makeFont(fs)
-
-        // Hard sticker offset shadow first.
-        if (hardShadow) {
-          ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
-          ctx.lineWidth = OUTLINE
-          ctx.strokeStyle = hardShadow.color
-          ctx.strokeText(line, x + hardShadow.dx, y + hardShadow.dy)
-          ctx.fillStyle = hardShadow.color
-          ctx.fillText(line, x + hardShadow.dx, y + hardShadow.dy)
-        }
-
-        // Soft blurred drop shadow.
-        ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
-        ctx.shadowBlur = 10
-        ctx.shadowOffsetX = 4
-        ctx.shadowOffsetY = 4
-
-        // Outline.
-        ctx.lineWidth = OUTLINE
-        ctx.strokeStyle = outlineColor
-        ctx.strokeText(line, x, y)
-
-        // Fill.
-        ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
-        ctx.fillStyle = LINE_COLORS[i] ?? LINE_COLORS[LINE_COLORS.length - 1]
-        ctx.fillText(line, x, y)
-      })
-
+      drawHeadline(ctx, lines, style, width, height)
       try {
         resolve({ url: canvas.toDataURL('image/jpeg', 0.92), styleId: style.id })
       } catch (e) {
@@ -369,5 +211,76 @@ export async function renderThumbnailOverlay(
     }
     img.onerror = () => reject(new Error('Image load failed'))
     img.src = rawUrl
+  })
+}
+
+/**
+ * Shared headline renderer — bold lettering with a hard offset shadow + thick
+ * outline (no background). Supports top/bottom × centre/left positions.
+ * Exported so the studio's overlay path can reuse the exact same look.
+ */
+export function drawHeadline(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  style: OverlayStyle,
+  width: number,
+  height: number,
+): void {
+  const centered = style.position.endsWith('center')
+  const MARGIN_X = Math.round(width * 0.045)
+  const MARGIN_EDGE = Math.round(height * 0.06)
+  const ZONE_W = centered ? Math.round(width * 0.92) : Math.round(width * (width >= height ? 0.55 : 0.85))
+  const { outlineW: OUTLINE, colors: LINE_COLORS, outlineColor, shadowAlpha } = style
+  const maxPxScaled = Math.min(style.maxPx, Math.round(height * 0.15))
+
+  const makeFont = (s: number) => `${style.weight} ${s}px ${style.fontStack}`
+  let fs = maxPxScaled
+  ctx.font = makeFont(fs)
+  while (fs > 36) {
+    const maxW = Math.max(...lines.map(l => ctx.measureText(l).width))
+    if (maxW <= ZONE_W - OUTLINE * 2) break
+    fs -= 4
+    ctx.font = makeFont(fs)
+  }
+
+  const lineH = fs * 1.14
+  const totalH = lines.length * lineH
+  const startY = style.position.startsWith('top') ? MARGIN_EDGE : height - MARGIN_EDGE - totalH
+  const x = centered ? Math.round(width / 2) : MARGIN_X
+
+  ctx.textAlign = centered ? 'center' : 'left'
+  ctx.textBaseline = 'top'
+  ctx.lineJoin = 'round'
+
+  const hardShadow = style.hardShadow
+  lines.forEach((line, i) => {
+    const y = startY + i * lineH
+    ctx.font = makeFont(fs)
+
+    // Hard offset "sticker" shadow first.
+    if (hardShadow) {
+      ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
+      ctx.lineWidth = OUTLINE
+      ctx.strokeStyle = hardShadow.color
+      ctx.strokeText(line, x + hardShadow.dx, y + hardShadow.dy)
+      ctx.fillStyle = hardShadow.color
+      ctx.fillText(line, x + hardShadow.dx, y + hardShadow.dy)
+    }
+
+    // Soft blurred drop shadow under the outline.
+    ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
+    ctx.shadowBlur = 12
+    ctx.shadowOffsetX = 3
+    ctx.shadowOffsetY = 4
+
+    // Outline.
+    ctx.lineWidth = OUTLINE
+    ctx.strokeStyle = outlineColor
+    ctx.strokeText(line, x, y)
+
+    // Fill.
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
+    ctx.fillStyle = LINE_COLORS[i] ?? LINE_COLORS[LINE_COLORS.length - 1]
+    ctx.fillText(line, x, y)
   })
 }
