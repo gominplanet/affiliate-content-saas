@@ -431,11 +431,18 @@ export async function POST(request: Request) {
         if (refImages.length === 0) throw new Error('No reference images downloaded')
 
         const sceneDir = STYLE_SCENES[style] ?? STYLE_SCENES.review
+        const faceRefCount = refImages.length - (hasProductRef ? 1 : 0)
         const gptPrompt = `Professional YouTube thumbnail, 16:9, photorealistic, high click-through-rate.
-SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Relaxed, natural friendly smile (not a forced wide open-mouth grin), looking toward camera.
+
+REFERENCE IMAGES — read carefully:
+- The FIRST ${faceRefCount} reference image${faceRefCount !== 1 ? 's are' : ' is'} the PERSON. They are all the SAME ONE individual. Use them ONLY to capture that person's facial identity, hair, and likeness.
+${hasProductRef ? '- The LAST reference image is the PRODUCT OBJECT only. Use it ONLY for the product\'s shape/colour/label/branding. If it contains any human, face, hand, or model, IGNORE that person completely — they are NOT the subject.' : ''}
+IDENTITY (critical): render EXACTLY ONE person — the individual from the PERSON reference photos. Do NOT blend, merge, average, or mix in any other face (including anyone appearing in the product image). The face must clearly be that single person, not a hybrid.
+
+SUBJECT: that person — preserve their exact facial identity, hair, and likeness. Relaxed, natural friendly smile (not a forced wide open-mouth grin), looking toward camera.
 VIDEO TITLE: "${videoTitle}"
 PRODUCT: ${hasProductRef
-          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding).'
+          ? 'the product object from the LAST reference image — reproduce it accurately (shape, colour, label text, branding).'
           : `${productTitle || 'the product from the video'}.`}
 SCENE: ${sceneDir}${channelStyle ? ` Channel aesthetic: ${channelStyle}.` : ''}${styleBrief ? ` Visual style: ${styleBrief}.` : ''}
 LAYOUT — follow this placement EXACTLY (this is the most important instruction):
