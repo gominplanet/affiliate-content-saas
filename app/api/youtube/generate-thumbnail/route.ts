@@ -502,17 +502,18 @@ export async function POST(request: Request) {
 
         const sceneDir = STYLE_SCENES[style] ?? STYLE_SCENES.review
         const gptPrompt = `Professional YouTube thumbnail, 16:9, photorealistic, high click-through-rate.
-SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Chest-up shot, positioned on the RIGHT side of the frame (occupying roughly the right 55-60%). They can be large and prominent. Keep them entirely OUT of the top-LEFT corner. Relaxed, natural friendly smile (not a forced wide open-mouth grin), looking toward camera.
+SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Relaxed, natural friendly smile (not a forced wide open-mouth grin), looking toward camera.
 VIDEO TITLE: "${videoTitle}"
 PRODUCT: ${hasProductRef
-          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding). Place it in the BOTTOM-LEFT area of the frame, held up or resting, FULLY visible and not cropped by any edge.'
-          : `${productTitle || 'the product from the video'}, in the BOTTOM-LEFT area of the frame, fully visible and not cropped.`}
+          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding).'
+          : `${productTitle || 'the product from the video'}.`}
 SCENE: ${sceneDir}${channelStyle ? ` Channel aesthetic: ${channelStyle}.` : ''}${styleBrief ? ` Visual style: ${styleBrief}.` : ''}
-COMPOSITION (strict): three zones, nothing overlapping —
-• TOP-LEFT quadrant: clean, simple, slightly darker EMPTY background (a title goes here — no person, no product, nothing important).
-• RIGHT side: the person (center-right).
-• BOTTOM-LEFT: the product.
-Keep faces and the product clear of the top-left. Nothing important touches the frame edges.
+LAYOUT — follow this placement EXACTLY (this is the most important instruction):
+• The PERSON is on the RIGHT HALF of the frame. Their face and body sit clearly to the RIGHT of center. DO NOT place the person in the middle. Chest-up.
+• The PRODUCT is on the LEFT, in the LOWER-LEFT area — the person extends it toward the left with one hand (arm reaching across to their left), or it rests on a surface lower-left. The product must be clearly LEFT of center and BELOW the title.
+• The person and the product are SEPARATED horizontally: person on the right, product on the left. They are NOT clustered together in the center.
+• The TOP-LEFT region stays clean, simple, slightly darker EMPTY background — no person, no product, nothing important there (a title overlay goes on top of it).
+Nothing important touches the frame edges.
 LIGHTING: editorial studio lighting — soft key + subtle rim light, realistic skin texture, shallow depth of field.
 Do NOT render any text, captions, watermarks, or logos in the image.`
 
