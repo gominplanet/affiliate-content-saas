@@ -57,6 +57,12 @@ export async function GET() {
       // Plugin too old to have /status — needs one manual update to v1.0.6.
       return NextResponse.json({ connected: true, needsManualUpdate: true })
     }
+    if (res.status === 401 || res.status === 403) {
+      // The stored Application Password is no longer valid (revoked, WP
+      // password changed, security plugin, site migrated). Brand syncs and
+      // publishing will fail until the user reconnects — surface it loudly.
+      return NextResponse.json({ connected: true, authFailed: true })
+    }
     if (!res.ok) {
       return NextResponse.json({ connected: true, error: `WP status ${res.status}` })
     }
