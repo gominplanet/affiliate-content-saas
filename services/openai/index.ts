@@ -82,6 +82,27 @@ export class OpenAIService {
     return process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1'
   }
 
+  /** Diagnostic: attempt a tiny low-cost image generation to confirm the
+   *  key + org + model work (and the org is verified for image gen).
+   *  Returns the exact OpenAI error message on failure. ~$0.01-0.02. */
+  async testImageGenerate(): Promise<{ ok: boolean; model: string; error?: string }> {
+    const model = OpenAIService.imageModel()
+    try {
+      await this.client.images.generate({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        model: model as any,
+        prompt: 'a simple red circle centered on a white background',
+        size: '1024x1024',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        quality: 'low' as any,
+        n: 1,
+      })
+      return { ok: true, model }
+    } catch (err) {
+      return { ok: false, model, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
   async generateImageSet(prompts: {
     hero: string
     lifestyle: string
