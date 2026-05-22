@@ -14,7 +14,10 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 // Anthropic helpers below so each call is tagged with the right user/tier.
 let TELEMETRY: { userId: string | null; tier: string | null } = { userId: null, tier: null }
 
-export const maxDuration = 120
+// 180s headroom: the face path can now run two stages — flux-lora, then a
+// per-variant Kontext composite to swap in the real product. Composites run
+// in parallel, but 2 variants + a slow Kontext queue can exceed 120s.
+export const maxDuration = 180
 
 // ── Retry wrapper for Anthropic overloaded (529) errors ──────────────────────
 async function withAnthropicRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
@@ -513,6 +516,27 @@ export async function POST(request: Request) {
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
 
+    // Re-host the real product reference on fal ONCE, so BOTH the Kontext
+    // path (product-only thumbnails) and the face-LoRA two-stage composite
+    // can use it. fal can't reach Amazon/Supabase/YouTube URLs directly.
+    // Best-effort — null on failure, and every path degrades gracefully
+    // (text-only product) rather than throwing.
+    let falProductImageUrl: string | null = null
+    if (productImageUrl) {
+      try {
+        const imgRes = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        if (imgRes.ok) {
+          const imgBlob = await imgRes.blob()
+          falProductImageUrl = await fal.storage.upload(imgBlob)
+          console.log('[generate-thumbnail] Product reference uploaded to fal:', falProductImageUrl)
+        } else {
+          console.warn('[generate-thumbnail] Product image fetch failed:', imgRes.status)
+        }
+      } catch (err) {
+        console.warn('[generate-thumbnail] Product image upload failed:', err)
+      }
+    }
+
     // Run channel-style + video-frame understanding in parallel — both are
     // best-effort Haiku vision calls that return null on failure.
     const channelThumbnailUrls = await fetchChannelThumbnails(supabase, user.id)
@@ -561,14 +585,9 @@ export async function POST(request: Request) {
     // Skipped when a face model is selected — Kontext is a closed Flux Pro
     // variant that doesn't accept LoRA weights, so we route through the
     // LoRA-capable open-source flux-lora endpoint below instead.
-    if (productImageUrl && !faceModel) {
+    if (falProductImageUrl && !faceModel) {
       try {
-        // fal.ai cannot reach Supabase/Amazon URLs directly — re-host first
-        const imgRes = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-        if (!imgRes.ok) throw new Error(`Cannot fetch product image (${imgRes.status})`)
-        const imgBlob = await imgRes.blob()
-        const falImageUrl = await fal.storage.upload(imgBlob)
-        console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
+        const falImageUrl = falProductImageUrl
 
         // Kontext: preserve the product, replace background with scene.
         // The instruction differs by reference type: a clean product photo
@@ -664,16 +683,66 @@ export async function POST(request: Request) {
           feature: 'yt_thumb_flux_lora_image', model: 'fal-flux-lora', images: 1,
         })
       }
+
+      // ── STAGE 2: composite the REAL product into the LoRA image ─────────────
+      // flux-lora renders the creator's real FACE but the product is only a
+      // text guess (LoRA can't take an image reference) — that's the "wrong
+      // product" problem on face thumbnails. Now run a Kontext multi-image
+      // pass per variant: feed [LoRA image, real product photo] and have
+      // Kontext swap the held product for the EXACT reference product while
+      // keeping the person/face/pose/scene identical. Best-effort per image:
+      // if a composite fails we keep that LoRA frame as-is so the user always
+      // gets a result. Skipped entirely when we have no product reference.
+      let finalFaceUrls = loraUrls
+      let compositeApplied = false
+      if (falProductImageUrl) {
+        const productSourceNote = productImageIsVideoFrame
+          ? 'The SECOND image is a video frame — use only the single main product/object featured in it (ignore any people, text, or background in it).'
+          : 'The SECOND image is a clean reference photo of the product.'
+        finalFaceUrls = await Promise.all(loraUrls.map(async (loraUrl) => {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const composite = await fal.subscribe('fal-ai/flux-pro/kontext/max/multi' as any, {
+              input: {
+                image_urls: [loraUrl, falProductImageUrl],
+                prompt: `Replace the product the person in the FIRST image is holding with the EXACT product from the SECOND image — match its shape, colour, material, proportions, and all branding/details precisely. ${productSourceNote} Keep the person, their face, expression, pose, hands, hair, clothing, the background, lighting and overall composition of the FIRST image completely unchanged. ONLY the product changes. Photorealistic, with natural shadows and contact where the hand meets the product. No added text.`,
+                aspect_ratio: '16:9',
+                num_images: 1,
+                output_format: 'jpeg',
+                guidance_scale: 4,
+              },
+              pollInterval: 3000,
+            })
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cImgs = (composite.data as any)?.images as Array<{ url: string }> | undefined
+            const cUrl = cImgs?.[0]?.url
+            if (cUrl) {
+              recordUsage({
+                userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+                feature: 'yt_thumb_face_product_composite', model: 'fal-flux-pro-kontext-max-multi', images: 1,
+              })
+              compositeApplied = true
+              return cUrl
+            }
+          } catch (err) {
+            console.warn('[generate-thumbnail] Stage-2 product composite failed, keeping LoRA frame:', err)
+          }
+          return loraUrl  // graceful fallback to the un-composited LoRA image
+        }))
+        console.log('[generate-thumbnail] Stage-2 composite applied:', compositeApplied)
+      }
+
       return NextResponse.json({
         ok: true,
-        thumbnailUrl: loraUrls[0],
-        thumbnailUrls: loraUrls,
+        thumbnailUrl: finalFaceUrls[0],
+        thumbnailUrls: finalFaceUrls,
         overlayHook,
         headlineLocked: !!lockedHeadline,
         prompt: facePrompt,
         styleBriefApplied: !!styleBrief,
+        productComposited: compositeApplied,
         channelStyle: channelStyle ?? null,
-        modelUsed: `flux-lora-${style}`,
+        modelUsed: compositeApplied ? `flux-lora+composite-${style}` : `flux-lora-${style}`,
         faceModelUsed: faceModel.trigger_token,
         headshotUsed: true,
       })

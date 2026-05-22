@@ -31,6 +31,12 @@ export interface OverlayStyle {
   highlightLineIdx?: number | null
   highlightColor?: string | null
   hardShadow?: { dx: number; dy: number; color: string } | null
+  /** Selection weight before per-user 👍/👎 feedback. >1 = picked more
+   *  often, <1 = less. The plainer presets (solid block, system Impact)
+   *  are weighted down because users read them as "basic"; the dual-tone /
+   *  highlight-strip / massive-split presets are weighted up. Feedback
+   *  still moves a style up or down from its base. Default 1. */
+  baseWeight?: number
 }
 
 export const OVERLAY_STYLES: OverlayStyle[] = [
@@ -47,6 +53,8 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'bottom-left',
     gradient: true,
     hardShadow: { dx: 8, dy: 8, color: '#000' },
+    // Plain system-Impact look — the "basic" one. Rarely picked now.
+    baseWeight: 0.4,
   },
   {
     id: 'bangers-orange',
@@ -61,6 +69,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 7, color: '#000' },
+    baseWeight: 1.2,
   },
   {
     id: 'oswald-red',
@@ -75,6 +84,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'bottom-left',
     gradient: true,
     hardShadow: { dx: 6, dy: 6, color: '#000' },
+    baseWeight: 1.2,
   },
   {
     id: 'split-red-white-massive',
@@ -89,6 +99,8 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'bottom-left',
     gradient: false,
     hardShadow: { dx: 10, dy: 10, color: '#000' },
+    // Dual-tone massive split — high impact. Favoured.
+    baseWeight: 1.8,
   },
   {
     id: 'banner-block',
@@ -104,6 +116,8 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     gradient: false,
     blockBg: '#FF7A00',
     hardShadow: { dx: 6, dy: 6, color: '#000' },
+    // Solid orange block — what the user flagged as "basic". Down-weighted.
+    baseWeight: 0.4,
   },
   {
     id: 'mrbeast-yellow',
@@ -118,6 +132,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 9, dy: 9, color: '#000' },
+    baseWeight: 1.6,
   },
   {
     id: 'highlight-strip-yellow',
@@ -134,6 +149,8 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     highlightLineIdx: 1,
     highlightColor: '#FFE034',
     hardShadow: { dx: 7, dy: 7, color: '#000' },
+    // Yellow highlight strip behind the punch line — strong editorial look.
+    baseWeight: 1.8,
   },
   {
     id: 'red-on-yellow-strip',
@@ -150,18 +167,22 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     highlightLineIdx: 1,
     highlightColor: '#FFE034',
     hardShadow: { dx: 9, dy: 9, color: '#000' },
+    baseWeight: 1.8,
   },
 ]
 
 /**
- * Pick a style index biased by per-user 👍 / 👎 feedback.
+ * Pick a style index biased by each preset's `baseWeight` AND per-user
+ * 👍 / 👎 feedback.
  *
- * Weight per style: `max(0.1, 1 + likes*0.3 - dislikes*0.5)`. A style
- * the user dislikes 2× and likes 0× scores 0.1 (still has a tiny shot,
- * never zeroed-out — we never know when their taste shifts). A style
- * they like 3× scores 1.9 — almost double the default.
+ * Weight per style: `max(0.1, baseWeight + likes*0.3 - dislikes*0.5)`.
+ * baseWeight defaults to 1; the plain presets sit at 0.4 (rarely picked)
+ * and the high-impact dual-tone / highlight-strip presets at 1.6–1.8.
+ * Feedback still nudges a style up or down from its base — a style the
+ * user dislikes is floored at 0.1 (never zeroed out, taste can shift);
+ * one they like repeatedly climbs well above its base.
  *
- * Pass empty objects to fall back to uniform random.
+ * Pass empty objects to fall back to base-weighted random (no feedback).
  */
 export function pickWeightedStyleIndex(
   liked: Record<string, number> = {},
@@ -170,7 +191,7 @@ export function pickWeightedStyleIndex(
   const weights = OVERLAY_STYLES.map(s => {
     const l = liked[s.id] || 0
     const d = disliked[s.id] || 0
-    return Math.max(0.1, 1 + l * 0.3 - d * 0.5)
+    return Math.max(0.1, (s.baseWeight ?? 1) + l * 0.3 - d * 0.5)
   })
   const total = weights.reduce((a, b) => a + b, 0)
   let r = Math.random() * total
