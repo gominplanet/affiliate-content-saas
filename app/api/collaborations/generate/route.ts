@@ -6,7 +6,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsPublishAll, TIERS, billingWindow, nextTierFor, type Tier } from '@/lib/tier'
+import { tierAllowsPublishAll, TIERS, billingWindow, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       (supabase as any).from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).single(),
       (supabase as any).from('brand_profiles').select('*').eq('user_id', user.id).single(),
     ])
-    const tier = (intRow?.tier as Tier) ?? 'trial'
+    const tier = normalizeTier(intRow?.tier)
     if (!tierAllowsPublishAll(tier)) {
       return NextResponse.json({ error: 'Collaborations is a Pro plan feature.' }, { status: 403 })
     }

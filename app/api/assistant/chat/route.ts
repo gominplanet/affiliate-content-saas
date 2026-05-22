@@ -15,7 +15,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { TIERS, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { getAssistantMemory, saveAssistantMemory, mergeAssistantMemory } from '@/lib/assistant-memory'
 
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     .from('integrations')
     .select('tier,subscription_period_start,subscription_period_end')
     .eq('user_id', user.id).single()
-  const tier = (intRow?.tier as Tier) ?? 'trial'
+  const tier = normalizeTier(intRow?.tier)
 
   // ── Cap gate ──────────────────────────────────────────────────────────────
   const cap = TIERS[tier].assistantMessagesPerMonth

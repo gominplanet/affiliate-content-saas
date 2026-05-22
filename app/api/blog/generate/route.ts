@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { YoutubeTranscript } from 'youtube-transcript'
-import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, type Tier } from '@/lib/tier'
+import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
@@ -219,7 +219,7 @@ async function handleGenerate(request: Request) {
       .select('tier')
       .eq('user_id', user.id)
       .single()
-    const tier = (intRow?.tier as Tier) ?? 'trial'
+    const tier = normalizeTier(intRow?.tier)
     if (tier !== 'pro' && tier !== 'admin') {
       const next = nextTierFor(tier, 'postsPerMonth')
       return NextResponse.json({
@@ -294,7 +294,7 @@ async function handleGenerate(request: Request) {
   const wp = integration as Record<string, string> | null
   // Function-scope tier (the rewrite gate above has its own narrow copy).
   // Drives the per-tier in-body image ceiling via allowedBlogImages.
-  const tier = ((wp?.tier as Tier) ?? 'trial')
+  const tier = normalizeTier(wp?.tier)
   if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
     return NextResponse.json(
       { error: 'WordPress not connected. Add your WordPress credentials in Settings.' },

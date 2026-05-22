@@ -5,7 +5,7 @@ import { fetchAmazonProduct } from '@/services/amazon'
 import { fal } from '@fal-ai/client'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
-import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 
 // Telemetry context — populated at request start, read by the three
@@ -286,7 +286,7 @@ export async function POST(request: Request) {
       .select('tier,subscription_period_start,subscription_period_end')
       .eq('user_id', user.id)
       .single()
-    const tier = (tierRow?.tier as Tier) ?? 'trial'
+    const tier = normalizeTier(tierRow?.tier)
     TELEMETRY = { userId: user.id, tier }
 
     const falKey = process.env.FAL_KEY

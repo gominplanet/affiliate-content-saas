@@ -6,6 +6,21 @@ export type Tier = 'trial' | 'creator' | 'pro' | 'admin'
 /** Default tier for a brand-new account (no Stripe subscription yet). */
 export const DEFAULT_TIER: Tier = 'trial'
 
+/**
+ * Coerce any stored tier value into a valid Tier. DB rows can hold null or
+ * pre-migration values ('free', 'starter', 'growth'); a bare `?? 'trial'`
+ * only catches null/undefined, so a legacy string would slip through and make
+ * `TIERS[tier]` undefined — which crashed generation with
+ * "cannot read properties of undefined (reading 'lifetimeMax')".
+ * Map legacy values to their new equivalents; anything unknown → DEFAULT_TIER.
+ */
+export function normalizeTier(raw: unknown): Tier {
+  if (raw === 'trial' || raw === 'creator' || raw === 'pro' || raw === 'admin') return raw
+  if (raw === 'starter') return 'creator'
+  if (raw === 'growth') return 'pro'
+  return DEFAULT_TIER // 'free', null, undefined, or any unknown value → trial
+}
+
 export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky' | 'telegram' | 'instagram'
 
 export const TIERS = {
@@ -112,14 +127,14 @@ export const TIERS = {
  *  clamped to the tier's blogImagesPerPost. Single source of truth for
  *  the blog generator's image count. */
 export function allowedBlogImages(tier: Tier, wordCount: number): number {
-  const ceiling = TIERS[tier].blogImagesPerPost
+  const ceiling = TIERS[normalizeTier(tier)].blogImagesPerPost
   const byLength = Math.round(wordCount / 500)
   return Math.max(2, Math.min(ceiling, byLength))
 }
 
 /** Whether a given tier can publish to a specific social platform. */
 export function tierAllowsSocial(tier: Tier, social: Social): boolean {
-  return TIERS[tier].socials.includes(social)
+  return TIERS[normalizeTier(tier)].socials.includes(social)
 }
 
 /** Next-tier upgrade hint for capped actions. Returns null when the
@@ -130,6 +145,7 @@ export function nextTierFor(
   tier: Tier,
   cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth',
 ): { tier: Tier; label: string; limit: number | null } | null {
+  tier = normalizeTier(tier)
   const order: Tier[] = ['trial', 'creator', 'pro']
   const idx = order.indexOf(tier)
   if (idx < 0 || idx === order.length - 1) return null
@@ -148,7 +164,7 @@ export function nextTierFor(
 
 /** Whether a given tier can use the one-click Publish All flow. */
 export function tierAllowsPublishAll(tier: Tier): boolean {
-  return TIERS[tier].publishAll
+  return TIERS[normalizeTier(tier)].publishAll
 }
 
 /** Whether a tier can use Creator Campaigns (Amazon Creator Connections +
@@ -202,7 +218,7 @@ export async function checkUsageLimit(
     .eq('user_id', userId)
     .single()
 
-  const tier = (ig?.tier as Tier) ?? 'trial'
+  const tier = normalizeTier(ig?.tier)
   const limits = TIERS[tier]
 
   // Admin — unlimited

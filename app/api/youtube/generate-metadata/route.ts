@@ -7,7 +7,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 
 export const maxDuration = 120
@@ -346,7 +346,7 @@ export async function POST(request: Request) {
     const intRow = intResult.data
 
     // Populate the module-level telemetry context that runAgent reads.
-    const tier = (intRow?.tier as Tier) ?? 'trial'
+    const tier = normalizeTier(intRow?.tier)
     TELEMETRY = { userId: user.id, tier }
 
     // Cap gate — metadata generations / billing period. Pre-flight the
