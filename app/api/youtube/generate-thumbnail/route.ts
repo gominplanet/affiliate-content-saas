@@ -4,6 +4,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchProductImageFromPage } from '@/services/research'
+import { createOpenAIService } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
@@ -349,17 +350,20 @@ export async function POST(request: Request) {
     // model is still training or failed, we silently fall back to no-face
     // generation rather than throwing — the user already chose, and the
     // worst outcome is a thumbnail without their face this time.
-    let faceModel: { trigger_token: string; lora_url: string; name: string } | null = null
+    let faceModel: { trigger_token: string; lora_url: string | null; name: string; source_images: string[] } | null = null
     if (faceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fm } = await (supabase as any)
         .from('face_models')
-        .select('trigger_token,lora_url,status,name')
+        .select('trigger_token,lora_url,status,name,source_images')
         .eq('id', faceModelId)
         .eq('user_id', user.id)
         .single()
-      if (fm?.status === 'ready' && fm?.lora_url) {
-        faceModel = { trigger_token: fm.trigger_token, lora_url: fm.lora_url, name: fm.name }
+      // gpt-image-1 needs the source headshots (no LoRA); the legacy flux-lora
+      // fallback needs lora_url. Accept the model if EITHER is available.
+      const srcImages: string[] = Array.isArray(fm?.source_images) ? fm.source_images : []
+      if (fm && (fm.lora_url || srcImages.length > 0)) {
+        faceModel = { trigger_token: fm.trigger_token, lora_url: fm.lora_url ?? null, name: fm.name, source_images: srcImages }
       }
     }
 
@@ -467,6 +471,79 @@ export async function POST(request: Request) {
     console.log('[generate-thumbnail] Overlay text:', overlayHook, lockedHeadline ? '(LOCKED)' : '(AI)')
     if (styleBrief) console.log('[generate-thumbnail] Style brief:', styleBrief)
 
+    // ── PATH G: gpt-image-1 reference-based (PREFERRED face path) ─────────────
+    // Uses the creator's uploaded headshots as identity references (NO LoRA)
+    // plus the real product photo, so both the person AND the product come out
+    // right — the thing the flux-lora + Kontext two-stage couldn't nail. Falls
+    // through to the legacy flux-lora path on any failure.
+    if (faceModel && faceModel.source_images.length > 0) {
+      try {
+        const refImages: Array<{ data: Uint8Array; filename: string; mime: string }> = []
+        for (const path of faceModel.source_images.slice(0, 4)) {
+          const { data: file } = await supabase.storage.from('headshots').download(path)
+          if (file) {
+            const buf = new Uint8Array(await file.arrayBuffer())
+            const ext = (path.split('.').pop() || 'jpg').toLowerCase()
+            refImages.push({ data: buf, filename: `face_${refImages.length}.${ext}`, mime: ext === 'png' ? 'image/png' : 'image/jpeg' })
+          }
+        }
+        // Real product photo as the LAST reference, when we have one.
+        let hasProductRef = false
+        if (productImageUrl) {
+          try {
+            const pr = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+            if (pr.ok) {
+              refImages.push({ data: new Uint8Array(await pr.arrayBuffer()), filename: 'product.jpg', mime: 'image/jpeg' })
+              hasProductRef = true
+            }
+          } catch { /* product ref optional */ }
+        }
+        if (refImages.length === 0) throw new Error('No reference images downloaded')
+
+        const sceneDir = STYLE_SCENES[style] ?? STYLE_SCENES.review
+        const gptPrompt = `Professional YouTube thumbnail, 16:9, photorealistic, high click-through-rate.
+SUBJECT: the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. Friendly, confident expression (warm genuine smile unless the video title clearly implies skepticism). Mid-shot (head and shoulders), positioned on the RIGHT side of the frame.
+VIDEO TITLE: "${videoTitle}"
+PRODUCT: ${hasProductRef
+          ? 'the product shown in the LAST reference image — reproduce it accurately (shape, colour, label text, branding), held naturally in the hand near the chest or shoulder, clearly visible.'
+          : `${productTitle || 'the product from the video'}, held near the chest, clearly visible.`}
+SCENE: ${sceneDir}${channelStyle ? ` Channel aesthetic: ${channelStyle}.` : ''}${styleBrief ? ` Visual style: ${styleBrief}.` : ''}
+COMPOSITION: person + product occupy the RIGHT ~55-60%. Keep the LEFT THIRD clean and uncluttered (simple background) for a text overlay added later.
+LIGHTING: editorial studio lighting — soft key + subtle rim light, realistic skin texture, shallow depth of field.
+Do NOT render any text, captions, watermarks, or logos in the image.`
+
+        const openai = createOpenAIService()
+        const b64 = await openai.generateWithReferences({
+          prompt: gptPrompt,
+          images: refImages,
+          size: '1536x1024',
+          quality: 'high',
+        })
+        const gptBlob = new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' })
+        const gptUrl = await fal.storage.upload(gptBlob)
+        recordUsage({
+          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+          feature: 'yt_thumb_gptimage', model: 'gpt-image-1', images: 1,
+        })
+        console.log('[generate-thumbnail] gpt-image-1 result:', gptUrl, `(refs: ${refImages.length}, product: ${hasProductRef})`)
+        return NextResponse.json({
+          ok: true,
+          thumbnailUrl: gptUrl,
+          thumbnailUrls: [gptUrl],
+          overlayHook,
+          headlineLocked: !!lockedHeadline,
+          prompt: gptPrompt,
+          styleBriefApplied: !!styleBrief,
+          channelStyle: channelStyle ?? null,
+          modelUsed: `gpt-image-1-${style}`,
+          faceModelUsed: faceModel.name,
+          headshotUsed: true,
+        })
+      } catch (err) {
+        console.warn('[generate-thumbnail] gpt-image-1 path failed, falling back to flux-lora:', err)
+      }
+    }
+
     // ── PATH A: Kontext — use real product image as visual reference ──────────
     // Start from the actual Amazon product photo and transform the scene around it.
     // This guarantees the product looks exactly right without relying on text descriptions.
@@ -536,7 +613,7 @@ export async function POST(request: Request) {
     // less polished than flux-pro/v1.1 on raw aesthetics but the only path
     // that respects a custom LoRA. The trigger token gets prepended to the
     // prompt so the model knows which subject the LoRA encodes.
-    if (faceModel) {
+    if (faceModel && faceModel.lora_url) {
       console.log('[generate-thumbnail] Using flux-lora with face model:', faceModel.trigger_token)
       // The person-aware prompt already starts with the trigger token —
       // no need to prepend. finalScenePrompt also already includes the

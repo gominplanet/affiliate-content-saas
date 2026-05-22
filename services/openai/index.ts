@@ -1,4 +1,4 @@
-import OpenAI from 'openai'
+import OpenAI, { toFile } from 'openai'
 
 export interface ImageSet {
   hero: string       // base64 PNG — 1792×1024 (16:9 hero)
@@ -31,6 +31,38 @@ export class OpenAIService {
    *  featured images. Caller normalizes to exact 1280x720. */
   async generateHeroImage(prompt: string): Promise<string> {
     return this.generateOne(prompt, '1792x1024')
+  }
+
+  /**
+   * Reference-based image generation with gpt-image-1 (the model behind
+   * ChatGPT's image_gen). Pass one or more reference images — e.g. a few of
+   * the creator's headshots (for facial-identity preservation) plus a product
+   * photo — and a prompt describing the desired image. No LoRA training: the
+   * model preserves identity/detail from the references directly.
+   *
+   * Returns a base64 PNG. Default size is 16:9 landscape at high quality.
+   */
+  async generateWithReferences(opts: {
+    prompt: string
+    images: Array<{ data: Buffer | Uint8Array; filename: string; mime: string }>
+    size?: '1024x1024' | '1536x1024' | '1024x1536'
+    quality?: 'low' | 'medium' | 'high' | 'auto'
+  }): Promise<string> {
+    if (!opts.images.length) throw new Error('generateWithReferences needs at least one reference image')
+    const files = await Promise.all(
+      opts.images.map(i => toFile(Buffer.from(i.data), i.filename, { type: i.mime })),
+    )
+    const res = await this.client.images.edit({
+      model: 'gpt-image-1',
+      image: files,
+      prompt: opts.prompt,
+      size: opts.size ?? '1536x1024',
+      quality: opts.quality ?? 'high',
+      n: 1,
+    })
+    const b64 = res.data?.[0]?.b64_json
+    if (!b64) throw new Error('gpt-image-1 returned no image data')
+    return b64
   }
 
   async generateImageSet(prompts: {

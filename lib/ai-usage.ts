@@ -32,6 +32,12 @@ export const PRICING: Record<string, Pricing> = {
   // dall-e-3 standard 1024x1024 = $0.04, 1024x1792 / 1792x1024 = $0.08
   'dall-e-3':      { in: 0, out: 0, imageCost: 0.04 },
   'dall-e-3-1792': { in: 0, out: 0, imageCost: 0.08 },
+  // gpt-image-1 (multimodal, reference-based). Token-priced in reality; these
+  // are approximate flat per-image costs for a 1536x1024 landscape image incl.
+  // typical reference-image input tokens. high ≈ $0.19, medium ≈ $0.06.
+  'gpt-image-1':        { in: 0, out: 0, imageCost: 0.19 },
+  'gpt-image-1-medium': { in: 0, out: 0, imageCost: 0.06 },
+  'gpt-image-1-low':    { in: 0, out: 0, imageCost: 0.02 },
 
   // ── OpenAI — text/chat (for fallbacks / future swaps) ─────────────────
   'gpt-4o':       { in: 2.5, out: 10  },
