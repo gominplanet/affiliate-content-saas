@@ -681,8 +681,8 @@ export default function LandingPage() {
           {/* Bottom savings callout */}
           <div className="mt-10 rounded-2xl bg-[#34c759]/10 border border-[#34c759]/30 px-6 py-5 max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-[#1d1d1f] mb-1">Save $174/month switching to Creator.</p>
-              <p className="text-xs text-[#3a3a3c]">That&apos;s $2,088/year — plus the time you stop spending integrating five dashboards.</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] mb-1">Creator covers the core for $49 — Pro replaces the whole stack for $199.</p>
+              <p className="text-xs text-[#3a3a3c]">Creator does the writing, links, YouTube metadata, thumbnails &amp; 5-channel posting. Pro adds all 8 channels + the AI Instagram image — still under the $223 you&apos;re paying, and one tool instead of five that don&apos;t talk to each other.</p>
             </div>
             <Link
               href="/pricing"
@@ -729,7 +729,7 @@ export default function LandingPage() {
                 <CompareRow label="Brand-collab pitch emails to land deals" us="check" gen="cross" free="cross" diy="cross" />
                 <CompareRow label="Stays in your brand voice across posts" us="check" gen="manual" free="manual" diy="manual" />
                 <CompareRow label="Only writes what's actually in your video — no invented stories" us="check" gen="cross" free="manual" diy="manual" />
-                <CompareRow label="Cost per 30 reviews / month" us="$49" gen="$30–80" free="$600–3000" diy="Your time" />
+                <CompareRow label="Cost per 30 reviews / month" us="from $49" gen="$30–80" free="$600–3000" diy="Your time" />
               </tbody>
             </table>
           </div>
