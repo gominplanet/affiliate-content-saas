@@ -97,9 +97,21 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
   const ratingMatch = html.match(/(\d+\.\d+)\s+out of\s+5\s+stars/)
   const rating = ratingMatch ? ratingMatch[1] : null
 
-  // Image
-  const imgMatch = html.match(/"large"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/);
-  const imageUrl = imgMatch ? imgMatch[1] : null
+  // Image — prefer the CANONICAL main product image. The old `"large":"…"`
+  // match grabbed the FIRST one on the page, which is often a related /
+  // sponsored product (→ wrong product rendered). Priority:
+  //   1. #landingImage data-old-hires — the main hi-res product photo
+  //   2. og:image meta — Amazon sets this to the main product image
+  //   3. first "hiRes" in the gallery JSON
+  //   4. legacy "large" fallback
+  const imageUrl =
+    html.match(/id="landingImage"[^>]*\bdata-old-hires="(https:\/\/[^"]+)"/)?.[1] ||
+    html.match(/\bdata-old-hires="(https:\/\/[^"]+)"[^>]*id="landingImage"/)?.[1] ||
+    html.match(/<meta[^>]+property="og:image"[^>]+content="(https:\/\/[^"]+)"/)?.[1] ||
+    html.match(/<meta[^>]+content="(https:\/\/[^"]+)"[^>]+property="og:image"/)?.[1] ||
+    html.match(/"hiRes"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/)?.[1] ||
+    html.match(/"large"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/)?.[1] ||
+    null
 
   return { asin, title, bullets: bullets.slice(0, 6), description, price, rating, imageUrl }
 }

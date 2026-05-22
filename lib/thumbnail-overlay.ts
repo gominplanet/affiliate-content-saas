@@ -183,14 +183,32 @@ export function pickWeightedStyleIndex(
 
 const loadedFonts = new Set<string>()
 
-async function loadOverlayFont(fontName: string | null): Promise<void> {
-  if (!fontName || typeof window === 'undefined' || loadedFonts.has(fontName)) return
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700&display=swap`
-  document.head.appendChild(link)
-  await document.fonts.ready
-  loadedFonts.add(fontName)
+async function loadOverlayFont(fontName: string | null, weight = '400'): Promise<void> {
+  if (!fontName || typeof window === 'undefined') return
+  const key = `${fontName}:${weight}`
+  if (loadedFonts.has(key)) return
+  // Inject the stylesheet once per font.
+  if (!document.querySelector(`link[data-overlay-font="${fontName}"]`)) {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.dataset.overlayFont = fontName
+    link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700;900&display=swap`
+    document.head.appendChild(link)
+  }
+  // CRITICAL: document.fonts.ready alone resolves BEFORE a freshly-added font
+  // finishes downloading, so canvas would draw with the Impact fallback (the
+  // "bland" look). Explicitly load THIS font+weight and wait for it (with a
+  // timeout so we never hang). Then the punchy fonts actually render.
+  try {
+    await Promise.race([
+      (async () => {
+        await document.fonts.load(`${weight} 100px "${fontName}"`)
+        await document.fonts.ready
+      })(),
+      new Promise<void>(r => setTimeout(r, 4000)),
+    ])
+  } catch { /* fall back to the fontStack (system Impact) */ }
+  loadedFonts.add(key)
 }
 
 export interface OverlayOpts {
@@ -217,7 +235,7 @@ export async function renderThumbnailOverlay(
   const width = opts.width ?? 1280
   const height = opts.height ?? 720
   const style = OVERLAY_STYLES[opts.styleIndex ?? Math.floor(Math.random() * OVERLAY_STYLES.length)]
-  await loadOverlayFont(style.fontName)
+  await loadOverlayFont(style.fontName, style.weight)
 
   return new Promise<{ url: string; styleId: string }>((resolve, reject) => {
     const canvas = document.createElement('canvas')
