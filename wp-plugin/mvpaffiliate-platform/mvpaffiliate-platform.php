@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.7
+ * Version: 1.0.8
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.7');
+define('MVP_AFFILIATE_VERSION', '1.0.8');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -668,6 +668,39 @@ add_filter('pre_set_site_transient_update_plugins', function ($transient) {
         unset($transient->response[$basename]);
     }
     return $transient;
+});
+
+// ── Prominent "update available" banner ─────────────────────────────────────
+// Matches the theme's banner: a bold RED notice at the top of every wp-admin
+// page when a newer plugin version is published, with a one-click "Update now"
+// button. WordPress's native Plugins-page hint is easy to miss. Only renders
+// for users who can update plugins; disappears once they're current.
+add_action('admin_notices', function () {
+    if (!current_user_can('update_plugins')) return;
+    $info = mvp_affiliate_fetch_remote_version();
+    if (empty($info['plugin']['version'])) return;
+    $latest = (string) $info['plugin']['version'];
+    if (!version_compare(MVP_AFFILIATE_VERSION, $latest, '<')) return;
+
+    $basename   = plugin_basename(__FILE__);
+    $update_url = wp_nonce_url(
+        self_admin_url('update.php?action=upgrade-plugin&plugin=' . $basename),
+        'upgrade-plugin_' . $basename
+    );
+    ?>
+    <div class="notice notice-error" style="border-left-width:6px;border-left-color:#d63638;background:#fcf0f1;padding:16px 18px;">
+      <p style="font-size:15px;margin:0 0 10px;color:#1d2327;">
+        <span style="display:inline-block;font-weight:700;color:#d63638;">⚠ MVP Affiliate plugin update available — v<?php echo esc_html($latest); ?></span>
+        <span style="opacity:.85;"> (you're on v<?php echo esc_html(MVP_AFFILIATE_VERSION); ?>). Update now to get the latest fixes and features.</span>
+      </p>
+      <p style="margin:0;">
+        <a href="<?php echo esc_url($update_url); ?>" class="button button-primary" style="background:#d63638;border-color:#d63638;box-shadow:none;text-shadow:none;font-weight:600;">
+          Update plugin now
+        </a>
+        <a href="<?php echo esc_url(self_admin_url('plugins.php')); ?>" style="margin-left:10px;color:#d63638;">View in Plugins</a>
+      </p>
+    </div>
+    <?php
 });
 
 // "View details" modal on the Plugins page — minimal but prevents a WP error
