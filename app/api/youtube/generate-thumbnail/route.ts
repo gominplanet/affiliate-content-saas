@@ -275,7 +275,7 @@ PROMPT RULES (this is a YouTube THUMBNAIL — must look engaging but NATURAL, no
 CALIBRATION NOTE: We've tuned away from "mouth-wide-open, eyes-bulging" expressions because they read as cartoonish and AI-generated. Aim for the energy of a great photojournalism portrait — present, alive, intriguing — NOT a meme-face reaction.
 
 1. START with "${opts.triggerToken}" — the LoRA's trigger token must appear at the very start so the loaded weights activate. Then describe what they're doing.
-2. PERSON FRAMING: ${opts.triggerToken} fills the frame — face takes ~30-40% of the image, MID-SHOT. Not a wide shot, not a tight close-up.
+2. PERSON FRAMING: ${opts.triggerToken} sits on the RIGHT side of the frame, face takes ~30-40% of the image, MID-SHOT. Not a wide shot, not a tight close-up. The person occupies roughly the right 55-60% of the frame.
 3. EXPRESSION: DEFAULT to a WARM GENUINE SMILE — friendly, inviting, slightly raised eyebrows like someone sharing a good find. People click on creators who look happy + trustworthy. ONLY use a different expression if the video's tone clearly demands it:
    - Sceptical / unimpressed look → ONLY if video title says "scam", "warning", "don't buy", "ripoff", "review fail"
    - Soft surprised (mouth slightly parted, eyes alert) → ONLY if video title says "shocked", "I didn't expect", "you won't believe"
@@ -283,9 +283,9 @@ CALIBRATION NOTE: We've tuned away from "mouth-wide-open, eyes-bulging" expressi
    When uncertain, USE THE SMILE. Smile is the safe high-CTR default.
    AVOID: mouth wide open, bulging eyes, screaming face, forced grimace, exaggerated shock. Those read as cartoonish.
 4. EYE CONTACT: looking AT camera or AT the product. Confident, not posed.
-5. PRODUCT: held naturally near the face or shoulder, clearly visible.
+5. PRODUCT: held up near the face/chest on the RIGHT side, at roughly shoulder height, fully visible and unobstructed. Do NOT place the product low or in the bottom-left — that corner is reserved for text.
 6. SCENE: real-world setting, slightly blurred background — bokeh that supports the subject, doesn't replace them. Setting should feel lived-in.
-7. COMPOSITION: person CENTRE or CENTRE-LEFT, product close to them. Leave clean space TOP-LEFT or BOTTOM-LEFT for a giant text overlay.
+7. COMPOSITION: person + product BOTH on the RIGHT 55-60% of the frame. The entire LEFT THIRD of the frame must stay clear and uncluttered — empty background only, NO product, NO hands, NO key detail there — because a giant text overlay will be placed in the bottom-left. This is critical: nothing important on the left.
 8. LIGHTING: natural editorial — soft key light + slight rim light, gentle contrast. Skin looks real, NOT plastic or over-lit.
 9. End with: "16:9, photorealistic, 8K, sharp focus on face, editorial portrait lighting, shallow depth of field, natural skin tones, no text overlays"
 10. Under 110 words total.
@@ -470,16 +470,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, overlayHook, quickMode: true })
     }
 
-    // ── Resolve product data + fetch real product image from Amazon ────────────
-    let productImageUrl: string | null = null
+    // ── Resolve product TEXT data (title / description / bullets) ─────────────
+    // Amazon (when there's an ASIN) and the store page are fine for the textual
+    // product facts. The IMAGE reference is resolved separately below.
     let productTitle = providedProductTitle ?? ''
     let productDescription = providedProductDescription ?? ''
     let productBullets = providedProductBullets ?? []
+    let amazonImageUrl: string | null = null
+    let storeImageUrl: string | null = null
 
     if (asin) {
       try {
         const p = await fetchAmazonProduct(asin)
-        productImageUrl = p.imageUrl
+        amazonImageUrl = p.imageUrl
         if (!productTitle) productTitle = p.title
         if (!productDescription) productDescription = p.description
         if (!productBullets.length) productBullets = p.bullets
@@ -487,31 +490,36 @@ export async function POST(request: Request) {
     }
 
     // NON-AMAZON products: grab the real product photo off the store/brand page
-    // the creator linked in the description, so the Kontext path can render the
-    // ACTUAL product (mirrors the blog pipeline). Without this, non-Amazon
-    // thumbnails fell back to a text-only guess of the product.
-    if (!productImageUrl && videoDescription) {
+    // the creator linked in the description (mirrors the blog pipeline).
+    if (videoDescription) {
       let pageUrl = firstProductUrl(videoDescription)
       if (pageUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
         pageUrl = await resolveFinalUrl(pageUrl)
       }
       if (pageUrl) {
-        productImageUrl = await fetchProductImageFromPage(pageUrl)
+        storeImageUrl = await fetchProductImageFromPage(pageUrl)
       }
     }
 
-    // PHASE 1 — last-resort product reference: the video's OWN thumbnail.
-    // When neither Amazon nor a store page gave us a product photo, the
-    // creator's own frame is the most accurate reference we have (they're
-    // literally showing the product on camera). Used to ground the Kontext
-    // path so we render the REAL product instead of a text-only guess.
-    // Flagged so the Kontext instruction can account for a busy frame
-    // (people, text, props) rather than a clean white-background photo.
+    // ── Resolve the product IMAGE reference — FRAME FIRST ─────────────────────
+    // KEY FIX: the video's OWN thumbnail is the authoritative reference — the
+    // creator is literally holding/showing the REAL product. A scraped Amazon
+    // image is unreliable (often a sponsored/related product, or blocked from
+    // datacenter IPs entirely), which is what kept rendering the WRONG product.
+    // So we now PREFER the frame, then fall back to Amazon, then the store page.
+    // (See memory/competitor_thumbnailcreator.md — this is the documented edge.)
+    let productImageUrl: string | null = null
     let productImageIsVideoFrame = false
-    if (!productImageUrl && videoThumbnailUrl) {
+    if (videoThumbnailUrl) {
       productImageUrl = videoThumbnailUrl
       productImageIsVideoFrame = true
+    } else if (amazonImageUrl) {
+      productImageUrl = amazonImageUrl
+    } else if (storeImageUrl) {
+      productImageUrl = storeImageUrl
     }
+    console.log('[generate-thumbnail] Product image ref:',
+      productImageIsVideoFrame ? 'video-frame' : (productImageUrl ? 'scraped' : 'none'))
 
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
