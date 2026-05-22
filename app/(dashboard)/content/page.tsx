@@ -1513,6 +1513,14 @@ function VideoCard({
     ?? fbAccounts[0]?.id
     ?? null
   const showFbAccountPicker = fbAccounts.length >= 1
+  // Remember the user's last Page choice across reloads (persisted globally,
+  // applied once the account list arrives and only if the id is still valid).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('mvp_fb_account_choice')
+      if (saved && fbAccounts.some(a => a.id === saved)) setSelectedFbAccountId(saved)
+    } catch { /* ignore */ }
+  }, [fbAccounts])
   const [pinLoading, setPinLoading] = useState(false)
   const [pinPosted, setPinPosted] = useState(!!post?.pinterestPinId)
   const [thPosting, setThPosting] = useState(false)
@@ -1922,7 +1930,11 @@ function VideoCard({
               {fbConnected && showFbAccountPicker && (
                 <select
                   value={effectiveFbAccountId ?? ''}
-                  onChange={e => setSelectedFbAccountId(e.target.value)}
+                  onChange={e => {
+                    const v = e.target.value
+                    setSelectedFbAccountId(v)
+                    try { localStorage.setItem('mvp_fb_account_choice', v) } catch { /* ignore */ }
+                  }}
                   title="Which Facebook Page to publish to"
                   className="text-[10px] px-1.5 py-1 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none max-w-[150px]"
                 >
@@ -3468,6 +3480,7 @@ export default function ContentPage() {
               { key: 'bluesky',  label: 'Bluesky',  color: '#1185fe', connected: blueskyConnected,   dryRunEndpoint: '/api/blog/bluesky-post' },
               { key: 'telegram', label: 'Telegram', color: '#229ED9', connected: telegramConnected,  dryRunEndpoint: '/api/blog/telegram-post' },
             ]}
+            fbAccounts={fbAccounts}
             onClose={() => setBulkScheduleOpen(false)}
             onScheduled={({ ok, failed, firstError }) => {
               setFixCatResult(`${ok} scheduled${failed > 0 ? ` · ${failed} failed${firstError ? ` (${firstError})` : ''}` : ''}`)

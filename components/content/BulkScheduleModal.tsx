@@ -41,11 +41,14 @@ interface QueuedPost {
 export function BulkScheduleModal({
   posts,
   platforms,
+  fbAccounts = [],
   onClose,
   onScheduled,
 }: {
   posts: QueuedPost[]
   platforms: PlatformOpt[]
+  /** Connected Facebook Pages (Pro) for the per-batch Page picker. */
+  fbAccounts?: Array<{ id: string; displayName: string | null; isDefault: boolean }>
   onClose: () => void
   /** Called once after the whole batch is done. */
   onScheduled: (counts: { ok: number; failed: number; firstError: string | null }) => void
@@ -58,6 +61,14 @@ export function BulkScheduleModal({
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<Platform>>(initialSelected)
   const [firstAt, setFirstAt] = useState<string>(() => defaultStartString())
   const [intervalMins, setIntervalMins] = useState<number>(30)
+  // Facebook Page target for this batch (Pro multi-account). Defaults to the
+  // last per-post choice, then the default Page.
+  const [fbAccountId, setFbAccountId] = useState<string>(() => {
+    let saved: string | null = null
+    try { saved = localStorage.getItem('mvp_fb_account_choice') } catch { /* ignore */ }
+    if (saved && fbAccounts.some(a => a.id === saved)) return saved
+    return fbAccounts.find(a => a.isDefault)?.id ?? fbAccounts[0]?.id ?? ''
+  })
 
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
@@ -120,7 +131,11 @@ export function BulkScheduleModal({
           const schedRes = await fetch('/api/blog/schedule-post', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ postId, platform, scheduledAt, text }),
+            body: JSON.stringify({
+              postId, platform, scheduledAt, text,
+              // Only Facebook supports a chosen Page today.
+              socialAccountId: platform === 'facebook' && fbAccountId ? fbAccountId : undefined,
+            }),
           })
           const schedData = await schedRes.json().catch(() => ({}))
           if (!schedRes.ok) throw new Error(schedData.error || `Schedule HTTP ${schedRes.status}`)
@@ -196,6 +211,24 @@ export function BulkScheduleModal({
               })}
             </div>
           </div>
+
+          {/* Facebook Page picker — only when FB is selected and there's a
+              choice to make (Pro multi-account). */}
+          {selectedPlatforms.has('facebook') && fbAccounts.length > 1 && (
+            <div className="mb-5">
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Facebook Page</p>
+              <select
+                value={fbAccountId}
+                onChange={e => setFbAccountId(e.target.value)}
+                disabled={running}
+                className="w-full text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#0071e3] focus:outline-none"
+              >
+                {fbAccounts.map(a => (
+                  <option key={a.id} value={a.id}>{a.displayName || 'Facebook Page'}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Step 2 — Timing */}
           <div className="mb-5 grid grid-cols-2 gap-3">
