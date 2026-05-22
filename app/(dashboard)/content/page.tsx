@@ -1504,13 +1504,15 @@ function VideoCard({
   const [fbPosting, setFbPosting] = useState(false)
   const [fbPosted, setFbPosted] = useState(!!post?.facebookPostId)
   // Per-post Facebook Page choice (Pro multi-account). Defaults to the
-  // user's default page; the picker only renders when there's >1 page.
+  // user's default page. The picker renders whenever the user has at least
+  // one connected Page (Pro loads the list) so it's discoverable/testable —
+  // even with a single page (you can confirm which Page you're posting to).
   const [selectedFbAccountId, setSelectedFbAccountId] = useState<string | null>(null)
   const effectiveFbAccountId = selectedFbAccountId
     ?? fbAccounts.find(a => a.isDefault)?.id
     ?? fbAccounts[0]?.id
     ?? null
-  const showFbAccountPicker = fbAccounts.length > 1
+  const showFbAccountPicker = fbAccounts.length >= 1
   const [pinLoading, setPinLoading] = useState(false)
   const [pinPosted, setPinPosted] = useState(!!post?.pinterestPinId)
   const [thPosting, setThPosting] = useState(false)
