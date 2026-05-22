@@ -1835,7 +1835,7 @@ export default function StudioPage() {
   if (loading) {
     return (
       <div>
-        <Header title="YouTube Co-Pilot" subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to YouTube Studio in one click." />
+        <Header title="YouTube Co-Pilot" subtitle="Generate viral title ideas, a description, tags, hashtags and a thumbnail for any video — then push it all back to YouTube Studio in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links." />
         <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" /> Loading your videos…
         </div>
@@ -1847,7 +1847,7 @@ export default function StudioPage() {
     <div>
       <Header
         title="YouTube Co-Pilot"
-        subtitle="Drop the ASIN in your YouTube title. We generate the description, tags, hashtags and thumbnail — then push it all back to YouTube Studio in one click."
+        subtitle="Generate viral title ideas, a description, tags, hashtags and a thumbnail for any video — then push it all back to YouTube Studio in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links."
       />
 
       <TutorialVideo sectionKey="studio" />
@@ -1865,8 +1865,8 @@ export default function StudioPage() {
             </p>
             <div className="rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 px-3 py-2 mb-4">
               <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
-                <strong>Before you upload your next video:</strong> include the Amazon ASIN in the video file name or YouTube title — e.g.{' '}
-                <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>. That&apos;s how MVP knows which product to generate the review for.
+                <strong>Tip for product reviews:</strong> add the Amazon ASIN to the video file name or YouTube title — e.g.{' '}
+                <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>. It&apos;s optional — it just pins the exact product for accurate Amazon data + your affiliate link.
               </p>
             </div>
             <a
@@ -1897,11 +1897,11 @@ export default function StudioPage() {
             <AlertCircle size={14} className="text-[#0071e3]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Before you upload to YouTube — include the Amazon ASIN in your video name</p>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Reviewing an Amazon product? Put the ASIN in your title for the best result</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-              Name the video file (or the YouTube title) so the 10-character Amazon ASIN sits inside it. Example:{' '}
+              If your video reviews an Amazon product, drop the 10-character ASIN into the YouTube title (or the video file name) — e.g.{' '}
               <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">Vacuum - B08TT4YHG1</span>.
-              That&apos;s how we identify the product, pull its Amazon data, and generate the description, tags, hashtags and thumbnail. No ASIN, no generation.
+              That pins the exact product so we pull its real Amazon data and add your affiliate link. <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">It&apos;s optional, though</strong> — with no ASIN we try to identify the product from your title automatically, and if it isn&apos;t a product video we still generate title ideas, description, tags, hashtags and thumbnail around your topic (just no affiliate link).
             </p>
           </div>
         </div>
