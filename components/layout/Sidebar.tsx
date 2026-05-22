@@ -269,15 +269,14 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         )}
       >
       {/* Logo */}
-      <div className="px-4 pt-5 pb-4" style={{ borderBottom: '1px solid var(--border-2)' }}>
-        <Link href="/dashboard" className="flex items-center gap-3 group">
+      <div className="px-4 pt-4 pb-4" style={{ borderBottom: '1px solid var(--border-2)' }}>
+        <Link href="/dashboard" className="inline-flex group" aria-label="MVP Affiliate — Dashboard">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/mvp-affiliate-logo.png"
             alt="MVP Affiliate"
-            className="w-12 h-12 rounded-xl object-contain mix-blend-multiply dark:mix-blend-screen flex-shrink-0 group-hover:opacity-90 transition-opacity"
+            className="w-16 h-16 rounded-2xl object-contain mix-blend-multiply dark:mix-blend-screen flex-shrink-0 group-hover:opacity-90 transition-opacity"
           />
-          <span className="font-bold text-[17px] tracking-tight leading-none" style={{ color: 'var(--text)' }}>MVP Affiliate</span>
         </Link>
       </div>
 
