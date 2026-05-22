@@ -31,6 +31,7 @@ import {
   Menu,
   TrendingUp,
   Megaphone,
+  Newspaper,
   DollarSign,
   Handshake,
   GraduationCap,
@@ -471,6 +472,13 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
               >
                 <DollarSign size={16} className="flex-shrink-0" />
                 AI Cost (admin)
+              </Link>
+              <Link
+                href="/admin/announcement"
+                className={cn('nav-item', isActive('/admin/announcement') && 'active')}
+              >
+                <Newspaper size={16} className="flex-shrink-0" />
+                News banner (admin)
               </Link>
             </>
           )}

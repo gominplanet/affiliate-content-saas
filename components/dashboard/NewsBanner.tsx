@@ -7,54 +7,54 @@ import { Megaphone, X, ArrowRight } from 'lucide-react'
 /**
  * Dashboard NEWS / announcement banner — red-tinted, dismissible.
  *
- * HOW TO POST AN ANNOUNCEMENT:
- *   1. Edit the NEWS object below (title + body, optional CTA).
- *   2. Bump NEWS.id to a new value.
- * Every user then sees the banner once on the dashboard until they X it out.
- * Because dismissal is keyed on the id, bumping the id re-shows a fresh
- * message even to users who dismissed the previous one.
+ * Content is managed (no deploy) from the admin "News banner" page
+ * (/admin/announcement), which writes to the `announcements` table. This
+ * component fetches the current active announcement from GET /api/announcement.
  *
- * To hide the banner entirely, set NEWS = null.
- *
- * (This is separate from WhatsNew.tsx, which is for product/feature
- * changelogs. Use this one for general heads-up announcements.)
+ * Each announcement has its own id; dismissal is stored per-id in
+ * localStorage, so publishing a new message re-shows it to everyone — even
+ * users who dismissed the previous one.
  */
 
-const NEWS: {
+interface Announcement {
   id: string
   title: string
   body: string
-  ctaLabel?: string
-  ctaHref?: string
-} | null = {
-  id: 'announcement-2026-05-22',
-  title: 'Heads up',
-  body: 'This is a sample announcement. Edit components/dashboard/NewsBanner.tsx (the NEWS object) and bump its id to post a new message — it shows here until each user dismisses it.',
-  // ctaLabel: 'Learn more',
-  // ctaHref: '/community',
+  cta_label: string | null
+  cta_href: string | null
 }
 
 const STORAGE_KEY = 'mvp_news_seen'
 
 export default function NewsBanner() {
-  // Start dismissed so we never flash the banner before hydration reads
-  // localStorage.
+  const [news, setNews] = useState<Announcement | null>(null)
+  // Start dismissed so we never flash a banner before we know what's live.
   const [dismissed, setDismissed] = useState(true)
 
   useEffect(() => {
-    if (!NEWS) return
-    try {
-      setDismissed(localStorage.getItem(STORAGE_KEY) === NEWS.id)
-    } catch {
-      setDismissed(false)
-    }
+    let alive = true
+    fetch('/api/announcement')
+      .then(r => r.json())
+      .then(d => {
+        if (!alive) return
+        const a = (d?.announcement as Announcement | null) ?? null
+        if (!a) return
+        setNews(a)
+        try {
+          setDismissed(localStorage.getItem(STORAGE_KEY) === a.id)
+        } catch {
+          setDismissed(false)
+        }
+      })
+      .catch(() => { /* no banner on error */ })
+    return () => { alive = false }
   }, [])
 
-  if (!NEWS || dismissed) return null
+  if (!news || dismissed) return null
 
-  const news = NEWS
+  const a = news
   function dismiss() {
-    try { localStorage.setItem(STORAGE_KEY, news.id) } catch { /* ignore */ }
+    try { localStorage.setItem(STORAGE_KEY, a.id) } catch { /* ignore */ }
     setDismissed(true)
   }
 
@@ -78,14 +78,14 @@ export default function NewsBanner() {
           <Megaphone size={16} className="text-[#dc2626]" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{news.title}</p>
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">{news.body}</p>
-          {news.ctaLabel && news.ctaHref && (
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">{a.title}</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">{a.body}</p>
+          {a.cta_label && a.cta_href && (
             <Link
-              href={news.ctaHref}
+              href={a.cta_href}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#dc2626] hover:underline mt-2"
             >
-              {news.ctaLabel} <ArrowRight size={11} />
+              {a.cta_label} <ArrowRight size={11} />
             </Link>
           )}
         </div>
