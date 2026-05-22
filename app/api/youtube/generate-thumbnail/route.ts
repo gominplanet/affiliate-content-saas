@@ -374,8 +374,15 @@ export async function POST(request: Request) {
       faceModelId,
       videoDescription,
       videoThumbnailUrl,
+      enhanceFrame = false,
     } = await request.json() as {
       quickMode?: boolean
+      /** ENHANCE-FRAME mode: skip all generation and use the creator's OWN
+       *  video frame as the thumbnail (real product, real face, real room —
+       *  zero hallucination). Best-effort AuraSR upscale for sharpness; the
+       *  client applies the colour-pop + title overlay. The accurate path for
+       *  "I filmed myself holding the product" thumbnails. */
+      enhanceFrame?: boolean
       videoTitle: string
       asin?: string
       /** The YouTube description — used to find the product link for a real
@@ -468,6 +475,61 @@ export async function POST(request: Request) {
       // Locked headline short-circuits the hook agent — no AI call needed.
       const overlayHook = lockedHeadline || (await generateHook(videoTitle))
       return NextResponse.json({ ok: true, overlayHook, quickMode: true })
+    }
+
+    // ── ENHANCE-FRAME mode: the creator's OWN frame, zero generation ──────────
+    // For "I filmed myself holding the real product" thumbnails, the actual
+    // video frame already has everything correct — real face, real product
+    // (real label), real room. We do NOT regenerate (which hallucinates the
+    // product/label). We just sharpen the frame (best-effort AuraSR upscale)
+    // and hand it back; the client applies the colour-pop + title overlay.
+    if (enhanceFrame) {
+      if (!videoThumbnailUrl) {
+        return NextResponse.json({ error: 'No video frame available to enhance.' }, { status: 400 })
+      }
+      fal.config({ credentials: falKey })
+      const overlayHook = lockedHeadline || (await generateHook(videoTitle))
+
+      let frameUrl = videoThumbnailUrl
+      try {
+        // AuraSR 4x super-resolution — sharpens a soft YouTube frame without
+        // altering content (it's an upscaler, not a generator, so the real
+        // product/label/face are preserved exactly). Best-effort.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sr = await fal.subscribe('fal-ai/aura-sr' as any, {
+          input: { image_url: videoThumbnailUrl, checkpoint: 'v2' },
+          pollInterval: 3000,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const d = sr.data as any
+        const srUrl = (d?.image?.url as string | undefined) || (d?.images?.[0]?.url as string | undefined)
+        if (srUrl) {
+          frameUrl = srUrl
+          recordUsage({
+            userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+            feature: 'yt_thumb_enhance_frame', model: 'fal-aura-sr', images: 1,
+          })
+        }
+      } catch (err) {
+        console.warn('[generate-thumbnail] AuraSR upscale failed, using raw frame:', err)
+      }
+      // Ensure the generation is counted once even if AuraSR was skipped.
+      if (frameUrl === videoThumbnailUrl) {
+        recordUsage({
+          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+          feature: 'yt_thumb_enhance_frame', model: 'fal-aura-sr', images: 0,
+        })
+      }
+      return NextResponse.json({
+        ok: true,
+        thumbnailUrl: frameUrl,
+        thumbnailUrls: [frameUrl],
+        overlayHook,
+        headlineLocked: !!lockedHeadline,
+        enhanceFrame: true,
+        modelUsed: 'enhance-frame',
+        headshotUsed: false,
+      })
     }
 
     // ── Resolve product TEXT data (title / description / bullets) ─────────────

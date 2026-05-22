@@ -23,7 +23,7 @@ export const PRIMARY_FEATURE = {
    *  product composite ('yt_thumb_face_product_composite') is
    *  deliberately EXCLUDED here so a face thumbnail counts once, not
    *  twice, against the user's cap. */
-  thumbnail: ['yt_thumb_kontext_image', 'yt_thumb_flux_image', 'yt_thumb_flux_lora_image'] as string[],
+  thumbnail: ['yt_thumb_kontext_image', 'yt_thumb_flux_image', 'yt_thumb_flux_lora_image', 'yt_thumb_enhance_frame'] as string[],
   /** Metadata 5-agent swarm; title_strategist runs exactly once per
    *  generation, so counting it = total successful metadata gens. */
   metadata: ['yt_meta_title_strategist'] as string[],
