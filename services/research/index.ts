@@ -237,3 +237,37 @@ Rules: ground every fact in search results — do NOT invent. Under 250 words.`,
     return ''
   }
 }
+
+/**
+ * Pull a real PRODUCT IMAGE off a store/brand product page so the image
+ * generator can use the ACTUAL product as a Kontext reference instead of a
+ * text-only guess. Used for non-Amazon products (Amazon has its own catalog
+ * photo via ASIN). Prefers og:image / twitter:image (the page's chosen hero
+ * image), falls back to the first large <img>. Best-effort, timeout-bounded.
+ */
+export async function fetchProductImageFromPage(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+    let img: string | null =
+      html.match(/<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)?.[1] ||
+      html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
+      null
+    if (!img) {
+      const m = html.match(/<img[^>]+src=["'](https?:\/\/[^"']+\.(?:jpe?g|png|webp)[^"']*)["']/i)
+      img = m?.[1] ?? null
+    }
+    if (!img) return null
+    if (img.startsWith('//')) img = 'https:' + img
+    else if (img.startsWith('/')) { try { img = new URL(img, url).href } catch { /* keep as-is */ } }
+    return img.startsWith('http') ? img : null
+  } catch {
+    return null
+  }
+}

@@ -9,7 +9,7 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
-import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
+import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { fal } from '@fal-ai/client'
@@ -777,6 +777,26 @@ async function handleGenerate(request: Request) {
                 if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
               }
             } catch { /* fall back to text-only prompts */ }
+          }
+
+          // NON-AMAZON products: pull the real product photo off the store/brand
+          // page the creator linked, so Kontext renders the ACTUAL product
+          // instead of a text-only guess (the #1 cause of "wrong product"). The
+          // Amazon path above already covers ASIN products; this fills the gap.
+          if (!falProductImageUrl) {
+            let pageUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
+            if (pageUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
+              pageUrl = await resolveFinalUrl(pageUrl) // unwrap short/geni.us links to the real page
+            }
+            if (pageUrl) {
+              const productImg = await fetchProductImageFromPage(pageUrl)
+              if (productImg) {
+                try {
+                  const imgRes = await fetch(productImg, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+                  if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
+                } catch { /* fall through to text-only prompts */ }
+              }
+            }
           }
 
           // Image count scales ~1 per 500 words, clamped to the tier ceiling.
