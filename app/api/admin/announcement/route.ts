@@ -32,6 +32,7 @@ export async function POST(request: Request) {
       body?: string
       ctaLabel?: string
       ctaHref?: string
+      variant?: string
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
     if ((ctaLabel && !ctaHref) || (!ctaLabel && ctaHref)) {
       return NextResponse.json({ error: 'Provide both a button label and link, or neither.' }, { status: 400 })
     }
+    const variant = body.variant === 'feature' ? 'feature' : 'news'
 
     // Deactivate the current banner, then publish the new one.
     await admin.from('announcements').update({ active: false, updated_at: now }).eq('active', true)
@@ -65,6 +67,7 @@ export async function POST(request: Request) {
         body: text,
         cta_label: ctaLabel,
         cta_href: ctaHref,
+        variant,
         created_by: user.id,
       })
       .select('id')

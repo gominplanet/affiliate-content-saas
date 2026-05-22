@@ -20,7 +20,7 @@ export async function GET() {
     const admin = createAdminClient() as any
     const { data } = await admin
       .from('announcements')
-      .select('id,title,body,cta_label,cta_href')
+      .select('id,title,body,cta_label,cta_href,variant')
       .eq('active', true)
       .order('created_at', { ascending: false })
       .limit(1)

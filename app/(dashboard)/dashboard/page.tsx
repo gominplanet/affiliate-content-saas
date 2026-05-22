@@ -4,7 +4,6 @@ import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
-import WhatsNew from '@/components/dashboard/WhatsNew'
 import NewsBanner from '@/components/dashboard/NewsBanner'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
@@ -203,7 +202,6 @@ export default async function DashboardPage() {
 
       <WpUpdateBanner />
       {int?.wordpress_url ? <AmazonSitesReminder siteUrl={int.wordpress_url as string} /> : null}
-      <WhatsNew />
       <ReferralBanner />
       <SetupChecklist />
       <ChannelStats />
