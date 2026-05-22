@@ -49,6 +49,14 @@
 @layer base {
   body {
     background-color: var(--bg);
+    /* Soft brand aurora fixed behind everything — blue glow top-left, violet
+       top-right. Content cards sit on top at full contrast; this just gives
+       the canvas depth and an on-brand, "designed" feel. */
+    background-image:
+      radial-gradient(55rem 30rem at 12% -8%,  rgba(0,113,227,0.14), transparent 60%),
+      radial-gradient(50rem 28rem at 102% 2%, rgba(123,97,255,0.16), transparent 55%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
     color: var(--text);
     @apply font-sans;
   }
@@ -123,10 +131,14 @@
   }
 
   .nav-item.active {
-    background-image: linear-gradient(135deg, rgba(0,113,227,0.13) 0%, rgba(123,97,255,0.13) 100%);
-    color: var(--accent);
+    background-image: var(--accent-gradient);
+    color: #fff;
+    box-shadow: 0 6px 16px -4px rgba(67,56,202,0.45);
     @apply font-semibold;
   }
+  /* Lucide icons stroke with currentColor — keep them white on the
+     gradient pill, and overrides any per-link inline icon color. */
+  .nav-item.active svg { color: #fff !important; }
 
   .stat-card {
     @apply card p-5 flex flex-col gap-1;

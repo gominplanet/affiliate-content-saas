@@ -209,7 +209,7 @@ export default async function DashboardPage() {
             <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center mb-3`}>
               <Icon size={18} className={color} />
             </div>
-            <p className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">{value}</p>
+            <p className="text-4xl font-bold tracking-tight text-gradient">{value}</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] font-medium">{label}</p>
           </div>
         ))}
