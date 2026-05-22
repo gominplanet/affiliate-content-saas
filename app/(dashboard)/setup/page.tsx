@@ -1301,7 +1301,28 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               {fbDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
             </button>
           </div>
-        ) : <ManualFacebookToken onConnected={() => load()} />}
+        ) : (
+          <div className="flex flex-col gap-4">
+            <a
+              href="/api/auth/facebook"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
+              style={{ backgroundColor: '#1877F2' }}
+            >
+              <Facebook size={14} /> Connect Facebook
+            </a>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+              Recommended. You&apos;ll be sent to Facebook to grant access — on that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post. The token method below only ever connects one Page.
+            </p>
+            <details className="text-xs">
+              <summary className="cursor-pointer text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
+                Advanced: paste a Page access token instead
+              </summary>
+              <div className="mt-3">
+                <ManualFacebookToken onConnected={() => load()} />
+              </div>
+            </details>
+          </div>
+        )}
       </div>
 
       {/* Pinterest */}
