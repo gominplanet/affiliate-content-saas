@@ -11,6 +11,8 @@ import {
   AlertTriangle,
   UserCog,
   ChevronRight,
+  ChevronDown,
+  type LucideIcon,
   Wrench,
   Plug,
   CreditCard,
@@ -43,25 +45,57 @@ import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { resetTutorials } from '@/components/TutorialVideo'
 import { DISCORD_INVITE_URL, COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
 
-// New nav order — Setup is split into two: Blog Set Up (WordPress wizard)
-// and Integrations (3rd-party social connectors). Both routes go to /setup
-// with different ?tab= values; active highlighting uses the query param.
-const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, matchKind: 'exact' as const },
-  { href: '/assistant', label: 'AI Assistant', icon: Bot, matchKind: 'prefix' as const },
-  { href: '/setup', label: 'Blog Set Up', icon: Wrench, matchKind: 'setup-wp' as const },
-  { href: '/setup?tab=integrations', label: 'Integrations', icon: Plug, matchKind: 'setup-int' as const },
-  { href: '/brand', label: 'Brand Profile', icon: Palette, matchKind: 'prefix' as const },
-  { href: '/learn', label: 'Learning', icon: GraduationCap, matchKind: 'prefix' as const },
-  { href: '/face-training', label: 'Face Training', icon: UserCircle2, matchKind: 'prefix' as const },
-  { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' as const },
-  { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' as const },
-  { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' as const },
-  { href: '/campaigns', label: 'Creator Campaigns', icon: Megaphone, matchKind: 'prefix' as const },
-  { href: '/collaborations', label: 'Collaborations', icon: Handshake, matchKind: 'prefix' as const },
-  { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' as const },
-  { href: '/tutorials', label: 'Tutorials', icon: GraduationCap, matchKind: 'prefix' as const },
+// Sidebar nav, grouped by workflow phase. Dashboard + AI Assistant are
+// pinned (cross-cutting daily destinations); everything else lives in a
+// collapsible group: Set Up & Brand → Create & Publish → Grow & Earn.
+// Setup is split into Blog Set Up (WordPress wizard) and Integrations
+// (3rd-party social connectors) — both route to /setup with different ?tab=
+// values; active highlighting uses the query param.
+type NavMatchKind = 'exact' | 'prefix' | 'setup-wp' | 'setup-int'
+type NavItem = { href: string; label: string; icon: LucideIcon; matchKind: NavMatchKind; badge?: string }
+type NavGroup = { id: string; label: string; items: NavItem[] }
+
+const pinnedNav: NavItem[] = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, matchKind: 'exact' },
+  { href: '/assistant', label: 'AI Assistant', icon: Bot, matchKind: 'prefix' },
 ]
+
+const navGroups: NavGroup[] = [
+  {
+    id: 'setup',
+    label: 'Set Up & Brand',
+    items: [
+      { href: '/setup', label: 'Blog Set Up', icon: Wrench, matchKind: 'setup-wp' },
+      { href: '/setup?tab=integrations', label: 'Integrations', icon: Plug, matchKind: 'setup-int' },
+      { href: '/brand', label: 'Brand Profile', icon: Palette, matchKind: 'prefix' },
+      { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' },
+      { href: '/learn', label: 'Learning', icon: GraduationCap, matchKind: 'prefix' },
+      { href: '/face-training', label: 'Face Training', icon: UserCircle2, matchKind: 'prefix' },
+    ],
+  },
+  {
+    id: 'create',
+    label: 'Create & Publish',
+    items: [
+      { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' },
+      { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' },
+    ],
+  },
+  {
+    id: 'grow',
+    label: 'Grow & Earn',
+    items: [
+      { href: '/campaigns', label: 'Creator Campaigns', icon: Megaphone, matchKind: 'prefix' },
+      { href: '/collaborations', label: 'Collaborations', icon: Handshake, matchKind: 'prefix' },
+      { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' },
+    ],
+  },
+]
+
+// Standalone link rendered after the groups (not part of any phase).
+const tutorialsNav: NavItem = { href: '/tutorials', label: 'Tutorials', icon: GraduationCap, matchKind: 'prefix' }
+
+const SIDEBAR_GROUPS_KEY = 'mvp_sidebar_groups'
 
 const secondaryNav = [
   { href: '/billing', label: 'Plan & Billing', icon: CreditCard },
@@ -94,6 +128,21 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const [mobileOpen, setMobileOpen] = useState(false)
   const [tutorialsRestored, setTutorialsRestored] = useState(false)
   useEffect(() => { setMobileOpen(false) }, [pathname, searchParams])
+
+  // Collapsible nav groups. We store ONLY the groups the user has explicitly
+  // collapsed (default = open), persisted per-browser. The group containing
+  // the current page is always force-opened regardless of stored state.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    try { setOpenGroups(JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY) || '{}')) } catch { /* default all-open */ }
+  }, [])
+  function toggleGroup(id: string) {
+    setOpenGroups(prev => {
+      const next = { ...prev, [id]: !(prev[id] ?? true) }
+      try { localStorage.setItem(SIDEBAR_GROUPS_KEY, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
 
   async function purgeCache() {
     setPurging(true)
@@ -166,6 +215,27 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
     return pathname.startsWith(href)
   }
 
+  // Render a single nav link (shared by pinned items + grouped items).
+  const renderNavLink = (item: NavItem) => {
+    const { href, label, icon: Icon, matchKind, badge } = item
+    // Analytics is Geniuslink-only — hide it until Geniuslink is connected.
+    if (href === '/analytics' && !geniusConnected) return null
+    return (
+      <Link key={label} href={href} className={cn('nav-item', isActiveTabbed(matchKind, href) && 'active')}>
+        <Icon size={16} className="flex-shrink-0" />
+        <span className="flex-1">{label}</span>
+        {badge && (
+          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#ff9500]/15 text-[#9a5d00] flex-shrink-0">
+            {badge}
+          </span>
+        )}
+      </Link>
+    )
+  }
+
+  // Which group holds the current page — it's always shown expanded.
+  const activeGroupId = navGroups.find(g => g.items.some(it => isActiveTabbed(it.matchKind, it.href)))?.id ?? null
+
   return (
     <>
       {/* Mobile hamburger — visible below lg, fixed top-left so it stays put as
@@ -213,24 +283,36 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
 
       {/* Primary nav */}
       <nav className="flex-1 px-3 pt-4 pb-2 flex flex-col gap-0.5">
-        <p className="section-label px-2 mb-2">Workspace</p>
-        {nav.map((item) => {
-          const { href, label, icon: Icon, matchKind } = item
-          // Analytics is Geniuslink-only — hide it until Geniuslink is connected.
-          if (href === '/analytics' && !geniusConnected) return null
-          const badge = (item as { badge?: string }).badge
+        {/* Pinned — cross-cutting daily destinations */}
+        {pinnedNav.map(renderNavLink)}
+
+        {/* Collapsible workflow groups: Set Up & Brand → Create & Publish →
+            Grow & Earn. The group containing the current page is always open;
+            other collapses are remembered per browser. */}
+        {navGroups.map((group) => {
+          const isOpen = activeGroupId === group.id || (openGroups[group.id] ?? true)
           return (
-            <Link key={label} href={href} className={cn('nav-item', isActiveTabbed(matchKind, href) && 'active')}>
-              <Icon size={16} className="flex-shrink-0" />
-              <span className="flex-1">{label}</span>
-              {badge && (
-                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-[#ff9500]/15 text-[#9a5d00] flex-shrink-0">
-                  {badge}
-                </span>
+            <div key={group.id} className="mt-3">
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.id)}
+                className="w-full flex items-center justify-between gap-2 px-2 mb-1 section-label hover:opacity-80 transition-opacity"
+                aria-expanded={isOpen}
+              >
+                <span>{group.label}</span>
+                <ChevronDown size={13} className={cn('flex-shrink-0 transition-transform', !isOpen && '-rotate-90')} />
+              </button>
+              {isOpen && (
+                <div className="flex flex-col gap-0.5">
+                  {group.items.map(renderNavLink)}
+                </div>
               )}
-            </Link>
+            </div>
           )
         })}
+
+        {/* Tutorials — standalone, after the workflow groups */}
+        <div className="mt-3">{renderNavLink(tutorialsNav)}</div>
 
         {/* Discord community — internal page that renders the live widget
             + a fresh invite. Hidden until the server ID is set so the
