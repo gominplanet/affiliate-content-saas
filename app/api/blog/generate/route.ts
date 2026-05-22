@@ -6,6 +6,7 @@ import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
+import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
@@ -27,59 +28,9 @@ const SHOT_PERSPECTIVES = [
   'low hero angle looking slightly up at the product against a softly blurred lifestyle background',
 ]
 
-/** The product/store URL a creator links in the description — used both as
- *  the affiliate link (when there's no Amazon product) and as the page we
- *  scrape for product facts. Amazon/geni.us links are handled by the
- *  Amazon path; socials, payment, and the creator's own site are skipped.
- *
- *  Prefers a URL that follows a buy/price CTA ("Check Today's Price and
- *  Availability here: <url>") — that's the actual product link — over the
- *  first random link (which is often a collaborations/website link).
- *  Returns null when nothing product-like is linked. */
-function firstProductUrl(description: string, ownSite?: string | null): string | null {
-  // NOTE: geni.us / amzn.to are NOT skipped here — a creator's product link
-  // may BE a Geniuslink (any destination) or an Amazon short link, and we
-  // want to recognize + resolve those. Full amazon.com links are handled by
-  // the ASIN path before this runs. We only skip socials, payments, link
-  // hubs, and the creator's own collaboration/site links.
-  const skip = /(youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.|alexmediacreations)/i
-  const own = ownSite ? ownSite.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
-  const candidate = (raw: string): string | null => {
-    const clean = raw.replace(/[.,;:)\]>"']+$/, '')
-    if (skip.test(clean)) return null
-    if (own && clean.includes(own)) return null
-    return clean
-  }
-  // 1. URL right after a buy/price/availability cue — the product link.
-  const cta = description.match(/(?:today'?s price|price|availability|buy(?:\s+it)?|shop|purchase|order|get yours|grab|available (?:here|at)|here)\b[:\s]*[\s\S]{0,40}?(https?:\/\/[^\s)>\]"']+)/i)
-  if (cta) { const c = candidate(cta[1]); if (c) return c }
-  // 2. Else the first non-excluded URL anywhere.
-  for (const raw of description.match(/https?:\/\/[^\s)>\]"']+/gi) || []) {
-    const c = candidate(raw); if (c) return c
-  }
-  return null
-}
-
-/** Follow a short link / redirect to its FINAL destination URL. Used to
- *  "look up" links before assuming what they are — a geni.us or amzn.to
- *  could resolve to Amazon OR to any store. Best-effort; returns the
- *  original URL on failure. */
-async function resolveFinalUrl(url: string): Promise<string> {
-  // Hard timeouts so a slow/hanging redirect host can never stall the
-  // generation request (which runs close to the function's time budget).
-  try {
-    const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) })
-    return res.url || url
-  } catch {
-    try {
-      // Some hosts reject HEAD — retry with a ranged GET (1 byte).
-      const res = await fetch(url, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0', Range: 'bytes=0-0' }, signal: AbortSignal.timeout(5000) })
-      return res.url || url
-    } catch {
-      return url
-    }
-  }
-}
+// firstProductUrl + resolveFinalUrl now live in lib/product-link.ts (shared
+// with YouTube Co-Pilot) so the description→product-link resolution can't
+// drift between the two pipelines. Imported at the top of this file.
 
 /** Race a promise against a timeout, resolving to `fallback` if it doesn't
  *  settle in time. Used to keep best-effort enrichment (web research) from
