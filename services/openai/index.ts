@@ -10,7 +10,14 @@ export class OpenAIService {
   private client: OpenAI
 
   constructor(apiKey: string) {
-    this.client = new OpenAI({ apiKey })
+    // Pin requests to a specific organization when OPENAI_ORG_ID is set.
+    // Needed when the API key belongs to multiple orgs and the verified one
+    // (required for gpt-image-*) isn't the account default — otherwise image
+    // calls fail with "organization must be verified".
+    this.client = new OpenAI({
+      apiKey,
+      organization: process.env.OPENAI_ORG_ID || undefined,
+    })
   }
 
   private async generateOne(prompt: string, size: '1792x1024' | '1024x1024'): Promise<string> {
