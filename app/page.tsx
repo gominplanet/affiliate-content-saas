@@ -84,7 +84,15 @@ const plans = [
 const faqs = [
   {
     q: 'How does the YouTube workflow actually work?',
-    a: 'Upload an unlisted draft to YouTube Studio with the Amazon ASIN in the title — that\'s all you need to do. MVP detects the ASIN, scrapes the product on Amazon, and the agent team generates the YouTube description (with affiliate links), 10 SEO video tags, 5 hashtags, and a click-magnet thumbnail. One click pushes everything back into your YouTube draft. Pro adds one-click batch settings: playlist, schedule, paid-promotion disclosure, and made-for-kids flag.',
+    a: 'Upload an unlisted draft to YouTube Studio. Dropping the Amazon ASIN in the title gives the most precise match, but it\'s optional — MVP detects the product from your title and description on its own. The agent team then generates the YouTube description (with your affiliate link), 10 SEO video tags, 5 hashtags, and a click-magnet thumbnail. One click pushes everything back into your YouTube draft. Pro adds one-click batch settings: playlist, schedule, paid-promotion disclosure, and made-for-kids flag.',
+  },
+  {
+    q: 'Do I have to promote Amazon products?',
+    a: 'No. Amazon is the easiest path, but if you promote a product on a brand site or store, just put that link in your video description — MVP uses it as your product link, wraps it with your Geniuslink for tracking, and writes the review and YouTube metadata around the real product. Not an Amazon associate? You\'re still fully covered.',
+  },
+  {
+    q: 'Can I track my traffic with Google Analytics?',
+    a: 'Yes. Add your GA4 Measurement ID (or a Google Tag Manager container) in Customize Blog and we inject the tracking for you — no code to paste. There\'s a step-by-step guide right in the dashboard, plus a clicks dashboard for your affiliate links when Geniuslink is connected.',
   },
   {
     q: 'Do I need my own WordPress site?',
@@ -92,7 +100,11 @@ const faqs = [
   },
   {
     q: 'Is the content AI-generated?',
-    a: 'Yes — but not by a single chatbot. We orchestrate an army of specialized agents: one researches the product, one designs the outline for SEO, one matches your voice from your Brand Profile, one drafts the body section by section, one writes the verdict + Buy/Skip block, one inserts affiliate links cleanly, one writes the FAQ, one tags and categorizes. The output is reviewed in Studio before publish — you always have the final say.',
+    a: 'Yes — but not by a single chatbot. We orchestrate an army of specialized agents: one researches the product, one designs the outline for SEO, one matches your voice — trained from your Brand Profile and refined from the posts you publish (your Learning profile) — one drafts the body section by section, one writes the verdict + Buy/Skip block, one inserts affiliate links cleanly, one writes the FAQ, one tags and categorizes. The output is reviewed in Studio before publish — you always have the final say.',
+  },
+  {
+    q: 'What\'s the built-in AI assistant?',
+    a: 'A business-aware chat assistant included in every plan (with higher limits as you move up). It already knows your brand, your recent posts and campaigns, and helps with setup, affiliate strategy, and content questions. It remembers context across chats, and you can import your history from ChatGPT or Claude so it picks up where you left off — one less $20/mo subscription to keep.',
   },
   {
     q: 'What are the brand-collab pitch emails?',
@@ -266,10 +278,11 @@ export default function LandingPage() {
             </span>
             <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">Your YouTube Co-Pilot, on autopilot.</h2>
             <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
-              Save an unlisted draft in YouTube Studio. MVP Affiliate pulls the video, scrapes the
-              product on Amazon, deploys an agent team to write everything you&apos;d normally hate
-              writing, and pushes the finished YouTube package back into Studio for you. The
-              matching long-form review goes live on your branded site with one more click.
+              Save an unlisted draft in YouTube Studio. MVP Affiliate pulls the video, identifies the
+              product — from your title, or the Amazon or store link in your description — deploys an
+              agent team to write everything you&apos;d normally hate writing, and pushes the finished
+              YouTube package back into Studio for you. The matching long-form review goes live on
+              your branded site with one more click.
             </p>
           </div>
 
@@ -278,7 +291,7 @@ export default function LandingPage() {
               n="01"
               icon={<Wand2 size={20} />}
               title="Save an unlisted draft"
-              desc="Title it with the Amazon ASIN, upload the video, save. No description, no tags, no thumbnail, no hashtags. Walk away."
+              desc="Upload the video and save. Drop the Amazon ASIN in the title for an exact match, or just link the product (Amazon or any store) in the description — MVP figures out the rest. No description, no tags, no thumbnail, no hashtags. Walk away."
               accent="#ff0000"
             />
             <StepCard
