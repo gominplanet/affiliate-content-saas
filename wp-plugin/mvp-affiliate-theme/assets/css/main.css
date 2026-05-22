@@ -301,7 +301,9 @@ p { margin: 0 0 1em; }
   color: inherit;
 }
 .mvp-lead-image {
-  aspect-ratio: 16 / 10;
+  /* Match the source thumbnail's native 16:9 (YouTube) so object-fit:cover
+     fills the box without slicing off the sides of the image. */
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   background: var(--mvp-bg-soft);
   border-radius: 6px;
