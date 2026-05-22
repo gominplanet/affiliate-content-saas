@@ -99,6 +99,56 @@ Ignore any text overlays. Focus only on consistent patterns across thumbnails. B
   }
 }
 
+// ── Claude vision: GROUND the thumbnail in the video's OWN frame ──────────────
+// PHASE 1 of competitor-matching. The leading AI-thumbnail tool grounds every
+// render in REAL video frames (the creator is literally showing/holding the
+// product) instead of a text-to-image guess or a flaky Amazon scrape. We
+// mirror the base case ("Frames: 1" = the YouTube thumbnail) here: vision-
+// analyse the video's own thumbnail to produce a structured brief of the REAL
+// product, scene, and which subjects are actually VISIBLE.
+//
+// Anti-hallucination is the key win: we explicitly mark subjects that are only
+// MENTIONED (in the title) but not shown as "do NOT render" — so we never
+// invent a face or object that wasn't in the footage. Cheap (~$0.005, Haiku).
+async function analyzeVideoForThumbnail(
+  thumbnailUrl: string,
+  videoTitle: string,
+): Promise<string | null> {
+  if (!thumbnailUrl) return null
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 320,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image' as const, source: { type: 'url' as const, url: thumbnailUrl } },
+          {
+            type: 'text' as const,
+            text: `This is the actual YouTube thumbnail for a video titled "${videoTitle}". Analyse the REAL frame so we can ground a new thumbnail in what is genuinely shown (not guesswork). Ignore any text overlays already on it.
+
+Return a compact brief with exactly these labelled lines:
+PRODUCT: The main product/object visibly present — describe it precisely (colour, shape, material, size cues, any branding). If no product is clearly visible, write "none visible".
+SCENE: The real setting/background and lighting actually shown.
+VISIBLE: Comma-separated list of subjects ACTUALLY shown in the frame and safe to render (e.g. "the product, a person, a dog").
+DO-NOT-RENDER: Comma-separated subjects the TITLE mentions but that are NOT visibly in the frame — never invent these (e.g. a person/face or object only named in the title). Write "none" if all title subjects are visible.
+
+Be specific and factual. Only describe what you can actually see. No preamble.`,
+          },
+        ],
+      }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_video_understanding', model: 'claude-haiku-4-5-20251001',
+    })
+    return (msg.content[0] as { type: string; text: string }).text.trim()
+  } catch {
+    return null  // non-fatal — fall back to scrape/text-only grounding
+  }
+}
+
 // ── Claude: Product scene prompt (product-only, style-aware, story-driven) ────
 const STYLE_SCENES: Record<string, string> = {
   review:     'Product IN USE on a real surface in a home or workspace — books, tools, or related objects in the background create context. Natural room light, lived-in environment, not a studio.',
@@ -115,6 +165,7 @@ async function generateProductPrompt(opts: {
   productBullets: string[]
   style: string
   channelStyle?: string | null
+  videoUnderstanding?: string | null
 }): Promise<string> {
   const sceneDirection = STYLE_SCENES[opts.style] ?? STYLE_SCENES.review
   const anthropic = createAnthropicClient()
@@ -124,7 +175,11 @@ async function generateProductPrompt(opts: {
     messages: [{
       role: 'user',
       content: `You are a YouTube thumbnail art director. Write a Flux image generation prompt for a product shot with an active, story-driven scene. NO faces. The product must look exactly as described — use every visual detail from the product data below.
-
+${opts.videoUnderstanding ? `
+GROUND TRUTH — analysis of the video's OWN thumbnail frame (HIGHEST PRIORITY, this describes the REAL product/scene actually shown; trust it over the scraped data below when they conflict):
+${opts.videoUnderstanding}
+Use the PRODUCT line above as the authoritative product appearance. NEVER render any subject listed under DO-NOT-RENDER — those are only mentioned, not shown.
+` : ''}
 PRODUCT DATA:
 TITLE: "${opts.videoTitle}"
 PRODUCT NAME: ${opts.productTitle || 'Unknown product'}
@@ -135,7 +190,7 @@ SCENE STYLE: ${sceneDirection}
 ${opts.channelStyle ? `CHANNEL AESTHETIC (match this): ${opts.channelStyle}` : ''}
 
 YOUR TASK:
-1. PRODUCT APPEARANCE — extract exact visual details from the data above: colour, shape, size, material, any text/branding on it. Describe it precisely so the AI renders the RIGHT product.
+1. PRODUCT APPEARANCE — describe the product precisely so the AI renders the RIGHT product. If the GROUND TRUTH brief is present, use its PRODUCT description as the source of truth; otherwise extract exact visual details (colour, shape, size, material, any text/branding) from the product data above.
 2. SCENE — pick one specific, active real-world setting that tells a story for this product. Not a studio. Not a white background. A real place with depth, context, and atmosphere.
 3. COMPOSITION — product CENTRE-RIGHT, large and sharp. LEFT third is empty negative space for text overlay. Background blurred but recognisable.
 4. LIGHTING — dramatic and cinematic. Makes the product look desirable.
@@ -189,6 +244,7 @@ async function generatePersonScenePrompt(opts: {
   productDescription: string
   productBullets: string[]
   channelStyle?: string | null
+  videoUnderstanding?: string | null
 }): Promise<string> {
   const anthropic = createAnthropicClient()
   const msg = await withAnthropicRetry(() => anthropic.messages.create({
@@ -200,7 +256,11 @@ async function generatePersonScenePrompt(opts: {
 
 CREATOR'S FACE TRIGGER TOKEN: ${opts.triggerToken}
   — Use this exact token as the SUBJECT of the prompt (e.g. "${opts.triggerToken} holding the product, surprised expression"). The token is a LoRA-trained identity reference; Flux + the loaded LoRA will render the real person when it sees this token.
-
+${opts.videoUnderstanding ? `
+GROUND TRUTH — analysis of the video's OWN thumbnail frame (HIGHEST PRIORITY for the PRODUCT's real appearance; trust its PRODUCT line over the scraped data below when they conflict):
+${opts.videoUnderstanding}
+The creator's face comes ONLY from the trigger token above — do NOT use any person described in this brief as the subject. NEVER render any subject listed under DO-NOT-RENDER.
+` : ''}
 VIDEO: "${opts.videoTitle}"
 PRODUCT: ${opts.productTitle || 'product from the video'}
 ${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
@@ -310,6 +370,7 @@ export async function POST(request: Request) {
       styleReferenceUrl,
       faceModelId,
       videoDescription,
+      videoThumbnailUrl,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -317,6 +378,12 @@ export async function POST(request: Request) {
       /** The YouTube description — used to find the product link for a real
        *  product photo when there's no Amazon ASIN (non-Amazon products). */
       videoDescription?: string
+      /** The video's OWN YouTube thumbnail URL. PHASE 1 grounding: we vision-
+       *  analyse this real frame to describe the actual product/scene/visible
+       *  subjects, and use it as the Kontext reference when no Amazon/store
+       *  product image is available — the creator is literally showing the
+       *  product, so it's the most accurate reference we have. */
+      videoThumbnailUrl?: string
       productTitle?: string
       productDescription?: string
       productBullets?: string[]
@@ -430,12 +497,31 @@ export async function POST(request: Request) {
       }
     }
 
+    // PHASE 1 — last-resort product reference: the video's OWN thumbnail.
+    // When neither Amazon nor a store page gave us a product photo, the
+    // creator's own frame is the most accurate reference we have (they're
+    // literally showing the product on camera). Used to ground the Kontext
+    // path so we render the REAL product instead of a text-only guess.
+    // Flagged so the Kontext instruction can account for a busy frame
+    // (people, text, props) rather than a clean white-background photo.
+    let productImageIsVideoFrame = false
+    if (!productImageUrl && videoThumbnailUrl) {
+      productImageUrl = videoThumbnailUrl
+      productImageIsVideoFrame = true
+    }
+
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
 
+    // Run channel-style + video-frame understanding in parallel — both are
+    // best-effort Haiku vision calls that return null on failure.
     const channelThumbnailUrls = await fetchChannelThumbnails(supabase, user.id)
-    const channelStyle = await analyzeChannelStyle(channelThumbnailUrls)
+    const [channelStyle, videoUnderstanding] = await Promise.all([
+      analyzeChannelStyle(channelThumbnailUrls),
+      videoThumbnailUrl ? analyzeVideoForThumbnail(videoThumbnailUrl, videoTitle) : Promise.resolve(null),
+    ])
     console.log('[generate-thumbnail] Channel style:', channelStyle ?? 'none')
+    console.log('[generate-thumbnail] Video understanding:', videoUnderstanding ?? 'none')
 
     // ── Generate scene prompt + hook + (optional) style brief in parallel ───
     // When a face LoRA is selected we use the person-aware prompt generator
@@ -451,8 +537,9 @@ export async function POST(request: Request) {
             productDescription,
             productBullets,
             channelStyle,
+            videoUnderstanding,
           })
-        : generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
+        : generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle, videoUnderstanding }),
       lockedHeadline ? Promise.resolve('') : generateHook(videoTitle),
       styleReferenceUrl ? extractStyleBrief(styleReferenceUrl) : Promise.resolve(null),
     ])
@@ -483,8 +570,15 @@ export async function POST(request: Request) {
         const falImageUrl = await fal.storage.upload(imgBlob)
         console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
 
-        // Kontext: preserve the product, replace background with scene
-        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. No white background. No people. No text.`
+        // Kontext: preserve the product, replace background with scene.
+        // The instruction differs by reference type: a clean product photo
+        // (Amazon/store) just needs its white background swapped for a scene;
+        // the video's OWN frame is busy (people, props, on-screen text), so
+        // we tell Kontext to ISOLATE the main product out of that frame and
+        // discard everything else.
+        const kontextInstruction = productImageIsVideoFrame
+          ? `This image is a YouTube video frame. Identify and EXTRACT the single main product/object being featured — preserve its exact shape, colour, material, branding, and all details. Discard everything else in the frame: the people, faces, hands, on-screen text, logos, and original background. Re-stage ONLY that product in the following scene: ${finalScenePrompt}. The product should sit naturally with realistic shadows and lighting. No people. No text. No original background.`
+          : `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. No white background. No people. No text.`
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
