@@ -26,10 +26,15 @@ export async function POST() {
 
   // Always GET current WP customizations first, then re-POST the same data.
   // This triggers litespeed_purge_all without ever overwriting stored data with empty.
+  // Identify ourselves with a normal-looking User-Agent. Some hosts / security
+  // plugins (Wordfence, mod_security, host WAFs) 403 REST writes that arrive
+  // with no / a "node"-style UA. Harmless on permissive sites.
+  const UA = 'MVP Affiliate/1.0 (+https://www.mvpaffiliate.io)'
+
   let existing: unknown = {}
   try {
     const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
-      headers: authHeader ? { Authorization: authHeader } : {},
+      headers: { 'User-Agent': UA, ...(authHeader ? { Authorization: authHeader } : {}) },
     })
     if (getRes.ok) existing = await getRes.json()
   } catch { /* start fresh */ }
@@ -45,6 +50,7 @@ export async function POST() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'User-Agent': UA,
       ...(authHeader ? { Authorization: authHeader } : {}),
     },
     body: JSON.stringify(payload),
@@ -52,7 +58,13 @@ export async function POST() {
 
   if (!res.ok) {
     const text = await res.text()
-    return NextResponse.json({ error: `WordPress returned ${res.status}: ${text.slice(0, 100)}` }, { status: 500 })
+    // A 403 here means WP authenticated the user but a capability check or a
+    // security layer (Wordfence / host WAF / "disable REST API" plugin) blocked
+    // the write. Surface more of the body so the real reason is visible.
+    const hint = res.status === 403
+      ? ' — your site blocked the write. Make sure the connected WordPress user is an Administrator, and that a security plugin or host firewall isn\'t blocking REST API writes.'
+      : ''
+    return NextResponse.json({ error: `WordPress returned ${res.status}: ${text.slice(0, 300)}${hint}` }, { status: 500 })
   }
 
   // Legacy Code Snippets refresh removed — the MVP Affiliate Plugin + Theme
