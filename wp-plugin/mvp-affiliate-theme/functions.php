@@ -9,7 +9,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_THEME_VERSION', '1.4.3');
+define('MVP_AFFILIATE_THEME_VERSION', '1.4.4');
 
 // ── Theme support ───────────────────────────────────────────────────────────
 add_action('after_setup_theme', function () {
@@ -234,6 +234,40 @@ add_filter('pre_set_site_transient_update_themes', function ($transient) {
         unset($transient->response[$slug]);
     }
     return $transient;
+});
+
+// ── Prominent "update available" banner ─────────────────────────────────────
+// WordPress's native theme-update hint is a tiny line of text buried on the
+// Appearance → Themes screen — easy to miss. This shows a bold RED banner at
+// the top of EVERY wp-admin page whenever a newer theme version is published,
+// with a one-click "Update now" button. It only renders for users who can
+// actually update themes, and disappears automatically once they're current.
+add_action('admin_notices', function () {
+    if (!current_user_can('update_themes')) return;
+    $info = mvp_affiliate_fetch_remote_version();
+    if (empty($info['theme']['version'])) return;
+    $latest = (string) $info['theme']['version'];
+    if (!version_compare(MVP_AFFILIATE_THEME_VERSION, $latest, '<')) return;
+
+    $slug       = 'mvp-affiliate-theme';
+    $update_url = wp_nonce_url(
+        self_admin_url('update.php?action=upgrade-theme&theme=' . $slug),
+        'upgrade-theme_' . $slug
+    );
+    ?>
+    <div class="notice notice-error" style="border-left-width:6px;border-left-color:#d63638;background:#fcf0f1;padding:16px 18px;">
+      <p style="font-size:15px;margin:0 0 10px;color:#1d2327;">
+        <span style="display:inline-block;font-weight:700;color:#d63638;">⚠ MVP Affiliate theme update available — v<?php echo esc_html($latest); ?></span>
+        <span style="opacity:.85;"> (you're on v<?php echo esc_html(MVP_AFFILIATE_THEME_VERSION); ?>). Update now to get the latest fixes and features.</span>
+      </p>
+      <p style="margin:0;">
+        <a href="<?php echo esc_url($update_url); ?>" class="button button-primary" style="background:#d63638;border-color:#d63638;box-shadow:none;text-shadow:none;font-weight:600;">
+          Update theme now
+        </a>
+        <a href="<?php echo esc_url(self_admin_url('themes.php')); ?>" style="margin-left:10px;color:#d63638;">View in Appearance → Themes</a>
+      </p>
+    </div>
+    <?php
 });
 
 // ── Comments (used in templates) ────────────────────────────────────────────
