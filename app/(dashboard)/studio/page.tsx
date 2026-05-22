@@ -795,12 +795,14 @@ function VideoStudioCard({ video, userTier, playlists }: {
         // or label (it's a colour filter, not regeneration). Followed by a
         // soft vignette to pull focus to the centre.
         if (enhance) {
-          ctx.filter = 'saturate(1.18) contrast(1.10) brightness(1.04)'
+          // VERY gentle, non-AI cleanup only — must not push skin to neon or
+          // add a heavy vignette. Light saturation + a touch of contrast.
+          ctx.filter = 'saturate(1.06) contrast(1.03)'
           ctx.drawImage(img, 0, 0, 1280, 720)
           ctx.filter = 'none'
-          const vg = ctx.createRadialGradient(640, 360, 280, 640, 360, 760)
+          const vg = ctx.createRadialGradient(640, 360, 420, 640, 360, 820)
           vg.addColorStop(0, 'rgba(0,0,0,0)')
-          vg.addColorStop(1, 'rgba(0,0,0,0.28)')
+          vg.addColorStop(1, 'rgba(0,0,0,0.10)')
           ctx.fillStyle = vg
           ctx.fillRect(0, 0, 1280, 720)
         } else {

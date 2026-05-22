@@ -487,39 +487,31 @@ export async function POST(request: Request) {
       if (!videoThumbnailUrl) {
         return NextResponse.json({ error: 'No video frame available to enhance.' }, { status: 400 })
       }
-      fal.config({ credentials: falKey })
       const overlayHook = lockedHeadline || (await generateHook(videoTitle))
 
+      // NO AuraSR here. Super-resolution on a soft/compressed YouTube frame
+      // hallucinates texture and warps faces (melted-face artifacts). For a
+      // "use my real frame" path we must NOT touch the pixels with a model —
+      // we hand back the highest-resolution version of the real frame and let
+      // the client do a gentle, non-AI colour pass + the title overlay.
+      //
+      // Upgrade to maxresdefault when the source is a YouTube thumbnail URL —
+      // the API often returns hqdefault (480×360), which is why the frame
+      // looked soft. Best-effort: HEAD-check it exists, else keep the original.
       let frameUrl = videoThumbnailUrl
-      try {
-        // AuraSR 4x super-resolution — sharpens a soft YouTube frame without
-        // altering content (it's an upscaler, not a generator, so the real
-        // product/label/face are preserved exactly). Best-effort.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const sr = await fal.subscribe('fal-ai/aura-sr' as any, {
-          input: { image_url: videoThumbnailUrl, checkpoint: 'v2' },
-          pollInterval: 3000,
-        })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const d = sr.data as any
-        const srUrl = (d?.image?.url as string | undefined) || (d?.images?.[0]?.url as string | undefined)
-        if (srUrl) {
-          frameUrl = srUrl
-          recordUsage({
-            userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-            feature: 'yt_thumb_enhance_frame', model: 'fal-aura-sr', images: 1,
-          })
-        }
-      } catch (err) {
-        console.warn('[generate-thumbnail] AuraSR upscale failed, using raw frame:', err)
+      const ytMatch = videoThumbnailUrl.match(/^(https?:\/\/i\.ytimg\.com\/vi\/[^/]+\/)[^/?#]+(\.\w+)/i)
+      if (ytMatch) {
+        const maxResUrl = `${ytMatch[1]}maxresdefault${ytMatch[2]}`
+        try {
+          const head = await fetch(maxResUrl, { method: 'HEAD' })
+          if (head.ok) frameUrl = maxResUrl
+        } catch { /* keep original */ }
       }
-      // Ensure the generation is counted once even if AuraSR was skipped.
-      if (frameUrl === videoThumbnailUrl) {
-        recordUsage({
-          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-          feature: 'yt_thumb_enhance_frame', model: 'fal-aura-sr', images: 0,
-        })
-      }
+
+      recordUsage({
+        userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+        feature: 'yt_thumb_enhance_frame', model: 'fal-aura-sr', images: 0,
+      })
       return NextResponse.json({
         ok: true,
         thumbnailUrl: frameUrl,
