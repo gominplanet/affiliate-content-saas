@@ -12,7 +12,11 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 // Anthropic helpers below so each call is tagged with the right user/tier.
 let TELEMETRY: { userId: string | null; tier: string | null } = { userId: null, tier: null }
 
-export const maxDuration = 120
+// 300s headroom: the face-swap experiment runs two sequential model calls
+// (flux-pro scene → face-swap + 2x upscale) plus the prompt agents, which
+// overran the old 120s limit (FUNCTION_INVOCATION_TIMEOUT). Other paths
+// (lora/kontext/pulid) finish well under this.
+export const maxDuration = 300
 
 // ── Retry wrapper for Anthropic overloaded (529) errors ──────────────────────
 async function withAnthropicRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
