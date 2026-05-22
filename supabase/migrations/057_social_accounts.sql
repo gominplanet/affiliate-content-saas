@@ -47,18 +47,42 @@ create policy "social_accounts_owner_all" on public.social_accounts
 -- ── Backfill the currently-connected Meta accounts from `integrations` ───────
 -- So existing users see their current Page / IG account in the new dropdown
 -- immediately, marked as default. ON CONFLICT keeps re-runs idempotent.
-insert into public.social_accounts (user_id, platform, external_id, display_name, kind, access_token, is_default)
-select user_id, 'facebook', facebook_page_id,
-       coalesce(facebook_page_name, 'Facebook Page'), 'page',
-       facebook_page_access_token, true
-  from public.integrations
- where facebook_page_id is not null
-on conflict (user_id, platform, external_id) do nothing;
+--
+-- Some of the Meta columns on `integrations` were added via the Supabase
+-- dashboard rather than a tracked migration, so we guard each backfill behind
+-- a column-existence check: if a column is missing the backfill is skipped
+-- (the table + RLS above are still created). Bulletproof and idempotent.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'integrations'
+       and column_name = 'facebook_page_id'
+  ) then
+    execute $fb$
+      insert into public.social_accounts (user_id, platform, external_id, display_name, kind, access_token, is_default)
+      select user_id, 'facebook', facebook_page_id,
+             coalesce(facebook_page_name, 'Facebook Page'), 'page',
+             facebook_page_access_token, true
+        from public.integrations
+       where facebook_page_id is not null
+      on conflict (user_id, platform, external_id) do nothing
+    $fb$;
+  end if;
 
-insert into public.social_accounts (user_id, platform, external_id, display_name, kind, access_token, is_default)
-select user_id, 'instagram', instagram_user_id,
-       coalesce(instagram_username, 'Instagram'), 'account',
-       instagram_access_token, true
-  from public.integrations
- where instagram_user_id is not null
-on conflict (user_id, platform, external_id) do nothing;
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'integrations'
+       and column_name = 'instagram_user_id'
+  ) then
+    execute $ig$
+      insert into public.social_accounts (user_id, platform, external_id, display_name, kind, access_token, is_default)
+      select user_id, 'instagram', instagram_user_id,
+             coalesce(instagram_username, 'Instagram'), 'account',
+             instagram_access_token, true
+        from public.integrations
+       where instagram_user_id is not null
+      on conflict (user_id, platform, external_id) do nothing
+    $ig$;
+  end if;
+end $$;
