@@ -144,6 +144,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  request and the server routes through the LoRA-capable Flux endpoint. */
   const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string }>>([])
   const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
+  // EXPERIMENT (admin-only A/B): face-render engine. 'lora' = current trained
+  // LoRA path; 'pulid' = identity from a reference photo (cheaper, no training).
+  // Scoped to admin so the live test never affects real users' thumbnails.
+  const [thumbEngine, setThumbEngine] = useState<'lora' | 'pulid'>('lora')
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
   const [capError, setCapError] = useState<{ message: string; info: { cap: string; currentTier?: string; upgrade?: { tier: string; label: string; limit: number | null } | null } } | null>(null)
@@ -524,6 +528,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
           faceModelId: selectedFaceModelId || undefined,
+          engine: thumbEngine === 'pulid' ? 'pulid' : undefined,
         }),
       })
       const data = await safeJson(res)
@@ -569,6 +574,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
           faceModelId: selectedFaceModelId || undefined,
+          engine: thumbEngine === 'pulid' ? 'pulid' : undefined,
         }),
       })
       const data = await safeJson(res)
@@ -1724,6 +1730,22 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     </label>
                   ))}
                 </div>
+                {userTier === 'admin' && selectedFaceModelId && (
+                  <div className="mt-3 pt-3 border-t border-dashed border-gray-200 dark:border-white/10">
+                    <p className="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider mb-1.5">Face engine · admin A/B</p>
+                    <div className="inline-flex rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden text-xs">
+                      <button type="button" onClick={() => setThumbEngine('lora')}
+                        className={thumbEngine === 'lora' ? 'px-3 py-1.5 bg-[#0071e3] text-white font-semibold' : 'px-3 py-1.5 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-50 dark:hover:bg-white/5'}>
+                        LoRA (current)
+                      </button>
+                      <button type="button" onClick={() => setThumbEngine('pulid')}
+                        className={thumbEngine === 'pulid' ? 'px-3 py-1.5 bg-[#5856d6] text-white font-semibold' : 'px-3 py-1.5 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-50 dark:hover:bg-white/5'}>
+                        PuLID (beta)
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-[#86868b] mt-1.5">PuLID injects your face from a reference photo (cheaper, no training). Generate one of each to compare. Admin-only — doesn&apos;t affect other users.</p>
+                  </div>
+                )}
               </div>
             )}
 
