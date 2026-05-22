@@ -10,7 +10,7 @@
 // the real DB tier, so impersonation never grants real access — actions
 // you trigger while "viewing as" still run with your true admin rights.
 
-import type { Tier } from '@/lib/tier'
+import { normalizeTier, type Tier } from '@/lib/tier'
 
 const KEY = 'mvp_view_as_tier'
 const EVENT = 'mvp:view-as-changed'
@@ -34,7 +34,10 @@ export function setViewAsTier(t: Tier | null) {
  * untouched. Pass the tier you fetched from the DB.
  */
 export function effectiveTier(realTier: Tier | string | null | undefined): Tier {
-  const real = (realTier as Tier) || 'trial'
+  // normalizeTier guarantees a valid Tier — so consumers that do TIERS[tier]
+  // (billing, content, studio) can never crash on a missing row (new trial
+  // user, no integrations row yet) or a legacy/invalid value.
+  const real = normalizeTier(realTier)
   if (real !== 'admin') return real
   return getViewAsTier() ?? 'admin'
 }
