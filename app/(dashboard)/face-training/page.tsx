@@ -36,8 +36,8 @@ interface FaceModel {
   created_at: string
 }
 
-const MIN_IMAGES = 10
-const MAX_IMAGES = 20
+const MIN_IMAGES = 4
+const MAX_IMAGES = 12
 const MAX_FILE_BYTES = 10 * 1024 * 1024
 
 export default function FaceTrainingPage() {
@@ -148,7 +148,7 @@ export default function FaceTrainingPage() {
         body: JSON.stringify({ name: name.trim(), imagePaths }),
       })
       const d = await res.json()
-      if (!res.ok) throw new Error(d.error || 'Failed to start training')
+      if (!res.ok) throw new Error(d.error || 'Failed to save face')
 
       // Reset + reload
       setName('')
@@ -164,7 +164,7 @@ export default function FaceTrainingPage() {
   }
 
   async function deleteModel(id: string) {
-    if (!confirm('Delete this trained face? You\'ll need to upload images again to retrain.')) return
+    if (!confirm('Delete this face? You\'ll need to re-upload the photos to use it again.')) return
     await fetch(`/api/face-models/${id}`, { method: 'DELETE' })
     setModels(prev => prev.filter(m => m.id !== id))
   }
@@ -172,8 +172,8 @@ export default function FaceTrainingPage() {
   return (
     <>
       <Header
-        title="Face Training"
-        subtitle="Train MVP on your own face so generated thumbnails put YOU in the picture — not a stock-photo lookalike."
+        title="Your Face"
+        subtitle="Add a few photos of yourself so generated thumbnails put YOU in the picture — not a stock-photo lookalike. Ready instantly, no training."
       />
 
       {/* Tutorial stays usable for non-Pro users (above the lock).
@@ -187,9 +187,9 @@ export default function FaceTrainingPage() {
             <Sparkles size={18} className="text-[#0071e3]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Face training is a Pro feature</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Putting your face in thumbnails is a Pro feature</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-3">
-              We train a custom AI model on your face (10-20 photos), so future thumbnails can include the real you — not a generic stock-photo person. One-time training; reusable on every thumbnail forever.
+              Add a few photos of yourself (4-12) and every generated thumbnail can include the real you — not a generic stock-photo person. No training step or wait; it&apos;s ready the moment you save, and reusable on every thumbnail forever.
             </p>
             <Link href="/pricing" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]">
               <Sparkles size={11} /> Upgrade to Pro
@@ -202,13 +202,13 @@ export default function FaceTrainingPage() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <UserCircle2 size={18} className="text-[#0071e3]" />
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your trained faces</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your saved faces</p>
           </div>
           <button
             onClick={() => { setNewFaceOpen(true); setError(null); setFiles([]); setName('') }}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]"
           >
-            <Camera size={11} /> Train new face
+            <Camera size={11} /> Add a face
           </button>
         </div>
 
@@ -219,8 +219,8 @@ export default function FaceTrainingPage() {
         ) : models.length === 0 ? (
           <div className="card p-8 text-center">
             <UserCircle2 size={32} className="text-[#86868b] mx-auto mb-3" />
-            <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No trained faces yet</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Click <span className="font-semibold">Train new face</span> to upload 10-20 headshots and train your first model.</p>
+            <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No saved faces yet</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Click <span className="font-semibold">Add a face</span> to upload 4-12 photos of yourself — ready to use instantly.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -249,9 +249,7 @@ export default function FaceTrainingPage() {
                     )}
                   </div>
                   <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5">
-                    Trigger word: <span className="font-mono">{m.trigger_token}</span>
-                    {' · '}
-                    {m.source_images.length} source images
+                    {m.source_images.length} reference photo{m.source_images.length !== 1 ? 's' : ''} · ready to use
                   </p>
                   {m.failure_reason && (
                     <p className="text-[11px] text-[#ff3b30] mt-1">{m.failure_reason}</p>
@@ -274,9 +272,9 @@ export default function FaceTrainingPage() {
       {newFaceOpen && isPro && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => !uploading && setNewFaceOpen(false)}>
           <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-xl w-full p-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Train a new face</h3>
+            <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Add your face</h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Upload 10-20 headshots. Training takes 5-15 minutes — you can leave the page and come back.
+              Upload 4-12 clear photos of yourself. No training wait — it&apos;s ready to use the moment you save.
             </p>
 
             <div className="card p-3 mb-4" style={{ background: 'rgba(0,113,227,0.05)', borderColor: 'rgba(0,113,227,0.2)' }}>
@@ -351,7 +349,7 @@ export default function FaceTrainingPage() {
               >
                 {uploading
                   ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
-                  : <><Sparkles size={11} /> Start training</>}
+                  : <><Sparkles size={11} /> Save face</>}
               </button>
             </div>
           </div>

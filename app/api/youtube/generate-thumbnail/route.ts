@@ -176,67 +176,8 @@ Return ONLY the hook text. Video: "${videoTitle}"`,
   return (msg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
 }
 
-// ── Claude: PERSON-IN-SCENE prompt (used when a face LoRA is active) ────────
-// The default generateProductPrompt is hardcoded "NO faces" + "no people"
-// because it's optimized for product-only thumbnails. When a face LoRA is
-// loaded we need the opposite: an active scene with the person prominently
-// reacting to the product. The trigger token (e.g. "michelle6634") gets
-// embedded directly so Flux + LoRA knows which subject to render.
-async function generatePersonScenePrompt(opts: {
-  triggerToken: string
-  faceName: string
-  videoTitle: string
-  productTitle: string
-  productDescription: string
-  productBullets: string[]
-  channelStyle?: string | null
-}): Promise<string> {
-  const anthropic = createAnthropicClient()
-  const msg = await withAnthropicRetry(() => anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 500,
-    messages: [{
-      role: 'user',
-      content: `You are a YouTube thumbnail art director. Write a Flux image generation prompt for a creator-style thumbnail that puts a PERSON in an active scene with a product.
-
-CREATOR'S FACE TRIGGER TOKEN: ${opts.triggerToken}
-  — Use this exact token as the SUBJECT of the prompt (e.g. "${opts.triggerToken} holding the product, surprised expression"). The token is a LoRA-trained identity reference; Flux + the loaded LoRA will render the real person when it sees this token.
-
-VIDEO: "${opts.videoTitle}"
-PRODUCT: ${opts.productTitle || 'product from the video'}
-${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
-${opts.productBullets.length ? `FEATURES: ${opts.productBullets.slice(0, 4).join(' · ')}` : ''}
-${opts.channelStyle ? `CHANNEL AESTHETIC (match this): ${opts.channelStyle}` : ''}
-
-PROMPT RULES (this is a YouTube THUMBNAIL — must look engaging but NATURAL, not cartoony):
-
-CALIBRATION NOTE: We've tuned away from "mouth-wide-open, eyes-bulging" expressions because they read as cartoonish and AI-generated. Aim for the energy of a great photojournalism portrait — present, alive, intriguing — NOT a meme-face reaction.
-
-1. START with "${opts.triggerToken}" — the LoRA's trigger token must appear at the very start so the loaded weights activate. Then describe what they're doing.
-2. PERSON FRAMING: ${opts.triggerToken} fills the frame — face takes ~30-40% of the image, MID-SHOT. Not a wide shot, not a tight close-up.
-3. EXPRESSION: DEFAULT to a WARM GENUINE SMILE — friendly, inviting, slightly raised eyebrows like someone sharing a good find. People click on creators who look happy + trustworthy. ONLY use a different expression if the video's tone clearly demands it:
-   - Sceptical / unimpressed look → ONLY if video title says "scam", "warning", "don't buy", "ripoff", "review fail"
-   - Soft surprised (mouth slightly parted, eyes alert) → ONLY if video title says "shocked", "I didn't expect", "you won't believe"
-   - Interested / examining look → ONLY if video is testing/measuring something analytical
-   When uncertain, USE THE SMILE. Smile is the safe high-CTR default.
-   AVOID: mouth wide open, bulging eyes, screaming face, forced grimace, exaggerated shock. Those read as cartoonish.
-4. EYE CONTACT: looking AT camera or AT the product. Confident, not posed.
-5. PRODUCT: held naturally near the face or shoulder, clearly visible.
-6. SCENE: real-world setting, slightly blurred background — bokeh that supports the subject, doesn't replace them. Setting should feel lived-in.
-7. COMPOSITION: person CENTRE or CENTRE-LEFT, product close to them. Leave clean space TOP-LEFT or BOTTOM-LEFT for a giant text overlay.
-8. LIGHTING: natural editorial — soft key light + slight rim light, gentle contrast. Skin looks real, NOT plastic or over-lit.
-9. End with: "16:9, photorealistic, 8K, sharp focus on face, editorial portrait lighting, shallow depth of field, natural skin tones, no text overlays"
-10. Under 110 words total.
-
-Return ONLY the prompt — no preamble.`,
-    }],
-  }))
-  recordAnthropicUsage(msg, {
-    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-    feature: 'yt_thumb_person_prompt', model: 'claude-sonnet-4-6',
-  })
-  return (msg.content[0] as { type: string; text: string }).text.trim()
-}
+// (generatePersonScenePrompt removed 2026-05-22 with the flux-lora retirement —
+//  the face path is now gpt-image-1/2 with the creator's reference photos.)
 
 // ── Claude Haiku vision: extract aesthetic from a style reference image ─────
 // User uploads any image they like the look of (a competitor thumbnail, a
@@ -442,21 +383,10 @@ export async function POST(request: Request) {
     console.log('[generate-thumbnail] Channel style:', channelStyle ?? 'none')
 
     // ── Generate scene prompt + hook + (optional) style brief in parallel ───
-    // When a face LoRA is selected we use the person-aware prompt generator
-    // (puts the creator IN the scene with the product); otherwise the
-    // standard product-only generator (no faces / no people by design).
+    // The face path (gpt-image, PATH G below) builds its own prompt inline;
+    // this product-only prompt feeds the Kontext / Flux-Pro no-face paths.
     const [productPrompt, generatedHook, styleBrief] = await Promise.all([
-      faceModel
-        ? generatePersonScenePrompt({
-            triggerToken: faceModel.trigger_token,
-            faceName: faceModel.name,
-            videoTitle,
-            productTitle,
-            productDescription,
-            productBullets,
-            channelStyle,
-          })
-        : generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
+      generateProductPrompt({ videoTitle, productTitle, productDescription, productBullets, style, channelStyle }),
       lockedHeadline ? Promise.resolve('') : generateHook(videoTitle),
       styleReferenceUrl ? extractStyleBrief(styleReferenceUrl) : Promise.resolve(null),
     ])
@@ -617,59 +547,8 @@ Do NOT render any text, captions, watermarks, or logos in the image.`
       }
     }
 
-    // ── PATH B: Face-LoRA — user picked a trained face ────────────────────────
-    // flux-lora is the open-source flux-dev base with LoRA loading. Slightly
-    // less polished than flux-pro/v1.1 on raw aesthetics but the only path
-    // that respects a custom LoRA. The trigger token gets prepended to the
-    // prompt so the model knows which subject the LoRA encodes.
-    if (faceModel && faceModel.lora_url) {
-      console.log('[generate-thumbnail] Using flux-lora with face model:', faceModel.trigger_token)
-      // The person-aware prompt already starts with the trigger token —
-      // no need to prepend. finalScenePrompt also already includes the
-      // style brief at the top if one was uploaded.
-      const facePrompt = finalScenePrompt
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const loraResult = await fal.subscribe('fal-ai/flux-lora' as any, {
-        input: {
-          prompt: facePrompt,
-          // CALIBRATION: 1.0 keeps identity strong without over-fitting.
-          // 1.1 produced cartoonish, over-rendered faces. If a user
-          // reports their face doesn't look like them, the move is to
-          // re-train with more varied source photos rather than crank
-          // the scale.
-          loras: [{ path: faceModel.lora_url, scale: 1.0 }],
-          image_size: 'landscape_16_9',
-          num_inference_steps: 28,
-          guidance_scale: 3.5,
-          num_images: variantCount,
-          output_format: 'jpeg',
-        },
-        pollInterval: 3000,
-      })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const loraImages = (loraResult.data as any)?.images as Array<{ url: string }> | undefined
-      const loraUrls = (loraImages ?? []).map(i => i.url).filter(Boolean)
-      if (loraUrls.length === 0) throw new Error('Face-LoRA path returned no image. Please try again.')
-      for (let i = 0; i < loraUrls.length; i++) {
-        recordUsage({
-          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-          feature: 'yt_thumb_flux_lora_image', model: 'fal-flux-lora', images: 1,
-        })
-      }
-      return NextResponse.json({
-        ok: true,
-        thumbnailUrl: loraUrls[0],
-        thumbnailUrls: loraUrls,
-        overlayHook,
-        headlineLocked: !!lockedHeadline,
-        prompt: facePrompt,
-        styleBriefApplied: !!styleBrief,
-        channelStyle: channelStyle ?? null,
-        modelUsed: `flux-lora-${style}`,
-        faceModelUsed: faceModel.trigger_token,
-        headshotUsed: true,
-      })
-    }
+    // (LoRA retired 2026-05-22 — the face path is gpt-image-1/2 above, PATH G.
+    //  If that fails we fall through to the product-only Flux Pro path below.)
 
     // ── PATH C: Flux Pro fallback — no product image, no face model ───────────
     console.log('[generate-thumbnail] Using Flux Pro fallback (no product image)')

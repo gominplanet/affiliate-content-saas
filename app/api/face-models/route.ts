@@ -20,15 +20,15 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { TIERS, type Tier } from '@/lib/tier'
-import { fal } from '@fal-ai/client'
-import JSZip from 'jszip'
-import { recordUsage } from '@/lib/ai-usage'
 
-export const maxDuration = 60
+// LoRA training retired (2026-05-22): gpt-image-1/2 uses the uploaded photos
+// directly as identity references at generation time — no training job, no
+// Fal cost, no 10-minute wait. A "face model" is now just a saved set of
+// reference photos, ready to use immediately.
+export const maxDuration = 30
 
-const MIN_IMAGES = 10
-const MAX_IMAGES = 20
-const STORAGE_BUCKET = 'headshots'
+const MIN_IMAGES = 4
+const MAX_IMAGES = 12
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -82,83 +82,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Up to ${MAX_IMAGES} images. You sent ${imagePaths.length}.` }, { status: 400 })
   }
 
-  // ── Generate a per-model trigger token ────────────────────────────────────
-  // Format: short slug of the name + 4 hex chars for uniqueness. Avoids
-  // collisions when the user trains multiple faces called "Me".
+  // No training step. gpt-image uses these photos directly as identity
+  // references, so the model is ready the moment the photos are saved.
+  // trigger_token is kept only for back-compat with old rows; it's unused.
   const slug = trimmedName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 10) || 'face'
   const triggerToken = `${slug}${Math.random().toString(16).slice(2, 6)}`
 
-  const falKey = process.env.FAL_KEY
-  if (!falKey) {
-    return NextResponse.json({ error: 'Face training is temporarily unavailable (FAL_KEY missing).' }, { status: 500 })
-  }
-  fal.config({ credentials: falKey })
-
-  // ── Build a ZIP of the uploaded images, upload it for Fal ─────────────────
-  // Fal's flux-lora-fast-training endpoint expects `images_data_url`: a
-  // single ZIP archive URL. We assemble it in-memory from the client-
-  // uploaded paths, then upload the ZIP to Fal's blob storage so the
-  // training job can fetch it.
-  let zipBlob: Blob
-  try {
-    const zip = new JSZip()
-    for (let i = 0; i < imagePaths.length; i++) {
-      const path = imagePaths[i]
-      const { data: file, error } = await supabase.storage.from(STORAGE_BUCKET).download(path)
-      if (error || !file) throw new Error(`Couldn't download ${path}: ${error?.message || 'unknown'}`)
-      const arrayBuf = await file.arrayBuffer()
-      const ext = (path.split('.').pop() || 'jpg').toLowerCase()
-      zip.file(`image_${String(i + 1).padStart(2, '0')}.${ext}`, arrayBuf)
-    }
-    const zipBytes = await zip.generateAsync({ type: 'uint8array' })
-    zipBlob = new Blob([new Uint8Array(zipBytes)], { type: 'application/zip' })
-  } catch (err) {
-    return NextResponse.json({
-      error: `Couldn't assemble training set: ${err instanceof Error ? err.message : 'unknown'}`,
-    }, { status: 500 })
-  }
-
-  const falZipUrl = await fal.storage.upload(zipBlob)
-
-  // ── Kick off the LoRA training job ────────────────────────────────────────
-  // Fal queues this — typical run time 5-15 minutes. We don't wait
-  // synchronously; we return immediately with the queue id and let the
-  // client poll /api/face-models/[id] for status.
-  let requestId: string
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const queued = await (fal as any).queue.submit('fal-ai/flux-lora-fast-training', {
-      input: {
-        images_data_url: falZipUrl,
-        trigger_word: triggerToken,
-        // 1000 steps is Fal's recommended default for "fast" training.
-        // Higher = better fidelity, but more cost + time. Sticking with
-        // the default keeps cost predictable (~$1.50/run).
-        steps: 1000,
-        // is_style: false → identity training (faces), not style transfer.
-        is_style: false,
-        // create_masks: true → Fal auto-masks the face area so background
-        // variation in the training set doesn't poison the model.
-        create_masks: true,
-      },
-    })
-    requestId = queued.request_id as string
-  } catch (err) {
-    return NextResponse.json({
-      error: `Fal training failed to start: ${err instanceof Error ? err.message : 'unknown'}`,
-    }, { status: 502 })
-  }
-
-  // Telemetry — training is a one-time fixed cost (~$1-2). Tag it so
-  // /admin/costs reflects face-training spend separately from inference.
-  // images:1 charges the fixed-rate training cost (~$1.50/run) defined
-  // in lib/ai-usage.ts PRICING['fal-flux-lora-fast-training'].
-  recordUsage({
-    userId: user.id, tier,
-    feature: 'face_lora_training', model: 'fal-flux-lora-fast-training', images: 1,
-  })
-
-  // ── Persist the face_models row ───────────────────────────────────────────
+  // ── Persist the face_models row (ready immediately) ───────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row, error: insertErr } = await (supabase as any)
     .from('face_models')
@@ -166,8 +96,7 @@ export async function POST(request: Request) {
       user_id: user.id,
       name: trimmedName,
       trigger_token: triggerToken,
-      status: 'training',
-      fal_request_id: requestId,
+      status: 'ready',
       source_images: imagePaths,
     })
     .select()
