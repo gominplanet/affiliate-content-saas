@@ -1468,7 +1468,7 @@ function InstagramPublishModal({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, userTier, brandNiches, customCategories, previewBeforePublish, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, fbAccounts, userTier, brandNiches, customCategories, previewBeforePublish, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -1482,6 +1482,7 @@ function VideoCard({
   blueskyConnected: boolean
   telegramConnected: boolean
   instagramConnected: boolean
+  fbAccounts: Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>
   userTier: 'trial' | 'creator' | 'pro' | 'admin'
   brandNiches: string[]
   customCategories: string[]
@@ -1502,6 +1503,14 @@ function VideoCard({
   const [deleting, setDeleting] = useState(false)
   const [fbPosting, setFbPosting] = useState(false)
   const [fbPosted, setFbPosted] = useState(!!post?.facebookPostId)
+  // Per-post Facebook Page choice (Pro multi-account). Defaults to the
+  // user's default page; the picker only renders when there's >1 page.
+  const [selectedFbAccountId, setSelectedFbAccountId] = useState<string | null>(null)
+  const effectiveFbAccountId = selectedFbAccountId
+    ?? fbAccounts.find(a => a.isDefault)?.id
+    ?? fbAccounts[0]?.id
+    ?? null
+  const showFbAccountPicker = fbAccounts.length > 1
   const [pinLoading, setPinLoading] = useState(false)
   const [pinPosted, setPinPosted] = useState(!!post?.pinterestPinId)
   const [thPosting, setThPosting] = useState(false)
@@ -1573,7 +1582,7 @@ function VideoCard({
 
     if (fbConnected && !fbPosted) {
       tasks.push(
-        fetch('/api/blog/facebook-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId }) })
+        fetch('/api/blog/facebook-post', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: currentPostId, socialAccountId: effectiveFbAccountId ?? undefined }) })
           .then(r => { if (r.ok) setFbPosted(true) })
           .catch(() => { /* non-fatal */ }),
       )
@@ -1732,7 +1741,7 @@ function VideoCard({
       const res = await fetch('/api/blog/facebook-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.postId }),
+        body: JSON.stringify({ postId: post.postId, socialAccountId: effectiveFbAccountId ?? undefined }),
       })
       await handleSocialResponse(res, 'Facebook', () => setFbPosted(true))
     } finally { setFbPosting(false) }
@@ -1908,6 +1917,18 @@ function VideoCard({
                   locked={!tierAllowsSocial(userTier, 'facebook')}
                 />
               )}
+              {fbConnected && showFbAccountPicker && (
+                <select
+                  value={effectiveFbAccountId ?? ''}
+                  onChange={e => setSelectedFbAccountId(e.target.value)}
+                  title="Which Facebook Page to publish to"
+                  className="text-[10px] px-1.5 py-1 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none max-w-[150px]"
+                >
+                  {fbAccounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.displayName || 'Facebook Page'}</option>
+                  ))}
+                </select>
+              )}
               {pinterestConnected && (
                 <SocialPill
                   brand="#E60023"
@@ -1998,6 +2019,7 @@ function VideoCard({
                 postId={post.postId}
                 onClose={() => setPreviewPlatform(null)}
                 onPublished={cfg.onPublished}
+                extraBody={previewPlatform === 'facebook' && effectiveFbAccountId ? { socialAccountId: effectiveFbAccountId } : undefined}
               />
             )
           })()}
@@ -2201,6 +2223,10 @@ export default function ContentPage() {
   const [blueskyConnected, setBlueskyConnected] = useState(false)
   const [telegramConnected, setTelegramConnected] = useState(false)
   const [instagramConnected, setInstagramConnected] = useState(false)
+  /** Connected Facebook Pages for the per-post account picker (Pro). Empty
+   *  for non-Pro users or those with a single page — the picker only shows
+   *  when there's a real choice to make. */
+  const [fbAccounts, setFbAccounts] = useState<Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>>([])
   const [userTier, setUserTier] = useState<'trial' | 'creator' | 'pro' | 'admin'>('trial')
   const [brandNiches, setBrandNiches] = useState<string[]>([])
   const [customCategories, setCustomCategories] = useState<string[]>([])
@@ -2323,7 +2349,16 @@ export default function ContentPage() {
     setBlueskyConnected(!!(i as Record<string, unknown>)?.bluesky_handle && !!(i as Record<string, unknown>)?.bluesky_app_password)
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
     setInstagramConnected(!!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
-    setUserTier(effectiveTier((i as Record<string, unknown>)?.tier as string))
+    const resolvedTier = effectiveTier((i as Record<string, unknown>)?.tier as string)
+    setUserTier(resolvedTier)
+    // Pro multi-account: load connected Facebook Pages so the per-post picker
+    // can offer a choice. Token-stripped endpoint; best-effort.
+    if (resolvedTier === 'pro' || resolvedTier === 'admin') {
+      fetch('/api/social-accounts?platform=facebook')
+        .then(r => r.json())
+        .then(d => { if (Array.isArray(d?.accounts)) setFbAccounts(d.accounts) })
+        .catch(() => {})
+    }
     setBrandNiches(((b?.niches as string[] | null) ?? []))
     setCustomCategories(((b?.custom_categories as string[] | null) ?? []))
     setVideos(vids)
@@ -3319,6 +3354,7 @@ export default function ContentPage() {
                     blueskyConnected={blueskyConnected}
                     telegramConnected={telegramConnected}
                     instagramConnected={instagramConnected}
+                    fbAccounts={fbAccounts}
                     userTier={userTier}
                     brandNiches={brandNiches}
                     customCategories={customCategories}

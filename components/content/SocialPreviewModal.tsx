@@ -33,6 +33,7 @@ export function SocialPreviewModal({
   onClose,
   onPublished,
   onScheduled,
+  extraBody,
 }: {
   /** Display label, e.g. "Threads" — shows in the modal header. */
   platform: string
@@ -51,6 +52,9 @@ export function SocialPreviewModal({
   onPublished: () => void
   /** Called after a scheduled-for-later succeeds. */
   onScheduled?: (when: Date) => void
+  /** Extra fields merged into every request body — e.g. a chosen
+   *  { socialAccountId } for multi-account targeting. */
+  extraBody?: Record<string, unknown>
 }) {
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -74,7 +78,7 @@ export function SocialPreviewModal({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, dryRun: true }),
+        body: JSON.stringify({ postId, dryRun: true, ...extraBody }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Preview failed')
@@ -108,7 +112,7 @@ export function SocialPreviewModal({
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, text }),
+        body: JSON.stringify({ postId, text, ...extraBody }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Publish failed')
@@ -142,6 +146,7 @@ export function SocialPreviewModal({
           platform: platformKey,
           scheduledAt: when.toISOString(),
           text,
+          ...extraBody,
         }),
       })
       const data = await res.json().catch(() => ({}))
