@@ -123,6 +123,10 @@ const faqs = [
     a: 'Yes — one click in your billing portal. No contracts, no exit fees. You keep access through the end of the period you paid for.',
   },
   {
+    q: 'How does posting to Instagram work?',
+    a: 'MVP auto-publishes the visual to Instagram via the official API — a Reel for Shorts, an auto-composed image post, or a Story. The one thing Instagram itself doesn\'t allow is clickable links in posts or captions, and its API can\'t set Story link stickers. So for the affiliate link on Instagram you add it where Instagram permits — a Story link sticker (we give you a one-tap copy and the exact 5-second steps) or your bio. Every other platform (Facebook, Threads, LinkedIn, Pinterest, X, Bluesky, Telegram) gets the link posted automatically.',
+  },
+  {
     q: 'Why is Pinterest "coming soon"?',
     a: 'Pinterest requires apps to pass their developer review before live API access. We\'re going through that process now. Once approved, every paid plan gets Pinterest auto-publish — no upgrade required.',
   },
