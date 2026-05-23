@@ -15,7 +15,10 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 // Anthropic helpers below so each call is tagged with the right user/tier.
 let TELEMETRY: { userId: string | null; tier: string | null } = { userId: null, tier: null }
 
-export const maxDuration = 120
+// 300s (Vercel Pro max). A face thumbnail runs the gpt-image cut-out and the
+// product scene; we run them in parallel, but gpt-image high quality alone can
+// take ~60s, so give generous headroom.
+export const maxDuration = 300
 
 // ── Retry wrapper for Anthropic overloaded (529) errors ──────────────────────
 async function withAnthropicRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
@@ -489,23 +492,29 @@ export async function POST(request: Request) {
     // caused identity blending + fought the product). Instead we generate the
     // product scene clean (below) and composite a cached transparent cut-out of
     // the creator into the bottom-right corner in the browser.
-    let personCutoutUrl: string | null = null
-    if (faceModel) {
-      personCutoutUrl = await generateFaceCutout(supabase, {
-        userId: user.id,
-        sourceImages: faceModel.source_images,
-        imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
-      })
-      console.log('[generate-thumbnail] Person cut-out:', personCutoutUrl ?? 'none')
+    // Kick off the creator cut-out NOW (don't await) so it runs in parallel
+    // with the product-scene generation below — otherwise the two sequential
+    // image generations blow the function timeout.
+    const cutoutPromise: Promise<string | null> = faceModel
+      ? generateFaceCutout(supabase, {
+          userId: user.id,
+          sourceImages: faceModel.source_images,
+          imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+        })
+      : Promise.resolve(null)
+    // Resolves the cut-out (awaiting the in-flight promise) + a debug reason,
+    // called right before each response so the cut-out overlaps product gen.
+    const resolveCutout = async (): Promise<{ url: string | null; debug: string }> => {
+      const url = await cutoutPromise
+      const debug = !faceModelId
+        ? 'no-faceModelId-sent (face not selected in the modal)'
+        : !faceModel
+          ? 'faceModelId sent but model not found / has no source photos'
+          : !url
+            ? `cut-out GENERATION FAILED: ${LAST_CUTOUT_ERROR || '(no error captured)'}`
+            : 'ok'
+      return { url, debug }
     }
-    // Surfaced to the client console so we can see WHY a cut-out is/ isn't made.
-    const faceDebug = !faceModelId
-      ? 'no-faceModelId-sent (face not selected in the modal)'
-      : !faceModel
-        ? 'faceModelId sent but model not found / has no source photos'
-        : !personCutoutUrl
-          ? `cut-out GENERATION FAILED: ${LAST_CUTOUT_ERROR || '(no error captured)'}`
-          : 'ok'
 
     // ── PATH A: Kontext — use real product image as visual reference ──────────
     // Start from the actual product photo and transform the scene around it.
@@ -547,6 +556,7 @@ export async function POST(request: Request) {
             })
           }
           console.log('[generate-thumbnail] Kontext results:', kontextUrls)
+          const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
           return NextResponse.json({
             ok: true,
             // Primary url retained for backwards-compat with existing client
@@ -599,6 +609,7 @@ export async function POST(request: Request) {
       })
     }
 
+    const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
     return NextResponse.json({
       ok: true,
       thumbnailUrl: thumbnailUrls[0],
