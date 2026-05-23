@@ -673,17 +673,21 @@ function VideoStudioCard({ video, userTier, playlists }: {
             octx.drawImage(cut, 0, 0)
             const imgData = octx.getImageData(0, 0, iw, ih)
             const data = imgData.data
-            let minX = iw, minY = ih, maxX = -1, maxY = -1
             const ALPHA = 16
+            // Per-column opaque stats — used both for the green despill and to
+            // isolate the main subject from a separated side-figure (gpt-image
+            // sometimes generates a companion next to the creator).
+            const colCount = new Int32Array(iw)
+            const colTop = new Int32Array(iw); colTop.fill(ih)
+            const colBot = new Int32Array(iw); colBot.fill(-1)
             for (let y = 0; y < ih; y++) {
               for (let x = 0; x < iw; x++) {
                 const i = (y * iw + x) * 4
                 const a = data[i + 3]
                 if (a > ALPHA) {
-                  if (x < minX) minX = x
-                  if (x > maxX) maxX = x
-                  if (y < minY) minY = y
-                  if (y > maxY) maxY = y
+                  colCount[x]++
+                  if (y < colTop[x]) colTop[x] = y
+                  if (y > colBot[x]) colBot[x] = y
                 }
                 // Green despill: the green-screen matte leaves a green tint on
                 // semi-transparent hair/edge pixels. Where green dominates,
@@ -698,8 +702,32 @@ function VideoStudioCard({ video, userTier, playlists }: {
             }
             octx.putImageData(imgData, 0, 0)
             source = oc
-            if (maxX >= minX && maxY >= minY) {
-              sx = minX; sy = minY; sw = maxX - minX + 1; sh = maxY - minY + 1
+
+            // Split the columns into runs separated by empty (fully transparent)
+            // gaps and keep the HEAVIEST run — that's the main subject. A
+            // companion standing apart with a gap between them becomes its own,
+            // lighter run and gets dropped. A lone subject yields one run = the
+            // full bounding box, so this is a no-op in the normal case.
+            const minCol = Math.max(2, Math.floor(ih * 0.04)) // ignore stray wisp columns
+            let bestStart = -1, bestEnd = -1, bestSum = -1
+            let curStart = -1, curSum = 0
+            for (let x = 0; x <= iw; x++) {
+              const active = x < iw && colCount[x] >= minCol
+              if (active) {
+                if (curStart < 0) { curStart = x; curSum = 0 }
+                curSum += colCount[x]
+              } else if (curStart >= 0) {
+                if (curSum > bestSum) { bestSum = curSum; bestStart = curStart; bestEnd = x - 1 }
+                curStart = -1; curSum = 0
+              }
+            }
+            if (bestStart >= 0) {
+              let top = ih, bot = -1
+              for (let x = bestStart; x <= bestEnd; x++) {
+                if (colTop[x] < top) top = colTop[x]
+                if (colBot[x] > bot) bot = colBot[x]
+              }
+              if (bot >= top) { sx = bestStart; sw = bestEnd - bestStart + 1; sy = top; sh = bot - top + 1 }
             }
           }
         } catch { /* tainted/unsupported — fall back to the full image */ }
