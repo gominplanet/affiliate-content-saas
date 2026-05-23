@@ -4,7 +4,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchProductImageFromPage } from '@/services/research'
-import { createOpenAIService } from '@/services/openai'
+import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
@@ -244,10 +244,14 @@ async function generateFaceCutout(supabase: any, opts: {
     const refImages: Array<{ data: Uint8Array; filename: string; mime: string }> = []
     for (const path of opts.sourceImages.slice(0, 5)) {
       const { data: file } = await supabase.storage.from('headshots').download(path)
-      if (file) {
-        const buf = new Uint8Array(await file.arrayBuffer())
-        const ext = (path.split('.').pop() || 'jpg').toLowerCase()
-        refImages.push({ data: buf, filename: `face_${refImages.length}.${ext}`, mime: ext === 'png' ? 'image/png' : 'image/jpeg' })
+      if (!file) continue
+      try {
+        // Re-encode to a clean RGB PNG so gpt-image never rejects the photo
+        // for an odd format / colour mode / orientation.
+        const png = await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
+        refImages.push({ data: png, filename: `face_${refImages.length}.png`, mime: 'image/png' })
+      } catch (e) {
+        console.warn('[generateFaceCutout] skipping unreadable reference photo', path, e)
       }
     }
     if (refImages.length === 0) return null

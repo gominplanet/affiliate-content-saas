@@ -1,4 +1,21 @@
 import OpenAI, { toFile } from 'openai'
+import sharp from 'sharp'
+
+/**
+ * Normalize an arbitrary image (JPEG/PNG/WEBP/HEIC, any colour mode,
+ * EXIF-rotated) into a clean RGB PNG that gpt-image's image-edit endpoint
+ * always accepts. Fixes "Invalid image file or mode" rejections from
+ * user-uploaded reference photos. Throws if the input can't be decoded
+ * (caller should skip that image).
+ */
+export async function normalizeToPng(bytes: Uint8Array): Promise<Uint8Array> {
+  const out = await sharp(Buffer.from(bytes))
+    .rotate()              // honor EXIF orientation
+    .flatten({ background: '#ffffff' }) // drop alpha → consistent RGB
+    .png()
+    .toBuffer()
+  return new Uint8Array(out)
+}
 
 export interface ImageSet {
   hero: string       // base64 PNG — 1792×1024 (16:9 hero)

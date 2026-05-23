@@ -11,7 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { type Tier } from '@/lib/tier'
-import { createOpenAIService, OpenAIService } from '@/services/openai'
+import { createOpenAIService, OpenAIService, normalizeToPng } from '@/services/openai'
 import { recordUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 120
@@ -69,10 +69,12 @@ export async function POST(request: Request) {
     const refImages: Array<{ data: Uint8Array; filename: string; mime: string }> = []
     for (const path of srcImages.slice(0, 5)) {
       const { data: file } = await supabase.storage.from('headshots').download(path)
-      if (file) {
-        const buf = new Uint8Array(await file.arrayBuffer())
-        const ext = (path.split('.').pop() || 'jpg').toLowerCase()
-        refImages.push({ data: buf, filename: `face_${refImages.length}.${ext}`, mime: ext === 'png' ? 'image/png' : 'image/jpeg' })
+      if (!file) continue
+      try {
+        const png = await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
+        refImages.push({ data: png, filename: `face_${refImages.length}.png`, mime: 'image/png' })
+      } catch (e) {
+        console.warn('[photobooth] skipping unreadable reference photo', path, e)
       }
     }
     if (refImages.length === 0) {
