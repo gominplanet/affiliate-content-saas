@@ -29,6 +29,8 @@ export const PRIMARY_FEATURE = {
   instagramAi: ['ig_ai_thumbnail_image'] as string[],
   /** AI assistant — one row per user message turn. */
   assistant: ['assistant_message'] as string[],
+  /** Photobooth headshot — one row per successful generation. */
+  photobooth: ['photobooth_image'] as string[],
 }
 
 interface CapCheck {

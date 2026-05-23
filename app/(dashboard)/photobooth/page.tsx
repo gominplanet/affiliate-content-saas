@@ -13,7 +13,7 @@ import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { effectiveTier } from '@/lib/view-as'
-import { Camera, Loader2, Sparkles, Download, AlertCircle, UserCircle2 } from 'lucide-react'
+import { Camera, Loader2, Sparkles, Download, AlertCircle, UserCircle2, Trash2 } from 'lucide-react'
 
 interface FaceModel { id: string; name: string; source_images: string[] }
 
@@ -33,6 +33,7 @@ const SIZE_OPTS: Array<{ key: '1024x1024' | '1024x1536' | '1536x1024'; label: st
 ]
 
 interface Shot { id: string; url: string; style: string }
+interface UsageInfo { used: number; limit: number | null; remaining: number | null; resetLabel: string }
 
 export default function PhotoboothPage() {
   const supabase = createBrowserClient()
@@ -46,6 +47,7 @@ export default function PhotoboothPage() {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [shots, setShots] = useState<Shot[]>([])
+  const [usage, setUsage] = useState<UsageInfo | null>(null)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -62,6 +64,11 @@ export default function PhotoboothPage() {
       const models = (d.models || []) as FaceModel[]
       setFaces(models)
       if (models.length > 0) setFaceId(models[0].id)
+    } catch { /* ignore */ }
+    try {
+      const ur = await fetch('/api/photobooth')
+      const ud = await ur.json()
+      if (ud?.usage) setUsage(ud.usage as UsageInfo)
     } catch { /* ignore */ }
     setLoading(false)
   }, [supabase])
@@ -81,6 +88,7 @@ export default function PhotoboothPage() {
         body: JSON.stringify({ faceModelId: faceId, style, customPrompt: customPrompt.trim() || undefined, size }),
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
+      if (d && d.usage) setUsage(d.usage as UsageInfo)
       if (!res.ok) {
         const msg = (d.error as string) || (
           res.status === 504 || res.status === 502
@@ -96,6 +104,12 @@ export default function PhotoboothPage() {
       setGenerating(false)
     }
   }
+
+  function removeShot(id: string) {
+    setShots(prev => prev.filter(s => s.id !== id))
+  }
+
+  const noneLeft = !!usage && usage.remaining === 0
 
   return (
     <>
@@ -187,12 +201,23 @@ export default function PhotoboothPage() {
 
               <button
                 onClick={generate}
-                disabled={generating || !faceId}
+                disabled={generating || !faceId || noneLeft}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors w-full justify-center"
               >
                 {generating ? <><Loader2 size={14} className="animate-spin" /> Generating… (~20s)</> : <><Camera size={14} /> Generate headshot</>}
               </button>
-              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center">Each generation creates one shot. Generate again for variations.</p>
+
+              {usage && usage.limit !== null ? (
+                <p className="text-[11px] text-center text-[#86868b] dark:text-[#8e8e93]">
+                  {noneLeft ? (
+                    <span className="text-[#ff3b30]">You&apos;ve used all {usage.limit} headshots this month. Resets {usage.resetLabel}.</span>
+                  ) : (
+                    <><span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{usage.remaining} of {usage.limit}</span> headshots left this month{usage.resetLabel ? ` · resets ${usage.resetLabel}` : ''}. Each generation creates one shot.</>
+                  )}
+                </p>
+              ) : (
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center">Each generation creates one shot. Generate again for variations.</p>
+              )}
             </div>
 
             {/* Results */}
@@ -205,7 +230,15 @@ export default function PhotoboothPage() {
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   {shots.map(s => (
-                    <div key={s.id} className="card p-2">
+                    <div key={s.id} className="card p-2 relative">
+                      <button
+                        onClick={() => removeShot(s.id)}
+                        aria-label="Delete headshot"
+                        title="Delete"
+                        className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/55 hover:bg-[#ff3b30] text-white flex items-center justify-center backdrop-blur-sm transition-colors"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={s.url} alt={`Headshot — ${s.style}`} className="w-full rounded-lg" />
                       <a

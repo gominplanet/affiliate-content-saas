@@ -10,11 +10,37 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { createOpenAIService, OpenAIService, normalizeToPng } from '@/services/openai'
 import { recordUsage } from '@/lib/ai-usage'
 
 export const maxDuration = 300
+
+/** Photobooth monthly usage for the current user (Pro = 20 / mo, admin = ∞). */
+async function loadPhotoboothUsage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any, userId: string,
+): Promise<{ tier: Tier; limit: number | null; used: number; remaining: number | null; resetLabel: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: row } = await (supabase as any)
+    .from('integrations')
+    .select('tier,subscription_period_start,subscription_period_end')
+    .eq('user_id', userId)
+    .single()
+  const tier = normalizeTier(row?.tier)
+  const limit = TIERS[tier].photoboothPerMonth
+  const check = await checkUsageCap(
+    supabase, userId, PRIMARY_FEATURE.photobooth, limit,
+    row?.subscription_period_start ?? null, row?.subscription_period_end ?? null,
+  )
+  const used = check?.used ?? 0
+  return {
+    tier, limit, used,
+    remaining: limit === null ? null : Math.max(0, limit - used),
+    resetLabel: check?.resetLabel ?? '',
+  }
+}
 
 /** Built-in looks. Free-text customPrompt is appended on top of these. */
 const STYLES: Record<string, string> = {
@@ -32,17 +58,23 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // ── Pro gate ──────────────────────────────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
-      .from('integrations').select('tier').eq('user_id', user.id).single()
-    const tier = (intRow?.tier as Tier) ?? 'trial'
+    // ── Pro gate + monthly cap ────────────────────────────────────────────
+    const usage = await loadPhotoboothUsage(supabase, user.id)
+    const tier = usage.tier
     if (tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({
         error: 'Photobooth is a Pro feature. Upgrade to Pro to generate professional headshots.',
         limitReached: true, cap: 'photobooth', currentTier: tier,
         upgrade: { tier: 'pro', label: 'Pro', limit: null },
       }, { status: 403 })
+    }
+    // 20 / month for Pro (admin = unlimited). Reject before spending on gpt-image.
+    if (usage.limit !== null && usage.used >= usage.limit) {
+      return NextResponse.json({
+        error: `You've used all ${usage.limit} Photobooth headshots for this billing period. Resets ${usage.resetLabel}.`,
+        limitReached: true, cap: 'photobooth', currentTier: tier,
+        usage: { used: usage.used, limit: usage.limit, remaining: 0, resetLabel: usage.resetLabel },
+      }, { status: 429 })
     }
 
     const body = await request.json() as {
@@ -104,14 +136,37 @@ Do NOT render any text, captions, watermarks, or logos.`
       feature: 'photobooth_image', model: imageModel, images: 1,
     })
 
+    // usage.used is the count BEFORE this generation; reflect this one now so
+    // the client countdown updates immediately (recordUsage is async).
+    const usedAfter = usage.used + 1
     return NextResponse.json({
       ok: true,
       image: `data:image/png;base64,${b64}`,
       style: body.style && STYLES[body.style] ? body.style : 'studio',
+      usage: {
+        used: usedAfter,
+        limit: usage.limit,
+        remaining: usage.limit === null ? null : Math.max(0, usage.limit - usedAfter),
+        resetLabel: usage.resetLabel,
+      },
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[photobooth] error:', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
+
+/** GET /api/photobooth — current month's headshot usage for the countdown. */
+export async function GET() {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const usage = await loadPhotoboothUsage(supabase, user.id)
+    return NextResponse.json({ ok: true, usage })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
