@@ -590,7 +590,7 @@ export async function POST(request: Request) {
         console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
 
         // Kontext: preserve the product, replace background with scene
-        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. No white background. No people. No text.`
+        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. COMPOSITION (important): position the product on the LEFT / CENTRE-LEFT of the frame and keep the RIGHT THIRD of the image open — empty background / negative space — because a person will be composited into the bottom-right corner afterwards, so the product must NOT extend into the right third or it will be covered. No white background. No people. No text.`
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
