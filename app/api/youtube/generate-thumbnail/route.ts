@@ -261,11 +261,14 @@ async function generateFaceCutout(supabase: any, opts: {
     const outfit = pick(CUTOUT_OUTFITS)
     const expression = pick(CUTOUT_EXPRESSIONS)
     // 1. Generate a head-and-shoulders portrait on a plain backdrop (same call
-    //    Photobooth uses — reliable). We remove the background next.
-    const prompt = `A clean head-and-shoulders studio portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, looking toward the camera. Flattering studio lighting, sharp focus, realistic skin. Plain, evenly-lit solid light-grey studio background behind them (so it can be cleanly removed). No text, no logos.`
+    //    Photobooth uses — reliable). We remove the background next. CRITICAL:
+    //    keep generous empty margin on every side so the person is NOT cropped
+    //    by the frame — that's what gives rembg a clean silhouette instead of a
+    //    hard straight edge where the body met the frame border.
+    const prompt = `A clean head-and-shoulders studio portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, looking toward the camera. Flattering studio lighting, sharp focus, realistic skin. FRAMING: the person is centered with GENEROUS EMPTY MARGIN on all four sides — their head, shoulders and arms are fully inside the frame and do NOT touch or get cropped by any edge. Plain, evenly-lit solid light-grey studio background behind them (so it can be cleanly removed). No text, no logos.`
     const openai = createOpenAIService()
     const b64 = await openai.generateWithReferences({
-      prompt, images: refImages, size: '1024x1536', quality: 'high', model: opts.imageModel,
+      prompt, images: refImages, size: '1024x1536', quality: 'medium', model: opts.imageModel,
     })
     const headshotUrl = await fal.storage.upload(new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' }))
     recordUsage({
@@ -464,6 +467,29 @@ export async function POST(request: Request) {
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
 
+    // Kick off the creator cut-out RIGHT NOW (don't await) so it runs in
+    // parallel with channel analysis + prompt gen + the product scene — the
+    // gpt-image cut-out is the long pole, so starting it first minimises total
+    // wall-clock time.
+    const cutoutPromise: Promise<string | null> = faceModel
+      ? generateFaceCutout(supabase, {
+          userId: user.id,
+          sourceImages: faceModel.source_images,
+          imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
+        })
+      : Promise.resolve(null)
+    const resolveCutout = async (): Promise<{ url: string | null; debug: string }> => {
+      const url = await cutoutPromise
+      const debug = !faceModelId
+        ? 'no-faceModelId-sent (face not selected in the modal)'
+        : !faceModel
+          ? 'faceModelId sent but model not found / has no source photos'
+          : !url
+            ? `cut-out GENERATION FAILED: ${LAST_CUTOUT_ERROR || '(no error captured)'}`
+            : 'ok'
+      return { url, debug }
+    }
+
     const channelThumbnailUrls = await fetchChannelThumbnails(supabase, user.id)
     const channelStyle = await analyzeChannelStyle(channelThumbnailUrls)
     console.log('[generate-thumbnail] Channel style:', channelStyle ?? 'none')
@@ -486,35 +512,6 @@ export async function POST(request: Request) {
     console.log('[generate-thumbnail] Scene prompt:', finalScenePrompt)
     console.log('[generate-thumbnail] Overlay text:', overlayHook, lockedHeadline ? '(LOCKED)' : '(AI)')
     if (styleBrief) console.log('[generate-thumbnail] Style brief:', styleBrief)
-
-    // ── Creator cut-out (composited bottom-right, client-side) ────────────────
-    // When a face is selected we DON'T render the person into the scene (that
-    // caused identity blending + fought the product). Instead we generate the
-    // product scene clean (below) and composite a cached transparent cut-out of
-    // the creator into the bottom-right corner in the browser.
-    // Kick off the creator cut-out NOW (don't await) so it runs in parallel
-    // with the product-scene generation below — otherwise the two sequential
-    // image generations blow the function timeout.
-    const cutoutPromise: Promise<string | null> = faceModel
-      ? generateFaceCutout(supabase, {
-          userId: user.id,
-          sourceImages: faceModel.source_images,
-          imageModel: process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1',
-        })
-      : Promise.resolve(null)
-    // Resolves the cut-out (awaiting the in-flight promise) + a debug reason,
-    // called right before each response so the cut-out overlaps product gen.
-    const resolveCutout = async (): Promise<{ url: string | null; debug: string }> => {
-      const url = await cutoutPromise
-      const debug = !faceModelId
-        ? 'no-faceModelId-sent (face not selected in the modal)'
-        : !faceModel
-          ? 'faceModelId sent but model not found / has no source photos'
-          : !url
-            ? `cut-out GENERATION FAILED: ${LAST_CUTOUT_ERROR || '(no error captured)'}`
-            : 'ok'
-      return { url, debug }
-    }
 
     // ── PATH A: Kontext — use real product image as visual reference ──────────
     // Start from the actual product photo and transform the scene around it.
