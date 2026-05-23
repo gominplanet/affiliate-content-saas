@@ -295,7 +295,7 @@ async function generateFaceCutout(supabase: any, opts: {
     //    rembg gives a clean silhouette (no hard "blade" edge). Only the lower
     //    chest/shoulders may run off the BOTTOM edge — that's hidden when the
     //    cut-out is bottom-anchored in the thumbnail.
-    const prompt = `A clean CLOSE-UP portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, ${pose}. Flattering studio lighting, sharp focus, realistic natural skin texture. FRAMING: a tight, close-up head shot — the FACE is large and fills most of the frame (chest-up, head and the top of the shoulders only). CRITICAL — a clear, visible strip of plain background must surround the person: their head, hair, shoulders and arms must NOT touch or be cut off by the TOP, LEFT or RIGHT edges (leave an obvious empty background gap on those three sides). Only the very bottom of the chest may reach the bottom edge. Plain, evenly-lit solid light-grey studio background behind them (so it can be cleanly removed). No text, no logos.`
+    const prompt = `A clean CLOSE-UP portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, ${pose}. Flattering studio lighting, sharp focus, realistic natural skin texture. FRAMING: a tight, close-up head shot — the FACE is large and fills most of the frame (chest-up, head and the top of the shoulders only). CRITICAL — a clear, visible strip of plain background must surround the person: their head, hair, shoulders and arms must NOT touch or be cut off by the TOP, LEFT or RIGHT edges (leave an obvious empty background gap on those three sides). Only the very bottom of the chest may reach the bottom edge. BACKGROUND: a plain, perfectly even, solid VIVID CHROMA-GREEN screen (bright saturated green, like a film green screen) filling the entire background — a strong colour that clearly contrasts with the person's hair, skin and clothing so the background can be removed perfectly with no part of the person mistaken for background. No shadows on the background, no gradients. No text, no logos.`
     const openai = createOpenAIService()
     const b64 = await openai.generateWithReferences({
       prompt, images: refImages, size: '1024x1536', quality: 'medium', model: opts.imageModel,
@@ -305,26 +305,28 @@ async function generateFaceCutout(supabase: any, opts: {
       feature: 'yt_thumb_face_cutout', model: opts.imageModel, images: 1,
     })
 
-    // Pad the portrait with a wide band of the same studio grey on the top and
+    // Pad the portrait with a wide band of the same chroma-green on the top and
     // both sides BEFORE background removal. This guarantees rembg always sees
     // clean background at every edge (except the bottom, where the chest is
     // meant to run off), so it traces the real body contour as a soft silhouette
     // instead of leaving a hard straight "blade" cut where a shoulder/arm
-    // touched the frame. We trim the transparent margin back off afterwards so
-    // the face still fills the composite.
+    // touched the frame. The green matches the generated backdrop so it's
+    // removed as one. We trim the transparent margin back off afterwards so the
+    // face still fills the composite.
+    const CHROMA = '#00b140'
     let uploadBuf: Buffer
     try {
       const meta = await sharp(Buffer.from(b64, 'base64')).metadata()
       const w = meta.width ?? 1024
       const h = meta.height ?? 1536
       uploadBuf = await sharp(Buffer.from(b64, 'base64'))
-        .flatten({ background: '#ededed' })
+        .flatten({ background: CHROMA })
         .extend({
           top: Math.round(h * 0.14),
           left: Math.round(w * 0.16),
           right: Math.round(w * 0.16),
           bottom: 0,
-          background: '#ededed',
+          background: CHROMA,
         })
         .png()
         .toBuffer()
