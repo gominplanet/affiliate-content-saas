@@ -148,7 +148,7 @@ YOUR TASK:
 2. SCENE — place the product in the SETTING/MOOD above. A real place with depth and atmosphere, background softly blurred but recognisable. Not a plain studio, not a white background.
 3. COMPOSITION — product CENTRE / CENTRE-LEFT, large and sharp. Keep the TOP-LEFT and the BOTTOM-RIGHT areas relatively clean (a title goes top-left, a person is added bottom-right later).
 4. LIGHTING — MATCH the setting above. If the setting is bright/airy, use bright, natural daylight (do NOT make it dark or heavily moody). Make the product look appealing and true-to-life.
-5. End with: "16:9, photorealistic, 8K, shallow depth of field, no faces, no people, no text overlays"
+5. End with: "16:9, photorealistic, 8K, shallow depth of field, absolutely no people, no humans, no faces, no heads, no bodies, no hands, no text overlays"
 6. Under 90 words total.
 
 Return ONLY the prompt.`,
@@ -590,7 +590,7 @@ export async function POST(request: Request) {
         console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
 
         // Kontext: preserve the product, replace background with scene
-        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. COMPOSITION (important): position the product on the LEFT / CENTRE-LEFT of the frame and keep the RIGHT THIRD of the image open — empty background / negative space — because a person will be composited into the bottom-right corner afterwards, so the product must NOT extend into the right third or it will be covered. No white background. No people. No text.`
+        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. COMPOSITION (important): position the product on the LEFT / CENTRE-LEFT of the frame and keep the RIGHT THIRD of the image open — empty background / negative space — because a person will be composited into the bottom-right corner afterwards, so the product must NOT extend into the right third or it will be covered. CRITICAL: there must be ABSOLUTELY NO people anywhere — no humans, no faces, no heads, no bodies, no hands, no silhouettes or reflections of people in the scene or its background. The scene is completely empty of any person. No white background. No text.`
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
