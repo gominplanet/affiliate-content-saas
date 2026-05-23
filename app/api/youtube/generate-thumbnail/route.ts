@@ -104,13 +104,17 @@ Ignore any text overlays. Focus only on consistent patterns across thumbnails. B
 }
 
 // ── Claude: Product scene prompt (product-only, style-aware, story-driven) ────
-const STYLE_SCENES: Record<string, string> = {
-  review:     'Product IN USE on a real surface in a home or workspace — books, tools, or related objects in the background create context. Natural room light, lived-in environment, not a studio.',
-  unboxing:   'Product next to or emerging from its open box on a wooden table, tissue paper scattered, warm indoor light as if someone just received a delivery.',
-  comparison: 'Product placed prominently on one side of frame, strong dramatic side-lighting, background hints at a decision or test scenario (whiteboard, notes, competitor products blurred).',
-  lifestyle:  'Product actively in use in its natural environment — outdoors, in the kitchen, at the gym, on a trail. Show the product doing its job. Golden-hour or natural ambient light. People or hands interacting are acceptable if they add story but NO faces.',
-  hero:       'Product in a dramatic cinematic environment — weather, movement, epic scale. Dark dramatic background, strong rim lighting, product looks like the hero of an action movie.',
-}
+// Setting/mood pool — weighted toward BRIGHT, airy, Instagram-style homes so
+// thumbnails aren't always moody/dark. One darker option for occasional variety.
+const SCENE_MOODS = [
+  'a BRIGHT, airy modern home interior — clean white walls, light wood, soft natural daylight pouring through a large window. Fresh, inviting Instagram-home aesthetic.',
+  'a cozy, warm, BRIGHT kitchen or living room — homey and welcoming, lots of soft natural light, light/neutral tones.',
+  'a clean, minimal, BRIGHT setting — light neutral background, crisp even daylight, fresh and modern.',
+  'a stylish bright sunroom / cafe corner with green plants and big windows, airy and vibrant with natural light.',
+  'a warm, sunlit golden-hour interior — bright, vibrant and lively, soft warm daylight.',
+  'a sleek modern desk / shelf setup in a bright room, daylight, clean and aspirational.',
+  'a moody, cinematic setting with dramatic rim lighting and a darker background (use this ONLY occasionally, for contrast).',
+]
 
 async function generateProductPrompt(opts: {
   videoTitle: string
@@ -120,14 +124,14 @@ async function generateProductPrompt(opts: {
   style: string
   channelStyle?: string | null
 }): Promise<string> {
-  const sceneDirection = STYLE_SCENES[opts.style] ?? STYLE_SCENES.review
+  const sceneMood = pick(SCENE_MOODS)
   const anthropic = createAnthropicClient()
   const msg = await withAnthropicRetry(() => anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 500,
     messages: [{
       role: 'user',
-      content: `You are a YouTube thumbnail art director. Write a Flux image generation prompt for a product shot with an active, story-driven scene. NO faces. The product must look exactly as described — use every visual detail from the product data below.
+      content: `You are a YouTube thumbnail art director. Write a Flux image generation prompt for a product shot in a real, story-driven scene. NO faces, NO people. The product must look exactly as described — use every visual detail from the product data below.
 
 PRODUCT DATA:
 TITLE: "${opts.videoTitle}"
@@ -135,15 +139,15 @@ PRODUCT NAME: ${opts.productTitle || 'Unknown product'}
 ${opts.productDescription ? `DESCRIPTION: ${opts.productDescription}` : ''}
 ${opts.productBullets.length ? `FEATURES: ${opts.productBullets.slice(0, 4).join(' · ')}` : ''}
 
-SCENE STYLE: ${sceneDirection}
-${opts.channelStyle ? `CHANNEL AESTHETIC (match this): ${opts.channelStyle}` : ''}
+SETTING / MOOD (use THIS — it sets the background and lighting): ${sceneMood}
+${opts.channelStyle ? `CHANNEL AESTHETIC (also match this): ${opts.channelStyle}` : ''}
 
 YOUR TASK:
 1. PRODUCT APPEARANCE — extract exact visual details from the data above: colour, shape, size, material, any text/branding on it. Describe it precisely so the AI renders the RIGHT product.
-2. SCENE — pick one specific, active real-world setting that tells a story for this product. Not a studio. Not a white background. A real place with depth, context, and atmosphere.
-3. COMPOSITION — product CENTRE-RIGHT, large and sharp. LEFT third is empty negative space for text overlay. Background blurred but recognisable.
-4. LIGHTING — dramatic and cinematic. Makes the product look desirable.
-5. End with: "16:9, photorealistic, 8K, shallow depth of field, no faces, no text overlays"
+2. SCENE — place the product in the SETTING/MOOD above. A real place with depth and atmosphere, background softly blurred but recognisable. Not a plain studio, not a white background.
+3. COMPOSITION — product CENTRE / CENTRE-LEFT, large and sharp. Keep the TOP-LEFT and the BOTTOM-RIGHT areas relatively clean (a title goes top-left, a person is added bottom-right later).
+4. LIGHTING — MATCH the setting above. If the setting is bright/airy, use bright, natural daylight (do NOT make it dark or heavily moody). Make the product look appealing and true-to-life.
+5. End with: "16:9, photorealistic, 8K, shallow depth of field, no faces, no people, no text overlays"
 6. Under 90 words total.
 
 Return ONLY the prompt.`,
@@ -156,20 +160,30 @@ Return ONLY the prompt.`,
   return (msg.content[0] as { type: string; text: string }).text.trim()
 }
 
-// ── Claude Haiku: punchy hook text ────────────────────────────────────────────
+// ── Claude Haiku: viral, general thumbnail title ──────────────────────────────
 async function generateHook(videoTitle: string): Promise<string> {
   const anthropic = createAnthropicClient()
   const msg = await withAnthropicRetry(() => anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 30,
+    max_tokens: 40,
     messages: [{
       role: 'user',
-      content: `Write a 2-3 word ALL-CAPS YouTube thumbnail hook.
-- 2-3 words MAX, complete phrase, no preposition at end
-- No hype words: AMAZING, INCREDIBLE, INSANE. NEVER use HONEST.
-- End with ? or !
-Examples: "WORTH IT?", "DON'T BUY!", "ACTUALLY WORKS?", "BIG MISTAKE?", "MUST HAVE?"
-Return ONLY the hook text. Video: "${videoTitle}"`,
+      content: `Write ONE viral, hooky YouTube thumbnail title for this video. It must be GENERAL, intriguing and FUN — built on curiosity, tension, contrast, emotion, or mystery — NOT a product-specific claim.
+
+VIDEO: "${videoTitle}"
+
+STRICT RULES (breaking any = bad title):
+- 3 to 7 words, a complete punchy phrase.
+- NEVER mention results or outcomes (no "results", "before/after", "after X days").
+- NEVER make a health, medical, or benefit claim (no "cures", "gone", "weight loss", "hair growth", "cellulite", "detox", etc.).
+- NEVER boast about testing for a time period (no "I tried this for 30 days", "30 days later").
+- No spammy hype words (AMAZING, INSANE, INCREDIBLE). NEVER use the word HONEST.
+- Keep it general and relatable — it should make ANYONE curious, even if they've never seen the product.
+
+STYLE TO MATCH (write a FRESH one in this spirit, do not copy verbatim):
+"I Didn't Expect This" · "Why Is Nobody Talking About This?" · "This Feels Illegal" · "This Makes No Sense" · "I Wasn't Ready for This" · "This Shouldn't Be This Good" · "The Internet Was Right About This" · "Tiny Gadget. Huge Difference." · "I Think This Changes Everything" · "This Is Either Genius or Stupid" · "Amazon Sent Us THIS" · "I Can't Stop Using This" · "Why Does This Even Exist?"
+
+Return ONLY the title text — no quotes, no preamble.`,
     }],
   }))
   recordAnthropicUsage(msg, {

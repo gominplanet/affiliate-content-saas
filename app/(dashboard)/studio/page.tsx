@@ -664,7 +664,16 @@ function VideoStudioCard({ video, userTier, playlists }: {
         let cw = maxW
         let ch = cw / ar
         if (ch > maxH) { ch = maxH; cw = ch * ar }
+        // Soft drop-shadow so the cut-out reads as a distinct layer on top of
+        // the scene — lifts it off bright backgrounds and disguises any residual
+        // edge from background removal.
+        ctx.save()
+        ctx.shadowColor = 'rgba(0,0,0,0.45)'
+        ctx.shadowBlur = 28
+        ctx.shadowOffsetX = -10
+        ctx.shadowOffsetY = 6
         ctx.drawImage(cut, 1280 - cw, 720 - ch, cw, ch)
+        ctx.restore()
       }
     }
 
