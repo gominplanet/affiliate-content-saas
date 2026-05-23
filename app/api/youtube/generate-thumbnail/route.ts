@@ -288,10 +288,14 @@ async function generateFaceCutout(supabase: any, opts: {
     // Fallback: opaque headshot (composites as a small portrait, still shows the person).
     return headshotUrl
   } catch (err) {
-    console.warn('[generateFaceCutout] failed:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn('[generateFaceCutout] failed:', msg)
+    LAST_CUTOUT_ERROR = msg.slice(0, 300)
     return null
   }
 }
+// Surfaced to the client console (faceDebug) so cut-out failures are visible.
+let LAST_CUTOUT_ERROR = ''
 
 // ── Main route ────────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
@@ -496,7 +500,7 @@ export async function POST(request: Request) {
       : !faceModel
         ? 'faceModelId sent but model not found / has no source photos'
         : !personCutoutUrl
-          ? 'face loaded but cut-out GENERATION FAILED (gpt-image / rembg)'
+          ? `cut-out GENERATION FAILED: ${LAST_CUTOUT_ERROR || '(no error captured)'}`
           : 'ok'
 
     // ── PATH A: Kontext — use real product image as visual reference ──────────
