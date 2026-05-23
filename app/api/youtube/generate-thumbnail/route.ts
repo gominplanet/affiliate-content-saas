@@ -111,13 +111,17 @@ Ignore any text overlays. Focus only on consistent patterns across thumbnails. B
 // shallow-depth background. NEVER dark or moody — dark scenes lose all detail
 // and the creator cut-out blends into them. A busy, deep room also invites the
 // model to hallucinate bystanders; a simple soft bright backdrop does not.
+// Backdrops are deliberately SHALLOW with NO room depth — a product on a
+// surface against a softly blurred LIGHT wall/backdrop. No open rooms, doorways
+// or deep kitchens: those give the model space to hallucinate a background
+// person. Always bright, never dark.
 const SCENE_MOODS = [
-  'a BRIGHT, clean modern countertop with a softly blurred, uncluttered LIGHT background, shallow depth of field, abundant soft natural daylight. Minimal, airy and fresh.',
-  'a simple BRIGHT kitchen counter, the background heavily blurred into a soft wash of light neutral tones, lots of airy daylight, no clutter.',
-  'a clean, minimal, BRIGHT surface against a softly blurred light neutral backdrop, crisp even daylight, fresh and modern, lots of empty space.',
-  'a BRIGHT wooden table by a sunny window, background blurred into soft bokeh and warm daylight, a couple of out-of-focus plants, calm and uncluttered.',
-  'a warm, sunlit BRIGHT surface with a softly blurred golden-hour background, vibrant, light and airy, plenty of negative space.',
-  'a sleek minimal shelf/desk against a softly blurred BRIGHT white/light wall, lots of daylight, clean and aspirational, uncluttered.',
+  'a product on a clean light wooden surface, directly behind it a softly blurred plain WARM-WHITE wall filling the whole background, bright soft daylight, very shallow depth of field, no room depth.',
+  'a product on a bright neutral countertop with a heavily blurred soft LIGHT-GREY wall right behind it, airy daylight, minimal, no open space or room behind.',
+  'a product on a light surface against an out-of-focus soft CREAM backdrop filling the frame, gentle warm daylight, clean and uncluttered, no room visible.',
+  'a product on a warm wooden tabletop with one or two softly blurred out-of-focus potted plants close behind against a blurred light wall, bright daylight, shallow depth, no open room.',
+  'a product on a bright surface with a softly blurred sunlit LIGHT backdrop directly behind it, warm golden daylight, airy and simple, no deep background.',
+  'a product on a sleek light shelf against a softly blurred BRIGHT WHITE wall close behind, lots of daylight, clean and aspirational, no room depth.',
 ]
 
 async function generateProductPrompt(opts: {
@@ -148,7 +152,7 @@ ${opts.channelStyle ? `CHANNEL AESTHETIC (also match this): ${opts.channelStyle}
 
 YOUR TASK:
 1. PRODUCT APPEARANCE — extract exact visual details from the data above: colour, shape, size, material, any text/branding on it. Describe it precisely so the AI renders the RIGHT product.
-2. SCENE — place the product in the SETTING/MOOD above. A real place with depth and atmosphere, background softly blurred but recognisable. Not a plain studio, not a white background.
+2. SCENE — place the product in the SETTING/MOOD above. Keep the background SHALLOW and softly blurred — a wall/backdrop close behind the product, NOT an open room, doorway or deep space. The space is completely EMPTY: nobody is present anywhere, not even a blurred figure in the far background.
 3. COMPOSITION — product CENTRE / CENTRE-LEFT, large and sharp. Keep the TOP-LEFT and the BOTTOM-RIGHT areas relatively clean (a title goes top-left, a person is added bottom-right later).
 4. LIGHTING — MATCH the setting above. If the setting is bright/airy, use bright, natural daylight (do NOT make it dark or heavily moody). Make the product look appealing and true-to-life.
 5. End with: "16:9, photorealistic, 8K, shallow depth of field, absolutely no people, no humans, no faces, no heads, no bodies, no hands, no text overlays"
