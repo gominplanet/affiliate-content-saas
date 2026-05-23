@@ -414,6 +414,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
     const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
     // Optional creator cut-out to composite into the bottom-right corner.
     const cutoutUrl = (data.personCutoutUrl as string) || undefined
+    console.log('[thumb] personCutoutUrl from server:', data.personCutoutUrl ?? 'NULL')
     let pickedStyleId: string | null = null
     const finalUrls = await Promise.all(rawList.map(async (url) => {
       if (!hook && !cutoutUrl) return url
@@ -655,6 +656,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
     // regardless of the cut-out's aspect ratio.
     if (cutoutUrl) {
       const cut = await loadImg(cutoutUrl)
+      console.log('[thumb] cut-out loaded:', !!cut, cut ? `${cut.naturalWidth}x${cut.naturalHeight}` : '—')
       if (cut && cut.naturalWidth > 0) {
         const ar = cut.width / cut.height
         const maxW = 1280 * 0.46

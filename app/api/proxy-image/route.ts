@@ -8,8 +8,10 @@ export async function GET(request: Request) {
   const url = searchParams.get('url')
   if (!url) return NextResponse.json({ error: 'Missing url param' }, { status: 400 })
 
-  // Only proxy known image CDNs — prevent open-proxy abuse
-  const allowed = ['fal.media', 'cdn.fal.ai', 'storage.googleapis.com', 'replicate.delivery', 'pbxt.replicate.delivery', 'i.ytimg.com', 'img.youtube.com']
+  // Only proxy known image CDNs — prevent open-proxy abuse. fal serves images
+  // across several hosts (fal.media, *.fal.media, *.fal.ai, fal.run) depending
+  // on the endpoint, so allow the whole fal family.
+  const allowed = ['fal.media', 'fal.ai', 'fal.run', 'storage.googleapis.com', 'replicate.delivery', 'pbxt.replicate.delivery', 'i.ytimg.com', 'img.youtube.com']
   let hostname: string
   try {
     hostname = new URL(url).hostname
