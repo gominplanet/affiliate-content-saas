@@ -107,17 +107,17 @@ Ignore any text overlays. Focus only on consistent patterns across thumbnails. B
 // ── Claude: Product scene prompt (product-only, style-aware, story-driven) ────
 // Setting/mood pool — weighted toward BRIGHT, airy, Instagram-style homes so
 // thumbnails aren't always moody/dark. One darker option for occasional variety.
-// Keep the backdrops BRIGHT but CLEAN and UNCLUTTERED with a strongly blurred
-// shallow-depth background — a busy, deep room invites the model to hallucinate
-// bystanders and clutter; a simple soft backdrop does not.
+// Backdrops are ALWAYS BRIGHT, CLEAN and UNCLUTTERED with a strongly blurred
+// shallow-depth background. NEVER dark or moody — dark scenes lose all detail
+// and the creator cut-out blends into them. A busy, deep room also invites the
+// model to hallucinate bystanders; a simple soft bright backdrop does not.
 const SCENE_MOODS = [
-  'a BRIGHT, clean modern countertop with a softly blurred, uncluttered light background, shallow depth of field, soft natural daylight. Minimal and fresh.',
-  'a simple BRIGHT kitchen counter, the background heavily blurred into a soft wash of light neutral tones, airy daylight, no clutter.',
+  'a BRIGHT, clean modern countertop with a softly blurred, uncluttered LIGHT background, shallow depth of field, abundant soft natural daylight. Minimal, airy and fresh.',
+  'a simple BRIGHT kitchen counter, the background heavily blurred into a soft wash of light neutral tones, lots of airy daylight, no clutter.',
   'a clean, minimal, BRIGHT surface against a softly blurred light neutral backdrop, crisp even daylight, fresh and modern, lots of empty space.',
-  'a bright wooden table by a window, background blurred into soft bokeh and daylight, a couple of out-of-focus plants, calm and uncluttered.',
-  'a warm, sunlit surface with a softly blurred golden-hour background, vibrant but simple, plenty of negative space.',
-  'a sleek minimal shelf/desk against a softly blurred bright wall, daylight, clean and aspirational, uncluttered.',
-  'a clean surface against a softly blurred darker backdrop with gentle rim lighting (use this ONLY occasionally, for contrast), still simple and uncluttered.',
+  'a BRIGHT wooden table by a sunny window, background blurred into soft bokeh and warm daylight, a couple of out-of-focus plants, calm and uncluttered.',
+  'a warm, sunlit BRIGHT surface with a softly blurred golden-hour background, vibrant, light and airy, plenty of negative space.',
+  'a sleek minimal shelf/desk against a softly blurred BRIGHT white/light wall, lots of daylight, clean and aspirational, uncluttered.',
 ]
 
 async function generateProductPrompt(opts: {
@@ -593,7 +593,7 @@ export async function POST(request: Request) {
         console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
 
         // Kontext: preserve the product, replace background with scene
-        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. COMPOSITION (important): position the product on the LEFT / CENTRE-LEFT of the frame and keep the RIGHT THIRD of the image open — empty background / negative space — because a person will be composited into the bottom-right corner afterwards, so the product must NOT extend into the right third or it will be covered. CRITICAL: there must be ABSOLUTELY NO people anywhere — no humans, no faces, no heads, no bodies, no hands, no silhouettes or reflections of people in the scene or its background. The scene is completely empty of any person. No white background. No text.`
+        const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. The scene MUST be BRIGHT and well-lit with light, airy tones and clear background detail — NEVER dark, black, dim or moody. COMPOSITION (important): position the product on the LEFT / CENTRE-LEFT of the frame and keep the RIGHT THIRD of the image open — empty background / negative space — because a person will be composited into the bottom-right corner afterwards, so the product must NOT extend into the right third or it will be covered. CRITICAL: there must be ABSOLUTELY NO people anywhere — no humans, no faces, no heads, no bodies, no hands, no silhouettes or reflections of people in the scene or its background. The scene is completely empty of any person. No white background. No text.`
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
