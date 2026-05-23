@@ -523,12 +523,55 @@ function GenerateButton({
   // ship a text-only post. Defaults ON (richer posts), user can opt out
   // before hitting Generate. Rewrites keep the same preference.
   const [includeImages, setIncludeImages] = useState(true)
+  // Optional: bring-your-own in-article images (up to 3). When present, these
+  // are placed throughout the post INSTEAD of AI-generated photos.
+  const [userImages, setUserImages] = useState<string[]>([])
+  const [imgBusy, setImgBusy] = useState(false)
+  const [imgErr, setImgErr] = useState<string | null>(null)
+  const imgInputRef = useRef<HTMLInputElement>(null)
+  const supabase = createBrowserClient()
 
   useEffect(() => {
     if (status !== 'generating') return
     const interval = setInterval(() => setStepIdx((i) => (i < GEN_STEPS.length - 1 ? i + 1 : i)), 9000)
     return () => clearInterval(interval)
   }, [status])
+
+  async function addUserImages(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setImgErr(null)
+    const room = 3 - userImages.length
+    if (room <= 0) { setImgErr('Up to 3 images'); return }
+    setImgBusy(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const next: string[] = []
+      for (const f of Array.from(files).slice(0, room)) {
+        if (!f.type.startsWith('image/')) continue
+        if (f.size > 10 * 1024 * 1024) { setImgErr('Each image must be under 10 MB'); continue }
+        const ext = f.name.split('.').pop()?.toLowerCase() || 'jpg'
+        const path = `${user.id}/blog/${videoId}/${crypto.randomUUID()}.${ext}`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: upErr } = await (supabase.storage as any).from('product-images').upload(path, f, {
+          cacheControl: '31536000', upsert: false, contentType: f.type || 'image/jpeg',
+        })
+        if (upErr) throw new Error(upErr.message || 'Upload failed')
+        const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(path)
+        if (urlData?.publicUrl) next.push(urlData.publicUrl)
+      }
+      if (next.length) setUserImages(prev => [...prev, ...next].slice(0, 3))
+    } catch (e) {
+      setImgErr(e instanceof Error ? e.message : 'Upload failed')
+    } finally {
+      setImgBusy(false)
+      if (imgInputRef.current) imgInputRef.current.value = ''
+    }
+  }
+
+  function removeUserImage(url: string) {
+    setUserImages(prev => prev.filter(u => u !== url))
+  }
 
   async function generate(opts?: { rewriteFeedback?: string }) {
     setStatus('generating')
@@ -541,6 +584,7 @@ function GenerateButton({
         body: JSON.stringify({
           videoId,
           includeImages,
+          ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
           ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
         }),
       })
@@ -622,22 +666,68 @@ function GenerateButton({
     )
   }
   return (
-    <div className="flex items-center gap-2.5">
-      <button onClick={() => generate()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
-        <Wand2 size={12} /> Generate post
-      </button>
-      <label
-        className="flex items-center gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer select-none"
-        title="Generate clean AI photos for the post body. Uncheck for a text-only post."
-      >
-        <input
-          type="checkbox"
-          checked={includeImages}
-          onChange={(e) => setIncludeImages(e.target.checked)}
-          className="accent-[#0071e3] w-3.5 h-3.5"
-        />
-        Include images
-      </label>
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <button onClick={() => generate()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
+          <Wand2 size={12} /> Generate post
+        </button>
+        <label
+          className="flex items-center gap-1.5 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] cursor-pointer select-none"
+          title="Add photos to the post body. Uncheck for a text-only post."
+        >
+          <input
+            type="checkbox"
+            checked={includeImages}
+            onChange={(e) => setIncludeImages(e.target.checked)}
+            className="accent-[#0071e3] w-3.5 h-3.5"
+          />
+          Include images
+        </label>
+        {includeImages && (
+          <>
+            <span className="text-[11px] text-[#c7c7cc] dark:text-[#48484a]">·</span>
+            <input
+              ref={imgInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              className="hidden"
+              onChange={(e) => addUserImages(e.target.files)}
+            />
+            <button
+              onClick={() => imgInputRef.current?.click()}
+              disabled={imgBusy || userImages.length >= 3}
+              className="flex items-center gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] disabled:opacity-50 transition-colors"
+              title="Upload up to 3 of your own images to use throughout the article instead of AI photos"
+            >
+              {imgBusy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+              {userImages.length > 0 ? `Your images (${userImages.length}/3)` : 'Use my own images'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {includeImages && (userImages.length > 0 || imgErr) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {userImages.map((u) => (
+            <div key={u} className="relative w-12 h-12 rounded-md overflow-hidden border border-gray-200 dark:border-white/10">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={u} alt="Article image" className="w-full h-full object-cover" />
+              <button
+                onClick={() => removeUserImage(u)}
+                aria-label="Remove image"
+                className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 hover:bg-[#ff3b30] text-white flex items-center justify-center"
+              >
+                <X size={9} />
+              </button>
+            </div>
+          ))}
+          {userImages.length > 0 && (
+            <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">These replace AI photos, placed through the article.</span>
+          )}
+          {imgErr && <span className="text-[10px] text-[#ff3b30]">{imgErr}</span>}
+        </div>
+      )}
     </div>
   )
 }

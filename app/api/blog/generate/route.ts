@@ -190,11 +190,21 @@ async function handleGenerate(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = (await request.json()) as { videoId?: string; rewriteFeedback?: string; includeImages?: boolean }
+  const body = (await request.json()) as {
+    videoId?: string
+    rewriteFeedback?: string
+    includeImages?: boolean
+    /** Optional: user-supplied in-article image URLs (public). When present,
+     *  these are placed throughout the article INSTEAD of AI-generated ones. */
+    userImageUrls?: string[]
+  }
   const { videoId, rewriteFeedback } = body
   // Default ON when omitted (older callers / bulk triggers) — the Content
   // page sends the explicit per-generation choice.
   const includeImages = body.includeImages !== false
+  const userImageUrls = Array.isArray(body.userImageUrls)
+    ? body.userImageUrls.filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 3)
+    : []
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
   // ── Detect rewrite vs fresh generation ────────────────────────────────────
@@ -750,7 +760,39 @@ async function handleGenerate(request: Request) {
   // request can NEVER 504 on the user because of images.
   after(async () => {
     let finalContent = content
-    if (includeImages) {
+
+    // ── User-supplied in-article images ───────────────────────────────────
+    // When the user uploaded their own images, place THOSE throughout the
+    // article (re-hosted on WP for a permanent URL) and skip AI generation.
+    if (includeImages && userImageUrls.length > 0) {
+      try {
+        const uploaded: Array<{ url: string; alt: string }> = []
+        for (let i = 0; i < userImageUrls.length; i++) {
+          try {
+            const media = await wpService.uploadImageFromUrl(userImageUrls[i], `${slug}-body${i + 1}.jpg`)
+            if (media?.source_url) uploaded.push({ url: media.source_url, alt: `${generated.title} — ${i + 1}` })
+            else uploaded.push({ url: userImageUrls[i], alt: `${generated.title} — ${i + 1}` }) // fallback: embed the public URL directly
+          } catch {
+            uploaded.push({ url: userImageUrls[i], alt: `${generated.title} — ${i + 1}` })
+          }
+        }
+        if (uploaded.length > 0) {
+          const slots = autoPlacementIndices(content, uploaded.length)
+          finalContent = insertImagesAtHeadings(
+            content,
+            uploaded.map((img, i) => ({
+              beforeHeadingIndex: slots[i] ?? (i + 1),
+              block: gutenbergImageBlock(img.url, img.alt),
+            })),
+          )
+          try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch { /* keep text-only post */ }
+          if (savedPost?.id) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            try { await (supabase as any).from('blog_posts').update({ content: finalContent }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+          }
+        }
+      } catch { /* non-fatal — the published text post stands */ }
+    } else if (includeImages) {
       try {
         const falKey = process.env.FAL_KEY
         if (falKey) {
