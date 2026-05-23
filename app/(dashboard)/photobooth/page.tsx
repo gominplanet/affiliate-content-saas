@@ -32,7 +32,7 @@ const SIZE_OPTS: Array<{ key: '1024x1024' | '1024x1536' | '1536x1024'; label: st
   { key: '1536x1024', label: 'Landscape (banners)' },
 ]
 
-interface Shot { id: string; url: string; style: string }
+interface Shot { id: string; url: string; style: string; path?: string }
 interface UsageInfo { used: number; limit: number | null; remaining: number | null; resetLabel: string }
 
 export default function PhotoboothPage() {
@@ -69,6 +69,11 @@ export default function PhotoboothPage() {
       const ur = await fetch('/api/photobooth')
       const ud = await ur.json()
       if (ud?.usage) setUsage(ud.usage as UsageInfo)
+      if (Array.isArray(ud?.shots)) {
+        setShots((ud.shots as Array<{ path: string; url: string; style: string }>).map(s => ({
+          id: s.path, url: s.url, style: s.style, path: s.path,
+        })))
+      }
     } catch { /* ignore */ }
     setLoading(false)
   }, [supabase])
@@ -97,7 +102,13 @@ export default function PhotoboothPage() {
         )
         throw new Error(msg)
       }
-      setShots(prev => [{ id: crypto.randomUUID(), url: d.image as string, style: d.style as string }, ...prev])
+      const newShot: Shot = {
+        id: (d.path as string) || crypto.randomUUID(),
+        url: d.image as string,
+        style: d.style as string,
+        path: (d.path as string) || undefined,
+      }
+      setShots(prev => [newShot, ...prev].slice(0, 5))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed')
     } finally {
@@ -105,8 +116,33 @@ export default function PhotoboothPage() {
     }
   }
 
-  function removeShot(id: string) {
-    setShots(prev => prev.filter(s => s.id !== id))
+  async function downloadShot(s: Shot) {
+    try {
+      const res = await fetch(s.url)
+      const blob = await res.blob()
+      const href = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = href
+      a.download = `headshot-${s.style}-${s.id.slice(-6)}.png`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(href)
+    } catch {
+      window.open(s.url, '_blank') // fallback if the blob fetch is blocked
+    }
+  }
+
+  function removeShot(shot: Shot) {
+    setShots(prev => prev.filter(s => s.id !== shot.id))
+    if (shot.path) {
+      // Best-effort server delete; the optimistic UI removal already happened.
+      fetch('/api/photobooth', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: shot.path }),
+      }).catch(() => { /* ignore */ })
+    }
   }
 
   const noneLeft = !!usage && usage.remaining === 0
@@ -232,7 +268,7 @@ export default function PhotoboothPage() {
                   {shots.map(s => (
                     <div key={s.id} className="card p-2 relative">
                       <button
-                        onClick={() => removeShot(s.id)}
+                        onClick={() => removeShot(s)}
                         aria-label="Delete headshot"
                         title="Delete"
                         className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/55 hover:bg-[#ff3b30] text-white flex items-center justify-center backdrop-blur-sm transition-colors"
@@ -241,13 +277,12 @@ export default function PhotoboothPage() {
                       </button>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={s.url} alt={`Headshot — ${s.style}`} className="w-full rounded-lg" />
-                      <a
-                        href={s.url}
-                        download={`headshot-${s.style}-${s.id.slice(0, 6)}.png`}
+                      <button
+                        onClick={() => downloadShot(s)}
                         className="mt-2 inline-flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90"
                       >
                         <Download size={12} /> Download
-                      </a>
+                      </button>
                     </div>
                   ))}
                 </div>

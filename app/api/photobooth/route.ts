@@ -42,6 +42,51 @@ async function loadPhotoboothUsage(
   }
 }
 
+// ── Persisted shots ───────────────────────────────────────────────────────
+// Generated headshots are saved in the existing `headshots` bucket so they
+// survive logout. Path MUST start with the user id — the bucket's per-user RLS
+// policy is ((storage.foldername(name))[1] = auth.uid()). We keep only the last
+// 5 per user.
+const SHOTS_BUCKET = 'headshots'
+const SHOTS_KEEP = 5
+const SIGNED_TTL = 60 * 60 * 24 * 365 // 1 year
+const shotsFolder = (userId: string) => `${userId}/photobooth`
+
+interface PersistedShot { path: string; url: string; style: string; createdAt: string | null }
+
+/** List the user's most-recent saved headshots (newest first), with signed URLs. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function listShots(supabase: any, userId: string): Promise<PersistedShot[]> {
+  const folder = shotsFolder(userId)
+  const { data: files } = await supabase.storage.from(SHOTS_BUCKET).list(folder, {
+    limit: 100, sortBy: { column: 'created_at', order: 'desc' },
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = ((files ?? []) as any[]).filter(f => f?.name && !f.name.startsWith('.')).slice(0, SHOTS_KEEP)
+  const out: PersistedShot[] = []
+  for (const f of rows) {
+    const path = `${folder}/${f.name}`
+    const { data: signed } = await supabase.storage.from(SHOTS_BUCKET).createSignedUrl(path, SIGNED_TTL)
+    if (signed?.signedUrl) {
+      out.push({ path, url: signed.signedUrl, style: String(f.name).split('-')[0] || 'studio', createdAt: f.created_at ?? null })
+    }
+  }
+  return out
+}
+
+/** Delete anything beyond the newest SHOTS_KEEP for this user. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function pruneShots(supabase: any, userId: string): Promise<void> {
+  const folder = shotsFolder(userId)
+  const { data: files } = await supabase.storage.from(SHOTS_BUCKET).list(folder, {
+    limit: 100, sortBy: { column: 'created_at', order: 'desc' },
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = ((files ?? []) as any[]).filter(f => f?.name && !f.name.startsWith('.'))
+  const extra = rows.slice(SHOTS_KEEP).map(f => `${folder}/${f.name}`)
+  if (extra.length) await supabase.storage.from(SHOTS_BUCKET).remove(extra)
+}
+
 /** Built-in looks. Free-text customPrompt is appended on top of these. */
 const STYLES: Record<string, string> = {
   studio:    'Clean professional studio headshot on a smooth neutral backdrop (soft grey or white), crisp even studio lighting, sharp focus.',
@@ -136,13 +181,36 @@ Do NOT render any text, captions, watermarks, or logos.`
       feature: 'photobooth_image', model: imageModel, images: 1,
     })
 
+    const styleKey = body.style && STYLES[body.style] ? body.style : 'studio'
+
+    // Persist to storage so it survives logout; keep only the last 5. If the
+    // save fails we still return the freshly-generated data URL so the user
+    // gets their image — just without the persisted/signed copy.
+    let imageUrl = `data:image/png;base64,${b64}`
+    let savedPath: string | null = null
+    try {
+      const fileName = `${styleKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`
+      const path = `${shotsFolder(user.id)}/${fileName}`
+      const { error: upErr } = await supabase.storage
+        .from(SHOTS_BUCKET)
+        .upload(path, Buffer.from(b64, 'base64'), { contentType: 'image/png', upsert: false })
+      if (upErr) throw upErr
+      savedPath = path
+      await pruneShots(supabase, user.id)
+      const { data: signed } = await supabase.storage.from(SHOTS_BUCKET).createSignedUrl(path, SIGNED_TTL)
+      if (signed?.signedUrl) imageUrl = signed.signedUrl
+    } catch (e) {
+      console.warn('[photobooth] could not persist headshot:', e)
+    }
+
     // usage.used is the count BEFORE this generation; reflect this one now so
     // the client countdown updates immediately (recordUsage is async).
     const usedAfter = usage.used + 1
     return NextResponse.json({
       ok: true,
-      image: `data:image/png;base64,${b64}`,
-      style: body.style && STYLES[body.style] ? body.style : 'studio',
+      image: imageUrl,
+      path: savedPath,
+      style: styleKey,
       usage: {
         used: usedAfter,
         limit: usage.limit,
@@ -157,14 +225,37 @@ Do NOT render any text, captions, watermarks, or logos.`
   }
 }
 
-/** GET /api/photobooth — current month's headshot usage for the countdown. */
+/** GET /api/photobooth — usage countdown + the user's last 5 saved headshots. */
 export async function GET() {
   try {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const usage = await loadPhotoboothUsage(supabase, user.id)
-    return NextResponse.json({ ok: true, usage })
+    const [usage, shots] = await Promise.all([
+      loadPhotoboothUsage(supabase, user.id),
+      listShots(supabase, user.id).catch(() => [] as PersistedShot[]),
+    ])
+    return NextResponse.json({ ok: true, usage, shots })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
+
+/** DELETE /api/photobooth { path } — remove one saved headshot. */
+export async function DELETE(request: Request) {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { path } = await request.json().catch(() => ({})) as { path?: string }
+    // Only allow deleting the caller's own photobooth objects.
+    if (!path || !path.startsWith(`${shotsFolder(user.id)}/`)) {
+      return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
+    }
+    const { error } = await supabase.storage.from(SHOTS_BUCKET).remove([path])
+    if (error) throw error
+    return NextResponse.json({ ok: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })
