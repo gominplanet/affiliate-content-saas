@@ -664,25 +664,40 @@ function VideoStudioCard({ video, userTier, playlists }: {
         // doesn't shrink the person — the face still fills the slot.
         const iw = cut.naturalWidth, ih = cut.naturalHeight
         let sx = 0, sy = 0, sw = iw, sh = ih
+        let source: CanvasImageSource = cut
         try {
           const oc = document.createElement('canvas')
           oc.width = iw; oc.height = ih
           const octx = oc.getContext('2d', { willReadFrequently: true })
           if (octx) {
             octx.drawImage(cut, 0, 0)
-            const data = octx.getImageData(0, 0, iw, ih).data
+            const imgData = octx.getImageData(0, 0, iw, ih)
+            const data = imgData.data
             let minX = iw, minY = ih, maxX = -1, maxY = -1
             const ALPHA = 16
             for (let y = 0; y < ih; y++) {
               for (let x = 0; x < iw; x++) {
-                if (data[(y * iw + x) * 4 + 3] > ALPHA) {
+                const i = (y * iw + x) * 4
+                const a = data[i + 3]
+                if (a > ALPHA) {
                   if (x < minX) minX = x
                   if (x > maxX) maxX = x
                   if (y < minY) minY = y
                   if (y > maxY) maxY = y
                 }
+                // Green despill: the green-screen matte leaves a green tint on
+                // semi-transparent hair/edge pixels. Where green dominates,
+                // clamp it down to the brighter of red/blue so the halo goes
+                // neutral instead of glowing green.
+                if (a > 0) {
+                  const g = data[i + 1]
+                  const rb = data[i] > data[i + 2] ? data[i] : data[i + 2]
+                  if (g > rb) data[i + 1] = rb
+                }
               }
             }
+            octx.putImageData(imgData, 0, 0)
+            source = oc
             if (maxX >= minX && maxY >= minY) {
               sx = minX; sy = minY; sw = maxX - minX + 1; sh = maxY - minY + 1
             }
@@ -703,7 +718,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
         ctx.shadowBlur = 28
         ctx.shadowOffsetX = -10
         ctx.shadowOffsetY = 6
-        ctx.drawImage(cut, sx, sy, sw, sh, 1280 - cw, 720 - ch, cw, ch)
+        ctx.drawImage(source, sx, sy, sw, sh, 1280 - cw, 720 - ch, cw, ch)
         ctx.restore()
       }
     }
