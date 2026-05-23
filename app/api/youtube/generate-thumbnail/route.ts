@@ -6,6 +6,7 @@ import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchProductImageFromPage } from '@/services/research'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
+import sharp from 'sharp'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
@@ -294,16 +295,44 @@ async function generateFaceCutout(supabase: any, opts: {
     //    rembg gives a clean silhouette (no hard "blade" edge). Only the lower
     //    chest/shoulders may run off the BOTTOM edge — that's hidden when the
     //    cut-out is bottom-anchored in the thumbnail.
-    const prompt = `A clean CLOSE-UP portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, ${pose}. Flattering studio lighting, sharp focus, realistic natural skin texture. FRAMING: a tight, close-up head shot — the FACE is large and fills most of the frame (chest-up, head and the top of the shoulders only). The entire head and hair sit comfortably inside the frame with empty margin ABOVE the head and on BOTH sides so they are never cropped at the top or the sides; only the lower shoulders/chest may reach the bottom edge. Plain, evenly-lit solid light-grey studio background behind them (so it can be cleanly removed). No text, no logos.`
+    const prompt = `A clean CLOSE-UP portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, ${pose}. Flattering studio lighting, sharp focus, realistic natural skin texture. FRAMING: a tight, close-up head shot — the FACE is large and fills most of the frame (chest-up, head and the top of the shoulders only). CRITICAL — a clear, visible strip of plain background must surround the person: their head, hair, shoulders and arms must NOT touch or be cut off by the TOP, LEFT or RIGHT edges (leave an obvious empty background gap on those three sides). Only the very bottom of the chest may reach the bottom edge. Plain, evenly-lit solid light-grey studio background behind them (so it can be cleanly removed). No text, no logos.`
     const openai = createOpenAIService()
     const b64 = await openai.generateWithReferences({
       prompt, images: refImages, size: '1024x1536', quality: 'medium', model: opts.imageModel,
     })
-    const headshotUrl = await fal.storage.upload(new Blob([Buffer.from(b64, 'base64')], { type: 'image/png' }))
     recordUsage({
       userId: opts.userId, tier: TELEMETRY.tier,
       feature: 'yt_thumb_face_cutout', model: opts.imageModel, images: 1,
     })
+
+    // Pad the portrait with a wide band of the same studio grey on the top and
+    // both sides BEFORE background removal. This guarantees rembg always sees
+    // clean background at every edge (except the bottom, where the chest is
+    // meant to run off), so it traces the real body contour as a soft silhouette
+    // instead of leaving a hard straight "blade" cut where a shoulder/arm
+    // touched the frame. We trim the transparent margin back off afterwards so
+    // the face still fills the composite.
+    let uploadBuf: Buffer
+    try {
+      const meta = await sharp(Buffer.from(b64, 'base64')).metadata()
+      const w = meta.width ?? 1024
+      const h = meta.height ?? 1536
+      uploadBuf = await sharp(Buffer.from(b64, 'base64'))
+        .flatten({ background: '#ededed' })
+        .extend({
+          top: Math.round(h * 0.14),
+          left: Math.round(w * 0.16),
+          right: Math.round(w * 0.16),
+          bottom: 0,
+          background: '#ededed',
+        })
+        .png()
+        .toBuffer()
+    } catch (e) {
+      console.warn('[generateFaceCutout] padding failed, using raw portrait:', e)
+      uploadBuf = Buffer.from(b64, 'base64')
+    }
+    const headshotUrl = await fal.storage.upload(new Blob([new Uint8Array(uploadBuf)], { type: 'image/png' }))
 
     // 2. Remove the background → clean transparent PNG to composite.
     try {
@@ -319,7 +348,23 @@ async function generateFaceCutout(supabase: any, opts: {
           userId: opts.userId, tier: TELEMETRY.tier,
           feature: 'yt_thumb_cutout_rembg', model: 'fal-rembg', images: 1,
         })
-        return cutUrl
+        // Trim the now-transparent padding (and any extra empty space) back to a
+        // tight bounding box around the silhouette, so the person still fills the
+        // composite and the face stays big. If anything fails, fall back to the
+        // untrimmed cut-out.
+        try {
+          const res = await fetch(cutUrl)
+          const cutBytes = Buffer.from(await res.arrayBuffer())
+          const trimmed = await sharp(cutBytes)
+            .trim({ threshold: 1 }) // trim fully-transparent borders
+            .png()
+            .toBuffer()
+          const trimmedUrl = await fal.storage.upload(new Blob([new Uint8Array(trimmed)], { type: 'image/png' }))
+          return trimmedUrl
+        } catch (e) {
+          console.warn('[generateFaceCutout] trim failed, using untrimmed cut-out:', e)
+          return cutUrl
+        }
       }
     } catch (e) {
       console.warn('[generateFaceCutout] rembg failed, using opaque headshot:', e)
