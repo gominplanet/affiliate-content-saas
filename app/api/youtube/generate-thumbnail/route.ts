@@ -490,6 +490,14 @@ export async function POST(request: Request) {
       })
       console.log('[generate-thumbnail] Person cut-out:', personCutoutUrl ?? 'none')
     }
+    // Surfaced to the client console so we can see WHY a cut-out is/ isn't made.
+    const faceDebug = !faceModelId
+      ? 'no-faceModelId-sent (face not selected in the modal)'
+      : !faceModel
+        ? 'faceModelId sent but model not found / has no source photos'
+        : !personCutoutUrl
+          ? 'face loaded but cut-out GENERATION FAILED (gpt-image / rembg)'
+          : 'ok'
 
     // ── PATH A: Kontext — use real product image as visual reference ──────────
     // Start from the actual product photo and transform the scene around it.
@@ -545,6 +553,7 @@ export async function POST(request: Request) {
             modelUsed: `kontext-${style}`,
             headshotUsed: !!personCutoutUrl,
             personCutoutUrl,
+            faceDebug,
           })
         }
       } catch (err) {
@@ -594,6 +603,7 @@ export async function POST(request: Request) {
       modelUsed: `flux-pro-${style}`,
       headshotUsed: !!personCutoutUrl,
       personCutoutUrl,
+      faceDebug,
     })
   } catch (err) {
     // fal.ai ApiError has a .body property with the full validation detail

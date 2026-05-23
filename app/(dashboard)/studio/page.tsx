@@ -414,7 +414,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
     const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
     // Optional creator cut-out to composite into the bottom-right corner.
     const cutoutUrl = (data.personCutoutUrl as string) || undefined
-    console.log('[thumb] personCutoutUrl from server:', data.personCutoutUrl ?? 'NULL')
+    console.log('[thumb] personCutoutUrl from server:', data.personCutoutUrl ?? 'NULL', '| reason:', data.faceDebug ?? '(none)')
     let pickedStyleId: string | null = null
     const finalUrls = await Promise.all(rawList.map(async (url) => {
       if (!hook && !cutoutUrl) return url
