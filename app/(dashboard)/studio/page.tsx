@@ -648,7 +648,20 @@ function VideoStudioCard({ video, userTier, playlists }: {
 
     const productImg = await loadImg(rawUrl)
     if (!productImg) throw new Error('Failed to load image for overlay')
-    ctx.drawImage(productImg, 0, 0, 1280, 720)
+    // When a creator cut-out is going into the bottom-right, pan the scene LEFT
+    // (with a slight zoom so there's no gap on the edges). Kontext renders the
+    // product centered no matter what we ask, so this physically shifts it
+    // left-of-centre and clear of the person. With no cut-out we draw the scene
+    // untouched, centered.
+    if (cutoutUrl) {
+      const z = 1.18
+      const dw = 1280 * z, dh = 720 * z
+      const dx = -(dw - 1280)        // pan so the right edge sits exactly at 1280 (no gap), crop the left
+      const dy = -(dh - 720) / 2     // vertically centered
+      ctx.drawImage(productImg, dx, dy, dw, dh)
+    } else {
+      ctx.drawImage(productImg, 0, 0, 1280, 720)
+    }
 
     // Composite the creator cut-out into the bottom-right corner (transparent
     // PNG over the product scene), anchored to the bottom edge. Capped to ~46%

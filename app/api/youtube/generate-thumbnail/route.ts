@@ -107,14 +107,17 @@ Ignore any text overlays. Focus only on consistent patterns across thumbnails. B
 // ── Claude: Product scene prompt (product-only, style-aware, story-driven) ────
 // Setting/mood pool — weighted toward BRIGHT, airy, Instagram-style homes so
 // thumbnails aren't always moody/dark. One darker option for occasional variety.
+// Keep the backdrops BRIGHT but CLEAN and UNCLUTTERED with a strongly blurred
+// shallow-depth background — a busy, deep room invites the model to hallucinate
+// bystanders and clutter; a simple soft backdrop does not.
 const SCENE_MOODS = [
-  'a BRIGHT, airy modern home interior — clean white walls, light wood, soft natural daylight pouring through a large window. Fresh, inviting Instagram-home aesthetic.',
-  'a cozy, warm, BRIGHT kitchen or living room — homey and welcoming, lots of soft natural light, light/neutral tones.',
-  'a clean, minimal, BRIGHT setting — light neutral background, crisp even daylight, fresh and modern.',
-  'a stylish bright sunroom / cafe corner with green plants and big windows, airy and vibrant with natural light.',
-  'a warm, sunlit golden-hour interior — bright, vibrant and lively, soft warm daylight.',
-  'a sleek modern desk / shelf setup in a bright room, daylight, clean and aspirational.',
-  'a moody, cinematic setting with dramatic rim lighting and a darker background (use this ONLY occasionally, for contrast).',
+  'a BRIGHT, clean modern countertop with a softly blurred, uncluttered light background, shallow depth of field, soft natural daylight. Minimal and fresh.',
+  'a simple BRIGHT kitchen counter, the background heavily blurred into a soft wash of light neutral tones, airy daylight, no clutter.',
+  'a clean, minimal, BRIGHT surface against a softly blurred light neutral backdrop, crisp even daylight, fresh and modern, lots of empty space.',
+  'a bright wooden table by a window, background blurred into soft bokeh and daylight, a couple of out-of-focus plants, calm and uncluttered.',
+  'a warm, sunlit surface with a softly blurred golden-hour background, vibrant but simple, plenty of negative space.',
+  'a sleek minimal shelf/desk against a softly blurred bright wall, daylight, clean and aspirational, uncluttered.',
+  'a clean surface against a softly blurred darker backdrop with gentle rim lighting (use this ONLY occasionally, for contrast), still simple and uncluttered.',
 ]
 
 async function generateProductPrompt(opts: {
@@ -585,40 +588,9 @@ export async function POST(request: Request) {
         // fal.ai cannot reach Supabase/Amazon URLs directly — re-host first
         const imgRes = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
         if (!imgRes.ok) throw new Error(`Cannot fetch product image (${imgRes.status})`)
-        const imgBytes = Buffer.from(await imgRes.arrayBuffer())
-
-        // Pre-position the product on a 16:9 canvas at CENTRE-LEFT before
-        // Kontext sees it. Kontext preserves the product's location from the
-        // input image, so a centered product on white comes out centered — and
-        // then gets half-covered by the bottom-right creator. Compositing it
-        // left-of-centre with empty space on the right reliably keeps that
-        // corner clear (text instructions alone don't move it).
-        let uploadBlob: Blob
-        try {
-          const CW = 1280, CH = 720
-          const prod = await sharp(imgBytes)
-            .rotate()
-            .resize({ height: Math.round(CH * 0.82), fit: 'inside' })
-            .png()
-            .toBuffer()
-          const pm = await sharp(prod).metadata()
-          const pw = pm.width ?? Math.round(CW * 0.4)
-          const ph = pm.height ?? Math.round(CH * 0.82)
-          const left = Math.max(0, Math.round(CW * 0.14))
-          const top = Math.max(0, Math.round(CH - ph - CH * 0.03)) // sit near the bottom
-          const composed = await sharp({
-            create: { width: CW, height: CH, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } },
-          })
-            .composite([{ input: prod, left: Math.min(left, CW - pw), top }])
-            .png()
-            .toBuffer()
-          uploadBlob = new Blob([new Uint8Array(composed)], { type: 'image/png' })
-        } catch (e) {
-          console.warn('[generate-thumbnail] product pre-position failed, using raw image:', e)
-          uploadBlob = new Blob([new Uint8Array(imgBytes)], { type: 'image/png' })
-        }
-        const falImageUrl = await fal.storage.upload(uploadBlob)
-        console.log('[generate-thumbnail] Product image uploaded to fal (pre-positioned center-left):', falImageUrl)
+        const imgBlob = await imgRes.blob()
+        const falImageUrl = await fal.storage.upload(imgBlob)
+        console.log('[generate-thumbnail] Product image uploaded to fal:', falImageUrl)
 
         // Kontext: preserve the product, replace background with scene
         const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details. Remove the white background and any accessories, packaging, or hands. Place the product in the following scene: ${finalScenePrompt}. The product should sit naturally in the scene with realistic shadows and lighting. COMPOSITION (important): position the product on the LEFT / CENTRE-LEFT of the frame and keep the RIGHT THIRD of the image open — empty background / negative space — because a person will be composited into the bottom-right corner afterwards, so the product must NOT extend into the right third or it will be covered. CRITICAL: there must be ABSOLUTELY NO people anywhere — no humans, no faces, no heads, no bodies, no hands, no silhouettes or reflections of people in the scene or its background. The scene is completely empty of any person. No white background. No text.`
