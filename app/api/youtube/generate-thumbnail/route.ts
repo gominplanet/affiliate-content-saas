@@ -246,7 +246,19 @@ const CUTOUT_OUTFITS = [
 ]
 const CUTOUT_EXPRESSIONS = [
   'a warm friendly smile', 'a confident slight smile', 'an intrigued raised-eyebrow look',
-  'a curious, pleasantly-surprised expression', 'an approachable grin', 'a relaxed natural smile',
+  'a wide, pleasantly-surprised open-mouth expression', 'an approachable grin showing teeth',
+  'a relaxed natural smile', 'a wide-eyed amazed "wow" expression', 'a curious, skeptical squint',
+  'a delighted laughing expression', 'a playful smirk', 'a mouth-slightly-open intrigued look',
+  'an excited eyebrows-up expression', 'a soft thoughtful smile',
+]
+const CUTOUT_POSES = [
+  'head turned slightly to one side, looking back at the camera',
+  'head tilted a little to the side',
+  'a slight lean toward the camera',
+  'chin angled down a touch with eyes up to the camera',
+  'shoulders turned at a three-quarter angle, face to camera',
+  'a relaxed straight-on pose facing the camera',
+  'one shoulder slightly forward, casual angle',
 ]
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
@@ -274,12 +286,15 @@ async function generateFaceCutout(supabase: any, opts: {
     if (refImages.length === 0) return null
     const outfit = pick(CUTOUT_OUTFITS)
     const expression = pick(CUTOUT_EXPRESSIONS)
-    // 1. Generate a head-and-shoulders portrait on a plain backdrop (same call
-    //    Photobooth uses — reliable). We remove the background next. CRITICAL:
-    //    keep generous empty margin on every side so the person is NOT cropped
-    //    by the frame — that's what gives rembg a clean silhouette instead of a
-    //    hard straight edge where the body met the frame border.
-    const prompt = `A clean head-and-shoulders studio portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, looking toward the camera. Flattering studio lighting, sharp focus, realistic skin. FRAMING: the person is centered with GENEROUS EMPTY MARGIN on all four sides — their head, shoulders and arms are fully inside the frame and do NOT touch or get cropped by any edge. Plain, evenly-lit solid light-grey studio background behind them (so it can be cleanly removed). No text, no logos.`
+    const pose = pick(CUTOUT_POSES)
+    // 1. Generate a tight CLOSE-UP portrait on a plain backdrop (same call
+    //    Photobooth uses — reliable). We remove the background next. We want the
+    //    FACE to be big (close crop, chest-up) for impact, but the whole HEAD +
+    //    HAIR must stay inside the frame with margin above and on the sides so
+    //    rembg gives a clean silhouette (no hard "blade" edge). Only the lower
+    //    chest/shoulders may run off the BOTTOM edge — that's hidden when the
+    //    cut-out is bottom-anchored in the thumbnail.
+    const prompt = `A clean CLOSE-UP portrait of the SAME person shown in the reference photos — preserve their exact facial identity, hair, and likeness. All reference photos are the same one individual; render exactly that one person and do NOT blend or mix with any other face. They are wearing ${outfit}, with ${expression}, ${pose}. Flattering studio lighting, sharp focus, realistic natural skin texture. FRAMING: a tight, close-up head shot — the FACE is large and fills most of the frame (chest-up, head and the top of the shoulders only). The entire head and hair sit comfortably inside the frame with empty margin ABOVE the head and on BOTH sides so they are never cropped at the top or the sides; only the lower shoulders/chest may reach the bottom edge. Plain, evenly-lit solid light-grey studio background behind them (so it can be cleanly removed). No text, no logos.`
     const openai = createOpenAIService()
     const b64 = await openai.generateWithReferences({
       prompt, images: refImages, size: '1024x1536', quality: 'medium', model: opts.imageModel,
