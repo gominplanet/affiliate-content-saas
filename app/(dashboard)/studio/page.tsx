@@ -658,7 +658,38 @@ function VideoStudioCard({ video, userTier, playlists }: {
       const cut = await loadImg(cutoutUrl)
       console.log('[thumb] cut-out loaded:', !!cut, cut ? `${cut.naturalWidth}x${cut.naturalHeight}` : '—')
       if (cut && cut.naturalWidth > 0) {
-        const ar = cut.width / cut.height
+        // The server pads the portrait with background before removing it, so
+        // the cut-out arrives with transparent margin around the person. Find
+        // the opaque bounding box and draw only that region, so the padding
+        // doesn't shrink the person — the face still fills the slot.
+        const iw = cut.naturalWidth, ih = cut.naturalHeight
+        let sx = 0, sy = 0, sw = iw, sh = ih
+        try {
+          const oc = document.createElement('canvas')
+          oc.width = iw; oc.height = ih
+          const octx = oc.getContext('2d', { willReadFrequently: true })
+          if (octx) {
+            octx.drawImage(cut, 0, 0)
+            const data = octx.getImageData(0, 0, iw, ih).data
+            let minX = iw, minY = ih, maxX = -1, maxY = -1
+            const ALPHA = 16
+            for (let y = 0; y < ih; y++) {
+              for (let x = 0; x < iw; x++) {
+                if (data[(y * iw + x) * 4 + 3] > ALPHA) {
+                  if (x < minX) minX = x
+                  if (x > maxX) maxX = x
+                  if (y < minY) minY = y
+                  if (y > maxY) maxY = y
+                }
+              }
+            }
+            if (maxX >= minX && maxY >= minY) {
+              sx = minX; sy = minY; sw = maxX - minX + 1; sh = maxY - minY + 1
+            }
+          }
+        } catch { /* tainted/unsupported — fall back to the full image */ }
+
+        const ar = sw / sh
         const maxW = 1280 * 0.46
         const maxH = 720 * 0.96
         let cw = maxW
@@ -672,7 +703,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
         ctx.shadowBlur = 28
         ctx.shadowOffsetX = -10
         ctx.shadowOffsetY = 6
-        ctx.drawImage(cut, 1280 - cw, 720 - ch, cw, ch)
+        ctx.drawImage(cut, sx, sy, sw, sh, 1280 - cw, 720 - ch, cw, ch)
         ctx.restore()
       }
     }

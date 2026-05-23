@@ -350,23 +350,11 @@ async function generateFaceCutout(supabase: any, opts: {
           userId: opts.userId, tier: TELEMETRY.tier,
           feature: 'yt_thumb_cutout_rembg', model: 'fal-rembg', images: 1,
         })
-        // Trim the now-transparent padding (and any extra empty space) back to a
-        // tight bounding box around the silhouette, so the person still fills the
-        // composite and the face stays big. If anything fails, fall back to the
-        // untrimmed cut-out.
-        try {
-          const res = await fetch(cutUrl)
-          const cutBytes = Buffer.from(await res.arrayBuffer())
-          const trimmed = await sharp(cutBytes)
-            .trim({ threshold: 1 }) // trim fully-transparent borders
-            .png()
-            .toBuffer()
-          const trimmedUrl = await fal.storage.upload(new Blob([new Uint8Array(trimmed)], { type: 'image/png' }))
-          return trimmedUrl
-        } catch (e) {
-          console.warn('[generateFaceCutout] trim failed, using untrimmed cut-out:', e)
-          return cutUrl
-        }
+        // The transparent padding we added is trimmed back to a tight bounding
+        // box on the CLIENT during compositing (alpha-bbox crop) — no extra
+        // server round trip, so the face still fills the composite without
+        // adding latency here.
+        return cutUrl
       }
     } catch (e) {
       console.warn('[generateFaceCutout] rembg failed, using opaque headshot:', e)
