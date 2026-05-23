@@ -80,8 +80,15 @@ export default function PhotoboothPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ faceModelId: faceId, style, customPrompt: customPrompt.trim() || undefined, size }),
       })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(d.error || 'Generation failed')
+      const d = await res.json().catch(() => ({} as Record<string, unknown>))
+      if (!res.ok) {
+        const msg = (d.error as string) || (
+          res.status === 504 || res.status === 502
+            ? 'That took too long and timed out. Please try again — generation can take ~30–60s.'
+            : `Generation failed (HTTP ${res.status}). Please try again.`
+        )
+        throw new Error(msg)
+      }
       setShots(prev => [{ id: crypto.randomUUID(), url: d.image as string, style: d.style as string }, ...prev])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Generation failed')

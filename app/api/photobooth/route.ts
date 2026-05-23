@@ -14,7 +14,7 @@ import { type Tier } from '@/lib/tier'
 import { createOpenAIService, OpenAIService, normalizeToPng } from '@/services/openai'
 import { recordUsage } from '@/lib/ai-usage'
 
-export const maxDuration = 120
+export const maxDuration = 300
 
 /** Built-in looks. Free-text customPrompt is appended on top of these. */
 const STYLES: Record<string, string> = {
