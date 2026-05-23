@@ -139,6 +139,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  URL from Supabase storage. */
   const [styleReferenceUrl, setStyleReferenceUrl] = useState<string | null>(null)
   const [styleRefUploading, setStyleRefUploading] = useState(false)
+  /** "Upload your own photo" flow — the user supplies a photo of themselves
+   *  WITH the product; the server cleans it up / re-renders it into a polished
+   *  thumbnail scene (Kontext) and we overlay the title. Public Supabase URL.
+   *  cleanupPrompt is optional free-text direction for the re-render. */
+  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null)
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [cleanupPrompt, setCleanupPrompt] = useState('')
   /** User's READY face models — pulled from /api/face-models on mount.
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
@@ -508,6 +515,37 @@ function VideoStudioCard({ video, userTier, playlists }: {
     }
   }
 
+  async function handlePhotoUpload(file: File) {
+    setThumbnailError(null)
+    if (!file.type.startsWith('image/')) {
+      setThumbnailError('Your photo must be an image (JPG, PNG, or WebP).')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setThumbnailError(`That photo is ${(file.size / 1024 / 1024).toFixed(1)} MB. Keep it under 10 MB.`)
+      return
+    }
+    setPhotoUploading(true)
+    try {
+      const sb = createBrowserClient()
+      const { data: { user } } = await sb.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      // Public bucket so the server can fetch it for the Kontext re-render.
+      const path = `${user.id}/thumb-uploads/${crypto.randomUUID()}.${ext}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (sb.storage as any)
+        .from('product-images').upload(path, file, { upsert: false, cacheControl: '31536000', contentType: file.type || 'image/jpeg' })
+      if (upErr) throw new Error(upErr.message)
+      const { data } = sb.storage.from('product-images').getPublicUrl(path)
+      setUploadedPhotoUrl(data.publicUrl)
+    } catch (err) {
+      setThumbnailError(err instanceof Error ? err.message : 'Photo upload failed')
+    } finally {
+      setPhotoUploading(false)
+    }
+  }
+
   async function generateThumbnail() {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
@@ -527,6 +565,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
           faceModelId: selectedFaceModelId || undefined,
+          uploadedPhotoUrl: uploadedPhotoUrl || undefined,
+          cleanupPrompt: cleanupPrompt.trim() || undefined,
         }),
       })
       const data = await safeJson(res)
@@ -1147,6 +1187,61 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       </label>
                     )}
                   </div>
+                </div>
+
+                {/* Optional: upload your OWN photo (you + the product). When
+                    set, we clean it up / re-render it into a polished
+                    thumbnail scene and overlay the title — no AI scene, no
+                    face cut-out. */}
+                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">
+                  <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                    Use your own photo <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — a photo of YOU with the product; we clean it up &amp; re-render it)</span>
+                  </label>
+                  {uploadedPhotoUrl ? (
+                    <div className="flex items-center gap-2 mb-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={uploadedPhotoUrl} alt="Your photo" className="w-16 h-9 object-cover rounded-md border border-gray-200 dark:border-white/10" />
+                      <span className="text-[11px] text-[#34c759] flex items-center gap-1"><CheckCircle size={11} /> Photo added</span>
+                      <button
+                        type="button"
+                        onClick={() => { setUploadedPhotoUrl(null); setCleanupPrompt('') }}
+                        disabled={generatingThumbnail || instantLoading}
+                        className="text-[11px] text-[#86868b] hover:text-[#ff3b30] ml-1"
+                        title="Remove your photo"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${photoUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#0071e3]'}`}
+                      style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        disabled={generatingThumbnail || instantLoading || photoUploading}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]
+                          if (f) handlePhotoUpload(f)
+                          e.target.value = ''
+                        }}
+                      />
+                      {photoUploading
+                        ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
+                        : <><Upload size={11} /> Upload your photo</>}
+                    </label>
+                  )}
+                  {uploadedPhotoUrl && (
+                    <input
+                      type="text"
+                      value={cleanupPrompt}
+                      onChange={(e) => setCleanupPrompt(e.target.value)}
+                      maxLength={400}
+                      placeholder="Optional direction — e.g. bright kitchen, surprised face"
+                      disabled={generatingThumbnail || instantLoading}
+                      className="mt-1 w-full text-[11px] px-2 py-1 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                    />
+                  )}
                 </div>
 
                 {/* Generate buttons */}

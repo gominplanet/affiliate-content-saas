@@ -414,6 +414,8 @@ export async function POST(request: Request) {
       styleReferenceUrl,
       faceModelId,
       videoDescription,
+      uploadedPhotoUrl,
+      cleanupPrompt,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -443,6 +445,14 @@ export async function POST(request: Request) {
        *  LoRA + trigger token and route generation through the LoRA-
        *  capable flux-lora endpoint so their actual face appears. */
       faceModelId?: string
+      /** "Upload your own photo" flow — a public URL to a photo the user
+       *  took of THEMSELVES with the product. We send it through Kontext to
+       *  clean it up / re-render it into a polished thumbnail scene, then
+       *  overlay the title. No separate face cut-out (the photo has them). */
+      uploadedPhotoUrl?: string
+      /** Optional free-text direction for the re-render of the uploaded photo
+       *  (e.g. "bright kitchen, surprised face"). */
+      cleanupPrompt?: string
     }
 
     const variantCount = Math.min(2, Math.max(1, Number(rawVariantCount) || 1))
@@ -537,6 +547,64 @@ export async function POST(request: Request) {
 
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
+
+    // ── PATH U: user uploaded their own photo (them + the product) ───────────
+    // Clean it up / re-render it into a polished YouTube thumbnail scene with
+    // Kontext, then the client overlays the title. No product fetch, no face
+    // cut-out — the uploaded photo already contains the person and product.
+    if (typeof uploadedPhotoUrl === 'string' && /^https?:\/\//.test(uploadedPhotoUrl)) {
+      try {
+        const overlayHookU = lockedHeadline || (await generateHook(videoTitle))
+        const photoRes = await fetch(uploadedPhotoUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+        if (!photoRes.ok) throw new Error(`Cannot fetch uploaded photo (${photoRes.status})`)
+        const falPhotoUrl = await fal.storage.upload(await photoRes.blob())
+
+        const cleanup = (typeof cleanupPrompt === 'string' ? cleanupPrompt : '').trim().slice(0, 400)
+        const kontextInstruction = `Transform this user-submitted photo into a clean, professional, eye-catching YouTube thumbnail. KEEP the same person and the same product they are holding/showing — preserve their facial identity, likeness and the product's exact appearance, branding and details. Clean it up: remove clutter and distractions, fix harsh or dim lighting into bright flattering light, sharpen and colour-grade for a premium, high-contrast thumbnail look, and place them in a bright, clean, uncluttered setting with a softly blurred background. Keep the person clearly visible and well-lit. ${cleanup ? `ADDITIONAL DIRECTION: ${cleanup}. ` : ''}Do NOT add any other people. Do NOT render any text, captions, watermarks or logos (other than what is physically on the product). Photorealistic, 16:9.`
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const kontextResult = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
+          input: {
+            image_url: falPhotoUrl,
+            prompt: kontextInstruction,
+            aspect_ratio: '16:9',
+            num_images: variantCount,
+            output_format: 'jpeg',
+            guidance_scale: 4,
+          },
+          pollInterval: 3000,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const imgs = (kontextResult.data as any)?.images as Array<{ url: string }> | undefined
+        const urls = (imgs ?? []).map(i => i.url).filter(Boolean)
+        if (urls.length > 0) {
+          for (let i = 0; i < urls.length; i++) {
+            recordUsage({
+              userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+              feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
+            })
+          }
+          return NextResponse.json({
+            ok: true,
+            thumbnailUrl: urls[0],
+            thumbnailUrls: urls,
+            overlayHook: overlayHookU,
+            headlineLocked: !!lockedHeadline,
+            prompt: kontextInstruction,
+            styleBriefApplied: false,
+            channelStyle: null,
+            modelUsed: 'kontext-upload',
+            headshotUsed: false,
+            personCutoutUrl: null,
+            faceDebug: 'upload-path (no cut-out — photo already has the person)',
+          })
+        }
+        // If Kontext returned nothing, fall through to the normal pipeline.
+        console.warn('[generate-thumbnail] upload path returned no image; falling through')
+      } catch (err) {
+        console.warn('[generate-thumbnail] upload path failed, falling through:', err)
+      }
+    }
 
     // Kick off the creator cut-out RIGHT NOW (don't await) so it runs in
     // parallel with channel analysis + prompt gen + the product scene — the
