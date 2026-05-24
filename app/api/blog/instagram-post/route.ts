@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { publishMedia, refreshLongLivedToken } from '@/services/instagram'
+import { cloudinaryConfigured, overlayCaptionOnVideo } from '@/services/cloudinary'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
@@ -25,7 +26,7 @@ import { resolveSocialAccount } from '@/lib/social-accounts'
 
 const ASIN_RE = /\b([A-Z0-9]{10})\b/
 
-export const maxDuration = 60
+export const maxDuration = 300
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -267,13 +268,22 @@ Return ONLY the caption text + hashtags.`,
     // ── Publish: video kind ─────────────────────────────────────────────────
     if (kind === 'video') {
       const m = mode as VideoMode
+      // Burn a "LINK IN BIO" caption into the lower third of the video (Reels
+      // can't carry a clickable link). Falls back to the original video if
+      // Cloudinary isn't configured or the overlay fails.
+      let effectiveVideoUrl = videoUrl as string
+      if (cloudinaryConfigured() && effectiveVideoUrl) {
+        const overlaid = await overlayCaptionOnVideo(effectiveVideoUrl, 'LINK IN BIO')
+        if (overlaid?.url) effectiveVideoUrl = overlaid.url
+        else results.warnings.push('Could not burn the on-screen caption — posted the original video.')
+      }
       if (m === 'reel' || m === 'both') {
         try {
           const reelId = await publishMedia({
             userId: igUserId,
             accessToken: igToken,
             mediaType: 'REELS',
-            videoUrl: videoUrl as string,
+            videoUrl: effectiveVideoUrl,
             caption: feedCaption ?? '',
             shareToFeed: true,
           })
@@ -291,7 +301,7 @@ Return ONLY the caption text + hashtags.`,
             userId: igUserId,
             accessToken: igToken,
             mediaType: 'STORIES',
-            videoUrl: videoUrl as string,
+            videoUrl: effectiveVideoUrl,
           })
           results.storyId = storyId
           results.affiliateUrl = affiliateUrl
