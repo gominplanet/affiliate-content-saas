@@ -759,6 +759,21 @@ async function handleGenerate(request: Request) {
   // function is cut off, the published post simply keeps its text — the
   // request can NEVER 504 on the user because of images.
   after(async () => {
+    // ── Fact-check pass (post-response so the main request never 504s) ───────
+    // Strip any product spec/price the transcript + product info don't support,
+    // re-publish the corrected text, and use it as the base for images.
+    try {
+      const checked = await claude.factCheckProductClaims(content, transcript, productResearch, { userId: user.id, tier: (wp?.tier as string) ?? null })
+      if (checked && checked !== content) {
+        content = scrubBanned(checked)
+        try { await wpService.updatePost(wpPost.id, { content }) } catch { /* keep prior text */ }
+        if (savedPost?.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { await (supabase as any).from('blog_posts').update({ content }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+        }
+      }
+    } catch { /* non-fatal — keep the generated text */ }
+
     let finalContent = content
     console.log('[blog-images] after() running', { includeImages, userImgs: userImageUrls.length, hasFal: !!process.env.FAL_KEY })
 

@@ -623,7 +623,7 @@ Output only valid JSON. No explanation, no markdown.`,
   // support. Best-effort: on any failure or a suspicious result (truncated, or
   // the affiliate link dropped), the original content stands — this can never
   // break a post.
-  private async factCheckProductClaims(
+  async factCheckProductClaims(
     content: string,
     transcript: string,
     productResearch: string | null | undefined,
@@ -925,7 +925,6 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
         }
       }
       parsed.content = parsed.content.replace(/{VIDEO_ID}/g, video.videoId)
-      parsed.content = await this.factCheckProductClaims(parsed.content, video.transcript, video.productResearch, ctx)
       return parsed
     }
 
@@ -945,9 +944,8 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
       content: contentMatch[1].replace(/{VIDEO_ID}/g, video.videoId),
     }
 
-    // Final fact-check pass — strip any product spec/feature the transcript +
-    // product info don't support. Best-effort (returns original on any issue).
-    parsed.content = await this.factCheckProductClaims(parsed.content, video.transcript, video.productResearch, ctx)
+    // NOTE: the fact-check pass runs in the route's after() block (post-response)
+    // so the main generation request stays fast and never 504s on a deep post.
 
     return parsed
   }
