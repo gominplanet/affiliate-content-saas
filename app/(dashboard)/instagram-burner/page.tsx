@@ -10,14 +10,18 @@ import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { effectiveTier } from '@/lib/view-as'
-import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video } from 'lucide-react'
+import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram } from 'lucide-react'
 
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
 const POSITIONS: Array<{ key: string; label: string; desc: string }> = [
   { key: 'lower-third', label: 'Lower third', desc: 'Recommended — clears IG’s buttons' },
-  { key: 'bottom', label: 'Bottom', desc: 'Near the bottom edge' },
-  { key: 'center', label: 'Center', desc: 'Middle of the screen' },
-  { key: 'top', label: 'Top', desc: 'Upper area' },
+  { key: 'center', label: 'Middle', desc: 'Center of the screen' },
+]
+const STYLES: Array<{ key: string; label: string; desc: string }> = [
+  { key: 'white-pill', label: 'White on dark', desc: 'White text, dark pill' },
+  { key: 'yellow-pill', label: 'Yellow on dark', desc: 'Yellow text, dark pill' },
+  { key: 'black-pill', label: 'Black on white', desc: 'Black text, white pill' },
+  { key: 'white-shadow', label: 'White + shadow', desc: 'White text, soft shadow, no pill' },
 ]
 
 export default function InstagramBurnerPage() {
@@ -27,11 +31,17 @@ export default function InstagramBurnerPage() {
 
   const [caption, setCaption] = useState('LINK IN BIO')
   const [position, setPosition] = useState('lower-third')
+  const [style, setStyle] = useState('white-pill')
+  const [product, setProduct] = useState('')
 
   const [uploading, setUploading] = useState(false)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
   const [burning, setBurning] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
+  const [igCaption, setIgCaption] = useState<string | null>(null)
+  const [published, setPublished] = useState(false)
+  const [igError, setIgError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -80,21 +90,36 @@ export default function InstagramBurnerPage() {
 
   async function burn() {
     if (!sourceUrl) { setError('Upload a video first.'); return }
-    setBurning(true); setError(null); setResultUrl(null)
+    setBurning(true); setError(null); setResultUrl(null); setIgCaption(null); setPublished(false); setIgError(null)
     try {
       const res = await fetch('/api/instagram/burn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl: sourceUrl, caption: caption.trim() || 'LINK IN BIO', position }),
+        body: JSON.stringify({
+          videoUrl: sourceUrl,
+          caption: caption.trim() || 'LINK IN BIO',
+          position,
+          style,
+          product: product.trim() || undefined,
+          autoPublish: true,
+        }),
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
       if (!res.ok) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
       setResultUrl(d.url as string)
+      setIgCaption((d.caption as string) || null)
+      setPublished(!!d.published)
+      setIgError((d.igError as string) || null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Burn failed')
     } finally {
       setBurning(false)
     }
+  }
+
+  function copyCaption() {
+    if (!igCaption) return
+    navigator.clipboard.writeText(igCaption).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
   }
 
   async function download() {
@@ -167,6 +192,15 @@ export default function InstagramBurnerPage() {
                     <button key={p} onClick={() => setCaption(p)} className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${caption === p ? 'border-[#0071e3] bg-[#0071e3]/5 text-[#0071e3]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>{p}</button>
                   ))}
                 </div>
+                {/* Style */}
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  {STYLES.map(s => (
+                    <button key={s.key} onClick={() => setStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${style === s.key ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
+                      <span className="block text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
+                      <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93]">{s.desc}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Position */}
@@ -180,6 +214,19 @@ export default function InstagramBurnerPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Product (optional) */}
+              <div>
+                <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">4. Product <span className="font-normal text-[#86868b]">(optional)</span></label>
+                <input
+                  type="text"
+                  value={product}
+                  onChange={(e) => setProduct(e.target.value)}
+                  className="input-field text-sm"
+                  placeholder="Amazon ASIN or product URL"
+                />
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">If set, we research it and write a Reel caption (3 hashtags + #ad disclosure) to post with the video.</p>
               </div>
 
               {error && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {error}</p>}
@@ -197,10 +244,35 @@ export default function InstagramBurnerPage() {
             {/* Result */}
             <div>
               {resultUrl ? (
-                <div className="card p-3">
+                <div className="card p-3 space-y-3">
                   {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                  <video src={resultUrl} controls playsInline className="w-full rounded-lg bg-black max-h-[70vh]" />
-                  <button onClick={download} className="mt-3 inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90">
+                  <video src={resultUrl} controls playsInline className="w-full rounded-lg bg-black max-h-[60vh]" />
+
+                  {/* Publish status */}
+                  {published ? (
+                    <div className="flex items-center gap-1.5 rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      <Instagram size={13} className="text-[#E1306C] flex-shrink-0" /> Posted to your Instagram as a Reel.
+                    </div>
+                  ) : igError ? (
+                    <div className="flex items-start gap-1.5 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      <AlertCircle size={13} className="text-[#ff9500] flex-shrink-0 mt-0.5" /> Couldn’t auto-post ({igError}). Download below and post it manually.
+                    </div>
+                  ) : null}
+
+                  {/* Composed Reel caption */}
+                  {igCaption && (
+                    <div className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Reel caption</span>
+                        <button onClick={copyCaption} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline">
+                          {copied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Copy</>}
+                        </button>
+                      </div>
+                      <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">{igCaption}</pre>
+                    </div>
+                  )}
+
+                  <button onClick={download} className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90">
                     <Download size={13} /> Download captioned video
                   </button>
                 </div>

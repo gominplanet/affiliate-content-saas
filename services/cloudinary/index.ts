@@ -62,6 +62,18 @@ export interface OverlaidVideo { url: string; publicId: string }
  * before we hand it to Instagram.
  */
 export type OverlayPosition = 'lower-third' | 'bottom' | 'center' | 'top'
+export type CaptionStyle = 'white-pill' | 'black-pill' | 'yellow-pill' | 'white-shadow'
+
+/** Visual look for the burned caption. */
+function styleParams(style: CaptionStyle): { color: string; background?: string; radius?: number; effect?: string } {
+  switch (style) {
+    case 'black-pill': return { color: 'black', background: '#ffffffd9', radius: 24 }
+    case 'yellow-pill': return { color: '#FFD400', background: '#000000a6', radius: 20 }
+    case 'white-shadow': return { color: 'white', effect: 'shadow:60' }
+    case 'white-pill':
+    default: return { color: 'white', background: '#000000a6', radius: 20 }
+  }
+}
 
 /** Map a friendly position to Cloudinary gravity + pixel y-offset (tuned for
  *  a 1080×1920 vertical video). lower-third sits clear of IG's bottom UI. */
@@ -97,11 +109,12 @@ async function waitForVideo(url: string, timeoutMs: number): Promise<boolean> {
 export async function overlayCaptionOnVideo(
   sourceVideoUrl: string,
   caption = 'LINK IN BIO',
-  opts?: { position?: OverlayPosition; fontSize?: number },
+  opts?: { position?: OverlayPosition; fontSize?: number; style?: CaptionStyle },
 ): Promise<OverlaidVideo | null> {
   if (!ensureConfig() || !sourceVideoUrl) return null
   try {
     const { gravity, y } = placement(opts?.position ?? 'lower-third')
+    const sp = styleParams(opts?.style ?? 'white-pill')
 
     // 1. Upload the source video (no transform yet).
     const up = await cloudinary.uploader.upload(sourceVideoUrl, {
@@ -121,9 +134,9 @@ export async function overlayCaptionOnVideo(
         { width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264' },
         {
           overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: caption },
-          color: 'white',
-          background: '#000000a6',
-          radius: 20,
+          color: sp.color,
+          ...(sp.background ? { background: sp.background, radius: sp.radius ?? 20 } : {}),
+          ...(sp.effect ? { effect: sp.effect } : {}),
           gravity,
           y,
         },
