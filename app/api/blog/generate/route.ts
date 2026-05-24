@@ -760,6 +760,7 @@ async function handleGenerate(request: Request) {
   // request can NEVER 504 on the user because of images.
   after(async () => {
     let finalContent = content
+    console.log('[blog-images] after() running', { includeImages, userImgs: userImageUrls.length, hasFal: !!process.env.FAL_KEY })
 
     // ── User-supplied in-article images ───────────────────────────────────
     // When the user uploaded their own images, place THOSE throughout the
@@ -853,6 +854,8 @@ async function handleGenerate(request: Request) {
           })
 
           const tier2 = (wp?.tier as string) ?? null
+          let firstImgError: string | null = null
+          console.log('[blog-images] generating', { count: prompts.length, falProduct: !!falProductImageUrl })
           const results = await Promise.all(prompts.map(async (prompt, i) => {
             if (!prompt || !prompt.trim()) return null
             const perspective = SHOT_PERSPECTIVES[i % SHOT_PERSPECTIVES.length]
@@ -902,9 +905,18 @@ async function handleGenerate(request: Request) {
               }
               const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
               return media?.source_url ? { url: media.source_url, alt: `${generated.title} — ${i + 1}` } : null
-            } catch { return null }
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e)
+              if (!firstImgError) firstImgError = msg
+              console.warn(`[blog-images] item ${i} failed:`, msg)
+              return null
+            }
           }))
           const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
+          console.log('[blog-images] result', { produced: uploaded.length, of: prompts.length, firstError: firstImgError })
+          if (uploaded.length === 0) {
+            try { await logFailure(supabase, user.id, videoId, 'blog_body_images', `0/${prompts.length} images. falProduct=${!!falProductImageUrl}. firstError=${firstImgError || 'none'}`) } catch { /* non-fatal */ }
+          }
           if (uploaded.length > 0) {
             const slots = autoPlacementIndices(content, uploaded.length)
             finalContent = insertImagesAtHeadings(
@@ -961,7 +973,7 @@ async function logFailure(
   supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createServerClient>>,
   userId: string,
   videoId: string,
-  jobType: 'blog_generation' | 'wp_publish',
+  jobType: 'blog_generation' | 'wp_publish' | 'blog_body_images',
   errorMessage: string,
 ) {
   await supabase.from('job_failures').insert({
