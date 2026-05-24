@@ -61,22 +61,38 @@ export interface OverlaidVideo { url: string; publicId: string }
  * Uses a synchronous eager transformation so the returned URL is render-ready
  * before we hand it to Instagram.
  */
+export type OverlayPosition = 'lower-third' | 'bottom' | 'center' | 'top'
+
+/** Map a friendly position to Cloudinary gravity + pixel y-offset (tuned for
+ *  a 1080×1920 vertical video). lower-third sits clear of IG's bottom UI. */
+function placement(pos: OverlayPosition): { gravity: string; y: number } {
+  switch (pos) {
+    case 'bottom': return { gravity: 'south', y: 130 }
+    case 'center': return { gravity: 'center', y: 0 }
+    case 'top': return { gravity: 'north', y: 220 }
+    case 'lower-third':
+    default: return { gravity: 'south', y: 360 }
+  }
+}
+
 export async function overlayCaptionOnVideo(
   sourceVideoUrl: string,
   caption = 'LINK IN BIO',
+  opts?: { position?: OverlayPosition; fontSize?: number },
 ): Promise<OverlaidVideo | null> {
   if (!ensureConfig() || !sourceVideoUrl) return null
   try {
+    const { gravity, y } = placement(opts?.position ?? 'lower-third')
     const res = await cloudinary.uploader.upload(sourceVideoUrl, {
       resource_type: 'video',
       folder: 'ig-overlays',
       eager: [{
-        overlay: { font_family: 'Arial', font_size: 64, font_weight: 'bold', text: caption },
+        overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: caption },
         color: 'white',
         background: '#000000a6', // translucent black pill behind the text
         radius: 20,
-        gravity: 'south',
-        y: 360, // ~lower third, clear of IG's bottom UI
+        gravity,
+        y,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any],
       eager_async: false,
