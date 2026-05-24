@@ -133,30 +133,8 @@ export default async function DashboardPage() {
 
       <TutorialVideo sectionKey="dashboard" />
 
-      {/* Discord community card — lands on /community which embeds the
-          live presence widget and pulls a fresh invite. */}
-      {DISCORD_INVITE_URL && (
-        <Link
-          href="/community"
-          className="card p-4 mb-6 max-w-3xl mx-auto flex items-center gap-3 hover:border-[#5865F2]/40 transition-colors"
-          style={{ borderColor: 'rgba(88,101,242,0.2)', background: 'linear-gradient(180deg, rgba(88,101,242,0.04) 0%, transparent 100%)' }}
-        >
-          <div className="w-9 h-9 rounded-full bg-[#5865F2]/10 flex items-center justify-center flex-shrink-0">
-            <MessagesSquare size={18} className="text-[#5865F2]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Join the MVP Affiliate community on Discord</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Hang out with other creators, ask questions, share what works, give us feedback.</p>
-          </div>
-          <span className="text-xs font-semibold text-[#5865F2] flex items-center gap-1 flex-shrink-0">
-            Open <ArrowRight size={11} />
-          </span>
-        </Link>
-      )}
-
-      {/* News / announcement banner — red-tinted, dismissible. Sits between
-          the Discord card and the channel/YouTube stats. Edit the message in
-          components/dashboard/NewsBanner.tsx. */}
+      {/* News / announcement banner — red-tinted, dismissible. Edit the
+          message in components/dashboard/NewsBanner.tsx. */}
       <NewsBanner />
 
       {/* Welcome card — shown until user generates their first post */}

@@ -137,7 +137,30 @@ Return ONLY the post text, nothing else.`,
     const caption = `${reviewText}\n\n🔗 Read the full post: ${post.wordpress_url}\n\n${disclaimer}`
 
     if (dryRun) {
-      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption })
+      // Generate 3 SPECIFIC, niche hashtags that fit this exact product/topic
+      // (for the manual Group copy block) — not generic spam tags.
+      let hashtags = ''
+      try {
+        const anthropic = createAnthropicClient()
+        const hres = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 40,
+          messages: [{
+            role: 'user',
+            content: `Give EXACTLY 3 hashtags for a Facebook post about this product/topic. They must be SPECIFIC and niche to the actual product/subject (e.g. for a cold brew maker: #coldbrew #coldbrewmaker #icedcoffee). Do NOT use generic spam tags like #amazonfinds, #musthave, #founditonamazon. Lowercase, no spaces inside a tag, each starting with #, space-separated. Return ONLY the 3 hashtags.
+
+Title: ${post.title}
+Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 500)}`,
+          }],
+        })
+        hashtags = (hres.content[0] as { type: string; text: string }).text
+          .trim().split(/\s+/).filter(t => t.startsWith('#')).slice(0, 3).join(' ')
+        recordAnthropicUsage(hres, {
+          userId: user.id, tier: integration?.tier,
+          feature: 'social_facebook_hashtags', model: 'claude-haiku-4-5-20251001',
+        })
+      } catch { /* hashtags optional — copy block still works without them */ }
+      return NextResponse.json({ ok: true, dryRun: true, text: reviewText, finalText: caption, hashtags })
     }
 
     // ── 8. Post to Facebook ───────────────────────────────────────────────────

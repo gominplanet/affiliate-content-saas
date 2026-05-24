@@ -88,10 +88,13 @@ export function SocialPreviewModal({
   const [scheduling, setScheduling] = useState(false)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // Niche hashtags generated server-side for THIS product/topic (preferred over
+  // the generic brand-niche fallback passed in via shareHashtags).
+  const [serverHashtags, setServerHashtags] = useState('')
 
   // Assembled copy-paste block for manual Group sharing: the (edited) post
   // text + hashtags + URL + FTC disclaimer. Reactive to textarea edits.
-  const groupCopy = [text.trim(), (shareHashtags || '').trim(), (shareUrl || '').trim(), (shareDisclaimer || '').trim()]
+  const groupCopy = [text.trim(), (serverHashtags || shareHashtags || '').trim(), (shareUrl || '').trim(), (shareDisclaimer || '').trim()]
     .filter(Boolean).join('\n\n')
 
   async function generate() {
@@ -106,6 +109,7 @@ export function SocialPreviewModal({
       if (!res.ok) throw new Error(data.error || 'Preview failed')
       setText(data.text || '')
       setFinalText(data.finalText || data.text || '')
+      if (typeof data.hashtags === 'string' && data.hashtags.trim()) setServerHashtags(data.hashtags.trim())
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Preview failed')
     }

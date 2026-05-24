@@ -1868,11 +1868,21 @@ function VideoCard({
     } finally { setLiPosting(false) }
   }
 
-  function handleFacebookPost() {
+  async function handleFacebookPost() {
     if (!post?.postId) return
-    // Facebook always opens the share popup — it carries the copy-for-Groups
-    // block + saved Group links alongside the publish-to-Page button.
-    setPreviewPlatform('facebook')
+    // Open the share popup whenever the user has saved Facebook Groups (so they
+    // can copy + paste into groups), or when preview-before-publish is on.
+    // Otherwise (Pages only, no preview) publish straight to the selected Page.
+    if (brandFacebookGroups.length > 0 || previewBeforePublish) { setPreviewPlatform('facebook'); return }
+    setFbPosting(true)
+    try {
+      const res = await fetch('/api/blog/facebook-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId: post.postId, socialAccountId: effectiveFbAccountId ?? undefined }),
+      })
+      await handleSocialResponse(res, 'Facebook', () => setFbPosted(true))
+    } finally { setFbPosting(false) }
   }
 
   async function handleThreadsPost() {
