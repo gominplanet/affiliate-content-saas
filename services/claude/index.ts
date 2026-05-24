@@ -190,6 +190,19 @@ CRITICAL RULES — FOLLOW STRICTLY
    "the reviewer notes…") instead of a fake personal memory. Grounded opinions and reactions
    are fine; invented autobiography is not.
 
+9. PRODUCT FACTS — NEVER INVENT SPECS OR FEATURES. Do NOT state any product spec,
+   number, measurement, dimension, weight, capacity, battery/run time, wattage,
+   speed, material, finish, model number, price, included accessory, warranty,
+   certification, ingredient, compatibility, or performance/result claim UNLESS it
+   appears explicitly in the transcript or the PRODUCT INFO block. If a detail
+   isn't given, OMIT it — never estimate, approximate, round, guess, or fill in a
+   plausible-sounding figure. Do NOT invent features the product may not have, and
+   do NOT make comparative or superlative claims ("the most powerful", "longest
+   battery", "better than X", "lasts for years") unless the source actually says
+   so. When you lack a spec, describe what the reviewer showed or said instead of
+   asserting a number. A made-up spec is far worse than an omitted one — when in
+   doubt, leave it out.
+
 ═══════════════════════════════════════
 HUMAN WRITING — NON-NEGOTIABLE
 ═══════════════════════════════════════
@@ -339,7 +352,9 @@ Use exactly this structure with {VIDEO_ID} replaced:
     Reference reviewer's actual experience. Use their language. Introduce product with affiliate link in first paragraph.
 
   Section B: <!-- wp:heading {"level":3} --> H3 — Product mechanics
-    Specific features from transcript. Real specs, measurements, results. No vague claims.
+    Only the features and specs ACTUALLY stated in the transcript or product info — quote
+    the real numbers/measurements when they're given, otherwise describe what the reviewer
+    showed or demonstrated. Never invent, estimate, or guess a spec. No vague claims.
 
   Section C: <!-- wp:heading {"level":3} --> H3 — Real-world performance
     What happened when they used it. Specific conditions from transcript.
@@ -707,7 +722,7 @@ NO INVENTED FIRST-PERSON EXPERIENCE: never manufacture a personal anecdote, test
 
 Mandatory in the body:
 - At least 3 DIRECT QUOTES from the transcript, in quotation marks, attributed naturally ("she says", "he admits", "they explain"). Quote the messy, specific, casual parts — not the polished bits.
-- At least 5 SPECIFIC FACTS pulled from the transcript: numbers, places, times, names, model details, costs, durations, distances, brands, dates. Surface them in prose, not bullet lists.
+- Surface the SPECIFIC FACTS the transcript actually provides (numbers, places, times, names, model details, costs, durations, distances, brands, dates) in prose, not bullet lists — aim for 5+ when the transcript supports it, but ONLY facts that are genuinely stated. NEVER pad to a count with invented, estimated, or guessed numbers; if the video is light on hard facts, use fewer and lean on quotes and what was shown instead.
 - At least 2 MOMENTS rendered as scenes — micro-stories that put the reader IN the room. ("She picks it up. Twenty seconds in, she's already shaking her head.")
 
 If the transcript is missing or thin, build the post around the title + description + tags, but flag the lack of detail honestly (e.g. "Without the full video, what we know is…") — never invent specifics.
