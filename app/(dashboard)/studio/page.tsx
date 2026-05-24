@@ -776,17 +776,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
         let cw = maxW
         let ch = cw / ar
         if (ch > maxH) { ch = maxH; cw = ch * ar }
-        // Subtle drop-shadow cast only to the LEFT (toward the scene) so the
-        // cut-out reads as a distinct layer on bright backgrounds — kept light
-        // with no downward offset so it never pools into a dark halo in the
-        // bottom-right corner.
-        ctx.save()
-        ctx.shadowColor = 'rgba(0,0,0,0.28)'
-        ctx.shadowBlur = 14
-        ctx.shadowOffsetX = -6
-        ctx.shadowOffsetY = 0
+        // No drop-shadow: any blurred shadow pools into a dark halo where the
+        // cut-out meets the bottom-right frame corner. The despilled green-screen
+        // edge is clean enough to sit directly on the scene.
         ctx.drawImage(source, sx, sy, sw, sh, 1280 - cw, 720 - ch, cw, ch)
-        ctx.restore()
       }
     }
 
