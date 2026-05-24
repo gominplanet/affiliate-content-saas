@@ -897,8 +897,8 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     if (ptError) setPtNotice({ ok: false, msg: `Pinterest error: ${ptError}` })
     const thConnected = searchParams.get('threads_connected')
     const thError = searchParams.get('threads_error')
-    if (thConnected) setThNotice({ ok: true, msg: 'Threads connected!' })
-    if (thError) setThNotice({ ok: false, msg: `Threads error: ${thError}` })
+    if (thConnected) { setThNotice({ ok: true, msg: 'Threads connected!' }); load() }
+    if (thError) setThNotice({ ok: false, msg: `Threads error: ${decodeURIComponent(thError)}` })
     const liConnected = searchParams.get('linkedin_connected')
     const liError = searchParams.get('linkedin_error')
     if (liConnected) { setLiNotice({ ok: true, msg: 'LinkedIn connected!' }); load() }
@@ -1385,7 +1385,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           {threads.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Threads uses a User Access Token from Meta's developer portal. Go to <strong>developers.facebook.com → My Apps → your app → Threads API → Settings → User Token Generator</strong>, generate a token for your account, and paste it below. The token is stored securely and used only to post on your behalf.
+          Click <strong>Connect Threads</strong> and you&apos;ll be redirected to Threads to authorize the connection. We only request permission to read your basic profile and publish posts on your behalf — we never access your inbox or any other account data.
         </p>
         {thNotice && <p className={`text-xs mb-3 ${thNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{thNotice.msg}</p>}
         {threads.connected ? (
@@ -1399,7 +1399,18 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <ManualThreadsToken onConnected={(username) => setThreads({ connected: true, userId: '', username })} />
+            <a
+              href="/api/auth/threads"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors bg-black hover:bg-[#1d1d1f]"
+            >
+              <MessageCircle size={14} /> Connect Threads
+            </a>
+            <details className="text-xs text-[#86868b] dark:text-[#8e8e93]">
+              <summary className="cursor-pointer hover:text-[#6e6e73] dark:hover:text-[#ebebf0] select-none">Advanced: paste a User Access Token instead</summary>
+              <div className="mt-3">
+                <ManualThreadsToken onConnected={(username) => setThreads({ connected: true, userId: '', username })} />
+              </div>
+            </details>
           </div>
         )}
       </div>
