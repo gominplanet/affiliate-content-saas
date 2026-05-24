@@ -360,6 +360,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   const [startAt, setStartAt] = useState(defaultStartLocal())
   const [intervalHours, setIntervalHours] = useState(24)
   const [submitting, setSubmitting] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
@@ -400,9 +401,26 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
   function addItem() { setItems(prev => prev.length >= 5 ? prev : [...prev, { id: crypto.randomUUID(), url: null, uploading: false, caption: 'LINK IN BIO', product: '' }]) }
   function removeItem(id: string) { setItems(prev => prev.length <= 1 ? prev : prev.filter(it => it.id !== id)) }
 
-  async function submit() {
+  const readyItems = items.filter(it => it.url)
+
+  // Exact scheduled time per post — mirrors the server's spread
+  // (startMs + i * intervalHours). Shown in the review step so the user
+  // confirms exactly what posts and when before anything is queued.
+  function scheduledAt(index: number): Date {
+    const startMs = startAt && !isNaN(Date.parse(startAt)) ? Date.parse(startAt) : Date.now()
+    return new Date(startMs + index * intervalHours * 3600_000)
+  }
+
+  // Step 1: open the review panel (no posting happens yet).
+  function openReview() {
+    if (readyItems.length === 0) { setErr('Upload at least one video.'); return }
+    setErr(null); setMsg(null); setReviewing(true)
+  }
+
+  // Step 2: explicit confirm — only now do we queue the batch.
+  async function confirmSchedule() {
     const ready = items.filter(it => it.url)
-    if (ready.length === 0) { setErr('Upload at least one video.'); return }
+    if (ready.length === 0) { setErr('Upload at least one video.'); setReviewing(false); return }
     setSubmitting(true); setErr(null); setMsg(null)
     try {
       const res = await fetch('/api/instagram/burn-batch', {
@@ -416,8 +434,9 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
       if (!res.ok) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
-      setMsg(`Queued ${d.queued} video${(d.queued as number) > 1 ? 's' : ''}. First posts ${new Date(d.firstAt as string).toLocaleString()}.`)
+      setMsg(`Scheduled ${d.queued} video${(d.queued as number) > 1 ? 's' : ''}. First posts ${new Date(d.firstAt as string).toLocaleString()}.`)
       setItems([{ id: crypto.randomUUID(), url: null, uploading: false, caption: 'LINK IN BIO', product: '' }])
+      setReviewing(false)
       loadJobs()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to queue')
@@ -501,10 +520,10 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
         {err && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {err}</p>}
         {msg && <p className="text-xs text-[#34c759] flex items-center gap-1.5"><CheckCircle size={12} /> {msg}</p>}
 
-        <button onClick={submit} disabled={submitting || !items.some(it => it.url)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors w-full justify-center">
-          {submitting ? <><Loader2 size={14} className="animate-spin" /> Queuing…</> : <><Clock size={14} /> Schedule batch</>}
+        <button onClick={openReview} disabled={submitting || !items.some(it => it.url)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors w-full justify-center">
+          <Clock size={14} /> Review &amp; schedule
         </button>
-        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center">Each video is burned, captioned (with product research), and auto-posted to Instagram at its scheduled time.</p>
+        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center">You’ll review every post before anything is scheduled. Each video is then burned, captioned, and posted to Instagram at its scheduled time.</p>
       </div>
 
       {/* Queue */}
@@ -529,6 +548,45 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
           </div>
         )}
       </div>
+
+      {/* Review & confirm — explicit approval before anything is scheduled */}
+      {reviewing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !submitting && setReviewing(false)}>
+          <div className="card max-w-lg w-full max-h-[85vh] overflow-y-auto p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Review before scheduling</h3>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-3">
+              These {readyItems.length} post{readyItems.length > 1 ? 's' : ''} will be burned and published to your connected Instagram at the times below. Nothing is posted until you confirm.
+            </p>
+            <div className="space-y-2 mb-4">
+              {readyItems.map((it, i) => (
+                <div key={it.id} className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Post {i + 1} · “{it.caption.trim() || 'LINK IN BIO'}”</span>
+                    <span className="text-[10px] font-medium text-[#0071e3] flex-shrink-0">{scheduledAt(i).toLocaleString()}</span>
+                  </div>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                    {it.product.trim()
+                      ? <>Reel caption auto-written from <span className="font-medium">{it.product.trim().slice(0, 60)}</span> (3 hashtags + #ad).</>
+                      : <>No product set — the on-screen caption is used as the Reel caption.</>}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mb-4">
+              Style: {STYLES.find(s => s.key === bStyle)?.label} · Position: {POSITIONS.find(p => p.key === bPos)?.label}
+            </p>
+            {err && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5 mb-3"><AlertCircle size={12} /> {err}</p>}
+            <div className="flex gap-2">
+              <button onClick={() => setReviewing(false)} disabled={submitting} className="flex-1 px-4 py-2 rounded-lg text-sm font-semibold border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50">
+                Back
+              </button>
+              <button onClick={confirmSchedule} disabled={submitting} className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50" style={{ background: 'linear-gradient(90deg, #F58529, #DD2A7B, #8134AF)' }}>
+                {submitting ? <><Loader2 size={14} className="animate-spin" /> Scheduling…</> : <><Instagram size={14} /> Confirm &amp; schedule {readyItems.length} post{readyItems.length > 1 ? 's' : ''}</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
