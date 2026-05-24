@@ -633,7 +633,7 @@ Output only valid JSON. No explanation, no markdown.`,
     try {
       const sources = `=== VIDEO TRANSCRIPT ===\n${(transcript || '').slice(0, 18000) || '(no transcript provided)'}\n\n=== PRODUCT INFO ===\n${(productResearch || '').slice(0, 2500) || '(none provided)'}`
       const message = await this.client.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 8000,
         system: 'You are a meticulous fact-checking editor for affiliate product posts. You remove invented product facts while preserving the writing and all HTML exactly.',
         messages: [{
@@ -660,12 +660,12 @@ ${sources}
 === POST HTML (return the corrected version) ===
 ${content}`,
         }],
-      })
+      }, { timeout: 45000 }) // hard cap so the fact-check can never eat the image-generation budget
       let out = message.content.filter(b => b.type === 'text').map(b => (b as Anthropic.TextBlock).text).join('').trim()
       // Strip accidental markdown code fences.
       out = out.replace(/^```(?:html)?\s*/i, '').replace(/\s*```$/i, '').trim()
       const u = usageFromAnthropic(message)
-      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_factcheck', model: 'claude-sonnet-4-6', input: u.input, output: u.output })
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_factcheck', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
 
       // Safety guards — never let the fact-check damage a post:
       if (!out || out.length < content.length * 0.5) return content // truncated / over-stripped
