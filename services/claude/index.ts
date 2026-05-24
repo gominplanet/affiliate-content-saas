@@ -196,7 +196,7 @@ CRITICAL RULES — FOLLOW STRICTLY
 
 9. PRODUCT FACTS — NEVER INVENT SPECS OR FEATURES. Do NOT state any product spec,
    number, measurement, dimension, weight, capacity, battery/run time, wattage,
-   speed, material, finish, model number, price, included accessory, warranty,
+   speed, material, finish, model number, included accessory, warranty,
    certification, ingredient, compatibility, or performance/result claim UNLESS it
    appears explicitly in the transcript or the PRODUCT INFO block. If a detail
    isn't given, OMIT it — never estimate, approximate, round, guess, or fill in a
@@ -206,6 +206,14 @@ CRITICAL RULES — FOLLOW STRICTLY
    so. When you lack a spec, describe what the reviewer showed or said instead of
    asserting a number. A made-up spec is far worse than an omitted one — when in
    doubt, leave it out.
+
+10. NEVER STATE PRICES OR DISCOUNTS — Do NOT write any specific price, list price,
+   sale price, dollar/currency amount, or discount percentage anywhere in the post
+   (no "$49.99", "was $68.99", "28% off", "on sale for", "under $50", "only $X").
+   Prices change constantly, so a hard number makes the post WRONG within days even
+   if it's right today. Instead, always point readers to the live price: "check the
+   current price", "see today's price at the link", "current pricing is on the
+   product page". This applies even if a price appears in the PRODUCT INFO — omit it.
 
 ═══════════════════════════════════════
 HUMAN WRITING — NON-NEGOTIABLE
@@ -471,6 +479,7 @@ BLOCK 2 rules:
 
 QUALITY CHECK:
 ✅ Written entirely in the FIRST PERSON — no "the reviewer", "she/he", or a name anywhere
+✅ No specific prices, dollar amounts, or discount percentages — readers are pointed to the live price
 ✅ Your exact phrases and vocabulary used throughout
 ✅ Transcript referenced in every section
 ✅ Affiliate link 3+ times (intro, body, mid-article button, final CTA)
@@ -637,6 +646,8 @@ For any product fact that is NOT supported by the transcript or product info:
 - Remove it, or minimally rewrite the sentence to drop the unsupported detail while keeping it natural and readable.
 - Do NOT replace it with a different invented fact, and do NOT add any new facts.
 - Direct quotes and the reviewer's stated opinions are fine to keep as long as they appear in the transcript.
+
+ALSO — PRICES: remove EVERY specific price, currency amount, list/sale price, and discount percentage (e.g. "$49.99", "was $68.99", "28% off", "under $50", "only $X"), EVEN IF it appears in the sources — prices go stale and make the post wrong. Replace with neutral live-price phrasing like "check the current price" / "see today's price at the link". Do not leave any "$" amount or "% off" in the body.
 
 OUTPUT RULES (critical):
 - Return the FULL corrected post as raw HTML and NOTHING else — no preamble, no markdown fences, no commentary.
