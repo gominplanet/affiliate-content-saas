@@ -165,8 +165,8 @@ export async function POST(request: Request) {
 
     const prompt = `Professional headshot portrait, photorealistic, high resolution.
 
-REFERENCE IMAGES: all of the provided photos are the SAME ONE person. Use them ONLY to capture that person's exact facial identity, hair, and likeness.
-IDENTITY (critical): render EXACTLY that one person. Do NOT blend, merge, average, or mix in any other face. It must clearly be the same individual — flattering but unmistakably them.
+REFERENCE IMAGES: use these ONLY to capture the MAIN subject's exact facial identity, hair, and likeness. The photos may also contain OTHER people (a partner or friend) — IGNORE everyone else; lock onto the single most prominent main subject (the largest, most central face).
+IDENTITY (critical): render EXACTLY that one person, completely ALONE. Do NOT blend, merge, average, or mix in any other face. There must be ONLY ONE person in the output — absolutely no second person, partner, companion, or any extra face/head/shoulder/arm of anyone else anywhere in the frame. It must clearly be the same individual — flattering but unmistakably them.
 
 SHOT: head-and-shoulders portrait, person centred, looking at the camera, relaxed confident professional expression, natural realistic skin texture (not plastic or over-retouched), flattering professional lighting, sharp focus on the eyes.
 LOOK: ${styleLine}${custom ? `\nADDITIONAL DIRECTION: ${custom}` : ''}
