@@ -741,6 +741,24 @@ function VideoStudioCard({ video, userTier, playlists }: {
             octx.putImageData(imgData, 0, 0)
             source = oc
 
+            // Feather the alpha edge ~1.5px so the cut-out blends into the scene
+            // instead of reading as a hard pasted sticker. Drawing a blurred copy
+            // with destination-in erodes the edge into a soft transition.
+            try {
+              const feather = document.createElement('canvas')
+              feather.width = iw; feather.height = ih
+              const fctx = feather.getContext('2d')
+              if (fctx) {
+                fctx.drawImage(oc, 0, 0)
+                fctx.globalCompositeOperation = 'destination-in'
+                fctx.filter = 'blur(1.5px)'
+                fctx.drawImage(oc, 0, 0)
+                fctx.filter = 'none'
+                fctx.globalCompositeOperation = 'source-over'
+                source = feather
+              }
+            } catch { /* keep the un-feathered cut-out */ }
+
             // Split the columns into runs separated by empty (fully transparent)
             // gaps and keep the HEAVIEST run — that's the main subject. A
             // companion standing apart with a gap between them becomes its own,
