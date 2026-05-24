@@ -538,6 +538,17 @@ export async function POST(request: Request) {
       engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n' + affiliateUrl
     }
 
+    // ── FTC disclosure ────────────────────────────────────────────────────────
+    // Affiliate / sponsored content must be labelled. Append "#ad #sponsored"
+    // at the very end of the pinned comment (product mode only), unless an
+    // equivalent disclosure is already present.
+    if (affiliateUrl && engagementResult.pinnedComment) {
+      const lc = engagementResult.pinnedComment.toLowerCase()
+      if (!lc.includes('#ad') && !lc.includes('#sponsored')) {
+        engagementResult.pinnedComment = engagementResult.pinnedComment.trimEnd() + '\n\n#ad #sponsored'
+      }
+    }
+
     // ── Assemble description ──────────────────────────────────────────────────
     // Honor the creator's explicit preference (Brand Profile → Brand
      // Outreach Contact). Fall back to whichever channel they actually
