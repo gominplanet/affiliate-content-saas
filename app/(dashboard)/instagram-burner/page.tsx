@@ -2,8 +2,10 @@
 
 /**
  * Instagram Burner — upload a vertical video and burn a caption (e.g.
- * "LINK IN BIO") into the lower third via Cloudinary, then preview + download
- * the captioned video to post on Reels / Stories / TikTok. Pro-only.
+ * "LINK IN BIO") into the lower third via Cloudinary, then preview the result.
+ * From there the user can explicitly publish it as a Reel to their connected
+ * Instagram (separate action — never auto-posted) or download it for Reels /
+ * Stories / TikTok. Pro-only.
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
@@ -40,6 +42,7 @@ export default function InstagramBurnerPage() {
   const [burning, setBurning] = useState(false)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [igCaption, setIgCaption] = useState<string | null>(null)
+  const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState(false)
   const [igError, setIgError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -102,19 +105,37 @@ export default function InstagramBurnerPage() {
           position,
           style,
           product: product.trim() || undefined,
-          autoPublish: true,
         }),
       })
       const d = await res.json().catch(() => ({} as Record<string, unknown>))
       if (!res.ok) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
       setResultUrl(d.url as string)
       setIgCaption((d.caption as string) || null)
-      setPublished(!!d.published)
-      setIgError((d.igError as string) || null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Burn failed')
     } finally {
       setBurning(false)
+    }
+  }
+
+  // Explicit, user-initiated publish — kept separate from burn() so we never
+  // auto-post (Meta content-publishing policy requires an explicit action).
+  async function publishToIg() {
+    if (!resultUrl) return
+    setPublishing(true); setIgError(null)
+    try {
+      const res = await fetch('/api/instagram/publish-burned', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl: resultUrl, caption: igCaption ?? caption.trim() ?? 'LINK IN BIO' }),
+      })
+      const d = await res.json().catch(() => ({} as Record<string, unknown>))
+      if (!res.ok || d.published !== true) throw new Error((d.error as string) || `Failed (HTTP ${res.status})`)
+      setPublished(true)
+    } catch (e) {
+      setIgError(e instanceof Error ? e.message : 'Publish failed')
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -257,18 +278,7 @@ export default function InstagramBurnerPage() {
                   {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                   <video src={resultUrl} controls playsInline className="w-full rounded-lg bg-black max-h-[60vh]" />
 
-                  {/* Publish status */}
-                  {published ? (
-                    <div className="flex items-center gap-1.5 rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      <Instagram size={13} className="text-[#E1306C] flex-shrink-0" /> Posted to your Instagram as a Reel.
-                    </div>
-                  ) : igError ? (
-                    <div className="flex items-start gap-1.5 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
-                      <AlertCircle size={13} className="text-[#ff9500] flex-shrink-0 mt-0.5" /> Couldn’t auto-post ({igError}). Download below and post it manually.
-                    </div>
-                  ) : null}
-
-                  {/* Composed Reel caption */}
+                  {/* Composed Reel caption — review before publishing */}
                   {igCaption && (
                     <div className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5">
                       <div className="flex items-center justify-between mb-1">
@@ -279,6 +289,30 @@ export default function InstagramBurnerPage() {
                       </div>
                       <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">{igCaption}</pre>
                     </div>
+                  )}
+
+                  {/* Publish status / explicit publish action */}
+                  {published ? (
+                    <div className="flex items-center gap-1.5 rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      <Instagram size={13} className="text-[#E1306C] flex-shrink-0" /> Posted to your Instagram as a Reel.
+                    </div>
+                  ) : (
+                    <>
+                      {igError && (
+                        <div className="flex items-start gap-1.5 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/25 px-3 py-2 text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          <AlertCircle size={13} className="text-[#ff9500] flex-shrink-0 mt-0.5" /> Couldn’t publish ({igError}). You can download below and post it manually.
+                        </div>
+                      )}
+                      <button
+                        onClick={publishToIg}
+                        disabled={publishing}
+                        className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                        style={{ background: 'linear-gradient(90deg, #F58529, #DD2A7B, #8134AF)' }}
+                      >
+                        {publishing ? <><Loader2 size={13} className="animate-spin" /> Publishing to Instagram…</> : <><Instagram size={13} /> Publish to Instagram</>}
+                      </button>
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] text-center -mt-1">Review the video and caption above, then publish when you’re ready. Nothing is posted automatically.</p>
+                    </>
                   )}
 
                   <button onClick={download} className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90">

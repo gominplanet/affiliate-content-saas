@@ -2,19 +2,19 @@
  * POST /api/instagram/burn
  *
  * Instagram Burner — takes a user-uploaded video (public URL), burns a styled
- * caption (e.g. "LINK IN BIO") into it via Cloudinary, optionally researches a
- * product (ASIN or URL) to compose a Reel caption (3 niche hashtags + FTC
- * disclaimer), and auto-publishes the Reel to the connected Instagram account.
- * Pro-only. Returns the burned video URL + the composed caption + publish status.
+ * caption (e.g. "LINK IN BIO") into it via Cloudinary, and optionally researches
+ * a product (ASIN or URL) to compose a Reel caption (3 niche hashtags + FTC
+ * disclaimer). Returns the burned video URL + the composed caption for the user
+ * to review. This route does NOT publish — publishing is a separate, explicit
+ * user action via /api/instagram/publish-burned (Meta policy: no auto-posting).
+ * Pro-only.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
+import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { recordUsage } from '@/lib/ai-usage'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
-import { resolveSocialAccount } from '@/lib/social-accounts'
-import { publishMedia } from '@/services/instagram'
 
 export const maxDuration = 300
 
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
     const body = await request.json() as {
       videoUrl?: string; caption?: string; position?: string; style?: string
-      product?: string; autoPublish?: boolean
+      product?: string
     }
     const videoUrl = (body.videoUrl || '').trim()
     if (!/^https:\/\//i.test(videoUrl)) return NextResponse.json({ error: 'Upload a video first.' }, { status: 400 })
@@ -54,7 +54,6 @@ export async function POST(request: Request) {
     const position = (POSITIONS.includes(body.position as OverlayPosition) ? body.position : 'lower-third') as OverlayPosition
     const style = (STYLES.includes(body.style as CaptionStyle) ? body.style : 'white-pill') as CaptionStyle
     const productInput = (body.product || '').trim()
-    const autoPublish = body.autoPublish !== false
 
     // ── 1. Burn the styled caption into the video (1080×1920) ─────────────────
     const burned = await overlayCaptionOnVideo(videoUrl, overlayText, { position, style })
@@ -64,46 +63,15 @@ export async function POST(request: Request) {
     recordUsage({ userId: user.id, tier, feature: 'instagram_burn', model: 'cloudinary', images: 1 })
 
     // ── 2. Research the product (if given) + compose the Reel caption ─────────
+    // Publishing is intentionally NOT done here. The user reviews the preview +
+    // caption, then publishes via an explicit action (/api/instagram/publish-burned).
     const productContext = productInput ? await researchProductContext(productInput, { userId: user.id, tier }) : ''
     const composedCaption = productContext ? await composeReelCaption(productContext, { userId: user.id, tier }) : null
-
-    // ── 3. Auto-publish the Reel to the connected Instagram account ───────────
-    let published = false
-    let igError: string | null = null
-    if (autoPublish) {
-      if (!tierAllowsSocial(tier, 'instagram')) {
-        igError = 'Instagram publishing requires Pro.'
-      } else {
-        const igAccount = await resolveSocialAccount(supabase, user.id, 'instagram', {
-          allowSelection: true,
-          legacy: { externalId: intRow?.instagram_user_id, accessToken: intRow?.instagram_access_token, displayName: intRow?.instagram_username },
-        })
-        if (!igAccount) {
-          igError = 'Instagram not connected — connect it under Setup → Integrations to auto-publish.'
-        } else {
-          try {
-            await publishMedia({
-              userId: igAccount.externalId,
-              accessToken: igAccount.accessToken,
-              mediaType: 'REELS',
-              videoUrl: burned.url,
-              caption: composedCaption ?? `${overlayText}`,
-              shareToFeed: true,
-            })
-            published = true
-          } catch (e) {
-            igError = e instanceof Error ? e.message : String(e)
-          }
-        }
-      }
-    }
 
     return NextResponse.json({
       ok: true,
       url: burned.url,
       caption: composedCaption,
-      published,
-      igError,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
