@@ -32,6 +32,7 @@ async function uploadBrandImage(
 
 interface GearItem { name: string; url: string }
 interface GearSection { title: string; items: GearItem[] }
+interface FacebookGroup { name: string; url: string }
 
 // ─── Amazon-style niches ──────────────────────────────────────────────────────
 const NICHES = [
@@ -112,6 +113,9 @@ interface BrandData {
   // Writing Style / About You / Target Reader / Words to Avoid now
   // live on the LEARN page (single editing surface for voice).
   gear_sections: GearSection[]
+  /** Facebook Groups the user admins — saved for one-click manual sharing
+   *  (Meta's API can't post to Groups, only Pages). */
+  facebook_groups: FacebookGroup[]
   logo_url: string
   header_banner_url: string
   headshot_url: string
@@ -189,6 +193,7 @@ const DEFAULT: BrandData = {
   primary_color: '#0071e3',
   secondary_color: '#34c759',
   gear_sections: [],
+  facebook_groups: [],
   logo_url: '',
   header_banner_url: '',
   headshot_url: '',
@@ -264,6 +269,7 @@ export default function BrandPage() {
         primary_color: row.primary_color ?? '#0071e3',
         secondary_color: row.secondary_color ?? '#34c759',
         gear_sections: row.gear_sections ?? [],
+        facebook_groups: row.facebook_groups ?? [],
         logo_url: row.logo_url ?? '',
         header_banner_url: row.header_banner_url ?? '',
         headshot_url: row.headshot_url ?? '',
@@ -680,6 +686,62 @@ export default function BrandPage() {
                     placeholder={placeholder}
                     className="input-field text-sm"
                   />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Facebook Groups — for one-click manual sharing */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Facebook Groups</h2>
+              <button
+                type="button"
+                onClick={() => set('facebook_groups', [...data.facebook_groups, { name: '', url: '' }])}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#0071e3] hover:underline"
+              >
+                <Plus size={12} /> Add group
+              </button>
+            </div>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              Paste the links to Facebook Groups you admin. When you push a post to Facebook, we&apos;ll list them so you can open each one and paste your post in (Meta&apos;s API can&apos;t post to Groups — only Pages).
+            </p>
+            {data.facebook_groups.length === 0 && (
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] italic">No groups yet — add one to enable one-click sharing.</p>
+            )}
+            <div className="space-y-2">
+              {data.facebook_groups.map((g, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={g.name}
+                    onChange={(e) => {
+                      const updated = [...data.facebook_groups]
+                      updated[i] = { ...updated[i], name: e.target.value }
+                      set('facebook_groups', updated)
+                    }}
+                    placeholder="Group name"
+                    className="input-field text-sm w-1/3"
+                  />
+                  <input
+                    type="text"
+                    value={g.url}
+                    onChange={(e) => {
+                      const updated = [...data.facebook_groups]
+                      updated[i] = { ...updated[i], url: e.target.value }
+                      set('facebook_groups', updated)
+                    }}
+                    placeholder="facebook.com/groups/yourgroup"
+                    className="input-field text-sm flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => set('facebook_groups', data.facebook_groups.filter((_, idx) => idx !== i))}
+                    className="text-[#86868b] hover:text-[#ff3b30] p-1"
+                    title="Remove group"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               ))}
             </div>
