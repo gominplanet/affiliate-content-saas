@@ -1261,7 +1261,7 @@ function InstagramPublishModal({
             <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
               {videoKind === 'horizontal'
                 ? '1. Instagram image (4:5, auto-composed from your thumbnail)'
-                : '1. Vertical video (9:16, MP4, <100MB)'}
+                : '1. Vertical video (9:16, MP4, <300MB)'}
             </p>
             {existingUrl ? (
               videoKind === 'horizontal' ? (
@@ -1477,7 +1477,7 @@ function InstagramPublishModal({
                   <>
                     <Wand2 size={18} className="text-[#86868b] dark:text-[#8e8e93] mb-2" />
                     <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Click to upload vertical MP4</p>
-                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3–90 seconds, under 100MB</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">9:16 aspect ratio, 3–90 seconds, under 300MB</p>
                   </>
                 )}
               </label>
