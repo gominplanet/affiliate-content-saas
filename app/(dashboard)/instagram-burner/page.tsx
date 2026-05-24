@@ -29,6 +29,7 @@ const STYLES: Array<{ key: string; label: string; desc: string }> = [
 export default function InstagramBurnerPage() {
   const supabase = createBrowserClient()
   const [tier, setTier] = useState('trial')
+  const [igUsername, setIgUsername] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [mode, setMode] = useState<'single' | 'batch'>('single')
@@ -53,9 +54,11 @@ export default function InstagramBurnerPage() {
     const { data: { user } } = await supabase.auth.getUser()
     let resolvedTier = 'trial'
     if (user) {
+      // Select only non-sensitive columns — never the access token.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+      const { data } = await (supabase as any).from('integrations').select('tier,instagram_username').eq('user_id', user.id).single()
       resolvedTier = (data?.tier as string) || 'trial'
+      setIgUsername((data?.instagram_username as string) || null)
     }
     setTier(effectiveTier(resolvedTier))
     setLoading(false)
@@ -183,6 +186,19 @@ export default function InstagramBurnerPage() {
           <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center"><Loader2 size={14} className="animate-spin" /> Loading…</div>
         ) : (
           <>
+            {/* Connected Instagram account (profile info read via instagram_business_basic) */}
+            {igUsername ? (
+              <div className="flex items-center gap-2 mb-4 rounded-lg border border-[#E1306C]/25 bg-[#E1306C]/5 px-3 py-2 w-fit">
+                <Instagram size={15} className="text-[#E1306C] flex-shrink-0" />
+                <span className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">Connected as <span className="font-semibold">@{igUsername}</span></span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 mb-4 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2 w-fit">
+                <Instagram size={15} className="text-[#86868b] flex-shrink-0" />
+                <span className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">No Instagram connected — <Link href="/setup?tab=integrations" className="text-[#0071e3] font-semibold hover:underline">connect under Setup → Integrations</Link> to publish.</span>
+              </div>
+            )}
+
             <div className="flex gap-2 mb-4">
               <button onClick={() => setMode('single')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'single' ? 'border-[#0071e3] bg-[#0071e3]/5 text-[#0071e3]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Single video</button>
               <button onClick={() => setMode('batch')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'batch' ? 'border-[#0071e3] bg-[#0071e3]/5 text-[#0071e3]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Batch &amp; schedule · up to 5</button>
