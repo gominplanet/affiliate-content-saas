@@ -60,7 +60,9 @@ export default function InstagramBurnerPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in')
       const ext = file.name.split('.').pop()?.toLowerCase() || 'mp4'
-      const path = `${user.id}/burner/${crypto.randomUUID()}.${ext}`
+      // Match the proven IG-upload path shape ({uid}/{file}) — the bucket's RLS
+      // policy only accepts the user id as the first folder, no extra subfolder.
+      const path = `${user.id}/burner-${crypto.randomUUID()}.${ext}`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: upErr } = await (supabase.storage as any).from('instagram-videos').upload(path, file, {
         cacheControl: '3600', upsert: false, contentType: file.type || 'video/mp4',
