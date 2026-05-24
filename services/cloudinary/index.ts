@@ -75,6 +75,25 @@ function placement(pos: OverlayPosition): { gravity: string; y: number } {
   }
 }
 
+/** Poll a Cloudinary derived-video URL until it serves real bytes. Cloudinary
+ *  generates video derivations on first request and returns 423 (Locked) while
+ *  processing, then 200/206 once ready. Returns false on timeout. */
+async function waitForVideo(url: string, timeoutMs: number): Promise<boolean> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-1' } })
+      if (res.status === 200 || res.status === 206) {
+        const len = res.headers.get('content-length')
+        if (!len || parseInt(len, 10) > 0) return true
+      }
+      // 423 / 420 = still processing → keep polling.
+    } catch { /* transient — retry */ }
+    await new Promise(r => setTimeout(r, 3000))
+  }
+  return false
+}
+
 export async function overlayCaptionOnVideo(
   sourceVideoUrl: string,
   caption = 'LINK IN BIO',
@@ -83,31 +102,44 @@ export async function overlayCaptionOnVideo(
   if (!ensureConfig() || !sourceVideoUrl) return null
   try {
     const { gravity, y } = placement(opts?.position ?? 'lower-third')
-    const res = await cloudinary.uploader.upload(sourceVideoUrl, {
+
+    // 1. Upload the source video (no transform yet).
+    const up = await cloudinary.uploader.upload(sourceVideoUrl, {
       resource_type: 'video',
       folder: 'ig-overlays',
-      eager: [{
-        // Chained steps: 1) normalize to the Instagram Reel spec (1080×1920,
-        // 9:16, center-cropped + scaled, h264 mp4), then 2) burn the caption.
-        // Forcing 1080×1920 also keeps the overlay's pixel placement exact.
-        transformation: [
-          { width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264' },
-          {
-            overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: caption },
-            color: 'white',
-            background: '#000000a6', // translucent black pill behind the text
-            radius: 20,
-            gravity,
-            y,
-          },
-        ],
-        format: 'mp4',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any],
-      eager_async: false,
     })
-    const url = res.eager?.[0]?.secure_url || res.secure_url
-    return url ? { url, publicId: res.public_id } : null
+    const publicId = up.public_id
+
+    // 2. Build the derived URL: normalize to the IG Reel spec (1080×1920, 9:16,
+    //    center-crop + scale, h264 mp4), then burn the caption.
+    const url = cloudinary.url(publicId, {
+      resource_type: 'video',
+      secure: true,
+      format: 'mp4',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      transformation: [
+        { width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264' },
+        {
+          overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: caption },
+          color: 'white',
+          background: '#000000a6',
+          radius: 20,
+          gravity,
+          y,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ] as any,
+    })
+
+    // 3. Cloudinary renders video derivations lazily and returns 423 while
+    //    processing. Poll until it actually serves bytes so we never hand back
+    //    a not-ready (0-byte) URL to the user or Instagram.
+    const ready = await waitForVideo(url, 120_000)
+    if (!ready) {
+      console.warn('[cloudinary] derived video not ready within timeout')
+      return null
+    }
+    return { url, publicId }
   } catch (e) {
     console.warn('[cloudinary] video overlay failed:', e instanceof Error ? e.message : String(e))
     return null
