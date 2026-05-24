@@ -1102,10 +1102,11 @@ function InstagramPublishModal({
       setUploadError('Please select a video file (MP4 recommended).')
       return
     }
-    // 100MB cap (Vercel Pro function payload limit, with headroom). For
-    // bigger videos the user has to compress first.
-    if (file.size > 100 * 1024 * 1024) {
-      setUploadError(`File is ${(file.size / 1024 / 1024).toFixed(1)}MB — Instagram videos must be under 100MB. Compress and retry.`)
+    // 300MB cap. The upload goes browser → Supabase Storage directly (not
+    // through a Vercel function), so the ceiling is the Supabase bucket's
+    // file_size_limit (set to 300MB) — well within Instagram's ~1GB Reel limit.
+    if (file.size > 300 * 1024 * 1024) {
+      setUploadError(`File is ${(file.size / 1024 / 1024).toFixed(1)}MB — videos must be under 300MB. Compress and retry.`)
       return
     }
     setUploading(true)
