@@ -10,7 +10,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
-import { cloudinaryConfigured, overlayCaptionOnVideo, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
+import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { recordUsage, recordAnthropicUsage } from '@/lib/ai-usage'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
     // ── 1. Burn the styled caption into the video (1080×1920) ─────────────────
     const burned = await overlayCaptionOnVideo(videoUrl, overlayText, { position, style })
     if (!burned?.url) {
-      return NextResponse.json({ error: 'Could not burn the caption onto the video. Please try again.' }, { status: 500 })
+      return NextResponse.json({ error: `Could not burn the caption: ${getLastOverlayError() || 'unknown error'}` }, { status: 500 })
     }
     recordUsage({ userId: user.id, tier, feature: 'instagram_burn', model: 'cloudinary', images: 1 })
 

@@ -87,23 +87,38 @@ function placement(pos: OverlayPosition): { gravity: string; y: number } {
   }
 }
 
+/** Last failure reason from overlayCaptionOnVideo — surfaced by the burn route
+ *  so we can see the real Cloudinary error instead of a generic message. */
+let lastOverlayError: string | null = null
+export function getLastOverlayError(): string | null { return lastOverlayError }
+
 /** Poll a Cloudinary derived-video URL until it serves real bytes. Cloudinary
- *  generates video derivations on first request and returns 423 (Locked) while
- *  processing, then 200/206 once ready. Returns false on timeout. */
-async function waitForVideo(url: string, timeoutMs: number): Promise<boolean> {
+ *  renders video derivations on first request and returns 423 while processing,
+ *  then 200/206 once ready. A 4xx means the transformation is invalid (won't
+ *  fix itself) — bail early with the body. Returns ready + a detail string. */
+async function waitForVideo(url: string, timeoutMs: number): Promise<{ ready: boolean; detail: string }> {
   const start = Date.now()
+  let last = 'no response'
   while (Date.now() - start < timeoutMs) {
     try {
       const res = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-1' } })
       if (res.status === 200 || res.status === 206) {
         const len = res.headers.get('content-length')
-        if (!len || parseInt(len, 10) > 0) return true
+        if (!len || parseInt(len, 10) > 0) return { ready: true, detail: 'ok' }
+        last = `200 but empty (content-length=${len})`
+      } else if (res.status === 423 || res.status === 420) {
+        last = `processing (${res.status})`
+      } else {
+        const body = await res.text().catch(() => '')
+        last = `HTTP ${res.status}: ${body.slice(0, 220)}`
+        if (res.status >= 400 && res.status < 500) return { ready: false, detail: last } // invalid transform — stop
       }
-      // 423 / 420 = still processing → keep polling.
-    } catch { /* transient — retry */ }
+    } catch (e) {
+      last = `fetch error: ${e instanceof Error ? e.message : String(e)}`
+    }
     await new Promise(r => setTimeout(r, 3000))
   }
-  return false
+  return { ready: false, detail: `timeout after ${Math.round(timeoutMs / 1000)}s — last: ${last}` }
 }
 
 export async function overlayCaptionOnVideo(
@@ -112,6 +127,7 @@ export async function overlayCaptionOnVideo(
   opts?: { position?: OverlayPosition; fontSize?: number; style?: CaptionStyle },
 ): Promise<OverlaidVideo | null> {
   if (!ensureConfig() || !sourceVideoUrl) return null
+  lastOverlayError = null
   try {
     const { gravity, y } = placement(opts?.position ?? 'lower-third')
     const sp = styleParams(opts?.style ?? 'white-pill')
@@ -147,14 +163,16 @@ export async function overlayCaptionOnVideo(
     // 3. Cloudinary renders video derivations lazily and returns 423 while
     //    processing. Poll until it actually serves bytes so we never hand back
     //    a not-ready (0-byte) URL to the user or Instagram.
-    const ready = await waitForVideo(url, 120_000)
+    const { ready, detail } = await waitForVideo(url, 120_000)
     if (!ready) {
-      console.warn('[cloudinary] derived video not ready within timeout')
+      lastOverlayError = detail
+      console.warn('[cloudinary] derived video not ready:', detail, '| url:', url)
       return null
     }
     return { url, publicId }
   } catch (e) {
-    console.warn('[cloudinary] video overlay failed:', e instanceof Error ? e.message : String(e))
+    lastOverlayError = e instanceof Error ? e.message : String(e)
+    console.warn('[cloudinary] video overlay failed:', lastOverlayError)
     return null
   }
 }
