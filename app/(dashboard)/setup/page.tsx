@@ -1640,19 +1640,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           {instagram.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
 
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
-          Two flows based on your video orientation:
-        </p>
-        <ul className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 ml-1 flex flex-col gap-2 leading-relaxed">
-          <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Vertical Shorts → Reel + Story.</strong> You upload a 9:16 MP4 (one-time per review). We post it as a Reel with an AI-written caption and as a Story so you can drop a Link Sticker for affiliate clicks (5s of manual work — IG&apos;s API doesn&apos;t expose stickers).</li>
-          <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Long-form videos → auto-composed image post + Story.</strong> We build a 1080×1350 feed image and a 1080×1920 story image from your YouTube thumbnail, blog title, excerpt, and brand colors. Zero design work, no upload.</li>
-        </ul>
-        <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
-          <li>Your Instagram must be a <strong>Business or Creator</strong> account (Settings → Account type and tools → Switch to professional account).</li>
-          <li>Click <strong>Connect Instagram</strong> below — you&apos;ll be redirected to Instagram to authorize MVP Affiliate.</li>
-          <li>From <a href="/content" className="text-[#0071e3] hover:underline">Library &amp; Social Push</a>, click the Instagram pill on any review — modal walks you through the rest.</li>
-        </ol>
-
         {igNotice && <p className={`text-xs mb-3 ${igNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{igNotice.msg}</p>}
 
         {instagram.connected ? (
