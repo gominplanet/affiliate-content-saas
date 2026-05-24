@@ -87,12 +87,21 @@ export async function overlayCaptionOnVideo(
       resource_type: 'video',
       folder: 'ig-overlays',
       eager: [{
-        overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: caption },
-        color: 'white',
-        background: '#000000a6', // translucent black pill behind the text
-        radius: 20,
-        gravity,
-        y,
+        // Chained steps: 1) normalize to the Instagram Reel spec (1080×1920,
+        // 9:16, center-cropped + scaled, h264 mp4), then 2) burn the caption.
+        // Forcing 1080×1920 also keeps the overlay's pixel placement exact.
+        transformation: [
+          { width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264' },
+          {
+            overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: caption },
+            color: 'white',
+            background: '#000000a6', // translucent black pill behind the text
+            radius: 20,
+            gravity,
+            y,
+          },
+        ],
+        format: 'mp4',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any],
       eager_async: false,
