@@ -37,6 +37,18 @@ export function cloudinaryConfigured(): boolean {
   return !!((CLOUD && KEY && SECRET) || URL_VAR)
 }
 
+/** Diagnostic: verify the configured credentials actually work + report which
+ *  cloud is loaded, so we can confirm the env var is live and correct. */
+export async function cloudinaryPing(): Promise<{ ok: boolean; cloudName?: string; error?: string }> {
+  if (!ensureConfig()) return { ok: false, error: 'Not configured — set CLOUDINARY_URL (or the 3 discrete vars).' }
+  try {
+    await cloudinary.api.ping()
+    return { ok: true, cloudName: (cloudinary.config().cloud_name as string) || undefined }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export interface OverlaidVideo { url: string; publicId: string }
 
 /**
