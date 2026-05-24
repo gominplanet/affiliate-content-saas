@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, X, RefreshCw, CheckCircle, AlertCircle, Calendar } from 'lucide-react'
+import { Loader2, X, RefreshCw, CheckCircle, AlertCircle, Calendar, Copy, ExternalLink, Users } from 'lucide-react'
 
 /** Platform key the SocialPreviewModal accepts for scheduling. The cron
  *  worker handles the same set. */
@@ -34,6 +34,10 @@ export function SocialPreviewModal({
   onPublished,
   onScheduled,
   extraBody,
+  shareUrl,
+  shareHashtags,
+  shareDisclaimer,
+  facebookGroups,
 }: {
   /** Display label, e.g. "Threads" — shows in the modal header. */
   platform: string
@@ -55,6 +59,14 @@ export function SocialPreviewModal({
   /** Extra fields merged into every request body — e.g. a chosen
    *  { socialAccountId } for multi-account targeting. */
   extraBody?: Record<string, unknown>
+  /** Facebook-only manual-share extras. When `shareUrl` is provided, the modal
+   *  shows a copy-paste block (post text + hashtags + URL + disclaimer) and a
+   *  list of the user's saved Facebook Groups to open and paste into — Meta's
+   *  API can't post to Groups, only Pages. */
+  shareUrl?: string
+  shareHashtags?: string
+  shareDisclaimer?: string
+  facebookGroups?: Array<{ name: string; url: string }>
 }) {
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -71,6 +83,12 @@ export function SocialPreviewModal({
   const [scheduledAt, setScheduledAt] = useState<string>(() => defaultScheduleString())
   const [scheduling, setScheduling] = useState(false)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  // Assembled copy-paste block for manual Group sharing: the (edited) post
+  // text + hashtags + URL + FTC disclaimer. Reactive to textarea edits.
+  const groupCopy = [text.trim(), (shareHashtags || '').trim(), (shareUrl || '').trim(), (shareDisclaimer || '').trim()]
+    .filter(Boolean).join('\n\n')
 
   async function generate() {
     setLoadError(null)
@@ -223,6 +241,47 @@ export function SocialPreviewModal({
                   </summary>
                   <pre className="mt-2 p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 whitespace-pre-wrap font-mono leading-relaxed">{finalText}</pre>
                 </details>
+              )}
+
+              {/* Facebook manual-share: copy block + saved Groups. Only shown
+                  when the caller passes shareUrl (the Facebook flow). */}
+              {shareUrl && (
+                <div className="mb-4 rounded-xl border border-gray-200 dark:border-white/10 p-3 bg-[#f5f5f7] dark:bg-white/5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Post to a Facebook Group</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(groupCopy).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline"
+                    >
+                      {copied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Copy</>}
+                    </button>
+                  </div>
+                  <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-mono leading-relaxed max-h-32 overflow-y-auto p-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">{groupCopy}</pre>
+                  <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
+                    Copy this, then open a Group below and paste it into a new post. (Facebook can&apos;t post to Groups via API — Pages only.)
+                  </p>
+                  {facebookGroups && facebookGroups.length > 0 ? (
+                    <div className="mt-2 flex flex-col gap-1">
+                      {facebookGroups.filter(g => g.url?.trim()).map((g, i) => (
+                        <a
+                          key={i}
+                          href={g.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-[11px] text-[#1877f2] hover:underline"
+                        >
+                          <Users size={11} /> {g.name?.trim() || g.url} <ExternalLink size={9} />
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">
+                      No groups saved yet — add them in <a href="/brand" className="text-[#0071e3] hover:underline">Brand Profile</a> to list them here.
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* Schedule-for-later toggle + date picker (only when caller

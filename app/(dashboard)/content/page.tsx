@@ -1590,7 +1590,7 @@ function InstagramPublishModal({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, previewBeforePublish, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, previewBeforePublish, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -1609,6 +1609,8 @@ function VideoCard({
   userTier: 'trial' | 'creator' | 'pro' | 'admin'
   brandNiches: string[]
   customCategories: string[]
+  brandDisclaimer: string
+  brandFacebookGroups: Array<{ name: string; url: string }>
   previewBeforePublish: boolean
   onCustomCategoryAdded: (next: string[]) => void
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
@@ -1866,18 +1868,11 @@ function VideoCard({
     } finally { setLiPosting(false) }
   }
 
-  async function handleFacebookPost() {
+  function handleFacebookPost() {
     if (!post?.postId) return
-    if (previewBeforePublish) { setPreviewPlatform('facebook'); return }
-    setFbPosting(true)
-    try {
-      const res = await fetch('/api/blog/facebook-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.postId, socialAccountId: effectiveFbAccountId ?? undefined }),
-      })
-      await handleSocialResponse(res, 'Facebook', () => setFbPosted(true))
-    } finally { setFbPosting(false) }
+    // Facebook always opens the share popup — it carries the copy-for-Groups
+    // block + saved Group links alongside the publish-to-Page button.
+    setPreviewPlatform('facebook')
   }
 
   async function handleThreadsPost() {
@@ -2147,6 +2142,24 @@ function VideoCard({
               bluesky:  { endpoint: '/api/blog/bluesky-post',  color: '#1185fe', label: 'Bluesky',   onPublished: () => setBsPosted(true) },
               telegram: { endpoint: '/api/blog/telegram-post', color: '#229ED9', label: 'Telegram',  onPublished: () => setTgPosted(true) },
             }[previewPlatform]
+            // 3 hashtags for the Facebook Group copy block: brand niches first,
+            // padded with evergreen affiliate tags.
+            const fbHashtags = (() => {
+              const tags = (brandNiches || []).slice(0, 3).map(n => '#' + n.toLowerCase().replace(/[^a-z0-9]+/g, ''))
+              for (const e of ['#amazonfinds', '#founditonamazon', '#musthave']) {
+                if (tags.length >= 3) break
+                if (!tags.includes(e)) tags.push(e)
+              }
+              return tags.slice(0, 3).join(' ')
+            })()
+            const fbExtras = previewPlatform === 'facebook'
+              ? {
+                  shareUrl: post.url,
+                  shareHashtags: fbHashtags,
+                  shareDisclaimer: brandDisclaimer || '#ad #sponsored',
+                  facebookGroups: brandFacebookGroups,
+                }
+              : {}
             return (
               <SocialPreviewModal
                 platform={cfg.label}
@@ -2157,6 +2170,7 @@ function VideoCard({
                 onClose={() => setPreviewPlatform(null)}
                 onPublished={cfg.onPublished}
                 extraBody={previewPlatform === 'facebook' && effectiveFbAccountId ? { socialAccountId: effectiveFbAccountId } : undefined}
+                {...fbExtras}
               />
             )
           })()}
@@ -2369,6 +2383,8 @@ export default function ContentPage() {
   const [userTier, setUserTier] = useState<'trial' | 'creator' | 'pro' | 'admin'>('trial')
   const [brandNiches, setBrandNiches] = useState<string[]>([])
   const [customCategories, setCustomCategories] = useState<string[]>([])
+  const [brandDisclaimer, setBrandDisclaimer] = useState('')
+  const [brandFacebookGroups, setBrandFacebookGroups] = useState<Array<{ name: string; url: string }>>([])
   /** When true, social pill clicks open a preview/edit modal instead of one-click publishing.
    *  Persisted across sessions in localStorage so it sticks to the user's choice. */
   const [previewBeforePublish, setPreviewBeforePublish] = useState(false)
@@ -2466,7 +2482,7 @@ export default function ContentPage() {
 
     const [vids, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
       fetchAllVideos(),
-      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories').eq('user_id', user.id).single(),
+      sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tier').eq('user_id', user.id).single(),
       sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
     ])
@@ -2504,6 +2520,8 @@ export default function ContentPage() {
     }
     setBrandNiches(((b?.niches as string[] | null) ?? []))
     setCustomCategories(((b?.custom_categories as string[] | null) ?? []))
+    setBrandDisclaimer((b?.affiliate_disclaimer as string | null) ?? '')
+    setBrandFacebookGroups(Array.isArray(b?.facebook_groups) ? (b!.facebook_groups as Array<{ name: string; url: string }>) : [])
     setVideos(vids)
 
     const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
@@ -3502,6 +3520,8 @@ export default function ContentPage() {
                     userTier={userTier}
                     brandNiches={brandNiches}
                     customCategories={customCategories}
+                    brandDisclaimer={brandDisclaimer}
+                    brandFacebookGroups={brandFacebookGroups}
                     previewBeforePublish={previewBeforePublish}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
