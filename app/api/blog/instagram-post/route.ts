@@ -239,6 +239,20 @@ Return ONLY the caption text + hashtags.`,
         })
         if (feedCaption.length > 2200) feedCaption = feedCaption.slice(0, 2199) + '…'
       }
+      // Reel/feed captions can't carry a clickable URL, so direct people to the
+      // bio link — the standard creator CTA. Appended above any hashtag block.
+      if (feedCaption) {
+        const linkLine = '👆 Link in bio'
+        if (!/link in bio/i.test(feedCaption)) {
+          // Insert before the trailing hashtag line(s) so it reads naturally.
+          const lines = feedCaption.split('\n')
+          let firstTagIdx = lines.findIndex(l => /^\s*#/.test(l))
+          if (firstTagIdx === -1) firstTagIdx = lines.length
+          lines.splice(firstTagIdx, 0, '', linkLine, '')
+          feedCaption = lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+          if (feedCaption.length > 2200) feedCaption = feedCaption.slice(0, 2199) + '…'
+        }
+      }
     }
 
     if (dryRun) {
