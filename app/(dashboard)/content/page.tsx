@@ -2152,12 +2152,17 @@ function VideoCard({
               }
               return tags.slice(0, 3).join(' ')
             })()
+            const fbPageLabel = fbAccounts.find(a => a.id === effectiveFbAccountId)?.displayName
+              || fbAccounts.find(a => a.isDefault)?.displayName
+              || fbAccounts[0]?.displayName
+              || 'your connected Page'
             const fbExtras = previewPlatform === 'facebook'
               ? {
                   shareUrl: post.url,
                   shareHashtags: fbHashtags,
                   shareDisclaimer: brandDisclaimer || '#ad #sponsored',
                   facebookGroups: brandFacebookGroups,
+                  publishTargetLabel: fbPageLabel,
                 }
               : {}
             return (

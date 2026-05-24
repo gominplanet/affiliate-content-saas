@@ -38,6 +38,7 @@ export function SocialPreviewModal({
   shareHashtags,
   shareDisclaimer,
   facebookGroups,
+  publishTargetLabel,
 }: {
   /** Display label, e.g. "Threads" — shows in the modal header. */
   platform: string
@@ -67,6 +68,9 @@ export function SocialPreviewModal({
   shareHashtags?: string
   shareDisclaimer?: string
   facebookGroups?: Array<{ name: string; url: string }>
+  /** Name of the exact destination the Publish button posts to (e.g. the
+   *  selected Facebook Page). Shown next to the button so it's unambiguous. */
+  publishTargetLabel?: string
 }) {
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -318,6 +322,15 @@ export function SocialPreviewModal({
                 </div>
               )}
 
+              {publishTargetLabel && !scheduleEnabled && (
+                <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-[#1877f2]/8 border border-[#1877f2]/20 px-3 py-2">
+                  <CheckCircle size={12} className="text-[#1877f2] flex-shrink-0" />
+                  <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    Publish posts to your Page: <span className="font-semibold">{publishTargetLabel}</span>
+                  </span>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2">
                 <button
                   onClick={onClose}
@@ -347,7 +360,7 @@ export function SocialPreviewModal({
                   >
                     {publishing
                       ? <><Loader2 size={12} className="animate-spin" /> Publishing…</>
-                      : <><CheckCircle size={12} /> Publish to {platform}</>
+                      : <><CheckCircle size={12} /> Publish to {publishTargetLabel || platform}</>
                     }
                   </button>
                 )}
