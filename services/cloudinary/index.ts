@@ -52,14 +52,12 @@ export async function cloudinaryPing(): Promise<{ ok: boolean; cloudName?: strin
 export interface OverlaidVideo { url: string; publicId: string }
 
 /**
- * Upload `sourceVideoUrl` to Cloudinary and return a delivery URL with the
- * caption burned into the lower third (~75% down, centred) on a translucent
- * rounded pill for legibility. `y: 360` lifts it clear of Instagram's own
- * caption/buttons UI at the very bottom of a Reel. Returns null when Cloudinary
- * isn't configured or anything fails (caller uses the original video).
- *
- * Uses a synchronous eager transformation so the returned URL is render-ready
- * before we hand it to Instagram.
+ * Upload `sourceVideoUrl` to Cloudinary, normalize to 1080×1920, and return a
+ * delivery URL with the caption burned in at the chosen position/style. We poll
+ * the derived URL until Cloudinary finishes rendering (it serves 423 while
+ * processing) so the returned URL is render-ready before we hand it to the user
+ * or Instagram. Returns null when Cloudinary isn't configured or anything fails
+ * (callers fall back to the original video); the reason is in getLastOverlayError().
  */
 export type OverlayPosition = 'lower-third' | 'bottom' | 'center' | 'top'
 export type CaptionStyle = 'white-pill' | 'black-pill' | 'yellow-pill' | 'white-shadow'
