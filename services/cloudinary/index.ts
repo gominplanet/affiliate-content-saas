@@ -66,12 +66,14 @@ export type CaptionStyle = 'white-pill' | 'black-pill' | 'yellow-pill' | 'white-
 
 /** Visual look for the burned caption. */
 function styleParams(style: CaptionStyle): { color: string; background?: string; radius?: number; effect?: string } {
+  // Opaque hex6 backgrounds — Cloudinary rejects 8-digit (alpha) hex in the
+  // delivery URL, which 400s the whole transform.
   switch (style) {
-    case 'black-pill': return { color: 'black', background: '#ffffffd9', radius: 24 }
-    case 'yellow-pill': return { color: '#FFD400', background: '#000000a6', radius: 20 }
-    case 'white-shadow': return { color: 'white', effect: 'shadow:60' }
+    case 'black-pill': return { color: 'black', background: '#ffffff', radius: 24 }
+    case 'yellow-pill': return { color: '#ffd400', background: '#111111', radius: 20 }
+    case 'white-shadow': return { color: 'white', effect: 'shadow:50' }
     case 'white-pill':
-    default: return { color: 'white', background: '#000000a6', radius: 20 }
+    default: return { color: 'white', background: '#111111', radius: 20 }
   }
 }
 
@@ -131,6 +133,9 @@ export async function overlayCaptionOnVideo(
   try {
     const { gravity, y } = placement(opts?.position ?? 'lower-third')
     const sp = styleParams(opts?.style ?? 'white-pill')
+    // Cloudinary's Arial text layer can't render emoji / non-ASCII and 400s the
+    // transform — strip to plain text for the burned caption.
+    const safeCaption = (caption.replace(/[^\x20-\x7E]/g, '').replace(/\s{2,}/g, ' ').trim()) || 'LINK IN BIO'
 
     // 1. Upload the source video (no transform yet).
     const up = await cloudinary.uploader.upload(sourceVideoUrl, {
@@ -149,7 +154,7 @@ export async function overlayCaptionOnVideo(
       transformation: [
         { width: 1080, height: 1920, crop: 'fill', gravity: 'center', video_codec: 'h264' },
         {
-          overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: caption },
+          overlay: { font_family: 'Arial', font_size: opts?.fontSize ?? 64, font_weight: 'bold', text: safeCaption },
           color: sp.color,
           ...(sp.background ? { background: sp.background, radius: sp.radius ?? 20 } : {}),
           ...(sp.effect ? { effect: sp.effect } : {}),
