@@ -9,22 +9,32 @@
  */
 import { v2 as cloudinary } from 'cloudinary'
 
+// Accept EITHER the single CLOUDINARY_URL (cloudinary://key:secret@cloud — the
+// format Cloudinary hands you) OR the three discrete vars.
+const URL_VAR = process.env.CLOUDINARY_URL
 const CLOUD = process.env.CLOUDINARY_CLOUD_NAME
 const KEY = process.env.CLOUDINARY_API_KEY
 const SECRET = process.env.CLOUDINARY_API_SECRET
 
 let configured = false
 function ensureConfig(): boolean {
-  if (!CLOUD || !KEY || !SECRET) return false
-  if (!configured) {
+  if (configured) return true
+  if (CLOUD && KEY && SECRET) {
     cloudinary.config({ cloud_name: CLOUD, api_key: KEY, api_secret: SECRET, secure: true })
     configured = true
+    return true
   }
-  return true
+  if (URL_VAR) {
+    // The SDK parses CLOUDINARY_URL from the environment automatically.
+    cloudinary.config({ secure: true })
+    configured = true
+    return true
+  }
+  return false
 }
 
 export function cloudinaryConfigured(): boolean {
-  return !!(CLOUD && KEY && SECRET)
+  return !!((CLOUD && KEY && SECRET) || URL_VAR)
 }
 
 export interface OverlaidVideo { url: string; publicId: string }
