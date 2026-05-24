@@ -604,6 +604,64 @@ Output only valid JSON. No explanation, no markdown.`,
     }
   }
 
+  // Final pass — fact-check product claims against the ONLY sources of truth
+  // (transcript + product info) and strip/soften any spec or feature they don't
+  // support. Best-effort: on any failure or a suspicious result (truncated, or
+  // the affiliate link dropped), the original content stands — this can never
+  // break a post.
+  private async factCheckProductClaims(
+    content: string,
+    transcript: string,
+    productResearch: string | null | undefined,
+    ctx?: UsageCtx,
+  ): Promise<string> {
+    if (!content || content.length < 200) return content
+    try {
+      const sources = `=== VIDEO TRANSCRIPT ===\n${(transcript || '').slice(0, 18000) || '(no transcript provided)'}\n\n=== PRODUCT INFO ===\n${(productResearch || '').slice(0, 2500) || '(none provided)'}`
+      const message = await this.client.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+        system: 'You are a meticulous fact-checking editor for affiliate product posts. You remove invented product facts while preserving the writing and all HTML exactly.',
+        messages: [{
+          role: 'user',
+          content: `Below is a ready-to-publish affiliate blog post (HTML) and the ONLY two sources of truth for product facts: the video transcript and product info.
+
+Find every PRODUCT FACT in the post — specs, numbers, measurements, dimensions, weight, capacity, battery/run time, wattage, speed, materials, finishes, model numbers, prices, included accessories, warranty, certifications, ingredients, compatibility, and performance/result claims — and check each against the sources.
+
+For any product fact that is NOT supported by the transcript or product info:
+- Remove it, or minimally rewrite the sentence to drop the unsupported detail while keeping it natural and readable.
+- Do NOT replace it with a different invented fact, and do NOT add any new facts.
+- Direct quotes and the reviewer's stated opinions are fine to keep as long as they appear in the transcript.
+
+OUTPUT RULES (critical):
+- Return the FULL corrected post as raw HTML and NOTHING else — no preamble, no markdown fences, no commentary.
+- Preserve ALL HTML structure exactly: every Gutenberg block comment (<!-- wp:... -->), heading, list, the CTA card markup, images, and EVERY hyperlink — especially affiliate links (rel="noopener sponsored"). Do not drop, alter, or reorder any link or block.
+- Change as LITTLE as possible. Only touch unsupported product facts. If everything checks out, return the post completely unchanged.
+- Never use the word "honest".
+
+${sources}
+
+=== POST HTML (return the corrected version) ===
+${content}`,
+        }],
+      })
+      let out = message.content.filter(b => b.type === 'text').map(b => (b as Anthropic.TextBlock).text).join('').trim()
+      // Strip accidental markdown code fences.
+      out = out.replace(/^```(?:html)?\s*/i, '').replace(/\s*```$/i, '').trim()
+      const u = usageFromAnthropic(message)
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_factcheck', model: 'claude-sonnet-4-6', input: u.input, output: u.output })
+
+      // Safety guards — never let the fact-check damage a post:
+      if (!out || out.length < content.length * 0.5) return content // truncated / over-stripped
+      // Monetization guard: if the original had affiliate/sponsored links, the
+      // corrected version must keep them.
+      if (/rel="[^"]*sponsored/i.test(content) && !/rel="[^"]*sponsored/i.test(out)) return content
+      return out
+    } catch {
+      return content
+    }
+  }
+
   async generateBlogPost(
     brand: BrandProfile,
     video: VideoInput,
@@ -851,6 +909,7 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
         }
       }
       parsed.content = parsed.content.replace(/{VIDEO_ID}/g, video.videoId)
+      parsed.content = await this.factCheckProductClaims(parsed.content, video.transcript, video.productResearch, ctx)
       return parsed
     }
 
@@ -869,6 +928,10 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
       ...meta,
       content: contentMatch[1].replace(/{VIDEO_ID}/g, video.videoId),
     }
+
+    // Final fact-check pass — strip any product spec/feature the transcript +
+    // product info don't support. Best-effort (returns original on any issue).
+    parsed.content = await this.factCheckProductClaims(parsed.content, video.transcript, video.productResearch, ctx)
 
     return parsed
   }
