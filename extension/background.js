@@ -12,11 +12,12 @@
  * black frames, so a brief visible tab is the reliable trade-off.
  */
 
-const CAPTURE_TIMEOUT_MS = 30000
+const CAPTURE_TIMEOUT_MS = 50000
 
-// Self-contained capture routine injected into the YouTube tab. Must not
-// reference anything outside its own scope (it's serialized + injected).
-async function grabFrameInPage(seekFraction) {
+// Self-contained capture routine injected into the YouTube tab. Captures a
+// frame at EACH fraction in one page visit. Must not reference anything outside
+// its own scope (it's serialized + injected).
+async function grabFramesInPage(fractions) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
   const deadline = Date.now() + 25000
 
@@ -46,33 +47,12 @@ async function grabFrameInPage(seekFraction) {
     await sleep(500)
   }
 
-  // 3. Seek to the requested point and wait for the frame to settle.
-  const target = Math.max(1, Math.min(video.duration - 0.5, (seekFraction || 0.5) * video.duration))
-  await new Promise((resolve) => {
-    let done = false
-    const finish = () => { if (!done) { done = true; resolve() } }
-    video.addEventListener('seeked', finish, { once: true })
-    try { video.currentTime = target } catch (e) { finish() }
-    setTimeout(finish, 4000)
-  })
-  // Let the decoded frame actually paint.
-  if (video.requestVideoFrameCallback) {
-    await new Promise((resolve) => {
-      let settled = false
-      video.requestVideoFrameCallback(() => { settled = true; resolve() })
-      setTimeout(() => { if (!settled) resolve() }, 1200)
-    })
-  } else {
-    await sleep(600)
-  }
+  const canvas = document.createElement('canvas')
+  canvas.width = 1280
+  canvas.height = 720
+  const ctx = canvas.getContext('2d')
 
-  // 4. Draw to a 1280×720 canvas and export.
-  try {
-    const canvas = document.createElement('canvas')
-    canvas.width = 1280
-    canvas.height = 720
-    const ctx = canvas.getContext('2d')
-    // Cover-fit the video frame into 16:9.
+  const captureNow = () => {
     const vw = video.videoWidth || 1280
     const vh = video.videoHeight || 720
     const scale = Math.max(canvas.width / vw, canvas.height / vh)
@@ -80,18 +60,46 @@ async function grabFrameInPage(seekFraction) {
     const dh = vh * scale
     ctx.drawImage(video, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh)
     const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
-    if (!dataUrl || dataUrl.length < 2000) return { ok: false, error: 'blank-frame' }
-    return { ok: true, dataUrl }
-  } catch (e) {
-    // SecurityError = tainted canvas (shouldn't happen for MSE blobs, but guard).
-    return { ok: false, error: 'capture-failed:' + (e && e.message ? e.message : 'unknown') }
+    return dataUrl && dataUrl.length > 2000 ? dataUrl : null
   }
+
+  const frames = []
+  for (const f of fractions) {
+    // Seek to this fraction and wait for the frame to settle.
+    const target = Math.max(1, Math.min(video.duration - 0.5, f * video.duration))
+    await new Promise((resolve) => {
+      let done = false
+      const finish = () => { if (!done) { done = true; resolve() } }
+      video.addEventListener('seeked', finish, { once: true })
+      try { video.currentTime = target } catch (e) { finish() }
+      setTimeout(finish, 5000)
+    })
+    if (video.requestVideoFrameCallback) {
+      await new Promise((resolve) => {
+        let settled = false
+        video.requestVideoFrameCallback(() => { settled = true; resolve() })
+        setTimeout(() => { if (!settled) resolve() }, 1200)
+      })
+    } else {
+      await sleep(600)
+    }
+    try {
+      const d = captureNow()
+      if (d) frames.push(d)
+    } catch (e) { /* tainted/blank — skip this fraction */ }
+  }
+
+  if (frames.length === 0) return { ok: false, error: 'no-frames' }
+  return { ok: true, frames }
 }
 
-async function captureYouTubeFrame({ youtubeVideoId, seekFraction }) {
+async function captureYouTubeFrames({ youtubeVideoId, fractions }) {
   if (!youtubeVideoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(youtubeVideoId)) {
     return { ok: false, error: 'bad-video-id' }
   }
+  const fracs = Array.isArray(fractions) && fractions.length
+    ? fractions.filter((n) => typeof n === 'number' && n > 0 && n < 1).slice(0, 6)
+    : [0.5]
   let tabId = null
   const url = `https://www.youtube.com/watch?v=${youtubeVideoId}`
   try {
@@ -112,8 +120,8 @@ async function captureYouTubeFrame({ youtubeVideoId, seekFraction }) {
 
     const results = await chrome.scripting.executeScript({
       target: { tabId },
-      func: grabFrameInPage,
-      args: [typeof seekFraction === 'number' ? seekFraction : 0.5],
+      func: grabFramesInPage,
+      args: [fracs],
     })
     const out = results && results[0] && results[0].result
     return out || { ok: false, error: 'no-result' }
@@ -132,8 +140,12 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     return // sync response
   }
   if (msg.type === 'MVP_CAPTURE_FRAME') {
+    // Accept `fractions` (multi-frame, preferred) or legacy single `seekFraction`.
+    const fractions = Array.isArray(msg.fractions) && msg.fractions.length
+      ? msg.fractions
+      : [typeof msg.seekFraction === 'number' ? msg.seekFraction : 0.5]
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), CAPTURE_TIMEOUT_MS)
-    captureYouTubeFrame({ youtubeVideoId: msg.youtubeVideoId, seekFraction: msg.seekFraction })
+    captureYouTubeFrames({ youtubeVideoId: msg.youtubeVideoId, fractions })
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open

@@ -53,20 +53,31 @@ export async function isExtensionAvailable(): Promise<boolean> {
 }
 
 /**
- * Ask the extension to grab a real frame from the user's video. Returns a JPEG
- * data URL, or null on any failure (extension missing, ad blocked, blank frame,
- * timeout) — callers fall back to the maxres frame.
+ * Ask the extension to grab SEVERAL real frames from the user's video (one per
+ * fraction of the runtime). Returns an array of JPEG data URLs, or [] on any
+ * failure (extension missing, ad blocked, blank frames, timeout) — callers fall
+ * back to the maxres frame. MVP then vision-picks the best one (face + product).
  */
-export async function requestVideoFrame(
+export async function requestVideoFrames(
   youtubeVideoId: string,
-  seekFraction = 0.5,
-): Promise<string | null> {
-  const resp = await sendToExtension<{ ok?: boolean; dataUrl?: string; error?: string }>(
-    { type: 'MVP_CAPTURE_FRAME', youtubeVideoId, seekFraction },
-    35000,
+  fractions: number[] = [0.2, 0.4, 0.6, 0.8],
+): Promise<string[]> {
+  const resp = await sendToExtension<{ ok?: boolean; frames?: string[]; dataUrl?: string; error?: string }>(
+    { type: 'MVP_CAPTURE_FRAME', youtubeVideoId, fractions },
+    50000,
   )
-  if (resp?.ok && typeof resp.dataUrl === 'string' && resp.dataUrl.startsWith('data:image/')) {
-    return resp.dataUrl
+  if (resp?.ok && Array.isArray(resp.frames)) {
+    return resp.frames.filter((f) => typeof f === 'string' && f.startsWith('data:image/'))
   }
-  return null
+  // Back-compat with an older extension that returned a single dataUrl.
+  if (resp?.ok && typeof resp.dataUrl === 'string' && resp.dataUrl.startsWith('data:image/')) {
+    return [resp.dataUrl]
+  }
+  return []
+}
+
+/** Single-frame convenience wrapper (kept for back-compat). */
+export async function requestVideoFrame(youtubeVideoId: string, seekFraction = 0.5): Promise<string | null> {
+  const frames = await requestVideoFrames(youtubeVideoId, [seekFraction])
+  return frames[0] ?? null
 }

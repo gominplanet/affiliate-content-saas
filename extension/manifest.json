@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MVP Affiliate — Co-Pilot Helper",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Scan Amazon Creator Connections into your MVP queue, AND let MVP's YouTube Co-Pilot grab a real frame from your video for grounded, viral thumbnails.",
   "homepage_url": "https://www.mvpaffiliate.io",
   "minimum_chrome_version": "114",

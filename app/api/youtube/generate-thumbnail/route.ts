@@ -11,7 +11,7 @@ import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/yout
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
-import { rankThumbnails, type ThumbnailScore } from '@/lib/thumbnail-score'
+import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
 import { composeWithNanoBanana, generateWithIdeogram, rehostToFal, NANO_BANANA_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
@@ -454,6 +454,7 @@ export async function POST(request: Request) {
       youtubeVideoId,
       textMode,
       capturedFrameDataUrl,
+      capturedFrames,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -470,11 +471,14 @@ export async function POST(request: Request) {
        *  for the cohesive "designed" look. 'clean': return a text-free scene so
        *  the client can draw its crisp canvas overlay (the fallback). */
       textMode?: 'baked' | 'clean'
-      /** A REAL frame grabbed from the user's video by the MVP Co-Pilot Helper
-       *  extension (a jpeg data: URL). When present we ground Nano Banana on
-       *  this instead of maxresdefault — it captures the creator + product as
-       *  they actually appear on camera (vidIQ-style). Absent → maxres frame. */
+      /** A single REAL frame grabbed by the extension (jpeg data: URL). Legacy
+       *  single-frame path. Superseded by capturedFrames. */
       capturedFrameDataUrl?: string | null
+      /** SEVERAL real frames grabbed across the video by the extension (jpeg
+       *  data: URLs). We vision-pick the best (clear face + product visible) and
+       *  ground Nano Banana on it — captures the creator + product as they
+       *  actually appear on camera. Absent → maxres frame. */
+      capturedFrames?: string[] | null
       productTitle?: string
       productDescription?: string
       productBullets?: string[]
@@ -609,14 +613,27 @@ export async function POST(request: Request) {
     // (the cohesive "designed" look). textMode:'clean' instead returns a
     // text-free scene for the crisp client-overlay fallback. On any failure we
     // fall through to the Kontext / Flux paths below, so this stays safe.
-    const hasCapturedFrame = typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/')
+    // Real frames grabbed by the extension: prefer the multi-frame array
+    // (vision-pick the best), then the legacy single frame, then maxres.
+    const validFrames = Array.isArray(capturedFrames)
+      ? capturedFrames.filter(f => typeof f === 'string' && f.startsWith('data:image/'))
+      : []
+    const hasCapturedFrame = validFrames.length > 0 || (typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/'))
     if (youtubeVideoId || hasCapturedFrame) {
       try {
-        // Prefer the REAL frame the extension grabbed (creator + product on
-        // camera); otherwise fall back to the uploader's maxres frame.
-        const baseFrame = hasCapturedFrame
-          ? (capturedFrameDataUrl as string)
-          : await resolveBestThumbnail(youtubeVideoId as string)
+        // Pick the best real frame (clear face + product visible) when we have
+        // several; otherwise use the single frame or the uploader's maxres.
+        let baseFrame: string
+        if (validFrames.length > 1) {
+          const pick = await pickBestFrame(validFrames, { productName: productTitle || undefined, ctx: { userId: user.id, tier } })
+          baseFrame = validFrames[pick] ?? validFrames[0]
+        } else if (validFrames.length === 1) {
+          baseFrame = validFrames[0]
+        } else if (typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/')) {
+          baseFrame = capturedFrameDataUrl
+        } else {
+          baseFrame = await resolveBestThumbnail(youtubeVideoId as string)
+        }
         const frameRef = await rehostToFal(baseFrame)
         if (frameRef) {
           const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
@@ -679,7 +696,7 @@ export async function POST(request: Request) {
               composited: true,
               headshotUsed: false,
               personCutoutUrl: null,
-              faceDebug: `nano-banana enhance (source=${hasCapturedFrame ? 'extension-frame' : 'maxres'}, textMode=${wantClean ? 'clean' : 'baked'})`,
+              faceDebug: `nano-banana enhance (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : 'maxres'}, textMode=${wantClean ? 'clean' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')

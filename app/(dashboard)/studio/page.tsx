@@ -7,7 +7,7 @@ import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrame } from '@/lib/extension-frame'
+import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
@@ -113,6 +113,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const [sceneAnalysis, setSceneAnalysis] = useState<string | null>(null)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
+  // Cache the real video frames grabbed by the extension, per video — so the
+  // baked⇄crisp toggles don't re-open YouTube every time (one capture / video).
+  const capturedFramesRef = React.useRef<{ videoId: string; frames: string[] } | null>(null)
   const [instantLoading, setInstantLoading] = useState(false)
   // Which overlay style was applied to the current thumbnail. Drives the
   // 👍 / 👎 row so reactions attribute to a styleId.
@@ -566,19 +569,27 @@ function VideoStudioCard({ video, userTier, playlists }: {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
     try {
-      // If the MVP Co-Pilot Helper extension is installed, grab a REAL frame
-      // from the video (the creator + product as they appear on camera) to
-      // ground on — vidIQ-style. Best-effort: null silently falls back to the
-      // maxres frame server-side. We skip it on the 'clean' re-render swap
-      // (no need to re-open YouTube just to redraw the text overlay).
-      let capturedFrameDataUrl: string | null = null
-      if (opts?.textMode !== 'clean' && video.youtubeVideoId) {
-        try {
-          if (await isExtensionAvailable()) {
-            setThumbnailError(null)
-            capturedFrameDataUrl = await requestVideoFrame(video.youtubeVideoId)
-          }
-        } catch { /* ignore — fall back to the maxres frame */ }
+      // If the MVP Co-Pilot Helper extension is installed, grab SEVERAL real
+      // frames from the video (the creator + product as they appear on camera).
+      // The server vision-picks the best one (face + product). Cached per video
+      // so the baked⇄crisp toggles reuse the frames instead of re-opening
+      // YouTube. Best-effort: [] silently falls back to the maxres frame.
+      let capturedFrames: string[] = []
+      if (video.youtubeVideoId) {
+        if (capturedFramesRef.current?.videoId === video.youtubeVideoId && capturedFramesRef.current.frames.length) {
+          capturedFrames = capturedFramesRef.current.frames
+        } else {
+          try {
+            if (await isExtensionAvailable()) {
+              setThumbnailError(null)
+              const frames = await requestVideoFrames(video.youtubeVideoId)
+              if (frames.length) {
+                capturedFrames = frames
+                capturedFramesRef.current = { videoId: video.youtubeVideoId, frames }
+              }
+            }
+          } catch { /* ignore — fall back to the maxres frame */ }
+        }
       }
       const res = await fetch('/api/youtube/generate-thumbnail', {
         method: 'POST',
@@ -602,7 +613,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           // overlay — image models can't spell, so we never let them. The
           // optional "Try AI-baked text" button re-runs with 'baked'.
           textMode: opts?.textMode ?? 'clean',
-          capturedFrameDataUrl: capturedFrameDataUrl || undefined,
+          capturedFrames: capturedFrames.length ? capturedFrames : undefined,
         }),
       })
       const data = await safeJson(res)

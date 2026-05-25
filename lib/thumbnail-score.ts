@@ -123,6 +123,55 @@ export async function rankThumbnails(
 }
 
 /**
+ * Pick the best candidate frame for a thumbnail (Phase 2 / Track B —
+ * multi-frame capture). Given several frames grabbed from the video, a vision
+ * pass picks the one with a clear, expressive human face AND (ideally) the
+ * product visible — so the enhance grounds on a real moment that has both the
+ * creator and the product. Best-effort: returns a sensible middle-frame index
+ * on any failure, never throws. `frameUrls` may be data: URLs or http(s) URLs.
+ */
+export async function pickBestFrame(
+  frameUrls: string[],
+  opts: { productName?: string; ctx?: Ctx } = {},
+): Promise<number> {
+  if (frameUrls.length <= 1) return 0
+  const fallback = Math.floor(frameUrls.length / 2) // a middle frame
+  try {
+    const blocks = await Promise.all(frameUrls.map(imageBlock))
+    // Keep only frames we could fetch, remembering their original index.
+    const valid: Array<{ block: NonNullable<Awaited<ReturnType<typeof imageBlock>>>; origIndex: number }> = []
+    blocks.forEach((b, i) => { if (b) valid.push({ block: b, origIndex: i }) })
+    if (valid.length === 0) return fallback
+    if (valid.length === 1) return valid[0].origIndex
+
+    const anthropic = createAnthropicClient()
+    const msg = await anthropic.messages.create({
+      model: SCORE_MODEL,
+      max_tokens: 150,
+      messages: [{
+        role: 'user',
+        content: [
+          ...valid.map(v => v.block),
+          {
+            type: 'text',
+            text: `These are ${valid.length} candidate frames (indexed 0 to ${valid.length - 1}, in the order shown) from a product-review video. Pick the SINGLE best one to turn into a YouTube thumbnail. Strongly prefer a frame that shows BOTH: (1) a clear, well-lit, expressive human face looking toward the camera, AND (2) the product${opts.productName ? ` ("${opts.productName}")` : ''} clearly visible (ideally held or shown). If none clearly show the product, pick the one with the best clear, expressive face. Avoid blurry frames, mid-blink faces, or frames that are just text/graphics.
+Return ONLY JSON: {"index":N,"hasFace":true|false,"hasProduct":true|false}`,
+          },
+        ],
+      }],
+    })
+    if (opts.ctx) recordAnthropicUsage(msg, { userId: opts.ctx.userId, tier: opts.ctx.tier, feature: 'thumbnail_frame_pick', model: SCORE_MODEL })
+    const text = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+    const p = firstJson(text)
+    const pos = p ? Math.round(Number(p.index)) : NaN
+    if (Number.isFinite(pos) && pos >= 0 && pos < valid.length) return valid[pos].origIndex
+    return valid[0].origIndex
+  } catch {
+    return fallback
+  }
+}
+
+/**
  * Score a YouTube/video title (0–100) for click-through: curiosity, clarity,
  * primary keyword near the front, ≤~60 chars, no hype/clickbait. Text-only.
  */
