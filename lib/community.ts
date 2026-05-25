@@ -33,3 +33,8 @@ export const DISCORD_WIDGET_JSON_URL: string = DISCORD_SERVER_ID
 export const COMMUNITY_LABEL = 'Community'
 export const COMMUNITY_TOOLTIP =
   'Hang out with other creators, ask questions, share what works, give us feedback.'
+
+/** Public MVP Affiliate Facebook group — the main community hub: get support,
+ *  share wins, and catch member-only offers. Shown on the Community page and
+ *  the dashboard. */
+export const FACEBOOK_GROUP_URL = 'https://www.facebook.com/groups/mvpaffiliate'

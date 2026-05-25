@@ -8,10 +8,10 @@ import NewsBanner from '@/components/dashboard/NewsBanner'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
-import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers, Gauge, MessagesSquare } from 'lucide-react'
+import { PlaySquare, ArrowRight, Clock, Sparkles, FileText, Layers, Gauge, MessagesSquare, Facebook, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
-import { DISCORD_INVITE_URL } from '@/lib/community'
+import { FACEBOOK_GROUP_URL } from '@/lib/community'
 
 export const metadata: Metadata = { title: 'Dashboard' }
 
@@ -181,6 +181,27 @@ export default async function DashboardPage() {
       <WpUpdateBanner />
       {int?.wordpress_url ? <AmazonSitesReminder siteUrl={int.wordpress_url as string} /> : null}
       <ReferralBanner />
+
+      {/* Community invite — join the MVP Affiliate Facebook group */}
+      <a
+        href={FACEBOOK_GROUP_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="card mb-6 p-4 flex items-center gap-3 hover:shadow-sm transition-shadow"
+        style={{ background: 'linear-gradient(180deg, rgba(24,119,242,0.06) 0%, transparent 100%)', borderColor: 'rgba(24,119,242,0.25)' }}
+      >
+        <div className="w-9 h-9 rounded-full bg-[#1877F2]/15 flex items-center justify-center flex-shrink-0">
+          <Facebook size={18} className="text-[#1877F2]" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Join the MVP Affiliate community</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get support, share what&apos;s working, and catch member-only offers in our Facebook group.</p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white flex-shrink-0" style={{ background: '#1877F2' }}>
+          Join <ExternalLink size={11} />
+        </span>
+      </a>
+
       <SetupChecklist />
       <ChannelStats />
 

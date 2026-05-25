@@ -47,7 +47,7 @@ import { metaEnabled } from '@/lib/feature-flags'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { resetTutorials } from '@/components/TutorialVideo'
-import { DISCORD_INVITE_URL, COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
+import { COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
 
 // Sidebar nav, grouped by workflow phase. Dashboard + AI Assistant are
 // pinned (cross-cutting daily destinations); everything else lives in a
@@ -319,20 +319,16 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         {/* Tutorials — standalone, after the workflow groups */}
         <div className="mt-3">{renderNavLink(tutorialsNav)}</div>
 
-        {/* Discord community — internal page that renders the live widget
-            + a fresh invite. Hidden until the server ID is set so the
-            link can't 404. */}
-        {DISCORD_INVITE_URL && (
-          <Link
-            href="/community"
-            className={cn('nav-item', isActive('/community') && 'active')}
-            title={COMMUNITY_TOOLTIP}
-            style={!isActive('/community') ? { color: '#5865F2' } : undefined}
-          >
-            <MessagesSquare size={16} className="flex-shrink-0" />
-            <span style={!isActive('/community') ? { fontWeight: 500 } : undefined}>{COMMUNITY_LABEL}</span>
-          </Link>
-        )}
+        {/* Community — the MVP Affiliate Facebook group hub (internal page). */}
+        <Link
+          href="/community"
+          className={cn('nav-item', isActive('/community') && 'active')}
+          title={COMMUNITY_TOOLTIP}
+          style={!isActive('/community') ? { color: '#1877F2' } : undefined}
+        >
+          <MessagesSquare size={16} className="flex-shrink-0" />
+          <span style={!isActive('/community') ? { fontWeight: 500 } : undefined}>{COMMUNITY_LABEL}</span>
+        </Link>
 
         {/* Visit Blog */}
         <a
