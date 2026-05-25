@@ -216,7 +216,7 @@ async function generateHook(videoTitle: string): Promise<string> {
 VIDEO: "${videoTitle}"
 
 STRICT RULES (breaking any = bad title):
-- 3 to 7 words, a complete punchy phrase.
+- 3 to 5 words, a complete punchy phrase. SHORTER IS BETTER — it must render cleanly as large baked-in thumbnail text, so avoid long phrases.
 - NEVER mention results or outcomes (no "results", "before/after", "after X days").
 - NEVER make a health, medical, or benefit claim (no "cures", "gone", "weight loss", "hair growth", "cellulite", "detox", etc.).
 - NEVER boast about testing for a time period (no "I tried this for 30 days", "30 days later").
@@ -629,13 +629,18 @@ export async function POST(request: Request) {
           // product image = fidelity.)
           const productRef = productImageUrl ? await rehostToFal(productImageUrl) : null
           const refs = productRef ? [frameRef, productRef] : [frameRef]
+          // IDENTITY LOCK: frame this as an EDIT of the creator's real photo, not
+          // a "generate a thumbnail from references" — otherwise Gemini synthesises
+          // a generic lookalike. The first image is the person to PRESERVE; the
+          // second (if any) is just the product to insert.
+          const identityLock = `This is a PHOTO EDIT of a real, specific person shown in the FIRST image. You MUST keep that person photographically identical — same face, same facial features and proportions, same age, same ethnicity and skin tone, same hair, same build. The output person must be unmistakably the SAME individual, NOT a lookalike or a model. Do NOT beautify, slim, de-age, smooth, or restyle their face. Preserve their identity exactly.`
           const productClause = productRef
-            ? `The FIRST reference image is a real frame of the creator from their own video. The SECOND reference image is the PRODUCT. Keep the EXACT creator (face, hair, likeness, build) from the first image, and reproduce the PRODUCT accurately (exact shape, colour, materials and branding) from the second image. Compose them into ONE shared scene: the creator presenting/holding or right beside the product, with the product prominent and large, lit by the same light so it clearly belongs in the same physical space. This MUST be one cohesive photo — NOT a collage, NOT a split screen, NOT two cut-outs side by side on a flat background.`
-            : `Keep the EXACT person (face, hair, likeness) from this video frame, and any product visible in it. This MUST be one cohesive photo — not a collage.`
+            ? ` The SECOND image is the PRODUCT — reproduce it accurately (exact shape, colour, materials and branding) and place it prominently in the person's hands or right beside them, lit by the same light so it belongs in the same scene. Keep it ONE cohesive photo — never a collage, split screen, or two cut-outs side by side.`
+            : ` Keep any product already visible in the frame. Keep it one cohesive photo, not a collage.`
           // Baked: Gemini renders the headline INTO the image as viral type.
-          const bakedPrompt = `Create ONE vibrant, scroll-stopping, high-CTR viral YouTube thumbnail (16:9). ${productClause} Put the creator on the RIGHT with an energetic, expressive reaction looking straight at the camera (mouth slightly open, eyebrows up). Re-light and colour-grade dramatically: bright, punchy, saturated, high-contrast colours with depth so it POPS at small sizes. Render the headline text EXACTLY as: "${overlayHookNB}" — large, bold, high-impact viral YouTube typography (thick heavy ALL-CAPS sans-serif, dual-tone such as white with one bold accent colour, thick black outline and drop shadow), placed big and legible in the upper-LEFT, NOT covering the person's face or the product. Spell the headline EXACTLY as given. No other text, no watermarks or logos (other than branding physically on the product). Photorealistic, sharp focus, no borders.`
+          const bakedPrompt = `${identityLock}${productClause} Keep the person roughly where they already are in the frame; you may give them a slightly more energetic, expressive reaction (open mouth / raised eyebrows) but their FACE must stay identical. Re-light and colour-grade for a bright, punchy, high-contrast viral YouTube look (16:9) with depth, and keep the upper-LEFT area clear. Render the headline text EXACTLY: "${overlayHookNB}" — large bold ALL-CAPS viral YouTube typography (dual-tone, e.g. white with one bold accent colour, thick black outline + drop shadow) in the upper-LEFT, not covering the face or product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words. No other text, no watermarks or logos (other than branding on the product). Photorealistic, sharp focus, no borders.`
           // Clean: no text — leaves room for the client's canvas overlay.
-          const cleanPrompt = `Create ONE vibrant, scroll-stopping viral YouTube thumbnail (16:9). ${productClause} Put the creator on the RIGHT with an energetic, expressive reaction looking straight at the camera. Re-light and colour-grade dramatically: bright, punchy, saturated, high-contrast colours with depth so it pops at small sizes. Keep the entire LEFT 40% of the frame as clean, simple, uncluttered background for a headline added afterwards. Render NO text, letters, numbers, captions, watermarks or logos anywhere (other than branding physically on the product). Photorealistic, sharp focus, no borders.`
+          const cleanPrompt = `${identityLock}${productClause} Keep the person roughly where they already are; you may give them a slightly more energetic expression but their FACE must stay identical. Re-light and colour-grade for a bright, punchy, high-contrast viral YouTube look (16:9) with depth. Keep the entire LEFT 40% of the frame clean and uncluttered for a headline added afterwards. Render NO text, letters, numbers, captions, watermarks or logos anywhere (other than branding on the product). Photorealistic, sharp focus, no borders.`
           const nbPrompt = wantClean ? cleanPrompt : bakedPrompt
 
           // Fire `variantCount` parallel single-image composes — guarantees the
