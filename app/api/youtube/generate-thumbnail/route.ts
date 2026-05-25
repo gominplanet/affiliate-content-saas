@@ -627,20 +627,19 @@ export async function POST(request: Request) {
           // scene — guaranteeing the product is present + accurate while keeping
           // the real on-camera person. (frame = person/expression/lighting;
           // product image = fidelity.)
-          const productRef = productImageUrl ? await rehostToFal(productImageUrl) : null
-          const refs = productRef ? [frameRef, productRef] : [frameRef]
-          // IDENTITY LOCK: frame this as an EDIT of the creator's real photo, not
-          // a "generate a thumbnail from references" — otherwise Gemini synthesises
-          // a generic lookalike. The first image is the person to PRESERVE; the
-          // second (if any) is just the product to insert.
-          const identityLock = `This is a PHOTO EDIT of a real, specific person shown in the FIRST image. You MUST keep that person photographically identical — same face, same facial features and proportions, same age, same ethnicity and skin tone, same hair, same build. The output person must be unmistakably the SAME individual, NOT a lookalike or a model. Do NOT beautify, slim, de-age, smooth, or restyle their face. Preserve their identity exactly.`
-          const productClause = productRef
-            ? ` The SECOND image is the PRODUCT — reproduce it accurately (exact shape, colour, materials and branding) and place it prominently in the person's hands or right beside them, lit by the same light so it belongs in the same scene. Keep it ONE cohesive photo — never a collage, split screen, or two cut-outs side by side.`
-            : ` Keep any product already visible in the frame. Keep it one cohesive photo, not a collage.`
+          // IDENTITY FIRST: this is the creator's REAL video frame. Treat it as
+          // an ENHANCE, not a compose — adding a separate product image as a 2nd
+          // reference made Gemini regenerate (and fabricate) the person. So we
+          // ground on the frame ALONE and forbid replacing anyone, which keeps
+          // the actual person(s) from the video. The product comes from the
+          // frame itself (we capture a frame where it's on screen).
+          const refs = [frameRef]
+          const identityLock = `This is the creator's REAL video frame containing real people. You MUST keep EVERY person exactly as they are — same faces, facial features, proportions, age, ethnicity, skin tone, hair, gender and build. Do NOT replace, swap, add or remove any person, and do NOT invent a new or different-looking person — the people in the output must be the SAME individuals as in the input photo, not lookalikes or models. Do not beautify, slim, de-age or restyle faces. Keep the product and objects already in the frame exactly as they appear.`
+          const styleClause = `Enhance it into a vibrant, scroll-stopping, high-CTR viral YouTube thumbnail (16:9): boost colour, vibrancy, contrast and lighting so it pops at small sizes, sharpen the subject, and lightly tidy/soften the background — WITHOUT changing who is in the photo or what the product is.`
           // Baked: Gemini renders the headline INTO the image as viral type.
-          const bakedPrompt = `${identityLock}${productClause} Keep the person roughly where they already are in the frame; you may give them a slightly more energetic, expressive reaction (open mouth / raised eyebrows) but their FACE must stay identical. Re-light and colour-grade for a bright, punchy, high-contrast viral YouTube look (16:9) with depth, and keep the upper-LEFT area clear. Render the headline text EXACTLY: "${overlayHookNB}" — large bold ALL-CAPS viral YouTube typography (dual-tone, e.g. white with one bold accent colour, thick black outline + drop shadow) in the upper-LEFT, not covering the face or product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words. No other text, no watermarks or logos (other than branding on the product). Photorealistic, sharp focus, no borders.`
+          const bakedPrompt = `${identityLock} ${styleClause} Render the headline text EXACTLY: "${overlayHookNB}" — large bold ALL-CAPS viral YouTube typography (dual-tone, e.g. white with one bold accent colour, thick black outline + drop shadow) in the upper-LEFT over a clear area, not covering any face or the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words. No other text, no watermarks or logos (other than branding already on the product). Photorealistic, sharp focus, no borders.`
           // Clean: no text — leaves room for the client's canvas overlay.
-          const cleanPrompt = `${identityLock}${productClause} Keep the person roughly where they already are; you may give them a slightly more energetic expression but their FACE must stay identical. Re-light and colour-grade for a bright, punchy, high-contrast viral YouTube look (16:9) with depth. Keep the entire LEFT 40% of the frame clean and uncluttered for a headline added afterwards. Render NO text, letters, numbers, captions, watermarks or logos anywhere (other than branding on the product). Photorealistic, sharp focus, no borders.`
+          const cleanPrompt = `${identityLock} ${styleClause} Keep the upper-LEFT area relatively clean and uncluttered for a headline added afterwards. Render NO text, letters, numbers, captions, watermarks or logos anywhere (other than branding already on the product). Photorealistic, sharp focus, no borders.`
           const nbPrompt = wantClean ? cleanPrompt : bakedPrompt
 
           // Fire `variantCount` parallel single-image composes — guarantees the
@@ -680,7 +679,7 @@ export async function POST(request: Request) {
               composited: true,
               headshotUsed: false,
               personCutoutUrl: null,
-              faceDebug: `nano-banana frame-grounded (source=${hasCapturedFrame ? 'extension-frame' : 'maxres'}, product=${productRef ? 'yes' : 'no'}, textMode=${wantClean ? 'clean' : 'baked'})`,
+              faceDebug: `nano-banana enhance (source=${hasCapturedFrame ? 'extension-frame' : 'maxres'}, textMode=${wantClean ? 'clean' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
