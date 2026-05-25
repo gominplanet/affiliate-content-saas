@@ -1011,27 +1011,12 @@ async function handleGenerate(request: Request) {
       } catch { /* non-fatal — the published text post stands */ }
     }
 
-    // Purge LiteSpeed cache LAST so the cached page reflects the images we
-    // just added. Re-POST the EXACT live customizations (never a stale local
-    // blob — that would wipe about.headerBannerUrl). Skip on GET failure.
-    try {
-      const wpBase = wp.wordpress_url.replace(/\/$/, '')
-      const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`)
-      if (getRes.ok) {
-        const existing = await getRes.json()
-        if (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing as object).length > 0) {
-          await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(existing),
-          })
-        }
-      }
-    } catch { /* non-fatal — post is published regardless */ }
-
-    // Purge the post's page cache now everything (content + images + SEO meta)
-    // is written, so the JSON-LD/meta render immediately. Best-effort.
-    await wpService.purgeCache(wpPost.id)
+    // Purge the page cache LAST — now content + images + SEO meta are all
+    // written — so the JSON-LD/meta render immediately. Uses the same proven
+    // path as the dashboard "Purge All" button (re-POST customizations →
+    // litespeed_purge_all + wp_cache_flush), WITH auth and unconditionally, so
+    // it purges even on a site with no customizations saved. Best-effort.
+    await wpService.purgeCache((wp as Record<string, unknown> | null)?.blog_customizations)
   })
 
   return NextResponse.json({

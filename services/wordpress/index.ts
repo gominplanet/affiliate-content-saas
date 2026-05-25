@@ -402,17 +402,26 @@ export class WordPressService {
     await this.request(`/posts/${id}?force=true`, { method: 'DELETE' })
   }
 
-  /** Best-effort cache purge via the MVP plugin's /purge endpoint (LiteSpeed +
-   *  object cache). Called after writing per-post SEO meta so the rendered page
-   *  reflects it immediately instead of waiting for cache expiry. Non-fatal. */
-  async purgeCache(postId?: number): Promise<void> {
+  /** Best-effort site cache purge — re-POSTs the current customizations to the
+   *  plugin, whose save handler runs litespeed_purge_all() + wp_cache_flush().
+   *  Same proven path as the dashboard "Purge All" button. Sends auth (the POST
+   *  needs manage_options) and posts unconditionally (existing data, else the
+   *  given fallback, else empty) so it purges even on a site with no
+   *  customizations saved. Non-fatal. */
+  async purgeCache(fallbackCustomizations: unknown = {}): Promise<void> {
     try {
-      await fetch(`${this.siteUrl}/wp-json/affiliateos/v1/purge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': this.authHeader },
-        body: JSON.stringify({ post_id: postId ?? 0 }),
-      })
-    } catch { /* non-fatal — page will refresh on cache expiry */ }
+      const base = `${this.siteUrl}/wp-json/affiliateos/v1/customizations`
+      const headers = { 'Content-Type': 'application/json', 'Authorization': this.authHeader }
+      let existing: unknown = {}
+      try {
+        const getRes = await fetch(base, { headers: { 'Authorization': this.authHeader } })
+        if (getRes.ok) existing = await getRes.json()
+      } catch { /* start fresh */ }
+      const payload = (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing).length > 0)
+        ? existing
+        : (fallbackCustomizations ?? {})
+      await fetch(base, { method: 'POST', headers, body: JSON.stringify(payload) })
+    } catch { /* non-fatal — page refreshes on cache expiry */ }
   }
 
   /** Resolve a post id from its slug (for cleaning up posts whose

@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.10
+ * Version: 1.0.9
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.10');
+define('MVP_AFFILIATE_VERSION', '1.0.9');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -469,27 +469,6 @@ add_action('wp_head', function () {
         }
     }
 }, 5);
-
-// ─── 13d. Cache purge endpoint ───────────────────────────────────────────────
-// The MVP app writes per-post SEO meta ~30–60s after publish (background pass).
-// It calls this after the meta write to purge the now-stale page cache so the
-// JSON-LD/meta render immediately instead of waiting for cache expiry.
-add_action('rest_api_init', function () {
-    register_rest_route('affiliateos/v1', '/purge', [
-        'methods'             => 'POST',
-        'permission_callback' => function () { return current_user_can('edit_posts'); },
-        'callback'            => function (WP_REST_Request $req) {
-            $post_id = (int) $req->get_param('post_id');
-            if ($post_id > 0) {
-                clean_post_cache($post_id);
-                do_action('litespeed_purge_post', $post_id);
-            }
-            do_action('litespeed_purge_all');
-            if (function_exists('wp_cache_flush')) wp_cache_flush();
-            return ['ok' => true, 'purged' => $post_id ?: 'all'];
-        },
-    ]);
-});
 
 // ─── 13b. Custom <head> meta tags (site verification, etc.) ──────────────────
 // Users paste verification tags (Google Search Console, Pinterest, Facebook,
