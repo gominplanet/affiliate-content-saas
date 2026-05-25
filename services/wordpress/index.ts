@@ -412,23 +412,35 @@ export class WordPressService {
 
   /** Best-effort site cache purge — re-POSTs the current customizations to the
    *  plugin, whose save handler runs litespeed_purge_all() + wp_cache_flush().
-   *  Same proven path as the dashboard "Purge All" button. Sends auth (the POST
-   *  needs manage_options) and posts unconditionally (existing data, else the
-   *  given fallback, else empty) so it purges even on a site with no
-   *  customizations saved. Non-fatal. */
+   *  Same proven path as the dashboard "Purge All" button.
+   *
+   *  CLOBBER-SAFE: we only POST `{}` when the GET *succeeded* and confirmed the
+   *  site truly has no customizations. If the GET fails (timeout / WAF 403), we
+   *  must NOT POST `{}` — that would persist empty and wipe live customizations
+   *  (header banner, colors, etc.). In that case we POST the non-empty fallback
+   *  if we have one, otherwise we skip the purge entirely. Non-fatal. */
   async purgeCache(fallbackCustomizations: unknown = {}): Promise<void> {
     try {
       const base = `${this.siteUrl}/wp-json/affiliateos/v1/customizations`
       const UA = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
       const headers = { 'Content-Type': 'application/json', 'Authorization': this.authHeader, 'User-Agent': UA }
+
+      const hasData = (o: unknown): o is Record<string, unknown> =>
+        !!o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o as object).length > 0
+
       let existing: unknown = {}
+      let getOk = false
       try {
         const getRes = await fetch(base, { headers: { 'Authorization': this.authHeader, 'User-Agent': UA } })
-        if (getRes.ok) existing = await getRes.json()
-      } catch { /* start fresh */ }
-      const payload = (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing).length > 0)
-        ? existing
-        : (fallbackCustomizations ?? {})
+        if (getRes.ok) { existing = await getRes.json(); getOk = true }
+      } catch { /* GET failed — getOk stays false */ }
+
+      let payload: unknown
+      if (hasData(existing)) payload = existing               // live data → re-save (safe)
+      else if (hasData(fallbackCustomizations)) payload = fallbackCustomizations // restore from DB
+      else if (getOk) payload = {}                            // GET confirmed site is empty → {} is safe
+      else return                                             // GET failed + no fallback → skip (never clobber)
+
       await fetch(base, { method: 'POST', headers, body: JSON.stringify(payload) })
     } catch { /* non-fatal — page refreshes on cache expiry */ }
   }

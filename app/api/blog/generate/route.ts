@@ -760,6 +760,64 @@ async function handleGenerate(request: Request) {
   // function is cut off, the published post simply keeps its text — the
   // request can NEVER 504 on the user because of images.
   after(async () => {
+    const ytThumb = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
+    const initialProductImage = ((v as Record<string, unknown>).product_image_url as string | null)?.trim() || null
+
+    // ── SEO/AEO structured data writer (idempotent — safe to call twice) ─────
+    // Builds the JSON-LD @graph + meta and writes them as post meta; the MVP
+    // plugin renders them in <head>. Called FIRST below (guaranteed delivery —
+    // before the fact-check or image gen, which are the things that can hang or
+    // exhaust the after() budget), then optionally again once images resolve to
+    // upgrade og:image to the AI hero + the real product name/image. Non-fatal.
+    const writeSeoMeta = async (ogImage: string, productName: string, productImage: string | null) => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const b = brand as Record<string, any>
+        const vrow = v as Record<string, unknown>
+        const wpBaseUrl = (wp.wordpress_url || '').replace(/\/$/, '')
+        const catSlug = (generated.category || '').toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+        const graph = buildReviewSchemaGraph({
+          pageUrl: wpPost.link,
+          title: generated.title,
+          description: generated.excerpt,
+          datePublished: (savedPost?.published_at as string) || new Date().toISOString(),
+          imageUrl: ogImage,
+          author: { name: (b.author_name as string) || (b.name as string) || 'Editor', channelUrl: (b.youtube_url as string) || null },
+          publisher: { name: (b.name as string) || 'MVP Affiliate', url: wp.wordpress_url, logoUrl: (b.logo_url as string) || null },
+          product: (effectiveAsin || productUrl)
+            ? { name: productName, url: productUrl || null, imageUrl: productImage }
+            : null,
+          rating: parseRating(generated.rating),
+          thirdPartyProduct: true,
+          video: {
+            youtubeId: youtubeVideoId,
+            name: (vrow.title as string) || generated.title,
+            description: ((vrow.description as string) || generated.excerpt || '').slice(0, 500),
+            uploadDate: (vrow.published_at as string) || (savedPost?.published_at as string) || new Date().toISOString(),
+            thumbnailUrl: ytThumb,
+            durationSeconds: (vrow.duration_seconds as number) || null,
+          },
+          faq: extractFaqFromHtml(content),
+          breadcrumb: [
+            { name: 'Home', url: wpBaseUrl || wp.wordpress_url },
+            ...(generated.category && catSlug ? [{ name: generated.category, url: `${wpBaseUrl}/category/${catSlug}/` }] : []),
+            { name: generated.title, url: wpPost.link },
+          ],
+        })
+        await wpService.updatePost(wpPost.id, {
+          meta: {
+            mvp_jsonld: JSON.stringify(graph),
+            mvp_meta_description: (generated.excerpt || '').slice(0, 300),
+            mvp_og_image: ogImage,
+          },
+        })
+        console.log('[seo-schema] wrote', { postId: wpPost.id, nodes: graph['@graph'].length, og: ogImage === ytThumb ? 'yt' : 'hero' })
+      } catch (e) { console.warn('[seo-schema] skipped:', e instanceof Error ? e.message : String(e)) }
+    }
+
+    // GUARANTEED early write — runs before anything that can hang.
+    await writeSeoMeta(ytThumb, generated.title, initialProductImage)
+
     // ── Fact-check pass (post-response so the main request never 504s) ───────
     // Strip any product spec/price the transcript + product info don't support,
     // re-publish the corrected text, and use it as the base for images.
@@ -776,60 +834,11 @@ async function handleGenerate(request: Request) {
     } catch { /* non-fatal — keep the generated text */ }
 
     let finalContent = content
-    // SEO-schema scope: captured across the image branches below, used to build
-    // the JSON-LD @graph at the end of after().
+    // Captured across the image branches; used to upgrade the SEO meta at the end.
     let heroImageUrl: string | null = null
     let schemaProductName = generated.title
-    let schemaProductImage: string | null = ((v as Record<string, unknown>).product_image_url as string | null)?.trim() || null
+    let schemaProductImage: string | null = initialProductImage
     console.log('[blog-images] after() running', { includeImages, userImgs: userImageUrls.length, hasFal: !!process.env.FAL_KEY })
-
-    // ── SEO/AEO structured data — written EARLY (before image gen) so a slow
-    //    image pass can never starve it. og:image uses the YouTube thumbnail
-    //    for now; Phase 2 upgrades it to the AI hero. Non-fatal.
-    try {
-      const ogImage = heroImageUrl || `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const b = brand as Record<string, any>
-      const vrow = v as Record<string, unknown>
-      const wpBaseUrl = (wp.wordpress_url || '').replace(/\/$/, '')
-      const catSlug = (generated.category || '').toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      const graph = buildReviewSchemaGraph({
-        pageUrl: wpPost.link,
-        title: generated.title,
-        description: generated.excerpt,
-        datePublished: (savedPost?.published_at as string) || new Date().toISOString(),
-        imageUrl: ogImage,
-        author: { name: (b.author_name as string) || (b.name as string) || 'Editor', channelUrl: (b.youtube_url as string) || null },
-        publisher: { name: (b.name as string) || 'MVP Affiliate', url: wp.wordpress_url, logoUrl: (b.logo_url as string) || null },
-        product: (effectiveAsin || productUrl)
-          ? { name: schemaProductName, url: productUrl || null, imageUrl: schemaProductImage }
-          : null,
-        rating: parseRating(generated.rating),
-        thirdPartyProduct: true,
-        video: {
-          youtubeId: youtubeVideoId,
-          name: (vrow.title as string) || generated.title,
-          description: ((vrow.description as string) || generated.excerpt || '').slice(0, 500),
-          uploadDate: (vrow.published_at as string) || (savedPost?.published_at as string) || new Date().toISOString(),
-          thumbnailUrl: `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
-          durationSeconds: (vrow.duration_seconds as number) || null,
-        },
-        faq: extractFaqFromHtml(finalContent),
-        breadcrumb: [
-          { name: 'Home', url: wpBaseUrl || wp.wordpress_url },
-          ...(generated.category && catSlug ? [{ name: generated.category, url: `${wpBaseUrl}/category/${catSlug}/` }] : []),
-          { name: generated.title, url: wpPost.link },
-        ],
-      })
-      await wpService.updatePost(wpPost.id, {
-        meta: {
-          mvp_jsonld: JSON.stringify(graph),
-          mvp_meta_description: (generated.excerpt || '').slice(0, 300),
-          mvp_og_image: ogImage,
-        },
-      })
-      console.log('[seo-schema] wrote', { postId: wpPost.id, nodes: graph['@graph'].length })
-    } catch (e) { console.warn('[seo-schema] skipped:', e instanceof Error ? e.message : String(e)) }
 
     // ── User-supplied in-article images ───────────────────────────────────
     // When the user uploaded their own images, place THOSE throughout the
@@ -1011,11 +1020,18 @@ async function handleGenerate(request: Request) {
       } catch { /* non-fatal — the published text post stands */ }
     }
 
+    // Upgrade the SEO meta now that images + product have resolved — promote the
+    // AI hero to og:image and use the real Amazon product name/image. Skipped
+    // when nothing improved over the guaranteed early write. Best-effort.
+    if (heroImageUrl || schemaProductName !== generated.title || schemaProductImage !== initialProductImage) {
+      await writeSeoMeta(heroImageUrl || ytThumb, schemaProductName, schemaProductImage)
+    }
+
     // Purge the page cache LAST — now content + images + SEO meta are all
     // written — so the JSON-LD/meta render immediately. Uses the same proven
     // path as the dashboard "Purge All" button (re-POST customizations →
-    // litespeed_purge_all + wp_cache_flush), WITH auth and unconditionally, so
-    // it purges even on a site with no customizations saved. Best-effort.
+    // litespeed_purge_all + wp_cache_flush), WITH auth, so it purges even on a
+    // site with no customizations saved. Best-effort.
     await wpService.purgeCache((wp as Record<string, unknown> | null)?.blog_customizations)
   })
 
