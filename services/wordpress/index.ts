@@ -12,6 +12,13 @@ export interface WPPost {
   featured_media?: number
   comment_status?: 'open' | 'closed'
   ping_status?: 'open' | 'closed'
+  /**
+   * Registered post meta forwarded to the WP REST API. The MVP plugin
+   * registers `mvp_jsonld` / `mvp_meta_description` / `mvp_og_image`
+   * (show_in_rest) and the theme renders them in <head>. Only registered
+   * keys are accepted by WordPress.
+   */
+  meta?: Record<string, string>
 }
 
 export interface WPPostResponse extends WPPost {

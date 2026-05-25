@@ -12,6 +12,7 @@ import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
+import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { fal } from '@fal-ai/client'
 import { recordUsage, recordAnthropicUsage } from '@/lib/ai-usage'
 import { createAnthropicClient } from '@/lib/anthropic'
@@ -775,6 +776,11 @@ async function handleGenerate(request: Request) {
     } catch { /* non-fatal — keep the generated text */ }
 
     let finalContent = content
+    // SEO-schema scope: captured across the image branches below, used to build
+    // the JSON-LD @graph at the end of after().
+    let heroImageUrl: string | null = null
+    let schemaProductName = generated.title
+    let schemaProductImage: string | null = ((v as Record<string, unknown>).product_image_url as string | null)?.trim() || null
     console.log('[blog-images] after() running', { includeImages, userImgs: userImageUrls.length, hasFal: !!process.env.FAL_KEY })
 
     // ── User-supplied in-article images ───────────────────────────────────
@@ -792,6 +798,7 @@ async function handleGenerate(request: Request) {
             uploaded.push({ url: userImageUrls[i], alt: `${generated.title} — ${i + 1}` })
           }
         }
+        heroImageUrl = uploaded[0]?.url ?? heroImageUrl
         if (uploaded.length > 0) {
           const slots = autoPlacementIndices(content, uploaded.length)
           finalContent = insertImagesAtHeadings(
@@ -829,7 +836,8 @@ async function handleGenerate(request: Request) {
           if (effectiveAsin) {
             try {
               const p = await fetchAmazonProduct(effectiveAsin)
-              if (p.title) productTitleForPrompts = p.title
+              if (p.title) { productTitleForPrompts = p.title; schemaProductName = p.title }
+              if (p.imageUrl) schemaProductImage = schemaProductImage || p.imageUrl
               if (!falProductImageUrl && p.imageUrl) {
                 const imgRes = await fetch(p.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
                 if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
@@ -928,6 +936,7 @@ async function handleGenerate(request: Request) {
             }
           }))
           const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
+          heroImageUrl = uploaded[0]?.url ?? heroImageUrl
           console.log('[blog-images] result', { produced: uploaded.length, of: prompts.length, firstError: firstImgError })
           if (uploaded.length === 0) {
             try { await logFailure(supabase, user.id, videoId, 'blog_body_images', `0/${prompts.length} images. falProduct=${!!falProductImageUrl}. firstError=${firstImgError || 'none'}`) } catch { /* non-fatal */ }
@@ -971,6 +980,54 @@ async function handleGenerate(request: Request) {
         }
       }
     } catch { /* non-fatal — post is published regardless */ }
+
+    // ── SEO/AEO structured data ──────────────────────────────────────────────
+    // Build the JSON-LD @graph + meta from the FINAL content (hero image,
+    // resolved product, on-page FAQ) and send as post meta; the MVP plugin
+    // renders it in <head>. Post-response + non-fatal — never blocks publish.
+    try {
+      const ogImage = heroImageUrl || `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b = brand as Record<string, any>
+      const vrow = v as Record<string, unknown>
+      const wpBaseUrl = (wp.wordpress_url || '').replace(/\/$/, '')
+      const catSlug = (generated.category || '').toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      const graph = buildReviewSchemaGraph({
+        pageUrl: wpPost.link,
+        title: generated.title,
+        description: generated.excerpt,
+        datePublished: (savedPost?.published_at as string) || new Date().toISOString(),
+        imageUrl: ogImage,
+        author: { name: (b.author_name as string) || (b.name as string) || 'Editor', channelUrl: (b.youtube_url as string) || null },
+        publisher: { name: (b.name as string) || 'MVP Affiliate', url: wp.wordpress_url, logoUrl: (b.logo_url as string) || null },
+        product: (effectiveAsin || productUrl)
+          ? { name: schemaProductName, url: productUrl || null, imageUrl: schemaProductImage }
+          : null,
+        rating: parseRating(generated.rating),
+        thirdPartyProduct: true,
+        video: {
+          youtubeId: youtubeVideoId,
+          name: (vrow.title as string) || generated.title,
+          description: ((vrow.description as string) || generated.excerpt || '').slice(0, 500),
+          uploadDate: (vrow.published_at as string) || (savedPost?.published_at as string) || new Date().toISOString(),
+          thumbnailUrl: `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
+          durationSeconds: (vrow.duration_seconds as number) || null,
+        },
+        faq: extractFaqFromHtml(finalContent),
+        breadcrumb: [
+          { name: 'Home', url: wpBaseUrl || wp.wordpress_url },
+          ...(generated.category && catSlug ? [{ name: generated.category, url: `${wpBaseUrl}/category/${catSlug}/` }] : []),
+          { name: generated.title, url: wpPost.link },
+        ],
+      })
+      await wpService.updatePost(wpPost.id, {
+        meta: {
+          mvp_jsonld: JSON.stringify(graph),
+          mvp_meta_description: (generated.excerpt || '').slice(0, 300),
+          mvp_og_image: ogImage,
+        },
+      })
+    } catch (e) { console.warn('[seo-schema] skipped:', e instanceof Error ? e.message : String(e)) }
   })
 
   return NextResponse.json({

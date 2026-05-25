@@ -91,6 +91,51 @@ export interface SeoSchemaInput {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Node = Record<string, any>
 
+/** Strip WP block comments + HTML tags + common entities → plain text. */
+function stripHtml(s: string): string {
+  return s
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ')
+    .replace(/&#8217;|&rsquo;/g, "'").replace(/&#8216;|&lsquo;/g, "'")
+    .replace(/&quot;|&#8220;|&#8221;/g, '"')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Extract the on-page FAQ (question/answer pairs) from generated post HTML so
+ * the FAQPage schema EXACTLY matches the visible content (Google requires the
+ * markup to reflect what's on the page). Scoped to the "Frequently Asked
+ * Questions" section: each `<h3>` is a question, everything up to the next
+ * `<h3>` (or the next `<h2>`/section end) is its answer.
+ */
+export function extractFaqFromHtml(html: string): SeoFaqItem[] {
+  if (!html) return []
+  const faqStart = html.search(/<h2[^>]*>\s*Frequently Asked Questions\s*<\/h2>/i)
+  if (faqStart === -1) return []
+  let section = html.slice(faqStart)
+  // Trim at the next H2 (keep this FAQ section only).
+  const nextH2 = section.slice(1).search(/<h2[^>]*>/i)
+  if (nextH2 !== -1) section = section.slice(0, nextH2 + 1)
+
+  const h3re = /<h3[^>]*>([\s\S]*?)<\/h3>/gi
+  const marks: Array<{ q: string; end: number; start: number }> = []
+  let m: RegExpExecArray | null
+  while ((m = h3re.exec(section)) !== null) {
+    marks.push({ q: stripHtml(m[1]), start: m.index, end: h3re.lastIndex })
+  }
+  const items: SeoFaqItem[] = []
+  for (let i = 0; i < marks.length; i++) {
+    const answerHtml = section.slice(marks[i].end, i + 1 < marks.length ? marks[i + 1].start : section.length)
+    const question = marks[i].q
+    const answer = stripHtml(answerHtml)
+    if (question && answer) items.push({ question, answer })
+  }
+  return items
+}
+
 /** Parse a rating like "4.5", "4.5/5", "4,5 out of 5" → 4.5 (clamped). */
 export function parseRating(raw: string | number | null | undefined, max = 5): number | null {
   if (raw == null) return null
