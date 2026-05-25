@@ -597,9 +597,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
-          // Default 'baked' (typography rendered into the image). The "clean
-          // text" swap re-runs with 'clean' → text-free scene + canvas overlay.
-          textMode: opts?.textMode ?? 'baked',
+          // Default 'clean': the model renders a text-FREE image (which it does
+          // reliably) and we draw the headline with the pixel-perfect canvas
+          // overlay — image models can't spell, so we never let them. The
+          // optional "Try AI-baked text" button re-runs with 'baked'.
+          textMode: opts?.textMode ?? 'clean',
           capturedFrameDataUrl: capturedFrameDataUrl || undefined,
         }),
       })
@@ -647,7 +649,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
-          textMode: 'baked',
+          textMode: 'clean',
         }),
       })
       const data = await safeJson(res)
@@ -1382,22 +1384,32 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       {thumbnailModel === 'nano-banana' && (
                         <>
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">
-                            ✨ AI-designed — text baked in
+                            ✨ AI-baked text (may have typos)
                           </span>
                           <button
                             onClick={() => generateThumbnail({ textMode: 'clean' })}
                             disabled={generatingThumbnail}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                            title="Re-render with the headline drawn as a clean overlay instead of baked into the image"
+                            title="Re-render with the headline drawn as a crisp, perfect overlay instead of baked into the image"
                           >
-                            <RefreshCw size={12} /> Use clean text instead
+                            <RefreshCw size={12} /> Switch to crisp text
                           </button>
                         </>
                       )}
                       {thumbnailModel === 'nano-banana-clean' && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">
-                          🔤 Clean overlay text
-                        </span>
+                        <>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
+                            ✓ Crisp text overlay
+                          </span>
+                          <button
+                            onClick={() => generateThumbnail({ textMode: 'baked' })}
+                            disabled={generatingThumbnail}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#5856d6] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
+                            title="Re-render with the headline baked into the image by the AI (more integrated, but may have typos)"
+                          >
+                            <RefreshCw size={12} /> Try AI-baked text
+                          </button>
+                        </>
                       )}
                       {thumbnailModel === 'upload' && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">
