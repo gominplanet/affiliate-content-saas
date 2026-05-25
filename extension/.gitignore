@@ -1,0 +1,6 @@
+# Never commit signing keys / generated ID artifacts
+*.pem
+*.der
+.keyinfo.txt
+.extid.txt
+*.zip

@@ -1,23 +1,34 @@
 {
   "manifest_version": 3,
-  "name": "MVP Affiliate — CC Scout",
-  "version": "1.1.2",
-  "description": "Scan Amazon Creator Connections, auto-select the high-EPC / medium-to-high-budget campaigns, and push them into your MVP Affiliate CC Campaigns queue.",
+  "name": "MVP Affiliate — Co-Pilot Helper",
+  "version": "1.2.0",
+  "description": "Scan Amazon Creator Connections into your MVP queue, AND let MVP's YouTube Co-Pilot grab a real frame from your video for grounded, viral thumbnails.",
   "homepage_url": "https://www.mvpaffiliate.io",
   "minimum_chrome_version": "114",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": [
     "https://affiliate-program.amazon.com/*",
     "https://www.amazon.com/creatorconnections/*",
-    "https://www.mvpaffiliate.io/*"
+    "https://www.mvpaffiliate.io/*",
+    "https://*.youtube.com/*"
   ],
+  "externally_connectable": {
+    "matches": [
+      "https://mvpaffiliate.io/*",
+      "https://*.mvpaffiliate.io/*",
+      "http://localhost:3000/*"
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "MVP Affiliate — CC Scout",
+    "default_title": "MVP Affiliate — Co-Pilot Helper",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

@@ -453,6 +453,7 @@ export async function POST(request: Request) {
       cleanupPrompt,
       youtubeVideoId,
       textMode,
+      capturedFrameDataUrl,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -469,6 +470,11 @@ export async function POST(request: Request) {
        *  for the cohesive "designed" look. 'clean': return a text-free scene so
        *  the client can draw its crisp canvas overlay (the fallback). */
       textMode?: 'baked' | 'clean'
+      /** A REAL frame grabbed from the user's video by the MVP Co-Pilot Helper
+       *  extension (a jpeg data: URL). When present we ground Nano Banana on
+       *  this instead of maxresdefault — it captures the creator + product as
+       *  they actually appear on camera (vidIQ-style). Absent → maxres frame. */
+      capturedFrameDataUrl?: string | null
       productTitle?: string
       productDescription?: string
       productBullets?: string[]
@@ -603,9 +609,14 @@ export async function POST(request: Request) {
     // (the cohesive "designed" look). textMode:'clean' instead returns a
     // text-free scene for the crisp client-overlay fallback. On any failure we
     // fall through to the Kontext / Flux paths below, so this stays safe.
-    if (youtubeVideoId) {
+    const hasCapturedFrame = typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/')
+    if (youtubeVideoId || hasCapturedFrame) {
       try {
-        const baseFrame = await resolveBestThumbnail(youtubeVideoId)
+        // Prefer the REAL frame the extension grabbed (creator + product on
+        // camera); otherwise fall back to the uploader's maxres frame.
+        const baseFrame = hasCapturedFrame
+          ? (capturedFrameDataUrl as string)
+          : await resolveBestThumbnail(youtubeVideoId as string)
         const frameRef = await rehostToFal(baseFrame)
         if (frameRef) {
           const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
@@ -653,7 +664,7 @@ export async function POST(request: Request) {
               composited: true,
               headshotUsed: false,
               personCutoutUrl: null,
-              faceDebug: `nano-banana frame-grounded (textMode=${wantClean ? 'clean' : 'baked'})`,
+              faceDebug: `nano-banana frame-grounded (source=${hasCapturedFrame ? 'extension-frame' : 'maxres'}, textMode=${wantClean ? 'clean' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')

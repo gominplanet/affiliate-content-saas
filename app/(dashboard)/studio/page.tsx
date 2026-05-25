@@ -7,6 +7,7 @@ import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline } from '@/lib/thumbnail-overlay'
+import { isExtensionAvailable, requestVideoFrame } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
@@ -565,6 +566,20 @@ function VideoStudioCard({ video, userTier, playlists }: {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
     try {
+      // If the MVP Co-Pilot Helper extension is installed, grab a REAL frame
+      // from the video (the creator + product as they appear on camera) to
+      // ground on — vidIQ-style. Best-effort: null silently falls back to the
+      // maxres frame server-side. We skip it on the 'clean' re-render swap
+      // (no need to re-open YouTube just to redraw the text overlay).
+      let capturedFrameDataUrl: string | null = null
+      if (opts?.textMode !== 'clean' && video.youtubeVideoId) {
+        try {
+          if (await isExtensionAvailable()) {
+            setThumbnailError(null)
+            capturedFrameDataUrl = await requestVideoFrame(video.youtubeVideoId)
+          }
+        } catch { /* ignore — fall back to the maxres frame */ }
+      }
       const res = await fetch('/api/youtube/generate-thumbnail', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -585,6 +600,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           // Default 'baked' (typography rendered into the image). The "clean
           // text" swap re-runs with 'clean' → text-free scene + canvas overlay.
           textMode: opts?.textMode ?? 'baked',
+          capturedFrameDataUrl: capturedFrameDataUrl || undefined,
         }),
       })
       const data = await safeJson(res)
