@@ -185,6 +185,7 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
 
   // ── Person (author) ──────────────────────────────────────────────────────
   const person: Node = { '@type': 'Person', '@id': id.person, name: input.author.name }
+  person.url = input.author.channelUrl || input.publisher.url
   if (input.author.channelUrl) person.sameAs = [input.author.channelUrl]
   graph.push(person)
 
@@ -243,26 +244,29 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
     if (input.product.imageUrl) product.image = [input.product.imageUrl]
     if (input.product.brand) product.brand = { '@type': 'Brand', name: input.product.brand }
 
-    const review: Node = {
-      '@type': 'Review',
-      '@id': id.review,
-      itemReviewed: { '@id': id.product },
-      author: { '@id': id.person },
-      datePublished: input.datePublished,
-      url,
-    }
+    // Only emit a Review when there's a real rating, and link it from the
+    // Product (product.review → @id). Per Google, a Review reached via its
+    // parent item must NOT carry `itemReviewed` (directional conflict), so it's
+    // omitted. A single first-party review uses `review`, not `aggregateRating`.
     if (rating != null) {
-      review.reviewRating = {
-        '@type': 'Rating',
-        ratingValue: rating,
-        bestRating: ratingMax,
-        worstRating: 1,
+      const review: Node = {
+        '@type': 'Review',
+        '@id': id.review,
+        author: { '@id': id.person },
+        datePublished: input.datePublished,
+        url,
+        reviewRating: {
+          '@type': 'Rating',
+          ratingValue: rating,
+          bestRating: ratingMax,
+          worstRating: 1,
+        },
       }
-      // Surface the rating on the Product too (single first-party review →
-      // use `review`, not `aggregateRating`, to stay within Google's policy).
       product.review = { '@id': id.review }
+      graph.push(product, review)
+    } else {
+      graph.push(product)
     }
-    graph.push(product, review)
   }
 
   // ── FAQPage ──────────────────────────────────────────────────────────────
