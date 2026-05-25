@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { exchangeCodeForToken } from '@/services/threads'
+import { exchangeCodeForToken, fetchThreadsProfile } from '@/services/threads'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -22,12 +22,26 @@ export async function GET(request: NextRequest) {
     const { access_token, user_id } = await exchangeCodeForToken(code, redirectUri)
 
     step = 'save_token'
+    // Save the core credentials first — this must always succeed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: saveErr } = await (supabase as any).from('integrations').upsert(
       { user_id: user.id, threads_access_token: access_token, threads_user_id: user_id },
       { onConflict: 'user_id' },
     )
     if (saveErr) throw new Error(saveErr.message || 'token save failed')
+
+    // Best-effort: fetch + store the @username for "Connected as @username".
+    // Wrapped separately so a missing threads_username column (pre-migration 064)
+    // or a profile-fetch hiccup can NEVER break the connection itself.
+    try {
+      const profile = await fetchThreadsProfile(access_token)
+      if (profile.username) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any).from('integrations')
+          .update({ threads_username: profile.username })
+          .eq('user_id', user.id)
+      }
+    } catch { /* non-fatal — connection works without the handle */ }
 
     return NextResponse.redirect(`${appUrl}/setup?threads_connected=1`)
   } catch (err) {

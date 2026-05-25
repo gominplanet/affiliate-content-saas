@@ -1356,7 +1356,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         {threads.connected ? (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
-              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" /> {threads.username ? `@${threads.username}` : 'Threads account connected'}
+              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" /> {threads.username ? <>Connected as <strong>@{threads.username}</strong></> : 'Threads account connected'}
             </p>
             <button onClick={disconnectThreads} disabled={thDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {thDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect

@@ -43,6 +43,15 @@ export class ThreadsService {
   }
 }
 
+/** Fetch the connected Threads profile (id + username). Best-effort —
+ *  used to display "Connected as @username" after OAuth. */
+export async function fetchThreadsProfile(accessToken: string): Promise<{ id: string; username: string | null }> {
+  const res = await fetch(`${BASE}/me?fields=id,username&access_token=${encodeURIComponent(accessToken)}`)
+  if (!res.ok) throw new Error(`Threads profile fetch failed: ${res.status}`)
+  const data = await res.json() as { id?: string; username?: string }
+  return { id: data.id ?? '', username: data.username ?? null }
+}
+
 export async function exchangeCodeForToken(code: string, redirectUri: string) {
   const res = await fetch('https://graph.threads.net/oauth/access_token', {
     method: 'POST',
