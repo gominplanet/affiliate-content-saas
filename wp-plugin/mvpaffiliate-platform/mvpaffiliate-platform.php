@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.8
+ * Version: 1.0.9
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.8');
+define('MVP_AFFILIATE_VERSION', '1.0.9');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -419,6 +419,56 @@ add_action('wp_head', function () {
     </style>
     <?php
 }, 100);
+
+// ─── 13c. SEO structured data (JSON-LD @graph + meta description + OpenGraph) ─
+// The MVP Affiliate app generates per-post SEO data and sends it as registered
+// post meta via the WP REST API. We register the meta (so REST accepts writes)
+// and render it in <head> on single posts. No dependency on Yoast/RankMath.
+add_action('init', function () {
+    $args = [
+        'type'          => 'string',
+        'single'        => true,
+        'show_in_rest'  => true,
+        'auth_callback' => function () { return current_user_can('edit_posts'); },
+    ];
+    register_post_meta('post', 'mvp_jsonld', $args);
+    register_post_meta('post', 'mvp_meta_description', $args);
+    register_post_meta('post', 'mvp_og_image', $args);
+});
+
+add_action('wp_head', function () {
+    if (!is_singular('post')) return;
+    $post_id = get_queried_object_id();
+    if (!$post_id) return;
+
+    $desc   = trim((string) get_post_meta($post_id, 'mvp_meta_description', true));
+    $og     = trim((string) get_post_meta($post_id, 'mvp_og_image', true));
+    $jsonld = trim((string) get_post_meta($post_id, 'mvp_jsonld', true));
+
+    if ($desc !== '') {
+        echo "\n<meta name=\"description\" content=\"" . esc_attr($desc) . "\" />";
+        echo "\n<meta property=\"og:description\" content=\"" . esc_attr($desc) . "\" />";
+        echo "\n<meta name=\"twitter:description\" content=\"" . esc_attr($desc) . "\" />";
+    }
+    echo "\n<meta property=\"og:title\" content=\"" . esc_attr(get_the_title($post_id)) . "\" />";
+    echo "\n<meta property=\"og:type\" content=\"article\" />";
+    echo "\n<meta property=\"og:url\" content=\"" . esc_url(get_permalink($post_id)) . "\" />";
+    if ($og !== '') {
+        echo "\n<meta property=\"og:image\" content=\"" . esc_url($og) . "\" />";
+        echo "\n<meta name=\"twitter:card\" content=\"summary_large_image\" />";
+        echo "\n<meta name=\"twitter:image\" content=\"" . esc_url($og) . "\" />";
+    }
+    if ($jsonld !== '') {
+        // Decode + re-encode so only well-formed JSON is printed, and JSON_HEX_TAG
+        // escapes < / > (neutralizes any "</script>" breakout). Never echo raw.
+        $decoded = json_decode($jsonld, true);
+        if (is_array($decoded)) {
+            echo "\n<script type=\"application/ld+json\">"
+               . wp_json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP)
+               . "</script>\n";
+        }
+    }
+}, 5);
 
 // ─── 13b. Custom <head> meta tags (site verification, etc.) ──────────────────
 // Users paste verification tags (Google Search Console, Pinterest, Facebook,
