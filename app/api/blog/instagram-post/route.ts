@@ -23,6 +23,7 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveSocialAccount } from '@/lib/social-accounts'
+import { metaEnabled } from '@/lib/feature-flags'
 
 const ASIN_RE = /\b([A-Z0-9]{10})\b/
 
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!metaEnabled()) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     const body = await request.json() as {
       postId?: string

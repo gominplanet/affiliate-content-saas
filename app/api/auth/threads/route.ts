@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
+import { metaEnabled } from '@/lib/feature-flags'
 
 export async function GET() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+  if (!metaEnabled()) {
+    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&meta_disabled=1`)
+  }
   const redirectUri = `${appUrl}/api/auth/threads/callback`
 
   const params = new URLSearchParams({

@@ -9,6 +9,7 @@ import {
   Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin, Lock,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { metaEnabled } from '@/lib/feature-flags'
 import { Suspense } from 'react'
 import { TutorialVideo } from '@/components/TutorialVideo'
 
@@ -1197,6 +1198,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       </div>
 
       {/* Facebook */}
+      {metaEnabled() && (
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -1246,6 +1248,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         )}
       </div>
+      )}
 
       {/* Pinterest */}
       <div className="card p-6">
@@ -1295,6 +1298,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       </div>
 
       {/* Threads */}
+      {metaEnabled() && (
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
@@ -1330,6 +1334,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         )}
       </div>
+      )}
 
       {/* LinkedIn */}
       <div className="card p-6">
@@ -1550,6 +1555,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       </div>
 
       {/* Instagram — Pro */}
+      {metaEnabled() && (
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div
@@ -1603,6 +1609,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </a>
         )}
       </div>
+      )}
 
       {/* YouTube OAuth — for YouTube Studio (draft video metadata) */}
       <div className="card p-5 flex flex-col gap-4">

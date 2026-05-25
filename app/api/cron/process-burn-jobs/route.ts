@@ -15,6 +15,7 @@ import { overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type 
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
 import { publishMedia } from '@/services/instagram'
 import { recordUsage } from '@/lib/ai-usage'
+import { metaEnabled } from '@/lib/feature-flags'
 
 export const maxDuration = 300
 
@@ -33,6 +34,9 @@ export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET
   if (!secret) return NextResponse.json({ error: 'CRON_SECRET not set' }, { status: 500 })
   if (auth !== `Bearer ${secret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Meta integration paused (App Review pending) — don't burn/publish any queued jobs.
+  if (!metaEnabled()) return NextResponse.json({ ok: true, processed: 0, skipped: 'meta_disabled' })
 
   const admin = createAdminClient()
   const nowIso = new Date().toISOString()

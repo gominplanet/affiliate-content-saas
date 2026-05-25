@@ -12,6 +12,7 @@ import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { effectiveTier } from '@/lib/view-as'
+import { metaEnabled } from '@/lib/feature-flags'
 import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock } from 'lucide-react'
 
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
@@ -159,6 +160,21 @@ export default function InstagramBurnerPage() {
       document.body.appendChild(a); a.click(); a.remove()
       URL.revokeObjectURL(href)
     } catch { window.open(resultUrl, '_blank') }
+  }
+
+  if (!metaEnabled()) {
+    return (
+      <>
+        <Header title="Instagram Burner" subtitle="Add an on-screen caption to your videos and publish them as Instagram Reels." />
+        <div className="card p-6 max-w-xl flex items-start gap-3">
+          <AlertCircle size={18} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Temporarily unavailable</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Instagram publishing is paused while our Meta integration is under review. It’ll be back as soon as we’re approved. You can still create and download content elsewhere in the app.</p>
+          </div>
+        </div>
+      </>
+    )
   }
 
   return (

@@ -12,9 +12,14 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildAuthUrl } from '@/services/instagram'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import { metaEnabled } from '@/lib/feature-flags'
 
 export async function GET() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+
+  if (!metaEnabled()) {
+    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&meta_disabled=1`)
+  }
 
   // Tier gate — bounce non-Pro users to /pricing
   const supabase = await createServerClient()

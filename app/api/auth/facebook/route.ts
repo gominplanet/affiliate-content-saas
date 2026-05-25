@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
+import { metaEnabled } from '@/lib/feature-flags'
 
 export async function GET() {
-  const appId = process.env.FACEBOOK_APP_ID
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!metaEnabled()) {
+    return NextResponse.redirect(`${appUrl || ''}/setup?tab=integrations&meta_disabled=1`)
+  }
+  const appId = process.env.FACEBOOK_APP_ID
   if (!appId || !appUrl) {
     return NextResponse.json({ error: 'Facebook app not configured' }, { status: 500 })
   }

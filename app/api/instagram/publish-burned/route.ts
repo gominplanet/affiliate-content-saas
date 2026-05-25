@@ -15,6 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, tierAllowsSocial, type Tier } from '@/lib/tier'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { publishMedia } from '@/services/instagram'
+import { metaEnabled } from '@/lib/feature-flags'
 
 export const maxDuration = 300
 
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!metaEnabled()) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)

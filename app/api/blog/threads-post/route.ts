@@ -7,6 +7,7 @@ import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
+import { metaEnabled } from '@/lib/feature-flags'
 
 const DISCLAIMER = '#ad — As an Amazon Associate I earn from qualifying purchases.'
 
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!metaEnabled()) return NextResponse.json({ error: 'Threads publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // Threads auto-publish is Creator+ (Creator, Pro, Admin).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

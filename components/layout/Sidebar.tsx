@@ -43,6 +43,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
+import { metaEnabled } from '@/lib/feature-flags'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { resetTutorials } from '@/components/TutorialVideo'
@@ -308,7 +309,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
               </button>
               {isOpen && (
                 <div className="flex flex-col gap-0.5">
-                  {group.items.map(renderNavLink)}
+                  {group.items.filter(it => metaEnabled() || it.href !== '/instagram-burner').map(renderNavLink)}
                 </div>
               )}
             </div>
