@@ -12,6 +12,8 @@ import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, type ThumbnailScore } from '@/lib/thumbnail-score'
+import { composeWithNanoBanana, generateWithIdeogram, rehostToFal, rehostAll, NANO_BANANA_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { resolveGroundingFrames } from '@/lib/youtube-frames'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
@@ -449,6 +451,7 @@ export async function POST(request: Request) {
       videoDescription,
       uploadedPhotoUrl,
       cleanupPrompt,
+      youtubeVideoId,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -456,6 +459,10 @@ export async function POST(request: Request) {
       /** The YouTube description — used to find the product link for a real
        *  product photo when there's no Amazon ASIN (non-Amazon products). */
       videoDescription?: string
+      /** YouTube native ID (e.g. dQw4w9WgXcQ). When present we pull REAL
+       *  frames (img.youtube.com) as Nano Banana references so the thumbnail
+       *  is grounded in the actual person + product the creator filmed. */
+      youtubeVideoId?: string | null
       productTitle?: string
       productDescription?: string
       productBullets?: string[]
@@ -465,9 +472,10 @@ export async function POST(request: Request) {
        *  explicitly tells Flux NOT to render text — overlay happens
        *  client-side via canvas, so locked text is always crisp. */
       customHeadline?: string
-      /** How many variants to generate in a single shot. 1 or 2 only —
-       *  clamp server-side. Each variant counts as one image against
-       *  the user's thumbnail cap + AI-cost telemetry. */
+      /** How many variants to generate in a single shot. 1–10 — clamped
+       *  server-side. Each variant counts as one image against the user's
+       *  thumbnail cap + AI-cost telemetry, and the monthly cap pre-flight
+       *  budgets for the full requested count. */
       variantCount?: number
       /** Optional public image URL the user uploaded as an aesthetic
        *  anchor. Haiku vision distills color/lighting/composition into
@@ -488,7 +496,7 @@ export async function POST(request: Request) {
       cleanupPrompt?: string
     }
 
-    const variantCount = Math.min(2, Math.max(1, Number(rawVariantCount) || 1))
+    const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 
     // ── Load the user's face model if they picked one ─────────────────────────
@@ -580,6 +588,115 @@ export async function POST(request: Request) {
 
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
+
+    // ── PATH NB (PRIMARY): Nano Banana single-pass composition ───────────────
+    // Compose the creator + product + a REAL video frame into a FINISHED
+    // thumbnail in ONE call (Google Gemini 2.5 Flash Image via fal). This
+    // replaces the slow gpt-image cut-out → rembg → client-composite chain and
+    // is the architecture that gets us near the ~20s bar: the model preserves
+    // the person's identity from the reference photos natively, so the person
+    // is already IN the scene — no separate cut-out, no client compositing.
+    // Runs whenever we have at least one real reference (subject photo,
+    // product image, or a key frame). On empty output we fall through to the
+    // Kontext / Flux paths below, so this is purely additive + safe.
+    {
+      // Resolve subject references (the person) → fal-hosted URLs.
+      const resolveSubjectFalUrls = async (): Promise<string[]> => {
+        const urls: string[] = []
+        // An uploaded "me + the product" photo is the single strongest ref.
+        if (typeof uploadedPhotoUrl === 'string' && /^https?:\/\//.test(uploadedPhotoUrl)) {
+          const u = await rehostToFal(uploadedPhotoUrl)
+          if (u) urls.push(u)
+        }
+        // Trained face-model source photos (identity anchors).
+        if (faceModel) {
+          for (const path of faceModel.source_images.slice(0, 2)) {
+            try {
+              const { data: file } = await supabase.storage.from('headshots').download(path)
+              if (!file) continue
+              const png = await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
+              const u = await fal.storage.upload(new Blob([new Uint8Array(png)], { type: 'image/png' }))
+              if (u) urls.push(u)
+            } catch { /* skip unreadable photo */ }
+          }
+        }
+        return urls
+      }
+
+      const subjectUrls = await resolveSubjectFalUrls()
+      const productFalUrl = productImageUrl ? await rehostToFal(productImageUrl) : null
+      let frameFalUrls: string[] = []
+      if (youtubeVideoId) {
+        try {
+          const frames = await resolveGroundingFrames(youtubeVideoId, {
+            maxFrames: 2,
+            includeMidFrames: subjectUrls.length === 0,
+          })
+          frameFalUrls = await rehostAll(frames.references)
+        } catch { /* no frames — fine */ }
+      }
+      // Order matters for Nano Banana: subject (identity) → product (fidelity)
+      // → real frame (authenticity). Cap at 4 refs; more degrades the compose.
+      const refs = [
+        ...subjectUrls,
+        ...(productFalUrl ? [productFalUrl] : []),
+        ...frameFalUrls,
+      ].slice(0, 4)
+
+      if (refs.length > 0) {
+        const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
+        const hasPerson = subjectUrls.length > 0
+        const personLine = hasPerson
+          ? 'Feature the SAME person from the reference photos as the prominent subject — preserve their exact facial identity, hair and likeness, and give them an engaging, expressive YouTube-thumbnail reaction looking toward the camera. Place the person on one side of the frame.'
+          : 'Do NOT add any people anywhere — no faces, heads, hands or bodies.'
+        const productLine = productTitle
+          ? `Feature the product "${productTitle}" with its exact appearance, branding and details preserved from the reference image.`
+          : 'Feature the product shown in the reference images with its exact appearance preserved.'
+        const nbPrompt = `Create a bright, high-contrast, professional YouTube thumbnail (16:9) in a "${style}" style for a video titled "${videoTitle}". ${personLine} ${productLine} Use bold punchy colours and clean studio-style lighting that pops at small sizes. COMPOSITION: keep a clear area of relatively clean background (the upper region or one side) so a large bold text headline can be overlaid on top afterwards — do NOT fill the entire frame edge-to-edge. CRITICAL: do NOT render ANY text, letters, words, captions, numbers, watermarks or logos anywhere in the image (other than branding physically printed on the product itself) — the headline is added separately. Photorealistic, sharp focus, no borders.`
+
+        // Fire `variantCount` parallel single-image composes. This guarantees
+        // the requested number of DISTINCT variants regardless of whether the
+        // endpoint honours num_images, and the calls run concurrently so wall-
+        // clock time ≈ a single generation.
+        const nbBatches = await Promise.all(
+          Array.from({ length: variantCount }, () =>
+            composeWithNanoBanana({ prompt: nbPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
+          ),
+        )
+        const nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
+
+        if (nbUrls.length > 0) {
+          for (let i = 0; i < nbUrls.length; i++) {
+            recordUsage({
+              userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+              feature: 'yt_thumb_nanobanana_image', model: NANO_BANANA_COST_MODEL, images: 1,
+            })
+          }
+          const rank = await rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+          return NextResponse.json({
+            ok: true,
+            thumbnailUrl: rank.urls[0],
+            thumbnailUrls: rank.urls,
+            thumbnailScores: rank.scores,
+            thumbnailScore: rank.topScore,
+            belowThreshold: rank.belowThreshold,
+            overlayHook: overlayHookNB,
+            headlineLocked: !!lockedHeadline,
+            prompt: nbPrompt,
+            styleBriefApplied: false,
+            channelStyle: null,
+            modelUsed: 'nano-banana',
+            // Person is baked into the image — the client must NOT composite a
+            // face cut-out on top; it only overlays the text headline.
+            composited: true,
+            headshotUsed: hasPerson,
+            personCutoutUrl: null,
+            faceDebug: `nano-banana (${refs.length} refs: ${subjectUrls.length} subject, ${productFalUrl ? 1 : 0} product, ${frameFalUrls.length} frame)`,
+          })
+        }
+        console.warn('[generate-thumbnail] Nano Banana returned no image; falling through to Kontext/Flux')
+      }
+    }
 
     // ── PATH U: user uploaded their own photo (them + the product) ───────────
     // Clean it up / re-render it into a polished YouTube thumbnail scene with
@@ -758,6 +875,45 @@ export async function POST(request: Request) {
 
     // (LoRA retired 2026-05-22 — the face path is gpt-image-1/2 above, PATH G.
     //  If that fails we fall through to the product-only Flux Pro path below.)
+
+    // ── PATH I: Ideogram v3 — text-forward scene (no product image) ──────────
+    // For the no-reference case Ideogram produces stronger graphic/thumbnail-
+    // style images than Flux Pro v1.1 (and far cleaner typography if we ever
+    // bake text in). The headline is still overlaid client-side, so the shared
+    // scene prompt tells it to avoid text. Falls through to Flux Pro on empty.
+    try {
+      const ideoUrls = await generateWithIdeogram({ prompt: finalScenePrompt, numImages: variantCount, renderingSpeed: 'BALANCED' })
+      if (ideoUrls.length > 0) {
+        for (let i = 0; i < ideoUrls.length; i++) {
+          recordUsage({
+            userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+            feature: 'yt_thumb_ideogram_image', model: IDEOGRAM_COST_MODEL, images: 1,
+          })
+        }
+        const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
+        const rank = await rankVariants(ideoUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+        return NextResponse.json({
+          ok: true,
+          thumbnailUrl: rank.urls[0],
+          thumbnailUrls: rank.urls,
+          thumbnailScores: rank.scores,
+          thumbnailScore: rank.topScore,
+          belowThreshold: rank.belowThreshold,
+          overlayHook,
+          headlineLocked: !!lockedHeadline,
+          prompt: finalScenePrompt,
+          styleBriefApplied: !!styleBrief,
+          channelStyle: channelStyle ?? null,
+          modelUsed: `ideogram-${style}`,
+          headshotUsed: !!personCutoutUrl,
+          personCutoutUrl,
+          faceDebug,
+        })
+      }
+      console.warn('[generate-thumbnail] Ideogram returned no image; falling back to Flux Pro')
+    } catch (err) {
+      console.warn('[generate-thumbnail] Ideogram path failed, falling back to Flux Pro:', err)
+    }
 
     // ── PATH C: Flux Pro fallback — no product image, no face model ───────────
     console.log('[generate-thumbnail] Using Flux Pro fallback (no product image)')

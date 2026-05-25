@@ -63,6 +63,12 @@ export const PRICING: Record<string, Pricing> = {
   'fal-aura-sr': { in: 0, out: 0, imageCost: 0.012 },
   // Background removal (rembg) for the thumbnail creator cut-out. Cheap.
   'fal-rembg': { in: 0, out: 0, imageCost: 0.01 },
+  // Nano Banana (Google Gemini 2.5 Flash Image) via fal — single-pass
+  // person+product+scene composition. fal lists $0.039/image.
+  'fal-nano-banana': { in: 0, out: 0, imageCost: 0.039 },
+  // Ideogram v3 via fal — text-forward thumbnails (legible typography).
+  // BALANCED tier ≈ $0.06/image (TURBO 0.03 / QUALITY 0.09).
+  'fal-ideogram-v3': { in: 0, out: 0, imageCost: 0.06 },
 
   // ── Google Gemini ──────────────────────────────────────────────────────
   'gemini-2.5-flash-image': { in: 0,     out: 0,    imageCost: 0.039 },

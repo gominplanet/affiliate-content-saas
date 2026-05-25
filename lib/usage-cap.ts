@@ -20,7 +20,7 @@ export const PRIMARY_FEATURE = {
    *  gpt-image-1 (face), Kontext (product), flux-lora (legacy face), or the
    *  Flux Pro fallback — so summing these feature names = total successful
    *  thumbnail generations. */
-  thumbnail: ['yt_thumb_gptimage', 'yt_thumb_kontext_image', 'yt_thumb_flux_image', 'yt_thumb_flux_lora_image'] as string[],
+  thumbnail: ['yt_thumb_gptimage', 'yt_thumb_kontext_image', 'yt_thumb_flux_image', 'yt_thumb_flux_lora_image', 'yt_thumb_nanobanana_image', 'yt_thumb_ideogram_image'] as string[],
   /** Metadata 5-agent swarm; title_strategist runs exactly once per
    *  generation, so counting it = total successful metadata gens. */
   metadata: ['yt_meta_title_strategist'] as string[],
