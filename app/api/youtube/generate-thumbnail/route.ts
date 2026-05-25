@@ -621,10 +621,21 @@ export async function POST(request: Request) {
         if (frameRef) {
           const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
           const wantClean = textMode === 'clean'
+          // A single grabbed frame often catches the creator BEFORE the product
+          // is on screen (intro/hook). So we also pass the real product image as
+          // a SECOND reference and tell Gemini to compose it INTO the creator's
+          // scene — guaranteeing the product is present + accurate while keeping
+          // the real on-camera person. (frame = person/expression/lighting;
+          // product image = fidelity.)
+          const productRef = productImageUrl ? await rehostToFal(productImageUrl) : null
+          const refs = productRef ? [frameRef, productRef] : [frameRef]
+          const productClause = productRef
+            ? `The FIRST reference image is a real frame of the creator from their own video. The SECOND reference image is the PRODUCT. Keep the EXACT creator (face, hair, likeness, build) from the first image, and reproduce the PRODUCT accurately (exact shape, colour, materials and branding) from the second image. Compose them into ONE shared scene: the creator presenting/holding or right beside the product, with the product prominent and large, lit by the same light so it clearly belongs in the same physical space. This MUST be one cohesive photo — NOT a collage, NOT a split screen, NOT two cut-outs side by side on a flat background.`
+            : `Keep the EXACT person (face, hair, likeness) from this video frame, and any product visible in it. This MUST be one cohesive photo — not a collage.`
           // Baked: Gemini renders the headline INTO the image as viral type.
-          const bakedPrompt = `Transform this YouTube video frame into a vibrant, scroll-stopping, high-CTR viral YouTube thumbnail (16:9). Keep the main PERSON and the PRODUCT that are already in the frame — preserve the person's exact face and likeness — and give the person an energetic, expressive reaction looking straight at the camera (mouth slightly open, eyebrows up). Re-light and colour-grade dramatically: bright, punchy, saturated, high-contrast colours with depth and a clean modern background so it POPS at small sizes. Render the headline text EXACTLY as: "${overlayHookNB}" — as large, bold, high-impact viral YouTube typography (thick heavy ALL-CAPS sans-serif, dual-tone such as white with one bold accent colour, thick black outline and drop shadow), placed big and legible in the upper-left, NOT covering the person's face or the product. Spell the headline EXACTLY as given. No other text, no watermarks or logos (other than branding physically on the product). Photorealistic subject, sharp focus, no borders.`
+          const bakedPrompt = `Create ONE vibrant, scroll-stopping, high-CTR viral YouTube thumbnail (16:9). ${productClause} Put the creator on the RIGHT with an energetic, expressive reaction looking straight at the camera (mouth slightly open, eyebrows up). Re-light and colour-grade dramatically: bright, punchy, saturated, high-contrast colours with depth so it POPS at small sizes. Render the headline text EXACTLY as: "${overlayHookNB}" — large, bold, high-impact viral YouTube typography (thick heavy ALL-CAPS sans-serif, dual-tone such as white with one bold accent colour, thick black outline and drop shadow), placed big and legible in the upper-LEFT, NOT covering the person's face or the product. Spell the headline EXACTLY as given. No other text, no watermarks or logos (other than branding physically on the product). Photorealistic, sharp focus, no borders.`
           // Clean: no text — leaves room for the client's canvas overlay.
-          const cleanPrompt = `Transform this YouTube video frame into a vibrant, scroll-stopping viral YouTube thumbnail (16:9). Keep the main PERSON and the PRODUCT already in the frame — preserve the person's exact face and likeness — and give the person an energetic, expressive reaction looking straight at the camera. Re-light and colour-grade dramatically: bright, punchy, saturated, high-contrast colours with depth and a clean modern background that pops at small sizes. Keep the entire LEFT 40% of the frame as clean, simple, uncluttered background for a headline added afterwards. Render NO text, letters, numbers, captions, watermarks or logos anywhere (other than branding physically on the product). Photorealistic, sharp focus, no borders.`
+          const cleanPrompt = `Create ONE vibrant, scroll-stopping viral YouTube thumbnail (16:9). ${productClause} Put the creator on the RIGHT with an energetic, expressive reaction looking straight at the camera. Re-light and colour-grade dramatically: bright, punchy, saturated, high-contrast colours with depth so it pops at small sizes. Keep the entire LEFT 40% of the frame as clean, simple, uncluttered background for a headline added afterwards. Render NO text, letters, numbers, captions, watermarks or logos anywhere (other than branding physically on the product). Photorealistic, sharp focus, no borders.`
           const nbPrompt = wantClean ? cleanPrompt : bakedPrompt
 
           // Fire `variantCount` parallel single-image composes — guarantees the
@@ -632,7 +643,7 @@ export async function POST(request: Request) {
           // wall-clock time ≈ a single generation.
           const nbBatches = await Promise.all(
             Array.from({ length: variantCount }, () =>
-              composeWithNanoBanana({ prompt: nbPrompt, referenceImageUrls: [frameRef], aspectRatio: '16:9', numImages: 1 }),
+              composeWithNanoBanana({ prompt: nbPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
             ),
           )
           const nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
@@ -664,7 +675,7 @@ export async function POST(request: Request) {
               composited: true,
               headshotUsed: false,
               personCutoutUrl: null,
-              faceDebug: `nano-banana frame-grounded (source=${hasCapturedFrame ? 'extension-frame' : 'maxres'}, textMode=${wantClean ? 'clean' : 'baked'})`,
+              faceDebug: `nano-banana frame-grounded (source=${hasCapturedFrame ? 'extension-frame' : 'maxres'}, product=${productRef ? 'yes' : 'no'}, textMode=${wantClean ? 'clean' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
