@@ -783,6 +783,54 @@ async function handleGenerate(request: Request) {
     let schemaProductImage: string | null = ((v as Record<string, unknown>).product_image_url as string | null)?.trim() || null
     console.log('[blog-images] after() running', { includeImages, userImgs: userImageUrls.length, hasFal: !!process.env.FAL_KEY })
 
+    // ── SEO/AEO structured data — written EARLY (before image gen) so a slow
+    //    image pass can never starve it. og:image uses the YouTube thumbnail
+    //    for now; Phase 2 upgrades it to the AI hero. Non-fatal.
+    try {
+      const ogImage = heroImageUrl || `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b = brand as Record<string, any>
+      const vrow = v as Record<string, unknown>
+      const wpBaseUrl = (wp.wordpress_url || '').replace(/\/$/, '')
+      const catSlug = (generated.category || '').toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      const graph = buildReviewSchemaGraph({
+        pageUrl: wpPost.link,
+        title: generated.title,
+        description: generated.excerpt,
+        datePublished: (savedPost?.published_at as string) || new Date().toISOString(),
+        imageUrl: ogImage,
+        author: { name: (b.author_name as string) || (b.name as string) || 'Editor', channelUrl: (b.youtube_url as string) || null },
+        publisher: { name: (b.name as string) || 'MVP Affiliate', url: wp.wordpress_url, logoUrl: (b.logo_url as string) || null },
+        product: (effectiveAsin || productUrl)
+          ? { name: schemaProductName, url: productUrl || null, imageUrl: schemaProductImage }
+          : null,
+        rating: parseRating(generated.rating),
+        thirdPartyProduct: true,
+        video: {
+          youtubeId: youtubeVideoId,
+          name: (vrow.title as string) || generated.title,
+          description: ((vrow.description as string) || generated.excerpt || '').slice(0, 500),
+          uploadDate: (vrow.published_at as string) || (savedPost?.published_at as string) || new Date().toISOString(),
+          thumbnailUrl: `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
+          durationSeconds: (vrow.duration_seconds as number) || null,
+        },
+        faq: extractFaqFromHtml(finalContent),
+        breadcrumb: [
+          { name: 'Home', url: wpBaseUrl || wp.wordpress_url },
+          ...(generated.category && catSlug ? [{ name: generated.category, url: `${wpBaseUrl}/category/${catSlug}/` }] : []),
+          { name: generated.title, url: wpPost.link },
+        ],
+      })
+      await wpService.updatePost(wpPost.id, {
+        meta: {
+          mvp_jsonld: JSON.stringify(graph),
+          mvp_meta_description: (generated.excerpt || '').slice(0, 300),
+          mvp_og_image: ogImage,
+        },
+      })
+      console.log('[seo-schema] wrote', { postId: wpPost.id, nodes: graph['@graph'].length })
+    } catch (e) { console.warn('[seo-schema] skipped:', e instanceof Error ? e.message : String(e)) }
+
     // ── User-supplied in-article images ───────────────────────────────────
     // When the user uploaded their own images, place THOSE throughout the
     // article (re-hosted on WP for a permanent URL) and skip AI generation.
@@ -980,54 +1028,6 @@ async function handleGenerate(request: Request) {
         }
       }
     } catch { /* non-fatal — post is published regardless */ }
-
-    // ── SEO/AEO structured data ──────────────────────────────────────────────
-    // Build the JSON-LD @graph + meta from the FINAL content (hero image,
-    // resolved product, on-page FAQ) and send as post meta; the MVP plugin
-    // renders it in <head>. Post-response + non-fatal — never blocks publish.
-    try {
-      const ogImage = heroImageUrl || `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const b = brand as Record<string, any>
-      const vrow = v as Record<string, unknown>
-      const wpBaseUrl = (wp.wordpress_url || '').replace(/\/$/, '')
-      const catSlug = (generated.category || '').toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      const graph = buildReviewSchemaGraph({
-        pageUrl: wpPost.link,
-        title: generated.title,
-        description: generated.excerpt,
-        datePublished: (savedPost?.published_at as string) || new Date().toISOString(),
-        imageUrl: ogImage,
-        author: { name: (b.author_name as string) || (b.name as string) || 'Editor', channelUrl: (b.youtube_url as string) || null },
-        publisher: { name: (b.name as string) || 'MVP Affiliate', url: wp.wordpress_url, logoUrl: (b.logo_url as string) || null },
-        product: (effectiveAsin || productUrl)
-          ? { name: schemaProductName, url: productUrl || null, imageUrl: schemaProductImage }
-          : null,
-        rating: parseRating(generated.rating),
-        thirdPartyProduct: true,
-        video: {
-          youtubeId: youtubeVideoId,
-          name: (vrow.title as string) || generated.title,
-          description: ((vrow.description as string) || generated.excerpt || '').slice(0, 500),
-          uploadDate: (vrow.published_at as string) || (savedPost?.published_at as string) || new Date().toISOString(),
-          thumbnailUrl: `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`,
-          durationSeconds: (vrow.duration_seconds as number) || null,
-        },
-        faq: extractFaqFromHtml(finalContent),
-        breadcrumb: [
-          { name: 'Home', url: wpBaseUrl || wp.wordpress_url },
-          ...(generated.category && catSlug ? [{ name: generated.category, url: `${wpBaseUrl}/category/${catSlug}/` }] : []),
-          { name: generated.title, url: wpPost.link },
-        ],
-      })
-      await wpService.updatePost(wpPost.id, {
-        meta: {
-          mvp_jsonld: JSON.stringify(graph),
-          mvp_meta_description: (generated.excerpt || '').slice(0, 300),
-          mvp_og_image: ogImage,
-        },
-      })
-    } catch (e) { console.warn('[seo-schema] skipped:', e instanceof Error ? e.message : String(e)) }
   })
 
   return NextResponse.json({
