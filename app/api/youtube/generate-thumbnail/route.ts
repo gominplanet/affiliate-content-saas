@@ -625,34 +625,38 @@ export async function POST(request: Request) {
 
       const subjectUrls = await resolveSubjectFalUrls()
       const productFalUrl = productImageUrl ? await rehostToFal(productImageUrl) : null
+      // Key frames add authenticity for the no-person case, but when we have a
+      // subject photo they push Gemini toward a cluttered COLLAGE of the input
+      // images — so ground on frames ONLY when there's no subject reference.
       let frameFalUrls: string[] = []
-      if (youtubeVideoId) {
+      if (youtubeVideoId && subjectUrls.length === 0) {
         try {
-          const frames = await resolveGroundingFrames(youtubeVideoId, {
-            maxFrames: 2,
-            includeMidFrames: subjectUrls.length === 0,
-          })
+          const frames = await resolveGroundingFrames(youtubeVideoId, { maxFrames: 2, includeMidFrames: true })
           frameFalUrls = await rehostAll(frames.references)
         } catch { /* no frames — fine */ }
       }
-      // Order matters for Nano Banana: subject (identity) → product (fidelity)
-      // → real frame (authenticity). Cap at 4 refs; more degrades the compose.
+      // Keep the reference set TIGHT (subject + product, max 3). Too many
+      // disparate images makes Gemini lay them out side-by-side instead of
+      // composing one cohesive scene.
       const refs = [
         ...subjectUrls,
         ...(productFalUrl ? [productFalUrl] : []),
         ...frameFalUrls,
-      ].slice(0, 4)
+      ].slice(0, 3)
 
       if (refs.length > 0) {
         const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
         const hasPerson = subjectUrls.length > 0
-        const personLine = hasPerson
-          ? 'Feature the SAME person from the reference photos as the prominent subject — preserve their exact facial identity, hair and likeness, and give them an engaging, expressive YouTube-thumbnail reaction looking toward the camera. Place the person on one side of the frame.'
-          : 'Do NOT add any people anywhere — no faces, heads, hands or bodies.'
         const productLine = productTitle
-          ? `Feature the product "${productTitle}" with its exact appearance, branding and details preserved from the reference image.`
-          : 'Feature the product shown in the reference images with its exact appearance preserved.'
-        const nbPrompt = `Create a bright, high-contrast, professional YouTube thumbnail (16:9) in a "${style}" style for a video titled "${videoTitle}". ${personLine} ${productLine} Use bold punchy colours and clean studio-style lighting that pops at small sizes. COMPOSITION: keep a clear area of relatively clean background (the upper region or one side) so a large bold text headline can be overlaid on top afterwards — do NOT fill the entire frame edge-to-edge. CRITICAL: do NOT render ANY text, letters, words, captions, numbers, watermarks or logos anywhere in the image (other than branding physically printed on the product itself) — the headline is added separately. Photorealistic, sharp focus, no borders.`
+          ? `the product "${productTitle}" (keep its exact appearance, branding and details from the reference image)`
+          : 'the product shown in the reference image (keep its exact appearance)'
+        // The text overlay is hard-pinned TOP-LEFT downstream, so we MUST keep
+        // the person on the RIGHT and the left clear. We also force ONE
+        // integrated scene (Gemini's default with multiple refs is a collage)
+        // and an expressive re-render of the person (the raw photo looks dead).
+        const nbPrompt = hasPerson
+          ? `Create ONE single, unified, photorealistic YouTube thumbnail (16:9) for a video titled "${videoTitle}". This MUST be one cohesive scene — NOT a collage, NOT a split screen, NOT side-by-side panels, NOT floating cut-outs on a flat gradient. Take the SAME person from the reference photo (keep their exact face, hair and likeness) and naturally re-render them into the scene on the RIGHT side of the frame, chest-up, with an excited, engaged, expressive reaction looking straight at the camera — mouth slightly open, eyebrows raised, energetic. Show them presenting ${productLine}, positioned near them in the same physical space with shared, realistic lighting and shadows so the person and product clearly belong together. Bright, premium, high-contrast lighting and a clean modern background with depth (NOT a flat two-tone gradient, NOT a plain colour block). CRITICAL COMPOSITION: keep the entire LEFT 40% of the frame as simple, clean, uncluttered background — no person and no product on the left — because a large bold text headline is overlaid on the TOP-LEFT afterwards. CRITICAL: render NO text, letters, words, numbers, captions, watermarks or logos anywhere (other than branding physically printed on the product). Sharp focus, photorealistic, no borders, no picture frames.`
+          : `Create ONE single cohesive, photorealistic YouTube thumbnail (16:9) in a "${style}" style for a video titled "${videoTitle}" — not a collage. Do NOT add any people, faces, hands or bodies. Feature ${productLine} as a bold hero, integrated into a bright, premium scene with depth and punchy high-contrast lighting (NOT a flat gradient). Keep the LEFT 40% of the frame as clean, simple background for a text headline overlaid afterwards. Render NO text, letters, numbers, watermarks or logos anywhere (other than branding on the product). Sharp focus, no borders.`
 
         // Fire `variantCount` parallel single-image composes. This guarantees
         // the requested number of DISTINCT variants regardless of whether the
