@@ -402,6 +402,19 @@ export class WordPressService {
     await this.request(`/posts/${id}?force=true`, { method: 'DELETE' })
   }
 
+  /** Best-effort cache purge via the MVP plugin's /purge endpoint (LiteSpeed +
+   *  object cache). Called after writing per-post SEO meta so the rendered page
+   *  reflects it immediately instead of waiting for cache expiry. Non-fatal. */
+  async purgeCache(postId?: number): Promise<void> {
+    try {
+      await fetch(`${this.siteUrl}/wp-json/affiliateos/v1/purge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': this.authHeader },
+        body: JSON.stringify({ post_id: postId ?? 0 }),
+      })
+    } catch { /* non-fatal — page will refresh on cache expiry */ }
+  }
+
   /** Resolve a post id from its slug (for cleaning up posts whose
    *  blog_posts row never linked — e.g. campaign rows that errored). */
   async getPostIdBySlug(slug: string): Promise<number | null> {

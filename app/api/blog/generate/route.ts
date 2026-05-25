@@ -1028,6 +1028,10 @@ async function handleGenerate(request: Request) {
         }
       }
     } catch { /* non-fatal — post is published regardless */ }
+
+    // Purge the post's page cache now everything (content + images + SEO meta)
+    // is written, so the JSON-LD/meta render immediately. Best-effort.
+    await wpService.purgeCache(wpPost.id)
   })
 
   return NextResponse.json({
