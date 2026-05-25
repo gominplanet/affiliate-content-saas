@@ -715,41 +715,6 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
 }
 
 // ─── Manual Facebook token ────────────────────────────────────────────────────
-function ManualFacebookToken({ onConnected }: { onConnected: () => void }) {
-  const [token, setToken] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function save() {
-    if (!token.trim()) return
-    setSaving(true); setError(null)
-    try {
-      const res = await fetch('/api/auth/facebook/manual-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pageAccessToken: token.trim() }) })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to save token')
-      onConnected()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error')
-    } finally { setSaving(false) }
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-        Paste your Facebook Page Access Token below.{' '}
-        <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Get it from Graph API Explorer →</a>
-      </p>
-      <input type="text" value={token} onChange={e => setToken(e.target.value)} placeholder="EAAxxxxxxx..." className="input-field font-mono text-xs" />
-      {error && <p className="text-xs text-[#ff3b30]">{error}</p>}
-      <button onClick={save} disabled={saving || !token.trim()} className="flex items-center gap-2 px-4 py-2 bg-[#1877F2] text-white text-sm font-medium rounded-lg hover:bg-[#1877F2]/90 transition-colors self-start disabled:opacity-50">
-        {saving ? <Loader2 size={14} className="animate-spin" /> : <Facebook size={14} />}
-        {saving ? 'Connecting…' : 'Connect Page'}
-      </button>
-    </div>
-  )
-}
-
-// ─── Manual Threads token ─────────────────────────────────────────────────────
 // ─── Integrations panel (shown after WordPress is connected) ──────────────────
 function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const supabase = createBrowserClient()
@@ -1276,16 +1241,8 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               <Facebook size={14} /> Connect Facebook
             </a>
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-              Recommended. You&apos;ll be sent to Facebook to grant access — on that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post. The token method below only ever connects one Page.
+              You&apos;ll be sent to Facebook to grant access — on that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post.
             </p>
-            <details className="text-xs">
-              <summary className="cursor-pointer text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]">
-                Advanced: paste a Page access token instead
-              </summary>
-              <div className="mt-3">
-                <ManualFacebookToken onConnected={() => load()} />
-              </div>
-            </details>
           </div>
         )}
       </div>
