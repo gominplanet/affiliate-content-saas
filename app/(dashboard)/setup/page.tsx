@@ -750,41 +750,6 @@ function ManualFacebookToken({ onConnected }: { onConnected: () => void }) {
 }
 
 // ─── Manual Threads token ─────────────────────────────────────────────────────
-function ManualThreadsToken({ onConnected }: { onConnected: (username: string) => void }) {
-  const [token, setToken] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function save() {
-    if (!token.trim()) return
-    setSaving(true); setError(null)
-    try {
-      const res = await fetch('/api/auth/threads/manual-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: token.trim() }) })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to save token')
-      onConnected(data.username)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error')
-    } finally { setSaving(false) }
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-        Generate a long-lived token in the{' '}
-        <a href="https://developers.facebook.com" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Meta Developer Portal</a>
-        {' '}→ MVP FLOW → Threads API → Settings → User Token Generator, then paste it below.
-      </p>
-      <input type="text" value={token} onChange={e => setToken(e.target.value)} placeholder="THQWJh..." className="input-field font-mono text-xs" />
-      {error && <p className="text-xs text-[#ff3b30]">{error}</p>}
-      <button onClick={save} disabled={saving || !token.trim()} className="flex items-center gap-2 px-4 py-2 bg-[#1d1d1f] text-white text-sm font-medium rounded-lg hover:bg-black transition-colors self-start disabled:opacity-50">
-        {saving ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
-        {saving ? 'Connecting…' : 'Connect Threads'}
-      </button>
-    </div>
-  )
-}
-
 // ─── Integrations panel (shown after WordPress is connected) ──────────────────
 function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const supabase = createBrowserClient()
@@ -1405,12 +1370,6 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             >
               <MessageCircle size={14} /> Connect Threads
             </a>
-            <details className="text-xs text-[#86868b] dark:text-[#8e8e93]">
-              <summary className="cursor-pointer hover:text-[#6e6e73] dark:hover:text-[#ebebf0] select-none">Advanced: paste a User Access Token instead</summary>
-              <div className="mt-3">
-                <ManualThreadsToken onConnected={(username) => setThreads({ connected: true, userId: '', username })} />
-              </div>
-            </details>
           </div>
         )}
       </div>
