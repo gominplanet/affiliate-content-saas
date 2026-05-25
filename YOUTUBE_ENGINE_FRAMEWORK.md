@@ -117,8 +117,11 @@ MVP must work flawlessly with **zero third-party SEO/scoring accounts** — we w
 - Post the pinned comment + generate & inject chapters (uses existing write scopes).
 
 **Phase 2 — Internal scoring + image system**
-- Internal keyword/intent grounding (transcript + product) → slug/tags/H2s; internal title scorer → pick best alternative; internal thumbnail scorer → publish gate. No external accounts.
-- Image router (Nano Banana Pro / FLUX.2 / Ideogram) + key-frame grounding + N-variant generation.
+- ✅ **Track A (shipped)** — Internal keyword/intent grounding + scoring, no external accounts:
+  - **Title auto-pick** — `scoreTitle` rates all 5 title candidates (best + 4 alts) in `generate-metadata`; the strongest is promoted *before* the description/pinned-comment agents run, so they build around the title that ships. Scores returned as `generated.title_scores`.
+  - **Thumbnail publish gate** — `rankThumbnails` scores every generated variant in `generate-thumbnail` (all 3 paths), reorders best-first (so `thumbnailUrl` = top variant), returns `thumbnailScores`/`thumbnailScore`, and flags `belowThreshold` (<55) so the client can suggest regenerating. No server-side auto-regen (would burn the cap silently).
+  - **Transcript-grounded keyword** — the blog generator now emits `seoKeyword` (the buyer's search phrase, from transcript + product) + a keyword-led `metaDescription` (≤155 chars); the meta description renders via WP post meta, and both persist to `blog_posts` (migration 065) for the re-optimise loop.
+- ◻️ **Track B (next)** — Image router (Nano Banana Pro / FLUX.2 / Ideogram) + key-frame grounding (`lib/youtube-frames.ts`) + N-variant generation (raise the 2-variant cap).
 
 **Phase 3 — Full YouTube write-back UX + verification**
 - Confirmation UI + audit trail + undo for title/desc/tags/thumbnail write-back; graceful thumbnail-eligibility fallback.

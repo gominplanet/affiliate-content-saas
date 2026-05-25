@@ -11,10 +11,43 @@ import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/yout
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { rankThumbnails, type ThumbnailScore } from '@/lib/thumbnail-score'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
 let TELEMETRY: { userId: string | null; tier: string | null } = { userId: null, tier: null }
+
+// Publish-gate threshold (Phase 2 / Track A). When the best variant's
+// vision-LLM score is below this, we flag `belowThreshold` so the client can
+// suggest regenerating. We never auto-regenerate server-side — that would
+// silently burn the user's thumbnail cap and add latency. 0–100 scale.
+const THUMBNAIL_SCORE_THRESHOLD = 55
+
+/**
+ * Score + rank generated thumbnail variants best-first. Returns the URLs
+ * reordered so index 0 is the strongest, the aligned scores, the top score,
+ * and whether the best variant fell below the publish-gate threshold. Fully
+ * best-effort: on any scoring failure the original order is preserved and
+ * scores come back null, so this can never break generation.
+ */
+async function rankVariants(
+  urls: string[],
+  overlayHook: string,
+  ctx: { userId?: string | null; tier?: string | null },
+): Promise<{ urls: string[]; scores: Array<ThumbnailScore | null>; topScore: number | null; belowThreshold: boolean }> {
+  if (urls.length === 0) return { urls, scores: [], topScore: null, belowThreshold: false }
+  const ranked = await rankThumbnails(urls, { title: overlayHook, ctx })
+  if (!ranked.some(r => r.score !== null)) {
+    return { urls, scores: urls.map(() => null), topScore: null, belowThreshold: false }
+  }
+  const topScore = ranked[0].score?.score ?? null
+  return {
+    urls: ranked.map(r => r.url),
+    scores: ranked.map(r => r.score),
+    topScore,
+    belowThreshold: topScore !== null && topScore < THUMBNAIL_SCORE_THRESHOLD,
+  }
+}
 
 // 300s (Vercel Pro max). A face thumbnail runs the gpt-image cut-out and the
 // product scene; we run them in parallel, but gpt-image high quality alone can
@@ -584,10 +617,14 @@ export async function POST(request: Request) {
               feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
             })
           }
+          const rank = await rankVariants(urls, overlayHookU, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
           return NextResponse.json({
             ok: true,
-            thumbnailUrl: urls[0],
-            thumbnailUrls: urls,
+            thumbnailUrl: rank.urls[0],
+            thumbnailUrls: rank.urls,
+            thumbnailScores: rank.scores,
+            thumbnailScore: rank.topScore,
+            belowThreshold: rank.belowThreshold,
             overlayHook: overlayHookU,
             headlineLocked: !!lockedHeadline,
             prompt: kontextInstruction,
@@ -693,12 +730,16 @@ export async function POST(request: Request) {
           }
           console.log('[generate-thumbnail] Kontext results:', kontextUrls)
           const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
+          const rank = await rankVariants(kontextUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
           return NextResponse.json({
             ok: true,
             // Primary url retained for backwards-compat with existing client
-            // code; thumbnailUrls is the full array when variantCount > 1.
-            thumbnailUrl: kontextUrls[0],
-            thumbnailUrls: kontextUrls,
+            // code; thumbnailUrls is the full array (best-first) when variantCount > 1.
+            thumbnailUrl: rank.urls[0],
+            thumbnailUrls: rank.urls,
+            thumbnailScores: rank.scores,
+            thumbnailScore: rank.topScore,
+            belowThreshold: rank.belowThreshold,
             overlayHook,
             headlineLocked: !!lockedHeadline,
             prompt: kontextInstruction,
@@ -746,10 +787,14 @@ export async function POST(request: Request) {
     }
 
     const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
+    const rank = await rankVariants(thumbnailUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
     return NextResponse.json({
       ok: true,
-      thumbnailUrl: thumbnailUrls[0],
-      thumbnailUrls,
+      thumbnailUrl: rank.urls[0],
+      thumbnailUrls: rank.urls,
+      thumbnailScores: rank.scores,
+      thumbnailScore: rank.topScore,
+      belowThreshold: rank.belowThreshold,
       overlayHook,
       headlineLocked: !!lockedHeadline,
       prompt: finalScenePrompt,

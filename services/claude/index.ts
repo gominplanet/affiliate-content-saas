@@ -53,6 +53,20 @@ export interface BlogGenerationOutput {
   content: string
   rating: string
   /**
+   * Phase 2 / Track A — transcript-grounded SEO focus keyword: the single
+   * search phrase a real buyer would type, derived from what the creator
+   * actually said on camera + the product info (not a generic keyword tool).
+   * Used to optimise the meta description and stored for the re-optimise loop.
+   * May be '' if the model omits it (older prompt) — callers fall back.
+   */
+  seoKeyword: string
+  /**
+   * Phase 2 / Track A — a click-optimised meta description (≤155 chars) that
+   * leads with `seoKeyword`. Distinct from `excerpt` (which is the on-page
+   * intro): this is what renders in the SERP/`<head>`. Falls back to excerpt.
+   */
+  metaDescription: string
+  /**
    * The single best-fitting niche label from the brand's `niches` array for
    * this specific post. Filled in by the generator (it gets the niche list
    * in the prompt). Falls back to the first niche if the model omits it or
@@ -456,7 +470,7 @@ OUTPUT FORMAT — TWO BLOCKS, IN THIS ORDER
 
 BLOCK 1 — metadata only, no HTML content:
 %%META_START%%
-{"title":"...","slug":"...","excerpt":"...","tags":[...],"rating":"4.2","category":"...","imagePrompts":{"hero":"...","lifestyle":"...","setting":"..."}}
+{"title":"...","slug":"...","excerpt":"...","seoKeyword":"...","metaDescription":"...","tags":[...],"rating":"4.2","category":"...","imagePrompts":{"hero":"...","lifestyle":"...","setting":"..."}}
 %%META_END%%
 
 BLOCK 2 — full HTML content, no JSON escaping needed:
@@ -467,6 +481,8 @@ BLOCK 2 — full HTML content, no JSON escaping needed:
 BLOCK 1 rules:
 - Valid JSON, no line breaks inside strings
 - excerpt: max 160 chars
+- seoKeyword: the ONE primary search phrase a real buyer would type into Google/YouTube to find THIS product/topic. Derive it from what the creator actually says in the transcript + the product facts — natural buyer language (e.g. "adjustable neck harness", "best budget standing desk"), 2–5 words, no brand fluff, no special characters. This is the phrase the post should rank for.
+- metaDescription: the SERP/social meta description, MAX 155 chars. Lead with seoKeyword in the first few words, then a concrete benefit + a reason to click. Active voice, no hype, no clickbait, never the word "honest". This is distinct from excerpt — write it to win the click in search results.
 - tags: 10 items — mix of broad high-traffic, niche-specific, and product/brand tags for SEO and social virality
 - category: REQUIRED — pick EXACTLY ONE label from this list of brand niches that best fits THIS specific product: ${niches}. Copy the label verbatim, including capitalization, spacing, and the "&" character. If multiple niches plausibly fit, pick the most specific one (e.g. for a kitchen mat prefer "Home & Kitchen" over "Tools & Home Improvement"). If none of the brand niches plausibly fit, pick the closest match anyway — never invent a new category and never leave this field blank.
 - imagePrompts.hero: YouTube thumbnail style. Bold text overlay with short specific verdict (max 6 words, specific to this product outcome). NO hype words — banned: HONEST, TRUTH, REAL, SHOCKING, AMAZING, LEGIT, FINALLY, ACTUALLY, WORTH IT, REAL TALK. Dramatic product close-up, studio lighting, high contrast. No packaging, no box.
@@ -799,7 +815,7 @@ Mandatory in the body:
 - Surface the SPECIFIC FACTS the transcript actually provides (numbers, places, times, names, model details, costs, durations, distances, brands, dates) in prose, not bullet lists — aim for 5+ when the transcript supports it, but ONLY facts that are genuinely stated. NEVER pad to a count with invented, estimated, or guessed numbers; if the video is light on hard facts, use fewer and lean on quotes and what was shown instead.
 - At least 2 MOMENTS rendered as scenes — micro-stories that put the reader IN the room, told in first person. ("I picked it up. Twenty seconds in, I'm already shaking my head.")
 
-If the transcript is missing or thin, build the post around the title + description + tags, but flag the lack of detail honestly (e.g. "Without the full video, what we know is…") — never invent specifics.
+If the transcript is missing or thin, build the post around the title + description + tags, but flag the lack of detail plainly (e.g. "Without the full video, what we know is…") — never invent specifics.
 
 ═══════════════════════════════════════
 VOICE

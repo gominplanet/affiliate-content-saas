@@ -575,6 +575,9 @@ async function handleGenerate(request: Request) {
   generated.title = scrubBanned(generated.title)
   generated.excerpt = scrubBanned(generated.excerpt)
   generated.content = scrubBanned(generated.content)
+  // Phase 2 / Track A SEO fields (may be absent on an older prompt parse).
+  generated.metaDescription = scrubBanned(generated.metaDescription || '')
+  generated.seoKeyword = scrubBanned(generated.seoKeyword || '')
   generated.imagePrompts = {
     hero: scrubBanned(generated.imagePrompts.hero),
     lifestyle: scrubBanned(generated.imagePrompts.lifestyle),
@@ -746,6 +749,24 @@ async function handleGenerate(request: Request) {
     savedPost = data
   }
 
+  // ── Persist Phase 2 / Track A SEO fields (best-effort) ────────────────────
+  // Separate from the core payload so a deploy that lands BEFORE migration 065
+  // runs can never fail the post save — once the columns exist these populate
+  // for the re-optimise loop. The rendered <head> meta does NOT depend on this
+  // (it's written via WP post meta in the after() block above).
+  if (savedPost?.id && (generated.seoKeyword || generated.metaDescription)) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('blog_posts')
+        .update({
+          seo_keyword: generated.seoKeyword || null,
+          meta_description: ((generated.metaDescription || generated.excerpt) || '').slice(0, 300) || null,
+        })
+        .eq('id', savedPost.id)
+    } catch { /* columns may not exist until migration 065 runs — non-fatal */ }
+  }
+
   // Fire-and-forget LEARN-profile evolution. Reads the user's last 5
   // posts + current profile, fills empty slots with AI-inferred
   // suggestions (never overwrites manual entries). Debounced 6h so a
@@ -807,7 +828,7 @@ async function handleGenerate(request: Request) {
         await wpService.updatePost(wpPost.id, {
           meta: {
             mvp_jsonld: JSON.stringify(graph),
-            mvp_meta_description: (generated.excerpt || '').slice(0, 300),
+            mvp_meta_description: ((generated.metaDescription || generated.excerpt) || '').slice(0, 300),
             mvp_og_image: ogImage,
           },
         })

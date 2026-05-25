@@ -9,6 +9,7 @@ import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { scoreTitle } from '@/lib/thumbnail-score'
 
 export const maxDuration = 120
 
@@ -527,6 +528,37 @@ export async function POST(request: Request) {
       anthropic, productContext, videoTitle, tone, productAnalysis, isProduct, priorTitles,
     )
 
+    // ── Internal title scoring (Phase 2 / Track A) ────────────────────────────
+    // The swarm proposes a "best" + 4 alternatives, but that pick is an
+    // unscored LLM guess. Score all 5 candidates on CTR-predictive factors
+    // (curiosity, clarity, keyword-near-front, ≤60 chars) and promote the
+    // strongest. Runs BEFORE the content + engagement agents so the
+    // description and pinned comment are built around the title we actually
+    // ship. Best-effort: scoreTitle returns null on failure, so a total
+    // scoring failure leaves the swarm's own pick untouched.
+    const titleKeyword = productAnalysis.keywords?.[0]
+    let titleScores: Array<{ title: string; score: number; verdict: string }> = []
+    {
+      const candidates = Array.from(
+        new Set([titleResult.best, ...titleResult.alternatives].map(t => (t || '').trim()).filter(Boolean)),
+      )
+      const scored = await Promise.all(
+        candidates.map(async title => ({ title, s: await scoreTitle(title, { keyword: titleKeyword, ctx: { userId: user.id, tier } }) })),
+      )
+      const ranked = scored
+        .filter(r => r.s !== null)
+        .sort((a, b) => (b.s?.score ?? 0) - (a.s?.score ?? 0))
+      if (ranked.length > 0) {
+        const winner = ranked[0].title
+        const rankedRest = ranked.slice(1).map(r => r.title)
+        // Preserve any candidates we couldn't score at the tail so nothing is lost.
+        const unscored = candidates.filter(c => c !== winner && !ranked.some(r => r.title === c))
+        titleResult.best = winner
+        titleResult.alternatives = [...rankedRest, ...unscored]
+        titleScores = ranked.map(r => ({ title: r.title, score: r.s?.score ?? 0, verdict: r.s?.verdict ?? '' }))
+      }
+    }
+
     const [contentResult, engagementResult] = await Promise.all([
       contentWriterAgent(anthropic, productAnalysis, titleResult.best, tone, niches, isProduct, priorDescriptions),
       engagementAgent(anthropic, titleResult.best, productAnalysis, affiliateUrl, tone, priorPinnedComments),
@@ -650,6 +682,7 @@ export async function POST(request: Request) {
         tags: seoData.tags,
         pinnedComment: engagementResult.pinnedComment,
         title_alternatives: titleResult.alternatives,
+        title_scores: titleScores,
       },
     })
   } catch (err) {
