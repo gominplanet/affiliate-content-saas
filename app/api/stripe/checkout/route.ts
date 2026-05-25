@@ -28,6 +28,10 @@ export async function POST(request: NextRequest) {
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: user.email,
     metadata: { user_id: user.id, tier },
+    // Show the "Add promotion code" field on the Stripe Checkout page so users
+    // can redeem a coupon. Requires a Promotion Code (not just a Coupon) to
+    // exist in the Stripe Dashboard.
+    allow_promotion_codes: true,
     // Rewardful affiliate attribution — the referral UUID lives in
     // client_reference_id, which Rewardful's Stripe webhook reads to
     // attribute the conversion to the correct affiliate.
