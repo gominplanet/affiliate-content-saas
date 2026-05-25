@@ -116,9 +116,11 @@ export function extractFaqFromHtml(html: string): SeoFaqItem[] {
   const faqStart = html.search(/<h2[^>]*>\s*Frequently Asked Questions\s*<\/h2>/i)
   if (faqStart === -1) return []
   let section = html.slice(faqStart)
-  // Trim at the next H2 (keep this FAQ section only).
-  const nextH2 = section.slice(1).search(/<h2[^>]*>/i)
-  if (nextH2 !== -1) section = section.slice(0, nextH2 + 1)
+  // Bound the FAQ section so post-FAQ blocks don't leak into the last answer:
+  // stop at the next <h2> OR the verdict / rating / CTA cards that follow the
+  // FAQ in our template (those are <div>s, not headings).
+  const bound = section.slice(1).search(/<h2[^>]*>|class="gr-(?:rating-box|verdict|cta)/i)
+  if (bound !== -1) section = section.slice(0, bound + 1)
 
   const h3re = /<h3[^>]*>([\s\S]*?)<\/h3>/gi
   const marks: Array<{ q: string; end: number; start: number }> = []
