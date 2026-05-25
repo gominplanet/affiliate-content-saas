@@ -227,7 +227,15 @@ export class WordPressService {
     const run = (authHeaders: Record<string, string>, nonce?: { cookies: string; nonce: string }) =>
       fetch(buildUrl(nonce), {
         ...options,
-        headers: { ...authHeaders, ...(options.headers as Record<string, string> || {}) },
+        headers: {
+          // Browser-like UA so host WAFs / security plugins (Hostinger,
+          // Wordfence, mod_security) don't intermittently 403 our REST writes —
+          // they challenge no-UA / "node"-style agents. This is why a post can
+          // publish (one write got through) yet a later meta write silently fails.
+          'User-Agent': 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)',
+          ...authHeaders,
+          ...(options.headers as Record<string, string> || {}),
+        },
       })
 
     let res = await run(buildHeaders())
@@ -411,10 +419,11 @@ export class WordPressService {
   async purgeCache(fallbackCustomizations: unknown = {}): Promise<void> {
     try {
       const base = `${this.siteUrl}/wp-json/affiliateos/v1/customizations`
-      const headers = { 'Content-Type': 'application/json', 'Authorization': this.authHeader }
+      const UA = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
+      const headers = { 'Content-Type': 'application/json', 'Authorization': this.authHeader, 'User-Agent': UA }
       let existing: unknown = {}
       try {
-        const getRes = await fetch(base, { headers: { 'Authorization': this.authHeader } })
+        const getRes = await fetch(base, { headers: { 'Authorization': this.authHeader, 'User-Agent': UA } })
         if (getRes.ok) existing = await getRes.json()
       } catch { /* start fresh */ }
       const payload = (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing).length > 0)
