@@ -414,6 +414,21 @@ function VideoStudioCard({ video, userTier, playlists }: {
       ? (data.thumbnailUrls as string[])
       : [(data.thumbnailUrl as string)].filter(Boolean)
 
+    // Baked path (Nano Banana default): the headline typography is already
+    // rendered INTO the image by the model — show it AS-IS. Drawing our canvas
+    // overlay on top would double the text. We keep the hook so the user can
+    // one-click swap to the clean client-overlay version.
+    if (data.baked === true) {
+      setThumbnailStyleId(null)
+      setThumbnailFeedbackSent(null)
+      setThumbnailUrl(rawList[0])
+      setThumbnailHook(hook)
+      setThumbnailPrompt((data.prompt as string) ?? null)
+      setThumbnailModel((data.modelUsed as string) ?? null)
+      setSceneAnalysis((data.channelStyle as string) ?? null)
+      return
+    }
+
     // Run the text overlay on each variant in parallel — these are small
     // canvas ops so it's fast. Falls back to raw URL on overlay failure
     // so the user never gets stuck.
@@ -546,7 +561,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
     }
   }
 
-  async function generateThumbnail() {
+  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' }) {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
     try {
@@ -565,9 +580,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
-          faceModelId: selectedFaceModelId || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
+          // Default 'baked' (typography rendered into the image). The "clean
+          // text" swap re-runs with 'clean' → text-free scene + canvas overlay.
+          textMode: opts?.textMode ?? 'baked',
         }),
       })
       const data = await safeJson(res)
@@ -614,7 +631,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
-          faceModelId: selectedFaceModelId || undefined,
+          textMode: 'baked',
         }),
       })
       const data = await safeJson(res)
@@ -1346,6 +1363,26 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           <Download size={12} /> Download Thumbnail
                         </a>
                       )}
+                      {thumbnailModel === 'nano-banana' && (
+                        <>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">
+                            ✨ AI-designed — text baked in
+                          </span>
+                          <button
+                            onClick={() => generateThumbnail({ textMode: 'clean' })}
+                            disabled={generatingThumbnail}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
+                            title="Re-render with the headline drawn as a clean overlay instead of baked into the image"
+                          >
+                            <RefreshCw size={12} /> Use clean text instead
+                          </button>
+                        </>
+                      )}
+                      {thumbnailModel === 'nano-banana-clean' && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">
+                          🔤 Clean overlay text
+                        </span>
+                      )}
                       {thumbnailModel === 'upload' && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">
                           📤 Your upload
@@ -1627,75 +1664,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
               </label>
             </div>
 
-            {/* Discoverability — when the user has NO trained faces, show
-                a small purple banner inside the modal so they know face
-                training exists without having to find /face-training in the
-                sidebar. One-tap link to start. */}
-            {faceModels.length === 0 && (
-              <div className="mb-4 pt-4 border-t border-gray-100 dark:border-white/10">
-                <Link
-                  href="/face-training"
-                  onClick={() => setHeadlinePromptOpen(false)}
-                  className="flex items-start gap-3 p-3 rounded-lg border border-[#5856d6]/30 hover:border-[#5856d6] transition-colors"
-                  style={{ background: 'linear-gradient(180deg, rgba(88,86,214,0.06) 0%, transparent 100%)' }}
-                >
-                  <div className="w-7 h-7 rounded-full bg-[#5856d6]/15 flex items-center justify-center flex-shrink-0">
-                    <Sparkles size={13} className="text-[#5856d6]" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Put YOUR face in the thumbnail</p>
-                    <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                      Add a few photos of yourself once (Pro feature) — ready instantly. After that, every thumbnail can include the real you.
-                    </p>
-                  </div>
-                  <span className="text-[11px] text-[#5856d6] font-semibold flex-shrink-0 self-center">
-                    Add →
-                  </span>
-                </Link>
-              </div>
-            )}
-
-            {/* Face model picker — only renders when the user has at
-                least one ready trained face. "None" is the default. */}
-            {faceModels.length > 0 && (
-              <div className="mb-4 pt-4 border-t border-gray-100 dark:border-white/10">
-                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Put your face in it?</p>
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2">
-                  Uses the photos you saved under Your Face as a reference, so the thumbnail shows the real person — not a stock-photo lookalike.
-                </p>
-                <div className="flex flex-col gap-1.5">
-                  <label className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs ${
-                    selectedFaceModelId === null
-                      ? 'border-[#0071e3] bg-[#0071e3]/5'
-                      : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
-                  }`}>
-                    <input
-                      type="radio"
-                      name="face-model"
-                      checked={selectedFaceModelId === null}
-                      onChange={() => setSelectedFaceModelId(null)}
-                    />
-                    <span className="font-medium">No face — let the AI handle it</span>
-                  </label>
-                  {faceModels.map(m => (
-                    <label key={m.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs ${
-                      selectedFaceModelId === m.id
-                        ? 'border-[#0071e3] bg-[#0071e3]/5'
-                        : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
-                    }`}>
-                      <input
-                        type="radio"
-                        name="face-model"
-                        checked={selectedFaceModelId === m.id}
-                        onChange={() => setSelectedFaceModelId(m.id)}
-                      />
-                      <span className="font-medium">{m.name}</span>
-                      <span className="text-[10px] text-[#86868b]">({m.trigger_token})</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Face picker removed — thumbnails now ground on the real video
+                frame (the creator + product are already in it), so no face
+                upload is needed. */}
 
             <div className="flex items-center justify-end gap-2">
               <button

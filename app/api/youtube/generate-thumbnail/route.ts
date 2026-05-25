@@ -12,8 +12,8 @@ import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, type ThumbnailScore } from '@/lib/thumbnail-score'
-import { composeWithNanoBanana, generateWithIdeogram, rehostToFal, rehostAll, NANO_BANANA_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
-import { resolveGroundingFrames } from '@/lib/youtube-frames'
+import { composeWithNanoBanana, generateWithIdeogram, rehostToFal, NANO_BANANA_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
@@ -452,6 +452,7 @@ export async function POST(request: Request) {
       uploadedPhotoUrl,
       cleanupPrompt,
       youtubeVideoId,
+      textMode,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -459,10 +460,15 @@ export async function POST(request: Request) {
       /** The YouTube description — used to find the product link for a real
        *  product photo when there's no Amazon ASIN (non-Amazon products). */
       videoDescription?: string
-      /** YouTube native ID (e.g. dQw4w9WgXcQ). When present we pull REAL
-       *  frames (img.youtube.com) as Nano Banana references so the thumbnail
-       *  is grounded in the actual person + product the creator filmed. */
+      /** YouTube native ID (e.g. dQw4w9WgXcQ). When present we pull the REAL
+       *  video frame (img.youtube.com) and let Nano Banana regenerate a viral
+       *  thumbnail from it — the creator + product are already in the frame, so
+       *  no face upload is needed. */
       youtubeVideoId?: string | null
+      /** 'baked' (default): the headline typography is rendered INTO the image
+       *  for the cohesive "designed" look. 'clean': return a text-free scene so
+       *  the client can draw its crisp canvas overlay (the fallback). */
+      textMode?: 'baked' | 'clean'
       productTitle?: string
       productDescription?: string
       productBullets?: string[]
@@ -589,116 +595,71 @@ export async function POST(request: Request) {
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
     fal.config({ credentials: falKey })
 
-    // ── PATH NB (PRIMARY): Nano Banana single-pass composition ───────────────
-    // Compose the creator + product + a REAL video frame into a FINISHED
-    // thumbnail in ONE call (Google Gemini 2.5 Flash Image via fal). This
-    // replaces the slow gpt-image cut-out → rembg → client-composite chain and
-    // is the architecture that gets us near the ~20s bar: the model preserves
-    // the person's identity from the reference photos natively, so the person
-    // is already IN the scene — no separate cut-out, no client compositing.
-    // Runs whenever we have at least one real reference (subject photo,
-    // product image, or a key frame). On empty output we fall through to the
-    // Kontext / Flux paths below, so this is purely additive + safe.
-    {
-      // Resolve subject references (the person) → fal-hosted URLs.
-      const resolveSubjectFalUrls = async (): Promise<string[]> => {
-        const urls: string[] = []
-        // An uploaded "me + the product" photo is the single strongest ref.
-        if (typeof uploadedPhotoUrl === 'string' && /^https?:\/\//.test(uploadedPhotoUrl)) {
-          const u = await rehostToFal(uploadedPhotoUrl)
-          if (u) urls.push(u)
-        }
-        // Trained face-model source photos (identity anchors).
-        if (faceModel) {
-          for (const path of faceModel.source_images.slice(0, 2)) {
-            try {
-              const { data: file } = await supabase.storage.from('headshots').download(path)
-              if (!file) continue
-              const png = await normalizeToPng(new Uint8Array(await file.arrayBuffer()))
-              const u = await fal.storage.upload(new Blob([new Uint8Array(png)], { type: 'image/png' }))
-              if (u) urls.push(u)
-            } catch { /* skip unreadable photo */ }
-          }
-        }
-        return urls
-      }
+    // ── PATH NB (PRIMARY): Nano Banana, grounded on the REAL video frame ─────
+    // Mirrors how the fast competitor works: the creator + product are ALREADY
+    // in the video's own frame, so we feed THAT frame to Gemini and let it
+    // regenerate a vibrant, viral thumbnail — no face upload, no client-side
+    // compositing. By default the headline typography is BAKED into the image
+    // (the cohesive "designed" look). textMode:'clean' instead returns a
+    // text-free scene for the crisp client-overlay fallback. On any failure we
+    // fall through to the Kontext / Flux paths below, so this stays safe.
+    if (youtubeVideoId) {
+      try {
+        const baseFrame = await resolveBestThumbnail(youtubeVideoId)
+        const frameRef = await rehostToFal(baseFrame)
+        if (frameRef) {
+          const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
+          const wantClean = textMode === 'clean'
+          // Baked: Gemini renders the headline INTO the image as viral type.
+          const bakedPrompt = `Transform this YouTube video frame into a vibrant, scroll-stopping, high-CTR viral YouTube thumbnail (16:9). Keep the main PERSON and the PRODUCT that are already in the frame — preserve the person's exact face and likeness — and give the person an energetic, expressive reaction looking straight at the camera (mouth slightly open, eyebrows up). Re-light and colour-grade dramatically: bright, punchy, saturated, high-contrast colours with depth and a clean modern background so it POPS at small sizes. Render the headline text EXACTLY as: "${overlayHookNB}" — as large, bold, high-impact viral YouTube typography (thick heavy ALL-CAPS sans-serif, dual-tone such as white with one bold accent colour, thick black outline and drop shadow), placed big and legible in the upper-left, NOT covering the person's face or the product. Spell the headline EXACTLY as given. No other text, no watermarks or logos (other than branding physically on the product). Photorealistic subject, sharp focus, no borders.`
+          // Clean: no text — leaves room for the client's canvas overlay.
+          const cleanPrompt = `Transform this YouTube video frame into a vibrant, scroll-stopping viral YouTube thumbnail (16:9). Keep the main PERSON and the PRODUCT already in the frame — preserve the person's exact face and likeness — and give the person an energetic, expressive reaction looking straight at the camera. Re-light and colour-grade dramatically: bright, punchy, saturated, high-contrast colours with depth and a clean modern background that pops at small sizes. Keep the entire LEFT 40% of the frame as clean, simple, uncluttered background for a headline added afterwards. Render NO text, letters, numbers, captions, watermarks or logos anywhere (other than branding physically on the product). Photorealistic, sharp focus, no borders.`
+          const nbPrompt = wantClean ? cleanPrompt : bakedPrompt
 
-      const subjectUrls = await resolveSubjectFalUrls()
-      const productFalUrl = productImageUrl ? await rehostToFal(productImageUrl) : null
-      // Key frames add authenticity for the no-person case, but when we have a
-      // subject photo they push Gemini toward a cluttered COLLAGE of the input
-      // images — so ground on frames ONLY when there's no subject reference.
-      let frameFalUrls: string[] = []
-      if (youtubeVideoId && subjectUrls.length === 0) {
-        try {
-          const frames = await resolveGroundingFrames(youtubeVideoId, { maxFrames: 2, includeMidFrames: true })
-          frameFalUrls = await rehostAll(frames.references)
-        } catch { /* no frames — fine */ }
-      }
-      // Keep the reference set TIGHT (subject + product, max 3). Too many
-      // disparate images makes Gemini lay them out side-by-side instead of
-      // composing one cohesive scene.
-      const refs = [
-        ...subjectUrls,
-        ...(productFalUrl ? [productFalUrl] : []),
-        ...frameFalUrls,
-      ].slice(0, 3)
+          // Fire `variantCount` parallel single-image composes — guarantees the
+          // requested number of DISTINCT variants and runs concurrently, so
+          // wall-clock time ≈ a single generation.
+          const nbBatches = await Promise.all(
+            Array.from({ length: variantCount }, () =>
+              composeWithNanoBanana({ prompt: nbPrompt, referenceImageUrls: [frameRef], aspectRatio: '16:9', numImages: 1 }),
+            ),
+          )
+          const nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
 
-      if (refs.length > 0) {
-        const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
-        const hasPerson = subjectUrls.length > 0
-        const productLine = productTitle
-          ? `the product "${productTitle}" (keep its exact appearance, branding and details from the reference image)`
-          : 'the product shown in the reference image (keep its exact appearance)'
-        // The text overlay is hard-pinned TOP-LEFT downstream, so we MUST keep
-        // the person on the RIGHT and the left clear. We also force ONE
-        // integrated scene (Gemini's default with multiple refs is a collage)
-        // and an expressive re-render of the person (the raw photo looks dead).
-        const nbPrompt = hasPerson
-          ? `Create ONE single, unified, photorealistic YouTube thumbnail (16:9) for a video titled "${videoTitle}". This MUST be one cohesive scene — NOT a collage, NOT a split screen, NOT side-by-side panels, NOT floating cut-outs on a flat gradient. Take the SAME person from the reference photo (keep their exact face, hair and likeness) and naturally re-render them into the scene on the RIGHT side of the frame, chest-up, with an excited, engaged, expressive reaction looking straight at the camera — mouth slightly open, eyebrows raised, energetic. Show them presenting ${productLine}, positioned near them in the same physical space with shared, realistic lighting and shadows so the person and product clearly belong together. Bright, premium, high-contrast lighting and a clean modern background with depth (NOT a flat two-tone gradient, NOT a plain colour block). CRITICAL COMPOSITION: keep the entire LEFT 40% of the frame as simple, clean, uncluttered background — no person and no product on the left — because a large bold text headline is overlaid on the TOP-LEFT afterwards. CRITICAL: render NO text, letters, words, numbers, captions, watermarks or logos anywhere (other than branding physically printed on the product). Sharp focus, photorealistic, no borders, no picture frames.`
-          : `Create ONE single cohesive, photorealistic YouTube thumbnail (16:9) in a "${style}" style for a video titled "${videoTitle}" — not a collage. Do NOT add any people, faces, hands or bodies. Feature ${productLine} as a bold hero, integrated into a bright, premium scene with depth and punchy high-contrast lighting (NOT a flat gradient). Keep the LEFT 40% of the frame as clean, simple background for a text headline overlaid afterwards. Render NO text, letters, numbers, watermarks or logos anywhere (other than branding on the product). Sharp focus, no borders.`
-
-        // Fire `variantCount` parallel single-image composes. This guarantees
-        // the requested number of DISTINCT variants regardless of whether the
-        // endpoint honours num_images, and the calls run concurrently so wall-
-        // clock time ≈ a single generation.
-        const nbBatches = await Promise.all(
-          Array.from({ length: variantCount }, () =>
-            composeWithNanoBanana({ prompt: nbPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
-          ),
-        )
-        const nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
-
-        if (nbUrls.length > 0) {
-          for (let i = 0; i < nbUrls.length; i++) {
-            recordUsage({
-              userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-              feature: 'yt_thumb_nanobanana_image', model: NANO_BANANA_COST_MODEL, images: 1,
+          if (nbUrls.length > 0) {
+            for (let i = 0; i < nbUrls.length; i++) {
+              recordUsage({
+                userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+                feature: 'yt_thumb_nanobanana_image', model: NANO_BANANA_COST_MODEL, images: 1,
+              })
+            }
+            const rank = await rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+            return NextResponse.json({
+              ok: true,
+              thumbnailUrl: rank.urls[0],
+              thumbnailUrls: rank.urls,
+              thumbnailScores: rank.scores,
+              thumbnailScore: rank.topScore,
+              belowThreshold: rank.belowThreshold,
+              overlayHook: overlayHookNB,
+              headlineLocked: !!lockedHeadline,
+              prompt: nbPrompt,
+              styleBriefApplied: false,
+              channelStyle: null,
+              modelUsed: wantClean ? 'nano-banana-clean' : 'nano-banana',
+              // baked:true → headline is already IN the image; the client must
+              // NOT draw a text overlay. baked:false (clean) → client overlays.
+              baked: !wantClean,
+              composited: true,
+              headshotUsed: false,
+              personCutoutUrl: null,
+              faceDebug: `nano-banana frame-grounded (textMode=${wantClean ? 'clean' : 'baked'})`,
             })
           }
-          const rank = await rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
-          return NextResponse.json({
-            ok: true,
-            thumbnailUrl: rank.urls[0],
-            thumbnailUrls: rank.urls,
-            thumbnailScores: rank.scores,
-            thumbnailScore: rank.topScore,
-            belowThreshold: rank.belowThreshold,
-            overlayHook: overlayHookNB,
-            headlineLocked: !!lockedHeadline,
-            prompt: nbPrompt,
-            styleBriefApplied: false,
-            channelStyle: null,
-            modelUsed: 'nano-banana',
-            // Person is baked into the image — the client must NOT composite a
-            // face cut-out on top; it only overlays the text headline.
-            composited: true,
-            headshotUsed: hasPerson,
-            personCutoutUrl: null,
-            faceDebug: `nano-banana (${refs.length} refs: ${subjectUrls.length} subject, ${productFalUrl ? 1 : 0} product, ${frameFalUrls.length} frame)`,
-          })
+          console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
         }
-        console.warn('[generate-thumbnail] Nano Banana returned no image; falling through to Kontext/Flux')
+      } catch (err) {
+        console.warn('[generate-thumbnail] Nano Banana frame path failed, falling through:', err)
       }
     }
 
