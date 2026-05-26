@@ -640,43 +640,65 @@ export async function POST(request: Request) {
         if (frameRef) {
           const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
           const wantClean = textMode === 'clean'
-          // A single grabbed frame often catches the creator BEFORE the product
-          // is on screen (intro/hook). So we also pass the real product image as
-          // a SECOND reference and tell Gemini to compose it INTO the creator's
-          // scene — guaranteeing the product is present + accurate while keeping
-          // the real on-camera person. (frame = person/expression/lighting;
-          // product image = fidelity.)
-          // IDENTITY FIRST: this is the creator's REAL video frame. Treat it as
-          // an ENHANCE, not a compose — adding a separate product image as a 2nd
-          // reference made Gemini regenerate (and fabricate) the person. So we
-          // ground on the frame ALONE and forbid replacing anyone, which keeps
-          // the actual person(s) from the video. The product comes from the
-          // frame itself (we capture a frame where it's on screen).
-          const refs = [frameRef]
-          // Two separate jobs: LOCK the identity (face/people), but AGGRESSIVELY
-          // upgrade production quality everywhere else. Conflating them made
-          // Gemini play safe and pass the raw frame through (looks low-quality).
+
+          // Product image as a SECOND reference so the product renders
+          // accurately (the vidIQ look — real product, not whatever's blurry in
+          // the frame). The prompt strictly scopes ref 2 to the product only, so
+          // the person is taken from ref 1 (the frame) alone — that's what kept
+          // identity from drifting before. Best-effort: dropped if it can't host.
+          const productRef = productImageUrl ? await rehostToFal(productImageUrl) : null
+          const refs = productRef ? [frameRef, productRef] : [frameRef]
+
+          // ── CLEAN path (toggle): enhance the real frame + leave space for the
+          //    crisp client-side canvas headline. True-to-frame face, lighter look.
           const identityLock = `This is the creator's REAL video frame with real people. Keep each person's IDENTITY exactly — same face, facial features and proportions, age, ethnicity, skin tone, hair, gender and build; the people must remain unmistakably the SAME individuals, never a different or generic-looking person. Do not slim, de-age, or change anyone's facial features or who they are. Keep any product/objects already in the frame, rendered accurately.`
           const styleClause = `Treat EVERYTHING ELSE as a high-end retouch + colour grade to make this a glossy, professionally-shot, high-CTR YouTube thumbnail (16:9): substantially SHARPEN and add clarity and fine detail, strongly boost colour vibrancy, saturation and contrast, add bright punchy cinematic lighting with depth and a subtle glow so the subject pops, and clean up + softly blur the background into a premium look. The result must look crisp, vivid, polished and eye-catching at small sizes — NOT a flat, dull, soft or low-quality screengrab. You may give the person a slightly more energetic expression, but their face/identity stays exactly the same. REMOVE any burned-in on-screen text, captions, lower-thirds, channel names, watermarks, video-player UI, progress/scrubber bars, timestamps, end-screen cards/boxes, AND any retailer/marketplace names or logos (e.g. Amazon, Prime), store logos, badges or price tags — keep only branding physically printed on the product itself.`
-          // Baked: Gemini renders the headline INTO the image as viral type.
-          const bakedPrompt = `${identityLock} ${styleClause} Render the headline text EXACTLY: "${overlayHookNB}" — large bold ALL-CAPS viral YouTube typography (dual-tone, e.g. white with one bold accent colour, thick black outline + drop shadow). PLACEMENT: put the headline in whichever top corner has the CLEANEST empty space — the side OPPOSITE the person; it must NOT cover or touch any face, head or the main product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words. Aside from this one headline, ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, sharp focus, no borders.`
-          // Clean: no text — leaves room for the client's canvas overlay.
           const cleanPrompt = `${identityLock} ${styleClause} Keep the upper-LEFT area relatively clean and uncluttered for a headline added afterwards. Render NO text, letters, numbers or captions anywhere. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, sharp focus, no borders.`
-          const nbPrompt = wantClean ? cleanPrompt : bakedPrompt
 
-          // BAKED text → Nano Banana PRO (Gemini 3 Pro Image) so the headline
-          // spells correctly; CLEAN (text-free) → cheaper regular Nano Banana.
+          // ── COMPOSED (baked, default): recompose into a designed, high-CTR
+          //    "creator-review" thumbnail — host large + expressive on one side,
+          //    product hero-rendered on the other with rim-light/glow, the
+          //    background reimagined to fit the video, and a bold dual-tone
+          //    headline baked in. Per-variant host side + title style give the
+          //    variety the user wants when generating 2–3.
+          const TITLE_STYLES = [
+            'a bold heavy CONDENSED ALL-CAPS sans-serif, the FIRST word bright YELLOW and the rest pure WHITE, with a thick solid black outline and a hard drop shadow',
+            'a bold heavy CONDENSED ALL-CAPS sans-serif in pure WHITE with a thick black outline and hard drop shadow',
+            'a bold heavy CONDENSED ALL-CAPS sans-serif in WHITE with ONE key word in a punchy accent colour (red or cyan), thick black outline and drop shadow',
+          ]
+          const productRefClause = productRef
+            ? `REFERENCE IMAGE 2 is the PRODUCT being reviewed — render the product to match it EXACTLY (same shape, colour, materials, proportions and any real branding physically on it). Use reference 2 ONLY for the product; do NOT take any person, face, hands or body from it.`
+            : `Render any product in the scene accurately, prominently and photo-realistically.`
+          const buildComposed = (i: number): string => {
+            const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
+            const productSide = hostSide === 'LEFT' ? 'RIGHT' : 'LEFT'
+            const titleStyle = TITLE_STYLES[i % TITLE_STYLES.length]
+            return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
+REFERENCE IMAGE 1 shows the REAL video creator. Preserve their EXACT face and identity from it — same facial features and proportions, age, ethnicity, skin tone, hair and build. They must be unmistakably the SAME real person, photorealistic, never a generic or altered face.
+${productRefClause}
+COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, with an energetic, expressive reaction (excited, surprised or delighted), looking toward the camera — ideally holding or gesturing toward the product. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so it pops.
+BACKGROUND: reimagine a clean, aspirational scene that fits the video "${videoTitle}", with a punchy cinematic colour grade, depth, and soft background bokeh. High contrast, vivid, eye-catching at small sizes.
+HEADLINE: bake the text EXACTLY "${overlayHookNB}" as ${titleStyle}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words.
+${NO_BRAND_IMAGE_CLAUSE}
+Ultra-sharp, professional, photorealistic.`
+          }
+
+          const promptFor = (i: number): string => wantClean ? cleanPrompt : buildComposed(i)
+          // Representative prompt for telemetry / the response payload.
+          const nbPrompt = promptFor(0)
+
+          // BAKED/composed → Nano Banana PRO (Gemini 3 Pro Image): best identity
+          // preservation + reliable baked text. CLEAN → cheaper regular NB.
           const usePro = !wantClean
           let nbModelKey = usePro ? NANO_BANANA_PRO_COST_MODEL : NANO_BANANA_COST_MODEL
           let nbModelUsed = wantClean ? 'nano-banana-clean' : 'nano-banana-pro'
           const composeFn = usePro ? composeWithNanoBananaPro : composeWithNanoBanana
 
-          // Fire `variantCount` parallel single-image composes — guarantees the
-          // requested number of DISTINCT variants and runs concurrently, so
-          // wall-clock time ≈ a single generation.
+          // Fire `variantCount` parallel single-image composes — each with its
+          // own prompt (rotating host side + title style) so variants differ.
           const nbBatches = await Promise.all(
-            Array.from({ length: variantCount }, () =>
-              composeFn({ prompt: nbPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
+            Array.from({ length: variantCount }, (_, i) =>
+              composeFn({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
             ),
           )
           let nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
@@ -685,8 +707,8 @@ export async function POST(request: Request) {
           // Nano Banana so we still produce a thumbnail rather than failing.
           if (nbUrls.length === 0 && usePro) {
             const fb = await Promise.all(
-              Array.from({ length: variantCount }, () =>
-                composeWithNanoBanana({ prompt: nbPrompt, referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
+              Array.from({ length: variantCount }, (_, i) =>
+                composeWithNanoBanana({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
               ),
             )
             nbUrls = fb.flat().filter(Boolean).slice(0, variantCount)

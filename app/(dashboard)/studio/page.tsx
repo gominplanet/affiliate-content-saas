@@ -621,11 +621,12 @@ function VideoStudioCard({ video, userTier, playlists }: {
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
-          // Default 'clean': the model renders a text-FREE image (which it does
-          // reliably) and we draw the headline with the pixel-perfect canvas
-          // overlay — image models can't spell, so we never let them. The
-          // optional "Try AI-baked text" button re-runs with 'baked'.
-          textMode: opts?.textMode ?? 'clean',
+          // Default 'baked': the composed, vidIQ-style designed thumbnail
+          // (host + hero product + reimagined scene + bold baked title) via
+          // Nano Banana Pro, which spells reliably. The "Switch to crisp text"
+          // button re-runs with 'clean' (enhanced frame + pixel-perfect canvas
+          // overlay) for users who want a true-to-frame face.
+          textMode: opts?.textMode ?? 'baked',
           capturedFrames: capturedFrames.length ? capturedFrames : undefined,
         }),
       })
@@ -673,7 +674,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
           styleReferenceUrl: styleReferenceUrl || undefined,
-          textMode: 'clean',
+          // Composed, vidIQ-style designed thumbnail by default (matches the
+          // manual Generate button). 'Switch to crisp text' re-runs as 'clean'.
+          textMode: 'baked',
         }),
       })
       const data = await safeJson(res)
@@ -1465,7 +1468,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       {(thumbnailModel === 'nano-banana' || thumbnailModel === 'nano-banana-pro') && (
                         <>
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">
-                            {thumbnailModel === 'nano-banana-pro' ? '✨ AI-baked text (Pro)' : '✨ AI-baked text (may have typos)'}
+                            {thumbnailModel === 'nano-banana-pro' ? '✨ Designed thumbnail (Pro)' : '✨ AI-baked text (may have typos)'}
                           </span>
                           <button
                             onClick={() => generateThumbnail({ textMode: 'clean' })}
