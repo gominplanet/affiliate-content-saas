@@ -426,7 +426,7 @@ export async function POST(request: Request) {
     // crisply client-side). Mirrors the YouTube composed path. Only when the
     // face model has source photos (the instant, no-LoRA models).
     const igFaceRefs = faceModel?.source_images?.length
-      ? await rehostFacePhotos(sb, faceModel.source_images, 3)
+      ? await rehostFacePhotos(sb, faceModel.source_images, 5)
       : []
     if (igFaceRefs.length > 0) {
       try {

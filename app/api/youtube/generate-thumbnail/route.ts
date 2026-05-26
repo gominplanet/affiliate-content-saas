@@ -771,7 +771,7 @@ export async function POST(request: Request) {
           // Pro locks the host's likeness from MULTIPLE angles — the biggest
           // lever for resemblance vs. a single frame. Best-effort.
           const faceRefs = faceModel?.source_images?.length
-            ? await rehostFacePhotos(supabase, faceModel.source_images, 3)
+            ? await rehostFacePhotos(supabase, faceModel.source_images, 5)
             : []
           // Product image as a reference so the product renders accurately (the
           // vidIQ look). The prompt scopes the product ref to the product ONLY,
