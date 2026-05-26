@@ -40,6 +40,7 @@ import {
   MessagesSquare,
   UserCircle2,
   Bot,
+  Scale,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -82,6 +83,7 @@ const navGroups: NavGroup[] = [
     label: 'Create & Publish',
     items: [
       { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' },
+      { href: '/comparison', label: 'Compare & Guides', icon: Scale, matchKind: 'prefix' },
       { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' },
       { href: '/instagram-burner', label: 'Instagram Burner', icon: Flame, matchKind: 'prefix' },
       { href: '/photobooth', label: 'Photobooth', icon: Camera, matchKind: 'prefix' },
