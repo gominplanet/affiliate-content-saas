@@ -1592,7 +1592,7 @@ function InstagramPublishModal({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, previewBeforePublish, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -1613,7 +1613,6 @@ function VideoCard({
   customCategories: string[]
   brandDisclaimer: string
   brandFacebookGroups: Array<{ name: string; url: string }>
-  previewBeforePublish: boolean
   onCustomCategoryAdded: (next: string[]) => void
   onGenerated: (videoId: string, url: string, title: string, postId: string) => void
   onDismiss: () => void
@@ -1770,137 +1769,41 @@ function VideoCard({
   // trigger it explicitly via the Instagram pill on each card.
   const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected, blueskyConnected, telegramConnected].filter(Boolean).length
 
-  /** Shared response handler for every per-platform Publish button.
-   *  - 429 + socialCapReached → fire the global cap banner.
-   *  - 200 + isLastAllowed    → toast/alert so the user knows the
-   *    *next* attempt on this platform for this post will be blocked.
-   *  - Anything else falls through to the platform's own handling. */
-  async function handleSocialResponse(
-    res: Response,
-    platformLabel: string,
-    onOk: () => void,
-  ): Promise<void> {
-    const d = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    if (res.status === 429 && d.socialCapReached) {
-      dispatchCapReached(
-        d.error || `${platformLabel} re-publish cap reached.`,
-        { cap: 'social-republish', currentTier: undefined, upgrade: null },
-      )
-      return
-    }
-    if (!res.ok) {
-      alert(d.error || `${platformLabel} post failed`)
-      return
-    }
-    onOk()
-    // Two-step warning so users aren't surprised when the cap hits.
-    // After publish #(CAP-1) → "your next will be the last".
-    // After publish #CAP    → "that was the last; future blocked".
-    const newCount = typeof d.publishCount === 'number' ? d.publishCount : null
-    if (newCount === SOCIAL_CAP) {
-      alert(`Heads up: that was your last allowed re-publish to ${platformLabel} for this post. The next attempt will be blocked.`)
-    } else if (newCount === SOCIAL_CAP - 1) {
-      alert(`Heads up: your next re-publish to ${platformLabel} for this post will be the last allowed. After that, ${platformLabel} pushes will be blocked.`)
-    }
-  }
   const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted) || (blueskyConnected && !bsPosted) || (telegramConnected && !tgPosted)
   const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost)
 
-  async function handleBlueskyPost() {
+  // Every social pill opens a preview + confirm modal first. The modal
+  // (SocialPreviewModal) performs the actual publish on confirm, so these
+  // handlers only need to open it. This is enforced for all platforms — there
+  // is no "publish straight away" path for individual pills anymore.
+  function handleBlueskyPost() {
     if (!post?.postId) return
-    if (previewBeforePublish) { setPreviewPlatform('bluesky'); return }
-    setBsPosting(true)
-    try {
-      const res = await fetch('/api/blog/bluesky-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.postId }),
-      })
-      await handleSocialResponse(res, 'Bluesky', () => setBsPosted(true))
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Bluesky post failed')
-    } finally { setBsPosting(false) }
+    setPreviewPlatform('bluesky')
   }
 
-  async function handleTelegramPost() {
+  function handleTelegramPost() {
     if (!post?.postId) return
-    if (previewBeforePublish) { setPreviewPlatform('telegram'); return }
-    setTgPosting(true)
-    try {
-      const res = await fetch('/api/blog/telegram-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.postId }),
-      })
-      await handleSocialResponse(res, 'Telegram', () => setTgPosted(true))
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Telegram post failed')
-    } finally { setTgPosting(false) }
+    setPreviewPlatform('telegram')
   }
 
-  async function handleTwitterPost() {
+  function handleTwitterPost() {
     if (!post?.postId) return
-    if (previewBeforePublish) { setPreviewPlatform('twitter'); return }
-    setTwPosting(true)
-    try {
-      const res = await fetch('/api/blog/twitter-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.postId }),
-      })
-      await handleSocialResponse(res, 'X', () => setTwPosted(true))
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'X post failed')
-    } finally { setTwPosting(false) }
+    setPreviewPlatform('twitter')
   }
 
-  async function handleLinkedInPost() {
+  function handleLinkedInPost() {
     if (!post?.postId) return
-    if (previewBeforePublish) { setPreviewPlatform('linkedin'); return }
-    setLiPosting(true)
-    try {
-      const res = await fetch('/api/blog/linkedin-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.postId }),
-      })
-      await handleSocialResponse(res, 'LinkedIn', () => setLiPosted(true))
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'LinkedIn post failed')
-    } finally { setLiPosting(false) }
+    setPreviewPlatform('linkedin')
   }
 
-  async function handleFacebookPost() {
+  function handleFacebookPost() {
     if (!post?.postId) return
-    // Open the share popup whenever the user has saved Facebook Groups (so they
-    // can copy + paste into groups), or when preview-before-publish is on.
-    // Otherwise (Pages only, no preview) publish straight to the selected Page.
-    if (brandFacebookGroups.length > 0 || previewBeforePublish) { setPreviewPlatform('facebook'); return }
-    setFbPosting(true)
-    try {
-      const res = await fetch('/api/blog/facebook-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.postId, socialAccountId: effectiveFbAccountId ?? undefined }),
-      })
-      await handleSocialResponse(res, 'Facebook', () => setFbPosted(true))
-    } finally { setFbPosting(false) }
+    setPreviewPlatform('facebook')
   }
 
-  async function handleThreadsPost() {
+  function handleThreadsPost() {
     if (!post?.postId) return
-    if (previewBeforePublish) { setPreviewPlatform('threads'); return }
-    setThPosting(true)
-    try {
-      const res = await fetch('/api/blog/threads-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId: post.postId }),
-      })
-      await handleSocialResponse(res, 'Threads', () => setThPosted(true))
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Threads post failed')
-    } finally { setThPosting(false) }
+    setPreviewPlatform('threads')
   }
 
   async function handlePinPreview() {
@@ -2402,9 +2305,6 @@ export default function ContentPage() {
   const [customCategories, setCustomCategories] = useState<string[]>([])
   const [brandDisclaimer, setBrandDisclaimer] = useState('')
   const [brandFacebookGroups, setBrandFacebookGroups] = useState<Array<{ name: string; url: string }>>([])
-  /** When true, social pill clicks open a preview/edit modal instead of one-click publishing.
-   *  Persisted across sessions in localStorage so it sticks to the user's choice. */
-  const [previewBeforePublish, setPreviewBeforePublish] = useState(false)
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ pulled: number; pages: number } | null>(null)
@@ -2461,12 +2361,6 @@ export default function ContentPage() {
   const [showHidden, setShowHidden] = useState(false)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
-  // Hydrate the preview-before-publish toggle from localStorage
-  useEffect(() => {
-    try {
-      setPreviewBeforePublish(localStorage.getItem('mvp_preview_before_publish') === '1')
-    } catch { /* ignore */ }
-  }, [])
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -3129,24 +3023,6 @@ export default function ContentPage() {
       <TutorialVideo sectionKey="library" />
       <CapBannerHost />
 
-      {/* Preview-before-publish toggle. When checked, clicking a social pill
-          on a video card opens an editable modal with the AI-generated text
-          instead of publishing immediately. Choice persists per browser. */}
-      <label className="flex items-center gap-2 -mt-2 mb-3 cursor-pointer w-fit">
-        <input
-          type="checkbox"
-          checked={previewBeforePublish}
-          onChange={e => {
-            const next = e.target.checked
-            setPreviewBeforePublish(next)
-            try { localStorage.setItem('mvp_preview_before_publish', next ? '1' : '0') } catch { /* ignore */ }
-          }}
-          className="rounded border-gray-300"
-        />
-        <span className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">Edit preview before publishing to socials</span>
-        <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">— when off, posts ship immediately</span>
-      </label>
-
       {/* Tab bar — split Videos into Horizontal (16:9 long-form, blog source)
           and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
       <div className="flex items-center gap-1 border-b border-gray-200 dark:border-white/10 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -3543,7 +3419,6 @@ export default function ContentPage() {
                     customCategories={customCategories}
                     brandDisclaimer={brandDisclaimer}
                     brandFacebookGroups={brandFacebookGroups}
-                    previewBeforePublish={previewBeforePublish}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
