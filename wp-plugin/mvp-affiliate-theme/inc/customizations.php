@@ -299,7 +299,11 @@ if (!function_exists('mvp_affiliate_render_block')) {
  */
 if (!function_exists('mvp_affiliate_homepage_ads')) {
     function mvp_affiliate_homepage_ads(): array {
-        $d = mvp_affiliate_get_data();
+        // Use the theme's own accessor — NOT mvp_affiliate_get_data(), which
+        // only exists in the companion plugin. When a site runs the theme
+        // without the plugin active, mvp_affiliate_get_data() is undefined and
+        // the homepage ad strip fatals (WSOD) while single posts still render.
+        $d = mvp_affiliate_data();
         $raw = is_array($d['homepageAds'] ?? null) ? $d['homepageAds'] : [];
         $out = [];
         for ($i = 0; $i < 3; $i++) {
