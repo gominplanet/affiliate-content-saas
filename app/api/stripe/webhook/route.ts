@@ -62,24 +62,41 @@ export async function POST(request: NextRequest) {
       cancel_at_period_end?: boolean
       current_period_start?: number
       current_period_end?: number
+      metadata?: { user_id?: string; tier?: Tier }
     }
     const priceId = sub.items.data[0]?.price.id
-    const tier = PRICE_TO_TIER[priceId]
+    // Prefer the env price→tier map; fall back to the tier we stamped on the
+    // subscription at checkout so a stale/missing env mapping can't silently
+    // skip the upgrade.
+    const tier = PRICE_TO_TIER[priceId] ?? sub.metadata?.tier
+    const userId = sub.metadata?.user_id
     if (tier) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any).from('integrations')
-        .update({
-          tier,
-          stripe_subscription_id: sub.id,
-          subscription_status: sub.cancel_at_period_end ? 'canceling' : sub.status,
-          subscription_period_start: sub.current_period_start
-            ? new Date(sub.current_period_start * 1000).toISOString()
-            : null,
-          subscription_period_end: sub.current_period_end
-            ? new Date(sub.current_period_end * 1000).toISOString()
-            : null,
-        })
-        .eq('stripe_customer_id', sub.customer)
+      const fields = {
+        tier,
+        stripe_customer_id: sub.customer,
+        stripe_subscription_id: sub.id,
+        subscription_status: sub.cancel_at_period_end ? 'canceling' : sub.status,
+        subscription_period_start: sub.current_period_start
+          ? new Date(sub.current_period_start * 1000).toISOString()
+          : null,
+        subscription_period_end: sub.current_period_end
+          ? new Date(sub.current_period_end * 1000).toISOString()
+          : null,
+      }
+      // If we know the user_id (stamped on the subscription at checkout), upsert
+      // by user_id — this links the row + applies the tier even when
+      // checkout.session.completed hasn't run yet (no chicken-and-egg on the
+      // stripe_customer_id). Otherwise fall back to matching by customer id
+      // (renewals / older subscriptions without our metadata).
+      if (userId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any).from('integrations').upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' })
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (admin as any).from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
+      }
+    } else {
+      console.warn('[stripe-webhook] subscription event with no resolvable tier', { priceId, subId: sub.id, hasMetaTier: !!sub.metadata?.tier })
     }
   }
 

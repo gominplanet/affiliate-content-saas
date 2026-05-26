@@ -28,6 +28,14 @@ export async function POST(request: NextRequest) {
     line_items: [{ price: priceId, quantity: 1 }],
     customer_email: user.email,
     metadata: { user_id: user.id, tier },
+    // Also stamp the SUBSCRIPTION with the same metadata. Stripe does NOT copy
+    // checkout-session metadata onto the subscription, so without this the
+    // customer.subscription.created/updated events carry no user_id and the
+    // webhook can only match by stripe_customer_id — which isn't linked yet on
+    // a first purchase. Stamping the subscription lets the webhook upsert by
+    // user_id directly, so the upgrade applies even if checkout.session.completed
+    // is delayed or not subscribed in the dashboard.
+    subscription_data: { metadata: { user_id: user.id, tier } },
     // Show the "Add promotion code" field on the Stripe Checkout page so users
     // can redeem a coupon. Requires a Promotion Code (not just a Coupon) to
     // exist in the Stripe Dashboard.
