@@ -219,10 +219,13 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
       "short_name": "A SHORT product label: brand + model only, 2-4 words, NO marketing fluff or specs (e.g. 'DREAME L50 Ultra', 'Anker Stick Vacuum')",
       "heading": "Short heading with rank/use-case, e.g. '1. Acme Pro — Best Overall'",
       "body_html": "About 450-500 words as raw HTML <p>...</p> (and optional <ul><li>) blocks. First person. Sell this product's real features + benefits from its data. Concrete, specific, no fabricated claims.",
+      "pros": ["2-4 short concrete pros, grounded in this product's real data/transcript"],
+      "cons": ["1-3 short honest drawbacks/limitations, grounded in the data (every product has trade-offs)"],
       "verdict": "one punchy sentence — the bottom line for this product"
     }
     // ... one object per product, ORDERED by your ranking (best first for comparison)
   ],
+  "winner_blurb": ${mode === 'comparison' ? '"one sentence on WHY the #1 pick wins — for the quick-verdict box at the top"' : 'null'},
   "conclusion_html": "1 short closing paragraph as <p> blocks with a soft CTA",
   "feature_table": {
     "features": ["5-8 short feature/capability labels relevant to THIS product category that differentiate the products, e.g. 'Cordless', 'HEPA filter', 'Self-emptying', 'Pet-hair tool', 'App control', '2yr+ warranty'"],
@@ -235,7 +238,8 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
 
   let parsed: {
     title: string; meta_description: string; hero_prompt?: string; intro_html: string; winner_index: number | null
-    products: Array<{ index: number; short_name?: string; heading: string; body_html: string; verdict: string }>
+    winner_blurb?: string | null
+    products: Array<{ index: number; short_name?: string; heading: string; body_html: string; verdict: string; pros?: string[]; cons?: string[] }>
     conclusion_html: string; faq: Array<{ q: string; a: string }>
     feature_table?: { features: string[]; rows: Array<{ index: number; values: string[] }> }
   }
@@ -269,6 +273,20 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   body += `<!-- wp:group {"style":{"color":{"background":"#fffbe6"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#FFC200","width":"4px"}}},"layout":{"type":"constrained"}} -->\n<div class="wp-block-group has-background" style="border-left-color:#FFC200;border-left-width:4px;background-color:#fffbe6;padding:16px 20px"><!-- wp:paragraph {"style":{"typography":{"fontSize":"13px"}}} --><p style="font-size:13px">${scrub(disclaimer)}</p><!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n`
   body += `${scrub(parsed.intro_html)}\n` // intro — already <p> blocks
 
+  // ── Quick-verdict winner box (comparison mode) ──────────────────────────────
+  if (mode === 'comparison' && typeof parsed.winner_index === 'number') {
+    const wItem = parsed.products.find(p => p.index === parsed.winner_index)
+    const wProd = resolved[parsed.winner_index]
+    if (wItem && wProd) {
+      const wName = scrub(wItem.short_name || wProd.productName.split(',')[0] || wProd.productName)
+      const wWhy = scrub(parsed.winner_blurb || wItem.verdict || '')
+      const wBtn = wProd.affiliateUrl
+        ? ` <a href="${wProd.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener"><strong>Check price →</strong></a>`
+        : ''
+      body += `<!-- wp:group {"style":{"color":{"background":"#f0f7ff"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#0071e3","width":"4px"}}},"layout":{"type":"constrained"}} -->\n<div class="wp-block-group has-background" style="border-left-color:#0071e3;border-left-width:4px;background-color:#f0f7ff;padding:16px 20px"><!-- wp:paragraph --><p>🏆 <strong>Our #1 pick: ${wName}.</strong> ${wWhy}${wBtn}</p><!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n`
+    }
+  }
+
   // Order products by Claude's ranking (it returns them ordered); guard indexes.
   for (const item of parsed.products) {
     const p = resolved[item.index]
@@ -277,6 +295,15 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     // Embed the source review video — readers see the thumbnail + can watch it.
     body += ytEmbed(p.videoId)
     body += `${scrub(item.body_html)}\n`
+    // Pros / cons lists.
+    const pros = (item.pros || []).filter(Boolean)
+    const cons = (item.cons || []).filter(Boolean)
+    if (pros.length || cons.length) {
+      const li = (arr: string[]) => arr.map(x => `<li>${scrub(x)}</li>`).join('')
+      const prosCol = pros.length ? `<!-- wp:column --><div class="wp-block-column"><!-- wp:paragraph --><p><strong>👍 Pros</strong></p><!-- /wp:paragraph --><!-- wp:list --><ul>${li(pros)}</ul><!-- /wp:list --></div><!-- /wp:column -->` : ''
+      const consCol = cons.length ? `<!-- wp:column --><div class="wp-block-column"><!-- wp:paragraph --><p><strong>👎 Cons</strong></p><!-- /wp:paragraph --><!-- wp:list --><ul>${li(cons)}</ul><!-- /wp:list --></div><!-- /wp:column -->` : ''
+      body += `<!-- wp:columns --><div class="wp-block-columns">${prosCol}${consCol}</div><!-- /wp:columns -->\n`
+    }
     if (item.verdict) {
       body += `<!-- wp:paragraph {"style":{"typography":{"fontStyle":"italic"}}} --><p><em>👉 ${scrub(item.verdict)}</em></p><!-- /wp:paragraph -->\n`
     }
@@ -308,7 +335,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       return `<tr><td>${nameCell}</td>${cells}</tr>`
     }).join('')
     body += `<!-- wp:heading --><h2>Feature comparison at a glance</h2><!-- /wp:heading -->\n`
-    body += `<!-- wp:table {"className":"is-style-stripes"} --><figure class="wp-block-table is-style-stripes"><table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table><figcaption class="wp-element-caption">✅ yes · ➖ limited · ❌ no</figcaption></figure><!-- /wp:table -->\n`
+    body += `<!-- wp:table {"className":"is-style-stripes"} --><figure class="wp-block-table is-style-stripes" style="overflow-x:auto"><table style="min-width:560px"><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table><figcaption class="wp-element-caption">✅ yes · ➖ limited · ❌ no</figcaption></figure><!-- /wp:table -->\n`
   }
 
   // Conclusion
@@ -352,6 +379,39 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     }
   } catch { /* publish without a hero rather than fail */ }
 
+  // ── JSON-LD: BlogPosting + ItemList (ranked products) + FAQPage ─────────────
+  // Rendered in <head> by the MVP plugin via the mvp_jsonld post meta.
+  const siteBase = (wp.wordpress_url || '').replace(/\/$/, '')
+  const postUrl = `${siteBase}/${slug}/`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graph: any[] = [
+    {
+      '@type': 'BlogPosting',
+      headline: title,
+      description: scrub(parsed.meta_description),
+      datePublished: new Date().toISOString(),
+      mainEntityOfPage: postUrl,
+      author: { '@type': 'Person', name: (brand?.author_name as string) || (brand?.name as string) || 'Editor' },
+    },
+    {
+      '@type': 'ItemList',
+      itemListOrder: 'https://schema.org/ItemListOrderDescending',
+      itemListElement: parsed.products.map((it, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        name: scrub(it.short_name || resolved[it.index]?.productName || `Product ${i + 1}`),
+        ...(resolved[it.index]?.affiliateUrl ? { url: resolved[it.index]!.affiliateUrl } : {}),
+      })),
+    },
+  ]
+  if (Array.isArray(parsed.faq) && parsed.faq.length) {
+    graph.push({
+      '@type': 'FAQPage',
+      mainEntity: parsed.faq.map(f => ({ '@type': 'Question', name: scrub(f.q), acceptedAnswer: { '@type': 'Answer', text: scrub(f.a) } })),
+    })
+  }
+  const jsonld = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })
+
   let wpPost
   try {
     wpPost = await wpService.createPost({
@@ -361,7 +421,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       slug,
       status: 'publish',
       ...(featuredMedia ? { featured_media: featuredMedia } : {}),
-      meta: { mvp_meta_description: scrub(parsed.meta_description) },
+      meta: { mvp_meta_description: scrub(parsed.meta_description), mvp_jsonld: jsonld },
     })
   } catch (err) {
     return NextResponse.json({ error: `WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
