@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
@@ -15,9 +16,21 @@ import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload,
 } from 'lucide-react'
-import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
-import { SocialPreviewModal } from '@/components/content/SocialPreviewModal'
-import { BulkScheduleModal } from '@/components/content/BulkScheduleModal'
+import type { PinPreviewData } from '@/components/PinterestPreviewModal'
+// Interaction-gated modals are code-split (next/dynamic, client-only) so they
+// stay out of the heavy content-page initial bundle and only load when opened.
+const PinterestPreviewModal = dynamic(
+  () => import('@/components/PinterestPreviewModal').then(m => ({ default: m.PinterestPreviewModal })),
+  { ssr: false },
+)
+const SocialPreviewModal = dynamic(
+  () => import('@/components/content/SocialPreviewModal').then(m => ({ default: m.SocialPreviewModal })),
+  { ssr: false },
+)
+const BulkScheduleModal = dynamic(
+  () => import('@/components/content/BulkScheduleModal').then(m => ({ default: m.BulkScheduleModal })),
+  { ssr: false },
+)
 
 // Shape returned by /api/blog/scheduled-list — flat enough that we don't
 // need a separate type module.

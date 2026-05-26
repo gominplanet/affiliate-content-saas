@@ -1,10 +1,16 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo, Suspense } from 'react'
+import dynamic from 'next/dynamic'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { Loader2, Sparkles, ExternalLink, CheckCircle, Clock, Send, Trash2, Copy, RefreshCw, Puzzle, AlertCircle } from 'lucide-react'
-import { PinterestPreviewModal, type PinPreviewData } from '@/components/PinterestPreviewModal'
+import type { PinPreviewData } from '@/components/PinterestPreviewModal'
+// Code-split the pin preview modal — only loads when the user previews a Pin.
+const PinterestPreviewModal = dynamic(
+  () => import('@/components/PinterestPreviewModal').then(m => ({ default: m.PinterestPreviewModal })),
+  { ssr: false },
+)
 import { ProLock } from '@/components/ProLock'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { effectiveTier } from '@/lib/view-as'
