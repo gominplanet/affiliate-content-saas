@@ -184,6 +184,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
         .filter(m => m.status === 'ready')
         .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
       setFaceModels(ready)
+      // Auto-use the first ready face model so the composed thumbnail locks the
+      // host's real likeness from their photos by default (the user can turn it
+      // off below). Only set when nothing's chosen yet.
+      setSelectedFaceModelId(prev => prev ?? (ready[0]?.id ?? null))
     } catch { setFaceModels([]) }
   }, [])
 
@@ -618,6 +622,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           style: 'lifestyle',
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
+          // "Your Face" — lock the host's likeness from their uploaded photos.
+          faceModelId: selectedFaceModelId || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
@@ -673,6 +679,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           style: 'lifestyle',
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
+          faceModelId: selectedFaceModelId || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           // Composed, vidIQ-style designed thumbnail by default (matches the
           // manual Generate button). 'Switch to crisp text' re-runs as 'clean'.
@@ -1398,6 +1405,30 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     </button>
                   ))}
                 </div>
+
+                {/* "Your Face" — locks the host's real likeness from their
+                    uploaded photos. Auto-on when a face is set up; toggle off to
+                    rely on the video frame alone. Manage faces in Face Training. */}
+                {faceModels.length > 0 ? (
+                  <label className="flex items-center gap-2 mb-3 cursor-pointer w-fit" title="Use your uploaded face photos so the generated host looks like you">
+                    <input
+                      type="checkbox"
+                      checked={!!selectedFaceModelId}
+                      onChange={e => setSelectedFaceModelId(e.target.checked ? (faceModels[0]?.id ?? null) : null)}
+                      disabled={generatingThumbnail || instantLoading}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">
+                      Use my face{faceModels[0]?.name ? ` (${faceModels[0].name})` : ''}
+                    </span>
+                    <span className="text-[10px] text-[#86868b]">— stronger likeness from your photos</span>
+                  </label>
+                ) : (
+                  <p className="text-[10px] text-[#86868b] mb-3">
+                    Want the host to look more like you? Add your photos in{' '}
+                    <a href="/face-training" className="text-[#0071e3] hover:underline">Face Training</a> — they&apos;ll lock your likeness into every thumbnail.
+                  </p>
+                )}
 
                 {thumbnailError && (
                   <p className="text-xs text-[#ff3b30] mb-3">{thumbnailError}</p>

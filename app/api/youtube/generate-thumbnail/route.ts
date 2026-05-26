@@ -307,6 +307,26 @@ const CUTOUT_POSES = [
 ]
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
+/**
+ * Re-host a face model's source photos to fal so they can be passed as
+ * identity references to Nano Banana Pro. The "Your Face" lever for the
+ * composed thumbnail: more real photos of the host = far stronger likeness
+ * than a single video frame. Best-effort — skips any photo that won't load.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function rehostFacePhotos(supabase: any, paths: string[], max = 3): Promise<string[]> {
+  const out: string[] = []
+  for (const path of paths.slice(0, max)) {
+    try {
+      const { data: file } = await supabase.storage.from('headshots').download(path)
+      if (!file) continue
+      const url = await fal.storage.upload(file as Blob)
+      if (url) out.push(url)
+    } catch { /* skip unreadable photo */ }
+  }
+  return out
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function generateFaceCutout(supabase: any, opts: {
   userId: string
@@ -641,13 +661,19 @@ export async function POST(request: Request) {
           const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
           const wantClean = textMode === 'clean'
 
-          // Product image as a SECOND reference so the product renders
-          // accurately (the vidIQ look — real product, not whatever's blurry in
-          // the frame). The prompt strictly scopes ref 2 to the product only, so
-          // the person is taken from ref 1 (the frame) alone — that's what kept
-          // identity from drifting before. Best-effort: dropped if it can't host.
+          // "Your Face" identity references: if the user has a face model, pass
+          // a few of their real photos alongside the video frame so Nano Banana
+          // Pro locks the host's likeness from MULTIPLE angles — the biggest
+          // lever for resemblance vs. a single frame. Best-effort.
+          const faceRefs = faceModel?.source_images?.length
+            ? await rehostFacePhotos(supabase, faceModel.source_images, 3)
+            : []
+          // Product image as a reference so the product renders accurately (the
+          // vidIQ look). The prompt scopes the product ref to the product ONLY,
+          // so the person is taken from the frame + face photos.
           const productRef = productImageUrl ? await rehostToFal(productImageUrl) : null
-          const refs = productRef ? [frameRef, productRef] : [frameRef]
+          const identityRefs = [frameRef, ...faceRefs]
+          const refs = productRef ? [...identityRefs, productRef] : identityRefs
 
           // ── CLEAN path (toggle): enhance the real frame + leave space for the
           //    crisp client-side canvas headline. True-to-frame face, lighter look.
@@ -666,15 +692,22 @@ export async function POST(request: Request) {
             'a bold heavy CONDENSED ALL-CAPS sans-serif in pure WHITE with a thick black outline and hard drop shadow',
             'a bold heavy CONDENSED ALL-CAPS sans-serif in WHITE with ONE key word in a punchy accent colour (red or cyan), thick black outline and drop shadow',
           ]
+          // Identity clause adapts to how many creator references we have. With
+          // the user's face-model photos we tell the model to fuse ALL of them
+          // for a much stronger likeness lock.
+          const nIdentity = identityRefs.length
+          const identityClause = faceRefs.length > 0
+            ? `The FIRST ${nIdentity} reference images ALL show the SAME real video creator (a still from their video plus their own reference photos). Study EVERY one of them and reproduce their EXACT face and identity — bone structure, facial features and proportions, eye shape, nose, jaw, age, ethnicity, skin tone, hair and build. The result must be unmistakably THIS real person, photorealistic — never a generic, idealized or altered face.`
+            : `REFERENCE IMAGE 1 shows the REAL video creator. Preserve their EXACT face and identity from it — same facial features and proportions, age, ethnicity, skin tone, hair and build. They must be unmistakably the SAME real person, photorealistic, never a generic or altered face.`
           const productRefClause = productRef
-            ? `REFERENCE IMAGE 2 is the PRODUCT being reviewed — render the product to match it EXACTLY (same shape, colour, materials, proportions and any real branding physically on it). Use reference 2 ONLY for the product; do NOT take any person, face, hands or body from it.`
+            ? `The FINAL reference image is the PRODUCT being reviewed — render the product to match it EXACTLY (same shape, colour, materials, proportions and any real branding physically on it). Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.`
             : `Render any product in the scene accurately, prominently and photo-realistically.`
           const buildComposed = (i: number): string => {
             const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
             const productSide = hostSide === 'LEFT' ? 'RIGHT' : 'LEFT'
             const titleStyle = TITLE_STYLES[i % TITLE_STYLES.length]
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
-REFERENCE IMAGE 1 shows the REAL video creator. Preserve their EXACT face and identity from it — same facial features and proportions, age, ethnicity, skin tone, hair and build. They must be unmistakably the SAME real person, photorealistic, never a generic or altered face.
+${identityClause}
 ${productRefClause}
 COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, with an energetic, expressive reaction (excited, surprised or delighted), looking toward the camera — ideally holding or gesturing toward the product. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so it pops.
 BACKGROUND: reimagine a clean, aspirational scene that fits the video "${videoTitle}", with a punchy cinematic colour grade, depth, and soft background bokeh. High contrast, vivid, eye-catching at small sizes.
@@ -758,7 +791,7 @@ Ultra-sharp, professional, photorealistic.`
               composited: true,
               headshotUsed: false,
               personCutoutUrl: null,
-              faceDebug: `nano-banana enhance (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : 'maxres'}, textMode=${wantClean ? 'clean' : 'baked'}${textPosition ? `, textZone=${textPosition}` : ''})`,
+              faceDebug: `nano-banana ${wantClean ? 'enhance' : 'composed'} (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : 'maxres'}, faceModelPhotos=${faceRefs.length}, productRef=${productRef ? 'yes' : 'no'}, textMode=${wantClean ? 'clean' : 'baked'}${textPosition ? `, textZone=${textPosition}` : ''})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
