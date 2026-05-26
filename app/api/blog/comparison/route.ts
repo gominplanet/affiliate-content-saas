@@ -500,6 +500,14 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   }
   const jsonld = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })
 
+  // Dedicated category per format: comparisons → "We Compare", guides →
+  // "Shopping Guide". Find-or-create; non-fatal if it fails.
+  let categoryIds: number[] = []
+  try {
+    const catId = await wpService.createCategory(mode === 'comparison' ? 'We Compare' : 'Shopping Guide')
+    if (catId) categoryIds = [catId]
+  } catch { /* publish uncategorized rather than fail */ }
+
   let wpPost
   try {
     wpPost = await wpService.createPost({
@@ -508,6 +516,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       excerpt: scrub(parsed.meta_description),
       slug,
       status: 'publish',
+      ...(categoryIds.length ? { categories: categoryIds } : {}),
       ...(featuredMedia ? { featured_media: featuredMedia } : {}),
       meta: { mvp_meta_description: scrub(parsed.meta_description), mvp_jsonld: jsonld },
     })
