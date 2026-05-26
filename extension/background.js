@@ -36,16 +36,30 @@ async function grabFramesInPage(fractions) {
   video.muted = true
   try { await video.play() } catch (e) {}
 
-  // 2. Skip / wait out a pre-roll ad so we capture real content.
-  const adDeadline = Date.now() + 12000
-  while (Date.now() < adDeadline) {
-    const player = document.querySelector('.html5-video-player')
-    const adShowing = player && player.classList.contains('ad-showing')
-    if (!adShowing) break
-    const skip = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern')
-    if (skip) { try { skip.click() } catch (e) {} }
-    await sleep(500)
+  // YouTube serves ads (pre-roll AND mid-roll, often triggered by seeking) in
+  // the same <video> element, flagged by .ad-showing / .ad-interrupting on the
+  // player. We must NEVER capture during an ad — that'd put an advertiser's
+  // footage/branding in the thumbnail or article.
+  const isAdShowing = () => {
+    const p = document.querySelector('.html5-video-player')
+    return !!(p && (p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting')))
+      || !!document.querySelector('.video-ads .ytp-ad-player-overlay, .video-ads .ytp-ad-player-overlay-layout')
   }
+  // Click skip if offered, otherwise wait the ad out. Returns true if the ad
+  // cleared within `ms`, false if it's still showing.
+  const waitOutAds = async (ms) => {
+    const until = Date.now() + ms
+    while (Date.now() < until) {
+      if (!isAdShowing()) return true
+      const skip = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button')
+      if (skip) { try { skip.click() } catch (e) {} }
+      await sleep(500)
+    }
+    return !isAdShowing()
+  }
+
+  // 2. Clear any pre-roll before we start.
+  await waitOutAds(15000)
 
   // 2b. Wait for the player to ramp to HD. A freshly-opened tab serves low-res
   // first, and setPlaybackQuality is a no-op now, so just poll videoWidth.
@@ -61,6 +75,7 @@ async function grabFramesInPage(fractions) {
   const ctx = canvas.getContext('2d')
 
   const captureNow = () => {
+    if (isAdShowing()) return null // never capture an ad frame
     const vw = video.videoWidth || 0
     const vh = video.videoHeight || 0
     if (vw < 854) return null // reject sub-480p (loading/garbage) frames
@@ -99,6 +114,15 @@ async function grabFramesInPage(fractions) {
       })
     } else {
       await sleep(600)
+    }
+    // Seeking can trigger a mid-roll ad — wait it out, and if it won't clear,
+    // skip this fraction entirely rather than capture the ad.
+    if (isAdShowing()) {
+      const cleared = await waitOutAds(8000)
+      if (!cleared) continue
+      // After an ad, the player may reset to low-res — let it ramp back.
+      const reDeadline = Date.now() + 4000
+      while (Date.now() < reDeadline) { if (video.videoWidth >= 1280) break; await sleep(400) }
     }
     try {
       const d = captureNow()
