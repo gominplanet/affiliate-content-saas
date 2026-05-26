@@ -56,13 +56,24 @@ export async function POST(request: Request) {
   // ── Resolve the product image (uploaded photo → Amazon → linked store page) ─
   let productTitle = (post.title as string) || ''
   let productImageUrl: string | null = null
+  // blog_posts.video_id is the youtube_videos DB id (UUID) for single reviews,
+  // but the youtube native id for comparison posts — match either.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: vid } = await (supabase as any)
-    .from('youtube_videos')
-    .select('title,description,product_image_url')
-    .eq('user_id', user.id)
-    .eq('youtube_video_id', post.video_id)
-    .maybeSingle()
+  let vid: any = null
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('youtube_videos').select('youtube_video_id,title,description,product_image_url')
+      .eq('user_id', user.id).eq('id', post.video_id).maybeSingle()
+    vid = data
+  }
+  if (!vid) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('youtube_videos').select('youtube_video_id,title,description,product_image_url')
+      .eq('user_id', user.id).eq('youtube_video_id', post.video_id).maybeSingle()
+    vid = data
+  }
   const description = (vid?.description as string) || ''
   if (vid?.product_image_url) productImageUrl = vid.product_image_url as string
   if (!productImageUrl) {
@@ -94,8 +105,8 @@ export async function POST(request: Request) {
       if (r.ok) falProductRef = await fal.storage.upload(await r.blob())
     } catch { /* none */ }
   }
-  if (frameRefs.length === 0 && !falProductRef) {
-    return NextResponse.json({ error: 'No video frames (extension) or product image available to build images from.' }, { status: 422 })
+  if (!process.env.FAL_KEY) {
+    return NextResponse.json({ error: 'Image generation is not configured.' }, { status: 500 })
   }
 
   // Strip the existing body images so we don't duplicate, then regenerate.
@@ -122,6 +133,17 @@ export async function POST(request: Request) {
         })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         url = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+      }
+      if (!url) {
+        // Last resort: text-to-image from the product title (no frame, no photo).
+        const prompt = `Editorial product photo of ${productTitle}, ${shot}, in a clean bright real-world setting, natural lighting, sharp focus, photorealistic, 8K. ${NO_BRAND_IMAGE_CLAUSE} No text, no logos, no people.`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+          input: { prompt, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed: Math.floor(Math.random() * 1e9) + i },
+          pollInterval: 3000,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        url = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
       }
       if (!url) return null
       const media = await wpService.uploadImageFromUrl(url, `${post.slug || 'post'}-body${i + 1}.jpg`)
