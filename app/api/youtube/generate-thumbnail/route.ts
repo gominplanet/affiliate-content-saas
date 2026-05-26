@@ -711,6 +711,7 @@ export async function POST(request: Request) {
                 : Promise.resolve(null),
             ])
             const textPosition: TextPosition | null = tz?.position ?? null
+            const faceBox = tz?.faceBox ?? null
             return NextResponse.json({
               ok: true,
               thumbnailUrl: rank.urls[0],
@@ -728,8 +729,10 @@ export async function POST(request: Request) {
               // NOT draw a text overlay. baked:false (clean) → client overlays.
               baked: !wantClean,
               // Smart text-zone for the client overlay (clean path). null → the
-              // client falls back to the style's default corner.
+              // client falls back to the style's default corner. faceBox lets
+              // the overlay constrain the headline to the band beside the face.
               textPosition,
+              faceBox,
               composited: true,
               headshotUsed: false,
               personCutoutUrl: null,

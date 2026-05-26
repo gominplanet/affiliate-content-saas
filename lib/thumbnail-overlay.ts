@@ -167,6 +167,9 @@ async function loadOverlayFont(fontName: string | null, weight = '400'): Promise
   loadedFonts.add(key)
 }
 
+/** Normalized (0–1) face bounding box from the vision text-zone pass. */
+export interface FaceBox { x: number; y: number; w: number; h: number }
+
 export interface OverlayOpts {
   width?: number
   height?: number
@@ -174,6 +177,9 @@ export interface OverlayOpts {
   /** Override the style's default placement (e.g. the vision text-zone result)
    *  so the headline avoids the subject's face. */
   position?: HeadlinePosition
+  /** Detected face box (normalized). When present the headline is constrained
+   *  to the clear band beside the face so it never sits on the subject. */
+  faceBox?: FaceBox | null
 }
 
 /**
@@ -211,7 +217,7 @@ export async function renderThumbnailOverlay(
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       ctx.drawImage(img, 0, 0, width, height)
-      drawHeadline(ctx, lines, style, width, height, opts.position)
+      drawHeadline(ctx, lines, style, width, height, opts.position, opts.faceBox)
       try {
         resolve({ url: canvas.toDataURL('image/jpeg', 0.92), styleId: style.id })
       } catch (e) {
@@ -235,15 +241,40 @@ export function drawHeadline(
   width: number,
   height: number,
   positionOverride?: HeadlinePosition,
+  faceBox?: FaceBox | null,
 ): void {
   // The vision text-zone result (if supplied) wins over the style's default
   // corner, so the headline lands in open space away from the face.
-  const position: HeadlinePosition = positionOverride ?? (style.position as HeadlinePosition)
-  const centered = position.endsWith('center')
-  const alignRight = position.endsWith('right')
+  let position: HeadlinePosition = positionOverride ?? (style.position as HeadlinePosition)
   const MARGIN_X = Math.round(width * 0.045)
   const MARGIN_EDGE = Math.round(height * 0.06)
-  const ZONE_W = centered ? Math.round(width * 0.92) : Math.round(width * (width >= height ? 0.55 : 0.85))
+  let zoneW = position.endsWith('center') ? Math.round(width * 0.92) : Math.round(width * (width >= height ? 0.55 : 0.85))
+
+  // Face-aware constraint: keep the headline OUT of the face's horizontal span.
+  // Picking a corner alone isn't enough — a centered subject still gets clipped
+  // by a wide top-corner block. So measure the clear band on each side of the
+  // face and pin the headline to the roomier side, capping its width to that
+  // band (the font-fit loop below then shrinks to fit). This is what stops the
+  // "text across the eyes" problem.
+  if (faceBox && faceBox.w > 0.02) {
+    const gap = Math.round(width * 0.03)
+    const faceLeft = faceBox.x * width
+    const faceRight = (faceBox.x + faceBox.w) * width
+    const leftBand = Math.max(0, faceLeft - MARGIN_X - gap)
+    const rightBand = Math.max(0, width - MARGIN_X - faceRight - gap)
+    const vert = position.startsWith('bottom') ? 'bottom' : 'top'
+    if (rightBand > leftBand) {
+      position = (vert === 'bottom' ? 'bottom-right' : 'top-right')
+      zoneW = Math.min(zoneW, Math.max(rightBand, Math.round(width * 0.26)))
+    } else {
+      position = (vert === 'bottom' ? 'bottom-left' : 'top-left')
+      zoneW = Math.min(zoneW, Math.max(leftBand, Math.round(width * 0.26)))
+    }
+  }
+
+  const centered = position.endsWith('center')
+  const alignRight = position.endsWith('right')
+  const ZONE_W = zoneW
   const { outlineW: OUTLINE, colors: LINE_COLORS, outlineColor, shadowAlpha } = style
   const maxPxScaled = Math.min(style.maxPx, Math.round(height * 0.15))
 

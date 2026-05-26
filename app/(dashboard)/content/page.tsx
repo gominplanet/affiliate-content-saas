@@ -1026,7 +1026,8 @@ function InstagramPublishModal({
           const styleIndex = pickWeightedStyleIndex(styleWeights.liked, styleWeights.disliked)
           // Smart text-zone (vision) keeps the caption off the face when present.
           const textPosition = (data.textPosition as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'top-center' | 'bottom-center' | null) || undefined
-          const overlayed = await renderThumbnailOverlay(rawUrl, overlayHook, { width: 1080, height: 1350, styleIndex, position: textPosition })
+          const faceBox = (data.faceBox as { x: number; y: number; w: number; h: number } | null) || undefined
+          const overlayed = await renderThumbnailOverlay(rawUrl, overlayHook, { width: 1080, height: 1350, styleIndex, position: textPosition, faceBox })
           finalUrl = overlayed.url
           styleId = overlayed.styleId
         } catch (overlayErr) {

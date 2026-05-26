@@ -528,9 +528,11 @@ export async function POST(request: Request) {
     // Smart text-zone: a cheap vision pass on the finished image tells the
     // client overlay which corner is clear of the face/subject (best-effort).
     let textPosition: string | null = null
+    let faceBox: { x: number; y: number; w: number; h: number } | null = null
     if (overlayHook) {
       const tz = await analyzeTextZone(imageUrl, { ctx: agentCtx })
       textPosition = tz?.position ?? null
+      faceBox = tz?.faceBox ?? null
     }
 
     return NextResponse.json({
@@ -538,6 +540,7 @@ export async function POST(request: Request) {
       imageUrl,
       overlayHook,
       textPosition,
+      faceBox,
       faceModelUsed: faceModel?.trigger_token ?? null,
       cached: false,
     })

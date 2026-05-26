@@ -6,7 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
-import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition } from '@/lib/thumbnail-overlay'
+import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
 import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import {
@@ -449,11 +449,14 @@ function VideoStudioCard({ video, userTier, playlists }: {
     // Smart text-zone: the server's vision pass tells us the corner clear of the
     // face (clean path only); undefined → the overlay uses the style default.
     const textPosition = (data.textPosition as HeadlinePosition | null) || undefined
+    // Detected face box — lets the overlay constrain the headline to the clear
+    // band beside the face so it never lands on the eyes.
+    const faceBox = (data.faceBox as FaceBox | null) || undefined
     let pickedStyleId: string | null = null
     const finalUrls = await Promise.all(rawList.map(async (url) => {
       if (!hook && !cutoutUrl) return url
       try {
-        const overlayed = await addTextOverlay(url, hook, styleIndex, cutoutUrl, textPosition)
+        const overlayed = await addTextOverlay(url, hook, styleIndex, cutoutUrl, textPosition, faceBox)
         pickedStyleId = overlayed.styleId
         return overlayed.url
       }
@@ -723,7 +726,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
   }
 
   // ── addTextOverlay — picks a random style, loads the font, draws the canvas ──
-  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number, cutoutUrl?: string, position?: HeadlinePosition): Promise<{ url: string; styleId: string }> {
+  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number, cutoutUrl?: string, position?: HeadlinePosition, faceBox?: FaceBox): Promise<{ url: string; styleId: string }> {
     const style = OVERLAY_STYLES[styleIndex ?? Math.floor(Math.random() * OVERLAY_STYLES.length)]
     await loadOverlayFont(style.fontName)
 
@@ -869,8 +872,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
       // clear of the face. If we composited a cut-out into the bottom-right, a
       // bottom-right headline would collide — fall back to the style default.
       const safePos = position && !(cutoutUrl && position === 'bottom-right') ? position : undefined
+      // Don't pass a faceBox when we composited a cut-out — the face we'd avoid
+      // is from the source frame, not this scene, so it'd misplace the text.
+      const safeFace = cutoutUrl ? undefined : faceBox
       // Shared renderer — MrBeast-style bold lettering, no boxes.
-      drawHeadline(ctx, lines, style, 1280, 720, safePos)
+      drawHeadline(ctx, lines, style, 1280, 720, safePos, safeFace)
     }
 
     return { url: canvas.toDataURL('image/jpeg', 0.95), styleId: style.id }
