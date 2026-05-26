@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
+import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
@@ -825,6 +826,28 @@ async function handleGenerate(request: Request) {
   // function is cut off, the published post simply keeps its text — the
   // request can NEVER 504 on the user because of images.
   after(async () => {
+    // ── Video→blog backlink (SEO #21) ──────────────────────────────────────
+    // Append a "Full written review" link to the source YouTube video's
+    // description so the video drives authority to the post (and vice versa).
+    // User-controllable (integrations.yt_backlink_enabled, default true) since
+    // it writes to their own channel; needs YouTube OAuth. Fully best-effort.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: ytRow } = await (supabase as any)
+        .from('integrations')
+        .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry,yt_backlink_enabled')
+        .eq('user_id', user.id)
+        .single()
+      if (ytRow?.yt_backlink_enabled !== false && ytRow?.youtube_oauth_access_token && youtubeVideoId && wpPost.link) {
+        const token = await getValidYouTubeToken(ytRow as Record<string, unknown>)
+        const yt = createYouTubeOAuthService(token)
+        const pushed = await yt.appendBlogLinkToDescription(youtubeVideoId, wpPost.link as string)
+        console.log('[blog-backlink]', pushed ? `linked ${youtubeVideoId} → ${wpPost.link}` : 'skipped (already linked or no snippet)')
+      }
+    } catch (err) {
+      console.warn('[blog-backlink] failed (non-fatal):', err instanceof Error ? err.message : String(err))
+    }
+
     const ytThumb = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
     const initialProductImage = ((v as Record<string, unknown>).product_image_url as string | null)?.trim() || null
 

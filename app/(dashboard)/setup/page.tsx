@@ -759,6 +759,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
   const [youtubeOAuthConnected, setYoutubeOAuthConnected] = useState(false)
   const [ytDisconnecting, setYtDisconnecting] = useState(false)
+  // When on, publishing a blog post appends a "Full written review" backlink to
+  // the source video's YouTube description (video→blog SEO). Default on.
+  const [ytBacklink, setYtBacklink] = useState(true)
   const [ytOAuthNotice, setYtOAuthNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [wpTesting, setWpTesting] = useState(false)
   const [wpTestResult, setWpTestResult] = useState<{ ok: boolean; message: string } | null>(null)
@@ -816,6 +819,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
       setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
       setYoutubeOAuthConnected(!!row.youtube_oauth_access_token)
+      setYtBacklink(row.yt_backlink_enabled !== false)
     }
     setLoading(false)
     onLoad()
@@ -954,6 +958,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     if (!user) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase as any).from('integrations').update({ pinterest_fallback_board: name.trim() || null }).eq('user_id', user.id)
+  }
+
+  async function saveYtBacklink(enabled: boolean) {
+    setYtBacklink(enabled)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('integrations').update({ yt_backlink_enabled: enabled }).eq('user_id', user.id)
   }
 
   async function disconnectYoutube() {
@@ -1116,6 +1128,23 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Channel ID</label>
           <input type="text" value={youtubeChannelId} onChange={e => setYoutubeChannelId(e.target.value)} placeholder="UCxxxxxxxxxxxxxxx" className="input-field font-mono text-xs" />
         </div>
+
+        {/* Video→blog backlink toggle — only relevant once YouTube is connected
+            (it edits your own video descriptions when you publish a post). */}
+        {youtubeOAuthConnected && (
+          <label className="flex items-start gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-white/10 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={ytBacklink}
+              onChange={e => saveYtBacklink(e.target.checked)}
+              className="mt-0.5 rounded border-gray-300"
+            />
+            <span>
+              <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Add a blog backlink to my YouTube videos</span>
+              <span className="block text-xs text-[#86868b] dark:text-[#8e8e93]">When you publish a post, append a “Full written review” link to that video&apos;s description. Boosts SEO both ways. Added once per video.</span>
+            </span>
+          </label>
+        )}
       </div>
 
       {/* WordPress connection — Application Password is managed inside the MVP Affiliate plugin */}

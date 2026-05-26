@@ -334,6 +334,39 @@ export class YouTubeOAuthService {
     throw new Error(`YouTube update failed ${res.status}: ${body1.slice(0, 500)}`)
   }
 
+  /**
+   * Append a "Full written review" backlink to the video's description
+   * (SEO #21 — video→blog cross-linking). Idempotent: no-op if the URL is
+   * already present. Preserves the existing title / categoryId / tags so the
+   * part=snippet update doesn't blank them. Returns true if it pushed an edit.
+   */
+  async appendBlogLinkToDescription(videoId: string, blogUrl: string): Promise<boolean> {
+    if (!blogUrl || !/^https?:\/\//.test(blogUrl)) return false
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = await this.get<any>('/videos', { part: 'snippet', id: videoId })
+    const snip = existing.items?.[0]?.snippet
+    if (!snip) return false
+    const desc: string = snip.description || ''
+    if (desc.includes(blogUrl)) return false // already linked
+    const line = `\n\n📝 Full written review & details: ${blogUrl}`
+    const newDesc = (desc + line).slice(0, 5000)
+
+    const snippet: Record<string, unknown> = {
+      title: (snip.title || '').slice(0, 100),
+      description: newDesc,
+      categoryId: snip.categoryId || '22',
+    }
+    if (Array.isArray(snip.tags) && snip.tags.length) snippet.tags = snip.tags
+    if (snip.defaultLanguage) snippet.defaultLanguage = snip.defaultLanguage
+
+    const res = await fetch(`${BASE}/videos?part=snippet`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${this.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: videoId, snippet }),
+    })
+    return res.ok
+  }
+
   // ── Pro batch-publish module ─────────────────────────────────────────
   // The methods below back the "Apply to YouTube" Pro feature: list the
   // creator's playlists for the dropdown, add a video to a playlist, and
