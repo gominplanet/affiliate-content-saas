@@ -285,6 +285,10 @@ SENTENCE AND PARAGRAPH RHYTHM:
 FAQ RULES:
 Each answer is 2-4 sentences max. Direct. Use contractions. No "It's important to note".
 Don't explain obvious things. Answer like you're texting a friend who asked.
+ANSWER-FIRST (AEO): the FIRST sentence must DIRECTLY answer the question in a
+self-contained way (so a search engine or AI assistant can lift it as the
+answer) — lead with the verdict/number/yes-or-no, THEN add the nuance. Don't
+open a FAQ answer with a question, a story, or "Well,". Still no banned filler.
 
 ═══════════════════════════════════════
 EXACT POST STRUCTURE — IN THIS ORDER
