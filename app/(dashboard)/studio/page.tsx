@@ -1406,23 +1406,33 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   ))}
                 </div>
 
-                {/* "Your Face" — locks the host's real likeness from their
-                    uploaded photos. Auto-on when a face is set up; toggle off to
-                    rely on the video frame alone. Manage faces in Face Training. */}
+                {/* "Your Face" picker — choose WHICH uploaded face to lock into
+                    the thumbnail (e.g. Seb vs Michelle), or Off to rely on the
+                    video frame alone. Manage faces in Face Training. */}
                 {faceModels.length > 0 ? (
-                  <label className="flex items-center gap-2 mb-3 cursor-pointer w-fit" title="Use your uploaded face photos so the generated host looks like you">
-                    <input
-                      type="checkbox"
-                      checked={!!selectedFaceModelId}
-                      onChange={e => setSelectedFaceModelId(e.target.checked ? (faceModels[0]?.id ?? null) : null)}
+                  <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    <span className="text-[11px] text-[#86868b]">Use my face:</span>
+                    <button
+                      onClick={() => setSelectedFaceModelId(null)}
                       disabled={generatingThumbnail || instantLoading}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] font-medium">
-                      Use my face{faceModels[0]?.name ? ` (${faceModels[0].name})` : ''}
-                    </span>
-                    <span className="text-[10px] text-[#86868b]">— stronger likeness from your photos</span>
-                  </label>
+                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === null ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                      title="Don't lock a face — use the video frame's host as-is"
+                    >
+                      Off
+                    </button>
+                    {faceModels.map(fm => (
+                      <button
+                        key={fm.id}
+                        onClick={() => setSelectedFaceModelId(fm.id)}
+                        disabled={generatingThumbnail || instantLoading}
+                        className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === fm.id ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                        title={`Lock the host's likeness to "${fm.name}" using your uploaded photos`}
+                      >
+                        {fm.name}
+                      </button>
+                    ))}
+                    <span className="text-[10px] text-[#86868b]">— locks that person&apos;s likeness from your photos</span>
+                  </div>
                 ) : (
                   <p className="text-[10px] text-[#86868b] mb-3">
                     Want the host to look more like you? Add your photos in{' '}
