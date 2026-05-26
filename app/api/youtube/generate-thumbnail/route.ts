@@ -777,7 +777,11 @@ export async function POST(request: Request) {
           // vidIQ look). The prompt scopes the product ref to the product ONLY,
           // so the person is taken from the frame + face photos.
           const productRef = productImageUrl ? await rehostToFal(productImageUrl) : null
-          const identityRefs = [frameRef, ...faceRefs]
+          // When we have the creator's photos, lock identity to THOSE alone —
+          // mixing in the lower-quality, oddly-lit video frame was letting the
+          // model drift to a different-looking person. Fall back to the frame
+          // only when no face photos are available.
+          const identityRefs = faceRefs.length > 0 ? faceRefs : [frameRef]
           const refs = productRef ? [...identityRefs, productRef] : identityRefs
 
           // ── COMPOSED thumbnail (always): recompose into a designed, high-CTR
@@ -802,8 +806,8 @@ export async function POST(request: Request) {
           const nIdentity = identityRefs.length
           const skinFidelity = `Match their skin and APPARENT AGE EXACTLY as in the reference photos: do NOT add wrinkles, fine lines, age spots, blemishes, skin roughness or extra texture, and do NOT make them look older, weathered or harsher — but do NOT de-age or plastic-smooth them either. Their complexion, skin tone and age must look natural, healthy and flattering, faithful to the photos.`
           const identityClause = faceRefs.length > 0
-            ? `The FIRST ${nIdentity} reference images ALL show the SAME real video creator (a still from their video plus their own reference photos). Study EVERY one of them and reproduce their EXACT face and identity — bone structure, facial features and proportions, eye shape, nose, jaw, age, ethnicity, skin tone, hair and build. The result must be unmistakably THIS real person, photorealistic — never a generic, idealized or altered face. ${skinFidelity}`
-            : `REFERENCE IMAGE 1 shows the REAL video creator. Preserve their EXACT face and identity from it — same facial features and proportions, age, ethnicity, skin tone, hair and build. They must be unmistakably the SAME real person, photorealistic, never a generic or altered face. ${skinFidelity}`
+            ? `The ${nIdentity} reference image(s) are real photos of the SAME video creator. Reproduce their EXACT face and identity from these photos — bone structure, features, eye shape, nose, jaw, age, ETHNICITY, skin tone, hair and build. The person MUST be unmistakably THIS exact human — never substitute, invent, or generate a different-looking, different-ethnicity or different-gender person. ${skinFidelity}`
+            : `REFERENCE IMAGE 1 is a still from the creator's OWN video — the person in it is the REAL host. Reproduce their EXACT face and identity: same features, age, ETHNICITY, skin tone, gender, hair and build. The person MUST be unmistakably that same individual — under NO circumstances invent, substitute, or generate a different-looking or different-ethnicity person. ${skinFidelity}`
           // Vary the OUTFIT — the reference photos are for the FACE only, not the
           // wardrobe, so thumbnails don't always show the same shirt.
           const outfitNote = `WARDROBE: use the reference photos ONLY for the face and identity — dress the creator in a FRESH, natural, casual everyday outfit (e.g. a plain tee, casual shirt, polo or light sweater) that suits the scene. Do NOT copy the exact clothing, top or colour shown in the reference photos; vary it.`
@@ -900,7 +904,10 @@ Ultra-sharp, professional, photorealistic.`
               composited: true,
               headshotUsed: false,
               personCutoutUrl: null,
-              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : 'maxres'}, faceModelPhotos=${faceRefs.length}, productRef=${productRef ? 'yes' : 'no'}, title=${wantClean ? 'overlay' : 'baked'})`,
+              // Which face model the likeness was locked to (Auto-match result),
+              // surfaced so the user can confirm it picked the right person.
+              faceUsed: faceModel?.name ?? null,
+              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : 'maxres'}, face=${faceModel?.name ?? 'none'}, faceModelPhotos=${faceRefs.length}, productRef=${productRef ? 'yes' : 'no'}, title=${wantClean ? 'overlay' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')

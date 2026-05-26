@@ -110,6 +110,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const [thumbnailPrompt, setThumbnailPrompt] = useState<string | null>(null)
   const [thumbnailModel, setThumbnailModel] = useState<string | null>(null)
   const [thumbnailHook, setThumbnailHook] = useState<string | null>(null)
+  // Which face the composed thumbnail locked to (Auto-match result), shown so
+  // the user can confirm it picked the right person.
+  const [thumbnailFaceUsed, setThumbnailFaceUsed] = useState<string | null>(null)
   const [sceneAnalysis, setSceneAnalysis] = useState<string | null>(null)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
@@ -420,6 +423,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
   // ── Shared thumbnail result handler ─────────────────────────────────────────
   async function applyThumbnailResult(data: Record<string, unknown>) {
     const hook = (data.overlayHook as string) || ''
+    setThumbnailFaceUsed((data.faceUsed as string | null) ?? null)
     // Server may return one or many. Backwards-compat: single thumbnailUrl
     // when older callers / older deploys. Always normalize to array first.
     const rawList = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls.length > 0)
@@ -1525,6 +1529,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       {/* Composed designed thumbnail — default draws the title
                           via crisp canvas overlay (perfect spelling); the baked
                           variant integrates it into the image (may misspell). */}
+                      {thumbnailFaceUsed && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium" title="Face locked to this person's photos (auto-matched)">
+                          👤 {thumbnailFaceUsed}
+                        </span>
+                      )}
                       {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (
                         <>
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
