@@ -34,7 +34,10 @@ export async function GET(request: Request) {
     headers: {
       'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, max-age=3600',
+      // CDN images are content-addressed / immutable — cache hard so we don't
+      // re-invoke this function for the same image. (Canvas-compositing path
+      // only; display images should use next/image, not this proxy.)
+      'Cache-Control': 'public, max-age=31536000, immutable',
     },
   })
 }
