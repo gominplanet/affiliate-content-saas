@@ -23,6 +23,8 @@ import { checkUsageLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+import { fal } from '@fal-ai/client'
 
 export const maxDuration = 300
 
@@ -54,10 +56,13 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { videoUrls, format, topic } = (await request.json()) as {
+  const { videoUrls, format, topic, heroImageDataUrl } = (await request.json()) as {
     videoUrls?: string[]
     format?: 'comparison' | 'guide'
     topic?: string
+    /** Optional user-uploaded hero image (data URL). When present we use it as
+     *  the featured image instead of generating one. */
+    heroImageDataUrl?: string
   }
   const mode = format === 'guide' ? 'guide' : 'comparison'
   const ids = Array.from(new Set((videoUrls || []).map(extractVideoId).filter((x): x is string => !!x))).slice(0, 10)
@@ -205,6 +210,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 {
   "title": "SEO title for the whole post (<= 65 chars, no banned words)",
   "meta_description": "150-160 char meta description, compelling, no banned words",
+  "hero_prompt": "one vivid sentence describing an editorial HERO photo for this article's product category — a clean, aspirational, magazine-style scene (NO people required, NO text). e.g. 'A row of modern cordless vacuums on a sunlit living-room floor'",
   "intro_html": "1-2 short intro paragraphs as raw HTML <p>...</p> blocks (first person, hook the reader, set up the ${mode})",
   "winner_index": ${mode === 'comparison' ? '<0-based index of your #1 pick among the products above>' : 'null'},
   "products": [
@@ -227,7 +233,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 For "feature_table": pick features that actually DIFFERENTIATE these products. For each product, mark "yes" ONLY if its data/transcript shows it has that feature, "no" if it clearly lacks it, "partial" if limited/uncertain. NEVER mark "yes" to fill the grid — be truthful. "values" MUST be in the SAME ORDER as "features", one entry per feature, and include one row per product.`
 
   let parsed: {
-    title: string; meta_description: string; intro_html: string; winner_index: number | null
+    title: string; meta_description: string; hero_prompt?: string; intro_html: string; winner_index: number | null
     products: Array<{ index: number; heading: string; body_html: string; verdict: string }>
     conclusion_html: string; faq: Array<{ q: string; a: string }>
     feature_table?: { features: string[]; rows: Array<{ index: number; values: string[] }> }
@@ -310,6 +316,33 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   const title = scrub(parsed.title) || (mode === 'comparison' ? 'Product Comparison' : 'Buying Guide')
   const slug = slugify(title)
 
+  // ── Hero / featured image ───────────────────────────────────────────────────
+  // User-uploaded design wins; otherwise generate a category-themed AI hero
+  // (text-free, no brands). Upload to WP and set as featured_media. Best-effort
+  // — a failed hero must not block publishing.
+  let featuredMedia: number | undefined
+  try {
+    let heroSrc: string | null = null
+    if (heroImageDataUrl && /^data:image\//.test(heroImageDataUrl)) {
+      heroSrc = heroImageDataUrl
+    } else if (process.env.FAL_KEY) {
+      fal.config({ credentials: process.env.FAL_KEY })
+      const heroPrompt = `${parsed.hero_prompt || `An editorial hero photo representing ${title}`}. Bright, aspirational, magazine-style editorial photography, clean composition, premium lighting, high quality, photorealistic. ${NO_BRAND_IMAGE_CLAUSE} No text, no words, no letters, no logos anywhere.`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
+        input: { prompt: heroPrompt, image_size: 'landscape_16_9', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2' },
+        pollInterval: 3000,
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      heroSrc = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url ?? null
+      if (heroSrc) recordUsage({ userId: user.id, tier, feature: 'comparison_hero_image', model: 'fal-flux-pro-v1.1', images: 1 })
+    }
+    if (heroSrc) {
+      const media = await wpService.uploadImageFromUrl(heroSrc, `${slug}-hero.jpg`)
+      if (media?.id) featuredMedia = media.id
+    }
+  } catch { /* publish without a hero rather than fail */ }
+
   let wpPost
   try {
     wpPost = await wpService.createPost({
@@ -318,6 +351,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       excerpt: scrub(parsed.meta_description),
       slug,
       status: 'publish',
+      ...(featuredMedia ? { featured_media: featuredMedia } : {}),
       meta: { mvp_meta_description: scrub(parsed.meta_description) },
     })
   } catch (err) {
