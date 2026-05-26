@@ -1,0 +1,156 @@
+/**
+ * POST /api/blog/refresh-images
+ *
+ * Re-run ONLY the in-article image step on an already-published post — for when
+ * the original generation shipped text-only (image stage failed / was cut off).
+ * Strips any existing body images, regenerates from real video frames (retouched)
+ * or the product photo, re-inserts at section headings, and updates WordPress.
+ *
+ * Body: { wordpressPostId: number, capturedFrames?: string[] (jpeg data URLs) }
+ */
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { createWordPressService } from '@/services/wordpress'
+import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
+import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
+import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
+import { fetchProductImageFromPage } from '@/services/research'
+import { normalizeTier, allowedBlogImages } from '@/lib/tier'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
+import { fal } from '@fal-ai/client'
+
+export const maxDuration = 300
+
+const SHOTS = ['close-up detail shot', 'in-use lifestyle shot', 'in a clean home setting', 'three-quarter angle', 'flat-lay overhead', 'on a bright surface']
+
+export async function POST(request: Request) {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { wordpressPostId, capturedFrames } = (await request.json()) as { wordpressPostId?: number; capturedFrames?: string[] }
+  if (!wordpressPostId) return NextResponse.json({ error: 'wordpressPostId required' }, { status: 400 })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: post } = await (supabase as any)
+    .from('blog_posts')
+    .select('id,video_id,title,slug,content')
+    .eq('user_id', user.id)
+    .eq('wordpress_post_id', wordpressPostId)
+    .maybeSingle()
+  if (!post?.content) return NextResponse.json({ error: 'Post not found, or it has no stored content to update.' }, { status: 404 })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: wp } = await (supabase as any)
+    .from('integrations')
+    .select('tier,wordpress_url,wordpress_username,wordpress_app_password,amazon_associates_tag')
+    .eq('user_id', user.id)
+    .single()
+  if (!wp?.wordpress_url || !wp?.wordpress_app_password) {
+    return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
+  }
+  const tier = normalizeTier(wp.tier)
+  const wpService = createWordPressService(wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password)
+
+  // ── Resolve the product image (uploaded photo → Amazon → linked store page) ─
+  let productTitle = (post.title as string) || ''
+  let productImageUrl: string | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: vid } = await (supabase as any)
+    .from('youtube_videos')
+    .select('title,description,product_image_url')
+    .eq('user_id', user.id)
+    .eq('youtube_video_id', post.video_id)
+    .maybeSingle()
+  const description = (vid?.description as string) || ''
+  if (vid?.product_image_url) productImageUrl = vid.product_image_url as string
+  if (!productImageUrl) {
+    let asin = extractAsin((vid?.title as string || '').toUpperCase())
+    let pageUrl = firstProductUrl(description, wp.wordpress_url ?? null)
+    if (pageUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
+      try { pageUrl = await resolveFinalUrl(pageUrl) } catch { /* keep */ }
+    }
+    if (!asin && pageUrl) asin = extractAsin(pageUrl)
+    if (asin) {
+      try { const p = await fetchAmazonProduct(asin); if (p.title) productTitle = p.title; productImageUrl = p.imageUrl || null } catch { /* ignore */ }
+    }
+    if (!productImageUrl && pageUrl) {
+      try { productImageUrl = await fetchProductImageFromPage(pageUrl) } catch { /* ignore */ }
+    }
+  }
+
+  fal.config({ credentials: process.env.FAL_KEY ?? '' })
+
+  // Real HD frames (extension) → retouch; else Kontext on the product photo.
+  const frameRefs: string[] = []
+  for (const f of (Array.isArray(capturedFrames) ? capturedFrames : []).filter(x => typeof x === 'string' && x.startsWith('data:image/')).slice(0, 4)) {
+    const u = await rehostToFal(f); if (u) frameRefs.push(u)
+  }
+  let falProductRef: string | null = null
+  if (productImageUrl) {
+    try {
+      const r = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
+      if (r.ok) falProductRef = await fal.storage.upload(await r.blob())
+    } catch { /* none */ }
+  }
+  if (frameRefs.length === 0 && !falProductRef) {
+    return NextResponse.json({ error: 'No video frames (extension) or product image available to build images from.' }, { status: 422 })
+  }
+
+  // Strip the existing body images so we don't duplicate, then regenerate.
+  const stripped = (post.content as string).replace(/<!-- wp:image[\s\S]*?<!-- \/wp:image -->\s*/g, '')
+  const words = stripped.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length
+  const count = Math.max(1, allowedBlogImages(tier, words))
+  const altBase = productTitle || (post.title as string) || 'product'
+
+  const results = await Promise.all(Array.from({ length: count }, async (_unused, i) => {
+    const shot = SHOTS[i % SHOTS.length]
+    try {
+      let url: string | undefined
+      if (frameRefs.length > 0) {
+        const prompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, product and scene EXACTLY — do not change identities, swap the product, or invent anything. Enhance: sharpen + add clarity, boost colour vibrancy and contrast, bright clean lighting, tidy/blur the background into a premium look. Frame as a ${shot}. Remove any burned-in text, captions, watermarks or player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
+        const out = await composeWithNanoBanana({ prompt, referenceImageUrls: [frameRefs[i % frameRefs.length]], aspectRatio: '4:3', numImages: 1 })
+        url = out[0]
+      }
+      if (!url && falProductRef) {
+        const prompt = `Keep the exact product object from this image — its shape, colour, material and details — shown as a ${shot}. Remove the white background and packaging; place it naturally in a clean, bright real-world setting with realistic shadows. Each image must look distinct. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, editorial product photography, photorealistic.`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
+          input: { image_url: falProductRef, prompt, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed: Math.floor(Math.random() * 1e9) + i },
+          pollInterval: 3000,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        url = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+      }
+      if (!url) return null
+      const media = await wpService.uploadImageFromUrl(url, `${post.slug || 'post'}-body${i + 1}.jpg`)
+      const finalUrl = media?.source_url || url
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recordUsageSafe(user.id, tier, frameRefs.length > 0 ? 'nano-banana' : 'fal-flux-pro-kontext')
+      return { url: finalUrl, alt: `${altBase} — ${shot}` }
+    } catch { return null }
+  }))
+
+  const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
+  if (uploaded.length === 0) return NextResponse.json({ error: 'Image generation failed — try again in a moment.' }, { status: 502 })
+
+  const slots = autoPlacementIndices(stripped, uploaded.length)
+  const finalContent = insertImagesAtHeadings(stripped, uploaded.map((img, i) => ({
+    beforeHeadingIndex: slots[i] ?? (i + 1),
+    block: gutenbergImageBlock(img.url, img.alt),
+  })))
+
+  try { await wpService.updatePost(wordpressPostId, { content: finalContent }) }
+  catch (err) { return NextResponse.json({ error: `WordPress update failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 }) }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  try { await (supabase as any).from('blog_posts').update({ content: finalContent }).eq('id', post.id) } catch { /* non-fatal */ }
+
+  return NextResponse.json({ ok: true, count: uploaded.length })
+}
+
+// Lazy import to keep the hot path lean; usage logging must never block.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function recordUsageSafe(userId: string, tier: string, model: string) {
+  import('@/lib/ai-usage').then(({ recordUsage }) => recordUsage({ userId, tier, feature: 'blog_body_image', model, images: 1 })).catch(() => {})
+}

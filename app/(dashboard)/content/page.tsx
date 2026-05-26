@@ -2371,6 +2371,8 @@ export default function ContentPage() {
   const [postsLoading, setPostsLoading] = useState(false)
   const [postsLoaded, setPostsLoaded] = useState(false)
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null)
+  const [refreshingImagesId, setRefreshingImagesId] = useState<number | null>(null)
+  const [imgToast, setImgToast] = useState<string | null>(null)
   const [selectedPostIds, setSelectedPostIds] = useState<Set<number>>(new Set())
   // Search box for the Posts tab — filters the published list by title.
   const [postSearch, setPostSearch] = useState('')
@@ -2655,6 +2657,36 @@ export default function ContentPage() {
       setFixCatResult('Rewrite failed.')
     } finally {
       setRewritingPostId(null)
+    }
+  }
+
+  // Re-run JUST the image step on a published post (for posts that shipped
+  // text-only). Grabs real HD frames via the extension when available, else
+  // falls back to the product photo, server-side.
+  async function refreshImages(wpPostId: number, ytVideoId: string | null) {
+    setRefreshingImagesId(wpPostId)
+    setImgToast(null)
+    try {
+      let frames: string[] = []
+      if (ytVideoId) {
+        try {
+          if (await isExtensionAvailable()) {
+            const f = await requestVideoFrames(ytVideoId)
+            if (f.length) frames = f.slice(0, 4)
+          }
+        } catch { /* server fallback */ }
+      }
+      const res = await fetch('/api/blog/refresh-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wordpressPostId: wpPostId, ...(frames.length ? { capturedFrames: frames } : {}) }),
+      })
+      const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+      setImgToast(res.ok ? `Added ${data.count} image${data.count === 1 ? '' : 's'} — refresh the post to see them.` : (data.error || 'Image refresh failed'))
+    } catch (e) {
+      setImgToast(e instanceof Error ? e.message : 'Image refresh failed')
+    } finally {
+      setRefreshingImagesId(null)
     }
   }
 
@@ -3115,6 +3147,12 @@ export default function ContentPage() {
         />
       ) : activeTab === 'posts' ? (
         <div className="flex flex-col gap-2">
+          {imgToast && (
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-[#34c759]/30 bg-[#34c759]/5 px-3 py-2 text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">
+              <span>{imgToast}</span>
+              <button onClick={() => setImgToast(null)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"><X size={13} /></button>
+            </div>
+          )}
           {/* Search — find older posts by title */}
           {!postsLoading && allBlogPosts.length > 0 && (
             <div className="relative max-w-md mb-1">
@@ -3241,6 +3279,16 @@ export default function ContentPage() {
                     <ExternalLink size={11} /> View
                   </a>
                 )}
+                {/* Refresh images — re-runs the in-article image step. */}
+                <button
+                  onClick={() => refreshImages(post.id, post.videoId)}
+                  disabled={refreshingImagesId === post.id}
+                  className="text-xs text-[#86868b] hover:text-[#34c759] flex items-center gap-1 px-2 py-1 rounded hover:bg-green-50 transition-colors disabled:opacity-60"
+                  title="Generate / refresh the photos inside this article"
+                >
+                  {refreshingImagesId === post.id ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                  {refreshingImagesId === post.id ? 'Adding…' : 'Images'}
+                </button>
                 {/* Edit manually — opens the post in the WordPress editor. */}
                 {post.link && (
                   <a
