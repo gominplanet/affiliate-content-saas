@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!metaEnabled()) return NextResponse.json({ error: 'Threads publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
+    if (!metaEnabled({ email: user.email })) return NextResponse.json({ error: 'Threads publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // Threads auto-publish is Creator+ (Creator, Pro, Admin).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

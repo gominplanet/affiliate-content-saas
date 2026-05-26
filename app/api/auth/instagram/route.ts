@@ -17,14 +17,15 @@ import { metaEnabled } from '@/lib/feature-flags'
 export async function GET() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
 
-  if (!metaEnabled()) {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&meta_disabled=1`)
-  }
-
-  // Tier gate — bounce non-Pro users to /pricing
+  // Resolve the user first so the reviewer test account / admins can start the
+  // OAuth flow while Meta is gated for the public.
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
+
+  if (!metaEnabled({ email: user.email })) {
+    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&meta_disabled=1`)
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: tierRow } = await (supabase as any)

@@ -309,7 +309,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
               </button>
               {isOpen && (
                 <div className="flex flex-col gap-0.5">
-                  {group.items.filter(it => metaEnabled() || it.href !== '/instagram-burner').map(renderNavLink)}
+                  {group.items.filter(it => metaEnabled({ tier: isAdmin ? 'admin' : null }) || it.href !== '/instagram-burner').map(renderNavLink)}
                 </div>
               )}
             </div>

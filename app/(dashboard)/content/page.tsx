@@ -2513,16 +2513,18 @@ export default function ContentPage() {
       videosReady: vids.length > 0,
     })
     setWpSiteUrl((i?.wordpress_url as string) || '')
-    // Meta (Facebook/Threads/Instagram) hidden while the integration is under
-    // review — treat as not-connected so their pills don't render.
-    setFbConnected(metaEnabled() && !!(i as Record<string, unknown>)?.facebook_page_id)
+    // Meta (Facebook/Threads/Instagram) hidden from the public while under
+    // review — but visible to admins + the reviewer test account so the flows
+    // stay testable.
+    const metaOn = metaEnabled({ tier: (i as Record<string, unknown>)?.tier as string | null })
+    setFbConnected(metaOn && !!(i as Record<string, unknown>)?.facebook_page_id)
     setPinterestConnected(!!(i as Record<string, unknown>)?.pinterest_access_token)
-    setThreadsConnected(metaEnabled() && !!(i as Record<string, unknown>)?.threads_access_token)
+    setThreadsConnected(metaOn && !!(i as Record<string, unknown>)?.threads_access_token)
     setLinkedInConnected(!!(i as Record<string, unknown>)?.linkedin_access_token && !!(i as Record<string, unknown>)?.linkedin_person_id)
     setTwitterConnected(!!(i as Record<string, unknown>)?.twitter_access_token)
     setBlueskyConnected(!!(i as Record<string, unknown>)?.bluesky_handle && !!(i as Record<string, unknown>)?.bluesky_app_password)
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
-    setInstagramConnected(metaEnabled() && !!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
+    setInstagramConnected(metaOn && !!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
     const resolvedTier = effectiveTier((i as Record<string, unknown>)?.tier as string)
     setUserTier(resolvedTier)
     // Pro multi-account: load connected Facebook Pages + Instagram accounts so

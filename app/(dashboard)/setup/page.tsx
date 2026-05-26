@@ -722,6 +722,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const searchParams = useSearchParams()
 
   const [youtubeChannelId, setYoutubeChannelId] = useState('')
+  // Meta cards are hidden from the public while under review, but shown to
+  // admins + the reviewer test account (resolved from tier/email in load()).
+  const [metaUnlocked, setMetaUnlocked] = useState(metaEnabled())
   const [facebook, setFacebook] = useState({ connected: false, pageName: '', pageId: '', pages: [] as { id: string; name: string }[] })
   const [fbDisconnecting, setFbDisconnecting] = useState(false)
   const [fbNotice, setFbNotice] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -782,6 +785,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const { data } = await (supabase as any).from('integrations').select('*').eq('user_id', user.id).single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = data as any
+    setMetaUnlocked(metaEnabled({ tier: row?.tier, email: user.email }))
     if (row) {
       setYoutubeChannelId(row.youtube_channel_id ?? '')
       setWpUrl(row.wordpress_url ?? '')
@@ -1198,7 +1202,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       </div>
 
       {/* Facebook */}
-      {metaEnabled() && (
+      {metaUnlocked && (
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -1298,7 +1302,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       </div>
 
       {/* Threads */}
-      {metaEnabled() && (
+      {metaUnlocked && (
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
@@ -1555,7 +1559,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       </div>
 
       {/* Instagram — Pro */}
-      {metaEnabled() && (
+      {metaUnlocked && (
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div

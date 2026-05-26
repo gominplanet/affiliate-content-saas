@@ -162,7 +162,7 @@ export default function InstagramBurnerPage() {
     } catch { window.open(resultUrl, '_blank') }
   }
 
-  if (!metaEnabled()) {
+  if (!metaEnabled({ tier })) {
     return (
       <>
         <Header title="Instagram Burner" subtitle="Add an on-screen caption to your videos and publish them as Instagram Reels." />
