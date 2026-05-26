@@ -5,6 +5,7 @@ import { TutorialVideo } from '@/components/TutorialVideo'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
+import ExtensionReminder from '@/components/ExtensionReminder'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
@@ -136,6 +137,9 @@ export default async function DashboardPage() {
       {/* News / announcement banner — red-tinted, dismissible. Edit the
           message in components/dashboard/NewsBanner.tsx. */}
       <NewsBanner />
+
+      {/* Browser-extension install reminder — auto-hides once detected. */}
+      <ExtensionReminder />
 
       {/* Welcome card — shown until user generates their first post */}
       {isNewUser && (
