@@ -49,12 +49,29 @@ export interface SeoSchemaInput {
     name: string
     /** The creator's YouTube channel (or site) URL → Person.sameAs. */
     channelUrl?: string | null
+    /** Author bio → Person.description (2026 author-authority signal). */
+    bio?: string | null
+    /** Headshot URL → Person.image. */
+    imageUrl?: string | null
+    /** e.g. "Product Reviewer" → Person.jobTitle. */
+    jobTitle?: string | null
+    /** Topics the author has hands-on expertise in → Person.knowsAbout. */
+    knowsAbout?: string[] | null
   }
   publisher: {
     name: string
     url: string
     logoUrl?: string | null
+    /** Brand social profile URLs → Organization.sameAs. */
+    sameAs?: string[] | null
   }
+
+  /** Approx word count of the post body → BlogPosting.wordCount. */
+  wordCount?: number | null
+  /** Category/section label → BlogPosting.articleSection. */
+  category?: string | null
+  /** BCP-47 language tag → BlogPosting.inLanguage (default "en"). */
+  inLanguage?: string | null
 
   /** The reviewed product. Null when the post isn't a single-product review. */
   product?: {
@@ -63,6 +80,8 @@ export interface SeoSchemaInput {
     brand?: string | null
     /** The affiliate/destination URL for the product. */
     url?: string | null
+    /** Short verdict text → Review.reviewBody (a quotable, attributable extract). */
+    reviewBody?: string | null
   } | null
   /** Numeric rating out of `ratingMax` (default 5). Null → no Review stars. */
   rating?: number | null
@@ -187,6 +206,11 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
   const person: Node = { '@type': 'Person', '@id': id.person, name: input.author.name }
   person.url = input.author.channelUrl || input.publisher.url
   if (input.author.channelUrl) person.sameAs = [input.author.channelUrl]
+  if (input.author.jobTitle) person.jobTitle = input.author.jobTitle
+  if (input.author.bio) person.description = input.author.bio
+  if (input.author.imageUrl) person.image = { '@type': 'ImageObject', url: input.author.imageUrl }
+  const knows = (input.author.knowsAbout || []).filter(Boolean)
+  if (knows.length) person.knowsAbout = knows
   graph.push(person)
 
   // ── Organization (publisher) ─────────────────────────────────────────────
@@ -194,6 +218,8 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
   if (input.publisher.logoUrl) {
     org.logo = { '@type': 'ImageObject', url: input.publisher.logoUrl }
   }
+  const orgSameAs = (input.publisher.sameAs || []).filter(Boolean)
+  if (orgSameAs.length) org.sameAs = orgSameAs
   graph.push(org)
 
   // ── VideoObject (the embedded YouTube review) ────────────────────────────
@@ -227,7 +253,10 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
     author: { '@id': id.person },
     publisher: { '@id': id.org },
     mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+    inLanguage: input.inLanguage || 'en',
   }
+  if (input.category) article.articleSection = input.category
+  if (input.wordCount && input.wordCount > 0) article.wordCount = input.wordCount
   if (input.imageUrl) article.image = [input.imageUrl]
   if (hasVideo) article.video = { '@id': id.video }
   graph.push(article)
@@ -262,6 +291,7 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
           worstRating: 1,
         },
       }
+      if (input.product.reviewBody) review.reviewBody = input.product.reviewBody.slice(0, 1500)
       product.review = { '@id': id.review }
       graph.push(product, review)
     } else {
@@ -270,6 +300,10 @@ export function buildReviewSchemaGraph(input: SeoSchemaInput): { '@context': str
   }
 
   // ── FAQPage ──────────────────────────────────────────────────────────────
+  // NOTE: Google retired FAQ rich results (May 2026), but this markup stays —
+  // it's now a high-leverage AEO/Bing asset: answer engines (ChatGPT, Perplexity,
+  // Google AI Mode) retrieve these self-contained Q&A chunks. Value = AI citation,
+  // not the old SERP accordion.
   const faq = (input.faq || []).filter(f => f?.question?.trim() && f?.answer?.trim())
   if (faq.length > 0) {
     graph.push({

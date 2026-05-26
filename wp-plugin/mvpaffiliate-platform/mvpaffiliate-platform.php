@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.9
+ * Version: 1.0.10
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.9');
+define('MVP_AFFILIATE_VERSION', '1.0.10');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -453,6 +453,11 @@ add_action('wp_head', function () {
     echo "\n<meta property=\"og:title\" content=\"" . esc_attr(get_the_title($post_id)) . "\" />";
     echo "\n<meta property=\"og:type\" content=\"article\" />";
     echo "\n<meta property=\"og:url\" content=\"" . esc_url(get_permalink($post_id)) . "\" />";
+    echo "\n<meta property=\"og:site_name\" content=\"" . esc_attr(get_bloginfo('name')) . "\" />";
+    echo "\n<meta property=\"article:published_time\" content=\"" . esc_attr(get_the_date('c', $post_id)) . "\" />";
+    echo "\n<meta property=\"article:modified_time\" content=\"" . esc_attr(get_the_modified_date('c', $post_id)) . "\" />";
+    // (Canonical is left to WP core / Kadence, which emit rel=canonical by
+    //  default — adding our own would risk a duplicate canonical tag.)
     if ($og !== '') {
         echo "\n<meta property=\"og:image\" content=\"" . esc_url($og) . "\" />";
         echo "\n<meta name=\"twitter:card\" content=\"summary_large_image\" />";

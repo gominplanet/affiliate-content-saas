@@ -784,6 +784,13 @@ async function handleGenerate(request: Request) {
     const ytThumb = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
     const initialProductImage = ((v as Record<string, unknown>).product_image_url as string | null)?.trim() || null
 
+    // Descriptive, keyword-bearing alt text for in-body images (image SEO +
+    // accessibility) — replaces the old "<title> — 2" placeholder. Varies the
+    // descriptor per slot so each image's alt is distinct.
+    const altBase = (generated.seoKeyword || generated.title || '').trim()
+    const ALT_DESCRIPTORS = ['in use', 'close-up detail', 'in a real setting', 'hands-on', 'key feature', 'overview']
+    const altFor = (i: number) => altBase ? `${altBase} — ${ALT_DESCRIPTORS[i % ALT_DESCRIPTORS.length]}` : `Product review image ${i + 1}`
+
     // ── SEO/AEO structured data writer (idempotent — safe to call twice) ─────
     // Builds the JSON-LD @graph + meta and writes them as post meta; the MVP
     // plugin renders them in <head>. Called FIRST below (guaranteed delivery —
@@ -803,10 +810,28 @@ async function handleGenerate(request: Request) {
           description: generated.excerpt,
           datePublished: (savedPost?.published_at as string) || new Date().toISOString(),
           imageUrl: ogImage,
-          author: { name: (b.author_name as string) || (b.name as string) || 'Editor', channelUrl: (b.youtube_url as string) || null },
-          publisher: { name: (b.name as string) || 'MVP Affiliate', url: wp.wordpress_url, logoUrl: (b.logo_url as string) || null },
+          // Author-authority + entity signals (2026 E-E-A-T): bio, headshot,
+          // job title, expertise topics, brand socials. All optional/additive.
+          author: {
+            name: (b.author_name as string) || (b.name as string) || 'Editor',
+            channelUrl: (b.youtube_url as string) || null,
+            bio: (b.author_bio as string) || null,
+            imageUrl: (b.headshot_url as string) || null,
+            jobTitle: 'Product Reviewer',
+            knowsAbout: Array.isArray(b.niches) ? (b.niches as string[]).slice(0, 8) : null,
+          },
+          publisher: {
+            name: (b.name as string) || 'MVP Affiliate',
+            url: wp.wordpress_url,
+            logoUrl: (b.logo_url as string) || null,
+            sameAs: [b.youtube_url, b.instagram_url, b.tiktok_url, b.website_url]
+              .filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u)),
+          },
+          wordCount: content ? content.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').trim().split(/\s+/).filter(Boolean).length : null,
+          category: generated.category || null,
+          inLanguage: 'en',
           product: (effectiveAsin || productUrl)
-            ? { name: productName, url: productUrl || null, imageUrl: productImage }
+            ? { name: productName, url: productUrl || null, imageUrl: productImage, reviewBody: (generated.excerpt || '').slice(0, 600) }
             : null,
           rating: parseRating(generated.rating),
           thirdPartyProduct: true,
@@ -870,10 +895,10 @@ async function handleGenerate(request: Request) {
         for (let i = 0; i < userImageUrls.length; i++) {
           try {
             const media = await wpService.uploadImageFromUrl(userImageUrls[i], `${slug}-body${i + 1}.jpg`)
-            if (media?.source_url) uploaded.push({ url: media.source_url, alt: `${generated.title} — ${i + 1}` })
-            else uploaded.push({ url: userImageUrls[i], alt: `${generated.title} — ${i + 1}` }) // fallback: embed the public URL directly
+            if (media?.source_url) uploaded.push({ url: media.source_url, alt: `${altFor(i)}` })
+            else uploaded.push({ url: userImageUrls[i], alt: `${altFor(i)}` }) // fallback: embed the public URL directly
           } catch {
-            uploaded.push({ url: userImageUrls[i], alt: `${generated.title} — ${i + 1}` })
+            uploaded.push({ url: userImageUrls[i], alt: `${altFor(i)}` })
           }
         }
         heroImageUrl = uploaded[0]?.url ?? heroImageUrl
@@ -1005,7 +1030,7 @@ async function handleGenerate(request: Request) {
                 } catch { /* keep the un-upscaled hero */ }
               }
               const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
-              return media?.source_url ? { url: media.source_url, alt: `${generated.title} — ${i + 1}` } : null
+              return media?.source_url ? { url: media.source_url, alt: `${altFor(i)}` } : null
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e)
               if (!firstImgError) firstImgError = msg
