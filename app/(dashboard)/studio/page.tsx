@@ -129,10 +129,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  image prompt explicitly says "no text". We then overlay this text
    *  client-side via canvas so it's always crisp. 2–5 words works best. */
   const [customHeadline, setCustomHeadline] = useState('')
-  /** Always 1 — variant generation was removed to save tokens. We keep
-   *  the variant-aware response handling for backwards-compat with any
-   *  older clients still in the wild. */
-  const variantCount = 1 as const
+  /** Test & Compare kit (#20): how many distinct variants to generate per
+   *  click so the user can pick the strongest. Default 2 (compare A vs B);
+   *  1–3 selectable. Each variant counts once against the thumbnail cap. */
+  const [variantCount, setVariantCount] = useState(2)
+  /** All generated variants (best-first, with CTR scores) for the compare
+   *  grid. The large preview shows the currently-selected one (thumbnailUrl). */
+  const [thumbnailVariants, setThumbnailVariants] = useState<Array<{ url: string; score: number | null }>>([])
   /** Pre-generation prompt — opens when the user clicks Generate Thumbnail
    *  so they consciously decide whether to write their own headline or
    *  let MVP do it, before any AI work fires. */
@@ -422,7 +425,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
     // rendered INTO the image by the model — show it AS-IS. Drawing our canvas
     // overlay on top would double the text. We keep the hook so the user can
     // one-click swap to the clean client-overlay version.
+    const scores = (data.thumbnailScores as Array<{ score: number } | null> | undefined) || []
     if (data.baked === true) {
+      setThumbnailVariants(rawList.map((u, i) => ({ url: u, score: scores[i]?.score ?? null })))
       setThumbnailStyleId(null)
       setThumbnailFeedbackSent(null)
       setThumbnailUrl(rawList[0])
@@ -457,9 +462,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
       }
     }))
 
-    // Variant generation was removed — server always returns one image —
-    // but the response handling stays array-aware in case an older client
-    // race somehow asked for more.
+    // Store every overlaid variant (best-first) for the compare grid; the
+    // large preview shows the top one until the user picks another.
+    setThumbnailVariants(finalUrls.map((u, i) => ({ url: u, score: scores[i]?.score ?? null })))
     setThumbnailStyleId(pickedStyleId)
     setThumbnailFeedbackSent(null)
     setThumbnailUrl(finalUrls[0])
@@ -493,6 +498,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
     reader.onload = () => {
       const dataUri = reader.result as string
       setThumbnailUrl(dataUri)
+      setThumbnailVariants([])
       setThumbnailPrompt(null)
       setThumbnailModel('upload')
       setThumbnailHook(null)
@@ -919,6 +925,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
       setThumbnailStyleId(pickedStyleId)
       setThumbnailFeedbackSent(null)
       setThumbnailUrl(finalUrl)
+      setThumbnailVariants([])
       setSceneAnalysis(null)
       setThumbnailModel('instant')
     } catch (err) {
@@ -1364,6 +1371,24 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   </label>
                 </div>
 
+                {/* Test & Compare: how many variants to generate per click. More
+                    variants = more options to A/B test, but each counts once
+                    against your thumbnail allowance. */}
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <span className="text-[11px] text-[#86868b]">Variants to compare:</span>
+                  {[1, 2, 3].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => setVariantCount(n)}
+                      disabled={generatingThumbnail || instantLoading}
+                      className={`text-[11px] w-7 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${variantCount === n ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                      title={`Generate ${n} variant${n > 1 ? 's' : ''} (${n} thumbnail credit${n > 1 ? 's' : ''})`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+
                 {thumbnailError && (
                   <p className="text-xs text-[#ff3b30] mb-3">{thumbnailError}</p>
                 )}
@@ -1374,6 +1399,37 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                       <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
                     </div>
+
+                    {/* Test & Compare grid — when 2+ variants were generated,
+                        show them ranked (best-first) with their CTR score.
+                        Click one to make it the active preview / download /
+                        apply target. The top variant is pre-selected. */}
+                    {thumbnailVariants.length > 1 && (
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-[#86868b]">Compare variants — click to select (★ = highest predicted CTR)</span>
+                        <div className="grid grid-cols-3 gap-2">
+                          {thumbnailVariants.map((v, i) => {
+                            const selected = v.url === thumbnailUrl
+                            return (
+                              <button
+                                key={v.url}
+                                onClick={() => { setThumbnailUrl(v.url); setThumbnailFeedbackSent(null) }}
+                                className={`relative rounded-lg overflow-hidden border-2 transition ${selected ? 'border-[#0071e3]' : 'border-transparent hover:border-gray-300 dark:hover:border-white/20'}`}
+                                title={v.score !== null ? `Predicted CTR score: ${v.score}/100` : 'Variant'}
+                              >
+                                <img src={v.url} alt={`Variant ${i + 1}`} className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
+                                <span className="absolute top-1 left-1 text-[9px] px-1.5 py-0.5 rounded-full bg-black/60 text-white font-semibold">
+                                  {i === 0 ? '★ ' : ''}{v.score !== null ? `${v.score}` : `#${i + 1}`}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <p className="text-[10px] text-[#86868b] leading-snug">
+                          A/B test on YouTube: publish your top pick, then after ~a week swap to the runner-up from <span className="font-medium">YouTube Studio → Content → Edit → Thumbnail</span> and compare impressions-CTR in <span className="font-medium">Analytics → Content</span>. Keep the winner.
+                        </p>
+                      </div>
+                    )}
                     {/* Visual Style Analysis text was here — removed so the
                         AI's internal prompt/notes aren't surfaced to users. */}
                     <div className="flex items-center gap-3 flex-wrap">
@@ -1399,10 +1455,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           <Download size={12} /> Download Thumbnail
                         </a>
                       )}
-                      {thumbnailModel === 'nano-banana' && (
+                      {(thumbnailModel === 'nano-banana' || thumbnailModel === 'nano-banana-pro') && (
                         <>
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">
-                            ✨ AI-baked text (may have typos)
+                            {thumbnailModel === 'nano-banana-pro' ? '✨ AI-baked text (Pro)' : '✨ AI-baked text (may have typos)'}
                           </span>
                           <button
                             onClick={() => generateThumbnail({ textMode: 'clean' })}
