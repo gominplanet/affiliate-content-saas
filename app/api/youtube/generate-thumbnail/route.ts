@@ -699,15 +699,17 @@ export async function POST(request: Request) {
                 feature: 'yt_thumb_nanobanana_image', model: nbModelKey, images: 1,
               })
             }
-            const rank = await rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
-            // CLEAN path only: the client draws the headline via canvas, so run a
-            // cheap vision pass on the top variant to find the corner clear of
-            // the face/subject and tell the client where to place it. Best-effort.
-            let textPosition: TextPosition | null = null
-            if (wantClean && rank.urls[0]) {
-              const tz = await analyzeTextZone(rank.urls[0], { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
-              textPosition = tz?.position ?? null
-            }
+            // Rank variants and (clean path only) detect the safe text zone in
+            // PARALLEL so the vision passes overlap instead of adding a
+            // sequential phase. Text-zone runs on the first generated variant
+            // (same frame/prompt → placement is consistent across variants).
+            const [rank, tz] = await Promise.all([
+              rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier }),
+              wantClean && nbUrls[0]
+                ? analyzeTextZone(nbUrls[0], { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
+                : Promise.resolve(null),
+            ])
+            const textPosition: TextPosition | null = tz?.position ?? null
             return NextResponse.json({
               ok: true,
               thumbnailUrl: rank.urls[0],

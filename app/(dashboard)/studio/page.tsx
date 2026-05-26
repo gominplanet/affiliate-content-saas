@@ -130,9 +130,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  client-side via canvas so it's always crisp. 2–5 words works best. */
   const [customHeadline, setCustomHeadline] = useState('')
   /** Test & Compare kit (#20): how many distinct variants to generate per
-   *  click so the user can pick the strongest. Default 2 (compare A vs B);
-   *  1–3 selectable. Each variant counts once against the thumbnail cap. */
-  const [variantCount, setVariantCount] = useState(2)
+   *  click so the user can pick the strongest. Default 1 (fast); bump to 2–3
+   *  to compare. Each extra variant adds an image generation (slower + one
+   *  more against the thumbnail cap), so comparison is opt-in. */
+  const [variantCount, setVariantCount] = useState(1)
   /** All generated variants (best-first, with CTR scores) for the compare
    *  grid. The large preview shows the currently-selected one (thumbnailUrl). */
   const [thumbnailVariants, setThumbnailVariants] = useState<Array<{ url: string; score: number | null }>>([])
