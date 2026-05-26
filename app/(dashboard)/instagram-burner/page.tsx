@@ -30,6 +30,10 @@ const STYLES: Array<{ key: string; label: string; desc: string }> = [
 export default function InstagramBurnerPage() {
   const supabase = createBrowserClient()
   const [tier, setTier] = useState('trial')
+  // Meta gate uses the RAW tier + reviewer email (NOT the view-as effective
+  // tier) so an admin previewing as another tier — or the reviewer — still
+  // gets in while the public stays gated.
+  const [metaUnlocked, setMetaUnlocked] = useState(metaEnabled())
   const [igUsername, setIgUsername] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -61,6 +65,7 @@ export default function InstagramBurnerPage() {
       resolvedTier = (data?.tier as string) || 'trial'
       setIgUsername((data?.instagram_username as string) || null)
     }
+    setMetaUnlocked(metaEnabled({ tier: resolvedTier, email: user?.email }))
     setTier(effectiveTier(resolvedTier))
     setLoading(false)
   }, [supabase])
@@ -162,7 +167,7 @@ export default function InstagramBurnerPage() {
     } catch { window.open(resultUrl, '_blank') }
   }
 
-  if (!metaEnabled({ tier })) {
+  if (!metaUnlocked) {
     return (
       <>
         <Header title="Instagram Burner" subtitle="Add an on-screen caption to your videos and publish them as Instagram Reels." />
