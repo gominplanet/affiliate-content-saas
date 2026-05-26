@@ -14,7 +14,10 @@ export default function PrivacyPage() {
             MVP Affiliate (&quot;the App&quot;, &quot;we&quot;, &quot;us&quot;) is a SaaS tool used by individual
             content creators (bloggers, YouTubers, affiliate marketers) to generate, publish, and distribute
             product review content to their own websites and social accounts. The App is operated by
-            Gomin Planet Holdings Ltd (<a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>).
+            Gominplanet Holdings Ltd, an exempted company incorporated in Anguilla, British West Indies under the
+            Business Companies Act, 2022 (company no. A000003427), registered office: The Hansa Bank Building, 1st Floor,
+            PO Box 886, Landsome Road, The Valley, AI-2640, Anguilla, BWI
+            (<a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>).
           </p>
         </div>
 

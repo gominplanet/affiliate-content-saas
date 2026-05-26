@@ -13,7 +13,7 @@ export default function TermsPage() {
           <p>
             By creating an account or using MVP Affiliate (&quot;the App&quot;, &quot;we&quot;, &quot;us&quot;),
             you agree to these Terms of Service. If you do not agree, do not use the App. The App is
-            operated by Gomin Planet Holdings Ltd.
+            operated by Gominplanet Holdings Ltd.
           </p>
         </div>
 
@@ -122,7 +122,7 @@ export default function TermsPage() {
         <div>
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Limitation of Liability</h2>
           <p>
-            To the maximum extent permitted by law, MVP Affiliate and Gomin Planet Holdings Ltd are not
+            To the maximum extent permitted by law, MVP Affiliate and Gominplanet Holdings Ltd are not
             liable for any indirect, incidental, special, consequential, or punitive damages arising from
             your use of the App, including damages arising from content you publish to third-party
             platforms. Our aggregate liability is limited to the fees you paid us in the 12 months

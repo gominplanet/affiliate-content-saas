@@ -944,7 +944,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-2">
             <Image src="/mvp-affiliate-logo.png" alt="MVP Affiliate" width={28} height={28} className="rounded-lg" />
             <span className="text-sm font-semibold text-[#1d1d1f]">MVP Affiliate</span>
-            <span className="text-xs text-[#86868b] ml-2">© {new Date().getFullYear()} Gomin Planet Holdings Ltd</span>
+            <span className="text-xs text-[#86868b] ml-2">© {new Date().getFullYear()} Gominplanet Holdings Ltd</span>
           </div>
           <div className="flex items-center gap-5 text-xs text-[#86868b] flex-wrap justify-center">
             <Link href="/pricing" className="hover:text-[#1d1d1f]">Pricing</Link>
@@ -962,6 +962,12 @@ export default function LandingPage() {
             <Link href="/login" className="hover:text-[#1d1d1f]">Sign in</Link>
           </div>
         </div>
+        <p className="max-w-6xl mx-auto mt-6 pt-5 border-t border-gray-100 text-[11px] leading-relaxed text-[#86868b] text-center px-2">
+          MVP Affiliate is a service of <strong className="font-semibold text-[#6e6e73]">Gominplanet Holdings Ltd</strong>, an exempted company
+          incorporated in Anguilla, British West Indies under the Business Companies Act, 2022 (company&nbsp;no.&nbsp;A000003427).
+          Registered office: The Hansa Bank Building, 1st Floor, PO Box 886, Landsome Road, The Valley, AI-2640, Anguilla, BWI.
+          {' '}Contact: <a href="mailto:us@gominplanet.com" className="underline hover:text-[#1d1d1f]">us@gominplanet.com</a>.
+        </p>
       </footer>
     </div>
   )
