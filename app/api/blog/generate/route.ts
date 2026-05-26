@@ -12,6 +12,7 @@ import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
+import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { fal } from '@fal-ai/client'
 import { recordUsage, recordAnthropicUsage } from '@/lib/ai-usage'
@@ -492,6 +493,24 @@ async function handleGenerate(request: Request) {
       .slice(0, 1200),
   })).filter(ex => ex.excerpt.length > 100) ?? []
 
+  // ── Internal-link candidates (SEO #15): the user's recent published posts
+  // with a public URL. We score these by topical overlap against the new post
+  // AFTER it's written and surface the best 2–3 as a "Related reviews" block —
+  // real topical internal linking, not random related. Best-effort.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: linkRows } = await (supabase as any)
+    .from('blog_posts')
+    .select('title,wordpress_url,seo_keyword')
+    .eq('user_id', user.id)
+    .eq('status', 'published')
+    .neq('video_id', videoId)
+    .not('wordpress_url', 'is', null)
+    .order('published_at', { ascending: false })
+    .limit(20)
+  const linkCandidates: LinkCandidate[] = (linkRows as Array<{ title: string; wordpress_url: string; seo_keyword: string | null }> | null)
+    ?.filter(r => r.title && r.wordpress_url)
+    .map(r => ({ title: r.title, url: r.wordpress_url, keyword: r.seo_keyword })) ?? []
+
   // ── 5.9. Web product research — scrape the product/brand site the
   //         creator linked in the description for factual product info,
   //         the open-web equivalent of an Amazon scrape. The transcript
@@ -590,6 +609,26 @@ async function handleGenerate(request: Request) {
     .replace('{{LIFESTYLE_IMAGE}}', '')
     .replace('{{SETTING_IMAGE}}', '')
 
+  // ── 6.1. Topical internal linking (SEO #15) — pick the 2–3 most relevant of
+  //         the user's existing posts by token overlap and splice a "Related
+  //         reviews" block before the FAQ. Skipped when nothing is relevant.
+  try {
+    const related = pickRelatedPosts(
+      {
+        title: generated.title,
+        keyword: generated.seoKeyword || null,
+        tags: generated.tags || [],
+        niches: ((brand as Record<string, unknown>).niches as string[]) || [],
+        category: generated.category || null,
+      },
+      linkCandidates,
+      3,
+    )
+    if (related.length > 0) {
+      content = insertRelatedLinks(content, renderRelatedLinksBlock(related))
+    }
+  } catch { /* internal links are best-effort; never block generation */ }
+
   const slug = generated.slug.slice(0, 60)
 
   // ── 7. Resolve tag IDs ────────────────────────────────────────────────────
@@ -636,11 +675,16 @@ async function handleGenerate(request: Request) {
     }
   } catch { /* non-fatal */ }
 
-  // ── 7.5. Sync author display name to WordPress ───────────────────────────
+  // ── 7.5. Sync author profile to WordPress (E-E-A-T #16) ───────────────────
+  // Push display name + bio + website so the byline-linked author archive page
+  // becomes a real author-authority page. Only what the user actually provided
+  // (no fabrication). Social profiles ride along in each post's Person schema.
   const authorName = (brand as Record<string, unknown>).author_name as string | null
-  if (authorName) {
+  const authorBio = (brand as Record<string, unknown>).author_bio as string | null
+  const authorWebsite = (brand as Record<string, unknown>).website_url as string | null
+  if (authorName || authorBio || authorWebsite) {
     try {
-      await wpService.updateCurrentUserDisplayName(authorName)
+      await wpService.updateCurrentUserProfile({ displayName: authorName, bio: authorBio, url: authorWebsite })
     } catch { /* non-fatal */ }
   }
 

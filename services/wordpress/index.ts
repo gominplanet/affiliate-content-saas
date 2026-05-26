@@ -486,6 +486,28 @@ export class WordPressService {
     })
   }
 
+  /**
+   * Sync the author profile to WordPress so the (theme-default, byline-linked)
+   * author archive page reads as a real author-authority page — bio +
+   * website. Author-authority is a 2026 E-E-A-T ranking signal. Only fields
+   * that are provided are written (we never fabricate / blank an existing bio).
+   */
+  async updateCurrentUserProfile(opts: { displayName?: string | null; bio?: string | null; url?: string | null }): Promise<void> {
+    const body: Record<string, string> = {}
+    if (opts.displayName && opts.displayName.trim()) {
+      body.name = opts.displayName.trim()
+      body.nickname = opts.displayName.trim()
+    }
+    if (opts.bio && opts.bio.trim()) body.description = opts.bio.trim()
+    if (opts.url && /^https?:\/\//.test(opts.url.trim())) body.url = opts.url.trim()
+    if (Object.keys(body).length === 0) return
+    await this.request('/users/me', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
   // ── Site setup ────────────────────────────────────────────────────────────
 
   async setSiteSettings(settings: Record<string, unknown>): Promise<void> {
