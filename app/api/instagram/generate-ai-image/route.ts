@@ -26,6 +26,8 @@ import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
+import { composeWithNanoBananaPro, composeWithNanoBanana, rehostToFal, rehostFacePhotos, NANO_BANANA_PRO_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
 /**
  * Look for an ASIN inside the FIRST TWO SENTENCES of the YouTube
@@ -366,16 +368,20 @@ export async function POST(request: Request) {
     }
 
     // ── Look up the face model if the user picked one ───────────────────────
-    let faceModel: { trigger_token: string; lora_url: string; name: string } | null = null
+    // New instant face models store source_images (no LoRA); older ones have a
+    // lora_url. We support both — source_images drive the Nano Banana Pro
+    // identity path below, lora_url the legacy flux-lora path.
+    let faceModel: { trigger_token: string | null; lora_url: string | null; name: string; source_images: string[] } | null = null
     if (faceModelId) {
       const { data: fm } = await sb
         .from('face_models')
-        .select('trigger_token,lora_url,status,name')
+        .select('trigger_token,lora_url,status,name,source_images')
         .eq('id', faceModelId)
         .eq('user_id', user.id)
         .single()
-      if (fm?.status === 'ready' && fm?.lora_url) {
-        faceModel = { trigger_token: fm.trigger_token, lora_url: fm.lora_url, name: fm.name }
+      const srcImages: string[] = Array.isArray(fm?.source_images) ? fm.source_images : []
+      if (fm?.status === 'ready' && (fm?.lora_url || srcImages.length > 0)) {
+        faceModel = { trigger_token: fm.trigger_token ?? null, lora_url: fm.lora_url ?? null, name: fm.name, source_images: srcImages }
       }
     }
 
@@ -413,7 +419,45 @@ export async function POST(request: Request) {
     fal.config({ credentials: falKey })
 
     let imageUrl: string | null = null
-    if (faceModel) {
+
+    // ── PRIMARY: Nano Banana Pro composed portrait from the user's face photos ─
+    // "Your Face" multi-photo identity refs + the real product → a designed 4:5
+    // IG image with the host's true likeness, text-free (the title is overlaid
+    // crisply client-side). Mirrors the YouTube composed path. Only when the
+    // face model has source photos (the instant, no-LoRA models).
+    const igFaceRefs = faceModel?.source_images?.length
+      ? await rehostFacePhotos(sb, faceModel.source_images, 3)
+      : []
+    if (igFaceRefs.length > 0) {
+      try {
+        const igProductRef = productImageUrl ? await rehostToFal(productImageUrl) : null
+        const refs = igProductRef ? [...igFaceRefs, igProductRef] : igFaceRefs
+        const igProductClause = igProductRef
+          ? `The FINAL reference image is the PRODUCT — render it EXACTLY (shape, colour, materials, any real branding on it); use that image ONLY for the product, never for a person.`
+          : `Render any product in the scene accurately and prominently.`
+        const igPrompt = `Create a vibrant, scroll-stopping NATIVE INSTAGRAM image (4:5 portrait) in the polished style of a top product reviewer.
+The reference photos show the SAME real creator — reproduce their EXACT face and identity (bone structure, features, eye shape, nose, jaw, age, ethnicity, skin tone, hair); unmistakably this real person, photorealistic, never generic or altered.
+WARDROBE: use the photos ONLY for the face and identity — dress them in a FRESH, natural casual outfit that suits the scene; do NOT copy the clothing or top shown in the reference photos.
+${igProductClause}
+COMPOSITION: a TIGHT head-and-shoulders portrait — the face fills the upper-middle and is the hero, with an energetic, expressive reaction (excited, surprised or delighted), looking at the camera, holding the product up near the face/jawline. Lived-in setting with a heavily blurred bokeh background; editorial portrait lighting, natural skin tones.
+HEADLINE SPACE: leave a generous CLEAN, uncluttered area at the TOP for a headline to be added afterwards. Render ABSOLUTELY NO text, letters, words, numbers or captions anywhere.
+${NO_BRAND_IMAGE_CLAUSE}
+Ultra-sharp, photorealistic, 4:5 portrait.`
+        const composed = await composeWithNanoBananaPro({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+        imageUrl = composed[0] || null
+        if (imageUrl) {
+          recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_image', model: NANO_BANANA_PRO_COST_MODEL, images: 1 })
+        } else {
+          const fb = await composeWithNanoBanana({ prompt: igPrompt, referenceImageUrls: refs, aspectRatio: '4:5', numImages: 1 })
+          imageUrl = fb[0] || null
+          if (imageUrl) recordUsage({ userId: user.id, tier, feature: 'ig_ai_thumbnail_image', model: NANO_BANANA_COST_MODEL, images: 1 })
+        }
+      } catch (err) {
+        console.warn('[ig-ai-image] Nano Banana composed path failed, falling back:', err)
+      }
+    }
+
+    if (!imageUrl && faceModel?.lora_url) {
       // Flux-lora portrait. Use the closest stock size — flux-lora accepts
       // image_size 'portrait_4_3' which is 1024x1280 = 4:5 ratio match.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -442,7 +486,8 @@ export async function POST(request: Request) {
           feature: 'ig_ai_thumbnail_image', model: 'fal-flux-lora', images: 1,
         })
       }
-    } else if (productImageUrl) {
+    }
+    if (!imageUrl && productImageUrl) {
       // No face but we have a real product image — route through Kontext
       // so the rendered product matches the Amazon photo exactly (shape,
       // colour, material, branding). Kontext takes the product image as

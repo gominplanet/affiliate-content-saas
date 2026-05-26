@@ -14,7 +14,7 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
-import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
 // Telemetry context — populated at request start, read by the three
@@ -356,26 +356,6 @@ const CUTOUT_POSES = [
   'one shoulder slightly forward, casual angle',
 ]
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
-
-/**
- * Re-host a face model's source photos to fal so they can be passed as
- * identity references to Nano Banana Pro. The "Your Face" lever for the
- * composed thumbnail: more real photos of the host = far stronger likeness
- * than a single video frame. Best-effort — skips any photo that won't load.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function rehostFacePhotos(supabase: any, paths: string[], max = 3): Promise<string[]> {
-  const out: string[] = []
-  for (const path of paths.slice(0, max)) {
-    try {
-      const { data: file } = await supabase.storage.from('headshots').download(path)
-      if (!file) continue
-      const url = await fal.storage.upload(file as Blob)
-      if (url) out.push(url)
-    } catch { /* skip unreadable photo */ }
-  }
-  return out
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function generateFaceCutout(supabase: any, opts: {

@@ -65,6 +65,26 @@ export async function rehostAll(urls: string[]): Promise<string[]> {
 }
 
 /**
+ * Re-host a face model's source photos (paths in the `headshots` bucket) to fal
+ * so they can be passed as identity references to Nano Banana Pro — the
+ * "Your Face" likeness lever, shared by the YouTube + Instagram paths.
+ * Best-effort: skips any photo that won't download.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function rehostFacePhotos(supabase: any, paths: string[], max = 3): Promise<string[]> {
+  const out: string[] = []
+  for (const path of (paths || []).slice(0, max)) {
+    try {
+      const { data: file } = await supabase.storage.from('headshots').download(path)
+      if (!file) continue
+      const url = await fal.storage.upload(file as Blob)
+      if (url) out.push(url)
+    } catch { /* skip unreadable photo */ }
+  }
+  return out
+}
+
+/**
  * Compose a finished thumbnail from reference images with Nano Banana.
  * `referenceImageUrls` must already be fal-reachable — call `rehostAll` first.
  * Returns up to `numImages` finished composites (best-first ranking happens in
