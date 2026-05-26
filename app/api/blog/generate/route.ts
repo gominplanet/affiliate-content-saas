@@ -138,7 +138,7 @@ ${opts.headings.slice(0, opts.count).map((h, i) => `${i + 1}. ${h}`).join('\n')}
 RULES:
 - Each prompt: a clean, realistic editorial product photo. Vary the angle/scene (in-use lifestyle, close-up detail, flat-lay, in-situ environment).
 - Show the EXACT product. No packaging, no boxes.
-- NO text, letters, logos, or watermarks in the image.
+- NO text, letters, logos, or watermarks in the image. NO retailer/marketplace names or logos (no "Amazon"/"Prime"/store logos), no brand signage, no price tags — only the product's own physical branding.
 - Each under 35 words.
 Return ONLY a JSON array of ${opts.count} strings, nothing else.`,
       }],
@@ -1056,7 +1056,7 @@ async function handleGenerate(request: Request) {
             try {
               let falUrl: string | undefined
               if (falProductImageUrl) {
-                const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details — but show it from a NEW, DISTINCT perspective: ${perspective}. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. This image MUST look clearly different from the other photos in the article — different angle, different framing, different surroundings. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene. Landscape 4:3 editorial product photography.`
+                const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details — but show it from a NEW, DISTINCT perspective: ${perspective}. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. This image MUST look clearly different from the other photos in the article — different angle, different framing, different surroundings. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene; and NO retailer/marketplace names or logos (no Amazon/Prime/store logos), no badges, no price tags, no copyright/trademark symbols. Landscape 4:3 editorial product photography.`
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
                   input: { image_url: falProductImageUrl, prompt: kontextInstruction, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed },
@@ -1069,7 +1069,7 @@ async function handleGenerate(request: Request) {
               if (!falUrl) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
-                  input: { prompt: `${prompt}. Shown as a ${perspective}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image.`, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed },
+                  input: { prompt: `${prompt}. Shown as a ${perspective}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image; NO retailer/marketplace names or logos (no Amazon/Prime/store logos), no badges, no price tags, no copyright/trademark symbols.`, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed },
                   pollInterval: 3000,
                 })
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any

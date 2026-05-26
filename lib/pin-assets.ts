@@ -162,6 +162,7 @@ The Product: A crisp, high-definition view of ${f.product_name} in real use, sho
 Visual Style: Vibrant, saturated colors, high-contrast cinematic lighting, modern lifestyle / luxury-tech aesthetic, shallow depth of field so the subject pops. Leave some clean, less-busy space near the TOP and the BOTTOM of the frame (calmer areas, e.g. softer background or gradient) suitable for overlaying text later.
 
 ABSOLUTELY NO TEXT: Do NOT render ANY text, letters, words, numbers, captions, labels, logos, watermarks, signage, UI, badges, stickers, or typography of ANY kind anywhere in the image. It must be a purely photographic scene with zero written characters. (Headline text is added separately afterward.)
+NO BRANDS: Do NOT render or invent any retailer/marketplace names or logos (especially "Amazon", "Prime", "Walmart", "eBay"), any company/store logos, watermarks, copyright/trademark symbols, or price tags anywhere — only the product's own physical branding is allowed.
 
 Final quality: high resolution, photorealistic, professional advertising photography, cinematic post-processing. Vertical 2:3 portrait. Completely text-free.`
 }
