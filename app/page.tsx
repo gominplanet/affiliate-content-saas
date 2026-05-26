@@ -716,31 +716,67 @@ export default function LandingPage() {
                 <tr className="bg-[#f7f9fc] text-sm uppercase tracking-wider text-[#6e6e73]">
                   <th className="p-4 font-semibold">What you need</th>
                   <th className="p-4 font-semibold text-[#0071e3]">MVP Affiliate</th>
-                  <th className="p-4 font-semibold">Generic AI writer</th>
-                  <th className="p-4 font-semibold">Hire a freelance writer</th>
-                  <th className="p-4 font-semibold">DIY in WordPress</th>
+                  <th className="p-4 font-semibold">Keyword AI writers</th>
+                  <th className="p-4 font-semibold">AI thumbnail / YT tools</th>
+                  <th className="p-4 font-semibold">Stitch 4+ tools together</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                <CompareRow label="Full long-form review draft" us="check" gen="check" free="check" diy="manual" />
-                <CompareRow label="Editorial WordPress theme included" us="check" gen="cross" free="cross" diy="cross" />
-                <CompareRow label="YouTube description + tags + hashtags" us="check" gen="manual" free="manual" diy="manual" />
-                <CompareRow label="One-click push back to your YouTube draft" us="check" gen="cross" free="cross" diy="cross" />
-                <CompareRow label="Click-magnet thumbnail generated" us="check" gen="cross" free="cross" diy="cross" />
-                <CompareRow label="Verdict + rating + Buy/Skip blocks built in" us="check" gen="manual" free="manual" diy="manual" />
-                <CompareRow label="Affiliate disclaimer auto-inserted" us="check" gen="cross" free="manual" diy="manual" />
-                <CompareRow label="One-click publish to WordPress" us="check" gen="cross" free="manual" diy="manual" />
-                <CompareRow label="Fan-out to FB / Threads / LI / Pinterest / X / Bluesky / Telegram / Instagram" us="check" gen="manual" free="manual" diy="cross" />
+                <CompareRow label="Built from your REAL video (transcript + frames)" us="check" gen="cross" free="manual" diy="cross" />
+                <CompareRow label="Long-form review auto-published to WordPress" us="check" gen="check" free="cross" diy="manual" />
+                <CompareRow label="YouTube title / description / tags pushed to your video" us="check" gen="cross" free="check" diy="manual" />
+                <CompareRow label="Click-magnet thumbnail from your real frames" us="check" gen="cross" free="manual" diy="manual" />
+                <CompareRow label="Affiliate links inserted + click tracking" us="check" gen="manual" free="cross" diy="manual" />
+                <CompareRow label="Multi-product comparisons & buying guides" us="check" gen="check" free="cross" diy="manual" />
+                <CompareRow label="Fan-out to 8 socials (FB, IG, Threads, LI, Pinterest, X, Bluesky, Telegram)" us="check" gen="cross" free="cross" diy="manual" />
                 <CompareRow label="Native AI Instagram image — your face + the product" us="check" gen="cross" free="cross" diy="cross" />
-                <CompareRow label="Brand-collab pitch emails to land deals" us="check" gen="cross" free="cross" diy="cross" />
-                <CompareRow label="Stays in your brand voice across posts" us="check" gen="manual" free="manual" diy="manual" />
-                <CompareRow label="Only writes what's actually in your video — no invented stories" us="check" gen="cross" free="manual" diy="manual" />
-                <CompareRow label="Cost per 30 reviews / month" us="from $49" gen="$30–80" free="$600–3000" diy="Your time" />
+                <CompareRow label="Only writes what's in your video — no invented stories" us="check" gen="cross" free="cross" diy="manual" />
+                <CompareRow label="One tool — not 3–4 subscriptions to wire together" us="check" gen="cross" free="cross" diy="cross" />
+                <CompareRow label="Cost per month" us="from $49" gen="$9–99" free="$20–69" diy="$100–300+" />
               </tbody>
             </table>
           </div>
           <p className="mt-5 text-center text-sm text-[#6e6e73]">
             <strong>check</strong> = handled for you · <strong>manual</strong> = possible but you do the work · <strong>cross</strong> = not supported
+          </p>
+        </div>
+      </section>
+
+      {/* ── Why MVP wins in 2026 (the search-update moat) ──────────────────── */}
+      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-[#0a0a0a] to-[#15103a] text-white">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12 max-w-3xl mx-auto">
+            <span className="inline-block text-xs font-bold uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-white/10 text-[#a78bfa]">
+              Why MVP wins in 2026
+            </span>
+            <h2 className="text-3xl sm:text-5xl font-bold mb-5 leading-[1.1]">
+              Google changed the rules. We were already playing by them.
+            </h2>
+            <p className="text-lg text-gray-300 leading-relaxed">
+              Google&apos;s 2026 core update made <span className="text-white font-semibold">first-hand experience</span> the
+              dominant ranking signal — and the sites hit hardest were the ones spinning AI articles from keywords and
+              SERPs, with no real testing behind them. AI answer engines lean the same way, citing real video and
+              multimodal sources first.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <p className="text-sm font-bold text-[#4ea3ff] uppercase tracking-wider mb-2">Real experience, built in</p>
+              <p className="text-sm text-gray-300 leading-relaxed">Every post is built from a video you actually recorded — your real transcript and real frames. That&apos;s the exact signal Google now rewards, and the one keyword tools structurally can&apos;t fake.</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <p className="text-sm font-bold text-[#34c759] uppercase tracking-wider mb-2">Fact-grounded, not fabricated</p>
+              <p className="text-sm text-gray-300 leading-relaxed">No invented test results or made-up stories — claims trace back to your words and the real product. Trust that survives both readers and Google&apos;s spam systems.</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <p className="text-sm font-bold text-[#ff9500] uppercase tracking-wider mb-2">The whole funnel, one tool</p>
+              <p className="text-sm text-gray-300 leading-relaxed">Reviews, <span className="text-white font-semibold">multi-product comparisons &amp; buying guides</span>, thumbnails, YouTube metadata, and social fan-out — from one video, on one subscription. Not four tools duct-taped together.</p>
+            </div>
+          </div>
+
+          <p className="mt-8 text-center text-sm text-gray-400 max-w-2xl mx-auto">
+            Competitors optimize for volume. MVP optimizes for the one thing the 2026 web actually rewards: proof you were really there.
           </p>
         </div>
       </section>
