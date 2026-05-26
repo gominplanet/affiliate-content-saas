@@ -10,6 +10,7 @@ import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner
 import { SOCIAL_CAP } from '@/lib/social-cap'
 import { tierAllowsSocial } from '@/lib/tier'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
+import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
@@ -516,9 +517,12 @@ function SocialPill({
 }
 
 function GenerateButton({
-  videoId, existingPost, userTier, onDone,
+  videoId, youtubeVideoId, existingPost, userTier, onDone,
 }: {
   videoId: string
+  /** YouTube native id — lets the extension grab real HD frames for the
+   *  in-article photos (retouched by AI). Optional. */
+  youtubeVideoId?: string
   existingPost?: { url: string; title: string; postId?: string } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
   userTier: 'trial' | 'creator' | 'pro' | 'admin'
@@ -592,6 +596,18 @@ function GenerateButton({
     setStepIdx(0)
     setError(null)
     try {
+      // Grab real HD video frames via the extension (when available) so the
+      // in-article photos are the REAL scene retouched by AI — only when the
+      // user hasn't uploaded their own and images are on.
+      let capturedFrames: string[] = []
+      if (includeImages && userImages.length === 0 && youtubeVideoId) {
+        try {
+          if (await isExtensionAvailable()) {
+            const frames = await requestVideoFrames(youtubeVideoId)
+            if (frames.length) capturedFrames = frames.slice(0, 4)
+          }
+        } catch { /* fall back to server-side image generation */ }
+      }
       const res = await fetch('/api/blog/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -599,6 +615,7 @@ function GenerateButton({
           videoId,
           includeImages,
           ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
+          ...(capturedFrames.length ? { capturedFrames } : {}),
           ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
         }),
       })
@@ -695,11 +712,10 @@ function GenerateButton({
             onChange={(e) => setIncludeImages(e.target.checked)}
             className="accent-[#0071e3] w-3.5 h-3.5"
           />
-          Include images
+          Include photos in the article
         </label>
         {includeImages && (
           <>
-            <span className="text-[11px] text-[#c7c7cc] dark:text-[#48484a]">·</span>
             <input
               ref={imgInputRef}
               type="file"
@@ -711,17 +727,17 @@ function GenerateButton({
             <button
               onClick={() => imgInputRef.current?.click()}
               disabled={imgBusy || userImages.length >= 3}
-              className="flex items-center gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#0071e3] disabled:opacity-50 transition-colors"
-              title="Upload up to 3 of your own images to use throughout the article instead of AI photos"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-white/10 text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3] disabled:opacity-50 transition-colors"
+              title="Upload up to 3 of your own photos to use throughout the article instead of the AI ones"
             >
               {imgBusy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-              {userImages.length > 0 ? `Your images (${userImages.length}/3)` : 'Use my own images'}
+              {userImages.length > 0 ? `Your photos (${userImages.length}/3)` : 'Upload your own'}
             </button>
           </>
         )}
       </div>
 
-      {includeImages && (userImages.length > 0 || imgErr) && (
+      {includeImages && (
         <div className="flex items-center gap-2 flex-wrap">
           {userImages.map((u) => (
             <div key={u} className="relative w-12 h-12 rounded-md overflow-hidden border border-gray-200 dark:border-white/10">
@@ -736,9 +752,12 @@ function GenerateButton({
               </button>
             </div>
           ))}
-          {userImages.length > 0 && (
-            <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">These replace AI photos, placed through the article.</span>
-          )}
+          {/* Explain the default so the option is discoverable. */}
+          <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+            {userImages.length > 0
+              ? 'Your photos will be placed through the article.'
+              : 'By default we use real frames from your video, enhanced — or upload your own.'}
+          </span>
           {imgErr && <span className="text-[10px] text-[#ff3b30]">{imgErr}</span>}
         </div>
       )}
@@ -1933,7 +1952,7 @@ function VideoCard({
           {/* Manage row — Generate / View / Rewrite (via GenerateButton),
               Edit in WP, Delete or Ignore. Text-link styling, low emphasis. */}
           <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap">
-            <GenerateButton videoId={id} existingPost={post} userTier={userTier} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
+            <GenerateButton videoId={id} youtubeVideoId={(video.youtube_video_id as string) || undefined} existingPost={post} userTier={userTier} onDone={(url, t, pid) => onGenerated(id, url, t, pid)} />
             <CategoryPicker
               videoId={id}
               initial={(video.selected_category as string | null) ?? null}

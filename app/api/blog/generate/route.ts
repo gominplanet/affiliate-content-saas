@@ -13,6 +13,8 @@ import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
+import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
+import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { fal } from '@fal-ai/client'
@@ -200,6 +202,10 @@ async function handleGenerate(request: Request) {
     /** Optional: user-supplied in-article image URLs (public). When present,
      *  these are placed throughout the article INSTEAD of AI-generated ones. */
     userImageUrls?: string[]
+    /** Optional: real HD video frames captured by the extension (jpeg data
+     *  URLs). When present, in-article photos are these REAL frames retouched
+     *  by Nano Banana into editorial, clickable images — not product re-stages. */
+    capturedFrames?: string[]
   }
   const { videoId, rewriteFeedback } = body
   // Default ON when omitted (older callers / bulk triggers) — the Content
@@ -207,6 +213,9 @@ async function handleGenerate(request: Request) {
   const includeImages = body.includeImages !== false
   const userImageUrls = Array.isArray(body.userImageUrls)
     ? body.userImageUrls.filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 3)
+    : []
+  const capturedFrames = Array.isArray(body.capturedFrames)
+    ? body.capturedFrames.filter(f => typeof f === 'string' && f.startsWith('data:image/')).slice(0, 4)
     : []
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
@@ -991,6 +1000,15 @@ async function handleGenerate(request: Request) {
         if (falKey) {
           fal.config({ credentials: falKey })
 
+          // Real video frames (extension) → re-host so we can retouch them. When
+          // present, these drive the in-article images (real scene, AI-enhanced)
+          // instead of product re-stages.
+          const frameRefs: string[] = []
+          for (const f of capturedFrames) {
+            const u = await rehostToFal(f)
+            if (u) frameRefs.push(u)
+          }
+
           // Resolve the REAL product image (uploaded photo → Amazon catalog
           // photo by ASIN) so Kontext renders the actual product.
           let falProductImageUrl: string | null = null
@@ -1055,7 +1073,19 @@ async function handleGenerate(request: Request) {
             const seed = Math.floor(Math.random() * 1_000_000_000) + i
             try {
               let falUrl: string | undefined
-              if (falProductImageUrl) {
+              // ── Preferred: retouch a REAL video frame into an editorial photo ──
+              // Keeps the real people/product/scene; just makes it sharper, brighter
+              // and more clickable. One frame per slot (cycled), enhanced distinctly.
+              if (frameRefs.length > 0) {
+                const frame = frameRefs[i % frameRefs.length]
+                const retouchPrompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, the SAME product and the SAME scene EXACTLY — do not change anyone's identity, swap the product, or invent anything new. Enhance it: substantially sharpen + add clarity and fine detail, boost colour vibrancy, saturation and contrast, add bright clean cinematic lighting so the subject pops, and tidy/softly blur the background into a premium look — crisp and vivid, never a flat low-quality screengrab. Frame it as a ${perspective}. REMOVE any burned-in on-screen text, captions, channel names, watermarks or video-player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
+                try {
+                  const out = await composeWithNanoBanana({ prompt: retouchPrompt, referenceImageUrls: [frame], aspectRatio: '4:3', numImages: 1 })
+                  falUrl = out[0]
+                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'nano-banana', images: 1 })
+                } catch { /* fall through to product/flux path */ }
+              }
+              if (!falUrl && falProductImageUrl) {
                 const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details — but show it from a NEW, DISTINCT perspective: ${perspective}. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. This image MUST look clearly different from the other photos in the article — different angle, different framing, different surroundings. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene; and NO retailer/marketplace names or logos (no Amazon/Prime/store logos), no badges, no price tags, no copyright/trademark symbols. Landscape 4:3 editorial product photography.`
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
