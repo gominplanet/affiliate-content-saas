@@ -357,6 +357,51 @@ const CUTOUT_POSES = [
 ]
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
+/**
+ * Auto-pick the right face model for a video by vision-comparing the video
+ * frame to one reference photo from each model (e.g. Seb vs Michelle). One
+ * cheap Haiku call. Returns the matching model, or null if none clearly match.
+ */
+async function matchFaceModelToFrame(
+  frameUrl: string,
+  models: Array<{ name: string; source_images: string[] }>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  ctx: { userId: string | null; tier: string | null },
+): Promise<{ name: string; source_images: string[] } | null> {
+  if (models.length === 0) return null
+  if (models.length === 1) return models[0]
+  const valid = models
+    .map(m => {
+      try { return { m, url: supabase.storage.from('headshots').getPublicUrl(m.source_images[0]).data.publicUrl as string } }
+      catch { return null }
+    })
+    .filter((x): x is { m: { name: string; source_images: string[] }; url: string } => !!x?.url)
+  if (valid.length === 0) return models[0]
+  try {
+    const anthropic = createAnthropicClient()
+    const content: Array<Record<string, unknown>> = [
+      { type: 'text', text: `Image 1 is a still from a video showing the on-camera host. Each following image is a reference photo of a DIFFERENT person, numbered 1 to ${valid.length}. Which reference photo shows the SAME human as the host in image 1? Reply with ONLY that number, or 0 if none clearly match.` },
+      { type: 'image', source: { type: 'url', url: frameUrl } },
+    ]
+    valid.forEach((v, i) => {
+      content.push({ type: 'text', text: `Reference ${i + 1}:` })
+      content.push({ type: 'image', source: { type: 'url', url: v.url } })
+    })
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 8,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages: [{ role: 'user', content: content as any }],
+    }))
+    recordAnthropicUsage(msg, { userId: ctx.userId, tier: ctx.tier, feature: 'yt_thumb_face_match', model: 'claude-haiku-4-5-20251001' })
+    const txt = (msg.content[0] as { type: string; text: string }).text || ''
+    const n = parseInt(txt.match(/\d+/)?.[0] || '0', 10)
+    if (n >= 1 && n <= valid.length) return valid[n - 1].m
+  } catch { /* fall through — no match */ }
+  return null
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function generateFaceCutout(supabase: any, opts: {
   userId: string
@@ -500,6 +545,7 @@ export async function POST(request: Request) {
       variantCount: rawVariantCount,
       styleReferenceUrl,
       faceModelId,
+      faceAuto,
       videoDescription,
       uploadedPhotoUrl,
       cleanupPrompt,
@@ -550,10 +596,13 @@ export async function POST(request: Request) {
        *  a short style brief that gets folded into the image prompt.
        *  Works alongside the product-image path — they don't conflict. */
       styleReferenceUrl?: string
-      /** Optional face_models.id — when set we load the user's trained
-       *  LoRA + trigger token and route generation through the LoRA-
-       *  capable flux-lora endpoint so their actual face appears. */
+      /** Optional face_models.id — when set we load that specific face's
+       *  reference photos to lock the host's likeness. */
       faceModelId?: string
+      /** When true (and no explicit faceModelId), the route loads ALL the
+       *  user's ready face models and vision-matches the video frame to pick
+       *  the right person automatically (e.g. Seb vs Michelle). */
+      faceAuto?: boolean
       /** "Upload your own photo" flow — a public URL to a photo the user
        *  took of THEMSELVES with the product. We send it through Kontext to
        *  clean it up / re-render it into a polished thumbnail scene, then
@@ -573,6 +622,9 @@ export async function POST(request: Request) {
     // generation rather than throwing — the user already chose, and the
     // worst outcome is a thumbnail without their face this time.
     let faceModel: { name: string; source_images: string[] } | null = null
+    // Auto-match pool: all the user's ready face models (used when faceAuto is
+    // on and no specific model was picked — we vision-match the frame below).
+    let autoFaceModels: Array<{ name: string; source_images: string[] }> = []
     if (faceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fm } = await (supabase as any)
@@ -585,6 +637,17 @@ export async function POST(request: Request) {
       if (fm && srcImages.length > 0) {
         faceModel = { name: fm.name, source_images: srcImages }
       }
+    } else if (faceAuto) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: fms } = await (supabase as any)
+        .from('face_models')
+        .select('name,source_images,status')
+        .eq('user_id', user.id)
+      autoFaceModels = ((fms as Array<{ name: string; source_images: string[]; status: string }>) || [])
+        .filter(m => m.status === 'ready' && Array.isArray(m.source_images) && m.source_images.length > 0)
+        .map(m => ({ name: m.name, source_images: m.source_images }))
+      // Only one face on file → no need to match, just use it.
+      if (autoFaceModels.length === 1) { faceModel = autoFaceModels[0]; autoFaceModels = [] }
     }
 
     // Cap gate — thumbnail generations / billing period. Pre-flight the
@@ -697,6 +760,12 @@ export async function POST(request: Request) {
           // Representative hook for the response payload + variant scoring.
           const overlayHookNB = hooks[0]
 
+          // Auto-match: when the user left the face on "Auto" and has multiple
+          // faces, vision-match the frame to pick the right person (Seb vs
+          // Michelle) instead of guessing. Sets faceModel for everything below.
+          if (!faceModel && autoFaceModels.length > 0) {
+            faceModel = await matchFaceModelToFrame(frameRef, autoFaceModels, supabase, { userId: user.id, tier })
+          }
           // "Your Face" identity references: if the user has a face model, pass
           // a few of their real photos alongside the video frame so Nano Banana
           // Pro locks the host's likeness from MULTIPLE angles — the biggest

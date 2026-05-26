@@ -184,10 +184,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
         .filter(m => m.status === 'ready')
         .map(m => ({ id: m.id, name: m.name, trigger_token: m.trigger_token }))
       setFaceModels(ready)
-      // Auto-use the first ready face model so the composed thumbnail locks the
-      // host's real likeness from their photos by default (the user can turn it
-      // off below). Only set when nothing's chosen yet.
-      setSelectedFaceModelId(prev => prev ?? (ready[0]?.id ?? null))
+      // Default to 'auto' — the server vision-matches the video to the right
+      // face (e.g. Seb vs Michelle), so we never lock the wrong person. The
+      // user can still pick a specific face or turn it off.
+      setSelectedFaceModelId(prev => prev ?? (ready.length ? 'auto' : null))
     } catch { setFaceModels([]) }
   }, [])
 
@@ -629,7 +629,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
           // "Your Face" — lock the host's likeness from their uploaded photos.
-          faceModelId: selectedFaceModelId || undefined,
+          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto') ? selectedFaceModelId : undefined,
+          faceAuto: selectedFaceModelId === 'auto' || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
@@ -685,7 +686,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
           style: 'lifestyle',
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
-          faceModelId: selectedFaceModelId || undefined,
+          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto') ? selectedFaceModelId : undefined,
+          faceAuto: selectedFaceModelId === 'auto' || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           // Composed scene + crisp canvas title by default (matches the manual
           // Generate button). 'Try AI-baked text' re-runs as 'baked'.
@@ -1418,6 +1420,14 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 {faceModels.length > 0 ? (
                   <div className="flex items-center gap-2 mb-3 flex-wrap">
                     <span className="text-[11px] text-[#86868b]">Use my face:</span>
+                    <button
+                      onClick={() => setSelectedFaceModelId('auto')}
+                      disabled={generatingThumbnail || instantLoading}
+                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === 'auto' ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                      title="Auto — we match the video to the right person from your faces"
+                    >
+                      Auto
+                    </button>
                     <button
                       onClick={() => setSelectedFaceModelId(null)}
                       disabled={generatingThumbnail || instantLoading}
