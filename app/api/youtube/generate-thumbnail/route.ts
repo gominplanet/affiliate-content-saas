@@ -12,7 +12,7 @@ import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
-import { analyzeTextZone, type TextPosition } from '@/lib/thumbnail-textzone'
+import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
@@ -731,18 +731,17 @@ export async function POST(request: Request) {
           const identityRefs = [frameRef, ...faceRefs]
           const refs = productRef ? [...identityRefs, productRef] : identityRefs
 
-          // ── CLEAN path (toggle): enhance the real frame + leave space for the
-          //    crisp client-side canvas headline. True-to-frame face, lighter look.
-          const identityLock = `This is the creator's REAL video frame with real people. Keep each person's IDENTITY exactly — same face, facial features and proportions, age, ethnicity, skin tone, hair, gender and build; the people must remain unmistakably the SAME individuals, never a different or generic-looking person. Do not slim, de-age, or change anyone's facial features or who they are. Keep any product/objects already in the frame, rendered accurately.`
-          const styleClause = `Treat EVERYTHING ELSE as a high-end retouch + colour grade to make this a glossy, professionally-shot, high-CTR YouTube thumbnail (16:9): substantially SHARPEN and add clarity and fine detail, strongly boost colour vibrancy, saturation and contrast, add bright punchy cinematic lighting with depth and a subtle glow so the subject pops, and clean up + softly blur the background into a premium look. The result must look crisp, vivid, polished and eye-catching at small sizes — NOT a flat, dull, soft or low-quality screengrab. You may give the person a slightly more energetic expression, but their face/identity stays exactly the same. REMOVE any burned-in on-screen text, captions, lower-thirds, channel names, watermarks, video-player UI, progress/scrubber bars, timestamps, end-screen cards/boxes, AND any retailer/marketplace names or logos (e.g. Amazon, Prime), store logos, badges or price tags — keep only branding physically printed on the product itself.`
-          const cleanPrompt = `${identityLock} ${styleClause} Keep the upper-LEFT area relatively clean and uncluttered for a headline added afterwards. Render NO text, letters, numbers or captions anywhere. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, sharp focus, no borders.`
-
-          // ── COMPOSED (baked, default): recompose into a designed, high-CTR
+          // ── COMPOSED thumbnail (always): recompose into a designed, high-CTR
           //    "creator-review" thumbnail — host large + expressive on one side,
           //    product hero-rendered on the other with rim-light/glow, the
-          //    background reimagined to fit the video, and a bold dual-tone
-          //    headline baked in. Per-variant host side + title style give the
-          //    variety the user wants when generating 2–3.
+          //    background reimagined to fit the video. Per-variant host side +
+          //    title style give the variety the user wants when generating 2–3.
+          //
+          //    DEFAULT (textMode 'clean'): render the scene TEXT-FREE and draw
+          //    the headline with the pixel-perfect canvas overlay — image models
+          //    misspell baked text ("USTNG", duplicate words), the overlay never
+          //    does. BAKED toggle (textMode 'baked'): bake the title in for a
+          //    fully-integrated look, at the risk of a typo.
           const TITLE_STYLES = [
             'a bold heavy CONDENSED ALL-CAPS sans-serif, the FIRST word bright YELLOW and the rest pure WHITE, with a thick solid black outline and a hard drop shadow',
             'a bold heavy CONDENSED ALL-CAPS sans-serif in pure WHITE with a thick black outline and hard drop shadow',
@@ -755,53 +754,59 @@ export async function POST(request: Request) {
           const identityClause = faceRefs.length > 0
             ? `The FIRST ${nIdentity} reference images ALL show the SAME real video creator (a still from their video plus their own reference photos). Study EVERY one of them and reproduce their EXACT face and identity — bone structure, facial features and proportions, eye shape, nose, jaw, age, ethnicity, skin tone, hair and build. The result must be unmistakably THIS real person, photorealistic — never a generic, idealized or altered face.`
             : `REFERENCE IMAGE 1 shows the REAL video creator. Preserve their EXACT face and identity from it — same facial features and proportions, age, ethnicity, skin tone, hair and build. They must be unmistakably the SAME real person, photorealistic, never a generic or altered face.`
+          // Vary the OUTFIT — the reference photos are for the FACE only, not the
+          // wardrobe, so thumbnails don't always show the same shirt.
+          const outfitNote = `WARDROBE: use the reference photos ONLY for the face and identity — dress the creator in a FRESH, natural, casual everyday outfit (e.g. a plain tee, casual shirt, polo or light sweater) that suits the scene. Do NOT copy the exact clothing, top or colour shown in the reference photos; vary it.`
           const productRefClause = productRef
             ? `The FINAL reference image is the PRODUCT being reviewed — render the product to match it EXACTLY (same shape, colour, materials, proportions and any real branding physically on it). Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.`
             : `Render any product in the scene accurately, prominently and photo-realistically.`
-          const buildComposed = (i: number): string => {
+          const buildComposed = (i: number, withText: boolean): string => {
             const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
             const productSide = hostSide === 'LEFT' ? 'RIGHT' : 'LEFT'
-            const titleStyle = TITLE_STYLES[i % TITLE_STYLES.length]
+            const headlineClause = withText
+              ? `HEADLINE: bake the text EXACTLY "${hooks[i % hooks.length]}" as ${TITLE_STYLES[i % TITLE_STYLES.length]}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words.`
+              : `HEADLINE SPACE: leave a generous CLEAN, uncluttered area across the TOP (especially the ${productSide === 'LEFT' ? 'upper-left' : 'upper-right'}) for a headline to be added afterwards. Render ABSOLUTELY NO text, letters, words, numbers or captions anywhere in the image.`
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
 ${identityClause}
+${outfitNote}
 ${productRefClause}
 COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, with an energetic, expressive reaction (excited, surprised or delighted), looking toward the camera — ideally holding or gesturing toward the product. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so it pops.
 BACKGROUND: reimagine a clean, aspirational scene that fits the video "${videoTitle}", with a punchy cinematic colour grade, depth, and soft background bokeh. High contrast, vivid, eye-catching at small sizes.
-HEADLINE: bake the text EXACTLY "${hooks[i % hooks.length]}" as ${titleStyle}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words.
+${headlineClause}
 ${NO_BRAND_IMAGE_CLAUSE}
 Ultra-sharp, professional, photorealistic.`
           }
 
-          const promptFor = (i: number): string => wantClean ? cleanPrompt : buildComposed(i)
+          // wantClean (default) = overlay the title via canvas (perfect text);
+          // !wantClean = bake the title into the image (integrated, may typo).
+          const promptFor = (i: number): string => buildComposed(i, !wantClean)
           // Representative prompt for telemetry / the response payload.
           const nbPrompt = promptFor(0)
 
-          // BAKED/composed → Nano Banana PRO (Gemini 3 Pro Image): best identity
-          // preservation + reliable baked text. CLEAN → cheaper regular NB.
-          const usePro = !wantClean
-          let nbModelKey = usePro ? NANO_BANANA_PRO_COST_MODEL : NANO_BANANA_COST_MODEL
-          let nbModelUsed = wantClean ? 'nano-banana-clean' : 'nano-banana-pro'
-          const composeFn = usePro ? composeWithNanoBananaPro : composeWithNanoBanana
+          // Composed scene always runs on Nano Banana PRO (best identity +
+          // composition). Title is overlaid (default) or baked (toggle).
+          let nbModelKey = NANO_BANANA_PRO_COST_MODEL
+          let nbModelUsed = wantClean ? 'nano-banana-pro' : 'nano-banana-pro-baked'
 
           // Fire `variantCount` parallel single-image composes — each with its
           // own prompt (rotating host side + title style) so variants differ.
           const nbBatches = await Promise.all(
             Array.from({ length: variantCount }, (_, i) =>
-              composeFn({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
+              composeWithNanoBananaPro({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
             ),
           )
           let nbUrls = nbBatches.flat().filter(Boolean).slice(0, variantCount)
 
-          // Fallback: if Pro returned nothing (baked path), retry on regular
-          // Nano Banana so we still produce a thumbnail rather than failing.
-          if (nbUrls.length === 0 && usePro) {
+          // Fallback: if Pro returned nothing, retry on regular Nano Banana so we
+          // still produce a thumbnail rather than failing.
+          if (nbUrls.length === 0) {
             const fb = await Promise.all(
               Array.from({ length: variantCount }, (_, i) =>
                 composeWithNanoBanana({ prompt: promptFor(i), referenceImageUrls: refs, aspectRatio: '16:9', numImages: 1 }),
               ),
             )
             nbUrls = fb.flat().filter(Boolean).slice(0, variantCount)
-            if (nbUrls.length > 0) { nbModelKey = NANO_BANANA_COST_MODEL; nbModelUsed = 'nano-banana' }
+            if (nbUrls.length > 0) { nbModelKey = NANO_BANANA_COST_MODEL; nbModelUsed = wantClean ? 'nano-banana' : 'nano-banana-baked' }
           }
 
           if (nbUrls.length > 0) {
@@ -811,18 +816,14 @@ Ultra-sharp, professional, photorealistic.`
                 feature: 'yt_thumb_nanobanana_image', model: nbModelKey, images: 1,
               })
             }
-            // Rank variants and (clean path only) detect the safe text zone in
-            // PARALLEL so the vision passes overlap instead of adding a
-            // sequential phase. Text-zone runs on the first generated variant
-            // (same frame/prompt → placement is consistent across variants).
-            const [rank, tz] = await Promise.all([
-              rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier }),
-              wantClean && nbUrls[0]
-                ? analyzeTextZone(nbUrls[0], { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
-                : Promise.resolve(null),
-            ])
-            const textPosition: TextPosition | null = tz?.position ?? null
-            const faceBox = tz?.faceBox ?? null
+            const rank = await rankVariants(nbUrls, overlayHookNB, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+            // Per-variant headline placement (overlay path): we composed the
+            // host on a KNOWN side per variant (even=LEFT, odd=RIGHT), so the
+            // title goes in the opposite TOP corner — deterministic, no vision
+            // call needed, and correct per variant (the host side rotates).
+            const posForIndex = (i: number): TextPosition => (i % 2 === 0 ? 'top-right' : 'top-left')
+            const textPositions = rank.urls.map(u => posForIndex(Math.max(0, nbUrls.indexOf(u))))
+            const textPosition: TextPosition | null = wantClean ? (textPositions[0] ?? null) : null
             return NextResponse.json({
               ok: true,
               thumbnailUrl: rank.urls[0],
@@ -831,27 +832,25 @@ Ultra-sharp, professional, photorealistic.`
               thumbnailScore: rank.topScore,
               belowThreshold: rank.belowThreshold,
               overlayHook: overlayHookNB,
-              // Per-variant titles, aligned to rank.urls order so the client can
-              // overlay the matching headline on each clean variant. Reordered
-              // to match the ranked URL order below.
-              overlayHooks: rank.urls.map(u => hooks[nbUrls.indexOf(u)] ?? overlayHookNB),
+              // Per-variant titles + placements, aligned to rank.urls order so
+              // the client overlays the matching headline + corner on each
+              // variant (the host side — and so the clear corner — rotates).
+              overlayHooks: rank.urls.map(u => hooks[Math.max(0, nbUrls.indexOf(u))] ?? overlayHookNB),
+              textPositions: wantClean ? textPositions : undefined,
               headlineLocked: !!lockedHeadline,
               prompt: nbPrompt,
               styleBriefApplied: false,
               channelStyle: null,
               modelUsed: nbModelUsed,
               // baked:true → headline is already IN the image; the client must
-              // NOT draw a text overlay. baked:false (clean) → client overlays.
+              // NOT draw a text overlay. baked:false → client overlays.
               baked: !wantClean,
-              // Smart text-zone for the client overlay (clean path). null → the
-              // client falls back to the style's default corner. faceBox lets
-              // the overlay constrain the headline to the band beside the face.
               textPosition,
-              faceBox,
+              faceBox: null,
               composited: true,
               headshotUsed: false,
               personCutoutUrl: null,
-              faceDebug: `nano-banana ${wantClean ? 'enhance' : 'composed'} (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : 'maxres'}, faceModelPhotos=${faceRefs.length}, productRef=${productRef ? 'yes' : 'no'}, textMode=${wantClean ? 'clean' : 'baked'}${textPosition ? `, textZone=${textPosition}` : ''})`,
+              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : 'maxres'}, faceModelPhotos=${faceRefs.length}, productRef=${productRef ? 'yes' : 'no'}, title=${wantClean ? 'overlay' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')

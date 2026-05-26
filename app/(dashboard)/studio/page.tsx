@@ -450,21 +450,23 @@ function VideoStudioCard({ video, userTier, playlists }: {
     const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
     // Optional creator cut-out to composite into the bottom-right corner.
     const cutoutUrl = (data.personCutoutUrl as string) || undefined
-    // Smart text-zone: the server's vision pass tells us the corner clear of the
-    // face (clean path only); undefined → the overlay uses the style default.
+    // Headline placement — fallback corner if no per-variant array is sent.
     const textPosition = (data.textPosition as HeadlinePosition | null) || undefined
-    // Detected face box — lets the overlay constrain the headline to the clear
-    // band beside the face so it never lands on the eyes.
+    // Per-variant placement: the composed scene rotates the host side, so each
+    // variant's clear corner differs (top-right when host is left, etc.).
+    const textPositions = (data.textPositions as HeadlinePosition[] | undefined) || []
+    // faceBox is null for composed (placement is deterministic from host side).
     const faceBox = (data.faceBox as FaceBox | null) || undefined
-    // Per-variant titles (aligned to rawList order) so each clean variant gets
-    // its own distinct headline, not the same line restyled.
+    // Per-variant titles (aligned to rawList order) so each variant gets its
+    // own distinct headline, not the same line restyled.
     const overlayHooks = (data.overlayHooks as string[] | undefined) || []
     let pickedStyleId: string | null = null
     const finalUrls = await Promise.all(rawList.map(async (url, i) => {
       const variantHook = overlayHooks[i] || hook
+      const variantPos = textPositions[i] || textPosition
       if (!variantHook && !cutoutUrl) return url
       try {
-        const overlayed = await addTextOverlay(url, variantHook, styleIndex, cutoutUrl, textPosition, faceBox)
+        const overlayed = await addTextOverlay(url, variantHook, styleIndex, cutoutUrl, variantPos, faceBox)
         pickedStyleId = overlayed.styleId
         return overlayed.url
       }
@@ -631,12 +633,12 @@ function VideoStudioCard({ video, userTier, playlists }: {
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
-          // Default 'baked': the composed, vidIQ-style designed thumbnail
-          // (host + hero product + reimagined scene + bold baked title) via
-          // Nano Banana Pro, which spells reliably. The "Switch to crisp text"
-          // button re-runs with 'clean' (enhanced frame + pixel-perfect canvas
-          // overlay) for users who want a true-to-frame face.
-          textMode: opts?.textMode ?? 'baked',
+          // Default 'clean': the composed, vidIQ-style designed scene (host +
+          // hero product + reimagined background) rendered TEXT-FREE, with the
+          // headline drawn by our pixel-perfect canvas overlay — guaranteed
+          // correct spelling. "Try AI-baked text" re-runs with 'baked' to bake
+          // the title into the image (more integrated, but may misspell).
+          textMode: opts?.textMode ?? 'clean',
           capturedFrames: capturedFrames.length ? capturedFrames : undefined,
         }),
       })
@@ -685,9 +687,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
           variantCount,
           faceModelId: selectedFaceModelId || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
-          // Composed, vidIQ-style designed thumbnail by default (matches the
-          // manual Generate button). 'Switch to crisp text' re-runs as 'clean'.
-          textMode: 'baked',
+          // Composed scene + crisp canvas title by default (matches the manual
+          // Generate button). 'Try AI-baked text' re-runs as 'baked'.
+          textMode: 'clean',
         }),
       })
       const data = await safeJson(res)
@@ -1510,25 +1512,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           <Download size={12} /> Download Thumbnail
                         </a>
                       )}
-                      {(thumbnailModel === 'nano-banana' || thumbnailModel === 'nano-banana-pro') && (
-                        <>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">
-                            {thumbnailModel === 'nano-banana-pro' ? '✨ Designed thumbnail (Pro)' : '✨ AI-baked text (may have typos)'}
-                          </span>
-                          <button
-                            onClick={() => generateThumbnail({ textMode: 'clean' })}
-                            disabled={generatingThumbnail}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                            title="Re-render with the headline drawn as a crisp, perfect overlay instead of baked into the image"
-                          >
-                            <RefreshCw size={12} /> Switch to crisp text
-                          </button>
-                        </>
-                      )}
-                      {thumbnailModel === 'nano-banana-clean' && (
+                      {/* Composed designed thumbnail — default draws the title
+                          via crisp canvas overlay (perfect spelling); the baked
+                          variant integrates it into the image (may misspell). */}
+                      {(thumbnailModel === 'nano-banana-pro' || thumbnailModel === 'nano-banana') && (
                         <>
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
-                            ✓ Crisp text overlay
+                            ✨ Designed · crisp text
                           </span>
                           <button
                             onClick={() => generateThumbnail({ textMode: 'baked' })}
@@ -1537,6 +1527,21 @@ function VideoStudioCard({ video, userTier, playlists }: {
                             title="Re-render with the headline baked into the image by the AI (more integrated, but may have typos)"
                           >
                             <RefreshCw size={12} /> Try AI-baked text
+                          </button>
+                        </>
+                      )}
+                      {(thumbnailModel === 'nano-banana-pro-baked' || thumbnailModel === 'nano-banana-baked') && (
+                        <>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#5856d6]/10 text-[#5856d6] font-medium">
+                            ✨ Designed · baked text (may have typos)
+                          </span>
+                          <button
+                            onClick={() => generateThumbnail({ textMode: 'clean' })}
+                            disabled={generatingThumbnail}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
+                            title="Re-render with the headline drawn as a crisp, perfect overlay instead of baked into the image"
+                          >
+                            <RefreshCw size={12} /> Switch to crisp text
                           </button>
                         </>
                       )}
