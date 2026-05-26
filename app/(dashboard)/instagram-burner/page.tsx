@@ -50,6 +50,8 @@ export default function InstagramBurnerPage() {
   const [igCaption, setIgCaption] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState(false)
+  // Final preview-and-confirm gate before anything is posted to Instagram.
+  const [confirmPublish, setConfirmPublish] = useState(false)
   const [igError, setIgError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -341,7 +343,7 @@ export default function InstagramBurnerPage() {
                         </div>
                       )}
                       <button
-                        onClick={publishToIg}
+                        onClick={() => setConfirmPublish(true)}
                         disabled={publishing}
                         className="inline-flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
                         style={{ background: 'linear-gradient(90deg, #F58529, #DD2A7B, #8134AF)' }}
@@ -368,6 +370,52 @@ export default function InstagramBurnerPage() {
           </>
         )}
       </div>
+
+      {/* Final preview + confirm before anything is posted to Instagram. */}
+      {confirmPublish && resultUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => { if (!publishing) setConfirmPublish(false) }}
+        >
+          <div
+            className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Instagram size={18} className="text-[#E1306C]" />
+              <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Publish this Reel to Instagram?</h3>
+            </div>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+              This posts to your connected Instagram account{igUsername ? <> (<strong>@{igUsername}</strong>)</> : ''} as a Reel. Give it one last look.
+            </p>
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video src={resultUrl} controls playsInline className="w-full rounded-lg bg-black max-h-[45vh] mb-3" />
+            {igCaption && (
+              <div className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5 mb-4">
+                <span className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Caption</span>
+                <pre className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">{igCaption}</pre>
+              </div>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setConfirmPublish(false)}
+                disabled={publishing}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setConfirmPublish(false); publishToIg() }}
+                disabled={publishing}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                style={{ background: 'linear-gradient(90deg, #F58529, #DD2A7B, #8134AF)' }}
+              >
+                <Instagram size={13} /> Confirm &amp; Publish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
