@@ -15,10 +15,10 @@ import { createServerClient } from '@/lib/supabase/server'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { createWordPressService } from '@/services/wordpress'
-import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { fetchAmazonProduct } from '@/services/amazon'
+import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
+import { researchProductFromUrl } from '@/services/research'
 import { checkUsageLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
@@ -142,35 +142,54 @@ export async function POST(request: Request) {
       }
       if (!videoTitle && !transcript) return null
 
-      // Product resolution (same pipeline as single-video blog gen).
-      const discovered = await discoverProductForVideo(videoTitle, description, ctx)
+      // ── Product resolution = THE LINK IS GROUND TRUTH ───────────────────────
+      // The product is whatever the creator linked in this video's description —
+      // NOT a guess from the title. We unwrap the link, pull the ASIN from the
+      // FINAL URL, and fetch THAT product. No Amazon-search guessing (that's what
+      // surfaced the wrong products). If we can't resolve a product from a link
+      // or an explicit ASIN, we rely on the transcript alone and never invent.
       let productName = videoTitle
       let pDescription = ''
       let bullets: string[] = []
       let affiliateUrl: string | null = null
+      let asin: string | null = null
 
-      if (discovered.asin) {
+      const rawLink = firstProductUrl(description, wp.wordpress_url ?? null)
+      let resolvedLink: string | null = rawLink
+      if (rawLink && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly|fkbms\.|lddy\.no|shrsl\.|sovrn\.|go\.magik)/i.test(rawLink)) {
+        try { resolvedLink = await resolveFinalUrl(rawLink) } catch { resolvedLink = rawLink }
+      }
+      // ASIN ONLY from the resolved link, or an explicit ASIN in the title.
+      asin = (resolvedLink ? extractAsin(resolvedLink) : null) || extractAsin((videoTitle || '').toUpperCase())
+
+      if (asin) {
         try {
-          const p = await fetchAmazonProduct(discovered.asin)
+          const p = await fetchAmazonProduct(asin)
           if (p.title) productName = p.title
           pDescription = p.description || ''
           bullets = p.bullets || []
-        } catch { /* fall through */ }
+        } catch { /* keep title-derived name; transcript still grounds the write */ }
         if (genius) {
-          try { affiliateUrl = (await genius.createAsinLinkWithCode(discovered.asin, productName)).url } catch { /* ignore */ }
+          try { affiliateUrl = (await genius.createAsinLinkWithCode(asin, productName)).url } catch { /* ignore */ }
         }
-        if (!affiliateUrl && wp.amazon_associates_tag) {
-          affiliateUrl = `https://www.amazon.com/dp/${discovered.asin}?tag=${wp.amazon_associates_tag}`
+        if (!affiliateUrl) {
+          affiliateUrl = wp.amazon_associates_tag
+            ? `https://www.amazon.com/dp/${asin}?tag=${wp.amazon_associates_tag}`
+            : `https://www.amazon.com/dp/${asin}`
         }
+      } else if (resolvedLink) {
+        // Non-Amazon real product page → research THAT page for details (not a guess).
+        affiliateUrl = rawLink || resolvedLink
+        try {
+          const research = await researchProductFromUrl(resolvedLink, videoTitle, ctx)
+          if (research) pDescription = research
+        } catch { /* transcript-only */ }
       }
-      // Non-Amazon / no affiliate link yet → use the linked store page.
-      if (!affiliateUrl) {
-        let pageUrl = firstProductUrl(description, wp.wordpress_url ?? null)
-        if (pageUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
-          pageUrl = await resolveFinalUrl(pageUrl)
-        }
-        if (pageUrl) affiliateUrl = pageUrl
-      }
+
+      // No verifiable product link AND no title ASIN → we can't confirm which
+      // product this is. Skip it rather than guess (the user demanded no
+      // hallucinated/wrong products).
+      if (!affiliateUrl && !asin && !rawLink) return null
 
       return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl }
     } catch {
@@ -196,7 +215,7 @@ export async function POST(request: Request) {
     ? `This is a head-to-head COMPARISON. RANK all ${resolved.length} products from best to worst and name a clear WINNER (#1 pick). Each product's heading should reflect its rank + a short superlative ("Best Overall", "Best Value", "Best for Beginners", "Runner-Up", etc.). Open the post by teasing that you tested them all and one stood out. Include a short verdict line per product.`
     : `This is a BUYING GUIDE. Assign each product a distinct "Best for ___" use-case (best for small spaces, best on a budget, best premium pick, etc.) — no single loser, help the reader self-select. Open with what matters when choosing in this category.`
 
-  const sys = `You are the creator writing in FIRST PERSON ("I"/"we") — you are the person who reviewed these products on camera. Never refer to "the reviewer" or use a third-person name. Only state facts that appear in each product's transcript excerpt or marketing description — NEVER invent specs, numbers, test results, or experiences. ${BANNED_RULE}\n${learnBlock}`
+  const sys = `You are the creator writing in FIRST PERSON ("I"/"we") — you are the person who reviewed these products on camera. Never refer to "the reviewer" or use a third-person name. Only state facts that appear in each product's transcript excerpt or marketing description — NEVER invent specs, numbers, test results, or experiences. CRITICAL: each entry is ONE specific product (the exact one named in "PRODUCT N" below); write that section about ONLY that product — never substitute a different product, confuse two products, or attribute one product's features/specs to another. If a product's data is thin, write only what its own transcript supports rather than borrowing from another. ${BANNED_RULE}\n${learnBlock}`
 
   const userPrompt = `Write a ${mode === 'comparison' ? 'product comparison' : 'buying guide'} blog post covering these ${resolved.length} products.
 
