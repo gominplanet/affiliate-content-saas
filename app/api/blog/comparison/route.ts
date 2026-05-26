@@ -15,7 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { createWordPressService } from '@/services/wordpress'
-import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
+import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { researchProductFromUrl } from '@/services/research'
@@ -50,6 +50,49 @@ interface ResolvedProduct {
 
 const slugify = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70)
+
+/** All candidate product URLs in a description (dedup, socials/own-site skipped),
+ *  in order. Descriptions often list several affiliate links — we resolve each
+ *  and keep only the one that matches the video. */
+function allProductLinks(description: string, ownSite?: string | null): string[] {
+  const skip = /(youtu\.?be|youtube\.com|instagram\.com|tiktok\.com|facebook\.com|fb\.com|twitter\.com|x\.com|linktr\.ee|linkedin\.com|pinterest\.|threads\.net|bsky\.|t\.me|discord\.|patreon\.|paypal\.)/i
+  const own = ownSite ? ownSite.replace(/^https?:\/\//, '').replace(/\/.*$/, '') : ''
+  const out: string[] = []
+  for (const raw of description.match(/https?:\/\/[^\s)>\]"']+/gi) || []) {
+    const clean = raw.replace(/[.,;:)\]>"']+$/, '')
+    if (skip.test(clean)) continue
+    if (own && clean.includes(own)) continue
+    if (!out.includes(clean)) out.push(clean)
+    if (out.length >= 5) break
+  }
+  return out
+}
+
+/** Identify the single product a video reviews, from its title + transcript —
+ *  the ground truth we match candidate links against. */
+async function identifyProduct(
+  title: string, transcript: string,
+  ctx: { userId: string | null; tier: string | null },
+): Promise<{ name: string; category: string } | null> {
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      messages: [{
+        role: 'user',
+        content: `What single physical product does this video review? Return ONLY JSON: {"name":"brand + model","category":"2-3 word product category e.g. robot vacuum, cordless stick vacuum"}.\n\nTITLE: ${title}\nTRANSCRIPT (start): ${(transcript || '').slice(0, 1400)}`,
+      }],
+    })
+    recordUsage({ ...usageFromAnthropic(msg), userId: ctx.userId, tier: ctx.tier, feature: 'comparison_identify', model: 'claude-haiku-4-5-20251001' })
+    const raw = (msg.content[0] as { type: string; text: string }).text
+    const j = raw.match(/\{[\s\S]*\}/)
+    if (!j) return null
+    const p = JSON.parse(j[0]) as { name?: string; category?: string }
+    if (!p?.name) return null
+    return { name: String(p.name), category: String(p.category || '') }
+  } catch { return null }
+}
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -142,54 +185,80 @@ export async function POST(request: Request) {
       }
       if (!videoTitle && !transcript) return null
 
-      // ── Product resolution = THE LINK IS GROUND TRUTH ───────────────────────
-      // The product is whatever the creator linked in this video's description —
-      // NOT a guess from the title. We unwrap the link, pull the ASIN from the
-      // FINAL URL, and fetch THAT product. No Amazon-search guessing (that's what
-      // surfaced the wrong products). If we can't resolve a product from a link
-      // or an explicit ASIN, we rely on the transcript alone and never invent.
-      let productName = videoTitle
+      // ── Product resolution: IDENTIFY then MATCH ─────────────────────────────
+      // 1) Identify what the video actually reviews (ground truth from the
+      //    title + transcript). 2) Among the (often many) links in the
+      //    description, pick the one whose product MATCHES — so a cross-promo
+      //    link (e.g. an iPhone in a vacuum video) can never slip in.
+      const identity = await identifyProduct(videoTitle, transcript, ctx)
+      const catWords = (identity?.category || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4)
+      const nameWords = (identity?.name || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3)
+      const matchesVideo = (productTitle: string): boolean => {
+        if (!identity) return true // no ground truth → can't reject; accept the link
+        const t = productTitle.toLowerCase()
+        return catWords.some(w => t.includes(w)) || nameWords.some(w => t.includes(w))
+      }
+
+      let productName = identity?.name || videoTitle
       let pDescription = ''
       let bullets: string[] = []
       let affiliateUrl: string | null = null
       let asin: string | null = null
+      let matched = false
 
-      const rawLink = firstProductUrl(description, wp.wordpress_url ?? null)
-      let resolvedLink: string | null = rawLink
-      if (rawLink && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly|fkbms\.|lddy\.no|shrsl\.|sovrn\.|go\.magik)/i.test(rawLink)) {
-        try { resolvedLink = await resolveFinalUrl(rawLink) } catch { resolvedLink = rawLink }
-      }
-      // ASIN ONLY from the resolved link, or an explicit ASIN in the title.
-      asin = (resolvedLink ? extractAsin(resolvedLink) : null) || extractAsin((videoTitle || '').toUpperCase())
-
-      if (asin) {
-        try {
-          const p = await fetchAmazonProduct(asin)
-          if (p.title) productName = p.title
-          pDescription = p.description || ''
-          bullets = p.bullets || []
-        } catch { /* keep title-derived name; transcript still grounds the write */ }
-        if (genius) {
-          try { affiliateUrl = (await genius.createAsinLinkWithCode(asin, productName)).url } catch { /* ignore */ }
+      const titleAsin = extractAsin((videoTitle || '').toUpperCase())
+      const candidates = allProductLinks(description, wp.wordpress_url ?? null)
+      // Walk the candidate links in order; keep the first whose product matches
+      // what the video reviews. Title ASIN is tried first when present.
+      const ordered = titleAsin ? [`https://www.amazon.com/dp/${titleAsin}`, ...candidates] : candidates
+      for (const rawLink of ordered.slice(0, 5)) {
+        let finalUrl = rawLink
+        if (/(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly|fkbms\.|lddy\.no|shrsl\.|sovrn\.|go\.magik)/i.test(rawLink)) {
+          try { finalUrl = await resolveFinalUrl(rawLink) } catch { finalUrl = rawLink }
         }
-        if (!affiliateUrl) {
-          affiliateUrl = wp.amazon_associates_tag
-            ? `https://www.amazon.com/dp/${asin}?tag=${wp.amazon_associates_tag}`
-            : `https://www.amazon.com/dp/${asin}`
+        const a = extractAsin(finalUrl) || extractAsin(rawLink)
+        if (a) {
+          let amazonTitle = ''
+          try {
+            const p = await fetchAmazonProduct(a)
+            amazonTitle = p.title || ''
+            if (matchesVideo(amazonTitle || '')) {
+              asin = a
+              if (p.title) productName = p.title
+              pDescription = p.description || ''
+              bullets = p.bullets || []
+              matched = true
+            }
+          } catch { /* skip unreadable product */ }
+          if (matched) {
+            if (genius) {
+              try { affiliateUrl = (await genius.createAsinLinkWithCode(asin!, productName)).url } catch { /* ignore */ }
+            }
+            if (!affiliateUrl) {
+              affiliateUrl = wp.amazon_associates_tag
+                ? `https://www.amazon.com/dp/${asin}?tag=${wp.amazon_associates_tag}`
+                : `https://www.amazon.com/dp/${asin}`
+            }
+            break
+          }
+        } else if (!matched && identity) {
+          // Non-Amazon store link — research the page and accept only if it matches.
+          try {
+            const research = await researchProductFromUrl(finalUrl, identity.name, ctx)
+            if (research && matchesVideo(research)) {
+              pDescription = research
+              affiliateUrl = rawLink
+              matched = true
+              break
+            }
+          } catch { /* skip */ }
         }
-      } else if (resolvedLink) {
-        // Non-Amazon real product page → research THAT page for details (not a guess).
-        affiliateUrl = rawLink || resolvedLink
-        try {
-          const research = await researchProductFromUrl(resolvedLink, videoTitle, ctx)
-          if (research) pDescription = research
-        } catch { /* transcript-only */ }
       }
 
-      // No verifiable product link AND no title ASIN → we can't confirm which
-      // product this is. Skip it rather than guess (the user demanded no
-      // hallucinated/wrong products).
-      if (!affiliateUrl && !asin && !rawLink) return null
+      // Nothing in the description matched this video's product. We still KNOW
+      // the product (identity from the video), so include it from the transcript
+      // alone — but never attach a wrong link. Drop only if we know nothing.
+      if (!matched && !identity) return null
 
       return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl }
     } catch {
