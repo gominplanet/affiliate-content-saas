@@ -738,8 +738,8 @@ export async function POST(request: Request) {
           // wardrobe, so thumbnails don't always show the same shirt.
           const outfitNote = `WARDROBE: use the reference photos ONLY for the face and identity — dress the creator in a FRESH, natural, casual everyday outfit (e.g. a plain tee, casual shirt, polo or light sweater) that suits the scene. Do NOT copy the exact clothing, top or colour shown in the reference photos; vary it.`
           const productRefClause = productRef
-            ? `The FINAL reference image is the PRODUCT being reviewed — render the product to match it EXACTLY (same shape, colour, materials, proportions and any real branding physically on it). Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.`
-            : `Render any product in the scene accurately, prominently and photo-realistically.`
+            ? `The FINAL reference image is the PRODUCT being reviewed — render the ACTUAL PRODUCT ITEM ITSELF, matching its true shape, colour and materials. CRITICAL: if that reference is retail PACKAGING, a box, a poly-bag or a marketing infographic, depict the REAL unpackaged product (in use or as a clean hero object) — NOT the box — and do NOT reproduce ANY printed marketing text, feature lists, claims, percentages, ratings, warranty/award badges, size charts or checkboxes from it. The product surface must be clean. Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.`
+            : `Render the ACTUAL product item accurately and prominently as a clean hero object — never its retail box or any marketing-infographic packaging, and with no printed claims or feature text on it.`
           const buildComposed = (i: number, withText: boolean): string => {
             const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
             const productSide = hostSide === 'LEFT' ? 'RIGHT' : 'LEFT'

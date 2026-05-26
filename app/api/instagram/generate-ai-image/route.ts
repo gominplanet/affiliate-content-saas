@@ -433,8 +433,8 @@ export async function POST(request: Request) {
         const igProductRef = productImageUrl ? await rehostToFal(productImageUrl) : null
         const refs = igProductRef ? [...igFaceRefs, igProductRef] : igFaceRefs
         const igProductClause = igProductRef
-          ? `The FINAL reference image is the PRODUCT — render it EXACTLY (shape, colour, materials, any real branding on it); use that image ONLY for the product, never for a person.`
-          : `Render any product in the scene accurately and prominently.`
+          ? `The FINAL reference image is the PRODUCT — render the ACTUAL PRODUCT ITEM ITSELF (true shape, colour, materials). CRITICAL: if that reference is retail PACKAGING, a box, a poly-bag or a marketing infographic, depict the REAL unpackaged product — NOT the box — and do NOT reproduce ANY printed marketing text, feature lists, claims, percentages, ratings, warranty/award badges, size charts or checkboxes from it. The product surface must be clean. Use that image ONLY for the product, never for a person.`
+          : `Render the ACTUAL product item accurately and prominently as a clean hero object — never its retail box or marketing-infographic packaging, and with no printed claims or feature text on it.`
         const igPrompt = `Create a vibrant, scroll-stopping NATIVE INSTAGRAM image (4:5 portrait) in the polished style of a top product reviewer.
 The reference photos show the SAME real creator — reproduce their EXACT face and identity (bone structure, features, eye shape, nose, jaw, age, ethnicity, skin tone, hair); unmistakably this real person, photorealistic, never generic or altered.
 WARDROBE: use the photos ONLY for the face and identity — dress them in a FRESH, natural casual outfit that suits the scene; do NOT copy the clothing or top shown in the reference photos.
