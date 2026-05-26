@@ -33,6 +33,10 @@ export interface OverlayStyle {
   hardShadow?: { dx: number; dy: number; color: string } | null
   /** Selection weight before per-user feedback. Default 1. */
   baseWeight?: number
+  /** vidIQ-style accent: colour the FIRST word of the headline differently
+   *  (e.g. yellow "WINE" + white rest). When set, `accentColor` is used. */
+  accentWord?: 'first' | null
+  accentColor?: string | null
 }
 
 /** Headline placement zones. Matches lib/thumbnail-textzone.ts TextPosition. */
@@ -117,6 +121,43 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     gradient: false,
     hardShadow: { dx: 6, dy: 7, color: '#000' },
     baseWeight: 0.8,
+  },
+  // vidIQ signature: first word YELLOW, rest white — the highest-converting
+  // look in the references. Weighted heavy so it's picked most often.
+  {
+    id: 'firstword-yellow',
+    fontName: 'Anton',
+    fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+    weight: '400',
+    colors: ['#FFFFFF', '#FFFFFF'],
+    outlineColor: '#000',
+    outlineW: 22,
+    shadowAlpha: 0.92,
+    maxPx: 158,
+    position: 'top-left',
+    gradient: false,
+    hardShadow: { dx: 7, dy: 9, color: '#000' },
+    accentWord: 'first',
+    accentColor: '#FFE034',
+    baseWeight: 2.4,
+  },
+  // First word CYAN — same energy, cooler accent for variety.
+  {
+    id: 'firstword-cyan',
+    fontName: 'Anton',
+    fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+    weight: '400',
+    colors: ['#FFFFFF', '#FFFFFF'],
+    outlineColor: '#000',
+    outlineW: 22,
+    shadowAlpha: 0.92,
+    maxPx: 158,
+    position: 'top-left',
+    gradient: false,
+    hardShadow: { dx: 7, dy: 9, color: '#000' },
+    accentWord: 'first',
+    accentColor: '#27E1FF',
+    baseWeight: 1.2,
   },
 ]
 
@@ -291,41 +332,58 @@ export function drawHeadline(
   const lineH = fs * 1.14
   const totalH = lines.length * lineH
   const startY = position.startsWith('top') ? MARGIN_EDGE : height - MARGIN_EDGE - totalH
-  const x = centered ? Math.round(width / 2) : alignRight ? width - MARGIN_X : MARGIN_X
 
-  ctx.textAlign = centered ? 'center' : alignRight ? 'right' : 'left'
+  // Position manually (textAlign 'left') so we can colour individual words —
+  // the vidIQ "first word yellow" look needs per-word fills, which a single
+  // aligned fillText can't do.
+  ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   ctx.lineJoin = 'round'
 
   const hardShadow = style.hardShadow
+  const accentFirst = style.accentWord === 'first'
+  const accentColor = style.accentColor || LINE_COLORS[0]
+
   lines.forEach((line, i) => {
     const y = startY + i * lineH
     ctx.font = makeFont(fs)
+    const words = line.split(' ')
+    const spaceW = ctx.measureText(' ').width
+    const wordWidths = words.map(w => ctx.measureText(w).width)
+    const lineW = wordWidths.reduce((a, b) => a + b, 0) + spaceW * Math.max(0, words.length - 1)
+    // Left edge of the line for the requested alignment.
+    const lineStartX = centered ? Math.round(width / 2 - lineW / 2)
+      : alignRight ? Math.round(width - MARGIN_X - lineW)
+      : MARGIN_X
 
-    // Hard offset "sticker" shadow first.
+    // Hard offset "sticker" shadow (whole line).
     if (hardShadow) {
       ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
       ctx.lineWidth = OUTLINE
       ctx.strokeStyle = hardShadow.color
-      ctx.strokeText(line, x + hardShadow.dx, y + hardShadow.dy)
       ctx.fillStyle = hardShadow.color
-      ctx.fillText(line, x + hardShadow.dx, y + hardShadow.dy)
+      ctx.strokeText(line, lineStartX + hardShadow.dx, y + hardShadow.dy)
+      ctx.fillText(line, lineStartX + hardShadow.dx, y + hardShadow.dy)
     }
 
-    // Soft blurred drop shadow under the outline.
+    // Soft blurred drop shadow + thick outline (whole line).
     ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
     ctx.shadowBlur = 12
     ctx.shadowOffsetX = 3
     ctx.shadowOffsetY = 4
-
-    // Outline.
     ctx.lineWidth = OUTLINE
     ctx.strokeStyle = outlineColor
-    ctx.strokeText(line, x, y)
+    ctx.strokeText(line, lineStartX, y)
 
-    // Fill.
+    // Fill — per word so the first word can take the accent colour.
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
-    ctx.fillStyle = LINE_COLORS[i] ?? LINE_COLORS[LINE_COLORS.length - 1]
-    ctx.fillText(line, x, y)
+    const baseColor = LINE_COLORS[i] ?? LINE_COLORS[LINE_COLORS.length - 1]
+    let cx = lineStartX
+    words.forEach((w, wi) => {
+      const isAccent = accentFirst && i === 0 && wi === 0
+      ctx.fillStyle = isAccent ? accentColor : baseColor
+      ctx.fillText(w, cx, y)
+      cx += wordWidths[wi] + spaceW
+    })
   })
 }
