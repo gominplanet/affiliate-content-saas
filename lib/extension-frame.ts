@@ -60,7 +60,9 @@ export async function isExtensionAvailable(): Promise<boolean> {
  */
 export async function requestVideoFrames(
   youtubeVideoId: string,
-  fractions: number[] = [0.2, 0.4, 0.6, 0.8],
+  // Front/mid-weighted, never near the tail — 0.8 lands in the end-screen-card
+  // zone (last ~5-20s) which injects stray UI boxes into the capture.
+  fractions: number[] = [0.2, 0.35, 0.5, 0.65],
 ): Promise<string[]> {
   const resp = await sendToExtension<{ ok?: boolean; frames?: string[]; dataUrl?: string; error?: string }>(
     { type: 'MVP_CAPTURE_FRAME', youtubeVideoId, fractions },

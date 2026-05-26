@@ -47,26 +47,43 @@ async function grabFramesInPage(fractions) {
     await sleep(500)
   }
 
+  // 2b. Wait for the player to ramp to HD. A freshly-opened tab serves low-res
+  // first, and setPlaybackQuality is a no-op now, so just poll videoWidth.
+  const hdDeadline = Date.now() + 8000
+  while (Date.now() < hdDeadline) {
+    if (video.videoWidth >= 1280) break
+    await sleep(400)
+  }
+
   const canvas = document.createElement('canvas')
   canvas.width = 1280
   canvas.height = 720
   const ctx = canvas.getContext('2d')
 
   const captureNow = () => {
-    const vw = video.videoWidth || 1280
-    const vh = video.videoHeight || 720
-    const scale = Math.max(canvas.width / vw, canvas.height / vh)
-    const dw = vw * scale
-    const dh = vh * scale
-    ctx.drawImage(video, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh)
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+    const vw = video.videoWidth || 0
+    const vh = video.videoHeight || 0
+    if (vw < 854) return null // reject sub-480p (loading/garbage) frames
+    // Crop ~3% off every edge to drop any residual player chrome / letterbox.
+    const cropX = vw * 0.03
+    const cropY = vh * 0.03
+    const sW = vw - cropX * 2
+    const sH = vh - cropY * 2
+    const scale = Math.max(canvas.width / sW, canvas.height / sH)
+    const dw = sW * scale
+    const dh = sH * scale
+    ctx.drawImage(video, cropX, cropY, sW, sH, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
     return dataUrl && dataUrl.length > 2000 ? dataUrl : null
   }
 
   const frames = []
   for (const f of fractions) {
-    // Seek to this fraction and wait for the frame to settle.
-    const target = Math.max(1, Math.min(video.duration - 0.5, f * video.duration))
+    // Seek to this fraction, but never within the last 25s — that's the
+    // end-screen card zone (the stray blue box). Wait for the frame to settle.
+    const tail = 25
+    const safeMax = Math.max(1, video.duration - tail)
+    const target = Math.min(safeMax, Math.max(1, f * video.duration))
     await new Promise((resolve) => {
       let done = false
       const finish = () => { if (!done) { done = true; resolve() } }
@@ -101,7 +118,8 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions }) {
     ? fractions.filter((n) => typeof n === 'number' && n > 0 && n < 1).slice(0, 6)
     : [0.5]
   let tabId = null
-  const url = `https://www.youtube.com/watch?v=${youtubeVideoId}`
+  // &vq=hd1080 nudges YouTube to start at HD so captures aren't soft 360/480p.
+  const url = `https://www.youtube.com/watch?v=${youtubeVideoId}&vq=hd1080`
   try {
     const tab = await chrome.tabs.create({ url, active: true })
     tabId = tab.id
