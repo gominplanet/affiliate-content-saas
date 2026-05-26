@@ -887,7 +887,7 @@ export default function CustomizePage() {
               <input
                 type="text"
                 value={data.analytics.ga4Id}
-                onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, ga4Id: e.target.value.trim() } }))}
+                onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, ga4Id: e.target.value.trim().toUpperCase() } }))}
                 placeholder="G-XXXXXXXXXX"
                 spellCheck={false}
                 className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#0071e3]"
@@ -920,7 +920,7 @@ export default function CustomizePage() {
               <input
                 type="text"
                 value={data.analytics.gtmId}
-                onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, gtmId: e.target.value.trim() } }))}
+                onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, gtmId: e.target.value.trim().toUpperCase() } }))}
                 placeholder="GTM-XXXXXXX"
                 spellCheck={false}
                 className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#0071e3]"
@@ -934,6 +934,16 @@ export default function CustomizePage() {
             </div>
           </div>
         </Section>
+
+        {/* Bottom save bar — mirrors the top action so users don't have to
+            scroll back up after editing a long page. */}
+        <div className="mt-2 flex items-center justify-end gap-2 border-t border-[var(--border-2)] pt-5">
+          {saved && <span className="text-xs text-[#34c759] font-medium">Saved!</span>}
+          <button onClick={save} disabled={saving} className="btn-primary flex items-center gap-2">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {saved ? 'Saved!' : saving ? 'Saving…' : 'Save & Push to Blog'}
+          </button>
+        </div>
 
       </div>
     </>

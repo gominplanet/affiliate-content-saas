@@ -1090,11 +1090,18 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
 
   return (
     <div className="flex flex-col gap-5 mt-6">
-      <div>
-        <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Integrations</h2>
-        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
-          Connect each platform once. Recommended order: <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube</strong> (so we can see your videos) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</strong> (for affiliate URL routing) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">social platforms</strong> you want to fan out to. Each integration is optional — only connect what you&apos;ll use.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Integrations</h2>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
+            Connect each platform once. Recommended order: <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">YouTube</strong> (so we can see your videos) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</strong> (for affiliate URL routing) → <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">social platforms</strong> you want to fan out to. Each integration is optional — only connect what you&apos;ll use.
+          </p>
+        </div>
+        {/* Top save — mirrors the Save button at the bottom so users can save
+            without scrolling the whole integrations list. */}
+        <button onClick={save} disabled={saving} className="btn-primary flex-shrink-0 self-start">
+          {saved ? <><Check size={14} /> Saved!</> : saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><Save size={14} /> Save</>}
+        </button>
       </div>
 
       {/* Security notice */}

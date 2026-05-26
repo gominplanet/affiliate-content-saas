@@ -1140,6 +1140,20 @@ export default function BrandPage() {
           </div>
         </div>
       </div>
+
+      {/* Bottom save bar — mirrors the top action so users don't have to
+          scroll back up to save a long form. */}
+      <div className="mt-8 flex items-center justify-end gap-3 border-t border-gray-200 dark:border-white/10 pt-5">
+        {saved && <span className="text-xs text-[#34c759] font-medium">Saved!</span>}
+        <button onClick={save} disabled={saving} className="btn-primary">
+          {saved
+            ? <><Check size={14} /> Saved!</>
+            : saving
+            ? 'Saving…'
+            : <><Save size={14} /> Save changes</>
+          }
+        </button>
+      </div>
     </>
   )
 }
