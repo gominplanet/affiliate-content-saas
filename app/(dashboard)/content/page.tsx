@@ -14,7 +14,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload, Search,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 // Interaction-gated modals are code-split (next/dynamic, client-only) so they
@@ -2353,6 +2353,8 @@ export default function ContentPage() {
   const [postsLoaded, setPostsLoaded] = useState(false)
   const [deletingPostId, setDeletingPostId] = useState<number | null>(null)
   const [selectedPostIds, setSelectedPostIds] = useState<Set<number>>(new Set())
+  // Search box for the Posts tab — filters the published list by title.
+  const [postSearch, setPostSearch] = useState('')
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkRewriting, setBulkRewriting] = useState(false)
   const [bulkRewriteProgress, setBulkRewriteProgress] = useState<{ done: number; total: number } | null>(null)
@@ -2999,6 +3001,13 @@ export default function ContentPage() {
     })
   const filtersActive = !!(search || videoChannel || videoGenFilter !== 'all' || videoSort !== 'newest')
 
+  // Posts-tab search: filter the published list by title (strip HTML entities
+  // for a forgiving match). Bulk-select + the list both use this.
+  const postQuery = postSearch.trim().toLowerCase()
+  const filteredPosts = postQuery
+    ? allBlogPosts.filter(p => (p.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery))
+    : allBlogPosts
+
   return (
     <>
       <Header
@@ -3087,6 +3096,24 @@ export default function ContentPage() {
         />
       ) : activeTab === 'posts' ? (
         <div className="flex flex-col gap-2">
+          {/* Search — find older posts by title */}
+          {!postsLoading && allBlogPosts.length > 0 && (
+            <div className="relative max-w-md mb-1">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
+              <input
+                type="text"
+                value={postSearch}
+                onChange={e => setPostSearch(e.target.value)}
+                placeholder={`Search ${allBlogPosts.length} posts by title…`}
+                className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#0071e3]"
+              />
+              {postSearch && (
+                <button onClick={() => setPostSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868b] hover:text-[#ff3b30]" title="Clear">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          )}
           {/* Bulk action toolbar */}
           {!postsLoading && allBlogPosts.length > 0 && (
             <div className="flex items-center gap-3 pb-1 flex-wrap">
@@ -3099,16 +3126,16 @@ export default function ContentPage() {
                 {backfilling ? <><Loader2 size={11} className="animate-spin" /> Linking…</> : '⚡ Link missing videos'}
               </button>
               <button
-                onClick={() => setSelectedPostIds(new Set(allBlogPosts.filter(p => !p.thumbnail).map(p => p.id)))}
+                onClick={() => setSelectedPostIds(new Set(filteredPosts.filter(p => !p.thumbnail).map(p => p.id)))}
                 className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
               >
                 Select no-thumbnail
               </button>
               <button
-                onClick={() => setSelectedPostIds(new Set(allBlogPosts.map(p => p.id)))}
+                onClick={() => setSelectedPostIds(new Set(filteredPosts.map(p => p.id)))}
                 className="text-xs text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] underline"
               >
-                Select all
+                {postQuery ? `Select all ${filteredPosts.length} matching` : 'Select all'}
               </button>
               {selectedPostIds.size > 0 && (
                 <>
@@ -3153,7 +3180,12 @@ export default function ContentPage() {
               <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No reviews live yet</p>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Head to the Videos tab, pick one with an Amazon ASIN, and click Generate. The full review lands on your site in about 60 seconds.</p>
             </div>
-          ) : allBlogPosts.map(post => (
+          ) : filteredPosts.length === 0 ? (
+            <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">
+              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">No posts match &ldquo;{postSearch}&rdquo;</p>
+              <button onClick={() => setPostSearch('')} className="text-xs text-[#0071e3] hover:underline">Clear search</button>
+            </div>
+          ) : filteredPosts.map(post => (
             <div key={post.id} className={`card p-4 flex items-center gap-3 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#0071e3]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
               <input
                 type="checkbox"
@@ -3188,6 +3220,18 @@ export default function ContentPage() {
                 {post.link && (
                   <a href={post.link} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex items-center gap-1">
                     <ExternalLink size={11} /> View
+                  </a>
+                )}
+                {/* Edit manually — opens the post in the WordPress editor. */}
+                {post.link && (
+                  <a
+                    href={`${new URL(post.link).origin}/wp-admin/post.php?post=${post.id}&action=edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-[#86868b] hover:text-[#0071e3] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                    title="Edit this post manually in WordPress"
+                  >
+                    <Edit3 size={11} /> Edit
                   </a>
                 )}
                 <button
