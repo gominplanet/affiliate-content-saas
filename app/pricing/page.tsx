@@ -40,7 +40,7 @@ const plans: PlanExt[] = [
     description: 'A real trial, not a teaser. Run the full YouTube workflow on 5 real reviews before paying a cent. No card, no time limit.',
     features: [
       '5 full reviews (lifetime — no time limit)',
-      'YouTube Co-Pilot — description, tags, hashtags & thumbnail pushed back to YouTube Studio',
+      'YouTube Co-Pilot — description, tags, hashtags & thumbnail pushed back to YouTube',
       'Branded WordPress review site (theme + plugin auto-installed)',
       'One-click publish to your site',
       'Facebook auto-post',

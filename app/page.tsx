@@ -84,7 +84,7 @@ const plans = [
 const faqs = [
   {
     q: 'How does the YouTube workflow actually work?',
-    a: 'Upload an unlisted draft to YouTube Studio. Dropping the Amazon ASIN in the title gives the most precise match, but it\'s optional — MVP detects the product from your title and description on its own. The agent team then generates the YouTube description (with your affiliate link), 10 SEO video tags, 5 hashtags, and a click-magnet thumbnail. One click pushes everything back into your YouTube draft. Pro adds one-click batch settings: playlist, schedule, paid-promotion disclosure, and made-for-kids flag.',
+    a: 'Upload an unlisted draft to YouTube. Dropping the Amazon ASIN in the title gives the most precise match, but it\'s optional — MVP detects the product from your title and description on its own. The agent team then generates the YouTube description (with your affiliate link), 10 SEO video tags, 5 hashtags, and a click-magnet thumbnail. One click pushes everything back into your YouTube draft. Pro adds one-click batch settings: playlist, schedule, paid-promotion disclosure, and made-for-kids flag.',
   },
   {
     q: 'Do I have to promote Amazon products?',
@@ -100,7 +100,7 @@ const faqs = [
   },
   {
     q: 'Is the content AI-generated?',
-    a: 'Yes — but not by a single chatbot. We orchestrate an army of specialized agents: one researches the product, one designs the outline for SEO, one matches your voice — trained from your Brand Profile and refined from the posts you publish (your Learning profile) — one drafts the body section by section, one writes the verdict + Buy/Skip block, one inserts affiliate links cleanly, one writes the FAQ, one tags and categorizes. The output is reviewed in Studio before publish — you always have the final say.',
+    a: 'Yes — but not by a single chatbot. We orchestrate an army of specialized agents: one researches the product, one designs the outline for SEO, one matches your voice — trained from your Brand Profile and refined from the posts you publish (your Learning profile) — one drafts the body section by section, one writes the verdict + Buy/Skip block, one inserts affiliate links cleanly, one writes the FAQ, one tags and categorizes. The output is reviewed in YouTube Co-Pilot before publish — you always have the final say.',
   },
   {
     q: 'What\'s the built-in AI assistant?',
@@ -287,10 +287,10 @@ export default function LandingPage() {
             </span>
             <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">Your YouTube Co-Pilot, on autopilot.</h2>
             <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
-              Save an unlisted draft in YouTube Studio. MVP Affiliate pulls the video, identifies the
+              Save an unlisted draft on YouTube. MVP Affiliate pulls the video, identifies the
               product — from your title, or the Amazon or store link in your description — deploys an
               agent team to write everything you&apos;d normally hate writing, and pushes the finished
-              YouTube package back into Studio for you. The matching long-form review goes live on
+              YouTube package back to your video for you. The matching long-form review goes live on
               your branded site with one more click.
             </p>
           </div>
@@ -364,7 +364,7 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-10 text-center text-base text-gray-400 max-w-2xl mx-auto">
-            Every agent feeds the next. The result lands in your Studio, ready for you to review and publish.
+            Every agent feeds the next. The result lands in your YouTube Co-Pilot, ready for you to review and publish.
             You always have the final say before anything goes live.
           </p>
 
@@ -725,7 +725,7 @@ export default function LandingPage() {
                 <CompareRow label="Full long-form review draft" us="check" gen="check" free="check" diy="manual" />
                 <CompareRow label="Editorial WordPress theme included" us="check" gen="cross" free="cross" diy="cross" />
                 <CompareRow label="YouTube description + tags + hashtags" us="check" gen="manual" free="manual" diy="manual" />
-                <CompareRow label="One-click push back to YouTube Studio" us="check" gen="cross" free="cross" diy="cross" />
+                <CompareRow label="One-click push back to your YouTube draft" us="check" gen="cross" free="cross" diy="cross" />
                 <CompareRow label="Click-magnet thumbnail generated" us="check" gen="cross" free="cross" diy="cross" />
                 <CompareRow label="Verdict + rating + Buy/Skip blocks built in" us="check" gen="manual" free="manual" diy="manual" />
                 <CompareRow label="Affiliate disclaimer auto-inserted" us="check" gen="cross" free="manual" diy="manual" />

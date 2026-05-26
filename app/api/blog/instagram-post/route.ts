@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
     if (!dryRun) {
       if (kind === 'video' && !videoUrl) {
         return NextResponse.json(
-          { error: 'No vertical Instagram video uploaded. Open the post in Studio and upload a 9:16 MP4 first.' },
+          { error: 'No vertical Instagram video uploaded. Open the post in YouTube Co-Pilot and upload a 9:16 MP4 first.' },
           { status: 400 },
         )
       }

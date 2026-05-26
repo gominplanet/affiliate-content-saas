@@ -696,7 +696,7 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your review site is live</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           Homepage, About, Privacy and navigation are all wired up at{' '}
-          <a href={wordpressUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline font-medium">{wordpressUrl}</a>. Now head to Studio and generate your first review.
+          <a href={wordpressUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline font-medium">{wordpressUrl}</a>. Now head to YouTube Co-Pilot and generate your first review.
         </p>
       </div>
       <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-4 text-left w-full max-w-md">

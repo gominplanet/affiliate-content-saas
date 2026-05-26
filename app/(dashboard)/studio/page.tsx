@@ -1211,7 +1211,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 <div className="flex items-start gap-2 mb-3">
                   <AlertCircle size={14} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Manual: paste these in YouTube Studio after Apply</p>
+                    <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Manual: paste these on YouTube after Apply</p>
                     <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
                       YouTube&apos;s API doesn&apos;t allow programmatic pinned comments or end-screen elements. We generate the content — you paste it in (90 seconds).
                     </p>
@@ -1497,7 +1497,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           })}
                         </div>
                         <p className="text-[10px] text-[#86868b] leading-snug">
-                          A/B test on YouTube: publish your top pick, then after ~a week swap to the runner-up from <span className="font-medium">YouTube Studio → Content → Edit → Thumbnail</span> and compare impressions-CTR in <span className="font-medium">Analytics → Content</span>. Keep the winner.
+                          A/B test on YouTube: publish your top pick, then after ~a week swap to the runner-up from <span className="font-medium">YouTube → Content → Edit → Thumbnail</span> and compare impressions-CTR in <span className="font-medium">Analytics → Content</span>. Keep the winner.
                         </p>
                       </div>
                     )}
@@ -1724,9 +1724,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     <div className="flex items-start gap-2">
                       <AlertCircle size={14} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Finish in Studio (3 clicks)</p>
+                        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Finish on YouTube (3 clicks)</p>
                         <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-                          YouTube&apos;s API doesn&apos;t accept these fields — open Studio and tick them once. Takes 10 seconds.
+                          YouTube&apos;s API doesn&apos;t accept these fields — open YouTube and tick them once. Takes 10 seconds.
                         </p>
                       </div>
                       <button
@@ -1759,7 +1759,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold text-white bg-[#ff0000] hover:bg-[#cc0000] transition-colors"
                     >
-                      <Youtube size={11} /> Open this video in Studio <ExternalLink size={10} />
+                      <Youtube size={11} /> Open this video on YouTube <ExternalLink size={10} />
                     </a>
                   </div>
                 )}
@@ -1957,7 +1957,7 @@ export default function StudioPage() {
   if (loading) {
     return (
       <div>
-        <Header title="YouTube Co-Pilot" subtitle="Generate viral title ideas, a description, tags, hashtags and a thumbnail for any video — then push it all back to YouTube Studio in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links." />
+        <Header title="YouTube Co-Pilot" subtitle="Generate viral title ideas, a description, tags, hashtags and a thumbnail for any video — then push it all back to YouTube in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links." />
         <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" /> Loading your videos…
         </div>
@@ -1969,7 +1969,7 @@ export default function StudioPage() {
     <div>
       <Header
         title="YouTube Co-Pilot"
-        subtitle="Generate viral title ideas, a description, tags, hashtags and a thumbnail for any video — then push it all back to YouTube Studio in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links."
+        subtitle="Generate viral title ideas, a description, tags, hashtags and a thumbnail for any video — then push it all back to YouTube in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links."
       />
 
       <TutorialVideo sectionKey="studio" />
@@ -1983,7 +1983,7 @@ export default function StudioPage() {
           <div className="flex-1">
             <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect YouTube to unlock the autopilot</h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-              We need read access to find your drafts (private + unlisted) and write access to push the description, tags, hashtags and thumbnail back into Studio. One-time Google OAuth — revoke anytime.
+              We need read access to find your drafts (private + unlisted) and write access to push the description, tags, hashtags and thumbnail back to YouTube. One-time Google OAuth — revoke anytime.
             </p>
             <div className="rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 px-3 py-2 mb-4">
               <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
