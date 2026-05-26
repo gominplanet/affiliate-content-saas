@@ -134,7 +134,9 @@ export const TIERS = {
  *  the blog generator's image count. */
 export function allowedBlogImages(tier: Tier, wordCount: number): number {
   const ceiling = TIERS[normalizeTier(tier)].blogImagesPerPost
-  const byLength = Math.round(wordCount / 500)
+  // A review reads best with ~2 photos; only a very long post earns a 3rd
+  // (~1 image per 1500 words). Keeps single reviews from getting cluttered.
+  const byLength = Math.round(wordCount / 1500)
   return Math.max(2, Math.min(ceiling, byLength))
 }
 
