@@ -456,11 +456,15 @@ function VideoStudioCard({ video, userTier, playlists }: {
     // Detected face box — lets the overlay constrain the headline to the clear
     // band beside the face so it never lands on the eyes.
     const faceBox = (data.faceBox as FaceBox | null) || undefined
+    // Per-variant titles (aligned to rawList order) so each clean variant gets
+    // its own distinct headline, not the same line restyled.
+    const overlayHooks = (data.overlayHooks as string[] | undefined) || []
     let pickedStyleId: string | null = null
-    const finalUrls = await Promise.all(rawList.map(async (url) => {
-      if (!hook && !cutoutUrl) return url
+    const finalUrls = await Promise.all(rawList.map(async (url, i) => {
+      const variantHook = overlayHooks[i] || hook
+      if (!variantHook && !cutoutUrl) return url
       try {
-        const overlayed = await addTextOverlay(url, hook, styleIndex, cutoutUrl, textPosition, faceBox)
+        const overlayed = await addTextOverlay(url, variantHook, styleIndex, cutoutUrl, textPosition, faceBox)
         pickedStyleId = overlayed.styleId
         return overlayed.url
       }

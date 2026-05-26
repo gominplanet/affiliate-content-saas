@@ -238,6 +238,56 @@ Return ONLY the title text — no quotes, no preamble.`,
   return (msg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
 }
 
+// ── Claude Haiku: N DISTINCT viral thumbnail titles (one per variant) ─────────
+// When the user asks for 2–3 variants we want different headline COPY on each,
+// not just restyled versions of the same line. One call returns a JSON array of
+// distinct hooks. Falls back to repeating a single hook on any parse failure.
+async function generateHooks(videoTitle: string, count: number): Promise<string[]> {
+  const n = Math.max(1, Math.min(10, Math.floor(count)))
+  if (n === 1) return [await generateHook(videoTitle)]
+  try {
+    const anthropic = createAnthropicClient()
+    const msg = await withAnthropicRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 160,
+      messages: [{
+        role: 'user',
+        content: `Write ${n} DISTINCT viral YouTube thumbnail titles for this video. Each must be GENERAL, intriguing and FUN — built on curiosity, tension, contrast, emotion or mystery — NOT a product-specific claim. They must be DIFFERENT from each other (different angle/emotion/structure), not rewordings of one idea.
+
+VIDEO: "${videoTitle}"
+
+STRICT RULES for EACH title (breaking any = bad):
+- 3 to 5 words, a complete punchy phrase. SHORTER IS BETTER (renders large as baked thumbnail text).
+- NEVER mention results/outcomes (no "results", "before/after", "after X days").
+- NEVER a health/medical/benefit claim. NEVER boast about testing for a time period.
+- No spammy hype words (AMAZING, INSANE, INCREDIBLE). NEVER use the word HONEST.
+- Relatable — makes ANYONE curious even if they've never seen the product.
+
+STYLE (write FRESH ones in this spirit, do not copy verbatim):
+"I Didn't Expect This" · "Why Is Nobody Talking About This?" · "This Feels Illegal" · "I Wasn't Ready for This" · "This Shouldn't Be This Good" · "Tiny Gadget. Huge Difference." · "I Can't Stop Using This" · "Why Does This Even Exist?"
+
+Return ONLY a JSON array of exactly ${n} strings.`,
+      }],
+    }))
+    recordAnthropicUsage(msg, {
+      userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+      feature: 'yt_thumb_hooks', model: 'claude-haiku-4-5-20251001',
+    })
+    const text = ((msg.content[0] as { type: string; text: string }).text || '').trim()
+    const m = text.match(/\[[\s\S]*\]/)
+    if (m) {
+      const arr = JSON.parse(m[0]) as unknown[]
+      const hooks = arr.map(h => String(h || '').trim().toUpperCase()).filter(Boolean)
+      if (hooks.length > 0) {
+        // Pad to n by cycling if the model returned fewer than asked.
+        return Array.from({ length: n }, (_, i) => hooks[i % hooks.length])
+      }
+    }
+  } catch { /* fall through to single-hook repeat */ }
+  const one = await generateHook(videoTitle)
+  return Array.from({ length: n }, () => one)
+}
+
 // (generatePersonScenePrompt removed 2026-05-22 with the flux-lora retirement —
 //  the face path is now gpt-image-1/2 with the creator's reference photos.)
 
@@ -658,8 +708,14 @@ export async function POST(request: Request) {
         }
         const frameRef = await rehostToFal(baseFrame)
         if (frameRef) {
-          const overlayHookNB = lockedHeadline || (await generateHook(videoTitle))
           const wantClean = textMode === 'clean'
+          // Distinct headline copy per variant (unless the user locked one).
+          // For 1 variant this is just a single hook.
+          const hooks = lockedHeadline
+            ? Array.from({ length: variantCount }, () => lockedHeadline)
+            : await generateHooks(videoTitle, variantCount)
+          // Representative hook for the response payload + variant scoring.
+          const overlayHookNB = hooks[0]
 
           // "Your Face" identity references: if the user has a face model, pass
           // a few of their real photos alongside the video frame so Nano Banana
@@ -711,7 +767,7 @@ ${identityClause}
 ${productRefClause}
 COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, with an energetic, expressive reaction (excited, surprised or delighted), looking toward the camera — ideally holding or gesturing toward the product. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so it pops.
 BACKGROUND: reimagine a clean, aspirational scene that fits the video "${videoTitle}", with a punchy cinematic colour grade, depth, and soft background bokeh. High contrast, vivid, eye-catching at small sizes.
-HEADLINE: bake the text EXACTLY "${overlayHookNB}" as ${titleStyle}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words.
+HEADLINE: bake the text EXACTLY "${hooks[i % hooks.length]}" as ${titleStyle}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words.
 ${NO_BRAND_IMAGE_CLAUSE}
 Ultra-sharp, professional, photorealistic.`
           }
@@ -775,6 +831,10 @@ Ultra-sharp, professional, photorealistic.`
               thumbnailScore: rank.topScore,
               belowThreshold: rank.belowThreshold,
               overlayHook: overlayHookNB,
+              // Per-variant titles, aligned to rank.urls order so the client can
+              // overlay the matching headline on each clean variant. Reordered
+              // to match the ranked URL order below.
+              overlayHooks: rank.urls.map(u => hooks[nbUrls.indexOf(u)] ?? overlayHookNB),
               headlineLocked: !!lockedHeadline,
               prompt: nbPrompt,
               styleBriefApplied: false,
