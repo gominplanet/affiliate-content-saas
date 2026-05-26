@@ -16,7 +16,7 @@ import {
   Clock,
 } from 'lucide-react'
 
-// ─── Honest platform availability ──────────────────────────────────────────
+// ─── Real platform availability ─────────────────────────────────────────────
 // Live = working today. Soon = built / scoped, awaiting external approval.
 // Roadmap = on the list, not promised by date.
 // Order matters for the strip layout: Live -> Pro -> Soon -> Roadmap.
@@ -183,9 +183,14 @@ export default function LandingPage() {
           </div>
 
           {/* Main title */}
-          <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-10 text-[#1d1d1f]">
-            Start your <span className="text-[#0071e3]">affiliate engine</span>!
+          <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6 text-[#1d1d1f]">
+            One real video in.<br className="hidden sm:block" /> A whole <span className="text-[#0071e3]">affiliate engine</span> out.
           </h1>
+
+          {/* Positioning line — the moat, up front */}
+          <p className="text-base sm:text-lg font-semibold text-[#0071e3] max-w-3xl mb-8">
+            Every other AI spins content from keywords and thumbnails from prompts. MVP builds it all from your <span className="underline decoration-[#0071e3]/30 underline-offset-2">actual review video</span> — so it&apos;s grounded in what you really said and showed, and fact-checked against your own words. Never fabricated.
+          </p>
 
           {/* Centered infographic */}
           <div className="relative w-full max-w-4xl mb-10">
@@ -606,7 +611,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Stack consolidation pitch ───────────────────────────────────────
-          Honest, concrete cost comparison: the 5 tools an active affiliate
+          Straight, concrete cost comparison: the 5 tools an active affiliate
           creator is already paying for, vs MVP doing it all in one. This is
           a price-pressure pitch (you're already spending this elsewhere),
           distinct from the "How we stack up" capability comparison below. */}
@@ -700,8 +705,9 @@ export default function LandingPage() {
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">How we stack up</h2>
             <p className="text-[#3a3a3c] text-base sm:text-lg max-w-2xl mx-auto">
-              The honest comparison nobody else will show you. No generic AI writer, freelancer, or
-              DIY WordPress setup covers the full creator workflow end-to-end.
+              The straight comparison nobody else will show you. Keyword writers and prompt-based
+              thumbnail tools don&apos;t touch the full creator workflow — and none of them build from
+              your real video.
             </p>
           </div>
           <div className="overflow-x-auto rounded-2xl border border-gray-200">
@@ -832,7 +838,7 @@ export default function LandingPage() {
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white">
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">Questions, answered honestly</h2>
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">Questions, answered straight</h2>
             <p className="text-[#6e6e73] text-base sm:text-lg">No fluff. No spin.</p>
           </div>
           <div className="flex flex-col gap-3">
@@ -1085,7 +1091,7 @@ function BrowserFrame() {
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <div>
               <p className="text-sm font-serif font-bold text-[#1d1d1f]">Your Review Site</p>
-              <p className="text-[8px] text-[#86868b] uppercase tracking-wider">Honest takes on the gear you buy</p>
+              <p className="text-[8px] text-[#86868b] uppercase tracking-wider">Real takes on the gear you buy</p>
             </div>
             <div className="flex gap-2 text-[9px] text-[#6e6e73]">
               <span>Reviews</span>
@@ -1095,7 +1101,7 @@ function BrowserFrame() {
           {/* Hero */}
           <div className="px-4 py-5 text-center">
             <p className="font-serif text-lg font-bold leading-tight">Your Review Site</p>
-            <p className="text-[10px] text-[#86868b] mt-0.5">Honest takes on the gear you buy</p>
+            <p className="text-[10px] text-[#86868b] mt-0.5">Real takes on the gear you buy</p>
           </div>
           {/* Featured grid */}
           <div className="px-3 pb-4 grid grid-cols-2 gap-2">
@@ -1144,7 +1150,7 @@ function SitePreviewFrame() {
           </div>
           <div className="px-5 py-4 border-b border-gray-100">
             <p className="font-serif font-bold">Let&apos;s Give You Reviews</p>
-            <p className="text-[10px] text-[#86868b]">Honest gear reviews from real homes</p>
+            <p className="text-[10px] text-[#86868b]">Real-world gear reviews from real homes</p>
           </div>
           <div className="px-5 py-6">
             <p className="font-serif text-2xl font-bold text-center leading-tight">Latest Reviews</p>
@@ -1245,7 +1251,7 @@ function ReviewAnatomy() {
           <p className="text-[10px] leading-relaxed text-[#333] mb-2">
             I cook a lot. My kitchen floor is tile. Hard, cold, unforgiving tile.
             Then I picked up the <span className="text-[#0071e3] underline">TranquilRelax Kitchen Mats</span>{' '}
-            and honestly wondered why I waited this long.
+            and genuinely wondered why I waited this long.
           </p>
           <p className="text-[10px] leading-relaxed text-[#333] mb-3">
             The cushioning does its job on your feet, knees, and lower back...
