@@ -216,6 +216,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   "products": [
     {
       "index": <0-based index matching the PRODUCT N above>,
+      "short_name": "A SHORT product label: brand + model only, 2-4 words, NO marketing fluff or specs (e.g. 'DREAME L50 Ultra', 'Anker Stick Vacuum')",
       "heading": "Short heading with rank/use-case, e.g. '1. Acme Pro — Best Overall'",
       "body_html": "About 450-500 words as raw HTML <p>...</p> (and optional <ul><li>) blocks. First person. Sell this product's real features + benefits from its data. Concrete, specific, no fabricated claims.",
       "verdict": "one punchy sentence — the bottom line for this product"
@@ -234,7 +235,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
 
   let parsed: {
     title: string; meta_description: string; hero_prompt?: string; intro_html: string; winner_index: number | null
-    products: Array<{ index: number; heading: string; body_html: string; verdict: string }>
+    products: Array<{ index: number; short_name?: string; heading: string; body_html: string; verdict: string }>
     conclusion_html: string; faq: Array<{ q: string; a: string }>
     feature_table?: { features: string[]; rows: Array<{ index: number; values: string[] }> }
   }
@@ -280,7 +281,8 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       body += `<!-- wp:paragraph {"style":{"typography":{"fontStyle":"italic"}}} --><p><em>👉 ${scrub(item.verdict)}</em></p><!-- /wp:paragraph -->\n`
     }
     if (p.affiliateUrl) {
-      body += `<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${p.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">Check price → ${scrub(p.productName).slice(0, 40)}</a></div><!-- /wp:button --></div><!-- /wp:buttons -->\n`
+      const btnName = scrub(item.short_name || p.productName.split(',')[0] || p.productName).slice(0, 40)
+      body += `<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${p.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">Check price → ${btnName}</a></div><!-- /wp:button --></div><!-- /wp:buttons -->\n`
     }
   }
 
@@ -292,11 +294,18 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     const orderedRows = parsed.products
       .map(pr => ft.rows.find(r => r.index === pr.index))
       .filter((r): r is { index: number; values: string[] } => !!r)
+    // Short, affiliate-linked product label for the first column.
+    const shortNameFor = (i: number) =>
+      scrub(parsed.products.find(p => p.index === i)?.short_name || resolved[i]?.productName?.split(',')[0]?.slice(0, 40) || `Product ${i + 1}`)
     const headCells = `<th>Product</th>${ft.features.map(f => `<th>${scrub(f)}</th>`).join('')}`
     const bodyRows = orderedRows.map(r => {
-      const name = scrub(resolved[r.index]?.productName || `Product ${r.index + 1}`)
+      const label = shortNameFor(r.index)
+      const aff = resolved[r.index]?.affiliateUrl
+      const nameCell = aff
+        ? `<a href="${aff}" target="_blank" rel="nofollow sponsored noopener"><strong>${label}</strong></a>`
+        : `<strong>${label}</strong>`
       const cells = ft.features.map((_, ci) => `<td style="text-align:center">${mark(r.values?.[ci] || 'no')}</td>`).join('')
-      return `<tr><td><strong>${name}</strong></td>${cells}</tr>`
+      return `<tr><td>${nameCell}</td>${cells}</tr>`
     }).join('')
     body += `<!-- wp:heading --><h2>Feature comparison at a glance</h2><!-- /wp:heading -->\n`
     body += `<!-- wp:table {"className":"is-style-stripes"} --><figure class="wp-block-table is-style-stripes"><table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table><figcaption class="wp-element-caption">✅ yes · ➖ limited · ❌ no</figcaption></figure><!-- /wp:table -->\n`
