@@ -19,13 +19,10 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct } from '@/services/amazon'
-import { fetchProductImageFromPage } from '@/services/research'
 import { checkUsageLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
-import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
-import { fal } from '@fal-ai/client'
 
 export const maxDuration = 300
 
@@ -46,7 +43,6 @@ interface ResolvedProduct {
   description: string
   bullets: string[]
   transcript: string
-  productImageUrl: string | null
   affiliateUrl: string | null
 }
 
@@ -146,7 +142,6 @@ export async function POST(request: Request) {
       let productName = videoTitle
       let pDescription = ''
       let bullets: string[] = []
-      let productImageUrl: string | null = null
       let affiliateUrl: string | null = null
 
       if (discovered.asin) {
@@ -155,7 +150,6 @@ export async function POST(request: Request) {
           if (p.title) productName = p.title
           pDescription = p.description || ''
           bullets = p.bullets || []
-          productImageUrl = p.imageUrl || null
         } catch { /* fall through */ }
         if (genius) {
           try { affiliateUrl = (await genius.createAsinLinkWithCode(discovered.asin, productName)).url } catch { /* ignore */ }
@@ -164,21 +158,16 @@ export async function POST(request: Request) {
           affiliateUrl = `https://www.amazon.com/dp/${discovered.asin}?tag=${wp.amazon_associates_tag}`
         }
       }
-      // Non-Amazon / no product image yet → scrape the linked store page.
-      if (!productImageUrl || !affiliateUrl) {
+      // Non-Amazon / no affiliate link yet → use the linked store page.
+      if (!affiliateUrl) {
         let pageUrl = firstProductUrl(description, wp.wordpress_url ?? null)
         if (pageUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
           pageUrl = await resolveFinalUrl(pageUrl)
         }
-        if (pageUrl) {
-          if (!affiliateUrl) affiliateUrl = pageUrl
-          if (!productImageUrl) {
-            try { productImageUrl = await fetchProductImageFromPage(pageUrl) } catch { /* ignore */ }
-          }
-        }
+        if (pageUrl) affiliateUrl = pageUrl
       }
 
-      return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, productImageUrl, affiliateUrl }
+      return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl }
     } catch {
       return null
     }
@@ -188,28 +177,6 @@ export async function POST(request: Request) {
   if (resolved.length < 2) {
     return NextResponse.json({ error: 'Could not resolve enough products from those videos. Make sure each links to a clear product.' }, { status: 422 })
   }
-
-  // ── Per-product images: the real product re-staged in a new setting ─────────
-  fal.config({ credentials: process.env.FAL_KEY ?? '' })
-  const SETTINGS = ['a bright minimalist studio surface', 'a cozy modern home setting', 'a clean kitchen counter', 'a stylish desk', 'a bright outdoor patio', 'a soft neutral backdrop with bokeh']
-  const productImages = await Promise.all(resolved.map(async (p, i) => {
-    if (!p.productImageUrl) return null
-    try {
-      const imgRes = await fetch(p.productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
-      if (!imgRes.ok) return null
-      const falSrc = await fal.storage.upload(await imgRes.blob())
-      const prompt = `Keep the EXACT product object from this image — its real shape, colour, materials and form. Re-stage it cleanly as a hero product shot on ${SETTINGS[i % SETTINGS.length]}, with soft realistic shadows and bright premium lighting. ABSOLUTELY NO people. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic, sharp focus.`
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
-        input: { image_url: falSrc, prompt, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5 },
-        pollInterval: 3000,
-      })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const url = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
-      if (url) recordUsage({ userId: user.id, tier, feature: 'comparison_product_image', model: 'fal-flux-pro-kontext', images: 1 })
-      return url ?? null
-    } catch { return null }
-  }))
 
   // ── Claude: rank + write each product section (structured, voice-applied) ───
   const anthropic = createAnthropicClient()
@@ -250,13 +217,20 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     // ... one object per product, ORDERED by your ranking (best first for comparison)
   ],
   "conclusion_html": "1 short closing paragraph as <p> blocks with a soft CTA",
+  "feature_table": {
+    "features": ["5-8 short feature/capability labels relevant to THIS product category that differentiate the products, e.g. 'Cordless', 'HEPA filter', 'Self-emptying', 'Pet-hair tool', 'App control', '2yr+ warranty'"],
+    "rows": [ { "index": <0-based product index>, "values": ["yes" | "no" | "partial", ...] } ]
+  },
   "faq": [ { "q": "question", "a": "2-4 sentence answer, answer-first" } ]  // 4-5 FAQs
-}`
+}
+
+For "feature_table": pick features that actually DIFFERENTIATE these products. For each product, mark "yes" ONLY if its data/transcript shows it has that feature, "no" if it clearly lacks it, "partial" if limited/uncertain. NEVER mark "yes" to fill the grid — be truthful. "values" MUST be in the SAME ORDER as "features", one entry per feature, and include one row per product.`
 
   let parsed: {
     title: string; meta_description: string; intro_html: string; winner_index: number | null
     products: Array<{ index: number; heading: string; body_html: string; verdict: string }>
     conclusion_html: string; faq: Array<{ q: string; a: string }>
+    feature_table?: { features: string[]; rows: Array<{ index: number; values: string[] }> }
   }
   try {
     const msg = await anthropic.messages.create({
@@ -277,15 +251,11 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   const wpService = createWordPressService(wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password)
   const para = (html: string) => `<!-- wp:paragraph -->${html}<!-- /wp:paragraph -->`
   const scrub = (s: string) => scrubBanned(s || '')
-
-  // Upload each product image to WP media so the post owns durable URLs.
-  const wpImageUrls = await Promise.all(productImages.map(async (url, i) => {
-    if (!url) return null
-    try {
-      const media = await wpService.uploadImageFromUrl(url, `compare-${slugify(resolved[i].productName)}-${i}.jpg`)
-      return media.source_url || url
-    } catch { return url }
-  }))
+  // Responsive YouTube embed block — shows the video thumbnail + plays inline.
+  const ytEmbed = (videoId: string) => {
+    const url = `https://www.youtube.com/watch?v=${videoId}`
+    return `<!-- wp:embed {"url":"${url}","type":"video","providerNameSlug":"youtube","responsive":true,"className":"wp-embed-aspect-16-9 wp-has-aspect-ratio"} -->\n<figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio"><div class="wp-block-embed__wrapper">\n${url}\n</div></figure>\n<!-- /wp:embed -->\n`
+  }
 
   let body = ''
   // Affiliate disclaimer banner
@@ -296,11 +266,9 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   for (const item of parsed.products) {
     const p = resolved[item.index]
     if (!p) continue
-    const img = wpImageUrls[item.index]
     body += `<!-- wp:heading --><h2>${scrub(item.heading)}</h2><!-- /wp:heading -->\n`
-    if (img) {
-      body += `<!-- wp:image {"sizeSlug":"large"} --><figure class="wp-block-image size-large"><img src="${img}" alt="${scrub(p.productName)}"/></figure><!-- /wp:image -->\n`
-    }
+    // Embed the source review video — readers see the thumbnail + can watch it.
+    body += ytEmbed(p.videoId)
     body += `${scrub(item.body_html)}\n`
     if (item.verdict) {
       body += `<!-- wp:paragraph {"style":{"typography":{"fontStyle":"italic"}}} --><p><em>👉 ${scrub(item.verdict)}</em></p><!-- /wp:paragraph -->\n`
@@ -308,6 +276,24 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     if (p.affiliateUrl) {
       body += `<!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button {"backgroundColor":"vivid-amber"} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${p.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">Check price → ${scrub(p.productName).slice(0, 40)}</a></div><!-- /wp:button --></div><!-- /wp:buttons -->\n`
     }
+  }
+
+  // ── Feature comparison chart (checkmarks) ───────────────────────────────────
+  const ft = parsed.feature_table
+  if (ft && Array.isArray(ft.features) && ft.features.length && Array.isArray(ft.rows) && ft.rows.length) {
+    const mark = (v: string) => v === 'yes' ? '✅' : v === 'partial' ? '➖' : '❌'
+    // Rows in the ranked product order, products down the side, features across.
+    const orderedRows = parsed.products
+      .map(pr => ft.rows.find(r => r.index === pr.index))
+      .filter((r): r is { index: number; values: string[] } => !!r)
+    const headCells = `<th>Product</th>${ft.features.map(f => `<th>${scrub(f)}</th>`).join('')}`
+    const bodyRows = orderedRows.map(r => {
+      const name = scrub(resolved[r.index]?.productName || `Product ${r.index + 1}`)
+      const cells = ft.features.map((_, ci) => `<td style="text-align:center">${mark(r.values?.[ci] || 'no')}</td>`).join('')
+      return `<tr><td><strong>${name}</strong></td>${cells}</tr>`
+    }).join('')
+    body += `<!-- wp:heading --><h2>Feature comparison at a glance</h2><!-- /wp:heading -->\n`
+    body += `<!-- wp:table {"className":"is-style-stripes"} --><figure class="wp-block-table is-style-stripes"><table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table><figcaption class="wp-element-caption">✅ yes · ➖ limited · ❌ no</figcaption></figure><!-- /wp:table -->\n`
   }
 
   // Conclusion
