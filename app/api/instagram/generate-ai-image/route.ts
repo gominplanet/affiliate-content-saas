@@ -25,6 +25,7 @@ import { fal } from '@fal-ai/client'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
+import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 
 /**
  * Look for an ASIN inside the FIRST TWO SENTENCES of the YouTube
@@ -524,10 +525,19 @@ export async function POST(request: Request) {
       .eq('id', video.id)
       .eq('user_id', user.id)
 
+    // Smart text-zone: a cheap vision pass on the finished image tells the
+    // client overlay which corner is clear of the face/subject (best-effort).
+    let textPosition: string | null = null
+    if (overlayHook) {
+      const tz = await analyzeTextZone(imageUrl, { ctx: agentCtx })
+      textPosition = tz?.position ?? null
+    }
+
     return NextResponse.json({
       ok: true,
       imageUrl,
       overlayHook,
+      textPosition,
       faceModelUsed: faceModel?.trigger_token ?? null,
       cached: false,
     })

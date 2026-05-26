@@ -66,6 +66,9 @@ export const PRICING: Record<string, Pricing> = {
   // Nano Banana (Google Gemini 2.5 Flash Image) via fal — single-pass
   // person+product+scene composition. fal lists $0.039/image.
   'fal-nano-banana': { in: 0, out: 0, imageCost: 0.039 },
+  // Nano Banana Pro (Google Gemini 3 Pro Image) via fal — used for the
+  // baked-text path (reliable spelling, higher fidelity). fal lists ~$0.13/img.
+  'fal-nano-banana-pro': { in: 0, out: 0, imageCost: 0.13 },
   // Ideogram v3 via fal — text-forward thumbnails (legible typography).
   // BALANCED tier ≈ $0.06/image (TURBO 0.03 / QUALITY 0.09).
   'fal-ideogram-v3': { in: 0, out: 0, imageCost: 0.06 },

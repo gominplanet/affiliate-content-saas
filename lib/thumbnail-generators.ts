@@ -20,10 +20,16 @@
 import { fal } from '@fal-ai/client'
 
 export const NANO_BANANA_EDIT = 'fal-ai/nano-banana/edit'
+// Nano Banana Pro = Google Gemini 3 Pro Image. Higher fidelity and — crucially
+// — reliable, legible BAKED text (it can actually spell), so it's the model we
+// use whenever the headline is rendered INTO the image. Pricier than regular
+// Nano Banana, so the clean (text-free) path stays on the cheaper model.
+export const NANO_BANANA_PRO_EDIT = 'fal-ai/gemini-3-pro-image-preview/edit'
 export const IDEOGRAM_V3 = 'fal-ai/ideogram/v3'
 
 /** Model keys used for cost telemetry (see lib/ai-usage.ts). */
 export const NANO_BANANA_COST_MODEL = 'fal-nano-banana'
+export const NANO_BANANA_PRO_COST_MODEL = 'fal-nano-banana-pro'
 export const IDEOGRAM_COST_MODEL = 'fal-ideogram-v3'
 
 const BROWSER_UA = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
@@ -88,6 +94,41 @@ export async function composeWithNanoBanana(opts: {
     return (images ?? []).map(i => i.url).filter(Boolean)
   } catch (err) {
     console.warn('[nano-banana] compose failed:', err instanceof Error ? err.message : String(err))
+    return []
+  }
+}
+
+/**
+ * Compose a finished thumbnail with Nano Banana PRO (Gemini 3 Pro Image).
+ * Same call shape as composeWithNanoBanana but on the Pro endpoint — used for
+ * the BAKED-text path where legible spelling matters. `referenceImageUrls`
+ * must already be fal-reachable (call `rehostAll` first). [] on failure so the
+ * caller can fall back to regular Nano Banana.
+ */
+export async function composeWithNanoBananaPro(opts: {
+  prompt: string
+  referenceImageUrls: string[]
+  aspectRatio?: string
+  numImages?: number
+}): Promise<string[]> {
+  if (opts.referenceImageUrls.length === 0) return []
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await fal.subscribe(NANO_BANANA_PRO_EDIT as any, {
+      input: {
+        prompt: opts.prompt,
+        image_urls: opts.referenceImageUrls,
+        aspect_ratio: opts.aspectRatio ?? '16:9',
+        num_images: Math.min(10, Math.max(1, opts.numImages ?? 1)),
+        output_format: 'jpeg',
+      },
+      pollInterval: 2000,
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const images = (result.data as any)?.images as Array<{ url: string }> | undefined
+    return (images ?? []).map(i => i.url).filter(Boolean)
+  } catch (err) {
+    console.warn('[nano-banana-pro] compose failed:', err instanceof Error ? err.message : String(err))
     return []
   }
 }

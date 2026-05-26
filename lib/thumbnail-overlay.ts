@@ -35,6 +35,11 @@ export interface OverlayStyle {
   baseWeight?: number
 }
 
+/** Headline placement zones. Matches lib/thumbnail-textzone.ts TextPosition. */
+export type HeadlinePosition =
+  | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+  | 'top-center' | 'bottom-center'
+
 // MrBeast-style: bold Anton/Impact, heavy outline + offset shadow, centred at
 // the top. No boxes, gradients, or strips. Variations are colour-only.
 export const OVERLAY_STYLES: OverlayStyle[] = [
@@ -166,6 +171,9 @@ export interface OverlayOpts {
   width?: number
   height?: number
   styleIndex?: number
+  /** Override the style's default placement (e.g. the vision text-zone result)
+   *  so the headline avoids the subject's face. */
+  position?: HeadlinePosition
 }
 
 /**
@@ -203,7 +211,7 @@ export async function renderThumbnailOverlay(
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       ctx.drawImage(img, 0, 0, width, height)
-      drawHeadline(ctx, lines, style, width, height)
+      drawHeadline(ctx, lines, style, width, height, opts.position)
       try {
         resolve({ url: canvas.toDataURL('image/jpeg', 0.92), styleId: style.id })
       } catch (e) {
@@ -226,8 +234,13 @@ export function drawHeadline(
   style: OverlayStyle,
   width: number,
   height: number,
+  positionOverride?: HeadlinePosition,
 ): void {
-  const centered = style.position.endsWith('center')
+  // The vision text-zone result (if supplied) wins over the style's default
+  // corner, so the headline lands in open space away from the face.
+  const position: HeadlinePosition = positionOverride ?? (style.position as HeadlinePosition)
+  const centered = position.endsWith('center')
+  const alignRight = position.endsWith('right')
   const MARGIN_X = Math.round(width * 0.045)
   const MARGIN_EDGE = Math.round(height * 0.06)
   const ZONE_W = centered ? Math.round(width * 0.92) : Math.round(width * (width >= height ? 0.55 : 0.85))
@@ -246,10 +259,10 @@ export function drawHeadline(
 
   const lineH = fs * 1.14
   const totalH = lines.length * lineH
-  const startY = style.position.startsWith('top') ? MARGIN_EDGE : height - MARGIN_EDGE - totalH
-  const x = centered ? Math.round(width / 2) : MARGIN_X
+  const startY = position.startsWith('top') ? MARGIN_EDGE : height - MARGIN_EDGE - totalH
+  const x = centered ? Math.round(width / 2) : alignRight ? width - MARGIN_X : MARGIN_X
 
-  ctx.textAlign = centered ? 'center' : 'left'
+  ctx.textAlign = centered ? 'center' : alignRight ? 'right' : 'left'
   ctx.textBaseline = 'top'
   ctx.lineJoin = 'round'
 

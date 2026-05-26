@@ -1011,7 +1011,9 @@ function InstagramPublishModal({
       if (overlayHook) {
         try {
           const styleIndex = pickWeightedStyleIndex(styleWeights.liked, styleWeights.disliked)
-          const overlayed = await renderThumbnailOverlay(rawUrl, overlayHook, { width: 1080, height: 1350, styleIndex })
+          // Smart text-zone (vision) keeps the caption off the face when present.
+          const textPosition = (data.textPosition as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'top-center' | 'bottom-center' | null) || undefined
+          const overlayed = await renderThumbnailOverlay(rawUrl, overlayHook, { width: 1080, height: 1350, styleIndex, position: textPosition })
           finalUrl = overlayed.url
           styleId = overlayed.styleId
         } catch (overlayErr) {

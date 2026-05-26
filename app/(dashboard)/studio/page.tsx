@@ -6,7 +6,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
-import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline } from '@/lib/thumbnail-overlay'
+import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition } from '@/lib/thumbnail-overlay'
 import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import {
@@ -440,11 +440,14 @@ function VideoStudioCard({ video, userTier, playlists }: {
     const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
     // Optional creator cut-out to composite into the bottom-right corner.
     const cutoutUrl = (data.personCutoutUrl as string) || undefined
+    // Smart text-zone: the server's vision pass tells us the corner clear of the
+    // face (clean path only); undefined → the overlay uses the style default.
+    const textPosition = (data.textPosition as HeadlinePosition | null) || undefined
     let pickedStyleId: string | null = null
     const finalUrls = await Promise.all(rawList.map(async (url) => {
       if (!hook && !cutoutUrl) return url
       try {
-        const overlayed = await addTextOverlay(url, hook, styleIndex, cutoutUrl)
+        const overlayed = await addTextOverlay(url, hook, styleIndex, cutoutUrl, textPosition)
         pickedStyleId = overlayed.styleId
         return overlayed.url
       }
@@ -713,7 +716,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
   }
 
   // ── addTextOverlay — picks a random style, loads the font, draws the canvas ──
-  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number, cutoutUrl?: string): Promise<{ url: string; styleId: string }> {
+  async function addTextOverlay(rawUrl: string, hookText: string, styleIndex?: number, cutoutUrl?: string, position?: HeadlinePosition): Promise<{ url: string; styleId: string }> {
     const style = OVERLAY_STYLES[styleIndex ?? Math.floor(Math.random() * OVERLAY_STYLES.length)]
     await loadOverlayFont(style.fontName)
 
@@ -855,8 +858,12 @@ function VideoStudioCard({ video, userTier, playlists }: {
       const lines = words.length === 1
         ? [words[0]]
         : (() => { const s = Math.ceil(words.length / 2); return [words.slice(0, s).join(' '), words.slice(s).join(' ')].filter(Boolean) })()
-      // Shared renderer — MrBeast-style top-left bold lettering, no boxes.
-      drawHeadline(ctx, lines, style, 1280, 720)
+      // Smart text-zone (from the vision pass) places the headline in the corner
+      // clear of the face. If we composited a cut-out into the bottom-right, a
+      // bottom-right headline would collide — fall back to the style default.
+      const safePos = position && !(cutoutUrl && position === 'bottom-right') ? position : undefined
+      // Shared renderer — MrBeast-style bold lettering, no boxes.
+      drawHeadline(ctx, lines, style, 1280, 720, safePos)
     }
 
     return { url: canvas.toDataURL('image/jpeg', 0.95), styleId: style.id }
