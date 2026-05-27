@@ -125,6 +125,9 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const supabase = createBrowserClient()
   const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
   const [isAdmin, setIsAdmin] = useState(false)
+  // Whether Meta surfaces (Instagram Burner link) are visible: on for everyone
+  // post-approval, else admins + the App-Review test account.
+  const [metaUnlocked, setMetaUnlocked] = useState(metaEnabled())
   // Admin-only "view as tier" preview. 'admin' = your real view (no override).
   const [viewAs, setViewAs] = useState<'admin' | 'pro' | 'creator' | 'trial'>('admin')
   useEffect(() => { setViewAs(getViewAsTier() ?? 'admin') }, [])
@@ -200,6 +203,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
           const url = data?.wordpress_url || null
           if (url) setWpSiteUrl(url)
           setIsAdmin(data?.tier === 'admin')
+          setMetaUnlocked(metaEnabled({ tier: data?.tier, email: user.email }))
           setGeniusConnected(!!data?.geniuslink_api_key && !!data?.geniuslink_api_secret)
         })
     })
@@ -311,7 +315,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
               </button>
               {isOpen && (
                 <div className="flex flex-col gap-0.5">
-                  {group.items.filter(it => metaEnabled({ tier: isAdmin ? 'admin' : null }) || it.href !== '/instagram-burner').map(renderNavLink)}
+                  {group.items.filter(it => metaUnlocked || it.href !== '/instagram-burner').map(renderNavLink)}
                 </div>
               )}
             </div>

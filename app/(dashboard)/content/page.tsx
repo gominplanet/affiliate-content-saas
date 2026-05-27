@@ -2454,7 +2454,7 @@ export default function ContentPage() {
     // Meta (Facebook/Threads/Instagram) hidden from the public while under
     // review — but visible to admins + the reviewer test account so the flows
     // stay testable.
-    const metaOn = metaEnabled({ tier: (i as Record<string, unknown>)?.tier as string | null })
+    const metaOn = metaEnabled({ tier: (i as Record<string, unknown>)?.tier as string | null, email: user?.email })
     setFbConnected(metaOn && !!(i as Record<string, unknown>)?.facebook_page_id)
     setPinterestConnected(!!(i as Record<string, unknown>)?.pinterest_access_token)
     setThreadsConnected(metaOn && !!(i as Record<string, unknown>)?.threads_access_token)
