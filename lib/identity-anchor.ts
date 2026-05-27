@@ -86,7 +86,12 @@ export async function getOrCreateIdentityAnchor(
 
     const model = OpenAIService.imageModel()
     const openai = createOpenAIService()
-    const b64 = await openai.generateWithReferences({ prompt: buildAnchorPrompt(expression), images: refImages, size: '1024x1024', quality: 'high', model })
+    // The anchor is only an IDENTITY REFERENCE that the composite (Nano Banana)
+    // re-renders — it does NOT need final-output quality. 'medium' is ~2x faster
+    // and cheaper than 'high', with no visible hit to the composited thumbnail,
+    // and keeps the (high-quality, slow) gpt-image call from blowing the route's
+    // time budget. The Photobooth headshot (its own call) stays on 'high'.
+    const b64 = await openai.generateWithReferences({ prompt: buildAnchorPrompt(expression), images: refImages, size: '1024x1024', quality: 'medium', model })
     recordUsage({ userId, tier: ctx?.tier ?? null, feature: 'identity_anchor_image', model, images: 1 })
 
     const bytes = Buffer.from(b64, 'base64')

@@ -784,7 +784,15 @@ export async function POST(request: Request) {
           // high-CTR energy instead of a calm headshot expression.
           let faceRefs: string[] = []
           if (faceModel?.source_images?.length) {
-            const anchor = await getOrCreateIdentityAnchor(supabase, user.id, faceModel.source_images, { tier, expression: 'excited' })
+            // Time-box the anchor build: a cold gpt-image call can be slow, and
+            // it must NEVER hang the whole thumbnail past the function budget. If
+            // it doesn't resolve in time, fall back to the raw face photos for
+            // this generation (cached anchors return instantly, so this only
+            // bites the very first thumbnail for a new face/expression).
+            const anchor = await Promise.race([
+              getOrCreateIdentityAnchor(supabase, user.id, faceModel.source_images, { tier, expression: 'excited' }),
+              new Promise<null>(res => setTimeout(() => res(null), 120_000)),
+            ])
             const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, anchor ? 2 : 5)
             faceRefs = anchor ? [anchor, ...rawRefs] : rawRefs
           }
