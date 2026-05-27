@@ -124,7 +124,7 @@ async function generateBodyImagePrompts(opts: {
     if (pool.length === 0) return []
     return Array.from({ length: n }, (_, i) => pool[i % pool.length])
   }
-  if (opts.count <= 2) return cycle(opts.count)
+  if (opts.count <= 1) return cycle(opts.count)
   try {
     const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
@@ -139,8 +139,9 @@ ARTICLE SECTIONS (one image sits above each — match the scene to the section):
 ${opts.headings.slice(0, opts.count).map((h, i) => `${i + 1}. ${h}`).join('\n')}
 
 RULES:
-- Each prompt: a clean, realistic editorial product photo. Vary the angle/scene (in-use lifestyle, close-up detail, flat-lay, in-situ environment).
-- Show the EXACT product. No packaging, no boxes.
+- Each prompt must be a CLEARLY DIFFERENT photo from the others — vary the SETTING/background, the surface, the lighting and time of day, the camera distance AND the angle (e.g. one tight close-up detail, one in-use lifestyle scene, one wide in-situ environment, one flat-lay). No two may read as the same shot with a small tweak.
+- If the product has more than one function or mode, show a DIFFERENT one in each image (e.g. for a water-bottle-with-lantern: one as a bottle in daytime use, one as a glowing lantern at night).
+- Each prompt: a clean, realistic editorial product photo of the EXACT product. No packaging, no boxes.
 - NO text, letters, logos, or watermarks in the image. NO retailer/marketplace names or logos (no "Amazon"/"Prime"/store logos), no brand signage, no price tags — only the product's own physical branding.
 - Each under 35 words.
 Return ONLY a JSON array of ${opts.count} strings, nothing else.`,
@@ -1111,7 +1112,7 @@ async function handleGenerate(request: Request) {
               // This keeps the ACTUAL product accurate — what readers came to
               // see — instead of guessing from random video frames.
               if (falProductImageUrl) {
-                const kontextInstruction = `Re-render the EXACT product shown in this reference image. Keep its precise shape, colour, materials, proportions and any on-product branding identical — never redesign it, swap it, or invent a different product. Remove the original background and any retail packaging. Present this same product as a polished, magazine-quality editorial photo shown as a ${perspective}, placed naturally in a real-world setting that fits how it is actually used: ${prompt}. If a realistic in-use setting doesn't suit it, instead stage the product on a clean surface against a VIBRANT, eye-catching colour-pop / gradient background with soft studio lighting, reflections and depth that make it shine and pop off the page. Realistic shadows and lighting. Make this image clearly DIFFERENT from the article's other photos — different angle, framing and surroundings. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
+                const kontextInstruction = `Re-render the EXACT product shown in this reference image. Keep its precise shape, colour, materials, proportions and any on-product branding identical — never redesign it, swap it, or invent a different product. Remove the original background and any retail packaging. Present this same product as a polished, magazine-quality editorial photo shown as a ${perspective}, placed naturally in a real-world setting that fits how it is actually used: ${prompt}. If a realistic in-use setting doesn't suit it, instead stage the product on a clean surface against a VIBRANT, eye-catching colour-pop / gradient background with soft studio lighting, reflections and depth that make it shine and pop off the page. Realistic shadows and lighting. This must look like a COMPLETELY different photo from the article's other images — a different background and environment, a different surface, different lighting and time of day, and a different camera distance and angle. Do NOT reuse the reference photo's plain studio background or its pose; relocate the product into the new scene. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
                 try {
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
