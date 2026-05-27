@@ -15,7 +15,7 @@ import { normalizeTier, type Tier } from '@/lib/tier'
 import { cloudinaryConfigured, overlayCaptionOnVideo, getLastOverlayError, type OverlayPosition, type CaptionStyle } from '@/services/cloudinary'
 import { recordUsage } from '@/lib/ai-usage'
 import { researchProductContext, composeReelCaption } from '@/lib/ig-burn'
-import { metaEnabled } from '@/lib/feature-flags'
+import { metaEnabledForUser } from '@/lib/feature-flags'
 
 export const maxDuration = 300
 
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!metaEnabled({ email: user.email })) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
+    if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any)

@@ -12,7 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildAuthUrl } from '@/services/instagram'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
-import { metaEnabled } from '@/lib/feature-flags'
+import { metaEnabledForUser } from '@/lib/feature-flags'
 
 export async function GET() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -23,7 +23,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
-  if (!metaEnabled({ email: user.email })) {
+  if (!(await metaEnabledForUser(supabase, user))) {
     return NextResponse.redirect(`${appUrl}/setup?tab=integrations&meta_disabled=1`)
   }
 

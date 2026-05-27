@@ -32,3 +32,27 @@ export function metaEnabled(opts?: { tier?: string | null; email?: string | null
   if (opts?.email && META_REVIEW_EMAILS.includes(opts.email.trim().toLowerCase())) return true
   return false
 }
+
+/**
+ * Server-side gate that honors ADMIN tier in addition to the public flag and
+ * the reviewer email. Server routes only have the user (not the tier) at the
+ * check point, so this looks the tier up — letting ANY admin account do
+ * everything with social (the App-Review reviewer is simply an admin). Short
+ * circuits before the query in the common cases (flag on, or reviewer email),
+ * so the extra read only happens while gated for a non-reviewer.
+ */
+export async function metaEnabledForUser(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  user: { id: string; email?: string | null } | null | undefined,
+): Promise<boolean> {
+  if (process.env.NEXT_PUBLIC_META_ENABLED !== 'false') return true
+  if (!user?.id) return false
+  if (user.email && META_REVIEW_EMAILS.includes(user.email.trim().toLowerCase())) return true
+  try {
+    const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).single()
+    return data?.tier === 'admin'
+  } catch {
+    return false
+  }
+}

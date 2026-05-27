@@ -11,7 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, type Tier } from '@/lib/tier'
-import { metaEnabled } from '@/lib/feature-flags'
+import { metaEnabledForUser } from '@/lib/feature-flags'
 
 const STYLES = ['white-pill', 'black-pill', 'yellow-pill', 'white-shadow']
 const POSITIONS = ['lower-third', 'center']
@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (!metaEnabled({ email: user.email })) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
+    if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: intRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
