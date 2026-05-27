@@ -848,7 +848,7 @@ ${identityClause}
 ${outfitNote}
 ${productRefClause}
 COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, with an energetic, expressive reaction (excited, surprised or delighted), looking toward the camera — ideally holding or gesturing toward the product. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so it pops.
-BACKGROUND: reimagine a clean, aspirational scene that fits the video "${videoTitle}", with a punchy cinematic colour grade, depth, and soft background bokeh. High contrast, vivid, eye-catching at small sizes.
+BACKGROUND: reimagine a MOODY, cinematic scene that fits the video "${videoTitle}" — richer and HIGHER-CONTRAST (deeper tones, dramatic directional lighting, a soft vignette around the edges and especially BEHIND the creator). Do NOT make it a flat, bright, white or airy room. Add subtle rim/edge light separating the creator from the background so the cut-out edge blends cleanly into the scene with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes.
 ${headlineClause}
 ${NO_BRAND_IMAGE_CLAUSE}
 Ultra-sharp, professional, photorealistic.`
