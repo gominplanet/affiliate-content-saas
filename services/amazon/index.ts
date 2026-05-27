@@ -8,10 +8,30 @@ export interface AmazonProduct {
   imageUrl: string | null
 }
 
-// Extract ASIN from YouTube video title — must be a 10-char uppercase alphanumeric string
+/** True if `token` looks like a real Amazon ASIN rather than an ordinary
+ *  word. Canonical modern ASINs are `B0` + 8 chars; older/book ASINs are 10
+ *  chars but ALWAYS contain at least one digit. Plain 10-letter English words
+ *  ("UNDERWATER", "WATERPROOF", "TECHNOLOGY", "SMARTWATCH"…) contain no digit,
+ *  so requiring a digit keeps the loose matcher from turning a title word into
+ *  a fake ASIN (which produced dead amazon.com/dp/UNDERWATER affiliate links). */
+export function isValidAsin(token: string): boolean {
+  const t = token.toUpperCase()
+  if (/^B0[A-Z0-9]{8}$/.test(t)) return true
+  return /^[A-Z0-9]{10}$/.test(t) && /[0-9]/.test(t)
+}
+
+// Extract a real ASIN from free text (e.g. a YouTube title). Prefers the
+// canonical B0… form; otherwise accepts a 10-char token ONLY if it contains a
+// digit — so ordinary 10-letter words are never mistaken for an ASIN.
 export function extractAsin(text: string): string | null {
-  const match = text.match(/\b([A-Z0-9]{10})\b/)
-  return match ? match[1] : null
+  const up = text.toUpperCase()
+  const b0 = up.match(/\b(B0[A-Z0-9]{8})\b/)
+  if (b0) return b0[1]
+  // Fallback: any 10-char alphanumeric token that contains at least one digit.
+  for (const m of up.match(/\b[A-Z0-9]{10}\b/g) || []) {
+    if (isValidAsin(m)) return m
+  }
+  return null
 }
 
 /**

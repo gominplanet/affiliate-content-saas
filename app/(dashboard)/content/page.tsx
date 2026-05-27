@@ -2356,6 +2356,11 @@ export default function ContentPage() {
   const [catPreview, setCatPreview] = useState<{ title: string; category: string }[] | null>(null)
   const [catPreviewLoading, setCatPreviewLoading] = useState(false)
   const [catApplying, setCatApplying] = useState(false)
+  // Affiliate-link repair — dryRun finds posts with a broken affiliate link
+  // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
+  const [affPreview, setAffPreview] = useState<{ title: string; oldUrl: string; newUrl: string }[] | null>(null)
+  const [affPreviewLoading, setAffPreviewLoading] = useState(false)
+  const [affApplying, setAffApplying] = useState(false)
   const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
   // Scheduled posts list (loaded on demand when the Scheduled tab opens)
   const [scheduledItems, setScheduledItems] = useState<ScheduledItem[] | null>(null)
@@ -2971,6 +2976,62 @@ export default function ContentPage() {
     }
   }
 
+  /**
+   * Step 1 of affiliate-link repair — dryRun finds posts whose buy link is
+   * broken (e.g. a title word was mistaken for an ASIN → dead Amazon page)
+   * and surfaces old→new in a modal. Nothing is written yet.
+   */
+  async function previewFixAffiliate() {
+    setAffPreviewLoading(true)
+    setFixCatResult(null)
+    try {
+      const res = await fetch('/api/blog/fix-affiliate-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setFixCatResult(`Error: ${data.error}`)
+      } else if (!Array.isArray(data.preview) || data.preview.length === 0) {
+        const tail = data.unresolved ? ` (${data.unresolved} couldn't be auto-resolved — check those manually).` : ''
+        setFixCatResult(`No broken affiliate links found across ${data.total ?? 0} posts.${tail}`)
+      } else {
+        setAffPreview(data.preview as { title: string; oldUrl: string; newUrl: string }[])
+      }
+    } catch {
+      setFixCatResult('Something went wrong.')
+    } finally {
+      setAffPreviewLoading(false)
+    }
+  }
+
+  /** Step 2 — apply the affiliate-link fixes to WordPress + the DB. */
+  async function applyFixAffiliate() {
+    setAffApplying(true)
+    try {
+      const res = await fetch('/api/blog/fix-affiliate-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setFixCatResult(`Error: ${data.error}`)
+      } else if (data.fixed === 0) {
+        setFixCatResult('No affiliate links needed fixing.')
+      } else {
+        const failed = Array.isArray(data.errors) && data.errors.length ? ` — ${data.errors.length} failed` : ''
+        setFixCatResult(`Done — fixed the affiliate link on ${data.fixed} post${data.fixed !== 1 ? 's' : ''}${failed}.`)
+      }
+    } catch {
+      setFixCatResult('Something went wrong.')
+    } finally {
+      setAffApplying(false)
+      setAffPreview(null)
+    }
+  }
+
   async function loadMore() {
     if (!nextPageToken) return
     setLoadingMore(true)
@@ -3086,6 +3147,16 @@ export default function ContentPage() {
               {catPreviewLoading
                 ? <><Loader2 size={14} className="animate-spin" /> Loading preview…</>
                 : 'Fix Categories'}
+            </button>
+            <button
+              onClick={previewFixAffiliate}
+              disabled={affPreviewLoading || affApplying}
+              className="btn-secondary text-sm"
+              title="Scan published posts for broken affiliate links and repair them"
+            >
+              {affPreviewLoading
+                ? <><Loader2 size={14} className="animate-spin" /> Scanning links…</>
+                : 'Fix Affiliate Links'}
             </button>
             {(activeTab === 'horizontal' || activeTab === 'vertical') && (
               <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
@@ -3627,6 +3698,60 @@ export default function ContentPage() {
                 {catApplying
                   ? <><Loader2 size={14} className="animate-spin" /> Applying…</>
                   : `Apply to ${catPreview.length} post${catPreview.length !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Affiliate-link repair preview — dryRun first, apply on confirm. */}
+      {affPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => !affApplying && setAffPreview(null)}>
+          <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-white/10">
+              <div>
+                <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Fix affiliate links</h3>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                  {affPreview.length} post{affPreview.length !== 1 ? 's' : ''} have a broken buy link. Nothing&apos;s saved yet.
+                </p>
+              </div>
+              <button
+                onClick={() => !affApplying && setAffPreview(null)}
+                disabled={affApplying}
+                className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] disabled:opacity-40"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-5">
+              <ul className="flex flex-col gap-2">
+                {affPreview.map((row, i) => (
+                  <li key={i} className="p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e]">
+                    <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-1 line-clamp-2">{row.title}</p>
+                    <p className="text-[11px] text-[#ff3b30] break-all font-mono">− {row.oldUrl}</p>
+                    <p className="text-[11px] text-[#34c759] break-all font-mono">+ {row.newUrl}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 p-5 border-t border-gray-100 dark:border-white/10">
+              <button
+                onClick={() => !affApplying && setAffPreview(null)}
+                disabled={affApplying}
+                className="btn-secondary text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyFixAffiliate}
+                disabled={affApplying}
+                className="btn-primary text-sm"
+              >
+                {affApplying
+                  ? <><Loader2 size={14} className="animate-spin" /> Fixing…</>
+                  : `Fix ${affPreview.length} link${affPreview.length !== 1 ? 's' : ''}`}
               </button>
             </div>
           </div>

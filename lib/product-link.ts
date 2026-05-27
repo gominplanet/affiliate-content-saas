@@ -9,6 +9,8 @@
 //   - HARD RULE: never blindly Amazon-search for a lookalike when the creator
 //     linked the product directly. Prefer the link that's actually there.
 
+import { extractAsin } from '@/services/amazon'
+
 /** Pull a 10-char Amazon ASIN out of an Amazon product URL path. */
 export function asinFromAmazonUrl(url: string): string | null {
   const m = url.match(/\/(?:dp|gp\/product|gp\/aw\/d|product)\/([A-Z0-9]{10})(?:[/?]|$)/i)
@@ -78,9 +80,9 @@ export type ResolvedProductLink =
  *   5. Nothing usable → 'none'.
  */
 export async function resolveProductLink(title: string, description: string, ownSite?: string | null): Promise<ResolvedProductLink> {
-  const titleAsin = (title.toUpperCase().match(/\b(B0[A-Z0-9]{8})\b/) || [])[1]
-    || (title.toUpperCase().match(/\b([A-Z0-9]{10})\b/) || [])[1]
-    || null
+  // Hardened: extractAsin rejects 10-letter words (e.g. "UNDERWATER") that the
+  // old bare /[A-Z0-9]{10}/ matcher wrongly treated as ASINs.
+  const titleAsin = extractAsin(title)
   const descAsin = description.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]?.toUpperCase() || null
   if (titleAsin) return { kind: 'amazon', asin: titleAsin.toUpperCase() }
   if (descAsin) return { kind: 'amazon', asin: descAsin }
