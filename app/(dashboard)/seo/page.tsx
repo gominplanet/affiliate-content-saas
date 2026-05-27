@@ -64,16 +64,32 @@ export default function SeoPage() {
     finally { setFixing(null) }
   }, [load])
 
-  const pingIndexNow = useCallback(async () => {
+  // One click: purge the host sitemap cache (so Google's sitemap is complete)
+  // + push URLs to Bing/Copilot via IndexNow + re-check.
+  const fixSitemap = useCallback(async () => {
     setPinging(true); setFixMsg(null)
+    let purged = false, submitted = 0, err: string | null = null
     try {
-      const res = await fetch('/api/seo/indexnow', { method: 'POST' })
-      const d = await res.json()
-      if (d.error) setFixMsg({ ok: false, text: d.error })
-      else setFixMsg({ ok: true, text: `Pushed ${d.submitted} URL${d.submitted !== 1 ? 's' : ''} to Bing/Copilot via IndexNow. Re-save any missing post in WordPress to refresh Google's sitemap.` })
-    } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
-    finally { setPinging(false) }
-  }, [])
+      const pr = await fetch('/api/seo/purge-sitemap', { method: 'POST' })
+      const pd = await pr.json().catch(() => ({}))
+      if (pr.ok) purged = true; else err = pd.error || `Sitemap refresh failed (${pr.status}).`
+    } catch { err = 'Sitemap refresh failed.' }
+    try {
+      const ir = await fetch('/api/seo/indexnow', { method: 'POST' })
+      const id = await ir.json().catch(() => ({}))
+      if (ir.ok) submitted = id.submitted || 0
+    } catch { /* Bing ping is best-effort */ }
+    // Give the host a moment to regenerate the just-purged sitemap, then re-check.
+    await new Promise(r => setTimeout(r, 2000))
+    await load()
+    const parts: string[] = []
+    if (purged) parts.push('refreshed Google’s sitemap cache')
+    if (submitted) parts.push(`pushed ${submitted} URLs to Bing/Copilot`)
+    setFixMsg(parts.length
+      ? { ok: true, text: `Done — ${parts.join(' + ')}. If any still show missing, give Google a minute and hit Refresh.` }
+      : { ok: false, text: err || 'Something went wrong.' })
+    setPinging(false)
+  }, [load])
 
   const posts = useMemo(() => {
     const p = data?.posts ? [...data.posts] : []
@@ -142,11 +158,11 @@ export default function SeoPage() {
                   Google discovers pages through your sitemap — posts not in it can sit unindexed (often a stale sitemap cache). Push them straight to Bing/Copilot now, and re-save the post in WordPress to refresh the sitemap for Google.
                 </p>
                 <button
-                  onClick={pingIndexNow}
+                  onClick={fixSitemap}
                   disabled={pinging}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#ff9500] hover:opacity-90 disabled:opacity-60 transition-opacity"
                 >
-                  {pinging ? <><Loader2 size={12} className="animate-spin" /> Pinging…</> : <><Zap size={12} /> Ping search engines (IndexNow)</>}
+                  {pinging ? <><Loader2 size={12} className="animate-spin" /> Refreshing…</> : <><Zap size={12} /> Refresh sitemap &amp; ping engines</>}
                 </button>
               </div>
             </div>

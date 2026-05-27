@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.12
+ * Version: 1.0.13
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.12');
+define('MVP_AFFILIATE_VERSION', '1.0.13');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -877,6 +877,18 @@ add_action('rest_api_init', function () {
     register_rest_route('affiliateos/v1', '/self-update', [
         'methods'             => 'POST',
         'callback'            => 'mvp_affiliate_rest_self_update',
+        'permission_callback' => function () { return current_user_can('manage_options'); },
+    ]);
+    // On-demand sitemap cache purge — lets the dashboard clear a stale host
+    // cache so newly published posts appear in the sitemap immediately.
+    register_rest_route('affiliateos/v1', '/purge-sitemap', [
+        'methods'             => 'POST',
+        'callback'            => function () {
+            if (function_exists('mvp_affiliate_purge_sitemap_cache')) {
+                mvp_affiliate_purge_sitemap_cache();
+            }
+            return new WP_REST_Response(['ok' => true], 200);
+        },
         'permission_callback' => function () { return current_user_can('manage_options'); },
     ]);
 });
