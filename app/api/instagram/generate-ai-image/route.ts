@@ -28,6 +28,7 @@ import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { composeWithNanoBananaPro, composeWithNanoBanana, rehostToFal, rehostFacePhotos, NANO_BANANA_PRO_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
+import { getOrCreateIdentityAnchor } from '@/lib/identity-anchor'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
 /**
@@ -428,9 +429,15 @@ export async function POST(request: Request) {
     // IG image with the host's true likeness, text-free (the title is overlaid
     // crisply client-side). Mirrors the YouTube composed path. Only when the
     // face model has source photos (the instant, no-LoRA models).
-    const igFaceRefs = faceModel?.source_images?.length
-      ? await rehostFacePhotos(sb, faceModel.source_images, 5)
-      : []
+    // Identity anchor (cached, Photobooth-grade) leads as the primary likeness
+    // reference; a couple of raw photos ride along for extra angles. Falls back
+    // to raw photos if the anchor can't be built.
+    let igFaceRefs: string[] = []
+    if (faceModel?.source_images?.length) {
+      const igAnchor = await getOrCreateIdentityAnchor(sb, user.id, faceModel.source_images, { tier })
+      const igRaw = await rehostFacePhotos(sb, faceModel.source_images, igAnchor ? 2 : 5)
+      igFaceRefs = igAnchor ? [igAnchor, ...igRaw] : igRaw
+    }
     if (igFaceRefs.length > 0) {
       try {
         const igProductRef = productImageUrl ? await rehostToFal(productImageUrl) : null

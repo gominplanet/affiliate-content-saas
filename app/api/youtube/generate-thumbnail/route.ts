@@ -16,6 +16,7 @@ import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbn
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { getOrCreateIdentityAnchor } from '@/lib/identity-anchor'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
 // Telemetry context — populated at request start, read by the three
@@ -773,9 +774,17 @@ export async function POST(request: Request) {
           // a few of their real photos alongside the video frame so Nano Banana
           // Pro locks the host's likeness from MULTIPLE angles — the biggest
           // lever for resemblance vs. a single frame. Best-effort.
-          const faceRefs = faceModel?.source_images?.length
-            ? await rehostFacePhotos(supabase, faceModel.source_images, 5)
-            : []
+          // Identity anchor: one Photobooth-quality gpt-image portrait of the
+          // creator (cached per face), led as the PRIMARY likeness reference so
+          // the composited face inherits Photobooth fidelity. A couple of the
+          // raw photos ride along for extra angles. Falls back to the raw photos
+          // if the anchor can't be built.
+          let faceRefs: string[] = []
+          if (faceModel?.source_images?.length) {
+            const anchor = await getOrCreateIdentityAnchor(supabase, user.id, faceModel.source_images, { tier })
+            const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, anchor ? 2 : 5)
+            faceRefs = anchor ? [anchor, ...rawRefs] : rawRefs
+          }
           // Product image as a reference so the product renders accurately (the
           // vidIQ look). The prompt scopes the product ref to the product ONLY,
           // so the person is taken from the frame + face photos.
