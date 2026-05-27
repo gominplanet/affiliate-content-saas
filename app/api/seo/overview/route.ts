@@ -19,7 +19,7 @@ import { fetchSitemapSlugs } from '@/lib/sitemap'
 
 export const maxDuration = 120
 
-const INSPECT_CAP = 12          // max URL Inspections per request (latency + quota guard)
+const INSPECT_CAP = 25          // max URL Inspections per request (latency + quota guard)
 const STALE_MS = 24 * 60 * 60 * 1000
 
 function ymd(d: Date): string { return d.toISOString().slice(0, 10) }

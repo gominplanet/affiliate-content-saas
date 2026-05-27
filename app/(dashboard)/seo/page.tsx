@@ -157,7 +157,15 @@ export default function SeoPage() {
             <SummaryCard label="Avg SEO score" value={`${data.summary.avgScore}/100`} accent={scoreColor(data.summary.avgScore)} />
             {data.connected ? (
               <>
-                <SummaryCard label="Indexed" value={`${data.summary.indexed}/${data.summary.total}`} accent="#34c759" sub={data.summary.notIndexed ? `${data.summary.notIndexed} not indexed` : undefined} />
+                <SummaryCard
+                  label="Indexed by Google"
+                  value={String(data.summary.indexed)}
+                  accent="#34c759"
+                  sub={[
+                    data.summary.notIndexed ? `${data.summary.notIndexed} not indexed` : null,
+                    data.summary.unknown ? `${data.summary.unknown} still checking` : null,
+                  ].filter(Boolean).join(' · ') || undefined}
+                />
                 <SummaryCard label="Clicks (28d)" value={data.summary.totalClicks.toLocaleString()} accent="#0071e3" />
                 <SummaryCard label="Impressions (28d)" value={data.summary.totalImpressions.toLocaleString()} accent="#5856d6" />
               </>
