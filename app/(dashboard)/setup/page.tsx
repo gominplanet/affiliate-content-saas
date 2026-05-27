@@ -759,6 +759,11 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
   const [youtubeOAuthConnected, setYoutubeOAuthConnected] = useState(false)
   const [ytDisconnecting, setYtDisconnecting] = useState(false)
+  // Google Search Console connection (read-only) — powers the SEO hub.
+  const [gscConnected, setGscConnected] = useState(false)
+  const [gscProperty, setGscProperty] = useState<string | null>(null)
+  const [gscDisconnecting, setGscDisconnecting] = useState(false)
+  const [gscNotice, setGscNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   // When on, publishing a blog post appends a "Full written review" backlink to
   // the source video's YouTube description (video→blog SEO). Default on.
   const [ytBacklink, setYtBacklink] = useState(true)
@@ -820,6 +825,8 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
       setYoutubeOAuthConnected(!!row.youtube_oauth_access_token)
       setYtBacklink(row.yt_backlink_enabled !== false)
+      setGscConnected(!!row.gsc_oauth_access_token)
+      setGscProperty(row.gsc_property ?? null)
     }
     setLoading(false)
     onLoad()
@@ -854,6 +861,22 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const igError = searchParams.get('instagram_error')
     if (igConnected) { setIgNotice({ ok: true, msg: 'Instagram connected!' }); load() }
     if (igError) setIgNotice({ ok: false, msg: `Instagram error: ${decodeURIComponent(igError)}` })
+    const gscConnectedParam = searchParams.get('gsc_connected')
+    const gscErr = searchParams.get('gsc_error')
+    const gscProp = searchParams.get('gsc_property')
+    const gscNoProp = searchParams.get('gsc_no_property')
+    if (gscConnectedParam) {
+      setGscNotice({
+        ok: true,
+        msg: gscProp
+          ? `Search Console connected — tracking ${decodeURIComponent(gscProp)}`
+          : gscNoProp
+            ? 'Search Console connected, but no matching property was found. Make sure this site is a verified property in your Search Console account.'
+            : 'Search Console connected!',
+      })
+      load()
+    }
+    if (gscErr) setGscNotice({ ok: false, msg: `Search Console error: ${decodeURIComponent(gscErr)}` })
   }, [searchParams, load])
 
   useEffect(() => { load() }, [load])
@@ -977,6 +1000,18 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         setYtOAuthNotice({ ok: true, msg: 'YouTube disconnected.' })
       }
     } finally { setYtDisconnecting(false) }
+  }
+
+  async function disconnectGsc() {
+    setGscDisconnecting(true)
+    try {
+      const res = await fetch('/api/auth/gsc/disconnect', { method: 'POST' })
+      if (res.ok) {
+        setGscConnected(false)
+        setGscProperty(null)
+        setGscNotice({ ok: true, msg: 'Search Console disconnected.' })
+      }
+    } finally { setGscDisconnecting(false) }
   }
 
   async function disconnectThreads() {
@@ -1697,6 +1732,49 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               Connect YouTube
             </a>
           </div>
+        )}
+      </div>
+
+      {/* Google Search Console */}
+      <div className="card p-5 flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#4285F4]/10">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4285F4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Google Search Console</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">See if posts are indexed + the searches that find them</p>
+            </div>
+          </div>
+          {gscConnected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+          Connect <strong>read-only</strong> Search Console so MVP can show whether each post is indexed by Google, its impressions, clicks and ranking, and the real queries readers use to find it — the data behind your SEO score and one-click fixes. We never write to your Search Console.
+        </p>
+        {gscNotice && (
+          <p className={`text-xs ${gscNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{gscNotice.msg}</p>
+        )}
+        {gscConnected ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+              {gscProperty
+                ? <>Tracking <span className="font-mono bg-white dark:bg-[#1c1c1e] px-1.5 py-0.5 rounded border border-[#d2d2d7] dark:border-[#3a3a3c]">{gscProperty}</span>.</>
+                : 'Connected, but no matching property was found — confirm this site is a verified property in your Search Console account.'}
+            </p>
+            <button onClick={disconnectGsc} disabled={gscDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {gscDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect Search Console
+            </button>
+          </div>
+        ) : (
+          <a
+            href="/api/auth/gsc"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-opacity hover:opacity-90"
+            style={{ backgroundColor: '#4285F4' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            Connect Search Console
+          </a>
         )}
       </div>
 
