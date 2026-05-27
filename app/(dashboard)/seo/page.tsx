@@ -77,6 +77,17 @@ export default function SeoPage() {
     finally { setFixing(null) }
   }, [load])
 
+  // "Request indexing" helper. We deliberately do NOT deep-link into the URL
+  // Inspection result: Google's `inspect?id=` param expects an internal
+  // inspection hash, not a page URL, so `id=<url>` returns a hard 404. Instead
+  // we copy the post URL and open Search Console — the user pastes it into the
+  // Inspect bar at the top (one paste, never 404s).
+  const requestIndexing = useCallback(async (url: string) => {
+    try { await navigator.clipboard.writeText(url) } catch { /* clipboard may be blocked; the URL is still in the toast guidance */ }
+    window.open('https://search.google.com/search-console', '_blank', 'noopener,noreferrer')
+    setFixMsg({ ok: true, text: 'Post URL copied. In Search Console, paste it into the Inspect bar at the top, then click “Request Indexing”. (Multiple Google logins? Pick the account that owns this site first.)' })
+  }, [])
+
   // One click: purge the host sitemap cache (so Google's sitemap is complete)
   // + push URLs to Bing/Copilot via IndexNow + re-check.
   const fixSitemap = useCallback(async () => {
@@ -299,16 +310,14 @@ export default function SeoPage() {
                         <span className="text-[11px] text-[#86868b]">{p.position ? `pos ${p.position.toFixed(1)}` : `${p.impressions} impr`}</span>
                       </span>
                     )}
-                    {data.connected && data.property && p.url && p.indexed !== true && (
-                      <a
-                        href={`https://search.google.com/search-console/inspect?resource_id=${gscParam(data.property)}&id=${gscParam(p.url)}`}
-                        target="_blank" rel="noopener noreferrer"
-                        onClick={e => e.stopPropagation()}
+                    {data.connected && p.url && p.indexed !== true && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); requestIndexing(p.url!) }}
                         className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline flex-shrink-0"
-                        title="Open this post in Google's URL Inspection tool, then click Request Indexing"
+                        title="Copy this post's URL and open Search Console to Request Indexing"
                       >
                         Index <ExternalLink size={11} />
-                      </a>
+                      </button>
                     )}
                     {p.url && (
                       <a href={p.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[#86868b] hover:text-[#0071e3] flex-shrink-0" title="Open post">
@@ -419,9 +428,10 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
   const sitemapsUrl = rid
     ? `https://search.google.com/search-console/sitemaps?resource_id=${rid}`
     : 'https://search.google.com/search-console'
-  const inspectUrl = rid
-    ? `https://search.google.com/search-console/inspect?resource_id=${rid}`
-    : 'https://search.google.com/search-console'
+  // URL Inspection has no reliable pre-fill deep link (Google's `id` param wants
+  // an internal inspection hash, not a page URL), so just open Search Console
+  // and paste into the Inspect bar.
+  const inspectUrl = 'https://search.google.com/search-console'
 
   return (
     <div className="card overflow-hidden">
@@ -473,8 +483,8 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
                 <a href={sitemapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline inline-flex items-center gap-0.5">Search Console → Sitemaps <ExternalLink size={11} /></a>, type <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px]">wp-sitemap.xml</code> under “Add a new sitemap”, and click Submit. The status should read “Success” within a day. You only do this once.
               </li>
               <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Request indexing for important posts.</span> Open the{' '}
-                <a href={inspectUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline inline-flex items-center gap-0.5">URL Inspection tool <ExternalLink size={11} /></a> — or just click <span className="font-semibold text-[#0071e3] whitespace-nowrap">Index ↗</span> on any post below to open it pre-filled. Then click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Request Indexing</strong>. Use the <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> filter below to work through them quickly. Google allows about 10 a day — it’s a nudge, not a guarantee, but it’s the strongest signal you can send.
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Request indexing for important posts.</span> Click <span className="font-semibold text-[#0071e3] whitespace-nowrap">Index ↗</span> on any post below — it copies that post’s URL and opens{' '}
+                <a href={inspectUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline inline-flex items-center gap-0.5">Search Console <ExternalLink size={11} /></a>. Paste the URL into the Inspect bar at the top, then click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Request Indexing</strong>. Use the <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> filter below to work through them in order. Google allows about 10 a day — it’s a nudge, not a guarantee, but it’s the strongest signal you can send.
               </li>
               <li>
                 <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on social (MVP can auto-post to Pinterest, Facebook &amp; Instagram — every share is a crawlable link back). Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.
