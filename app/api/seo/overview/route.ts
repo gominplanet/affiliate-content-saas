@@ -114,7 +114,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toUpsert: any[] = []
 
-  for (const p of posts) {
+  for (const p of livePosts) {
     const { score, checks } = scorePostSeo({
       title: p.title || '', contentHtml: p.content || '', siteHost, postType: p.post_type || 'review',
       // meta description isn't on blog_posts; the FAQ/intro checks still cover AEO.
