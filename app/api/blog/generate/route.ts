@@ -614,6 +614,34 @@ async function handleGenerate(request: Request) {
     setting: scrubBanned(generated.imagePrompts.setting),
   }
 
+  // ── 5.6. Title identity fact-check (critical path — tiny, fast Haiku call) ──
+  //         The title seeds the slug, the URL, and every section, so an invented
+  //         product IDENTITY here (e.g. a plain water bottle titled "2-in-1 Water
+  //         Bottle LED Lantern") poisons the whole post. Catch it BEFORE publish
+  //         so we can also re-derive a clean slug — no live-URL churn later. The
+  //         body fact-check (in after()) then strips any matching invented claims.
+  //         Best-effort: factCheckTitle returns the original on any failure.
+  try {
+    const checkedTitle = scrubBanned(await claude.factCheckTitle(
+      generated.title,
+      transcript,
+      productResearch,
+      { userId: user.id, tier: (wp?.tier as string) ?? null },
+    ))
+    if (checkedTitle && checkedTitle.trim() && checkedTitle.trim() !== generated.title.trim()) {
+      console.log('[blog-factcheck-title] corrected invented identity', { from: generated.title, to: checkedTitle.trim() })
+      generated.title = checkedTitle.trim()
+      // Re-derive the slug from the corrected title so no invented term
+      // (e.g. "lantern") leaks into the URL/slug.
+      const reslug = generated.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '')
+        .slice(0, 60)
+      if (reslug) generated.slug = reslug
+    }
+  } catch { /* non-fatal — keep the generated title/slug */ }
+
   // ── 6. Clean any vestigial placeholders (the prompt no longer emits
   //        these, but strip defensively in case an old prompt variant does) ─
   let content = generated.content

@@ -208,7 +208,23 @@ CRITICAL RULES — FOLLOW STRICTLY
    video, grounded in the transcript. Real first-person grounded in the video is the goal;
    invented autobiography (specs, tests, or outcomes the video never shows) is banned.
 
-9. PRODUCT FACTS — NEVER INVENT SPECS OR FEATURES. Do NOT state any product spec,
+9. PRODUCT FACTS — NEVER INVENT WHAT THE PRODUCT IS OR WHAT IT DOES.
+   ⛔ CORE IDENTITY COMES FIRST. The product is ONLY what the transcript or PRODUCT
+   INFO explicitly shows it to be — nothing more. NEVER invent or assume its type,
+   form factor, or that it has a SECOND function. Do NOT turn one product into a
+   "2-in-1", "combo", "convertible", "multi-function", "doubles as a…", or "X that's
+   also a Y" unless the source EXPLICITLY states that dual nature. Do NOT add an
+   attached or built-in component the source never mentions — a light, lantern,
+   speaker, fan, cooler, charger, handle, mount, compartment, etc. Do NOT infer a
+   feature from the setting, the niche, the category, the packaging, or the
+   product's name: a camping clip does NOT make a bottle a lantern; an outdoor scene
+   does NOT add a light. If the source says "water bottle", it is a water bottle —
+   not a "water bottle lantern". When you're unsure what something is, describe only
+   what is shown or said and stop there. Inventing the product's identity or a whole
+   component is the WORST possible error — it makes the entire post about a product
+   that doesn't exist.
+
+   NEVER INVENT SPECS OR FEATURES. Do NOT state any product spec,
    number, measurement, dimension, weight, capacity, battery/run time, wattage,
    speed, material, finish, model number, included accessory, warranty,
    certification, ingredient, compatibility, or performance/result claim UNLESS it
@@ -484,6 +500,14 @@ BLOCK 2 — full HTML content, no JSON escaping needed:
 
 BLOCK 1 rules:
 - Valid JSON, no line breaks inside strings
+- title: name the EXACT product and ONLY what it actually is per the transcript /
+  PRODUCT INFO. NEVER add a function, component, or "2-in-1 / combo / multi-X /
+  doubles-as" framing the source doesn't state (e.g. do NOT write "Water Bottle LED
+  Lantern" for a plain water bottle, or add an attached light/speaker/fan/cooler).
+  The title is the SEED for the whole post, the slug, and the URL — a fabricated
+  identity here poisons every section. Truthful first, catchy second. Never "honest".
+- slug: kebab-case derived from the truthful title — it must NOT contain any term
+  the title doesn't (no invented function/component leaking into the URL).
 - excerpt: max 160 chars
 - seoKeyword: the ONE primary search phrase a real buyer would type into Google/YouTube to find THIS product/topic. Derive it from what the creator actually says in the transcript + the product facts — natural buyer language (e.g. "adjustable neck harness", "best budget standing desk"), 2–5 words, no brand fluff, no special characters. This is the phrase the post should rank for.
 - metaDescription: the SERP/social meta description, MAX 155 chars. Lead with seoKeyword in the first few words, then a concrete benefit + a reason to click. Active voice, no hype, no clickbait, never the word "honest". This is distinct from excerpt — write it to win the click in search results.
@@ -660,9 +684,11 @@ Output only valid JSON. No explanation, no markdown.`,
           role: 'user',
           content: `Below is a ready-to-publish affiliate blog post (HTML) and the ONLY two sources of truth for product facts: the video transcript and product info.
 
-Find every PRODUCT FACT in the post — specs, numbers, measurements, dimensions, weight, capacity, battery/run time, wattage, speed, materials, finishes, model numbers, prices, included accessories, warranty, certifications, ingredients, compatibility, and performance/result claims — and check each against the sources.
+FIRST AND MOST IMPORTANT — VERIFY THE PRODUCT'S IDENTITY. Confirm the post describes ONLY the product the sources actually show: its real type/form factor and its real function(s). If the post invents a second function, an extra component, or a "2-in-1 / combo / convertible / multi-function / doubles-as-a-X" nature that the sources never state (e.g. it calls a plain water bottle a "water bottle lantern", says it has a built-in light/speaker/fan/cooler, or frames a single-purpose product as dual-purpose), that is a fabricated identity — REMOVE every sentence, claim, FAQ, verdict bullet, and aside that depends on the invented part, and rewrite surrounding text so the post is consistently about the REAL product only. Do not infer a feature from the setting, niche, or product name. This identity check overrides everything below: an invented "what the product is" is the worst error in the post.
 
-For any product fact that is NOT supported by the transcript or product info:
+Then find every PRODUCT FACT in the post — specs, numbers, measurements, dimensions, weight, capacity, battery/run time, wattage, speed, materials, finishes, model numbers, prices, included accessories, warranty, certifications, ingredients, compatibility, and performance/result claims — and check each against the sources.
+
+For any product fact (or invented function/component) that is NOT supported by the transcript or product info:
 - Remove it, or minimally rewrite the sentence to drop the unsupported detail while keeping it natural and readable.
 - Do NOT replace it with a different invented fact, and do NOT add any new facts.
 - Direct quotes and the reviewer's stated opinions are fine to keep as long as they appear in the transcript.
@@ -695,6 +721,59 @@ ${content}`,
       return out
     } catch {
       return content
+    }
+  }
+
+  /**
+   * Title-only fact-check — catches an invented product IDENTITY in the headline
+   * (e.g. a plain water bottle titled "2-in-1 Water Bottle LED Lantern"). The title
+   * seeds the post, the slug, and the URL, so a fabricated identity here is the
+   * worst hallucination of all. Returns a corrected title (same product, invented
+   * function/component stripped) or the original verbatim if it checks out.
+   * Cheap + fast (tiny Haiku call) so it can run on the critical path BEFORE
+   * publish, letting the caller also re-derive a clean slug. Best-effort: any
+   * failure or suspicious result returns the original title unchanged.
+   */
+  async factCheckTitle(
+    title: string,
+    transcript: string,
+    productResearch: string | null | undefined,
+    ctx?: UsageCtx,
+  ): Promise<string> {
+    const t = (title || '').trim()
+    if (!t) return title
+    try {
+      const sources = `=== VIDEO TRANSCRIPT ===\n${(transcript || '').slice(0, 14000) || '(no transcript provided)'}\n\n=== PRODUCT INFO ===\n${(productResearch || '').slice(0, 2500) || '(none provided)'}`
+      const message = await this.client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: 'You verify that an affiliate blog-post TITLE names the real product and nothing more. You never invent; you only strip an invented identity.',
+        messages: [{
+          role: 'user',
+          content: `A blog-post title must describe ONLY the product the sources actually show — its real type/form factor and its real function(s). It must NOT claim a second function, an extra component, or a "2-in-1 / combo / convertible / multi-function / doubles-as" nature the sources never state.
+
+Check the title below against the sources.
+- If every part of the title is supported by the sources, return it EXACTLY unchanged.
+- If the title invents a function, component, or dual nature the sources don't support (e.g. calling a plain water bottle a "Water Bottle LED Lantern", adding "2-in-1", an attached light/speaker/fan/cooler), rewrite it to name ONLY the real product: keep the brand, the real product type, and the "Review" framing; drop the invented part. Keep it natural and similar in length. Do not infer a feature from the setting or the product's name.
+- Never add a new claim. Never use the word "honest".
+
+Return ONLY the final title text on a single line — no quotes, no explanation, no JSON.
+
+${sources}
+
+=== TITLE TO CHECK ===
+${t}`,
+        }],
+      }, { timeout: 20000 })
+      let out = message.content.filter(b => b.type === 'text').map(b => (b as Anthropic.TextBlock).text).join('').trim()
+      out = out.replace(/^["'\s]+|["'\s]+$/g, '').replace(/\s+/g, ' ').trim()
+      const u = usageFromAnthropic(message)
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_factcheck_title', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
+      // Guards: never return empty, multi-line, or absurdly long output.
+      if (!out || out.length < 3 || out.length > 160 || /\n/.test(out)) return title
+      return out
+    } catch {
+      return title
     }
   }
 
