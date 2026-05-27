@@ -1073,33 +1073,41 @@ async function handleGenerate(request: Request) {
             const seed = Math.floor(Math.random() * 1_000_000_000) + i
             try {
               let falUrl: string | undefined
-              // ── Preferred: retouch a REAL video frame into an editorial photo ──
-              // Keeps the real people/product/scene; just makes it sharper, brighter
-              // and more clickable. One frame per slot (cycled), enhanced distinctly.
-              if (frameRefs.length > 0) {
+              // ── Primary: re-render the REAL product photo (resolved from the
+              // Amazon / Geniuslink / affiliate link) into a fitting setting.
+              // This keeps the ACTUAL product accurate — what readers came to
+              // see — instead of guessing from random video frames.
+              if (falProductImageUrl) {
+                const kontextInstruction = `Re-render the EXACT product shown in this reference image. Keep its precise shape, colour, materials, proportions and any on-product branding identical — never redesign it, swap it, or invent a different product. Remove the original background and any retail packaging. Present this same product as a polished, magazine-quality editorial photo shown as a ${perspective}, placed naturally in a real-world setting that fits how it is actually used: ${prompt}. If a realistic in-use setting doesn't suit it, instead stage the product on a clean surface against a VIBRANT, eye-catching colour-pop / gradient background with soft studio lighting, reflections and depth that make it shine and pop off the page. Realistic shadows and lighting. Make this image clearly DIFFERENT from the article's other photos — different angle, framing and surroundings. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
+                try {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
+                    input: { image_url: falProductImageUrl, prompt: kontextInstruction, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed },
+                    pollInterval: 3000,
+                  })
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  falUrl = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-kontext', images: 1 })
+                } catch { /* fall through to frame / text-to-image */ }
+              }
+              // ── Fallback: no product photo resolved → retouch a real video
+              // frame (keeps genuine footage). Secondary because frames don't
+              // always cleanly show the product.
+              if (!falUrl && frameRefs.length > 0) {
                 const frame = frameRefs[i % frameRefs.length]
-                const retouchPrompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, the SAME product and the SAME scene EXACTLY — do not change anyone's identity, swap the product, or invent anything new. Enhance it: substantially sharpen + add clarity and fine detail, boost colour vibrancy, saturation and contrast, add bright clean cinematic lighting so the subject pops, and tidy/softly blur the background into a premium look — crisp and vivid, never a flat low-quality screengrab. Frame it as a ${perspective}. REMOVE any burned-in on-screen text, captions, channel names, watermarks or video-player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
+                const retouchPrompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, the SAME product and the SAME scene EXACTLY — do not change anyone's identity, swap the product, or invent anything new. Enhance it: substantially sharpen + add clarity, boost colour vibrancy, saturation and contrast, add bright clean cinematic lighting so the subject pops, and tidy/softly blur the background into a premium look. Frame it as a ${perspective}. REMOVE any burned-in on-screen text, captions, channel names, watermarks or video-player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
                 try {
                   const out = await composeWithNanoBanana({ prompt: retouchPrompt, referenceImageUrls: [frame], aspectRatio: '4:3', numImages: 1 })
                   falUrl = out[0]
                   if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'nano-banana', images: 1 })
-                } catch { /* fall through to product/flux path */ }
+                } catch { /* fall through to text-to-image */ }
               }
-              if (!falUrl && falProductImageUrl) {
-                const kontextInstruction = `Keep the exact product object from this image — its shape, colour, material, branding, and all details — but show it from a NEW, DISTINCT perspective: ${perspective}. Remove the white background and any packaging. Place the product naturally into this scene: ${prompt}. This image MUST look clearly different from the other photos in the article — different angle, different framing, different surroundings. Realistic shadows and lighting. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS (other than what's physically on the product), OR WATERMARKS anywhere in the scene; and NO retailer/marketplace names or logos (no Amazon/Prime/store logos), no badges, no price tags, no copyright/trademark symbols. Landscape 4:3 editorial product photography.`
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
-                  input: { image_url: falProductImageUrl, prompt: kontextInstruction, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed },
-                  pollInterval: 3000,
-                })
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                falUrl = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
-                if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-kontext', images: 1 })
-              }
+              // ── Last resort: text-to-image (no product photo, no frame). Make
+              // it vibrant so the product still pops off the page.
               if (!falUrl) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const result = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
-                  input: { prompt: `${prompt}. Shown as a ${perspective}. Editorial product photography, natural lighting, sharp focus, photorealistic, 8K. ABSOLUTELY NO TEXT, LETTERS, WORDS, LOGOS, OR WATERMARKS anywhere in the image; NO retailer/marketplace names or logos (no Amazon/Prime/store logos), no badges, no price tags, no copyright/trademark symbols.`, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed },
+                  input: { prompt: `${prompt}. Shown as a ${perspective}. Place the product in a fitting real-world setting, or against a vibrant, eye-catching colour-pop background with soft studio lighting that makes it shine. Editorial product photography, sharp focus, photorealistic, 8K. ${NO_BRAND_IMAGE_CLAUSE} no added text.`, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed },
                   pollInterval: 3000,
                 })
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any

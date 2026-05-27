@@ -130,13 +130,10 @@ export async function POST(request: Request) {
     const shot = SHOTS[i % SHOTS.length]
     try {
       let url: string | undefined
-      if (frameRefs.length > 0) {
-        const prompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, product and scene EXACTLY — do not change identities, swap the product, or invent anything. Enhance: sharpen + add clarity, boost colour vibrancy and contrast, bright clean lighting, tidy/blur the background into a premium look. Frame as a ${shot}. Remove any burned-in text, captions, watermarks or player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
-        const out = await composeWithNanoBanana({ prompt, referenceImageUrls: [frameRefs[i % frameRefs.length]], aspectRatio: '4:3', numImages: 1 })
-        url = out[0]
-      }
-      if (!url && falProductRef) {
-        const prompt = `Keep the exact product object from this image — its shape, colour, material and details — shown as a ${shot}. Remove the white background and packaging; place it naturally in a clean, bright real-world setting with realistic shadows. Each image must look distinct. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, editorial product photography, photorealistic.`
+      // Primary: re-render the REAL product photo (from the affiliate/Amazon
+      // link) into a fitting setting — accurate product, not a guessed frame.
+      if (falProductRef) {
+        const prompt = `Re-render the EXACT product shown in this reference image — keep its precise shape, colour, materials, proportions and any on-product branding identical; never swap, redesign, or invent a different product. Remove the original background and any retail packaging. Present this same product as a polished editorial photo shown as a ${shot}, placed naturally in a real-world setting that fits how it is actually used. If no realistic setting suits it, stage it on a clean surface against a VIBRANT, eye-catching colour-pop / gradient background with soft studio lighting, reflections and depth that make it shine and pop off the page. Realistic shadows; each image clearly distinct. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
           input: { image_url: falProductRef, prompt, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed: Math.floor(Math.random() * 1e9) + i },
@@ -145,9 +142,15 @@ export async function POST(request: Request) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         url = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
       }
+      // Fallback: retouch a real video frame only if no product photo resolved.
+      if (!url && frameRefs.length > 0) {
+        const prompt = `Turn this REAL video frame into a polished, magazine-quality editorial photo for a product-review article. Keep the SAME real people, product and scene EXACTLY — do not change identities, swap the product, or invent anything. Enhance: sharpen + add clarity, boost colour vibrancy and contrast, bright clean lighting, tidy/blur the background into a premium look. Frame as a ${shot}. Remove any burned-in text, captions, watermarks or player UI. ${NO_BRAND_IMAGE_CLAUSE} Photorealistic, landscape 4:3, no added text.`
+        const out = await composeWithNanoBanana({ prompt, referenceImageUrls: [frameRefs[i % frameRefs.length]], aspectRatio: '4:3', numImages: 1 })
+        url = out[0]
+      }
       if (!url) {
-        // Last resort: text-to-image from the product title (no frame, no photo).
-        const prompt = `Editorial product photo of ${productTitle}, ${shot}, in a clean bright real-world setting, natural lighting, sharp focus, photorealistic, 8K. ${NO_BRAND_IMAGE_CLAUSE} No text, no logos, no people.`
+        // Last resort: text-to-image (no product photo, no frame) — vibrant.
+        const prompt = `Editorial product photo of ${productTitle}, ${shot}, placed in a fitting real-world setting or against a vibrant, eye-catching colour-pop background with soft studio lighting that makes it shine. Sharp focus, photorealistic, 8K. ${NO_BRAND_IMAGE_CLAUSE} No text, no logos, no people.`
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = await fal.subscribe('fal-ai/flux-pro/v1.1' as any, {
           input: { prompt, image_size: 'landscape_4_3', num_inference_steps: 28, guidance_scale: 3.5, num_images: 1, output_format: 'jpeg', safety_tolerance: '2', seed: Math.floor(Math.random() * 1e9) + i },
@@ -160,7 +163,7 @@ export async function POST(request: Request) {
       const media = await wpService.uploadImageFromUrl(url, `${post.slug || 'post'}-body${i + 1}.jpg`)
       const finalUrl = media?.source_url || url
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      recordUsageSafe(user.id, tier, frameRefs.length > 0 ? 'nano-banana' : 'fal-flux-pro-kontext')
+      recordUsageSafe(user.id, tier, falProductRef ? 'fal-flux-pro-kontext' : (frameRefs.length > 0 ? 'nano-banana' : 'fal-flux-pro-v1.1'))
       return { url: finalUrl, alt: `${altBase} — ${shot}` }
     } catch { return null }
   }))
