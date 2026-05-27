@@ -504,7 +504,7 @@ export default function PhotoboothPage() {
                         <select
                           value={s.expression || 'neutral'}
                           onChange={(e) => updateShotExpression(s, e.target.value)}
-                          title="Expression tag — energetic ones (Excited / Surprised / Laughing / Happy) get cast onto your thumbnails; calm ones stay for headshots."
+                          title="Expression tag — only Excited / Surprised / Laughing are cast onto your thumbnails; everything else (incl. Happy & Neutral) stays a headshot."
                           className="mt-2 w-full text-[11px] px-2 py-1 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
                         >
                           {EXPRESSION_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}

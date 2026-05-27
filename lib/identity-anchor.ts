@@ -113,10 +113,11 @@ export async function getOrCreateIdentityAnchor(
  * `{faceId}__{style}__{expression}__{ts}-{rand}.png`; legacy shots without the
  * expression segment never match (so they're skipped). Returns null if none.
  */
-/** Expressions that read as energetic, high-CTR thumbnail faces. Calm shots
- *  (neutral/serious/focused/angry) stay in the bank for headshots & logos but
- *  are NOT cast onto thumbnails — a calm headshot makes a flat thumbnail. */
-const THUMBNAIL_EXPRESSIONS = new Set(['excited', 'surprised', 'laughing', 'happy'])
+/** Only unambiguously high-energy, OPEN expressions read as clickable thumbnail
+ *  faces. Everything else — happy (a soft closed-mouth smile reads calm),
+ *  neutral, serious, focused, angry — stays in the bank for headshots/logos and
+ *  is NOT cast onto thumbnails. A calm face makes a flat thumbnail. */
+const THUMBNAIL_EXPRESSIONS = new Set(['excited', 'surprised', 'laughing'])
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: string): Promise<string | null> {
@@ -143,10 +144,10 @@ async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: str
 
 /**
  * The face reference for a composite (thumbnail / IG). Randomly casts one of the
- * creator's ENERGETIC Photobooth headshots for this face (excited/surprised/
- * laughing/happy) — instant, no generation, with natural variety shot-to-shot —
- * and falls back to the auto-generated cached anchor (of `expression`) when they
- * have no energetic shot. Returns a fal-reachable URL, or null on total failure.
+ * creator's high-energy Photobooth headshots for this face (excited/surprised/
+ * laughing) — instant, no generation, with natural variety shot-to-shot — and
+ * falls back to the auto-generated cached anchor (of `expression`) when they
+ * have no such shot. Returns a fal-reachable URL, or null on total failure.
  */
 export async function getThumbnailFaceRef(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
