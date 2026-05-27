@@ -210,7 +210,7 @@ export default function PhotoboothPage() {
       if (!res.ok) {
         throw new Error((d.error as string) || (
           res.status === 504 || res.status === 502
-            ? 'That took too long and timed out. Please try again — generation can take ~30–60s.'
+            ? 'That took too long and timed out. Please try again — high-quality headshots can take 1–3 minutes.'
             : `Generation failed (HTTP ${res.status}). Please try again.`
         ))
       }
@@ -441,8 +441,10 @@ export default function PhotoboothPage() {
                   disabled={generating || !faceId || noneLeft}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors w-full justify-center"
                 >
-                  {generating ? <><Loader2 size={14} className="animate-spin" /> Generating… (~20s)</> : <><Camera size={14} /> Generate headshot</>}
+                  {generating ? <><Loader2 size={14} className="animate-spin" /> Generating… (up to ~3 min)</> : <><Camera size={14} /> Generate headshot</>}
                 </button>
+
+                <p className="text-[11px] text-center text-[#86868b] dark:text-[#8e8e93] -mt-1">Rendered at high quality — allow <span className="font-medium">1–3 minutes</span> per headshot.</p>
 
                 {usage && usage.limit !== null ? (
                   <p className="text-[11px] text-center text-[#86868b] dark:text-[#8e8e93]">
