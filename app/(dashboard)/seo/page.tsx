@@ -50,7 +50,7 @@ export default function SeoPage() {
   }, [])
   useEffect(() => { load() }, [load])
 
-  const runFix = useCallback(async (postId: string, fix: 'internal_links' | 'faq') => {
+  const runFix = useCallback(async (postId: string, fix: 'internal_links' | 'faq' | 'title_length' | 'image_alt') => {
     setFixing(`${postId}:${fix}`); setFixMsg(null)
     try {
       const res = await fetch('/api/seo/fix', {
@@ -249,7 +249,7 @@ export default function SeoPage() {
                     <div className="px-4 pb-4 pl-12">
                       <ul className="flex flex-col gap-1.5">
                         {p.checks.filter(c => c.weight > 0).map(c => {
-                          const fixable = !c.pass && (c.id === 'internal_links' || c.id === 'faq')
+                          const fixable = !c.pass && ['internal_links', 'faq', 'title_length', 'image_alt'].includes(c.id)
                           const key = `${p.postId}:${c.id}`
                           return (
                             <li key={c.id} className="flex items-start gap-2 text-xs">
@@ -262,7 +262,7 @@ export default function SeoPage() {
                               </span>
                               {fixable && (
                                 <button
-                                  onClick={() => runFix(p.postId, c.id as 'internal_links' | 'faq')}
+                                  onClick={() => runFix(p.postId, c.id as 'internal_links' | 'faq' | 'title_length' | 'image_alt')}
                                   disabled={fixing === key}
                                   className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
                                 >

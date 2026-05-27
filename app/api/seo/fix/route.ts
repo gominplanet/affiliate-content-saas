@@ -18,7 +18,8 @@ import { scrubBanned } from '@/lib/scrub'
 
 export const maxDuration = 120
 
-type FixType = 'internal_links' | 'faq'
+type FixType = 'internal_links' | 'faq' | 'title_length' | 'image_alt'
+const VALID_FIXES: FixType[] = ['internal_links', 'faq', 'title_length', 'image_alt']
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { postId, fix } = (await request.json().catch(() => ({}))) as { postId?: string; fix?: FixType }
-  if (!postId || (fix !== 'internal_links' && fix !== 'faq')) {
+  if (!postId || !fix || !VALID_FIXES.includes(fix)) {
     return NextResponse.json({ error: 'postId and a valid fix are required' }, { status: 400 })
   }
 
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
   const wpService = createWordPressService(wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password, wp.wordpress_api_token || undefined)
 
   let content = post.content as string
+  let title = (post.title as string) || ''
 
   try {
     if (fix === 'internal_links') {
@@ -115,14 +117,50 @@ export async function POST(request: Request) {
       content = relIdx !== -1 ? content.slice(0, relIdx) + block + content.slice(relIdx) : content + block
     }
 
-    // Push to WordPress + persist.
-    await wpService.updatePost(post.wordpress_post_id, { content } as never)
+    if (fix === 'title_length') {
+      const client = createAnthropicClient()
+      const resp = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 60,
+        messages: [{
+          role: 'user',
+          content: `Shorten this product-review blog title to 60 characters or fewer for SEO. Keep the exact product name and the main hook; do not invent anything; no surrounding quotes. Return ONLY the new title.\n\nTitle: ${title}`,
+        }],
+      })
+      recordAnthropicUsage(resp, { userId: user.id, tier: wp?.tier, feature: 'seo_fix_title', model: 'claude-haiku-4-5-20251001' })
+      let next = scrubBanned((resp.content[0] as { type: string; text: string }).text || '').trim().replace(/^["']+|["']+$/g, '')
+      if (!next || next.length > 65) next = title.slice(0, 60).replace(/\s+\S*$/, '').trim() // fallback: clean truncate at a word boundary
+      title = next
+    }
+
+    if (fix === 'image_alt') {
+      const altBase = (title || 'product').replace(/<[^>]+>/g, '').slice(0, 110).replace(/"/g, '&quot;')
+      let added = 0
+      content = content.replace(/<img\b[^>]*>/gi, (tag) => {
+        if (/\balt\s*=\s*["'][^"']+["']/i.test(tag)) return tag // already has non-empty alt
+        added++
+        const cleaned = tag.replace(/\s+alt\s*=\s*["']\s*["']/i, '') // drop any empty alt=""
+        return cleaned.replace(/<img\b/i, `<img alt="${altBase}"`)
+      })
+      if (added === 0) return NextResponse.json({ error: 'No images need alt text on this post.' }, { status: 422 })
+    }
+
+    // Push only what changed to WordPress + persist.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('blog_posts').update({ content }).eq('id', post.id)
+    const wpUpdate: any = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dbUpdate: any = {}
+    if (content !== post.content) { wpUpdate.content = content; dbUpdate.content = content }
+    if (title !== post.title) { wpUpdate.title = title; dbUpdate.title = title }
+    if (Object.keys(wpUpdate).length) await wpService.updatePost(post.wordpress_post_id, wpUpdate as never)
+    if (Object.keys(dbUpdate).length) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('blog_posts').update(dbUpdate).eq('id', post.id)
+    }
 
     // Re-score and refresh the cache so the UI reflects the fix immediately.
     const host = wpBase
-    const { score, checks } = scorePostSeo({ title: post.title || '', contentHtml: content, siteHost: host, postType: post.post_type || 'review' })
+    const { score, checks } = scorePostSeo({ title, contentHtml: content, siteHost: host, postType: post.post_type || 'review' })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     try { await (supabase as any).from('post_seo').update({ seo_score: score, score_detail: checks, checked_at: new Date().toISOString() }).eq('post_id', post.id) } catch { /* non-fatal */ }
 
