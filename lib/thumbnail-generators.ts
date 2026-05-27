@@ -91,19 +91,30 @@ export async function applyMoodyGrade(url: string): Promise<string> {
     const w = meta.width ?? 1280
     const h = meta.height ?? 720
 
-    // Radial vignette: white (no change under multiply) through the centre where
-    // the face/product sit, falling to a mid-grey at the edges so corners and
-    // the background behind the creator darken. cy is biased slightly up (42%)
-    // so the typically chest-up subject stays in the bright zone.
-    const vignette = Buffer.from(
-      `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">` +
-        `<defs><radialGradient id="v" cx="50%" cy="42%" r="78%">` +
-        `<stop offset="48%" stop-color="#ffffff"/>` +
-        `<stop offset="100%" stop-color="#6e6e6e"/>` +
-        `</radialGradient></defs>` +
-        `<rect width="${w}" height="${h}" fill="url(#v)"/>` +
-      `</svg>`,
-    )
+    // Radial vignette computed as a RAW pixel buffer (deliberately NOT an SVG):
+    // SVG gradients depend on librsvg being present and behaving identically in
+    // the serverless runtime, which isn't guaranteed. This is pure pixel math +
+    // a core libvips multiply, so it's identical on every runtime. White (255 =
+    // no change under multiply) through the centre where the face + product sit,
+    // falling to a mid-grey at the corners so the background darkens. cy is
+    // biased up (42%) so the chest-up subject stays in the bright zone.
+    const cx = w * 0.5, cy = h * 0.42
+    const maxR = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy))
+    const INNER = 0.45   // inner fraction of the radius kept fully bright
+    const EDGE = 120     // corner multiplier value (120/255 ≈ 0.47 brightness)
+    const vig = Buffer.alloc(w * h * 3)
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const d = Math.hypot(x - cx, y - cy) / maxR
+        let v = 255
+        if (d > INNER) {
+          const t = Math.min(1, (d - INNER) / (1 - INNER))
+          v = Math.round(255 - t * (255 - EDGE))
+        }
+        const i = (y * w + x) * 3
+        vig[i] = vig[i + 1] = vig[i + 2] = v
+      }
+    }
 
     const out = await base
       // Slight global darken + richer colour.
@@ -111,7 +122,7 @@ export async function applyMoodyGrade(url: string): Promise<string> {
       // Contrast bump: slope > 1 with a negative offset deepens the shadows.
       .linear(1.12, -12)
       // Multiply the vignette so the centre is untouched and the edges fall off.
-      .composite([{ input: vignette, blend: 'multiply' }])
+      .composite([{ input: vig, raw: { width: w, height: h, channels: 3 }, blend: 'multiply' }])
       .jpeg({ quality: 90 })
       .toBuffer()
 
