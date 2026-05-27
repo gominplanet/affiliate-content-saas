@@ -75,6 +75,13 @@ export async function GET() {
   // Which post slugs are actually in the site's sitemap (Google's discovery
   // path). `found:false` → couldn't read a sitemap, so we don't flag "missing".
   const sitemap = wpUrl ? await fetchSitemapSlugs(wpUrl) : { slugs: new Set<string>(), found: false }
+  // Guard against false "missing" positives from slug drift: WordPress can
+  // store a permalink slug that differs from the one MVP recorded (dedupe
+  // suffixes like "-2", manual edits). If the sitemap clearly holds at least as
+  // many URLs as we have posts, it's complete — treat every post as present
+  // rather than alarming on a slug mismatch. We only flag specific posts when
+  // the sitemap genuinely has fewer entries than the catalog.
+  const sitemapComplete = sitemap.found && sitemap.slugs.size >= posts.length
 
   // Match a post's slug to a GSC page URL.
   const findPageForSlug = (slug: string): string | null => {
@@ -121,7 +128,7 @@ export async function GET() {
       postId: p.id, title: p.title, slug: p.slug, url,
       score, checks,
       indexed: indexedState === 'indexed' ? true : indexedState === 'not_indexed' ? false : null,
-      inSitemap: sitemap.found ? sitemap.slugs.has((p.slug || '').toLowerCase()) : null,
+      inSitemap: !sitemap.found ? null : (sitemapComplete ? true : sitemap.slugs.has((p.slug || '').toLowerCase())),
       coverageState, lastCrawl,
       clicks: perf?.clicks ?? cached?.clicks ?? 0,
       impressions: perf?.impressions ?? cached?.impressions ?? 0,
