@@ -62,7 +62,14 @@ function styleFromName(name: string): string {
   return (parts[1] || 'studio').split('-')[0] || 'studio'
 }
 
-interface PersistedShot { path: string; url: string; style: string; createdAt: string | null }
+/** The expression tag from the filename (the source of truth the thumbnail
+ *  caster reads). Legacy shots without the segment read as 'neutral'. */
+function expressionFromName(name: string): string {
+  const parts = String(name).split('__')
+  return (parts.length >= 3 && parts[2]) ? parts[2] : 'neutral'
+}
+
+interface PersistedShot { path: string; url: string; style: string; expression: string; createdAt: string | null }
 
 /** List the user's most-recent saved headshots (newest first), with signed URLs. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,7 +85,7 @@ async function listShots(supabase: any, userId: string): Promise<PersistedShot[]
     const path = `${folder}/${f.name}`
     const { data: signed } = await supabase.storage.from(SHOTS_BUCKET).createSignedUrl(path, SIGNED_TTL)
     if (signed?.signedUrl) {
-      out.push({ path, url: signed.signedUrl, style: styleFromName(String(f.name)), createdAt: f.created_at ?? null })
+      out.push({ path, url: signed.signedUrl, style: styleFromName(String(f.name)), expression: expressionFromName(String(f.name)), createdAt: f.created_at ?? null })
     }
   }
   return out
@@ -266,6 +273,41 @@ export async function GET() {
       listShots(supabase, user.id).catch(() => [] as PersistedShot[]),
     ])
     return NextResponse.json({ ok: true, usage, shots })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
+
+/**
+ * PATCH /api/photobooth { path, expression } — re-tag a saved headshot's
+ * expression. The filename IS the tag the thumbnail caster reads, so this
+ * renames the object (preserving face id + style). Returns the new path + URL.
+ */
+export async function PATCH(request: Request) {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { path, expression } = await request.json().catch(() => ({})) as { path?: string; expression?: string }
+    const folderPrefix = `${shotsFolder(user.id)}/`
+    if (!path || !path.startsWith(folderPrefix)) return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
+    if (!expression || !EXPRESSIONS[expression]) return NextResponse.json({ error: 'Invalid expression' }, { status: 400 })
+
+    // Rebuild `{faceId}__{style}__{expression}__{ts}-{rand}.png`, keeping the
+    // face id + style from the old name. A fresh suffix avoids any collision.
+    const name = path.slice(folderPrefix.length)
+    const parts = name.replace(/\.png$/i, '').split('__')
+    const faceId = parts[0] || 'face'
+    const style = (parts[1] || 'studio').split('-')[0] || 'studio'
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const newPath = `${folderPrefix}${faceId}__${style}__${expression}__${suffix}.png`
+    if (newPath === path) return NextResponse.json({ ok: true, path, expression })
+
+    const { error } = await supabase.storage.from(SHOTS_BUCKET).move(path, newPath)
+    if (error) throw error
+    const { data: signed } = await supabase.storage.from(SHOTS_BUCKET).createSignedUrl(newPath, SIGNED_TTL)
+    return NextResponse.json({ ok: true, path: newPath, url: signed?.signedUrl, expression })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

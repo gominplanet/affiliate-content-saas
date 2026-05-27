@@ -59,7 +59,7 @@ const SIZE_OPTS: Array<{ key: '1024x1024' | '1024x1536' | '1536x1024'; label: st
   { key: '1536x1024', label: 'Landscape (banners)' },
 ]
 
-interface Shot { id: string; url: string; style: string; path?: string }
+interface Shot { id: string; url: string; style: string; expression?: string; path?: string }
 interface UsageInfo { used: number; limit: number | null; remaining: number | null; resetLabel: string }
 
 export default function PhotoboothPage() {
@@ -108,8 +108,8 @@ export default function PhotoboothPage() {
       const ud = await ur.json()
       if (ud?.usage) setUsage(ud.usage as UsageInfo)
       if (Array.isArray(ud?.shots)) {
-        setShots((ud.shots as Array<{ path: string; url: string; style: string }>).map(s => ({
-          id: s.path, url: s.url, style: s.style, path: s.path,
+        setShots((ud.shots as Array<{ path: string; url: string; style: string; expression?: string }>).map(s => ({
+          id: s.path, url: s.url, style: s.style, expression: s.expression || 'neutral', path: s.path,
         })))
       }
     } catch { /* ignore */ }
@@ -218,6 +218,7 @@ export default function PhotoboothPage() {
         id: (d.path as string) || crypto.randomUUID(),
         url: d.image as string,
         style: d.style as string,
+        expression,
         path: (d.path as string) || undefined,
       }
       setShots(prev => [newShot, ...prev].slice(0, 20))
@@ -250,6 +251,26 @@ export default function PhotoboothPage() {
         body: JSON.stringify({ path: shot.path }),
       }).catch(() => { /* ignore */ })
     }
+  }
+
+  // Re-tag a shot's expression. The server renames the file (the tag the
+  // thumbnail caster reads) and returns the new path/URL. Optimistic.
+  async function updateShotExpression(shot: Shot, expr: string) {
+    if (shot.expression === expr) return
+    setShots(prev => prev.map(s => s.id === shot.id ? { ...s, expression: expr } : s))
+    if (!shot.path) return
+    try {
+      const res = await fetch('/api/photobooth', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: shot.path, expression: expr }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d.path) {
+        setShots(prev => prev.map(s => s.id === shot.id
+          ? { ...s, id: d.path as string, path: d.path as string, url: (d.url as string) || s.url, expression: expr }
+          : s))
+      }
+    } catch { /* keep the optimistic tag */ }
   }
 
   return (
@@ -480,9 +501,17 @@ export default function PhotoboothPage() {
                         </button>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={s.url} alt={`Headshot — ${s.style}`} className="w-full rounded-lg" />
+                        <select
+                          value={s.expression || 'neutral'}
+                          onChange={(e) => updateShotExpression(s, e.target.value)}
+                          title="Expression tag — energetic ones (Excited / Surprised / Laughing / Happy) get cast onto your thumbnails; calm ones stay for headshots."
+                          className="mt-2 w-full text-[11px] px-2 py-1 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+                        >
+                          {EXPRESSION_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                        </select>
                         <button
                           onClick={() => downloadShot(s)}
-                          className="mt-2 inline-flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90"
+                          className="mt-1.5 inline-flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90"
                         >
                           <Download size={12} /> Download
                         </button>
