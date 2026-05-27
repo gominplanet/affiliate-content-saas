@@ -306,6 +306,35 @@ export class WordPressService {
     return res.json()
   }
 
+  /**
+   * IDs of every published post on the site. Used to reconcile our catalog
+   * against what's ACTUALLY live — a post deleted/trashed in WordPress lingers
+   * in our DB and would otherwise show as a phantom (404 link, "not on Google",
+   * source video stuck on "published"). Goes through `request()` so it inherits
+   * the browser-like UA + auth (+ nonce) path that survives Hostinger/SiteGround
+   * WAFs — a plain bot-UA fetch gets challenged and silently returns garbage.
+   * Returns null if the first page can't be read, so callers skip reconciliation
+   * (a transient error must never hide real posts).
+   */
+  async getPublishedPostIds(): Promise<Set<number> | null> {
+    const ids = new Set<number>()
+    for (let page = 1; page <= 10; page++) {   // up to 1000 published posts
+      let batch: Array<{ id?: number }>
+      try {
+        batch = await this.request<Array<{ id?: number }>>(
+          `/posts?per_page=100&page=${page}&status=publish&_fields=id`,
+        )
+      } catch {
+        // First page failing → can't read the site; a later page → past the end.
+        return page === 1 ? null : (ids.size ? ids : null)
+      }
+      if (!Array.isArray(batch) || batch.length === 0) break
+      for (const p of batch) { if (typeof p.id === 'number') ids.add(p.id) }
+      if (batch.length < 100) break
+    }
+    return ids.size ? ids : null
+  }
+
   // ── Tags ──────────────────────────────────────────────────────────────────
 
   async findOrCreateTag(name: string): Promise<number> {

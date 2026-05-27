@@ -16,7 +16,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getValidGscToken, querySearchAnalytics, inspectUrl } from '@/lib/gsc'
 import { scorePostSeo } from '@/lib/seo-score'
 import { fetchSitemapSlugs } from '@/lib/sitemap'
-import { fetchLiveWpPostIds, wpBasicAuth } from '@/lib/wp-live-posts'
+import { createWordPressService } from '@/services/wordpress'
 
 export const maxDuration = 120
 
@@ -33,7 +33,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await (supabase as any)
     .from('integrations')
-    .select('wordpress_url,wordpress_username,wordpress_app_password,gsc_property,gsc_oauth_access_token')
+    .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,gsc_property,gsc_oauth_access_token')
     .eq('user_id', user.id)
     .single()
   const wpUrl: string = (integ?.wordpress_url || '').replace(/\/$/, '')
@@ -55,7 +55,13 @@ export async function GET() {
   // catalog row whose WP post no longer exists. If the site's REST can't be
   // read (liveIds === null) or returns nothing usable, show everything — never
   // hide real posts on a transient error.
-  const liveIds = await fetchLiveWpPostIds(wpUrl, wpBasicAuth(integ?.wordpress_username, integ?.wordpress_app_password))
+  let liveIds: Set<number> | null = null
+  if (integ?.wordpress_url && integ?.wordpress_username && integ?.wordpress_app_password) {
+    try {
+      const wpSvc = createWordPressService(integ.wordpress_url, integ.wordpress_username, integ.wordpress_app_password, integ.wordpress_api_token || undefined)
+      liveIds = await wpSvc.getPublishedPostIds()
+    } catch { liveIds = null }
+  }
   const livePosts = (liveIds && liveIds.size > 0)
     ? posts.filter(p => p.wordpress_post_id != null && liveIds.has(p.wordpress_post_id))
     : posts

@@ -14,7 +14,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { fetchLiveWpPostIds, wpBasicAuth } from '@/lib/wp-live-posts'
+import { createWordPressService } from '@/services/wordpress'
 
 export const maxDuration = 30
 
@@ -26,11 +26,16 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await (supabase as any)
     .from('integrations')
-    .select('wordpress_url,wordpress_username,wordpress_app_password')
+    .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
     .eq('user_id', user.id)
     .single()
 
-  const wpUrl: string = (integ?.wordpress_url || '').replace(/\/$/, '')
-  const ids = await fetchLiveWpPostIds(wpUrl, wpBasicAuth(integ?.wordpress_username, integ?.wordpress_app_password))
+  let ids: Set<number> | null = null
+  if (integ?.wordpress_url && integ?.wordpress_username && integ?.wordpress_app_password) {
+    try {
+      const wpSvc = createWordPressService(integ.wordpress_url, integ.wordpress_username, integ.wordpress_app_password, integ.wordpress_api_token || undefined)
+      ids = await wpSvc.getPublishedPostIds()
+    } catch { ids = null }
+  }
   return NextResponse.json({ liveIds: ids ? Array.from(ids) : null })
 }
