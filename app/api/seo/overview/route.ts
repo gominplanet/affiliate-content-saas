@@ -24,6 +24,34 @@ const STALE_MS = 24 * 60 * 60 * 1000
 
 function ymd(d: Date): string { return d.toISOString().slice(0, 10) }
 
+/**
+ * Live published post IDs from the WordPress site, so the SEO hub reflects what
+ * is ACTUALLY on the site. A post deleted/trashed in WordPress still lingers in
+ * our blog_posts table and would otherwise score here as a phantom 404 (Google
+ * rejects indexing for it, it shows "URL is not on Google", etc.). Returns null
+ * if the site's REST API can't be read — callers then skip reconciliation and
+ * show everything, so a transient error never hides real posts.
+ */
+async function fetchLiveWpPostIds(wpUrl: string): Promise<Set<number> | null> {
+  if (!wpUrl) return null
+  try {
+    const ids = new Set<number>()
+    for (let page = 1; page <= 5; page++) {   // up to 500 published posts
+      const r = await fetch(`${wpUrl}/wp-json/wp/v2/posts?per_page=100&page=${page}&_fields=id`, {
+        headers: { 'User-Agent': 'MVPAffiliate/1.0' },
+        signal: AbortSignal.timeout(10000),
+      })
+      // A 400 on a page past the last is expected — keep whatever we gathered.
+      if (!r.ok) return ids.size ? ids : null
+      const arr = await r.json().catch(() => null)
+      if (!Array.isArray(arr)) return ids.size ? ids : null
+      for (const it of arr) { const id = (it as { id?: unknown }).id; if (typeof id === 'number') ids.add(id) }
+      if (arr.length < 100) break
+    }
+    return ids.size ? ids : null
+  } catch { return null }
+}
+
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -48,6 +76,16 @@ export async function GET() {
     .order('published_at', { ascending: false })
   type Post = { id: string; title: string; slug: string; content: string; post_type: string | null; wordpress_post_id: number | null; published_at: string | null }
   const posts = (postsRaw as Post[] | null) ?? []
+
+  // Reconcile against the LIVE site: a post deleted/trashed in WordPress still
+  // lingers in blog_posts and would score as a phantom 404 here. Drop any
+  // catalog row whose WP post no longer exists. If the site's REST can't be
+  // read (liveIds === null) or returns nothing usable, show everything — never
+  // hide real posts on a transient error.
+  const liveIds = await fetchLiveWpPostIds(wpUrl)
+  const livePosts = (liveIds && liveIds.size > 0)
+    ? posts.filter(p => p.wordpress_post_id != null && liveIds.has(p.wordpress_post_id))
+    : posts
 
   // Existing cache (for serving stale indexing without re-inspecting).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -81,7 +119,7 @@ export async function GET() {
   // many URLs as we have posts, it's complete — treat every post as present
   // rather than alarming on a slug mismatch. We only flag specific posts when
   // the sitemap genuinely has fewer entries than the catalog.
-  const sitemapComplete = sitemap.found && sitemap.slugs.size >= posts.length
+  const sitemapComplete = sitemap.found && sitemap.slugs.size >= livePosts.length
 
   // Match a post's slug to a GSC page URL.
   const findPageForSlug = (slug: string): string | null => {
