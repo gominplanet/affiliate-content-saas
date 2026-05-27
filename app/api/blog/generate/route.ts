@@ -10,6 +10,7 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
+import { pickProductReferenceImage } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
@@ -1025,9 +1026,13 @@ async function handleGenerate(request: Request) {
             try {
               const p = await fetchAmazonProduct(effectiveAsin)
               if (p.title) { productTitleForPrompts = p.title; schemaProductName = p.title }
-              if (p.imageUrl) schemaProductImage = schemaProductImage || p.imageUrl
-              if (!falProductImageUrl && p.imageUrl) {
-                const imgRes = await fetch(p.imageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+              // The Amazon main image is often a multi-panel lifestyle collage;
+              // vision-pick the cleanest isolated product shot so Kontext
+              // re-renders the ACTUAL product, not a prop from the collage.
+              const cleanImg = (await pickProductReferenceImage(p.images, p.title || productTitleForPrompts, { userId: user.id, tier: (wp?.tier as string) ?? null })) || p.imageUrl
+              if (cleanImg) schemaProductImage = schemaProductImage || cleanImg
+              if (!falProductImageUrl && cleanImg) {
+                const imgRes = await fetch(cleanImg, { headers: { 'User-Agent': 'Mozilla/5.0' } })
                 if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
               }
             } catch { /* fall back to text-only prompts */ }

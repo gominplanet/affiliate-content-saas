@@ -13,6 +13,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
+import { pickProductReferenceImage } from '@/lib/product-image'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchProductImageFromPage } from '@/services/research'
 import { normalizeTier, allowedBlogImages } from '@/lib/tier'
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
     }
     if (!asin && pageUrl) asin = extractAsin(pageUrl)
     if (asin) {
-      try { const p = await fetchAmazonProduct(asin); if (p.title) productTitle = p.title; productImageUrl = p.imageUrl || null } catch { /* ignore */ }
+      try { const p = await fetchAmazonProduct(asin); if (p.title) productTitle = p.title; productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null } catch { /* ignore */ }
     }
     if (!productImageUrl && pageUrl) {
       try { productImageUrl = await fetchProductImageFromPage(pageUrl) } catch { /* ignore */ }
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
     const { data: camp } = await (supabase as any)
       .from('campaigns').select('asin').eq('user_id', user.id).eq('blog_post_id', post.id).maybeSingle()
     if (camp?.asin) {
-      try { const p = await fetchAmazonProduct(camp.asin); if (p.title) productTitle = p.title; productImageUrl = p.imageUrl || null } catch { /* ignore */ }
+      try { const p = await fetchAmazonProduct(camp.asin); if (p.title) productTitle = p.title; productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null } catch { /* ignore */ }
     }
   }
 

@@ -6,6 +6,9 @@ export interface AmazonProduct {
   price: string | null
   rating: string | null
   imageUrl: string | null
+  /** All gallery hi-res images (main first). Lets a vision picker choose the
+   *  cleanest isolated product shot instead of a lifestyle/collage main image. */
+  images: string[]
 }
 
 /** True if `token` looks like a real Amazon ASIN rather than an ordinary
@@ -133,5 +136,10 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
     html.match(/"large"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/)?.[1] ||
     null
 
-  return { asin, title, bullets: bullets.slice(0, 6), description, price, rating, imageUrl }
+  // Full gallery (hi-res) so callers can vision-pick the cleanest product
+  // shot — the main image is often a multi-panel lifestyle collage.
+  const galleryImages = Array.from(html.matchAll(/"hiRes"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/g)).map(m => m[1])
+  const images = Array.from(new Set([imageUrl, ...galleryImages].filter((u): u is string => !!u))).slice(0, 8)
+
+  return { asin, title, bullets: bullets.slice(0, 6), description, price, rating, imageUrl, images }
 }
