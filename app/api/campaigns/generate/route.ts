@@ -23,6 +23,7 @@ import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
+import { pickProductReferenceImage } from '@/lib/product-image'
 import { researchProduct } from '@/services/research'
 import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
@@ -281,9 +282,12 @@ export async function POST(request: Request) {
     // we don't disturb the already-published title/content/categories.
     let heroKind: 'ai' | 'product' | null = null
     try {
+      // Vision-pick the clean isolated product shot (the Amazon main image is
+      // often a lifestyle collage) so the hero grounds on the real product.
+      const cleanProductImage = (await pickProductReferenceImage(product.images, product.title, { userId: user.id, tier })) || product.imageUrl
       const hero = await buildCampaignHero({
         heroPrompt: generated.imagePrompts?.hero,
-        productImageUrl: product.imageUrl,
+        productImageUrl: cleanProductImage,
         ctx: { userId: user.id, tier },
       })
       if (hero) {

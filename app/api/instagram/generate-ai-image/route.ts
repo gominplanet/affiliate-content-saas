@@ -21,6 +21,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
+import { pickProductReferenceImage } from '@/lib/product-image'
 import { fal } from '@fal-ai/client'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
@@ -363,7 +364,9 @@ export async function POST(request: Request) {
         productTitle = p.title
         productDescription = p.description
         productBullets = p.bullets
-        productImageUrl = p.imageUrl
+        // Vision-pick the clean isolated product shot (the Amazon main image is
+        // often a lifestyle collage) so the composed image grounds on the real product.
+        productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id })) || p.imageUrl
       } catch { /* non-fatal */ }
     }
 

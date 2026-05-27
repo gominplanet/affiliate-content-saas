@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
+import { pickProductReferenceImage } from '@/lib/product-image'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchProductImageFromPage } from '@/services/research'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
@@ -696,7 +697,9 @@ export async function POST(request: Request) {
     if (asin) {
       try {
         const p = await fetchAmazonProduct(asin)
-        productImageUrl = p.imageUrl
+        // Vision-pick the clean isolated product shot (Amazon's main image is
+        // often a lifestyle collage) so the thumbnail grounds on the real product.
+        productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id })) || p.imageUrl
         if (!productTitle) productTitle = p.title
         if (!productDescription) productDescription = p.description
         if (!productBullets.length) productBullets = p.bullets
