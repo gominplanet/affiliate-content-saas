@@ -50,7 +50,7 @@ export default function SeoPage() {
   }, [])
   useEffect(() => { load() }, [load])
 
-  const runFix = useCallback(async (postId: string, fix: 'internal_links' | 'faq' | 'title_length' | 'image_alt') => {
+  const runFix = useCallback(async (postId: string, fix: 'internal_links' | 'faq' | 'title_length' | 'image_alt' | 'all') => {
     setFixing(`${postId}:${fix}`); setFixMsg(null)
     try {
       const res = await fetch('/api/seo/fix', {
@@ -58,8 +58,12 @@ export default function SeoPage() {
         body: JSON.stringify({ postId, fix }),
       })
       const d = await res.json()
-      if (d.error) setFixMsg({ ok: false, text: d.error })
-      else { setFixMsg({ ok: true, text: `Fixed — re-scored to ${d.score}/100 and republished.` }); await load() }
+      if (d.error) { setFixMsg({ ok: false, text: d.error }); return }
+      const n = Array.isArray(d.applied) ? d.applied.length : 1
+      setFixMsg(n === 0
+        ? { ok: true, text: 'Nothing left to auto-fix on this post.' }
+        : { ok: true, text: `Applied ${n} fix${n !== 1 ? 'es' : ''} — re-scored to ${d.score}/100 and republished.` })
+      await load()
     } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
     finally { setFixing(null) }
   }, [load])
@@ -247,6 +251,20 @@ export default function SeoPage() {
                   </button>
                   {open && (
                     <div className="px-4 pb-4 pl-12">
+                      {(() => {
+                        const fixableCount = p.checks.filter(c => !c.pass && ['internal_links', 'faq', 'title_length', 'image_alt'].includes(c.id)).length
+                        if (fixableCount < 2) return null  // a single fix → just use its own button
+                        const busy = fixing === `${p.postId}:all`
+                        return (
+                          <button
+                            onClick={() => runFix(p.postId, 'all')}
+                            disabled={!!fixing}
+                            className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                          >
+                            {busy ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} Fix all {fixableCount} automatically
+                          </button>
+                        )
+                      })()}
                       <ul className="flex flex-col gap-1.5">
                         {p.checks.filter(c => c.weight > 0).map(c => {
                           const fixable = !c.pass && ['internal_links', 'faq', 'title_length', 'image_alt'].includes(c.id)
