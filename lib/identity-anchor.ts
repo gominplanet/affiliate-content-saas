@@ -113,24 +113,19 @@ export async function getOrCreateIdentityAnchor(
  * `{faceId}__{style}__{expression}__{ts}-{rand}.png`; legacy shots without the
  * expression segment never match (so they're skipped). Returns null if none.
  */
-/** Expressions that read well as thumbnail faces — preferred over a calm shot. */
-const PUNCHY_EXPRESSIONS = new Set(['excited', 'surprised', 'laughing', 'happy'])
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: string): Promise<string | null> {
   try {
     const folder = `${userId}/photobooth`
-    const { data: files } = await supabase.storage.from('headshots').list(folder, {
-      limit: 200, sortBy: { column: 'created_at', order: 'desc' },
-    })
-    // This face's headshots, newest first.
+    const { data: files } = await supabase.storage.from('headshots').list(folder, { limit: 200 })
+    // Every headshot the creator has KEPT for this face is fair game — they
+    // curate the bank (and the 10/face cap keeps it tidy), so we just randomly
+    // cast one. That gives natural variety thumbnail-to-thumbnail and respects
+    // whatever expressions they chose to keep, instead of forcing one mood.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mine = ((files ?? []) as any[]).filter(f => typeof f?.name === 'string' && f.name.split('__')[0] === faceId)
     if (mine.length === 0) return null
-    // Prefer a punchy-expression headshot (best for thumbnails); otherwise use
-    // the most recent one the creator made — whatever it is. Older headshots
-    // predate the expression tag and simply fall into "most recent".
-    const pick = mine.find(f => PUNCHY_EXPRESSIONS.has(String(f.name).split('__')[2])) ?? mine[0]
+    const pick = mine[Math.floor(Math.random() * mine.length)]
     const { data: file } = await supabase.storage.from('headshots').download(`${folder}/${pick.name}`)
     if (!file) return null
     const url = await fal.storage.upload(file as Blob)
@@ -139,10 +134,11 @@ async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: str
 }
 
 /**
- * The face reference for a composite (thumbnail / IG). Prefers the creator's OWN
- * Photobooth headshot of `expression` — instant, no generation, the face they
- * picked — and falls back to the auto-generated cached anchor only when they
- * haven't made one. Returns a fal-reachable URL, or null on total failure.
+ * The face reference for a composite (thumbnail / IG). Randomly casts one of the
+ * creator's OWN Photobooth headshots for this face — instant, no generation,
+ * faces they made and kept, with natural variety shot-to-shot — and falls back
+ * to the auto-generated cached anchor (of `expression`) only when they haven't
+ * made any. Returns a fal-reachable URL, or null on total failure.
  */
 export async function getThumbnailFaceRef(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
