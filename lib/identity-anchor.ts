@@ -113,21 +113,25 @@ export async function getOrCreateIdentityAnchor(
  * `{faceId}__{style}__{expression}__{ts}-{rand}.png`; legacy shots without the
  * expression segment never match (so they're skipped). Returns null if none.
  */
+/** Expressions that read well as thumbnail faces — preferred over a calm shot. */
+const PUNCHY_EXPRESSIONS = new Set(['excited', 'surprised', 'laughing', 'happy'])
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: string, expression: string): Promise<string | null> {
+async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: string): Promise<string | null> {
   try {
     const folder = `${userId}/photobooth`
     const { data: files } = await supabase.storage.from('headshots').list(folder, {
       limit: 200, sortBy: { column: 'created_at', order: 'desc' },
     })
-    // List is newest-first → the first match is the most recent.
+    // This face's headshots, newest first.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const match = ((files ?? []) as any[]).find(f => {
-      const parts = typeof f?.name === 'string' ? f.name.split('__') : []
-      return parts[0] === faceId && parts[2] === expression
-    })
-    if (!match) return null
-    const { data: file } = await supabase.storage.from('headshots').download(`${folder}/${match.name}`)
+    const mine = ((files ?? []) as any[]).filter(f => typeof f?.name === 'string' && f.name.split('__')[0] === faceId)
+    if (mine.length === 0) return null
+    // Prefer a punchy-expression headshot (best for thumbnails); otherwise use
+    // the most recent one the creator made — whatever it is. Older headshots
+    // predate the expression tag and simply fall into "most recent".
+    const pick = mine.find(f => PUNCHY_EXPRESSIONS.has(String(f.name).split('__')[2])) ?? mine[0]
+    const { data: file } = await supabase.storage.from('headshots').download(`${folder}/${pick.name}`)
     if (!file) return null
     const url = await fal.storage.upload(file as Blob)
     return url || null
@@ -147,7 +151,7 @@ export async function getThumbnailFaceRef(
   opts: { faceId?: string | null; sourceImages: string[]; expression: string; tier?: string | null },
 ): Promise<string | null> {
   if (opts.faceId) {
-    const own = await findPhotoboothHeadshot(supabase, userId, opts.faceId, opts.expression)
+    const own = await findPhotoboothHeadshot(supabase, userId, opts.faceId)
     if (own) return own
   }
   return getOrCreateIdentityAnchor(supabase, userId, opts.sourceImages, { tier: opts.tier ?? null, expression: opts.expression })
