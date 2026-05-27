@@ -28,6 +28,11 @@ interface Overview {
 
 const scoreColor = (s: number) => (s >= 80 ? '#34c759' : s >= 60 ? '#ff9500' : '#ff3b30')
 
+// Google Search Console deep links expect LITERAL ':' and '/' in resource_id
+// and id. encodeURIComponent turns them into %3A / %2F, which makes GSC return
+// a 404. Encode everything else (spaces, &, #, ?) but keep those two literal.
+const gscParam = (s: string) => encodeURIComponent(s).replace(/%3A/gi, ':').replace(/%2F/gi, '/')
+
 export default function SeoPage() {
   const [data, setData] = useState<Overview | null>(null)
   const [loading, setLoading] = useState(true)
@@ -296,7 +301,7 @@ export default function SeoPage() {
                     )}
                     {data.connected && data.property && p.url && p.indexed !== true && (
                       <a
-                        href={`https://search.google.com/search-console/inspect?resource_id=${encodeURIComponent(data.property)}&id=${encodeURIComponent(p.url)}`}
+                        href={`https://search.google.com/search-console/inspect?resource_id=${gscParam(data.property)}&id=${gscParam(p.url)}`}
                         target="_blank" rel="noopener noreferrer"
                         onClick={e => e.stopPropagation()}
                         className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline flex-shrink-0"
@@ -410,7 +415,7 @@ export default function SeoPage() {
  */
 function IndexingGuide({ property, connected }: { property: string | null; connected: boolean }) {
   const [open, setOpen] = useState(false)
-  const rid = property ? encodeURIComponent(property) : null
+  const rid = property ? gscParam(property) : null
   const sitemapsUrl = rid
     ? `https://search.google.com/search-console/sitemaps?resource_id=${rid}`
     : 'https://search.google.com/search-console'
