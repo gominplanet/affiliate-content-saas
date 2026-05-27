@@ -19,7 +19,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { TIERS, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier } from '@/lib/tier'
 
 // LoRA training retired (2026-05-22): gpt-image-1/2 uses the uploaded photos
 // directly as identity references at generation time — no training job, no
@@ -28,7 +28,7 @@ import { TIERS, type Tier } from '@/lib/tier'
 export const maxDuration = 30
 
 const MIN_IMAGES = 4
-const MAX_IMAGES = 12
+const MAX_IMAGES = 20
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -50,19 +50,35 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // ── Pro/Admin gate ────────────────────────────────────────────────────────
+  // ── Paid-tier gate (maxFaces 0 = feature off for this tier) ───────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
     .from('integrations').select('tier').eq('user_id', user.id).single()
-  const tier = (intRow?.tier as Tier) ?? 'trial'
-  if (tier !== 'pro' && tier !== 'admin') {
+  const tier = normalizeTier(intRow?.tier)
+  const maxFaces = TIERS[tier].maxFaces
+  if (maxFaces === 0) {
     return NextResponse.json({
-      error: `Face training is a Pro feature. Upgrade to ${TIERS.pro.label} to train your face for thumbnails.`,
+      error: `Saved faces are available on paid plans. Upgrade to ${TIERS.creator.label} or ${TIERS.pro.label} to put your face in thumbnails and posts.`,
       limitReached: true,
-      cap: 'face_training',
+      cap: 'face_models',
       currentTier: tier,
-      upgrade: { tier: 'pro', label: TIERS.pro.label, limit: null },
+      upgrade: { tier: 'creator', label: TIERS.creator.label, limit: TIERS.creator.maxFaces },
     }, { status: 403 })
+  }
+
+  // ── Face count cap (cost guard — each face seeds cached gpt-image anchors) ─
+  if (maxFaces !== null) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (supabase as any)
+      .from('face_models').select('id', { count: 'exact', head: true }).eq('user_id', user.id)
+    if ((count ?? 0) >= maxFaces) {
+      return NextResponse.json({
+        error: `You can keep up to ${maxFaces} faces. Delete one to add another.`,
+        limitReached: true,
+        cap: 'face_models',
+        currentTier: tier,
+      }, { status: 429 })
+    }
   }
 
   const { name, imagePaths } = await request.json() as {

@@ -136,7 +136,10 @@ export default function PhotoboothPage() {
     return () => clearInterval(t)
   }, [faces])
 
-  const isPro = tier === 'pro' || tier === 'admin'
+  const isPaid = tier === 'creator' || tier === 'pro' || tier === 'admin'
+  const isAdmin = tier === 'admin'
+  const MAX_FACES = 2
+  const atFaceCap = !isAdmin && faces.length >= MAX_FACES
   const noneLeft = !!usage && usage.remaining === 0
   const hasFace = faces.length > 0
 
@@ -217,7 +220,7 @@ export default function PhotoboothPage() {
         style: d.style as string,
         path: (d.path as string) || undefined,
       }
-      setShots(prev => [newShot, ...prev].slice(0, 5))
+      setShots(prev => [newShot, ...prev].slice(0, 20))
     } catch (e) {
       setGenError(e instanceof Error ? e.message : 'Generation failed')
     } finally {
@@ -256,13 +259,13 @@ export default function PhotoboothPage() {
         subtitle="Teach the AI your face once — then put the real you in every thumbnail, post, and studio-quality headshot."
       />
 
-      {!isPro && (
+      {!isPaid && (
         <div className="card p-5 mb-6 flex items-start gap-3" style={{ background: 'linear-gradient(180deg, rgba(0,113,227,0.05) 0%, transparent 100%)', borderColor: 'rgba(0,113,227,0.25)' }}>
           <div className="w-9 h-9 rounded-full bg-[#0071e3]/15 flex items-center justify-center flex-shrink-0">
             <Sparkles size={18} className="text-[#0071e3]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Putting your face in thumbnails, posts &amp; headshots is a Pro feature</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Putting your face in thumbnails, posts &amp; headshots is a paid feature</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-3">
               Add a few photos of yourself once, and every generated thumbnail, social image, and headshot can include the real you — not a generic stock-photo person. No training wait; ready the moment you save.
             </p>
@@ -273,7 +276,7 @@ export default function PhotoboothPage() {
         </div>
       )}
 
-      <div className={`max-w-4xl flex flex-col gap-6 ${!isPro ? 'opacity-60 pointer-events-none' : ''}`}>
+      <div className={`max-w-4xl flex flex-col gap-6 ${!isPaid ? 'opacity-60 pointer-events-none' : ''}`}>
 
         {/* ── Explainer ─────────────────────────────────────────────────────── */}
         <div className="card p-5">
@@ -296,11 +299,13 @@ export default function PhotoboothPage() {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <UserCircle2 size={18} className="text-[#0071e3]" />
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your faces</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your faces{!isAdmin && <span className="font-normal text-[#86868b]"> ({faces.length}/{MAX_FACES})</span>}</p>
             </div>
             <button
-              onClick={() => { setNewFaceOpen(true); setFaceError(null); setFiles([]); setName('') }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]"
+              onClick={() => { if (atFaceCap) return; setNewFaceOpen(true); setFaceError(null); setFiles([]); setName('') }}
+              disabled={atFaceCap}
+              title={atFaceCap ? `Maximum ${MAX_FACES} faces — delete one to add another` : 'Add a face'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Camera size={11} /> Add a face
             </button>
@@ -490,7 +495,7 @@ export default function PhotoboothPage() {
       </div>
 
       {/* Add-face modal */}
-      {newFaceOpen && isPro && (
+      {newFaceOpen && isPaid && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => !uploading && setNewFaceOpen(false)}>
           <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-xl w-full p-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Add your face</h3>

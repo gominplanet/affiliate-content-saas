@@ -37,8 +37,11 @@ export const TIERS = {
     thumbnailsPerMonth: 5 as number | null,
     metadataGensPerMonth: 5 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    /** Professional headshots (Photobooth) / month. Pro-only feature. */
+    /** Professional headshots (Photobooth) / month. Paid-tier feature. */
     photoboothPerMonth: 0 as number | null,
+    /** Max saved faces a user can keep (0 = feature off for this tier). Bounds
+     *  the gpt-image anchor COGS, since each face seeds cached anchors. */
+    maxFaces: 0 as number | null,
     /** In-body blog images per post (hard ceiling — COGS guard). */
     blogImagesPerPost: 2,
     /** AI assistant chat messages / month (product help + coach). */
@@ -66,7 +69,8 @@ export const TIERS = {
     thumbnailsPerMonth: 40 as number | null,
     metadataGensPerMonth: 60 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    photoboothPerMonth: 0 as number | null,
+    photoboothPerMonth: 10 as number | null,
+    maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 200 as number | null,
     faceTrainJobs: 0 as number | null,
@@ -90,6 +94,7 @@ export const TIERS = {
     instagramAiThumbnailsPerMonth: 50 as number | null,
     /** 20 professional headshots / month — bounds gpt-image COGS. */
     photoboothPerMonth: 20 as number | null,
+    maxFaces: 2 as number | null,
     blogImagesPerPost: 4,
     // High enough to feel unlimited for normal daily use (~160/day) while
     // still bounding worst-case Haiku cost (~$25/mo at the ceiling).
@@ -116,6 +121,7 @@ export const TIERS = {
     metadataGensPerMonth: null as number | null,
     instagramAiThumbnailsPerMonth: null as number | null,
     photoboothPerMonth: null as number | null,
+    maxFaces: null as number | null,
     blogImagesPerPost: 6,
     assistantMessagesPerMonth: null as number | null,
     faceTrainJobs: null as number | null,

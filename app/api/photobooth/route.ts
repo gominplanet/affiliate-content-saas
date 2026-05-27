@@ -48,9 +48,17 @@ async function loadPhotoboothUsage(
 // policy is ((storage.foldername(name))[1] = auth.uid()). We keep only the last
 // 5 per user.
 const SHOTS_BUCKET = 'headshots'
-const SHOTS_KEEP = 5
+const SHOTS_KEEP_PER_FACE = 10   // cost/tidiness cap: keep the 10 most recent per face
+const SHOTS_DISPLAY_CAP = 20     // album shows up to this many (≈ 2 faces × 10)
 const SIGNED_TTL = 60 * 60 * 24 * 365 // 1 year
 const shotsFolder = (userId: string) => `${userId}/photobooth`
+
+// Stored filename: `{faceModelId}__{style}-{ts}-{rand}.png` — the face id prefix
+// lets us cap storage PER FACE while keeping everything in one flat folder.
+function styleFromName(name: string): string {
+  const afterFace = name.includes('__') ? name.split('__').slice(1).join('__') : name
+  return afterFace.split('-')[0] || 'studio'
+}
 
 interface PersistedShot { path: string; url: string; style: string; createdAt: string | null }
 
@@ -62,28 +70,28 @@ async function listShots(supabase: any, userId: string): Promise<PersistedShot[]
     limit: 100, sortBy: { column: 'created_at', order: 'desc' },
   })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = ((files ?? []) as any[]).filter(f => f?.name && !f.name.startsWith('.')).slice(0, SHOTS_KEEP)
+  const rows = ((files ?? []) as any[]).filter(f => f?.name && !f.name.startsWith('.')).slice(0, SHOTS_DISPLAY_CAP)
   const out: PersistedShot[] = []
   for (const f of rows) {
     const path = `${folder}/${f.name}`
     const { data: signed } = await supabase.storage.from(SHOTS_BUCKET).createSignedUrl(path, SIGNED_TTL)
     if (signed?.signedUrl) {
-      out.push({ path, url: signed.signedUrl, style: String(f.name).split('-')[0] || 'studio', createdAt: f.created_at ?? null })
+      out.push({ path, url: signed.signedUrl, style: styleFromName(String(f.name)), createdAt: f.created_at ?? null })
     }
   }
   return out
 }
 
-/** Delete anything beyond the newest SHOTS_KEEP for this user. */
+/** Keep only the newest SHOTS_KEEP_PER_FACE shots for ONE face; delete older. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function pruneShots(supabase: any, userId: string): Promise<void> {
+async function pruneShots(supabase: any, userId: string, faceId: string): Promise<void> {
   const folder = shotsFolder(userId)
   const { data: files } = await supabase.storage.from(SHOTS_BUCKET).list(folder, {
-    limit: 100, sortBy: { column: 'created_at', order: 'desc' },
+    limit: 200, sortBy: { column: 'created_at', order: 'desc' },
   })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = ((files ?? []) as any[]).filter(f => f?.name && !f.name.startsWith('.'))
-  const extra = rows.slice(SHOTS_KEEP).map(f => `${folder}/${f.name}`)
+  const rows = ((files ?? []) as any[]).filter(f => f?.name && f.name.startsWith(`${faceId}__`))
+  const extra = rows.slice(SHOTS_KEEP_PER_FACE).map(f => `${folder}/${f.name}`)
   if (extra.length) await supabase.storage.from(SHOTS_BUCKET).remove(extra)
 }
 
@@ -119,11 +127,13 @@ export async function POST(request: Request) {
     // ── Pro gate + monthly cap ────────────────────────────────────────────
     const usage = await loadPhotoboothUsage(supabase, user.id)
     const tier = usage.tier
-    if (tier !== 'pro' && tier !== 'admin') {
+    // Paid-tier gate: photoboothPerMonth === 0 → off (trial). Creator/Pro have a
+    // monthly cap; admin is unlimited (null limit).
+    if (usage.limit === 0) {
       return NextResponse.json({
-        error: 'Photobooth is a Pro feature. Upgrade to Pro to generate professional headshots.',
+        error: 'Photobooth is available on paid plans. Upgrade to Creator or Pro to generate headshots.',
         limitReached: true, cap: 'photobooth', currentTier: tier,
-        upgrade: { tier: 'pro', label: 'Pro', limit: null },
+        upgrade: { tier: 'creator', label: TIERS.creator.label, limit: TIERS.creator.photoboothPerMonth },
       }, { status: 403 })
     }
     // 20 / month for Pro (admin = unlimited). Reject before spending on gpt-image.
@@ -206,14 +216,14 @@ Do NOT render any text, captions, watermarks, or logos.`
     let imageUrl = `data:image/png;base64,${b64}`
     let savedPath: string | null = null
     try {
-      const fileName = `${styleKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`
+      const fileName = `${body.faceModelId}__${styleKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`
       const path = `${shotsFolder(user.id)}/${fileName}`
       const { error: upErr } = await supabase.storage
         .from(SHOTS_BUCKET)
         .upload(path, Buffer.from(b64, 'base64'), { contentType: 'image/png', upsert: false })
       if (upErr) throw upErr
       savedPath = path
-      await pruneShots(supabase, user.id)
+      await pruneShots(supabase, user.id, body.faceModelId)
       const { data: signed } = await supabase.storage.from(SHOTS_BUCKET).createSignedUrl(path, SIGNED_TTL)
       if (signed?.signedUrl) imageUrl = signed.signedUrl
     } catch (e) {
