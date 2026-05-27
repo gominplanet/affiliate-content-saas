@@ -596,13 +596,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
     try {
-      // If the MVP Co-Pilot Helper extension is installed, grab SEVERAL real
-      // frames from the video (the creator + product as they appear on camera).
-      // The server vision-picks the best one (face + product). Cached per video
-      // so the baked⇄crisp toggles reuse the frames instead of re-opening
-      // YouTube. Best-effort: [] silently falls back to the maxres frame.
+      // Real video frames are only needed as the LIKENESS source when there's NO
+      // face in play. With a face selected (specific or Auto), the face comes
+      // from the creator's Photobooth bank and the route uses the YouTube
+      // thumbnail for layout — so we skip opening/scrubbing the video entirely.
+      // Only when "No face" is chosen do we grab frames (the host's likeness).
       let capturedFrames: string[] = []
-      if (video.youtubeVideoId) {
+      if (video.youtubeVideoId && selectedFaceModelId === null) {
         if (capturedFramesRef.current?.videoId === video.youtubeVideoId && capturedFramesRef.current.frames.length) {
           capturedFrames = capturedFramesRef.current.frames
         } else {
