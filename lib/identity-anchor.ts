@@ -113,19 +113,27 @@ export async function getOrCreateIdentityAnchor(
  * `{faceId}__{style}__{expression}__{ts}-{rand}.png`; legacy shots without the
  * expression segment never match (so they're skipped). Returns null if none.
  */
+/** Expressions that read as energetic, high-CTR thumbnail faces. Calm shots
+ *  (neutral/serious/focused/angry) stay in the bank for headshots & logos but
+ *  are NOT cast onto thumbnails — a calm headshot makes a flat thumbnail. */
+const THUMBNAIL_EXPRESSIONS = new Set(['excited', 'surprised', 'laughing', 'happy'])
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: string): Promise<string | null> {
   try {
     const folder = `${userId}/photobooth`
     const { data: files } = await supabase.storage.from('headshots').list(folder, { limit: 200 })
-    // Every headshot the creator has KEPT for this face is fair game — they
-    // curate the bank (and the 10/face cap keeps it tidy), so we just randomly
-    // cast one. That gives natural variety thumbnail-to-thumbnail and respects
-    // whatever expressions they chose to keep, instead of forcing one mood.
+    // Cast randomly from this face's ENERGETIC headshots only — natural variety
+    // thumbnail-to-thumbnail, but a calm/neutral headshot never lands on a
+    // thumbnail. Filename: `{faceId}__{style}__{expression}__{ts}-{rand}.png`.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mine = ((files ?? []) as any[]).filter(f => typeof f?.name === 'string' && f.name.split('__')[0] === faceId)
-    if (mine.length === 0) return null
-    const pick = mine[Math.floor(Math.random() * mine.length)]
+    const eligible = ((files ?? []) as any[]).filter(f => {
+      if (typeof f?.name !== 'string') return false
+      const parts = f.name.split('__')
+      return parts[0] === faceId && THUMBNAIL_EXPRESSIONS.has(parts[2])
+    })
+    if (eligible.length === 0) return null
+    const pick = eligible[Math.floor(Math.random() * eligible.length)]
     const { data: file } = await supabase.storage.from('headshots').download(`${folder}/${pick.name}`)
     if (!file) return null
     const url = await fal.storage.upload(file as Blob)
@@ -135,10 +143,10 @@ async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: str
 
 /**
  * The face reference for a composite (thumbnail / IG). Randomly casts one of the
- * creator's OWN Photobooth headshots for this face — instant, no generation,
- * faces they made and kept, with natural variety shot-to-shot — and falls back
- * to the auto-generated cached anchor (of `expression`) only when they haven't
- * made any. Returns a fal-reachable URL, or null on total failure.
+ * creator's ENERGETIC Photobooth headshots for this face (excited/surprised/
+ * laughing/happy) — instant, no generation, with natural variety shot-to-shot —
+ * and falls back to the auto-generated cached anchor (of `expression`) when they
+ * have no energetic shot. Returns a fal-reachable URL, or null on total failure.
  */
 export async function getThumbnailFaceRef(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
