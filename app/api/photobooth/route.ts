@@ -53,11 +53,13 @@ const SHOTS_DISPLAY_CAP = 20     // album shows up to this many (≈ 2 faces × 
 const SIGNED_TTL = 60 * 60 * 24 * 365 // 1 year
 const shotsFolder = (userId: string) => `${userId}/photobooth`
 
-// Stored filename: `{faceModelId}__{style}-{ts}-{rand}.png` — the face id prefix
-// lets us cap storage PER FACE while keeping everything in one flat folder.
+// Stored filename: `{faceModelId}__{style}__{expression}__{ts}-{rand}.png`. The
+// face-id prefix lets us cap storage PER FACE in one flat folder; the expression
+// segment lets the thumbnail pipeline auto-pick a creator's "Excited" headshot.
+// (Older shots use the legacy `{faceModelId}__{style}-...` form — still parses.)
 function styleFromName(name: string): string {
-  const afterFace = name.includes('__') ? name.split('__').slice(1).join('__') : name
-  return afterFace.split('-')[0] || 'studio'
+  const parts = String(name).split('__')
+  return (parts[1] || 'studio').split('-')[0] || 'studio'
 }
 
 interface PersistedShot { path: string; url: string; style: string; createdAt: string | null }
@@ -216,7 +218,8 @@ Do NOT render any text, captions, watermarks, or logos.`
     let imageUrl = `data:image/png;base64,${b64}`
     let savedPath: string | null = null
     try {
-      const fileName = `${body.faceModelId}__${styleKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`
+      const exprKey = (body.expression && EXPRESSIONS[body.expression]) ? body.expression : 'neutral'
+      const fileName = `${body.faceModelId}__${styleKey}__${exprKey}__${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`
       const path = `${shotsFolder(user.id)}/${fileName}`
       const { error: upErr } = await supabase.storage
         .from(SHOTS_BUCKET)

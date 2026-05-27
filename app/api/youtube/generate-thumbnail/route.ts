@@ -16,7 +16,7 @@ import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbn
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
-import { getOrCreateIdentityAnchor } from '@/lib/identity-anchor'
+import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
 // Telemetry context — populated at request start, read by the three
@@ -364,13 +364,13 @@ function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length
  * frame to one reference photo from each model (e.g. Seb vs Michelle). One
  * cheap Haiku call. Returns the matching model, or null if none clearly match.
  */
-async function matchFaceModelToFrame(
+async function matchFaceModelToFrame<T extends { name: string; source_images: string[] }>(
   frameUrl: string,
-  models: Array<{ name: string; source_images: string[] }>,
+  models: T[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   ctx: { userId: string | null; tier: string | null },
-): Promise<{ name: string; source_images: string[] } | null> {
+): Promise<T | null> {
   if (models.length === 0) return null
   if (models.length === 1) return models[0]
   const valid = models
@@ -378,7 +378,7 @@ async function matchFaceModelToFrame(
       try { return { m, url: supabase.storage.from('headshots').getPublicUrl(m.source_images[0]).data.publicUrl as string } }
       catch { return null }
     })
-    .filter((x): x is { m: { name: string; source_images: string[] }; url: string } => !!x?.url)
+    .filter((x): x is { m: T; url: string } => !!x?.url)
   if (valid.length === 0) return models[0]
   try {
     const anthropic = createAnthropicClient()
@@ -623,10 +623,10 @@ export async function POST(request: Request) {
     // model is still training or failed, we silently fall back to no-face
     // generation rather than throwing — the user already chose, and the
     // worst outcome is a thumbnail without their face this time.
-    let faceModel: { name: string; source_images: string[] } | null = null
+    let faceModel: { id: string; name: string; source_images: string[] } | null = null
     // Auto-match pool: all the user's ready face models (used when faceAuto is
     // on and no specific model was picked — we vision-match the frame below).
-    let autoFaceModels: Array<{ name: string; source_images: string[] }> = []
+    let autoFaceModels: Array<{ id: string; name: string; source_images: string[] }> = []
     if (faceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fm } = await (supabase as any)
@@ -637,17 +637,17 @@ export async function POST(request: Request) {
         .single()
       const srcImages: string[] = Array.isArray(fm?.source_images) ? fm.source_images : []
       if (fm && srcImages.length > 0) {
-        faceModel = { name: fm.name, source_images: srcImages }
+        faceModel = { id: faceModelId, name: fm.name, source_images: srcImages }
       }
     } else if (faceAuto) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fms } = await (supabase as any)
         .from('face_models')
-        .select('name,source_images,status')
+        .select('id,name,source_images,status')
         .eq('user_id', user.id)
-      autoFaceModels = ((fms as Array<{ name: string; source_images: string[]; status: string }>) || [])
+      autoFaceModels = ((fms as Array<{ id: string; name: string; source_images: string[]; status: string }>) || [])
         .filter(m => m.status === 'ready' && Array.isArray(m.source_images) && m.source_images.length > 0)
-        .map(m => ({ name: m.name, source_images: m.source_images }))
+        .map(m => ({ id: m.id, name: m.name, source_images: m.source_images }))
       // Only one face on file → no need to match, just use it.
       if (autoFaceModels.length === 1) { faceModel = autoFaceModels[0]; autoFaceModels = [] }
     }
@@ -784,17 +784,17 @@ export async function POST(request: Request) {
           // high-CTR energy instead of a calm headshot expression.
           let faceRefs: string[] = []
           if (faceModel?.source_images?.length) {
-            // Time-box the anchor build: a cold gpt-image call can be slow, and
-            // it must NEVER hang the whole thumbnail past the function budget. If
-            // it doesn't resolve in time, fall back to the raw face photos for
-            // this generation (cached anchors return instantly, so this only
-            // bites the very first thumbnail for a new face/expression).
-            const anchor = await Promise.race([
-              getOrCreateIdentityAnchor(supabase, user.id, faceModel.source_images, { tier, expression: 'excited' }),
+            // Prefer the creator's OWN most-recent "Excited" Photobooth headshot
+            // (instant — no generation); else auto-build the cached anchor.
+            // Time-boxed so a cold anchor build can never hang the whole
+            // thumbnail past the function budget — if it's slow, fall back to the
+            // raw face photos for this generation.
+            const primaryFace = await Promise.race([
+              getThumbnailFaceRef(supabase, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier }),
               new Promise<null>(res => setTimeout(() => res(null), 120_000)),
             ])
-            const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, anchor ? 2 : 5)
-            faceRefs = anchor ? [anchor, ...rawRefs] : rawRefs
+            const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 2 : 5)
+            faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
           }
           // Product image as a reference so the product renders accurately (the
           // vidIQ look). The prompt scopes the product ref to the product ONLY,

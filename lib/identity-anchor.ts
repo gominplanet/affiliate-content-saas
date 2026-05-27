@@ -104,3 +104,51 @@ export async function getOrCreateIdentityAnchor(
     return null
   }
 }
+
+/**
+ * The user's most-recent Photobooth headshot of a given expression for a face,
+ * rehosted to fal so it can be passed straight to the composite model. Lets the
+ * thumbnail pipeline reuse a headshot the creator already generated (and can
+ * see) instead of building a separate anchor. Filenames are
+ * `{faceId}__{style}__{expression}__{ts}-{rand}.png`; legacy shots without the
+ * expression segment never match (so they're skipped). Returns null if none.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: string, expression: string): Promise<string | null> {
+  try {
+    const folder = `${userId}/photobooth`
+    const { data: files } = await supabase.storage.from('headshots').list(folder, {
+      limit: 200, sortBy: { column: 'created_at', order: 'desc' },
+    })
+    // List is newest-first → the first match is the most recent.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const match = ((files ?? []) as any[]).find(f => {
+      const parts = typeof f?.name === 'string' ? f.name.split('__') : []
+      return parts[0] === faceId && parts[2] === expression
+    })
+    if (!match) return null
+    const { data: file } = await supabase.storage.from('headshots').download(`${folder}/${match.name}`)
+    if (!file) return null
+    const url = await fal.storage.upload(file as Blob)
+    return url || null
+  } catch { return null }
+}
+
+/**
+ * The face reference for a composite (thumbnail / IG). Prefers the creator's OWN
+ * Photobooth headshot of `expression` — instant, no generation, the face they
+ * picked — and falls back to the auto-generated cached anchor only when they
+ * haven't made one. Returns a fal-reachable URL, or null on total failure.
+ */
+export async function getThumbnailFaceRef(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  opts: { faceId?: string | null; sourceImages: string[]; expression: string; tier?: string | null },
+): Promise<string | null> {
+  if (opts.faceId) {
+    const own = await findPhotoboothHeadshot(supabase, userId, opts.faceId, opts.expression)
+    if (own) return own
+  }
+  return getOrCreateIdentityAnchor(supabase, userId, opts.sourceImages, { tier: opts.tier ?? null, expression: opts.expression })
+}
