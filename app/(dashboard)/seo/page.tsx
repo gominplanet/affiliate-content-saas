@@ -10,7 +10,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '@/components/layout/Header'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X } from 'lucide-react'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
@@ -33,6 +33,8 @@ export default function SeoPage() {
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [sort, setSort] = useState<'score' | 'clicks' | 'impressions'>('score')
+  const [fixing, setFixing] = useState<string | null>(null)   // `${postId}:${fix}`
+  const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -45,6 +47,20 @@ export default function SeoPage() {
     finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
+
+  const runFix = useCallback(async (postId: string, fix: 'internal_links' | 'faq') => {
+    setFixing(`${postId}:${fix}`); setFixMsg(null)
+    try {
+      const res = await fetch('/api/seo/fix', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, fix }),
+      })
+      const d = await res.json()
+      if (d.error) setFixMsg({ ok: false, text: d.error })
+      else { setFixMsg({ ok: true, text: `Fixed — re-scored to ${d.score}/100 and republished.` }); await load() }
+    } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
+    finally { setFixing(null) }
+  }, [load])
 
   const posts = useMemo(() => {
     const p = data?.posts ? [...data.posts] : []
@@ -79,6 +95,12 @@ export default function SeoPage() {
         <div className="card p-5 border border-[#ff3b30]/30 bg-[#ff3b30]/5 text-sm text-[#ff3b30]">{error}</div>
       ) : !data ? null : (
         <div className="flex flex-col gap-4">
+          {fixMsg && (
+            <div className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg text-sm ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
+              <span>{fixMsg.text}</span>
+              <button onClick={() => setFixMsg(null)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0"><X size={14} /></button>
+            </div>
+          )}
           {/* Connect-GSC prompt when not connected — scores still work without it */}
           {!data.connected && (
             <div className="card p-5 border border-[#4285F4]/25 bg-[#4285F4]/5 flex items-start gap-4">
@@ -162,17 +184,30 @@ export default function SeoPage() {
                   {open && (
                     <div className="px-4 pb-4 pl-12">
                       <ul className="flex flex-col gap-1.5">
-                        {p.checks.filter(c => c.weight > 0).map(c => (
-                          <li key={c.id} className="flex items-start gap-2 text-xs">
-                            {c.pass
-                              ? <CheckCircle2 size={13} className="text-[#34c759] mt-0.5 flex-shrink-0" />
-                              : <XCircle size={13} className="text-[#ff3b30] mt-0.5 flex-shrink-0" />}
-                            <span className={c.pass ? 'text-[#6e6e73] dark:text-[#8e8e93]' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}>
-                              {c.label}
-                              {!c.pass && c.hint && <span className="block text-[11px] text-[#86868b] mt-0.5">{c.hint}</span>}
-                            </span>
-                          </li>
-                        ))}
+                        {p.checks.filter(c => c.weight > 0).map(c => {
+                          const fixable = !c.pass && (c.id === 'internal_links' || c.id === 'faq')
+                          const key = `${p.postId}:${c.id}`
+                          return (
+                            <li key={c.id} className="flex items-start gap-2 text-xs">
+                              {c.pass
+                                ? <CheckCircle2 size={13} className="text-[#34c759] mt-0.5 flex-shrink-0" />
+                                : <XCircle size={13} className="text-[#ff3b30] mt-0.5 flex-shrink-0" />}
+                              <span className={`flex-1 ${c.pass ? 'text-[#6e6e73] dark:text-[#8e8e93]' : 'text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
+                                {c.label}
+                                {!c.pass && c.hint && <span className="block text-[11px] text-[#86868b] mt-0.5">{c.hint}</span>}
+                              </span>
+                              {fixable && (
+                                <button
+                                  onClick={() => runFix(p.postId, c.id as 'internal_links' | 'faq')}
+                                  disabled={fixing === key}
+                                  className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                                >
+                                  {fixing === key ? <Loader2 size={10} className="animate-spin" /> : <Wand2 size={10} />} Fix
+                                </button>
+                              )}
+                            </li>
+                          )
+                        })}
                       </ul>
                       {data.connected && p.coverageState && (
                         <p className="text-[11px] text-[#86868b] mt-3">Google: {p.coverageState}</p>

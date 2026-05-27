@@ -46,7 +46,6 @@ export function scorePostSeo(input: SeoScoreInput): SeoScoreResult {
   const text = plainText(html)
   const words = text ? text.split(/\s+/).filter(Boolean).length : 0
   const title = (input.title || '').trim()
-  const meta = (input.metaDescription || '').trim()
   const host = (input.siteHost || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').toLowerCase()
 
   const h2s = (html.match(/<h2[\s>]/gi) || []).length
@@ -79,11 +78,6 @@ export function scorePostSeo(input: SeoScoreInput): SeoScoreResult {
       id: 'title_length', label: 'Title is a good length (30–65 chars)',
       pass: title.length >= 30 && title.length <= 65, weight: 10,
       hint: title.length < 30 ? 'Title is short — add the product + a benefit/year.' : 'Title is long — trim to ~60 chars so it isn’t cut off in results.',
-    },
-    {
-      id: 'meta_description', label: 'Meta description set (70–160 chars)',
-      pass: meta.length >= 70 && meta.length <= 160, weight: 10,
-      hint: 'Write a 1-sentence meta description that answers the query and invites the click.',
     },
     {
       id: 'word_count', label: 'Enough depth (600+ words)',
