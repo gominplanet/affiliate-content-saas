@@ -48,7 +48,12 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { dryRun = false } = await request.json().catch(() => ({}))
+    const body = await request.json().catch(() => ({})) as {
+      dryRun?: boolean
+      fixes?: { postId: string; oldUrl: string; newUrl: string }[]
+    }
+    const dryRun = body.dryRun === true
+    const selectedFixes = Array.isArray(body.fixes) ? body.fixes : null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: integration } = await (supabase as any)
@@ -64,6 +69,46 @@ export async function POST(request: Request) {
     const wpService = createWordPressService(
       wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password, wp.wordpress_api_token || undefined,
     )
+
+    // ── Targeted apply ───────────────────────────────────────────────────────
+    // The client sends back ONLY the previewed fixes the user kept checked
+    // (postId + old→new). We swap those exact links — no re-scan, no
+    // re-resolution — so deselected posts are untouched and we don't mint
+    // duplicate Geniuslinks. The post is re-loaded server-side by id (RLS) so
+    // we never trust client-supplied content/WP ids.
+    if (!dryRun && selectedFixes) {
+      let fixed = 0
+      const errs: string[] = []
+      for (const f of selectedFixes) {
+        try {
+          if (!f?.postId || !f?.oldUrl || !/^https?:\/\//i.test(f?.newUrl || '')) continue
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: row } = await (supabase as any)
+            .from('blog_posts').select('id,content,wordpress_post_id,video_id')
+            .eq('user_id', user.id).eq('id', f.postId).maybeSingle()
+          if (!row?.content) continue
+          const original = row.content as string
+          let updated = original.split(f.oldUrl).join(f.newUrl)
+          updated = updated.replace(
+            /href="https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^"]*"/gi,
+            (href) => (badAmazonAsin(href) ? `href="${f.newUrl}"` : href),
+          )
+          if (updated === original) continue
+          if (row.wordpress_post_id) await wpService.updatePost(row.wordpress_post_id, { content: updated } as never)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any).from('blog_posts').update({ content: updated }).eq('id', row.id)
+          fixed++
+          // Best-effort: refresh the video's stored product link (single reviews
+          // store the UUID in video_id; comparison posts store a youtube id and
+          // simply won't match — harmless).
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { if (row.video_id) await (supabase as any).from('youtube_videos').update({ product_url: f.newUrl }).eq('user_id', user.id).eq('id', row.video_id) } catch { /* non-fatal */ }
+        } catch (err) {
+          errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+      return NextResponse.json({ success: true, fixed, attempted: selectedFixes.length, errors: errs.slice(0, 10) })
+    }
 
     // ── Load published posts that have a body + a WP id ──────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,54 +196,24 @@ export async function POST(request: Request) {
       }))
     }
 
-    if (dryRun) {
-      return NextResponse.json({
-        dryRun: true,
-        total: rows.length,
-        toFix: candidates.length,
-        unresolved: unresolved.length,
-        preview: candidates.map((c) => ({
-          title: (c.post.title || c.post.slug || '').replace(/<[^>]+>/g, ''),
-          oldUrl: c.oldUrl,
-          newUrl: c.newUrl,
-        })),
-      })
+    // Scan path = preview. Applying is always done via the targeted branch
+    // above (the client posts back only the fixes the user kept selected), so
+    // a non-dryRun call with no fixes has nothing to do.
+    if (!dryRun) {
+      return NextResponse.json({ error: 'No fixes selected.' }, { status: 400 })
     }
-
-    // ── Apply: swap the old link for the new one in body + WP + DB ───────────
-    let fixed = 0
-    for (const c of candidates) {
-      try {
-        const original = c.post.content || ''
-        // Replace the exact old link everywhere, plus any direct dead
-        // amazon.com/dp/<junk> occurrences that share the same product id.
-        let updated = original.split(c.oldUrl).join(c.newUrl)
-        updated = updated.replace(
-          /href="https?:\/\/(?:www\.)?amazon\.[a-z.]+\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^"]*"/gi,
-          (href) => (badAmazonAsin(href) ? `href="${c.newUrl}"` : href),
-        )
-        if (updated === original) { unresolved.push(c.post.title || c.post.id); continue }
-
-        if (c.post.wordpress_post_id) {
-          await wpService.updatePost(c.post.wordpress_post_id, { content: updated } as never)
-        }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('blog_posts').update({ content: updated }).eq('id', c.post.id)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('youtube_videos').update({ product_url: c.newUrl }).eq('id', c.video.id)
-        fixed++
-      } catch (err) {
-        errors.push(`${c.post.title || c.post.id}: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-
+    void errors
     return NextResponse.json({
-      success: true,
+      dryRun: true,
       total: rows.length,
-      fixed,
-      attempted: candidates.length,
+      toFix: candidates.length,
       unresolved: unresolved.length,
-      errors: errors.slice(0, 10),
+      preview: candidates.map((c) => ({
+        postId: c.post.id,
+        title: (c.post.title || c.post.slug || '').replace(/<[^>]+>/g, ''),
+        oldUrl: c.oldUrl,
+        newUrl: c.newUrl,
+      })),
     })
   } catch (err: unknown) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })

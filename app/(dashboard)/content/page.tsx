@@ -2358,7 +2358,8 @@ export default function ContentPage() {
   const [catApplying, setCatApplying] = useState(false)
   // Affiliate-link repair — dryRun finds posts with a broken affiliate link
   // (e.g. a dead amazon.com/dp/UNDERWATER) and previews old→new before writing.
-  const [affPreview, setAffPreview] = useState<{ title: string; oldUrl: string; newUrl: string }[] | null>(null)
+  const [affPreview, setAffPreview] = useState<{ postId: string; title: string; oldUrl: string; newUrl: string }[] | null>(null)
+  const [affSelected, setAffSelected] = useState<Set<string>>(new Set())
   const [affPreviewLoading, setAffPreviewLoading] = useState(false)
   const [affApplying, setAffApplying] = useState(false)
   const [activeTab, setActiveTab] = useState<'horizontal' | 'vertical' | 'posts' | 'scheduled'>('horizontal')
@@ -2997,7 +2998,9 @@ export default function ContentPage() {
         const tail = data.unresolved ? ` (${data.unresolved} couldn't be auto-resolved — check those manually).` : ''
         setFixCatResult(`No broken affiliate links found across ${data.total ?? 0} posts.${tail}`)
       } else {
-        setAffPreview(data.preview as { title: string; oldUrl: string; newUrl: string }[])
+        const rows = data.preview as { postId: string; title: string; oldUrl: string; newUrl: string }[]
+        setAffPreview(rows)
+        setAffSelected(new Set(rows.map(r => r.postId))) // default: all checked
       }
     } catch {
       setFixCatResult('Something went wrong.')
@@ -3006,14 +3009,19 @@ export default function ContentPage() {
     }
   }
 
-  /** Step 2 — apply the affiliate-link fixes to WordPress + the DB. */
+  /** Step 2 — apply ONLY the fixes the user kept checked. */
   async function applyFixAffiliate() {
+    if (!affPreview) return
+    const fixes = affPreview
+      .filter(r => affSelected.has(r.postId))
+      .map(({ postId, oldUrl, newUrl }) => ({ postId, oldUrl, newUrl }))
+    if (fixes.length === 0) return
     setAffApplying(true)
     try {
       const res = await fetch('/api/blog/fix-affiliate-links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ fixes }),
       })
       const data = await res.json()
       if (data.error) {
@@ -3712,7 +3720,7 @@ export default function ContentPage() {
               <div>
                 <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Fix affiliate links</h3>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                  {affPreview.length} post{affPreview.length !== 1 ? 's' : ''} have a broken buy link. Nothing&apos;s saved yet.
+                  {affPreview.length} post{affPreview.length !== 1 ? 's' : ''} have a broken buy link. Uncheck any you don&apos;t want to change — nothing&apos;s saved yet.
                 </p>
               </div>
               <button
@@ -3724,15 +3732,37 @@ export default function ContentPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 p-5">
+            <div className="px-5 pt-3 flex items-center gap-3 text-xs">
+              <button onClick={() => setAffSelected(new Set(affPreview.map(r => r.postId)))} className="text-[#0071e3] hover:underline">Select all</button>
+              <span className="text-[#d2d2d7] dark:text-white/15">·</span>
+              <button onClick={() => setAffSelected(new Set())} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] hover:underline">Select none</button>
+              <span className="ml-auto text-[#86868b]">{affSelected.size} of {affPreview.length} selected</span>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-5 pt-3">
               <ul className="flex flex-col gap-2">
-                {affPreview.map((row, i) => (
-                  <li key={i} className="p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e]">
-                    <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-1 line-clamp-2">{row.title}</p>
-                    <p className="text-[11px] text-[#ff3b30] break-all font-mono">− {row.oldUrl}</p>
-                    <p className="text-[11px] text-[#34c759] break-all font-mono">+ {row.newUrl}</p>
-                  </li>
-                ))}
+                {affPreview.map((row) => {
+                  const checked = affSelected.has(row.postId)
+                  return (
+                    <li
+                      key={row.postId}
+                      onClick={() => setAffSelected(prev => { const n = new Set(prev); if (n.has(row.postId)) n.delete(row.postId); else n.add(row.postId); return n })}
+                      className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${checked ? 'bg-[#f5f5f7] dark:bg-[#2c2c2e]' : 'bg-transparent border border-dashed border-gray-200 dark:border-white/10 opacity-60'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {}}
+                        className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#0071e3] cursor-pointer"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-1 line-clamp-2">{row.title}</p>
+                        <p className="text-[11px] text-[#ff3b30] break-all font-mono">− {row.oldUrl}</p>
+                        <p className="text-[11px] text-[#34c759] break-all font-mono">+ {row.newUrl}</p>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
 
@@ -3746,12 +3776,12 @@ export default function ContentPage() {
               </button>
               <button
                 onClick={applyFixAffiliate}
-                disabled={affApplying}
+                disabled={affApplying || affSelected.size === 0}
                 className="btn-primary text-sm"
               >
                 {affApplying
                   ? <><Loader2 size={14} className="animate-spin" /> Fixing…</>
-                  : `Fix ${affPreview.length} link${affPreview.length !== 1 ? 's' : ''}`}
+                  : `Fix ${affSelected.size} link${affSelected.size !== 1 ? 's' : ''}`}
               </button>
             </div>
           </div>
