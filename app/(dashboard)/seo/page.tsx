@@ -37,6 +37,9 @@ export default function SeoPage() {
   const [fixing, setFixing] = useState<string | null>(null)   // `${postId}:${fix}`
   const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [pinging, setPinging] = useState(false)
+  const [bulkPreview, setBulkPreview] = useState<{ total: number; toFix: number; totalFixes: number; preview: { postId: string; title: string; fixes: number }[] } | null>(null)
+  const [bulkLoading, setBulkLoading] = useState(false)
+  const [bulkApplying, setBulkApplying] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -95,6 +98,37 @@ export default function SeoPage() {
     setPinging(false)
   }, [load])
 
+  const previewFixAll = useCallback(async () => {
+    setBulkLoading(true); setFixMsg(null)
+    try {
+      const res = await fetch('/api/seo/fix-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dryRun: true }) })
+      const d = await res.json()
+      if (d.error) setFixMsg({ ok: false, text: d.error })
+      else if (!d.toFix) setFixMsg({ ok: true, text: 'Every post is already as good as auto-fixes can make it. 🎉' })
+      else setBulkPreview(d)
+    } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
+    finally { setBulkLoading(false) }
+  }, [])
+
+  // Apply across the catalog, auto-continuing through the server's batches.
+  const applyFixAll = useCallback(async () => {
+    setBulkApplying(true)
+    let totalFixed = 0
+    try {
+      for (let guard = 0; guard < 20; guard++) {
+        const res = await fetch('/api/seo/fix-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+        const d = await res.json()
+        if (d.error) { setFixMsg({ ok: false, text: d.error }); break }
+        totalFixed += d.fixed || 0
+        if (!d.remaining || d.fixed === 0) break // done (or no further progress)
+        setFixMsg({ ok: true, text: `Fixing posts… ${totalFixed} done, ${d.remaining} to go.` })
+      }
+      setFixMsg({ ok: true, text: `Done — fixed ${totalFixed} post${totalFixed !== 1 ? 's' : ''} and republished.` })
+      await load()
+    } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
+    finally { setBulkApplying(false); setBulkPreview(null) }
+  }, [load])
+
   const posts = useMemo(() => {
     const p = data?.posts ? [...data.posts] : []
     if (sort === 'score') p.sort((a, b) => a.score - b.score)        // worst first → fix these
@@ -114,9 +148,14 @@ export default function SeoPage() {
             : 'Make sure your posts are indexed and optimized'
         }
         actions={
-          <button onClick={load} disabled={loading} className="btn-secondary text-sm">
-            {loading ? <><Loader2 size={14} className="animate-spin" /> Refreshing…</> : <><RefreshCw size={14} /> Refresh</>}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={previewFixAll} disabled={loading || bulkLoading || bulkApplying} className="btn-primary text-sm" title="Auto-fix every post's fixable SEO issues">
+              {bulkLoading ? <><Loader2 size={14} className="animate-spin" /> Scanning…</> : <><Wand2 size={14} /> Fix all posts</>}
+            </button>
+            <button onClick={load} disabled={loading} className="btn-secondary text-sm">
+              {loading ? <><Loader2 size={14} className="animate-spin" /> Refreshing…</> : <><RefreshCw size={14} /> Refresh</>}
+            </button>
+          </div>
         }
       />
 
@@ -299,6 +338,41 @@ export default function SeoPage() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Fix-all-posts preview modal — dryRun first, apply (batched) on confirm */}
+      {bulkPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => !bulkApplying && setBulkPreview(null)}>
+          <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-white/10">
+              <div>
+                <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Fix all posts</h3>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                  {bulkPreview.toFix} of {bulkPreview.total} posts have auto-fixable issues ({bulkPreview.totalFixes} fixes total). Each gets its title trimmed, internal links + alt text + FAQ added as needed, then republished. Nothing&apos;s saved yet.
+                </p>
+              </div>
+              <button onClick={() => !bulkApplying && setBulkPreview(null)} disabled={bulkApplying} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] disabled:opacity-40">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-5">
+              <ul className="flex flex-col gap-2">
+                {bulkPreview.preview.map((row) => (
+                  <li key={row.postId} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e]">
+                    <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex-1 line-clamp-2">{row.title}</p>
+                    <span className="text-xs font-semibold text-[#0071e3] whitespace-nowrap mt-0.5">{row.fixes} fix{row.fixes !== 1 ? 'es' : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-5 border-t border-gray-100 dark:border-white/10">
+              <button onClick={() => !bulkApplying && setBulkPreview(null)} disabled={bulkApplying} className="btn-secondary text-sm">Cancel</button>
+              <button onClick={applyFixAll} disabled={bulkApplying} className="btn-primary text-sm">
+                {bulkApplying ? <><Loader2 size={14} className="animate-spin" /> Fixing…</> : `Fix all ${bulkPreview.toFix} posts`}
+              </button>
+            </div>
           </div>
         </div>
       )}
