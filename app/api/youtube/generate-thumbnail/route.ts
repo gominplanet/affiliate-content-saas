@@ -15,7 +15,7 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
-import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 
@@ -884,6 +884,14 @@ Ultra-sharp, professional, photorealistic.`
             )
             nbUrls = fb.flat().filter(Boolean).slice(0, variantCount)
             if (nbUrls.length > 0) { nbModelKey = NANO_BANANA_COST_MODEL; nbModelUsed = wantClean ? 'nano-banana' : 'nano-banana-baked' }
+          }
+
+          // Force-moody grade: deterministically darken + add contrast + vignette
+          // to every composed thumbnail so the background is moody/contrasty every
+          // time and any faint cut-out halo is hidden — then rank/overlay the
+          // graded versions. Best-effort per image (falls back to the original).
+          if (nbUrls.length > 0) {
+            nbUrls = await Promise.all(nbUrls.map(applyMoodyGrade))
           }
 
           if (nbUrls.length > 0) {

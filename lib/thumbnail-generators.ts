@@ -18,6 +18,7 @@
  * cost telemetry (one recordUsage per returned image).
  */
 import { fal } from '@fal-ai/client'
+import sharp from 'sharp'
 
 export const NANO_BANANA_EDIT = 'fal-ai/nano-banana/edit'
 // Nano Banana Pro = Google Gemini 3 Pro Image. Higher fidelity and — crucially
@@ -62,6 +63,66 @@ export async function rehostAll(urls: string[]): Promise<string[]> {
   const unique = urls.filter(u => u && !seen.has(u) && (seen.add(u), true))
   const out = await Promise.all(unique.map(rehostToFal))
   return out.filter((u): u is string => !!u)
+}
+
+/**
+ * Force-moody post-process. A deterministic, server-side cinematic grade applied
+ * to a FINISHED thumbnail: a slight darken + saturation lift, a contrast bump,
+ * and a radial vignette (bright centre → dark edges). This guarantees a moody,
+ * higher-contrast background on EVERY thumbnail regardless of what the model
+ * rendered — which both reads as more "clickable" and hides any faint cut-out
+ * edge/halo around the composited creator. The bright centre keeps the face and
+ * product lit while the background falls off; overlaid (or baked) bright
+ * headline text pops harder against the darker frame.
+ *
+ * Best-effort: fetches the image, grades it with sharp, re-hosts the result to
+ * fal storage and returns the new URL. Returns the ORIGINAL url unchanged on any
+ * failure (bad fetch, decode error, upload error) so the caller never loses a
+ * thumbnail to the grade.
+ */
+export async function applyMoodyGrade(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': BROWSER_UA }, signal: AbortSignal.timeout(15000) })
+    if (!res.ok) return url
+    const input = Buffer.from(await res.arrayBuffer())
+
+    const base = sharp(input)
+    const meta = await base.metadata()
+    const w = meta.width ?? 1280
+    const h = meta.height ?? 720
+
+    // Radial vignette: white (no change under multiply) through the centre where
+    // the face/product sit, falling to a mid-grey at the edges so corners and
+    // the background behind the creator darken. cy is biased slightly up (42%)
+    // so the typically chest-up subject stays in the bright zone.
+    const vignette = Buffer.from(
+      `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">` +
+        `<defs><radialGradient id="v" cx="50%" cy="42%" r="78%">` +
+        `<stop offset="48%" stop-color="#ffffff"/>` +
+        `<stop offset="100%" stop-color="#6e6e6e"/>` +
+        `</radialGradient></defs>` +
+        `<rect width="${w}" height="${h}" fill="url(#v)"/>` +
+      `</svg>`,
+    )
+
+    const out = await base
+      // Slight global darken + richer colour.
+      .modulate({ brightness: 0.94, saturation: 1.12 })
+      // Contrast bump: slope > 1 with a negative offset deepens the shadows.
+      .linear(1.12, -12)
+      // Multiply the vignette so the centre is untouched and the edges fall off.
+      .composite([{ input: vignette, blend: 'multiply' }])
+      .jpeg({ quality: 90 })
+      .toBuffer()
+
+    // Wrap in a fresh Uint8Array so the Blob part is backed by a plain
+    // ArrayBuffer (sharp's Buffer is typed ArrayBufferLike, not a valid BlobPart).
+    const newUrl = await fal.storage.upload(new Blob([new Uint8Array(out)], { type: 'image/jpeg' }))
+    return newUrl || url
+  } catch (err) {
+    console.warn('[moody-grade] failed:', err instanceof Error ? err.message : String(err))
+    return url
+  }
 }
 
 /**
