@@ -34,6 +34,7 @@ export default function SeoPage() {
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [sort, setSort] = useState<'score' | 'clicks' | 'impressions'>('score')
+  const [filterNotIndexed, setFilterNotIndexed] = useState(false)  // "Request indexing" worklist
   const [fixing, setFixing] = useState<string | null>(null)   // `${postId}:${fix}`
   const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [pinging, setPinging] = useState(false)
@@ -130,12 +131,13 @@ export default function SeoPage() {
   }, [load])
 
   const posts = useMemo(() => {
-    const p = data?.posts ? [...data.posts] : []
+    let p = data?.posts ? [...data.posts] : []
+    if (filterNotIndexed) p = p.filter(x => x.indexed === false)     // Google "not indexed" worklist
     if (sort === 'score') p.sort((a, b) => a.score - b.score)        // worst first → fix these
     else if (sort === 'clicks') p.sort((a, b) => b.clicks - a.clicks)
     else p.sort((a, b) => b.impressions - a.impressions)
     return p
-  }, [data, sort])
+  }, [data, sort, filterNotIndexed])
 
   return (
     <>
@@ -167,6 +169,7 @@ export default function SeoPage() {
         <div className="card p-5 border border-[#ff3b30]/30 bg-[#ff3b30]/5 text-sm text-[#ff3b30]">{error}</div>
       ) : !data ? null : (
         <div className="flex flex-col gap-4">
+          <IndexingGuide property={data.property} connected={data.connected} />
           {fixMsg && (
             <div className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg text-sm ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
               <span>{fixMsg.text}</span>
@@ -246,12 +249,21 @@ export default function SeoPage() {
                 {lbl}
               </button>
             ))}
+            {data.connected && data.summary.notIndexed > 0 && (
+              <button
+                onClick={() => setFilterNotIndexed(v => !v)}
+                className={`ml-1 px-2.5 py-1 rounded-full border transition-colors inline-flex items-center gap-1 ${filterNotIndexed ? 'border-[#ff3b30] text-[#ff3b30] bg-[#ff3b30]/5' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f]'}`}
+                title="Show only posts Google hasn't indexed yet — your Request Indexing worklist"
+              >
+                {filterNotIndexed ? <X size={11} /> : <AlertCircle size={11} />} Not indexed ({data.summary.notIndexed})
+              </button>
+            )}
           </div>
 
           {/* Posts table */}
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
             {posts.length === 0 ? (
-              <div className="p-6 text-sm text-[#86868b] text-center">No published posts yet.</div>
+              <div className="p-6 text-sm text-[#86868b] text-center">{filterNotIndexed ? 'No posts are marked “not indexed” right now. 🎉' : 'No published posts yet.'}</div>
             ) : posts.map((p) => {
               const open = expanded === p.postId
               const failing = p.checks.filter(c => !c.pass && c.weight > 0)
@@ -281,6 +293,17 @@ export default function SeoPage() {
                         <span className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{p.clicks} clicks</span>
                         <span className="text-[11px] text-[#86868b]">{p.position ? `pos ${p.position.toFixed(1)}` : `${p.impressions} impr`}</span>
                       </span>
+                    )}
+                    {data.connected && data.property && p.url && p.indexed !== true && (
+                      <a
+                        href={`https://search.google.com/search-console/inspect?resource_id=${encodeURIComponent(data.property)}&id=${encodeURIComponent(p.url)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline flex-shrink-0"
+                        title="Open this post in Google's URL Inspection tool, then click Request Indexing"
+                      >
+                        Index <ExternalLink size={11} />
+                      </a>
                     )}
                     {p.url && (
                       <a href={p.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[#86868b] hover:text-[#0071e3] flex-shrink-0" title="Open post">
@@ -377,6 +400,89 @@ export default function SeoPage() {
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Collapsible "how indexing works" explainer that sits at the top of the page.
+ * Sets expectations (optimization vs. indexing, realistic timing) and gives the
+ * exact steps + live, property-aware Search Console links to speed Google up.
+ */
+function IndexingGuide({ property, connected }: { property: string | null; connected: boolean }) {
+  const [open, setOpen] = useState(false)
+  const rid = property ? encodeURIComponent(property) : null
+  const sitemapsUrl = rid
+    ? `https://search.google.com/search-console/sitemaps?resource_id=${rid}`
+    : 'https://search.google.com/search-console'
+  const inspectUrl = rid
+    ? `https://search.google.com/search-console/inspect?resource_id=${rid}`
+    : 'https://search.google.com/search-console'
+
+  return (
+    <div className="card overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+      >
+        <Gauge size={18} className="text-[#5856d6] flex-shrink-0" />
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">How indexing works — and what to expect</span>
+          <span className="block text-[12px] text-[#6e6e73] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
+            Your score measures how well a post is <em>optimized</em>. Indexing is separate — whether search engines have added it to their results. We submit to Bing, Yandex &amp; Copilot instantly; Google indexes on its own schedule (days to weeks).
+          </span>
+        </span>
+        {open ? <ChevronDown size={16} className="text-[#86868b] flex-shrink-0" /> : <ChevronRight size={16} className="text-[#86868b] flex-shrink-0" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-5 pt-3 sm:pl-12 flex flex-col gap-4 border-t border-gray-100 dark:border-white/10 text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0]">
+          <div>
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What “indexed” means</p>
+            <p>Indexing is when a search engine adds your post to its results so people can actually find it. A post can score 100 and still be waiting to get indexed — that’s normal, especially on a newer site. Optimization (your score) and indexing (the engine’s decision) are two different steps.</p>
+          </div>
+
+          <div>
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What MVP does for you, automatically</p>
+            <ul className="list-disc pl-5 flex flex-col gap-1">
+              <li>Optimizes every post for search &amp; AI Overviews (answer-first intros, FAQ, internal links, alt text, structured data) so it’s ready to rank.</li>
+              <li>Keeps your sitemap fresh and pings it the moment you publish, so engines can find new posts fast.</li>
+              <li>Instantly notifies Bing, Yandex &amp; Copilot on publish (IndexNow) — these often index within hours.</li>
+              <li>Pulls each post’s real status from Google Search Console so you can see what’s live.</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What to expect</p>
+            <ul className="list-disc pl-5 flex flex-col gap-1">
+              <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Bing, Yandex, Copilot:</strong> usually a few hours to a day or two.</li>
+              <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Google:</strong> slower, on Google’s own schedule. Days to a few weeks is normal, sometimes longer for a new site. There’s no “index now” button for Google (for anyone), so early statuses like “Not indexed”, “Still checking” or “URL unknown to Google” are expected — not a problem with your post.</li>
+              <li>Impressions show up before clicks, so 0 clicks at the start is normal.</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">How to get indexed by Google faster</p>
+            <ol className="list-decimal pl-5 flex flex-col gap-2">
+              <li>
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Submit your sitemap (one-time).</span> Open{' '}
+                <a href={sitemapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline inline-flex items-center gap-0.5">Search Console → Sitemaps <ExternalLink size={11} /></a>, type <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px]">wp-sitemap.xml</code> under “Add a new sitemap”, and click Submit. The status should read “Success” within a day. You only do this once.
+              </li>
+              <li>
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Request indexing for important posts.</span> Open the{' '}
+                <a href={inspectUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline inline-flex items-center gap-0.5">URL Inspection tool <ExternalLink size={11} /></a> — or just click <span className="font-semibold text-[#0071e3] whitespace-nowrap">Index ↗</span> on any post below to open it pre-filled. Then click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Request Indexing</strong>. Use the <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> filter below to work through them quickly. Google allows about 10 a day — it’s a nudge, not a guarantee, but it’s the strongest signal you can send.
+              </li>
+              <li>
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on social (MVP can auto-post to Pinterest, Facebook &amp; Instagram — every share is a crawlable link back). Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.
+              </li>
+            </ol>
+          </div>
+
+          {!connected && (
+            <p className="text-[12px] text-[#86868b]">Connect Google Search Console to see live index status and get one-click links here.</p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
