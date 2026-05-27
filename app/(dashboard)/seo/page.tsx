@@ -10,18 +10,19 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '@/components/layout/Header'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap } from 'lucide-react'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
   postId: string; title: string; slug: string; url: string | null
   score: number; checks: Check[]
   indexed: boolean | null; coverageState: string | null
+  inSitemap: boolean | null
   clicks: number; impressions: number; position: number | null; ctr: number | null
 }
 interface Overview {
   connected: boolean; property: string | null
-  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; totalClicks: number; totalImpressions: number }
+  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; sitemapFound: boolean; totalClicks: number; totalImpressions: number }
   posts: PostRow[]
 }
 
@@ -35,6 +36,7 @@ export default function SeoPage() {
   const [sort, setSort] = useState<'score' | 'clicks' | 'impressions'>('score')
   const [fixing, setFixing] = useState<string | null>(null)   // `${postId}:${fix}`
   const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pinging, setPinging] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -61,6 +63,17 @@ export default function SeoPage() {
     } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
     finally { setFixing(null) }
   }, [load])
+
+  const pingIndexNow = useCallback(async () => {
+    setPinging(true); setFixMsg(null)
+    try {
+      const res = await fetch('/api/seo/indexnow', { method: 'POST' })
+      const d = await res.json()
+      if (d.error) setFixMsg({ ok: false, text: d.error })
+      else setFixMsg({ ok: true, text: `Pushed ${d.submitted} URL${d.submitted !== 1 ? 's' : ''} to Bing/Copilot via IndexNow. Re-save any missing post in WordPress to refresh Google's sitemap.` })
+    } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
+    finally { setPinging(false) }
+  }, [])
 
   const posts = useMemo(() => {
     const p = data?.posts ? [...data.posts] : []
@@ -117,6 +130,28 @@ export default function SeoPage() {
             </div>
           )}
 
+          {/* Missing-from-sitemap warning — Google can't discover what isn't there */}
+          {data.summary.sitemapFound && data.summary.notInSitemap > 0 && (
+            <div className="card p-4 border border-[#ff9500]/30 bg-[#ff9500]/5 flex items-start gap-3">
+              <AlertCircle size={16} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
+                  {data.summary.notInSitemap} post{data.summary.notInSitemap !== 1 ? 's' : ''} missing from your sitemap
+                </p>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
+                  Google discovers pages through your sitemap — posts not in it can sit unindexed (often a stale sitemap cache). Push them straight to Bing/Copilot now, and re-save the post in WordPress to refresh the sitemap for Google.
+                </p>
+                <button
+                  onClick={pingIndexNow}
+                  disabled={pinging}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#ff9500] hover:opacity-90 disabled:opacity-60 transition-opacity"
+                >
+                  {pinging ? <><Loader2 size={12} className="animate-spin" /> Pinging…</> : <><Zap size={12} /> Ping search engines (IndexNow)</>}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <SummaryCard label="Avg SEO score" value={`${data.summary.avgScore}/100`} accent={scoreColor(data.summary.avgScore)} />
@@ -168,6 +203,11 @@ export default function SeoPage() {
                       <span className="block text-sm text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{p.title}</span>
                       <span className="block text-[11px] text-[#86868b] truncate">{failing.length === 0 ? 'All checks pass' : `${failing.length} fix${failing.length !== 1 ? 'es' : ''} suggested`}</span>
                     </span>
+                    {p.inSitemap === false && (
+                      <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0" title="Not in your sitemap — Google may not discover it">
+                        <AlertCircle size={12} /> No sitemap
+                      </span>
+                    )}
                     {data.connected && <IndexBadge indexed={p.indexed} coverage={p.coverageState} />}
                     {data.connected && (
                       <span className="hidden sm:flex flex-col items-end w-20 flex-shrink-0">

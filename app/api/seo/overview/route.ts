@@ -15,6 +15,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getValidGscToken, querySearchAnalytics, inspectUrl } from '@/lib/gsc'
 import { scorePostSeo } from '@/lib/seo-score'
+import { fetchSitemapSlugs } from '@/lib/sitemap'
 
 export const maxDuration = 120
 
@@ -71,6 +72,10 @@ export async function GET() {
   }
   const connected = !!(property && token)
 
+  // Which post slugs are actually in the site's sitemap (Google's discovery
+  // path). `found:false` → couldn't read a sitemap, so we don't flag "missing".
+  const sitemap = wpUrl ? await fetchSitemapSlugs(wpUrl) : { slugs: new Set<string>(), found: false }
+
   // Match a post's slug to a GSC page URL.
   const findPageForSlug = (slug: string): string | null => {
     if (!slug) return null
@@ -116,6 +121,7 @@ export async function GET() {
       postId: p.id, title: p.title, slug: p.slug, url,
       score, checks,
       indexed: indexedState === 'indexed' ? true : indexedState === 'not_indexed' ? false : null,
+      inSitemap: sitemap.found ? sitemap.slugs.has((p.slug || '').toLowerCase()) : null,
       coverageState, lastCrawl,
       clicks: perf?.clicks ?? cached?.clicks ?? 0,
       impressions: perf?.impressions ?? cached?.impressions ?? 0,
@@ -146,6 +152,8 @@ export async function GET() {
     indexed: out.filter(r => r.indexed === true).length,
     notIndexed: out.filter(r => r.indexed === false).length,
     unknown: out.filter(r => r.indexed === null).length,
+    notInSitemap: out.filter(r => r.inSitemap === false).length,
+    sitemapFound: sitemap.found,
     totalClicks: out.reduce((s, r) => s + (r.clicks as number), 0),
     totalImpressions: out.reduce((s, r) => s + (r.impressions as number), 0),
   }

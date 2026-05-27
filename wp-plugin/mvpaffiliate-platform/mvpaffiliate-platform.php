@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.10
+ * Version: 1.0.11
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.10');
+define('MVP_AFFILIATE_VERSION', '1.0.11');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -44,8 +44,37 @@ if (!function_exists('mvp_affiliate_activate')) {
         if (!get_option('mvp_affiliate_installed_at')) {
             update_option('mvp_affiliate_installed_at', time());
         }
+        if (!get_option('affiliateos_indexnow_key')) {
+            update_option('affiliateos_indexnow_key', bin2hex(random_bytes(16)));
+        }
     }
 }
+
+// ─── 2b. IndexNow — instant Bing/Copilot/Yandex indexing ──────────────────────
+// MVP's dashboard submits URLs to IndexNow, which verifies site ownership by
+// fetching a key file at https://thissite/{key}.txt. We generate a per-site key
+// (lazily, so already-active installs get one) and serve that file. The key is
+// reported to the dashboard via /status so MVP can sign its submissions.
+if (!function_exists('mvp_affiliate_indexnow_key')) {
+    function mvp_affiliate_indexnow_key() {
+        $key = get_option('affiliateos_indexnow_key');
+        if (!$key) {
+            $key = bin2hex(random_bytes(16)); // 32 hex chars
+            update_option('affiliateos_indexnow_key', $key);
+        }
+        return $key;
+    }
+}
+add_action('init', function () {
+    $key = get_option('affiliateos_indexnow_key');
+    if (!$key) return;
+    $path = trim((string) (parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: ''), '/');
+    if ($path === $key . '.txt') {
+        header('Content-Type: text/plain; charset=utf-8');
+        echo $key;
+        exit;
+    }
+});
 
 // ─── 3. Data accessor ─────────────────────────────────────────────────────────
 if (!function_exists('mvp_affiliate_get_data')) {
@@ -806,6 +835,7 @@ if (!function_exists('mvp_affiliate_rest_status')) {
             'plugin_version' => MVP_AFFILIATE_VERSION,
             'theme_version'  => $theme->exists() ? (string) $theme->get('Version') : null,
             'theme_active'   => (get_stylesheet() === 'mvp-affiliate-theme'),
+            'indexnow_key'   => mvp_affiliate_indexnow_key(),
         ], 200);
     }
 }
