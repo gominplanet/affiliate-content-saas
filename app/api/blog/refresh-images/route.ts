@@ -90,6 +90,17 @@ export async function POST(request: Request) {
       try { productImageUrl = await fetchProductImageFromPage(pageUrl) } catch { /* ignore */ }
     }
   }
+  // EPC / Creator-Connections posts have no source video — resolve the product
+  // image from the campaign's ASIN instead (that's where the product lives), so
+  // "Refresh images" works on them too.
+  if (!productImageUrl) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: camp } = await (supabase as any)
+      .from('campaigns').select('asin').eq('user_id', user.id).eq('blog_post_id', post.id).maybeSingle()
+    if (camp?.asin) {
+      try { const p = await fetchAmazonProduct(camp.asin); if (p.title) productTitle = p.title; productImageUrl = p.imageUrl || null } catch { /* ignore */ }
+    }
+  }
 
   fal.config({ credentials: process.env.FAL_KEY ?? '' })
 

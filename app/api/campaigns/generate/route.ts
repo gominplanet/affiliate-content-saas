@@ -73,6 +73,10 @@ export async function POST(request: Request) {
     // reuse that row instead of inserting a duplicate. Otherwise insert.
     let campaignId: string | undefined
     if (body.campaignId) {
+      // Atomically CLAIM the scouted campaign — only proceed if it's still
+      // claimable (pending/failed). If it's already 'researching' or
+      // 'published', a generation is in flight or already done, so we return
+      // its post instead of creating a DUPLICATE (the double-submit bug).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: reused } = await (supabase as any)
         .from('campaigns')
@@ -86,11 +90,40 @@ export async function POST(request: Request) {
         })
         .eq('id', body.campaignId)
         .eq('user_id', user.id)
+        .in('status', ['pending', 'failed'])
         .select('id')
-        .single()
-      campaignId = reused?.id as string | undefined
+        .maybeSingle()
+      if (reused?.id) {
+        campaignId = reused.id as string
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: existing } = await (supabase as any)
+          .from('campaigns').select('id,status,wordpress_url').eq('id', body.campaignId).eq('user_id', user.id).maybeSingle()
+        if (existing) {
+          return NextResponse.json({
+            ok: true,
+            alreadyGenerated: existing.status === 'published',
+            status: existing.status,
+            wordpressUrl: existing.wordpress_url ?? null,
+            message: existing.status === 'published'
+              ? 'This campaign already has a published post — skipped to avoid a duplicate.'
+              : 'This campaign is already generating — skipped to avoid a duplicate.',
+          })
+        }
+        // campaignId given but no matching row → fall through and insert fresh.
+      }
     }
     if (!campaignId) {
+      // No reusable campaign. Soft guard against a double-submit for the same
+      // ASIN: if one is already in flight, don't start a second.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: inflight } = await (supabase as any)
+        .from('campaigns').select('id,status,wordpress_url')
+        .eq('user_id', user.id).eq('asin', asin).eq('status', 'researching')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      if (inflight?.id) {
+        return NextResponse.json({ ok: true, status: 'researching', message: 'A post for this product is already being generated — skipped to avoid a duplicate.' })
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: campaignRow } = await (supabase as any)
         .from('campaigns')
