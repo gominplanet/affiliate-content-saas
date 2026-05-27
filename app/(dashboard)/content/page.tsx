@@ -2454,11 +2454,14 @@ export default function ContentPage() {
       return all
     }
 
-    const [vids, { data: brand }, { data: integration }, { data: blogPosts }] = await Promise.all([
+    const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp] = await Promise.all([
       fetchAllVideos(),
       sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tier').eq('user_id', user.id).single(),
       sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
+      // Which posts still exist (published) on the live WP site — to reconcile
+      // away phantoms (deleted/trashed posts still linger in blog_posts).
+      fetch('/api/blog/live-post-ids').then(r => r.ok ? r.json() : null).catch(() => null),
     ])
 
     const b = brand as Record<string, unknown> | null
@@ -2502,8 +2505,15 @@ export default function ContentPage() {
     setBrandFacebookGroups(Array.isArray(b?.facebook_groups) ? (b!.facebook_groups as Array<{ name: string; url: string }>) : [])
     setVideos(vids)
 
+    // Reconcile against the LIVE site: a post deleted/trashed in WordPress still
+    // lingers in blog_posts, which would otherwise leave its source video stuck
+    // showing "published" with a link to a 404. null = couldn't read the site →
+    // keep everything (a transient error must never hide real posts).
+    const liveIds: Set<number> | null = (liveResp && Array.isArray(liveResp.liveIds)) ? new Set<number>(liveResp.liveIds) : null
+
     const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
+      if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number)) continue  // deleted/trashed in WordPress
       if (p.video_id && p.wordpress_url) {
         postMap[p.video_id as string] = {
           url: p.wordpress_url as string,

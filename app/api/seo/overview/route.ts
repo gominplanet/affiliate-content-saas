@@ -16,6 +16,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getValidGscToken, querySearchAnalytics, inspectUrl } from '@/lib/gsc'
 import { scorePostSeo } from '@/lib/seo-score'
 import { fetchSitemapSlugs } from '@/lib/sitemap'
+import { fetchLiveWpPostIds } from '@/lib/wp-live-posts'
 
 export const maxDuration = 120
 
@@ -23,34 +24,6 @@ const INSPECT_CAP = 25          // max URL Inspections per request (latency + qu
 const STALE_MS = 24 * 60 * 60 * 1000
 
 function ymd(d: Date): string { return d.toISOString().slice(0, 10) }
-
-/**
- * Live published post IDs from the WordPress site, so the SEO hub reflects what
- * is ACTUALLY on the site. A post deleted/trashed in WordPress still lingers in
- * our blog_posts table and would otherwise score here as a phantom 404 (Google
- * rejects indexing for it, it shows "URL is not on Google", etc.). Returns null
- * if the site's REST API can't be read — callers then skip reconciliation and
- * show everything, so a transient error never hides real posts.
- */
-async function fetchLiveWpPostIds(wpUrl: string): Promise<Set<number> | null> {
-  if (!wpUrl) return null
-  try {
-    const ids = new Set<number>()
-    for (let page = 1; page <= 5; page++) {   // up to 500 published posts
-      const r = await fetch(`${wpUrl}/wp-json/wp/v2/posts?per_page=100&page=${page}&_fields=id`, {
-        headers: { 'User-Agent': 'MVPAffiliate/1.0' },
-        signal: AbortSignal.timeout(10000),
-      })
-      // A 400 on a page past the last is expected — keep whatever we gathered.
-      if (!r.ok) return ids.size ? ids : null
-      const arr = await r.json().catch(() => null)
-      if (!Array.isArray(arr)) return ids.size ? ids : null
-      for (const it of arr) { const id = (it as { id?: unknown }).id; if (typeof id === 'number') ids.add(id) }
-      if (arr.length < 100) break
-    }
-    return ids.size ? ids : null
-  } catch { return null }
-}
 
 export async function GET() {
   const supabase = await createServerClient()
