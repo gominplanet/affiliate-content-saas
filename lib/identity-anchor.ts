@@ -6,21 +6,39 @@ import { recordUsage } from '@/lib/ai-usage'
 
 const BUCKET = 'headshots'
 
-/** Stable cache key for a face's photo set — changes when the photos change, so
- *  a re-uploaded "Your Face" automatically regenerates the anchor next time. */
-function anchorKey(userId: string, sourceImages: string[]): string {
+/** Facial expression for the anchor. The energetic ones make punchy thumbnail
+ *  faces; `neutral` is the default for headshots / IG / general likeness. */
+export const ANCHOR_EXPRESSIONS: Record<string, string> = {
+  neutral:   'a relaxed, confident expression',
+  happy:     'a warm, genuine smile — friendly and approachable',
+  excited:   'visibly excited and energetic — bright wide eyes and a big enthusiastic smile',
+  surprised: 'a genuine surprised reaction — eyebrows raised, eyes wide, mouth slightly open in a "wow"',
+  laughing:  'laughing naturally — joyful and candid, eyes lit up',
+  focused:   'focused and determined — calm intensity',
+  serious:   'serious and composed — confident, no smile',
+  angry:     'an intense, fired-up reaction — furrowed brow, strong emotion',
+}
+
+/** Stable cache key for a face's photo set + expression — changes when the
+ *  photos change, so a re-uploaded "Your Face" regenerates anchors next time.
+ *  Neutral keeps the bare key, backward-compatible with already-cached anchors. */
+function anchorKey(userId: string, sourceImages: string[], expression: string): string {
   const h = createHash('sha1').update(sourceImages.join('|')).digest('hex').slice(0, 12)
-  return `${userId}/anchors/${h}.png`
+  const suffix = expression && expression !== 'neutral' ? `-${expression}` : ''
+  return `${userId}/anchors/${h}${suffix}.png`
 }
 
 // Same identity-lock discipline as the Photobooth, distilled to a clean,
 // composite-friendly reference portrait (neutral backdrop, even light, centred).
-const ANCHOR_PROMPT = `Professional head-and-shoulders portrait, photorealistic, high resolution.
+function buildAnchorPrompt(expression: string): string {
+  const expr = ANCHOR_EXPRESSIONS[expression] || ANCHOR_EXPRESSIONS.neutral
+  return `Professional head-and-shoulders portrait, photorealistic, high resolution.
 
 REFERENCE IMAGES: use these ONLY to capture the MAIN subject's exact facial identity, hair, and likeness. The photos may also contain OTHER people — IGNORE everyone else; lock onto the single most prominent main subject (the largest, most central face).
 IDENTITY (critical): render EXACTLY that one person, completely ALONE. Do NOT blend, merge, average, or mix in any other face. ONLY ONE person in the output — no second person, partner, companion, or any extra face/head/shoulder/arm anywhere in the frame. It must be unmistakably the same individual — flattering but clearly them.
-SHOT: head-and-shoulders, person centred, facing the camera, relaxed confident expression, natural realistic skin texture (NOT plastic or over-retouched), flattering even studio lighting, sharp focus on the eyes, on a clean evenly-lit neutral light-grey backdrop.
+SHOT: head-and-shoulders, person centred, facing the camera, ${expr}, natural realistic skin texture (NOT plastic or over-retouched), flattering even studio lighting, sharp focus on the eyes, on a clean evenly-lit neutral light-grey backdrop.
 Do NOT render any text, captions, watermarks, or logos.`
+}
 
 /**
  * Photobooth-quality "identity anchor": one clean, identity-locked solo portrait
@@ -38,10 +56,11 @@ export async function getOrCreateIdentityAnchor(
   supabase: any,
   userId: string,
   sourceImages: string[],
-  ctx?: { tier?: string | null },
+  ctx?: { tier?: string | null; expression?: string },
 ): Promise<string | null> {
   if (!userId || !Array.isArray(sourceImages) || sourceImages.length === 0) return null
-  const path = anchorKey(userId, sourceImages)
+  const expression = (ctx?.expression && ANCHOR_EXPRESSIONS[ctx.expression]) ? ctx.expression : 'neutral'
+  const path = anchorKey(userId, sourceImages, expression)
 
   // 1. Reuse a cached anchor if we've already built one for this exact photo set.
   try {
@@ -67,7 +86,7 @@ export async function getOrCreateIdentityAnchor(
 
     const model = OpenAIService.imageModel()
     const openai = createOpenAIService()
-    const b64 = await openai.generateWithReferences({ prompt: ANCHOR_PROMPT, images: refImages, size: '1024x1024', quality: 'high', model })
+    const b64 = await openai.generateWithReferences({ prompt: buildAnchorPrompt(expression), images: refImages, size: '1024x1024', quality: 'high', model })
     recordUsage({ userId, tier: ctx?.tier ?? null, feature: 'identity_anchor_image', model, images: 1 })
 
     const bytes = Buffer.from(b64, 'base64')

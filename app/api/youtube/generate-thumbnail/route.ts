@@ -779,9 +779,12 @@ export async function POST(request: Request) {
           // the composited face inherits Photobooth fidelity. A couple of the
           // raw photos ride along for extra angles. Falls back to the raw photos
           // if the anchor can't be built.
+          // Thumbnails want PUNCH: lead with an "excited" anchor (cached
+          // separately from the neutral one) so the composited face carries
+          // high-CTR energy instead of a calm headshot expression.
           let faceRefs: string[] = []
           if (faceModel?.source_images?.length) {
-            const anchor = await getOrCreateIdentityAnchor(supabase, user.id, faceModel.source_images, { tier })
+            const anchor = await getOrCreateIdentityAnchor(supabase, user.id, faceModel.source_images, { tier, expression: 'excited' })
             const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, anchor ? 2 : 5)
             faceRefs = anchor ? [anchor, ...rawRefs] : rawRefs
           }
