@@ -124,17 +124,19 @@ async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: str
   try {
     const folder = `${userId}/photobooth`
     const { data: files } = await supabase.storage.from('headshots').list(folder, { limit: 200 })
-    // Cast randomly from this face's ENERGETIC headshots only — natural variety
-    // thumbnail-to-thumbnail, but a calm/neutral headshot never lands on a
-    // thumbnail. Filename: `{faceId}__{style}__{expression}__{ts}-{rand}.png`.
+    // This face's shots. Filename: `{faceId}__{style}__{expression}__{thumb}__{ts}-{rand}`.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const eligible = ((files ?? []) as any[]).filter(f => {
-      if (typeof f?.name !== 'string') return false
-      const parts = f.name.split('__')
-      return parts[0] === faceId && THUMBNAIL_EXPRESSIONS.has(parts[2])
-    })
-    if (eligible.length === 0) return null
-    const pick = eligible[Math.floor(Math.random() * eligible.length)]
+    const mine = ((files ?? []) as any[]).filter(f => typeof f?.name === 'string' && f.name.split('__')[0] === faceId)
+    if (mine.length === 0) return null
+    // 1) If the creator STARRED any shots for thumbnails, cast ONLY from those
+    //    — fully deterministic, exactly their pick. 2) Otherwise auto-fall back
+    //    to the high-energy expressions. Random within whichever pool applies.
+    const starred = mine.filter(f => f.name.split('__')[3] === 'on')
+    const pool = starred.length > 0
+      ? starred
+      : mine.filter(f => THUMBNAIL_EXPRESSIONS.has(f.name.split('__')[2]))
+    if (pool.length === 0) return null
+    const pick = pool[Math.floor(Math.random() * pool.length)]
     const { data: file } = await supabase.storage.from('headshots').download(`${folder}/${pick.name}`)
     if (!file) return null
     const url = await fal.storage.upload(file as Blob)
@@ -143,11 +145,11 @@ async function findPhotoboothHeadshot(supabase: any, userId: string, faceId: str
 }
 
 /**
- * The face reference for a composite (thumbnail / IG). Randomly casts one of the
- * creator's high-energy Photobooth headshots for this face (excited/surprised/
- * laughing) — instant, no generation, with natural variety shot-to-shot — and
- * falls back to the auto-generated cached anchor (of `expression`) when they
- * have no such shot. Returns a fal-reachable URL, or null on total failure.
+ * The face reference for a composite (thumbnail / IG). Casts a shot the creator
+ * STARRED for thumbnails (or, if none starred, a high-energy excited/surprised/
+ * laughing one) — instant, no generation, with natural variety shot-to-shot —
+ * and falls back to the auto-generated cached anchor (of `expression`) when they
+ * have no eligible shot. Returns a fal-reachable URL, or null on total failure.
  */
 export async function getThumbnailFaceRef(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

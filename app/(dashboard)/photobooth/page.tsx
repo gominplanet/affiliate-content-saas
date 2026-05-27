@@ -59,7 +59,7 @@ const SIZE_OPTS: Array<{ key: '1024x1024' | '1024x1536' | '1536x1024'; label: st
   { key: '1536x1024', label: 'Landscape (banners)' },
 ]
 
-interface Shot { id: string; url: string; style: string; expression?: string; path?: string }
+interface Shot { id: string; url: string; style: string; expression?: string; starred?: boolean; path?: string }
 interface UsageInfo { used: number; limit: number | null; remaining: number | null; resetLabel: string }
 
 export default function PhotoboothPage() {
@@ -108,8 +108,8 @@ export default function PhotoboothPage() {
       const ud = await ur.json()
       if (ud?.usage) setUsage(ud.usage as UsageInfo)
       if (Array.isArray(ud?.shots)) {
-        setShots((ud.shots as Array<{ path: string; url: string; style: string; expression?: string }>).map(s => ({
-          id: s.path, url: s.url, style: s.style, expression: s.expression || 'neutral', path: s.path,
+        setShots((ud.shots as Array<{ path: string; url: string; style: string; expression?: string; starred?: boolean }>).map(s => ({
+          id: s.path, url: s.url, style: s.style, expression: s.expression || 'neutral', starred: !!s.starred, path: s.path,
         })))
       }
     } catch { /* ignore */ }
@@ -219,6 +219,7 @@ export default function PhotoboothPage() {
         url: d.image as string,
         style: d.style as string,
         expression,
+        starred: false,
         path: (d.path as string) || undefined,
       }
       setShots(prev => [newShot, ...prev].slice(0, 20))
@@ -271,6 +272,25 @@ export default function PhotoboothPage() {
           : s))
       }
     } catch { /* keep the optimistic tag */ }
+  }
+
+  // Toggle "use on thumbnails". Co-Pilot casts ONLY from starred shots when any
+  // exist (else it auto-falls back to high-energy ones). Renames the file.
+  async function updateShotStarred(shot: Shot, starred: boolean) {
+    setShots(prev => prev.map(s => s.id === shot.id ? { ...s, starred } : s))
+    if (!shot.path) return
+    try {
+      const res = await fetch('/api/photobooth', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: shot.path, starred }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d.path) {
+        setShots(prev => prev.map(s => s.id === shot.id
+          ? { ...s, id: d.path as string, path: d.path as string, url: (d.url as string) || s.url, starred }
+          : s))
+      }
+    } catch { /* keep the optimistic state */ }
   }
 
   return (
@@ -509,6 +529,13 @@ export default function PhotoboothPage() {
                         >
                           {EXPRESSION_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
                         </select>
+                        <button
+                          onClick={() => updateShotStarred(s, !s.starred)}
+                          title="When on, Co-Pilot may cast this shot as your face on thumbnails. Star a few of your best — it uses only the starred ones."
+                          className={`mt-1.5 inline-flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${s.starred ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'bg-transparent border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#0071e3]'}`}
+                        >
+                          {s.starred ? '★ Used on thumbnails' : '☆ Use on thumbnails'}
+                        </button>
                         <button
                           onClick={() => downloadShot(s)}
                           className="mt-1.5 inline-flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#34c759] text-white hover:opacity-90"
