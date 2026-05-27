@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.11
+ * Version: 1.0.12
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.11');
+define('MVP_AFFILIATE_VERSION', '1.0.12');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -75,6 +75,59 @@ add_action('init', function () {
         exit;
     }
 });
+
+// ─── 2c. Self-healing on publish: purge sitemap cache + ping IndexNow ─────────
+// WordPress builds the sitemap dynamically, but hosts (LiteSpeed/Hostinger,
+// SiteGround, etc.) cache the sitemap response for days — so a freshly
+// published post can sit out of the sitemap until the cache TTL lapses (the
+// "missing from sitemap" problem). On publish we purge the sitemap URLs and
+// ping IndexNow so the new post is discoverable immediately on Bing/Copilot.
+if (!function_exists('mvp_affiliate_purge_sitemap_cache')) {
+    function mvp_affiliate_purge_sitemap_cache() {
+        $urls = array(
+            home_url('/wp-sitemap.xml'),
+            home_url('/wp-sitemap-posts-post-1.xml'),
+            home_url('/sitemap.xml'),
+            home_url('/sitemap_index.xml'),
+            home_url('/post-sitemap.xml'),
+        );
+        // LiteSpeed Cache (Hostinger) — precise per-URL purge.
+        foreach ($urls as $u) { do_action('litespeed_purge_url', $u); }
+        // SiteGround Optimizer — no public per-URL purge, so flush dynamic cache.
+        do_action('sg_cachepress_purge_cache');
+        // Other common caches (no-op if the plugin/function isn't present).
+        if (function_exists('rocket_clean_domain')) { rocket_clean_domain(); }
+        if (function_exists('w3tc_flush_all')) { w3tc_flush_all(); }
+        if (function_exists('wp_cache_clear_cache')) { wp_cache_clear_cache(); }
+        // Core object cache (the dynamic sitemap reads from it).
+        wp_cache_flush();
+    }
+}
+if (!function_exists('mvp_affiliate_indexnow_submit')) {
+    function mvp_affiliate_indexnow_submit($urls) {
+        $key = get_option('affiliateos_indexnow_key');
+        if (!$key || empty($urls)) return;
+        $host = wp_parse_url(home_url(), PHP_URL_HOST);
+        if (!$host) return;
+        wp_remote_post('https://api.indexnow.org/indexnow', array(
+            'headers'  => array('Content-Type' => 'application/json; charset=utf-8'),
+            'body'     => wp_json_encode(array(
+                'host'        => $host,
+                'key'         => $key,
+                'keyLocation' => home_url('/' . $key . '.txt'),
+                'urlList'     => array_values(array_unique($urls)),
+            )),
+            'timeout'  => 8,
+            'blocking' => false, // fire-and-forget — never delay the publish
+        ));
+    }
+}
+add_action('transition_post_status', function ($new_status, $old_status, $post) {
+    if (!$post || $post->post_type !== 'post' || $new_status !== 'publish') return;
+    if (wp_is_post_revision($post->ID) || wp_is_post_autosave($post->ID)) return;
+    mvp_affiliate_purge_sitemap_cache();
+    mvp_affiliate_indexnow_submit(array(get_permalink($post->ID)));
+}, 20, 3);
 
 // ─── 3. Data accessor ─────────────────────────────────────────────────────────
 if (!function_exists('mvp_affiliate_get_data')) {
