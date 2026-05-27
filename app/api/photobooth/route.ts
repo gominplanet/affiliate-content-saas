@@ -87,7 +87,7 @@ async function pruneShots(supabase: any, userId: string): Promise<void> {
   if (extra.length) await supabase.storage.from(SHOTS_BUCKET).remove(extra)
 }
 
-/** Built-in looks. Free-text customPrompt is appended on top of these. */
+/** Built-in looks (backdrop + lighting). Free-text customPrompt is appended. */
 const STYLES: Record<string, string> = {
   studio:    'Clean professional studio headshot on a smooth neutral backdrop (soft grey or white), crisp even studio lighting, sharp focus.',
   office:    'Modern office setting — a computer/desk and workspace softly blurred in the background, approachable and professional.',
@@ -95,6 +95,19 @@ const STYLES: Record<string, string> = {
   magazine:  'Bright, well-lit editorial magazine-style headshot — polished, high-end commercial lighting, glossy professional finish.',
   outdoor:   'Natural outdoor daylight, soft bokeh background, warm and friendly.',
   linkedin:  'Classic LinkedIn-style professional headshot — business-casual attire, simple neutral background, confident friendly expression.',
+}
+
+/** Facial expressions (independent of LOOK). Empty `neutral` → the default
+ *  relaxed-confident line. The energetic ones double as punchy thumbnail faces. */
+const EXPRESSIONS: Record<string, string> = {
+  neutral:   '',
+  happy:     'a warm, genuine smile — friendly and approachable',
+  excited:   'visibly excited and energetic — bright wide eyes and a big enthusiastic smile',
+  surprised: 'a genuine surprised reaction — eyebrows raised, eyes wide, mouth slightly open in a "wow"',
+  laughing:  'laughing naturally — joyful and candid, eyes lit up',
+  focused:   'focused and determined — calm intensity, looking straight at the camera',
+  serious:   'serious and composed — confident, no smile',
+  angry:     'an intense, fired-up reaction — furrowed brow, strong emotion',
 }
 
 export async function POST(request: Request) {
@@ -125,6 +138,7 @@ export async function POST(request: Request) {
     const body = await request.json() as {
       faceModelId?: string
       style?: string
+      expression?: string
       customPrompt?: string
       size?: '1024x1024' | '1024x1536' | '1536x1024'
     }
@@ -160,6 +174,9 @@ export async function POST(request: Request) {
 
     // ── Build the headshot prompt ─────────────────────────────────────────
     const styleLine = (body.style && STYLES[body.style]) ? STYLES[body.style] : STYLES.studio
+    const expressionClause = (body.expression && EXPRESSIONS[body.expression])
+      ? EXPRESSIONS[body.expression]
+      : 'a relaxed, confident professional expression'
     const custom = (body.customPrompt || '').trim().slice(0, 400)
     const size = (body.size === '1024x1536' || body.size === '1536x1024') ? body.size : '1024x1024'
 
@@ -168,7 +185,7 @@ export async function POST(request: Request) {
 REFERENCE IMAGES: use these ONLY to capture the MAIN subject's exact facial identity, hair, and likeness. The photos may also contain OTHER people (a partner or friend) — IGNORE everyone else; lock onto the single most prominent main subject (the largest, most central face).
 IDENTITY (critical): render EXACTLY that one person, completely ALONE. Do NOT blend, merge, average, or mix in any other face. There must be ONLY ONE person in the output — absolutely no second person, partner, companion, or any extra face/head/shoulder/arm of anyone else anywhere in the frame. It must clearly be the same individual — flattering but unmistakably them.
 
-SHOT: head-and-shoulders portrait, person centred, looking at the camera, relaxed confident professional expression, natural realistic skin texture (not plastic or over-retouched), flattering professional lighting, sharp focus on the eyes.
+SHOT: head-and-shoulders portrait, person centred, looking at the camera, ${expressionClause}, natural realistic skin texture (not plastic or over-retouched), flattering professional lighting, sharp focus on the eyes.
 LOOK: ${styleLine}${custom ? `\nADDITIONAL DIRECTION: ${custom}` : ''}
 Do NOT render any text, captions, watermarks, or logos.`
 

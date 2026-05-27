@@ -38,7 +38,6 @@ import {
   Handshake,
   GraduationCap,
   MessagesSquare,
-  UserCircle2,
   Bot,
   Scale,
   Gauge,
@@ -76,7 +75,6 @@ const navGroups: NavGroup[] = [
       { href: '/brand', label: 'Brand Profile', icon: Palette, matchKind: 'prefix' },
       { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' },
       { href: '/learn', label: 'Learning', icon: GraduationCap, matchKind: 'prefix' },
-      { href: '/face-training', label: 'Your Face', icon: UserCircle2, matchKind: 'prefix' },
     ],
   },
   {
