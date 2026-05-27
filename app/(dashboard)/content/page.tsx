@@ -2368,6 +2368,24 @@ export default function ContentPage() {
   const [scheduledLoading, setScheduledLoading] = useState(false)
   const [scheduledError, setScheduledError] = useState<string | null>(null)
   const [allBlogPosts, setAllBlogPosts] = useState<{ id: number; title: string; link: string; date: string; thumbnail: string | null; videoId: string | null }[]>([])
+  // SEO score per post (slug → score) for the Library card badge. Loaded once
+  // when the Posts tab opens, from the same /api/seo/overview the SEO hub uses.
+  const [seoScores, setSeoScores] = useState<Record<string, number>>({})
+  const [seoScoresLoaded, setSeoScoresLoaded] = useState(false)
+  useEffect(() => {
+    if (activeTab !== 'posts' || seoScoresLoaded) return
+    setSeoScoresLoaded(true)
+    ;(async () => {
+      try {
+        const res = await fetch('/api/seo/overview')
+        const d = await res.json()
+        if (!Array.isArray(d?.posts)) return
+        const map: Record<string, number> = {}
+        for (const p of d.posts) if (p?.slug) map[p.slug] = p.score as number
+        setSeoScores(map)
+      } catch { /* badge is best-effort */ }
+    })()
+  }, [activeTab, seoScoresLoaded])
   const [rewritingPostId, setRewritingPostId] = useState<number | null>(null)
   // Row-level Rewrite modal (Posts tab). Tracks the post we're about
   // to rewrite + the feedback typed by the Pro user. Modal renders at
@@ -3336,9 +3354,23 @@ export default function ContentPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-snug" dangerouslySetInnerHTML={{ __html: post.title }} />
-                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">
-                  {post.date ? new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''}
-                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  {(() => {
+                    let slug = ''
+                    try { slug = new URL(post.link).pathname.replace(/\/$/, '').split('/').filter(Boolean).pop() || '' } catch { /* ignore */ }
+                    const sc = slug ? seoScores[slug] : undefined
+                    if (sc === undefined) return null
+                    const col = sc >= 80 ? '#34c759' : sc >= 60 ? '#ff9500' : '#ff3b30'
+                    return (
+                      <Link href="/seo" title="Open the SEO hub" className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ color: col, background: `${col}1a` }}>
+                        SEO {sc}
+                      </Link>
+                    )
+                  })()}
+                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
+                    {post.date ? new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : ''}
+                  </p>
+                </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {/* Rewrite is Pro-only and one-shot per post. Hide for
