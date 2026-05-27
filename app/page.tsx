@@ -63,7 +63,7 @@ const plans = [
     regular: 99,
     limit: '40 posts / month',
     bonus: '',
-    features: ['Free themed review site', 'Facebook, Threads, Bluesky, LinkedIn, Pinterest *', 'In-body AI product images (up to 3 / post)', '5 brand-collab pitch emails / month', 'Built-in AI assistant that knows your brand — one less subscription'],
+    features: ['Free themed review site', 'Facebook, Threads, Bluesky, LinkedIn, Pinterest *', 'In-body AI product images (up to 3 / post)', 'Your Face in AI thumbnails + studio Photobooth headshots', '5 brand-collab pitch emails / month', 'Built-in AI assistant that knows your brand — one less subscription'],
     cta: 'Get Creator',
     href: '/pricing',
     highlight: false,
@@ -74,7 +74,7 @@ const plans = [
     regular: 499,
     limit: '200 posts / month',
     bonus: '140 + 60 bonus posts',
-    features: ['Everything in Creator', '100 brand-collab pitch emails / month', 'For Amazon influencers & associates — scout Creator Connections campaigns by commission & EPC, publish in one click', 'Native AI Instagram image — your face + the product, 4:5', 'Custom face training for AI thumbnails', 'Near-unlimited AI assistant that knows your business', 'Adds Instagram, X & Telegram', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids)', 'One-click Publish All to socials', 'Priority support'],
+    features: ['Everything in Creator', '100 brand-collab pitch emails / month', 'For Amazon influencers & associates — scout Creator Connections campaigns by commission & EPC, publish in one click', 'Native AI Instagram image — your face + the product, 4:5', 'Double the Photobooth headshots (20 / month)', 'Near-unlimited AI assistant that knows your business', 'Adds Instagram, X & Telegram', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids)', 'One-click Publish All to socials', 'Priority support'],
     cta: 'Get Pro',
     href: '/pricing',
     highlight: true,
@@ -678,7 +678,7 @@ export default function LandingPage() {
                 <span className="text-3xl font-bold">$49<span className="text-base font-medium">/mo</span></span>
               </div>
               <p className="relative text-[11px] text-white/80 mt-2 leading-relaxed">
-                Pro at $199 adds Instagram, X &amp; Telegram, the native AI Instagram image (your face + the product), face training, and one-click Publish All.
+                Pro at $199 adds Instagram, X &amp; Telegram, the native AI Instagram image (your face + the product), double the Photobooth headshots, and one-click Publish All.
               </p>
             </div>
           </div>
