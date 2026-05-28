@@ -507,6 +507,71 @@ export class YouTubeOAuthService {
       throw new Error(`YouTube thumbnail upload failed ${res.status}: ${body.slice(0, 300)}`)
     }
   }
+
+  /**
+   * Fetch the transcript for a video via the OFFICIAL YouTube Data API
+   * (captions.list + captions.download). Reliable for videos the user has
+   * uploaded captions on; auto-generated captions ARE listed but YouTube
+   * blocks downloading them via this endpoint for non-owners (and is even
+   * inconsistent for owners). Returns plain text or null on any failure /
+   * empty result so the caller falls back to the next transcript source.
+   *
+   * Requires the `youtube.force-ssl` scope (we already request that scope
+   * at the OAuth handshake). Prefers English; falls back to any available
+   * track if no English one exists.
+   */
+  async getTranscript(videoId: string): Promise<string | null> {
+    try {
+      // 1) List caption tracks for the video.
+      interface CaptionItem {
+        id: string
+        snippet?: { language?: string; trackKind?: string; name?: string }
+      }
+      const list = await this.get<{ items?: CaptionItem[] }>('/captions', {
+        videoId,
+        part: 'snippet',
+      })
+      const items = list.items ?? []
+      if (items.length === 0) return null
+
+      // Prefer en/en-US, then a user-uploaded track (trackKind 'standard'),
+      // then anything left.
+      const score = (it: CaptionItem) => {
+        let s = 0
+        const lang = (it.snippet?.language || '').toLowerCase()
+        if (lang === 'en' || lang.startsWith('en-')) s += 10
+        if (it.snippet?.trackKind === 'standard') s += 5   // user-uploaded
+        if (it.snippet?.trackKind === 'asr') s += 1        // auto-generated
+        return s
+      }
+      const picked = items.slice().sort((a, b) => score(b) - score(a))[0]
+      if (!picked?.id) return null
+
+      // 2) Download the picked track as SRT.
+      const dlRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/captions/${encodeURIComponent(picked.id)}?tfmt=srt`,
+        { headers: { Authorization: `Bearer ${this.accessToken}` }, signal: AbortSignal.timeout(15_000) },
+      )
+      if (!dlRes.ok) return null
+      const srt = await dlRes.text()
+      if (!srt) return null
+
+      // 3) Strip SRT framing (index lines + "00:00:00,000 --> 00:00:00,000")
+      //    and HTML-style tags YouTube embeds for styling, then collapse
+      //    whitespace. Plain text only.
+      const plain = srt
+        .replace(/\r/g, '')
+        .split('\n\n')
+        .map(block => block.split('\n').slice(2).join(' '))
+        .join(' ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+      return plain || null
+    } catch {
+      return null
+    }
+  }
 }
 
 // Refresh an expired OAuth access token

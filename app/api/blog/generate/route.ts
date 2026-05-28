@@ -259,35 +259,66 @@ async function handleGenerate(request: Request) {
   }
 
   // ── 4. Fetch transcript ───────────────────────────────────────────────────
+  // Layered: cached on the row → YouTube Data API (official, force-ssl scope
+  // the user already granted) → YoutubeTranscript scraper as last resort.
+  // The Data API is the most reliable for caption tracks the creator uploaded
+  // themselves; the scraper picks up auto-captions YouTube generates (which
+  // the Data API often refuses to download). transcriptSource is reported
+  // back to the client so the UI can show what we used.
   let transcript = (video as Record<string, string>).transcript || ''
-  if (!transcript) {
+  let transcriptSource: 'cache' | 'youtube_api' | 'scraper' | 'none' = transcript ? 'cache' : 'none'
+  const youtubeVideoIdForTranscript = (video as Record<string, string>).youtube_video_id
+
+  // Layer 1: official YouTube Data API.
+  if (!transcript && youtubeVideoIdForTranscript) {
     try {
-      const segments = await YoutubeTranscript.fetchTranscript(
-        (video as Record<string, string>).youtube_video_id,
-        { lang: 'en' },
-      )
-      transcript = segments.map((s: { text: string }) => s.text).join(' ')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: integ } = await (supabase as any)
+        .from('integrations')
+        .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
+        .eq('user_id', user.id).single()
+      if (integ?.youtube_oauth_access_token) {
+        const token = await getValidYouTubeToken(integ as Record<string, unknown>)
+        const yt = createYouTubeOAuthService(token)
+        const apiTranscript = await yt.getTranscript(youtubeVideoIdForTranscript)
+        if (apiTranscript && apiTranscript.trim().length >= 40) {
+          transcript = apiTranscript
+          transcriptSource = 'youtube_api'
+        }
+      }
+    } catch { /* fall through to the scraper */ }
+  }
+
+  // Layer 2: YoutubeTranscript scraper (handles auto-captions but YouTube
+  // blocks it from many cloud IPs — best-effort).
+  if (!transcript && youtubeVideoIdForTranscript) {
+    try {
+      const segments = await YoutubeTranscript.fetchTranscript(youtubeVideoIdForTranscript, { lang: 'en' })
+      const text = segments.map((s: { text: string }) => s.text).join(' ')
+      if (text && text.trim().length >= 40) {
+        transcript = text
+        transcriptSource = 'scraper'
+      }
+    } catch { /* leave empty */ }
+  }
+
+  // Cache whatever we got so the next regen / rewrite is instant.
+  if (transcript && transcriptSource !== 'cache') {
+    try {
       await supabase
         .from('youtube_videos')
         .update({ transcript, transcript_fetched_at: new Date().toISOString() })
         .eq('id', videoId)
-    } catch {
-      transcript = ''
-    }
+    } catch { /* non-fatal */ }
   }
 
-  // NOTE: the hard "no transcript = 422" gate that used to live here has been
-  // removed. The YoutubeTranscript library scrapes YouTube and YouTube now
-  // blocks most scrapers (especially from Vercel's cloud IPs), so the gate was
-  // firing on legitimate videos with captions. The voice-betrayal scrub
-  // (lib/blog-voice-scrub.ts) + the explicit prompt rules in rule 8 of
-  // services/claude/index.ts together prevent the "we don't have a transcript"
-  // disclaimers and "watch the full video" filler from appearing in the body
-  // even when the transcript is empty — so the safer move is to proceed with
-  // whatever we have (description + product info) and let those guards do
-  // their job. The allowEmptyTranscript body flag is kept as a no-op for
-  // forward compat. transcriptUsed is reported back to the client so the UI
-  // can show a soft notice when the post was grounded without captions.
+  // NOTE: no hard gate on empty transcript anymore — the layered fetcher above
+  // already tries the official Data API before the scraper, and on the rare
+  // case where both fail the voice-betrayal scrub (lib/blog-voice-scrub.ts) +
+  // the explicit prompt rules in rule 8 of services/claude/index.ts prevent
+  // the "we don't have a transcript" / "watch the full video" patterns from
+  // appearing in the body. allowEmptyTranscript is kept as a no-op for
+  // forward compat.
   void allowEmptyTranscript
   const transcriptUsed = !!transcript && transcript.trim().length >= 80
 
@@ -1199,10 +1230,13 @@ async function handleGenerate(request: Request) {
     title: generated.title,
     productUrl,
     hasImages: includeImages,
-    // false when YouTube blocked the transcript scraper; the article was
-    // grounded on description + product info only. The client can show a soft
-    // notice — the post is fine, just a bit shorter / less specific.
+    // false when both transcript sources failed; the article was grounded on
+    // description + product info only. The client can show a soft notice —
+    // the post is fine, just a bit shorter / less specific.
     transcriptUsed,
+    // Which source supplied the transcript so the UI can surface it
+    // (cache / youtube_api / scraper / none).
+    transcriptSource,
   })
 }
 
