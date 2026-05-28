@@ -16,11 +16,20 @@ export interface LinkCandidate {
   title: string
   url: string
   keyword?: string | null
+  /** First few hundred chars of the candidate's body text (HTML stripped). Used
+   *  as extra topical signal so two posts whose TITLES don't overlap but whose
+   *  body content does still match (e.g. one titled "YITAHOME Garden Bench"
+   *  and another "Best Patio Furniture for Wet Weather"). */
+  contentSnippet?: string | null
+  /** 'review' | 'comparison' | 'guide'. Same type adds a small score bump. */
+  postType?: string | null
 }
 
 export interface CurrentTopic {
   title: string
   keyword?: string | null
+  contentSnippet?: string | null
+  postType?: string | null
   tags?: string[]
   niches?: string[]
   category?: string | null
@@ -56,9 +65,14 @@ export function pickRelatedPosts(
   candidates: LinkCandidate[],
   max = 3,
 ): LinkCandidate[] {
+  // Tokenize the CURRENT post from every signal available. We deliberately
+  // include the content snippet — many older posts have a null seo_keyword and
+  // a short title, so without the body the token set is too narrow and obvious
+  // related posts get filtered out by "0 overlapping tokens".
   const currentTokens = tokenize(
     current.title,
     current.keyword,
+    current.contentSnippet,
     (current.tags || []).join(' '),
     (current.niches || []).join(' '),
     current.category,
@@ -68,9 +82,13 @@ export function pickRelatedPosts(
   const scored = candidates
     .filter(c => c.title && c.url)
     .map(c => {
-      const ct = tokenize(c.title, c.keyword)
+      // Score each candidate by token overlap across title + keyword + body
+      // snippet (same widening on this side). Same post_type adds a small
+      // bump so reviews bond with other reviews, comparisons with comparisons.
+      const ct = tokenize(c.title, c.keyword, c.contentSnippet)
       let score = 0
       for (const t of ct) if (currentTokens.has(t)) score++
+      if (current.postType && c.postType && current.postType === c.postType) score += 1
       return { c, score }
     })
     .filter(s => s.score > 0)

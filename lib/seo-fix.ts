@@ -82,14 +82,36 @@ export async function applyPostFixes(opts: {
 
   const applyInternalLinks = async (): Promise<boolean> => {
     if (/<h2>\s*Related reviews/i.test(state.content)) { reasons.internal_links = 'Already has a related-reviews block.'; return false }
+    // Pull title + slug + keyword + content + post_type so the matcher can
+    // score on body text and same-post-type overlap, not just title overlap.
+    // The token set in pickRelatedPosts was too narrow when both posts had
+    // no seo_keyword and short titles — the body widens the signal.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: others } = await (supabase as any)
-      .from('blog_posts').select('title,slug,seo_keyword')
+      .from('blog_posts').select('title,slug,seo_keyword,post_type,content')
       .eq('user_id', userId).not('wordpress_post_id', 'is', null).neq('id', post.id).limit(200)
+    // Strip HTML + cap to first 800 chars per candidate — token-overlap math
+    // doesn't benefit from more, and we want the candidate list to stay light.
+    const stripSnippet = (html: string | null | undefined): string => {
+      if (!html) return ''
+      return String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 800)
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const candidates: LinkCandidate[] = ((others ?? []) as any[])
-      .filter(o => o.title && o.slug).map(o => ({ title: o.title as string, url: `${wpBase}/${o.slug}`, keyword: o.seo_keyword || undefined }))
-    const related = pickRelatedPosts({ title: state.title, keyword: post.seo_keyword || undefined }, candidates, 3)
+      .filter(o => o.title && o.slug)
+      .map(o => ({
+        title: o.title as string,
+        url: `${wpBase}/${o.slug}`,
+        keyword: o.seo_keyword || undefined,
+        contentSnippet: stripSnippet(o.content as string | null),
+        postType: (o.post_type as string | null) || undefined,
+      }))
+    const related = pickRelatedPosts({
+      title: state.title,
+      keyword: post.seo_keyword || undefined,
+      contentSnippet: stripSnippet(state.content),
+      postType: post.post_type || undefined,
+    }, candidates, 3)
     if (related.length === 0) { reasons.internal_links = 'No related posts to link to yet.'; return false }
     state.content = insertRelatedLinks(state.content, renderRelatedLinksBlock(related)); return true
   }

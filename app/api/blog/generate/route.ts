@@ -490,16 +490,29 @@ async function handleGenerate(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: linkRows } = await (supabase as any)
     .from('blog_posts')
-    .select('title,wordpress_url,seo_keyword')
+    .select('title,wordpress_url,seo_keyword,post_type,content')
     .eq('user_id', user.id)
     .eq('status', 'published')
     .neq('video_id', videoId)
     .not('wordpress_url', 'is', null)
     .order('published_at', { ascending: false })
     .limit(20)
-  const linkCandidates: LinkCandidate[] = (linkRows as Array<{ title: string; wordpress_url: string; seo_keyword: string | null }> | null)
+  // Include a stripped content snippet + post_type so the topical matcher has
+  // body-text and type signal to score on, not just title overlap (which is
+  // too narrow when many posts have no seo_keyword and short titles).
+  const stripSnippet = (html: string | null | undefined): string => {
+    if (!html) return ''
+    return String(html).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 800)
+  }
+  const linkCandidates: LinkCandidate[] = (linkRows as Array<{ title: string; wordpress_url: string; seo_keyword: string | null; post_type: string | null; content: string | null }> | null)
     ?.filter(r => r.title && r.wordpress_url)
-    .map(r => ({ title: r.title, url: r.wordpress_url, keyword: r.seo_keyword })) ?? []
+    .map(r => ({
+      title: r.title,
+      url: r.wordpress_url,
+      keyword: r.seo_keyword,
+      contentSnippet: stripSnippet(r.content),
+      postType: r.post_type || undefined,
+    })) ?? []
 
   // ── 5.9. Web product research — scrape the product/brand site the
   //         creator linked in the description for factual product info,
@@ -649,6 +662,8 @@ async function handleGenerate(request: Request) {
       {
         title: generated.title,
         keyword: generated.seoKeyword || null,
+        contentSnippet: content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 800),
+        postType: (generated as { postType?: string | null }).postType || null,
         tags: generated.tags || [],
         niches: ((brand as Record<string, unknown>).niches as string[]) || [],
         category: generated.category || null,
