@@ -16,6 +16,7 @@ import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFr
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
+import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
@@ -148,7 +149,14 @@ async function handleGenerate(request: Request) {
   const userImageUrls = Array.isArray(body.userImageUrls)
     ? body.userImageUrls.filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 3)
     : []
-  const capturedFrames = Array.isArray(body.capturedFrames)
+  // `capturedFrames` are HD video frames the in-article images get retouched
+  // FROM. They used to come from a Chrome extension that opened a YouTube tab
+  // in the background to scrub frames — which the user kept noticing. The
+  // server now fetches storyboard tiles from YouTube directly (no tabs, no
+  // extension) via lib/youtube-storyboards as the default source; the body
+  // field is kept for forward compatibility / admin retries that still want to
+  // pass their own frames.
+  let capturedFrames = Array.isArray(body.capturedFrames)
     ? body.capturedFrames.filter(f => typeof f === 'string' && f.startsWith('data:image/')).slice(0, 4)
     : []
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
@@ -1047,8 +1055,23 @@ async function handleGenerate(request: Request) {
         if (falKey) {
           fal.config({ credentials: falKey })
 
-          // Real video frames (extension) → re-host so we can retouch them. When
-          // present, these drive the in-article images (real scene, AI-enhanced)
+          // Server-side fallback: when no client-supplied frames came in (the
+          // common case now that the browser-extension capture has been removed),
+          // pull a handful of evenly-spaced storyboard frames from YouTube
+          // directly — no tabs, no extension. Best-effort; if it fails we just
+          // fall through to the existing product-re-stage path.
+          if (capturedFrames.length === 0) {
+            const ytId = (v as Record<string, string>).youtube_video_id
+            if (ytId) {
+              try {
+                const sb = await fetchStoryboardFrames(ytId, { maxFrames: 4 })
+                if (sb.length > 0) capturedFrames = sb.map(f => f.dataUrl)
+              } catch { /* keep capturedFrames = [] */ }
+            }
+          }
+
+          // Real video frames → re-host so we can retouch them. When present,
+          // these drive the in-article images (real scene, AI-enhanced)
           // instead of product re-stages.
           const frameRefs: string[] = []
           for (const f of capturedFrames) {

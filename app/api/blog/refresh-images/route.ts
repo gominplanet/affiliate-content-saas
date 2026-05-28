@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
+import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
@@ -106,9 +107,21 @@ export async function POST(request: Request) {
 
   fal.config({ credentials: process.env.FAL_KEY ?? '' })
 
-  // Real HD frames (extension) → retouch; else Kontext on the product photo.
+  // Real HD frames source: first whatever the body sent (legacy / admin
+  // retries), then server-side storyboard fetch from YouTube — no extension,
+  // no background tab — so the in-article images get retouched FROM real
+  // video scenes. Falls back to Kontext on the product photo if both fail.
+  let inFrames = (Array.isArray(capturedFrames) ? capturedFrames : [])
+    .filter(x => typeof x === 'string' && x.startsWith('data:image/'))
+    .slice(0, 4)
+  if (inFrames.length === 0 && (vid?.youtube_video_id as string | undefined)) {
+    try {
+      const sb = await fetchStoryboardFrames(vid!.youtube_video_id as string, { maxFrames: 4 })
+      if (sb.length > 0) inFrames = sb.map(f => f.dataUrl)
+    } catch { /* fall through to product re-stage */ }
+  }
   const frameRefs: string[] = []
-  for (const f of (Array.isArray(capturedFrames) ? capturedFrames : []).filter(x => typeof x === 'string' && x.startsWith('data:image/')).slice(0, 4)) {
+  for (const f of inFrames) {
     const u = await rehostToFal(f); if (u) frameRefs.push(u)
   }
   let falProductRef: string | null = null

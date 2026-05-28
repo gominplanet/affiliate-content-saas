@@ -10,7 +10,6 @@ import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner
 import { SOCIAL_CAP } from '@/lib/social-cap'
 import { tierAllowsSocial } from '@/lib/tier'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
-import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
@@ -596,18 +595,12 @@ function GenerateButton({
     setStepIdx(0)
     setError(null)
     try {
-      // Grab real HD video frames via the extension (when available) so the
-      // in-article photos are the REAL scene retouched by AI — only when the
-      // user hasn't uploaded their own and images are on.
-      let capturedFrames: string[] = []
-      if (includeImages && userImages.length === 0 && youtubeVideoId) {
-        try {
-          if (await isExtensionAvailable()) {
-            const frames = await requestVideoFrames(youtubeVideoId)
-            if (frames.length) capturedFrames = frames.slice(0, 4)
-          }
-        } catch { /* fall back to server-side image generation */ }
-      }
+      // Frame capture used to live here — the extension would open a YouTube
+      // tab in the background to scrub HD frames. That tab-opening is what
+      // the user kept seeing, and it's no longer needed: /api/blog/generate
+      // now pulls evenly-spaced frames from YouTube's own storyboard tiles
+      // server-side (lib/youtube-storyboards) — same "real frames" benefit,
+      // zero browser tabs, no extension required.
       const callGenerate = async (allowEmptyTranscript = false) => {
         const r = await fetch('/api/blog/generate', {
           method: 'POST',
@@ -616,7 +609,6 @@ function GenerateButton({
             videoId,
             includeImages,
             ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
-            ...(capturedFrames.length ? { capturedFrames } : {}),
             ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
             ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
           }),
@@ -2748,19 +2740,14 @@ export default function ContentPage() {
     setRefreshingImagesId(wpPostId)
     setImgToast(null)
     try {
-      let frames: string[] = []
-      if (ytVideoId) {
-        try {
-          if (await isExtensionAvailable()) {
-            const f = await requestVideoFrames(ytVideoId)
-            if (f.length) frames = f.slice(0, 4)
-          }
-        } catch { /* server fallback */ }
-      }
+      // Frame capture used to live here too — same story as Generate:
+      // the route now pulls storyboard frames server-side, no extension /
+      // background tab needed.
+      void ytVideoId
       const res = await fetch('/api/blog/refresh-images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wordpressPostId: wpPostId, ...(frames.length ? { capturedFrames: frames } : {}) }),
+        body: JSON.stringify({ wordpressPostId: wpPostId }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       setImgToast(res.ok ? `Added ${data.count} image${data.count === 1 ? '' : 's'} — refresh the post to see them.` : (data.error || 'Image refresh failed'))
