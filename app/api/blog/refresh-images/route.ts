@@ -219,8 +219,12 @@ export async function POST(request: Request) {
 
   try { await wpService.updatePost(wordpressPostId, { content: finalContent }) }
   catch (err) { return NextResponse.json({ error: `WordPress update failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 }) }
+  // Persist the image-enriched body AND stamp body_images_count so the Content
+  // page's diagnostic badge ("🖼 N") reflects the refresh result — otherwise a
+  // post whose initial generation died at 0 images would keep showing the
+  // orange ⚠ even after the user successfully re-rolled them.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  try { await (supabase as any).from('blog_posts').update({ content: finalContent }).eq('id', post.id) } catch { /* non-fatal */ }
+  try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', post.id) } catch { /* non-fatal */ }
 
   return NextResponse.json({ ok: true, count: uploaded.length })
 }
