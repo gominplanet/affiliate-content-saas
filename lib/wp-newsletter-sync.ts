@@ -30,6 +30,11 @@ interface NewsletterFields {
   ctaTitle: string | null
   ctaSubtitle: string | null
   ctaButton: string | null
+  // Slot overrides — the WP theme maps these strings to specific render
+  // hooks in front-page.php (homepage) and single.php (sidebar). Null on
+  // either side means "use the theme's default slot for that surface".
+  homepagePlacement: string | null
+  sidebarPlacement: string | null
 }
 
 /** Read the row + return the shape the WP option expects. Single source
@@ -41,7 +46,7 @@ export async function readNewsletterFields(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from('newsletter_settings')
-    .select('enabled,sender_name,cta_title,cta_subtitle,cta_button')
+    .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
     .eq('user_id', userId)
     .maybeSingle()
   return {
@@ -51,6 +56,8 @@ export async function readNewsletterFields(
     ctaTitle: (data?.cta_title as string | null)?.trim() || null,
     ctaSubtitle: (data?.cta_subtitle as string | null)?.trim() || null,
     ctaButton: (data?.cta_button as string | null)?.trim() || null,
+    homepagePlacement: (data?.homepage_placement as string | null)?.trim() || null,
+    sidebarPlacement: (data?.sidebar_placement as string | null)?.trim() || null,
   }
 }
 

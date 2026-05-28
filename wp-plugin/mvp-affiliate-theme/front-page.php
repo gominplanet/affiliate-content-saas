@@ -91,6 +91,11 @@ $used_ids = [];
   </section>
   <?php endif; ?>
 
+  <?php /* ─── Newsletter slot: BEFORE Pick of the Day ─────────────────── */ ?>
+  <?php $nl_before = mvp_affiliate_render_newsletter_at('homepage', 'before_pick'); if ($nl_before !== ''): ?>
+    <section class="mvp-section mvp-newsletter-section"><div class="mvp-container"><?php echo $nl_before; ?></div></section>
+  <?php endif; ?>
+
   <?php /* ─── PICK OF THE DAY ─────────────────────────────────────────
        Renders only if the user has enabled Pick of the Day AND ticked
        "Show on homepage" in Customize Blog. Tracks the picked post in
@@ -118,6 +123,11 @@ $used_ids = [];
       endif;
   endif;
   ?>
+
+  <?php /* ─── Newsletter slot: AFTER Pick of the Day (before ads) ─────── */ ?>
+  <?php $nl_after_pick = mvp_affiliate_render_newsletter_at('homepage', 'after_pick'); if ($nl_after_pick !== ''): ?>
+    <section class="mvp-section mvp-newsletter-section"><div class="mvp-container"><?php echo $nl_after_pick; ?></div></section>
+  <?php endif; ?>
 
   <?php /* ─── HOMEPAGE 3-UP AD STRIP ────────────────────────────────────
        Three banner slots managed in Customize Blog → Homepage Banner
@@ -158,19 +168,10 @@ $used_ids = [];
   </section>
   <?php endif; ?>
 
-  <?php /* ─── Newsletter signup (auto-embedded). Renders only when the
-            creator has enabled the newsletter in their MVP dashboard.
-            Sits right after the 3-up ad strip so it gets prime above-the-
-            fold real estate without competing with the editor's pick. ─ */ ?>
-  <?php
-  $newsletter_html = mvp_affiliate_render_newsletter_inline();
-  if ($newsletter_html !== ''):
-  ?>
-  <section class="mvp-section mvp-newsletter-section">
-    <div class="mvp-container">
-      <?php echo $newsletter_html; ?>
-    </div>
-  </section>
+  <?php /* ─── Newsletter slot: AFTER the 3-up ad strip (default).
+            Hidden when the creator picked a different slot. */ ?>
+  <?php $nl_after_ads = mvp_affiliate_render_newsletter_at('homepage', 'after_ads'); if ($nl_after_ads !== ''): ?>
+    <section class="mvp-section mvp-newsletter-section"><div class="mvp-container"><?php echo $nl_after_ads; ?></div></section>
   <?php endif; ?>
 
   <?php /* ─── BY CATEGORY — for each category w/ ≥1 unused post, show 3 ─ */ ?>
@@ -252,6 +253,11 @@ $used_ids = [];
       </ul>
     </div>
   </section>
+  <?php endif; ?>
+
+  <?php /* ─── Newsletter slot: FOOTER (last thing before the global footer). */ ?>
+  <?php $nl_footer = mvp_affiliate_render_newsletter_at('homepage', 'footer'); if ($nl_footer !== ''): ?>
+    <section class="mvp-section mvp-newsletter-section"><div class="mvp-container"><?php echo $nl_footer; ?></div></section>
   <?php endif; ?>
 
 </main>

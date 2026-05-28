@@ -49,7 +49,11 @@ get_header();
 
     <aside class="mvp-single-sidebar">
       <?php
-      // 1. Pick of the Day (top of sidebar)
+      // 0. Newsletter — TOP slot. Renders before everything else when the
+      //    creator picks "Top of sidebar" on the dashboard.
+      echo mvp_affiliate_render_newsletter_at('sidebar', 'top');
+
+      // 1. Pick of the Day
       echo mvp_affiliate_render_pick_of_day('sidebar');
 
       // 2. Render dynamic sidebar widgets (registered in functions.php)
@@ -57,21 +61,16 @@ get_header();
           dynamic_sidebar('sidebar-1');
       }
 
-      // 3. Newsletter signup form — sits between the WP widgets and the
-      //    ad blocks so it gets prime sidebar real estate without being
-      //    the very first thing in the sidebar. Renders only when the
-      //    creator has enabled the newsletter (silent no-op otherwise),
-      //    so disabling on the MVP dashboard removes it from every post
-      //    without theme edits. No atts passed in — the renderer reads
-      //    the creator's dashboard CTA overrides (or its default copy)
-      //    so both placements share whatever they set on /newsletter.
-      echo mvp_affiliate_render_newsletter_inline();
-
-      // 4. Render MVP Affiliate sidebar ad blocks
+      // 3. Render MVP Affiliate sidebar ad blocks
       $blocks = mvp_affiliate_sidebar_blocks();
       foreach ($blocks as $block) {
           echo mvp_affiliate_render_block($block);
       }
+
+      // 4. Newsletter — BOTTOM slot (default). Renders after everything
+      //    else when the creator picks "After other ads" (or hasn't
+      //    chosen a slot at all). Silent no-op when newsletter is off.
+      echo mvp_affiliate_render_newsletter_at('sidebar', 'bottom');
       ?>
     </aside>
 

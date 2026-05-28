@@ -22,7 +22,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from('newsletter_settings')
-    .select('user_id,sender_domain,sender_local_part,sender_name,domain_status,domain_checked_at,dkim_records,enabled,mailing_address,resend_domain_id,cta_title,cta_subtitle,cta_button')
+    .select('user_id,sender_domain,sender_local_part,sender_name,domain_status,domain_checked_at,dkim_records,enabled,mailing_address,resend_domain_id,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -44,9 +44,17 @@ export async function GET() {
       cta_title: null,
       cta_subtitle: null,
       cta_button: null,
+      homepage_placement: null,
+      sidebar_placement: null,
     },
   })
 }
+
+// Whitelists kept here (not in lib) so the PUT handler can validate without
+// an extra import; the WP theme uses the same constant set. Keep these in
+// sync with wp-plugin/mvp-affiliate-theme/inc/customizations.php.
+const HOMEPAGE_PLACEMENTS = ['before_pick', 'after_pick', 'after_ads', 'footer'] as const
+const SIDEBAR_PLACEMENTS = ['top', 'bottom'] as const
 
 export async function PUT(req: Request) {
   const supabase = await createServerClient()
@@ -60,6 +68,8 @@ export async function PUT(req: Request) {
     cta_title?: string | null
     cta_subtitle?: string | null
     cta_button?: string | null
+    homepage_placement?: string | null
+    sidebar_placement?: string | null
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -75,6 +85,17 @@ export async function PUT(req: Request) {
   if (typeof body.cta_title === 'string') patch.cta_title = body.cta_title.trim().slice(0, 140) || null
   if (typeof body.cta_subtitle === 'string') patch.cta_subtitle = body.cta_subtitle.trim().slice(0, 320) || null
   if (typeof body.cta_button === 'string') patch.cta_button = body.cta_button.trim().slice(0, 40) || null
+  // Placement overrides — must match the whitelists or fall back to NULL
+  // (= "use theme default"). Empty string from the dashboard radio
+  // explicitly means "reset to default".
+  if (typeof body.homepage_placement === 'string') {
+    const v = body.homepage_placement.trim().toLowerCase() as typeof HOMEPAGE_PLACEMENTS[number]
+    patch.homepage_placement = (HOMEPAGE_PLACEMENTS as readonly string[]).includes(v) ? v : null
+  }
+  if (typeof body.sidebar_placement === 'string') {
+    const v = body.sidebar_placement.trim().toLowerCase() as typeof SIDEBAR_PLACEMENTS[number]
+    patch.sidebar_placement = (SIDEBAR_PLACEMENTS as readonly string[]).includes(v) ? v : null
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)

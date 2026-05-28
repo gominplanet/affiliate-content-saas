@@ -339,16 +339,52 @@ if (!function_exists('mvp_affiliate_newsletter_data')) {
     function mvp_affiliate_newsletter_data(): array {
         $d = mvp_affiliate_data();
         $n = is_array($d['newsletter'] ?? null) ? $d['newsletter'] : [];
+        // Homepage slot whitelist — must match the constants in the MVP API
+        // route at app/api/newsletter/settings (HOMEPAGE_PLACEMENTS). When
+        // a slot doesn't match, fall back to the default ('after_ads').
+        $home_slots = ['before_pick', 'after_pick', 'after_ads', 'footer'];
+        $home_raw = is_string($n['homepagePlacement'] ?? null) ? strtolower(trim($n['homepagePlacement'])) : '';
+        $home = in_array($home_raw, $home_slots, true) ? $home_raw : 'after_ads';
+        // Sidebar slot whitelist.
+        $side_slots = ['top', 'bottom'];
+        $side_raw = is_string($n['sidebarPlacement'] ?? null) ? strtolower(trim($n['sidebarPlacement'])) : '';
+        $side = in_array($side_raw, $side_slots, true) ? $side_raw : 'bottom';
         return [
-            'enabled'     => !empty($n['enabled']),
-            'userId'      => is_string($n['userId'] ?? null) ? trim($n['userId']) : '',
-            'senderName'  => is_string($n['senderName'] ?? null) ? trim($n['senderName']) : '',
+            'enabled'           => !empty($n['enabled']),
+            'userId'            => is_string($n['userId'] ?? null) ? trim($n['userId']) : '',
+            'senderName'        => is_string($n['senderName'] ?? null) ? trim($n['senderName']) : '',
             // CTA copy overrides — empty string when the creator hasn't
             // customised; the placement-specific defaults below kick in.
-            'ctaTitle'    => is_string($n['ctaTitle'] ?? null) ? trim($n['ctaTitle']) : '',
-            'ctaSubtitle' => is_string($n['ctaSubtitle'] ?? null) ? trim($n['ctaSubtitle']) : '',
-            'ctaButton'   => is_string($n['ctaButton'] ?? null) ? trim($n['ctaButton']) : '',
+            'ctaTitle'          => is_string($n['ctaTitle'] ?? null) ? trim($n['ctaTitle']) : '',
+            'ctaSubtitle'       => is_string($n['ctaSubtitle'] ?? null) ? trim($n['ctaSubtitle']) : '',
+            'ctaButton'         => is_string($n['ctaButton'] ?? null) ? trim($n['ctaButton']) : '',
+            // Resolved slots — already validated, safe to compare directly.
+            'homepagePlacement' => $home,
+            'sidebarPlacement'  => $side,
         ];
+    }
+}
+
+/**
+ * Render the newsletter form ONLY when the creator's chosen slot matches the
+ * one this caller represents. Used by front-page.php and single.php to drop
+ * the form in their respective hooks — every potential location calls this,
+ * and only the matching one actually renders.
+ *
+ * $surface  'homepage' | 'sidebar'   Which surface this caller represents
+ * $slot     string                    Which slot — must be one of the
+ *                                     whitelisted values for that surface.
+ *
+ * Returns '' silently when the newsletter is disabled OR the caller's slot
+ * doesn't match the creator's selection. Callers can echo unconditionally.
+ */
+if (!function_exists('mvp_affiliate_render_newsletter_at')) {
+    function mvp_affiliate_render_newsletter_at(string $surface, string $slot, array $atts = []): string {
+        if (!mvp_affiliate_newsletter_enabled()) return '';
+        $n = mvp_affiliate_newsletter_data();
+        $picked = $surface === 'homepage' ? $n['homepagePlacement'] : $n['sidebarPlacement'];
+        if ($picked !== $slot) return '';
+        return mvp_affiliate_render_newsletter_inline($atts);
     }
 }
 

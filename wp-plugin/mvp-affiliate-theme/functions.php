@@ -9,7 +9,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_THEME_VERSION', '1.4.10');
+define('MVP_AFFILIATE_THEME_VERSION', '1.4.11');
 
 // ── Theme support ───────────────────────────────────────────────────────────
 add_action('after_setup_theme', function () {

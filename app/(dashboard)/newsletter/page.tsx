@@ -35,6 +35,9 @@ interface DkimRecord {
   ttl?: string
   status?: string
 }
+type HomepagePlacement = 'before_pick' | 'after_pick' | 'after_ads' | 'footer'
+type SidebarPlacement = 'top' | 'bottom'
+
 interface Settings {
   user_id: string
   sender_domain: string | null
@@ -52,6 +55,21 @@ interface Settings {
   cta_title?: string | null
   cta_subtitle?: string | null
   cta_button?: string | null
+  // Where to render the form on each surface. null = theme default
+  // ('after_ads' / 'bottom').
+  homepage_placement?: HomepagePlacement | null
+  sidebar_placement?: SidebarPlacement | null
+}
+
+const HOMEPAGE_PLACEMENT_LABELS: Record<HomepagePlacement, { label: string; hint: string }> = {
+  before_pick: { label: 'Before Pick of the Day', hint: 'First thing under the hero — highest visibility, competes with the editor’s pick' },
+  after_pick:  { label: 'After Pick of the Day',  hint: 'Between the pick and the 3-up ad strip' },
+  after_ads:   { label: 'After the 3 ad spots',   hint: 'Default — prime above-the-fold real estate without crowding the pick' },
+  footer:      { label: 'In the footer',          hint: 'Last thing on the page — lowest visibility, but doesn’t compete with content' },
+}
+const SIDEBAR_PLACEMENT_LABELS: Record<SidebarPlacement, { label: string; hint: string }> = {
+  top:    { label: 'Top of the sidebar',     hint: 'First sidebar element on every blog post' },
+  bottom: { label: 'After other sidebar ads', hint: 'Default — last sidebar element so readers see it after the post' },
 }
 interface SubscriberRow {
   id: string
@@ -574,6 +592,75 @@ export default function NewsletterPage() {
               subtitle={ctaSubtitle}
               button={ctaButton}
             />
+          </div>
+        </div>
+      </div>
+
+      {/* Where on the blog the form renders. Two surfaces, each with its
+          own radio group. Default ('after_ads' / 'bottom') matches the
+          theme's hard-coded placement before this card existed. */}
+      <div className="card p-5 mb-6">
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Where the form shows up</p>
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4 leading-relaxed">
+          Pick where the signup form sits on your homepage and in your blog-post sidebar. Saves and syncs to your blog as soon as you click.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Homepage */}
+          <div>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Homepage</p>
+            <div className="flex flex-col gap-1.5">
+              {(Object.keys(HOMEPAGE_PLACEMENT_LABELS) as HomepagePlacement[]).map((slot) => {
+                const meta = HOMEPAGE_PLACEMENT_LABELS[slot]
+                const current = (settings?.homepage_placement || 'after_ads') as HomepagePlacement
+                const selected = current === slot
+                return (
+                  <label key={slot} className={`flex items-start gap-2 p-2 rounded-md border cursor-pointer transition-colors ${selected ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}>
+                    <input
+                      type="radio"
+                      name="homepage_placement"
+                      value={slot}
+                      checked={selected}
+                      onChange={() => saveSetting({ homepage_placement: slot } as Partial<Settings>, 'homepage_placement')}
+                      disabled={savingField === 'homepage_placement'}
+                      className="accent-[#0071e3] mt-0.5 flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{meta.label}</p>
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] leading-snug">{meta.hint}</p>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div>
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Blog-post sidebar</p>
+            <div className="flex flex-col gap-1.5">
+              {(Object.keys(SIDEBAR_PLACEMENT_LABELS) as SidebarPlacement[]).map((slot) => {
+                const meta = SIDEBAR_PLACEMENT_LABELS[slot]
+                const current = (settings?.sidebar_placement || 'bottom') as SidebarPlacement
+                const selected = current === slot
+                return (
+                  <label key={slot} className={`flex items-start gap-2 p-2 rounded-md border cursor-pointer transition-colors ${selected ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}>
+                    <input
+                      type="radio"
+                      name="sidebar_placement"
+                      value={slot}
+                      checked={selected}
+                      onChange={() => saveSetting({ sidebar_placement: slot } as Partial<Settings>, 'sidebar_placement')}
+                      disabled={savingField === 'sidebar_placement'}
+                      className="accent-[#0071e3] mt-0.5 flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{meta.label}</p>
+                      <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] leading-snug">{meta.hint}</p>
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>

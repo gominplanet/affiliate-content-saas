@@ -113,7 +113,7 @@ export async function POST(req: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: nlRow } = await (supabase as any)
         .from('newsletter_settings')
-        .select('enabled,sender_name,cta_title,cta_subtitle,cta_button')
+        .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
         .eq('user_id', user.id)
         .maybeSingle()
       const nlEnabled = !!nlRow?.enabled
@@ -121,6 +121,8 @@ export async function POST(req: Request) {
       const nlCtaTitle = (nlRow?.cta_title as string | null)?.trim() || null
       const nlCtaSubtitle = (nlRow?.cta_subtitle as string | null)?.trim() || null
       const nlCtaButton = (nlRow?.cta_button as string | null)?.trim() || null
+      const nlHomePlacement = (nlRow?.homepage_placement as string | null)?.trim() || null
+      const nlSideBarPlacement = (nlRow?.sidebar_placement as string | null)?.trim() || null
 
       const payload = {
         ...existing,
@@ -147,6 +149,10 @@ export async function POST(req: Request) {
           ctaTitle: nlCtaTitle,
           ctaSubtitle: nlCtaSubtitle,
           ctaButton: nlCtaButton,
+          // Slot overrides. null → theme picks the default slot
+          // ('after_ads' on homepage, 'bottom' in sidebar).
+          homepagePlacement: nlHomePlacement,
+          sidebarPlacement: nlSideBarPlacement,
         },
       }
 
