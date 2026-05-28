@@ -1130,7 +1130,7 @@ async function handleGenerate(request: Request) {
           // Image count scales ~1 per 500 words, clamped to the tier ceiling.
           const words = bodyWordCount(content)
           const imageCount = allowedBlogImages(tier, words)
-          const prompts = await generateBodyImagePrompts({
+          const slots = await generateBodyImagePrompts({
             count: imageCount,
             productTitle: productTitleForPrompts,
             headings: sectionHeadings(content),
@@ -1140,9 +1140,13 @@ async function handleGenerate(request: Request) {
 
           const tier2 = (wp?.tier as string) ?? null
           let firstImgError: string | null = null
-          console.log('[blog-images] generating', { count: prompts.length, falProduct: !!falProductImageUrl })
-          const results = await Promise.all(prompts.map(async (prompt, i) => {
+          console.log('[blog-images] generating', { count: slots.length, falProduct: !!falProductImageUrl })
+          const results = await Promise.all(slots.map(async (slot, i) => {
+            const prompt = slot.prompt
             if (!prompt || !prompt.trim()) return null
+            // The AI-written alt for this specific image. Falls back to the
+            // descriptor-style altFor(i) if the slot somehow shipped without one.
+            const altForThisImage = (slot.alt && slot.alt.trim()) || altFor(i)
             const perspective = SHOT_PERSPECTIVES[i % SHOT_PERSPECTIVES.length]
             const seed = Math.floor(Math.random() * 1_000_000_000) + i
             try {
@@ -1223,7 +1227,7 @@ async function handleGenerate(request: Request) {
                 if (!firstImgError) firstImgError = `wp-media: ${msg}`
                 console.warn(`[blog-images] item ${i} WP media upload failed, embedding fal URL directly:`, msg)
               }
-              return { url: mediaUrl || falUrl, alt: `${altFor(i)}` }
+              return { url: mediaUrl || falUrl, alt: altForThisImage }
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e)
               if (!firstImgError) firstImgError = msg
@@ -1233,9 +1237,9 @@ async function handleGenerate(request: Request) {
           }))
           const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
           heroImageUrl = uploaded[0]?.url ?? heroImageUrl
-          console.log('[blog-images] result', { produced: uploaded.length, of: prompts.length, firstError: firstImgError })
+          console.log('[blog-images] result', { produced: uploaded.length, of: slots.length, firstError: firstImgError })
           if (uploaded.length === 0) {
-            try { await logFailure(supabase, user.id, videoId, 'blog_body_images', `0/${prompts.length} images. falProduct=${!!falProductImageUrl}. firstError=${firstImgError || 'none'}`) } catch { /* non-fatal */ }
+            try { await logFailure(supabase, user.id, videoId, 'blog_body_images', `0/${slots.length} images. falProduct=${!!falProductImageUrl}. firstError=${firstImgError || 'none'}`) } catch { /* non-fatal */ }
           }
           if (uploaded.length > 0) {
             const slots = autoPlacementIndices(content, uploaded.length)

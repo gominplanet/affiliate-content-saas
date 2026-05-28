@@ -155,7 +155,11 @@ export async function POST(request: Request) {
   const results = await Promise.all(Array.from({ length: count }, async (_unused, i) => {
     const shot = SHOTS[i % SHOTS.length]
     const perspective = SHOT_PERSPECTIVES[i % SHOT_PERSPECTIVES.length]
-    const scene = (scenePrompts[i] || '').trim()
+    const slot = scenePrompts[i]
+    const scene = (slot?.prompt || '').trim()
+    // AI-written alt for this exact image. Falls back to the legacy
+    // "<product> — <shot>" descriptor if the slot didn't ship an alt.
+    const altForThisImage = (slot?.alt && slot.alt.trim()) || `${altBase} — ${shot}`
     try {
       let url: string | undefined
       // Primary: re-render the REAL product photo (from the affiliate/Amazon
@@ -200,7 +204,7 @@ export async function POST(request: Request) {
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recordUsageSafe(user.id, tier, falProductRef ? 'fal-flux-pro-kontext' : (frameRefs.length > 0 ? 'nano-banana' : 'fal-flux-pro-v1.1'))
-      return { url: finalUrl, alt: `${altBase} — ${shot}` }
+      return { url: finalUrl, alt: altForThisImage }
     } catch { return null }
   }))
 
