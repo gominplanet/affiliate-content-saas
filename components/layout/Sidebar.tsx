@@ -41,6 +41,7 @@ import {
   Bot,
   Scale,
   Gauge,
+  Mail,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -93,6 +94,7 @@ const navGroups: NavGroup[] = [
     label: 'Grow & Earn',
     items: [
       { href: '/seo', label: 'SEO & Indexing', icon: Gauge, matchKind: 'prefix' },
+      { href: '/newsletter', label: 'Newsletter', icon: Mail, matchKind: 'prefix' },
       { href: '/campaigns', label: 'Creator Campaigns', icon: Megaphone, matchKind: 'prefix' },
       { href: '/collaborations', label: 'Collaborations', icon: Handshake, matchKind: 'prefix' },
       { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' },

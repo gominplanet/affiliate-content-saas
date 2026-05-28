@@ -48,6 +48,14 @@ export const TIERS = {
     assistantMessagesPerMonth: 20 as number | null,
     /** LoRA face-training jobs / month (0 = feature off). */
     faceTrainJobs: 0 as number | null,
+    /** Newsletter (Milestone 1+): max total subscribers the trial can keep on
+     *  their list. Hard cap — once reached, new sign-ups are rejected with
+     *  a friendly "this newsletter is full" message rather than silently
+     *  dropping them. */
+    newsletterSubscribers: 100 as number | null,
+    /** Newsletter: max broadcast SENDS per billing month. The trial gets one
+     *  send so they can see the full compose → blast loop, but won't spam. */
+    newsletterBroadcastsPerMonth: 1 as number | null,
     basePosts: 5,
     bonusPosts: 0,
     sites: 1,
@@ -74,6 +82,11 @@ export const TIERS = {
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 200 as number | null,
     faceTrainJobs: 0 as number | null,
+    /** Newsletter: Creator-tier subscriber + broadcast caps. At the cap (1,000
+     *  subs × 4 broadcasts = 4,000 emails/mo) MVP's Resend cost is ~$1.60 —
+     *  trivial fraction of $49 MRR. */
+    newsletterSubscribers: 1000 as number | null,
+    newsletterBroadcastsPerMonth: 4 as number | null,
     basePosts: 40,
     bonusPosts: 0,
     sites: 1,
@@ -102,6 +115,13 @@ export const TIERS = {
     // 3 LoRA training jobs / month — bounded ($1.50/job has no natural
     // ceiling, so it's explicitly capped rather than uncapped).
     faceTrainJobs: 3 as number | null,
+    /** Newsletter: Pro-tier caps. 10k subscribers + unlimited broadcasts —
+     *  even at heavy use (say 10 broadcasts × 10k = 100k emails/mo) the Resend
+     *  cost is ~$40, still well under 25% of Pro's $199 MRR. The contact cap
+     *  protects MVP from a creator suddenly importing a 50k list and tanking
+     *  shared sender rep before deliverability quarantine catches it. */
+    newsletterSubscribers: 10000 as number | null,
+    newsletterBroadcastsPerMonth: null as number | null,
     basePosts: 140,
     bonusPosts: 60,
     sites: 1,
@@ -125,6 +145,9 @@ export const TIERS = {
     blogImagesPerPost: 6,
     assistantMessagesPerMonth: null as number | null,
     faceTrainJobs: null as number | null,
+    /** Newsletter: admin uncapped — internal accounts, no shared-rep risk. */
+    newsletterSubscribers: null as number | null,
+    newsletterBroadcastsPerMonth: null as number | null,
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
@@ -149,6 +172,20 @@ export function allowedBlogImages(tier: Tier, wordCount: number): number {
 /** Whether a given tier can publish to a specific social platform. */
 export function tierAllowsSocial(tier: Tier, social: Social): boolean {
   return TIERS[normalizeTier(tier)].socials.includes(social)
+}
+
+/** Newsletter subscriber cap for the given tier. null = unlimited (Pro+).
+ *  Used by /api/newsletter/subscribe to reject new sign-ups past the cap
+ *  with an upgrade nudge instead of silently dropping them. */
+export function allowedNewsletterSubscribers(tier: Tier): number | null {
+  return TIERS[normalizeTier(tier)].newsletterSubscribers
+}
+
+/** Newsletter broadcast-send cap per billing month. null = unlimited. Used
+ *  by /api/newsletter/send to gate the send button + render the upgrade
+ *  banner once the creator hits the ceiling. */
+export function allowedNewsletterBroadcasts(tier: Tier): number | null {
+  return TIERS[normalizeTier(tier)].newsletterBroadcastsPerMonth
 }
 
 /** Next-tier upgrade hint for capped actions. Returns null when the
