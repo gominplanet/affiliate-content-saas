@@ -23,17 +23,29 @@ import Link from 'next/link'
 import Header from '@/components/layout/Header'
 import {
   Loader2, Mail, CheckCircle, AlertCircle, Upload, Download,
-  Copy, Trash2, RefreshCw,
+  Copy, Trash2, RefreshCw, ShieldCheck, Globe,
 } from 'lucide-react'
 
+interface DkimRecord {
+  record: string
+  type: string
+  name: string
+  value: string
+  priority?: number
+  ttl?: string
+  status?: string
+}
 interface Settings {
   user_id: string
   sender_domain: string | null
   sender_local_part: string | null
   sender_name: string | null
   domain_status: string | null
+  domain_checked_at?: string | null
+  dkim_records?: DkimRecord[] | null
   enabled: boolean
   mailing_address: string | null
+  resend_domain_id?: string | null
 }
 interface SubscriberRow {
   id: string
@@ -57,6 +69,13 @@ export default function NewsletterPage() {
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Sender-domain card state (Milestone 2)
+  const [domainInput, setDomainInput] = useState('')
+  const [domainBusy, setDomainBusy] = useState<'add' | 'verify' | 'remove' | null>(null)
+  const [domainMsg, setDomainMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // Per-record copy feedback — keyed by `${type}:${name}` so each "Copy"
+  // button can flash its own "Copied!" independently.
+  const [copiedRecord, setCopiedRecord] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -99,6 +118,82 @@ export default function NewsletterPage() {
     } finally {
       setSavingField(null)
     }
+  }
+
+  // ── Sender-domain handlers (Milestone 2) ────────────────────────────────
+  async function addDomain() {
+    const raw = domainInput.trim().toLowerCase()
+    if (!raw) { setDomainMsg({ ok: false, text: 'Enter a domain first.' }); return }
+    setDomainBusy('add')
+    setDomainMsg(null)
+    try {
+      const r = await fetch('/api/newsletter/domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subdomain: raw }),
+      })
+      const d = await r.json()
+      if (!r.ok) {
+        setDomainMsg({ ok: false, text: d.error || 'Failed to register domain.' })
+      } else {
+        setSettings(d.settings)
+        setDomainInput('')
+        setDomainMsg({ ok: true, text: 'Domain added. Now paste the DNS records below into your DNS host, then click Verify.' })
+      }
+    } catch (e) {
+      setDomainMsg({ ok: false, text: e instanceof Error ? e.message : 'Failed to register domain.' })
+    } finally {
+      setDomainBusy(null)
+    }
+  }
+
+  async function verifyDomain() {
+    setDomainBusy('verify')
+    setDomainMsg(null)
+    try {
+      const r = await fetch('/api/newsletter/domain', { method: 'GET' })
+      const d = await r.json()
+      if (!r.ok) {
+        setDomainMsg({ ok: false, text: d.error || 'Verification failed.' })
+      } else {
+        setSettings(d.settings)
+        const s = d.settings?.domain_status
+        if (s === 'verified') setDomainMsg({ ok: true, text: 'Verified! Your newsletter will now send from your own domain.' })
+        else if (s === 'failed') setDomainMsg({ ok: false, text: "Records didn't match. Double-check the DNS values below and give it a few more minutes — DNS can take up to an hour to propagate." })
+        else setDomainMsg({ ok: true, text: 'Still pending — DNS propagation usually finishes within an hour. Try again shortly.' })
+      }
+    } catch (e) {
+      setDomainMsg({ ok: false, text: e instanceof Error ? e.message : 'Verification failed.' })
+    } finally {
+      setDomainBusy(null)
+    }
+  }
+
+  async function removeDomain() {
+    if (!confirm('Remove the sender domain? You\'ll need to add and verify a domain again before you can send newsletters from your own address.')) return
+    setDomainBusy('remove')
+    setDomainMsg(null)
+    try {
+      const r = await fetch('/api/newsletter/domain', { method: 'DELETE' })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setDomainMsg({ ok: false, text: d.error || 'Removal failed.' })
+      } else {
+        await load()
+        setDomainMsg({ ok: true, text: 'Domain removed.' })
+      }
+    } catch (e) {
+      setDomainMsg({ ok: false, text: e instanceof Error ? e.message : 'Removal failed.' })
+    } finally {
+      setDomainBusy(null)
+    }
+  }
+
+  function copyRecord(key: string, value: string) {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedRecord(key)
+      setTimeout(() => setCopiedRecord(null), 1800)
+    }).catch(() => { /* ignore */ })
   }
 
   async function deleteSubscriber(id: string) {
@@ -244,6 +339,150 @@ export default function NewsletterPage() {
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">Required by US law in every commercial email. A PO box works.</p>
           </div>
         </div>
+      </div>
+
+      {/* Sender domain — Milestone 2.
+          Three visual states:
+          (a) No domain set → empty input + "Add" button + explainer
+          (b) Domain set, status pending/failed → show the DNS records to
+              paste, a "Verify" button, a status badge, and the remove option
+          (c) Verified → green badge + the from-address + remove option */}
+      <div className="card p-5 mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Globe size={14} className="text-[#0071e3]" />
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Sender domain</p>
+          {settings?.sender_domain && settings.domain_status === 'verified' && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-[#34c759]/10 text-[#34c759]">
+              <ShieldCheck size={11} /> Verified
+            </span>
+          )}
+          {settings?.sender_domain && settings.domain_status === 'pending' && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-[#ff9500]/10 text-[#ff9500]">
+              Pending
+            </span>
+          )}
+          {settings?.sender_domain && settings.domain_status === 'failed' && (
+            <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-[#ff3b30]/10 text-[#ff3b30]">
+              <AlertCircle size={11} /> Records not found
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3 leading-relaxed">
+          Send newsletters from your own domain (e.g. <code className="font-mono text-[11px]">newsletter@mail.yourdomain.com</code>) so subscribers recognise the sender and inboxes trust the email. Until verified, MVP sends from a shared address.
+        </p>
+
+        {/* State (a): no domain set yet → input + add button */}
+        {!settings?.sender_domain && (
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex-1 min-w-[220px]">
+              <label className="block text-[11px] font-medium text-[#3a3a3c] dark:text-[#d2d2d7] mb-1">Pick a sender subdomain</label>
+              <input
+                type="text"
+                value={domainInput}
+                onChange={(e) => setDomainInput(e.target.value)}
+                placeholder="mail.yourdomain.com"
+                disabled={domainBusy === 'add'}
+                className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">A subdomain like <code className="font-mono">mail.</code> is recommended — it keeps your root domain&apos;s reputation isolated.</p>
+            </div>
+            <button
+              onClick={() => void addDomain()}
+              disabled={domainBusy === 'add' || !domainInput.trim()}
+              className="px-3 py-2 rounded-md text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors"
+            >
+              {domainBusy === 'add' ? <><Loader2 size={11} className="animate-spin inline mr-1" /> Adding…</> : 'Add domain'}
+            </button>
+          </div>
+        )}
+
+        {/* State (b)+(c): domain is set → show records (always, in case the
+            user wants to copy again) + verify + remove */}
+        {settings?.sender_domain && (
+          <>
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <code className="text-sm font-mono text-[#1d1d1f] dark:text-[#f5f5f7] px-2 py-1 bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-md">
+                newsletter@{settings.sender_domain}
+              </code>
+              {settings.domain_status !== 'verified' && (
+                <button
+                  onClick={() => void verifyDomain()}
+                  disabled={domainBusy === 'verify'}
+                  className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors"
+                >
+                  {domainBusy === 'verify' ? <><Loader2 size={11} className="animate-spin inline mr-1" /> Checking…</> : <>Verify</>}
+                </button>
+              )}
+              <button
+                onClick={() => void removeDomain()}
+                disabled={domainBusy === 'remove'}
+                className="px-2 py-1 rounded-md text-[11px] font-medium text-[#86868b] hover:text-[#ff3b30] transition-colors"
+              >
+                {domainBusy === 'remove' ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
+
+            {/* DNS records — only show until verified */}
+            {settings.domain_status !== 'verified' && Array.isArray(settings.dkim_records) && settings.dkim_records.length > 0 && (
+              <div className="mt-3 border border-gray-200 dark:border-white/10 rounded-lg overflow-hidden">
+                <div className="px-3 py-2 bg-[#f5f5f7] dark:bg-[#1c1c1e] border-b border-gray-200 dark:border-white/10">
+                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Add these {settings.dkim_records.length} DNS records to your domain</p>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
+                    In your DNS host (Hostinger / Cloudflare / Namecheap), add each row exactly. If the Name column already appends your root domain, paste just the prefix part shown here.
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-[10px] uppercase tracking-wide text-[#86868b] dark:text-[#8e8e93] border-b border-gray-200 dark:border-white/10">
+                        <th className="font-medium px-3 py-2">Type</th>
+                        <th className="font-medium px-3 py-2">Name</th>
+                        <th className="font-medium px-3 py-2">Value</th>
+                        <th className="font-medium px-3 py-2">TTL</th>
+                        <th className="font-medium px-3 py-2"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settings.dkim_records.map((r, i) => {
+                        const key = `${r.type}:${r.name}:${i}`
+                        return (
+                          <tr key={key} className="border-b border-gray-100 dark:border-white/5">
+                            <td className="px-3 py-2 font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">
+                              {r.type}
+                              {r.type === 'MX' && r.priority != null && <span className="text-[#86868b]"> (prio {r.priority})</span>}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-[#1d1d1f] dark:text-[#f5f5f7] break-all">{r.name}</td>
+                            <td className="px-3 py-2 font-mono text-[#1d1d1f] dark:text-[#f5f5f7] break-all max-w-[280px]">{r.value}</td>
+                            <td className="px-3 py-2 text-[#86868b] dark:text-[#8e8e93]">{r.ttl || 'Auto'}</td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              <button
+                                onClick={() => copyRecord(key, r.value)}
+                                className="inline-flex items-center gap-1 text-[11px] text-[#0071e3] hover:underline"
+                              >
+                                {copiedRecord === key ? <><CheckCircle size={11} /> Copied</> : <><Copy size={11} /> Copy value</>}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-3 py-2 bg-[#f5f5f7] dark:bg-[#1c1c1e] border-t border-gray-200 dark:border-white/10">
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                    DNS can take a few minutes to an hour to propagate. Add the records, then come back and hit Verify.
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {domainMsg && (
+          <div className={`mt-3 text-xs rounded-md px-3 py-2 ${domainMsg.ok ? 'bg-[#34c759]/10 text-[#34c759]' : 'bg-[#ff3b30]/10 text-[#ff3b30]'}`}>
+            {domainMsg.text}
+          </div>
+        )}
       </div>
 
       {/* Embed snippet */}
