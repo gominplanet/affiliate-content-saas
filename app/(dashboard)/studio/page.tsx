@@ -122,7 +122,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
   // Cache the real video frames grabbed by the extension, per video — so the
   // baked⇄crisp toggles don't re-open YouTube every time (one capture / video).
   const capturedFramesRef = React.useRef<{ videoId: string; frames: string[] } | null>(null)
-  const [instantLoading, setInstantLoading] = useState(false)
   // Which overlay style was applied to the current thumbnail. Drives the
   // 👍 / 👎 row so reactions attribute to a styleId.
   const [thumbnailStyleId, setThumbnailStyleId] = useState<string | null>(null)
@@ -139,7 +138,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  click so the user can pick the strongest. Default 1 (fast); bump to 2–3
    *  to compare. Each extra variant adds an image generation (slower + one
    *  more against the thumbnail cap), so comparison is opt-in. */
-  const [variantCount, setVariantCount] = useState(1)
+  // Variants selector removed — always generate a single thumbnail per click.
+  const variantCount = 1
   /** All generated variants (best-first, with CTR scores) for the compare
    *  grid. The large preview shows the currently-selected one (thumbnailUrl). */
   const [thumbnailVariants, setThumbnailVariants] = useState<Array<{ url: string; score: number | null }>>([])
@@ -908,66 +908,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
     return { url: canvas.toDataURL('image/jpeg', 0.95), styleId: style.id }
   }
 
-  // ── ⚡ Instant thumbnail — real video frame + AI hook, no generation wait ────
-  async function quickThumbnail() {
-    if (!video.thumbnailUrl) return
-    setInstantLoading(true)
-    setThumbnailError(null)
-    try {
-      let hook = thumbnailHook  // reuse cached hook if available
-
-      if (!hook) {
-        // Fast hook-only call — skips all image generation
-        const res = await fetch('/api/youtube/generate-thumbnail', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            quickMode: true,
-            videoTitle: editTitle || video.title,
-            productTitle: product?.title ?? undefined,
-            asin: video.detectedAsin ?? undefined,
-            // Honour the locked headline on the instant path too —
-            // the server short-circuits the hook agent when this is set.
-            customHeadline: customHeadline.trim() || undefined,
-          }),
-        })
-        const data = await res.json() as Record<string, unknown>
-        if (data.limitReached) {
-          setCapError({
-            message: (data.error as string) || 'You\'ve hit your thumbnail cap for this period.',
-            info: { cap: (data.cap as string) || 'thumbnails', currentTier: data.currentTier as string | undefined, upgrade: data.upgrade as { tier: string; label: string; limit: number | null } | null | undefined },
-          })
-          return
-        }
-        if (!res.ok) throw new Error((data.error as string) || 'Hook generation failed')
-        hook = (data.overlayHook as string) || ''
-        setThumbnailHook(hook)
-      }
-
-      let finalUrl: string = video.thumbnailUrl
-      let pickedStyleId: string | null = null
-      try {
-        const styleIndex = pickWeightedStyleIndex(ytStyleWeights.liked, ytStyleWeights.disliked)
-        const overlayed = await addTextOverlay(video.thumbnailUrl, hook, styleIndex)
-        finalUrl = overlayed.url
-        pickedStyleId = overlayed.styleId
-      } catch (overlayErr) {
-        console.warn('[instant-overlay]', overlayErr)
-        // Fall back to raw YouTube thumbnail — hook still saved for display
-      }
-      setThumbnailStyleId(pickedStyleId)
-      setThumbnailFeedbackSent(null)
-      setThumbnailUrl(finalUrl)
-      setThumbnailVariants([])
-      setSceneAnalysis(null)
-      setThumbnailModel('instant')
-    } catch (err) {
-      setThumbnailError(err instanceof Error ? err.message : 'Instant thumbnail failed')
-    } finally {
-      setInstantLoading(false)
-    }
-  }
-
   function copy(text: string, key: string) {
     navigator.clipboard.writeText(text)
     setCopied(key)
@@ -1267,7 +1207,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         <button
                           type="button"
                           onClick={() => setStyleReferenceUrl(null)}
-                          disabled={generatingThumbnail || instantLoading}
+                          disabled={generatingThumbnail}
                           className="text-[11px] text-[#86868b] hover:text-[#ff3b30] ml-1"
                           title="Remove style reference"
                         >
@@ -1281,7 +1221,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           type="file"
                           accept="image/jpeg,image/png,image/webp"
                           className="hidden"
-                          disabled={generatingThumbnail || instantLoading || styleRefUploading}
+                          disabled={generatingThumbnail || styleRefUploading}
                           onChange={(e) => {
                             const f = e.target.files?.[0]
                             if (f) handleStyleReferenceUpload(f)
@@ -1312,7 +1252,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       <button
                         type="button"
                         onClick={() => { setUploadedPhotoUrl(null); setCleanupPrompt('') }}
-                        disabled={generatingThumbnail || instantLoading}
+                        disabled={generatingThumbnail}
                         className="text-[11px] text-[#86868b] hover:text-[#ff3b30] ml-1"
                         title="Remove your photo"
                       >
@@ -1326,7 +1266,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
                         className="hidden"
-                        disabled={generatingThumbnail || instantLoading || photoUploading}
+                        disabled={generatingThumbnail || photoUploading}
                         onChange={(e) => {
                           const f = e.target.files?.[0]
                           if (f) handlePhotoUpload(f)
@@ -1345,7 +1285,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       onChange={(e) => setCleanupPrompt(e.target.value)}
                       maxLength={400}
                       placeholder="Optional direction — e.g. bright kitchen, surprised face"
-                      disabled={generatingThumbnail || instantLoading}
+                      disabled={generatingThumbnail}
                       className="mt-1 w-full text-[11px] px-2 py-1 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                     />
                   )}
@@ -1360,7 +1300,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       setHeadlinePromptChoice(customHeadline.trim() ? 'manual' : 'auto')
                       setHeadlinePromptOpen(true)
                     }}
-                    disabled={generatingThumbnail || instantLoading}
+                    disabled={generatingThumbnail}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
                     style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
                   >
@@ -1368,20 +1308,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
                       : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate' : 'Generate Thumbnail'}</>}
                   </button>
-
-                  {video.thumbnailUrl && (
-                    <button
-                      onClick={quickThumbnail}
-                      disabled={generatingThumbnail || instantLoading}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-60 transition-opacity hover:opacity-80 border"
-                      style={{ background: '#1c1c1e', borderColor: '#3a3a3c', color: '#f5f5f7' }}
-                      title="Uses your real video frame + AI hook. No generation wait."
-                    >
-                      {instantLoading
-                        ? <><Loader2 size={12} className="animate-spin" /> Generating hook…</>
-                        : <>⚡ Instant</>}
-                    </button>
-                  )}
 
                   {/* Upload your own — skips AI, uses the user's file as-is. */}
                   <label
@@ -1398,28 +1324,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         if (f) handleThumbnailUpload(f)
                         e.target.value = '' // allow re-uploading the same file
                       }}
-                      disabled={generatingThumbnail || instantLoading}
+                      disabled={generatingThumbnail}
                     />
                     <Upload size={12} /> Upload your own
                   </label>
-                </div>
-
-                {/* Test & Compare: how many variants to generate per click. More
-                    variants = more options to A/B test, but each counts once
-                    against your thumbnail allowance. */}
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  <span className="text-[11px] text-[#86868b]">Variants to compare:</span>
-                  {[1, 2, 3].map(n => (
-                    <button
-                      key={n}
-                      onClick={() => setVariantCount(n)}
-                      disabled={generatingThumbnail || instantLoading}
-                      className={`text-[11px] w-7 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${variantCount === n ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
-                      title={`Generate ${n} variant${n > 1 ? 's' : ''} (${n} thumbnail credit${n > 1 ? 's' : ''})`}
-                    >
-                      {n}
-                    </button>
-                  ))}
                 </div>
 
                 {/* "Your Face" picker — choose WHICH uploaded face to lock into
@@ -1430,7 +1338,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     <span className="text-[11px] text-[#86868b]">Use my face:</span>
                     <button
                       onClick={() => setSelectedFaceModelId('auto')}
-                      disabled={generatingThumbnail || instantLoading}
+                      disabled={generatingThumbnail}
                       className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === 'auto' ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
                       title="Auto — we match the video to the right person from your faces"
                     >
@@ -1438,7 +1346,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     </button>
                     <button
                       onClick={() => setSelectedFaceModelId(null)}
-                      disabled={generatingThumbnail || instantLoading}
+                      disabled={generatingThumbnail}
                       className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === null ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
                       title="Don't lock a face — use the video frame's host as-is"
                     >
@@ -1448,7 +1356,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       <button
                         key={fm.id}
                         onClick={() => setSelectedFaceModelId(fm.id)}
-                        disabled={generatingThumbnail || instantLoading}
+                        disabled={generatingThumbnail}
                         className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === fm.id ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
                         title={`Lock the host's likeness to "${fm.name}" using your uploaded photos`}
                       >
@@ -1571,11 +1479,6 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       {thumbnailModel === 'kontext-upload' && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">
                           📤 Your upload
-                        </span>
-                      )}
-                      {thumbnailModel === 'instant' && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#34c759]/10 text-[#34c759] font-medium">
-                          ⚡ Instant — your real frame
                         </span>
                       )}
                       {/* Fallback render paths (the primary "Designed" Nano Banana
