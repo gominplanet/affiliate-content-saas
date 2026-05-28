@@ -196,6 +196,74 @@ export default function NewsletterPage() {
     }).catch(() => { /* ignore */ })
   }
 
+  /** Build a BIND zone-file snippet for the current DKIM records and
+   *  download it. Cloudflare, AWS Route 53, Google Cloud DNS, and a
+   *  number of others accept this format under "Import DNS records",
+   *  making domain setup a one-click affair on those panels.
+   *
+   *  Hostinger doesn't support BIND import in the standard UI (yet),
+   *  but the file still serves as a clean, no-line-wrapping reference
+   *  the user can paste from — much easier than reading a ~200-char
+   *  DKIM value out of a copy button. */
+  function downloadZoneFile() {
+    if (!settings?.sender_domain || !Array.isArray(settings.dkim_records) || settings.dkim_records.length === 0) return
+    // The sender domain is e.g. "mail.gominreviews.com" — derive the
+    // root zone the user actually edits in their DNS host (the last 2
+    // labels). Hostinger zone files are scoped to the root domain, so
+    // record names need to be relative to it (e.g. "send.mail" rather
+    // than "send.mail.gominreviews.com.").
+    const parts = settings.sender_domain.split('.')
+    const root = parts.length >= 2 ? parts.slice(-2).join('.') : settings.sender_domain
+    const stamp = new Date().toISOString().slice(0, 10)
+    const header = [
+      `;; MVP Affiliate — newsletter sender records`,
+      `;; Sender domain: ${settings.sender_domain}`,
+      `;; Generated: ${stamp}`,
+      `;; Import into your DNS host's "Import zone file" feature, or use as a copy-paste reference.`,
+      ``,
+      `$ORIGIN ${root}.`,
+      `$TTL 3600`,
+      ``,
+    ].join('\n')
+    // Build one line per record. BIND requires:
+    //   <relative-name>  IN  <type>  <value>
+    // For long TXT values (DKIM), wrap in quotes — BIND tolerates a
+    // single un-split quoted string up to 4 KB; the user's DNS host
+    // will fragment it on its side if needed. For MX we prepend the
+    // priority before the target host (and append the trailing dot to
+    // make it absolute, otherwise BIND treats it as relative to $ORIGIN
+    // and re-appends the root, breaking the record).
+    const lines = settings.dkim_records.map((r) => {
+      // Convert "send.mail" within zone root "gominreviews.com" → "send.mail"
+      // (already relative). Convert "send.mail.gominreviews.com" → "send.mail".
+      let name = r.name.trim()
+      if (name.endsWith('.' + root)) name = name.slice(0, -(root.length + 1))
+      if (name === root) name = '@'
+      const type = r.type.trim().toUpperCase()
+      if (type === 'MX') {
+        const target = r.value.endsWith('.') ? r.value : r.value + '.'
+        return `${name}\tIN\tMX\t${r.priority ?? 10} ${target}`
+      }
+      // TXT — quote the value, escape any embedded double-quote.
+      const txt = `"${r.value.replace(/"/g, '\\"')}"`
+      return `${name}\tIN\t${type}\t${txt}`
+    })
+    const body = header + lines.join('\n') + '\n'
+
+    // Trigger the download via a transient anchor element. Filename
+    // includes the root domain so users with multiple sites can tell
+    // their downloads apart.
+    const blob = new Blob([body], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${root}-newsletter-dns.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   async function deleteSubscriber(id: string) {
     if (!confirm('Permanently delete this subscriber? They\'ll lose any subscription state. Use the unsubscribe link in the email if you want them in the "unsubscribed" bucket instead.')) return
     const r = await fetch(`/api/newsletter/subscribers?id=${id}`, { method: 'DELETE' })
@@ -425,11 +493,23 @@ export default function NewsletterPage() {
             {/* DNS records — only show until verified */}
             {settings.domain_status !== 'verified' && Array.isArray(settings.dkim_records) && settings.dkim_records.length > 0 && (
               <div className="mt-3 border border-gray-200 dark:border-white/10 rounded-lg overflow-hidden">
-                <div className="px-3 py-2 bg-[#f5f5f7] dark:bg-[#1c1c1e] border-b border-gray-200 dark:border-white/10">
-                  <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Add these {settings.dkim_records.length} DNS records to your domain</p>
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
-                    In your DNS host (Hostinger / Cloudflare / Namecheap), add each row exactly. If the Name column already appends your root domain, paste just the prefix part shown here.
-                  </p>
+                <div className="px-3 py-2 bg-[#f5f5f7] dark:bg-[#1c1c1e] border-b border-gray-200 dark:border-white/10 flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Add these {settings.dkim_records.length} DNS records to your domain</p>
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-0.5 leading-relaxed">
+                      Cloudflare, Route 53, and Google DNS support the zone file below as a one-click <strong>Import</strong>. Hostinger / Namecheap: add each row by hand — if the Name column already appends your root domain, paste just the prefix part.
+                    </p>
+                  </div>
+                  {/* Zone-file download — useful for both bulk-import panels AND
+                      as a clean copy-paste reference (especially for the long
+                      DKIM value, which is a pain to copy from the table cell). */}
+                  <button
+                    onClick={downloadZoneFile}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] hover:border-[#0071e3] text-[#0071e3] flex-shrink-0"
+                    title="Download as a BIND zone file — import into Cloudflare / Route 53 / Google DNS in one shot"
+                  >
+                    <Download size={11} /> Download zone file
+                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
