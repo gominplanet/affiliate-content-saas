@@ -113,11 +113,14 @@ export async function POST(req: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: nlRow } = await (supabase as any)
         .from('newsletter_settings')
-        .select('enabled,sender_name')
+        .select('enabled,sender_name,cta_title,cta_subtitle,cta_button')
         .eq('user_id', user.id)
         .maybeSingle()
       const nlEnabled = !!nlRow?.enabled
       const nlSenderName = (nlRow?.sender_name as string | null)?.trim() || null
+      const nlCtaTitle = (nlRow?.cta_title as string | null)?.trim() || null
+      const nlCtaSubtitle = (nlRow?.cta_subtitle as string | null)?.trim() || null
+      const nlCtaButton = (nlRow?.cta_button as string | null)?.trim() || null
 
       const payload = {
         ...existing,
@@ -139,6 +142,11 @@ export async function POST(req: Request) {
           enabled: nlEnabled,
           userId: user.id,
           senderName: nlSenderName,
+          // Per-placement CTA overrides. Null/undefined → theme falls
+          // back to its own default copy.
+          ctaTitle: nlCtaTitle,
+          ctaSubtitle: nlCtaSubtitle,
+          ctaButton: nlCtaButton,
         },
       }
 

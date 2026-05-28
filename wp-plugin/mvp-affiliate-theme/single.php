@@ -62,11 +62,10 @@ get_header();
       //    the very first thing in the sidebar. Renders only when the
       //    creator has enabled the newsletter (silent no-op otherwise),
       //    so disabling on the MVP dashboard removes it from every post
-      //    without theme edits.
-      echo mvp_affiliate_render_newsletter_inline([
-          'title'    => 'Get reviews in your inbox',
-          'subtitle' => 'No spam. One short email per new post worth your time.',
-      ]);
+      //    without theme edits. No atts passed in — the renderer reads
+      //    the creator's dashboard CTA overrides (or its default copy)
+      //    so both placements share whatever they set on /newsletter.
+      echo mvp_affiliate_render_newsletter_inline();
 
       // 4. Render MVP Affiliate sidebar ad blocks
       $blocks = mvp_affiliate_sidebar_blocks();

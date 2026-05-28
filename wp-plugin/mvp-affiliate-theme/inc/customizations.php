@@ -340,9 +340,14 @@ if (!function_exists('mvp_affiliate_newsletter_data')) {
         $d = mvp_affiliate_data();
         $n = is_array($d['newsletter'] ?? null) ? $d['newsletter'] : [];
         return [
-            'enabled'    => !empty($n['enabled']),
-            'userId'     => is_string($n['userId'] ?? null) ? trim($n['userId']) : '',
-            'senderName' => is_string($n['senderName'] ?? null) ? trim($n['senderName']) : '',
+            'enabled'     => !empty($n['enabled']),
+            'userId'      => is_string($n['userId'] ?? null) ? trim($n['userId']) : '',
+            'senderName'  => is_string($n['senderName'] ?? null) ? trim($n['senderName']) : '',
+            // CTA copy overrides — empty string when the creator hasn't
+            // customised; the placement-specific defaults below kick in.
+            'ctaTitle'    => is_string($n['ctaTitle'] ?? null) ? trim($n['ctaTitle']) : '',
+            'ctaSubtitle' => is_string($n['ctaSubtitle'] ?? null) ? trim($n['ctaSubtitle']) : '',
+            'ctaButton'   => is_string($n['ctaButton'] ?? null) ? trim($n['ctaButton']) : '',
         ];
     }
 }
@@ -364,16 +369,24 @@ if (!function_exists('mvp_affiliate_render_newsletter_inline')) {
         // stale data; better to silently skip than fatal.
         if (!function_exists('mvp_affiliate_render_newsletter_form')) return '';
         $n = mvp_affiliate_newsletter_data();
-        $args = array_merge([
+
+        // Resolve the copy in priority order:
+        //   1. Caller atts (placement-specific in single.php / front-page.php)
+        //   2. Creator's dashboard CTA overrides (cta_title etc.)
+        //   3. Theme defaults
+        // A non-empty value at any earlier tier short-circuits the rest.
+        $default_title = $n['senderName']
+            ? sprintf('Get the next %s review in your inbox', $n['senderName'])
+            : 'Get the next review in your inbox';
+        $title    = !empty($atts['title'])    ? $atts['title']    : ($n['ctaTitle']    ?: $default_title);
+        $subtitle = !empty($atts['subtitle']) ? $atts['subtitle'] : ($n['ctaSubtitle'] ?: 'No spam. One short email when there’s a new post worth your time.');
+        $button   = !empty($atts['button'])   ? $atts['button']   : ($n['ctaButton']   ?: 'Subscribe');
+
+        return mvp_affiliate_render_newsletter_form([
             'user_id'  => $n['userId'],
-            // Title default mentions the brand when we have one; otherwise
-            // the generic "Get the next review" line lands.
-            'title'    => $n['senderName']
-                ? sprintf('Get the next %s review in your inbox', $n['senderName'])
-                : 'Get the next review in your inbox',
-            'subtitle' => 'No spam. One short email when there’s a new post worth your time.',
-            'button'   => 'Subscribe',
-        ], $atts);
-        return mvp_affiliate_render_newsletter_form($args);
+            'title'    => $title,
+            'subtitle' => $subtitle,
+            'button'   => $button,
+        ]);
     }
 }

@@ -46,6 +46,12 @@ interface Settings {
   enabled: boolean
   mailing_address: string | null
   resend_domain_id?: string | null
+  // CTA copy overrides — null when the creator hasn't customised, in
+  // which case the dashboard preview shows the same fallback the WP
+  // theme would render.
+  cta_title?: string | null
+  cta_subtitle?: string | null
+  cta_button?: string | null
 }
 interface SubscriberRow {
   id: string
@@ -72,6 +78,18 @@ export default function NewsletterPage() {
   // straight from clipboard without saving a CSV file first.
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
+  // Live CTA editor state — separate from settings so the preview can
+  // re-render on every keystroke without waiting for the blur-then-save
+  // round-trip. Seeded from settings the moment they load and re-synced
+  // whenever the server returns a fresher row (save handler updates them).
+  const [ctaTitle, setCtaTitle] = useState('')
+  const [ctaSubtitle, setCtaSubtitle] = useState('')
+  const [ctaButton, setCtaButton] = useState('')
+  useEffect(() => {
+    setCtaTitle(settings?.cta_title || '')
+    setCtaSubtitle(settings?.cta_subtitle || '')
+    setCtaButton(settings?.cta_button || '')
+  }, [settings?.cta_title, settings?.cta_subtitle, settings?.cta_button])
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Recent broadcasts table (Milestone 3) — the creator's last 30 sends.
@@ -458,6 +476,74 @@ export default function NewsletterPage() {
         </div>
       </div>
 
+      {/* Signup form copy — what subscribers actually see on the
+          homepage + every blog-post sidebar. All three fields are
+          optional (empty → theme default). The right column is a
+          1:1 live preview of how the form will render once saved. */}
+      <div className="card p-5 mb-6">
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Signup form copy</p>
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4 leading-relaxed">
+          What subscribers see on your homepage (under the ad strip) and in the sidebar of every blog post.
+          Leave any field blank to use the default copy.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[#3a3a3c] dark:text-[#d2d2d7] mb-1">Title</label>
+              <input
+                type="text"
+                value={ctaTitle}
+                onChange={(e) => setCtaTitle(e.target.value)}
+                onBlur={(e) => saveSetting({ cta_title: e.target.value } as Partial<Settings>, 'cta_title')}
+                maxLength={140}
+                placeholder={settings?.sender_name ? `Get the next ${settings.sender_name} review in your inbox` : 'Get the next review in your inbox'}
+                className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#3a3a3c] dark:text-[#d2d2d7] mb-1">Subtitle</label>
+              <textarea
+                value={ctaSubtitle}
+                onChange={(e) => setCtaSubtitle(e.target.value)}
+                onBlur={(e) => saveSetting({ cta_subtitle: e.target.value } as Partial<Settings>, 'cta_subtitle')}
+                maxLength={240}
+                rows={2}
+                placeholder="No spam. One short email when there’s a new post worth your time."
+                className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#3a3a3c] dark:text-[#d2d2d7] mb-1">Button label</label>
+              <input
+                type="text"
+                value={ctaButton}
+                onChange={(e) => setCtaButton(e.target.value)}
+                onBlur={(e) => saveSetting({ cta_button: e.target.value } as Partial<Settings>, 'cta_button')}
+                maxLength={40}
+                placeholder="Subscribe"
+                className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+            </div>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+              Changes save when you click away from a field, then sync to your blog within a few seconds.
+            </p>
+          </div>
+
+          {/* Live preview — 1:1 with what the WP theme renders. Same inline
+              CSS, same widths, same colours. If anything ever drifts here
+              vs the production form, this is the place to keep in sync. */}
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-[#86868b] dark:text-[#8e8e93] mb-2">Preview</p>
+            <NewsletterFormPreview
+              senderName={settings?.sender_name || ''}
+              title={ctaTitle}
+              subtitle={ctaSubtitle}
+              button={ctaButton}
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Sender domain — Milestone 2.
           Three visual states:
           (a) No domain set → empty input + "Add" button + explainer
@@ -811,5 +897,79 @@ export default function NewsletterPage() {
         </div>
       )}
     </>
+  )
+}
+
+// ── Live preview of the WP-rendered signup form ──────────────────────────────
+// Mirrors mvp_affiliate_render_newsletter_form() in the plugin — same
+// inline styles, same layout, same fallback hierarchy (caller atts →
+// dashboard overrides → theme default). Kept here as a tiny component so
+// the editor card stays readable.
+function NewsletterFormPreview({
+  senderName, title, subtitle, button,
+}: {
+  /** Current sender_name from settings — drives the title fallback. */
+  senderName: string
+  /** Live editor value (uncontrolled string). Empty → use the
+   *  sender-aware fallback so creators see the actual default they'd
+   *  ship with. */
+  title: string
+  subtitle: string
+  button: string
+}) {
+  const name = senderName.trim()
+  const titleFallback = name
+    ? `Get the next ${name} review in your inbox`
+    : 'Get the next review in your inbox'
+  const t = title.trim() || titleFallback
+  const s = subtitle.trim() || 'No spam. One short email when there’s a new post worth your time.'
+  const b = button.trim() || 'Subscribe'
+  return (
+    <div
+      className="rounded-2xl border border-gray-200 dark:border-white/10"
+      style={{
+        background: '#ffffff',
+        padding: '24px',
+        fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif',
+        color: '#1d1d1f',
+      }}
+    >
+      <h3 style={{ margin: '0 0 6px', fontSize: '18px', lineHeight: 1.3, color: '#1d1d1f' }}>{t}</h3>
+      <p style={{ margin: '0 0 14px', fontSize: '13px', lineHeight: 1.5, color: '#6e6e73' }}>{s}</p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input
+          type="email"
+          placeholder="you@email.com"
+          disabled
+          style={{
+            flex: '1 1 200px',
+            minWidth: 0,
+            padding: '11px 12px',
+            border: '1px solid rgba(0,0,0,0.15)',
+            borderRadius: 10,
+            fontSize: 14,
+            color: '#1d1d1f',
+            background: '#fff',
+            outline: 'none',
+          }}
+        />
+        <button
+          type="button"
+          disabled
+          style={{
+            padding: '11px 18px',
+            border: 'none',
+            borderRadius: 10,
+            background: '#0071e3',
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'default',
+          }}
+        >
+          {b}
+        </button>
+      </div>
+    </div>
   )
 }

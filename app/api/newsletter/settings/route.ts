@@ -22,7 +22,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from('newsletter_settings')
-    .select('user_id,sender_domain,sender_local_part,sender_name,domain_status,domain_checked_at,dkim_records,enabled,mailing_address,resend_domain_id')
+    .select('user_id,sender_domain,sender_local_part,sender_name,domain_status,domain_checked_at,dkim_records,enabled,mailing_address,resend_domain_id,cta_title,cta_subtitle,cta_button')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -41,6 +41,9 @@ export async function GET() {
       enabled: false,
       mailing_address: null,
       resend_domain_id: null,
+      cta_title: null,
+      cta_subtitle: null,
+      cta_button: null,
     },
   })
 }
@@ -50,7 +53,14 @@ export async function PUT(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { enabled?: boolean; sender_name?: string | null; mailing_address?: string | null }
+  let body: {
+    enabled?: boolean
+    sender_name?: string | null
+    mailing_address?: string | null
+    cta_title?: string | null
+    cta_subtitle?: string | null
+    cta_button?: string | null
+  }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
   // Build the patch — only include the fields the caller actually sent. Lets
@@ -60,6 +70,11 @@ export async function PUT(req: Request) {
   if (typeof body.enabled === 'boolean') patch.enabled = body.enabled
   if (typeof body.sender_name === 'string') patch.sender_name = body.sender_name.trim().slice(0, 120) || null
   if (typeof body.mailing_address === 'string') patch.mailing_address = body.mailing_address.trim().slice(0, 400) || null
+  // CTA overrides — empty string means "go back to the theme default",
+  // which we model by storing NULL (a sentinel for "not customised").
+  if (typeof body.cta_title === 'string') patch.cta_title = body.cta_title.trim().slice(0, 140) || null
+  if (typeof body.cta_subtitle === 'string') patch.cta_subtitle = body.cta_subtitle.trim().slice(0, 240) || null
+  if (typeof body.cta_button === 'string') patch.cta_button = body.cta_button.trim().slice(0, 40) || null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)

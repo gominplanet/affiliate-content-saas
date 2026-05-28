@@ -25,6 +25,11 @@ interface NewsletterFields {
   enabled: boolean
   userId: string
   senderName: string | null
+  // CTA copy overrides — the WP theme uses these when present, falls back
+  // to its dynamic defaults otherwise. Null = use theme default.
+  ctaTitle: string | null
+  ctaSubtitle: string | null
+  ctaButton: string | null
 }
 
 /** Read the row + return the shape the WP option expects. Single source
@@ -36,13 +41,16 @@ export async function readNewsletterFields(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from('newsletter_settings')
-    .select('enabled,sender_name')
+    .select('enabled,sender_name,cta_title,cta_subtitle,cta_button')
     .eq('user_id', userId)
     .maybeSingle()
   return {
     enabled: !!data?.enabled,
     userId,
     senderName: (data?.sender_name as string | null)?.trim() || null,
+    ctaTitle: (data?.cta_title as string | null)?.trim() || null,
+    ctaSubtitle: (data?.cta_subtitle as string | null)?.trim() || null,
+    ctaButton: (data?.cta_button as string | null)?.trim() || null,
   }
 }
 
