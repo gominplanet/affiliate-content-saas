@@ -79,17 +79,37 @@ export default function NewsletterPage() {
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
   // Live CTA editor state — separate from settings so the preview can
-  // re-render on every keystroke without waiting for the blur-then-save
-  // round-trip. Seeded from settings the moment they load and re-synced
-  // whenever the server returns a fresher row (save handler updates them).
+  // re-render on every keystroke. NOT auto-saved on blur (creators
+  // explicitly asked for a Save button so they can confirm the wording
+  // before it ships to the live blog). The Save button below the card
+  // fires a single PUT with all three fields, then setSettings flips the
+  // dirty flag back off.
   const [ctaTitle, setCtaTitle] = useState('')
   const [ctaSubtitle, setCtaSubtitle] = useState('')
   const [ctaButton, setCtaButton] = useState('')
+  const [ctaSaved, setCtaSaved] = useState(false) // brief "Saved ✓" flash
   useEffect(() => {
     setCtaTitle(settings?.cta_title || '')
     setCtaSubtitle(settings?.cta_subtitle || '')
     setCtaButton(settings?.cta_button || '')
   }, [settings?.cta_title, settings?.cta_subtitle, settings?.cta_button])
+  // Dirty = any field differs from the server snapshot. Enables the Save
+  // button + suppresses the navigation-was-pointless case.
+  const ctaDirty = (
+    ctaTitle !== (settings?.cta_title || '')
+    || ctaSubtitle !== (settings?.cta_subtitle || '')
+    || ctaButton !== (settings?.cta_button || '')
+  )
+  async function saveCta() {
+    if (!ctaDirty) return
+    await saveSetting({
+      cta_title: ctaTitle,
+      cta_subtitle: ctaSubtitle,
+      cta_button: ctaButton,
+    } as Partial<Settings>, 'cta')
+    setCtaSaved(true)
+    setTimeout(() => setCtaSaved(false), 2000)
+  }
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Recent broadcasts table (Milestone 3) — the creator's last 30 sends.
@@ -494,7 +514,6 @@ export default function NewsletterPage() {
                 type="text"
                 value={ctaTitle}
                 onChange={(e) => setCtaTitle(e.target.value)}
-                onBlur={(e) => saveSetting({ cta_title: e.target.value } as Partial<Settings>, 'cta_title')}
                 maxLength={140}
                 placeholder={settings?.sender_name ? `Get the next ${settings.sender_name} review in your inbox` : 'Get the next review in your inbox'}
                 className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
@@ -505,7 +524,6 @@ export default function NewsletterPage() {
               <textarea
                 value={ctaSubtitle}
                 onChange={(e) => setCtaSubtitle(e.target.value)}
-                onBlur={(e) => saveSetting({ cta_subtitle: e.target.value } as Partial<Settings>, 'cta_subtitle')}
                 maxLength={320}
                 rows={3}
                 placeholder="No spam. One short email when there’s a new post worth your time or when there are things you might have missed online."
@@ -518,15 +536,31 @@ export default function NewsletterPage() {
                 type="text"
                 value={ctaButton}
                 onChange={(e) => setCtaButton(e.target.value)}
-                onBlur={(e) => saveSetting({ cta_button: e.target.value } as Partial<Settings>, 'cta_button')}
                 maxLength={40}
                 placeholder="Subscribe"
                 className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
               />
             </div>
-            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-              Changes save when you click away from a field, then sync to your blog within a few seconds.
-            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => void saveCta()}
+                disabled={!ctaDirty || savingField === 'cta'}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  ctaDirty
+                    ? 'bg-[#0071e3] text-white hover:bg-[#0062c4]'
+                    : 'bg-gray-100 dark:bg-white/5 text-[#86868b] cursor-default'
+                } disabled:opacity-60`}
+              >
+                {savingField === 'cta'
+                  ? <><Loader2 size={12} className="inline animate-spin mr-1" /> Saving…</>
+                  : ctaSaved
+                    ? <><CheckCircle size={12} className="inline mr-1" /> Saved</>
+                    : ctaDirty ? 'Save changes' : 'No changes to save'}
+              </button>
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                The form on your blog updates within a few seconds of saving.
+              </p>
+            </div>
           </div>
 
           {/* Live preview — 1:1 with what the WP theme renders. Same inline
