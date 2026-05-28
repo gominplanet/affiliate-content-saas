@@ -316,3 +316,64 @@ if (!function_exists('mvp_affiliate_homepage_ads')) {
         return $out;
     }
 }
+
+/**
+ * Newsletter (auto-embed).
+ *
+ * The MVP plugin pushes { enabled, userId, senderName } into the
+ * `newsletter` key of affiliateos_customizations every time the creator
+ * toggles the dashboard switch or saves Customize Blog. The theme reads
+ * those fields here so it can render the signup form on the home page
+ * AND in every blog-post sidebar — no shortcode pasting required.
+ *
+ * `mvp_affiliate_newsletter_enabled()`  → true only when the toggle is on
+ *                                         AND we have a valid user id.
+ * `mvp_affiliate_render_newsletter_inline($atts = [])`
+ *     → returns the rendered HTML (via the plugin's render function) or
+ *       '' when the newsletter isn't ready. Callers can echo unconditionally.
+ *
+ * Atts forwarded to the plugin renderer: title, subtitle, button (all
+ * optional — sensible defaults inside the renderer).
+ */
+if (!function_exists('mvp_affiliate_newsletter_data')) {
+    function mvp_affiliate_newsletter_data(): array {
+        $d = mvp_affiliate_data();
+        $n = is_array($d['newsletter'] ?? null) ? $d['newsletter'] : [];
+        return [
+            'enabled'    => !empty($n['enabled']),
+            'userId'     => is_string($n['userId'] ?? null) ? trim($n['userId']) : '',
+            'senderName' => is_string($n['senderName'] ?? null) ? trim($n['senderName']) : '',
+        ];
+    }
+}
+
+if (!function_exists('mvp_affiliate_newsletter_enabled')) {
+    function mvp_affiliate_newsletter_enabled(): bool {
+        $n = mvp_affiliate_newsletter_data();
+        return $n['enabled'] && preg_match('/^[0-9a-f-]{36}$/i', $n['userId']);
+    }
+}
+
+if (!function_exists('mvp_affiliate_render_newsletter_inline')) {
+    function mvp_affiliate_render_newsletter_inline(array $atts = []): string {
+        if (!mvp_affiliate_newsletter_enabled()) return '';
+        // The plugin's renderer is what actually draws the form. If the
+        // plugin isn't active (theme-only install) we just don't render —
+        // the option's presence guarantees the plugin was active at
+        // least at customize-save time, but a deactivation could leave
+        // stale data; better to silently skip than fatal.
+        if (!function_exists('mvp_affiliate_render_newsletter_form')) return '';
+        $n = mvp_affiliate_newsletter_data();
+        $args = array_merge([
+            'user_id'  => $n['userId'],
+            // Title default mentions the brand when we have one; otherwise
+            // the generic "Get the next review" line lands.
+            'title'    => $n['senderName']
+                ? sprintf('Get the next %s review in your inbox', $n['senderName'])
+                : 'Get the next review in your inbox',
+            'subtitle' => 'No spam. One short email when there’s a new post worth your time.',
+            'button'   => 'Subscribe',
+        ], $atts);
+        return mvp_affiliate_render_newsletter_form($args);
+    }
+}

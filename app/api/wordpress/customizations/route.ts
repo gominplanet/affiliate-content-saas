@@ -104,6 +104,21 @@ export async function POST(req: Request) {
       delete stripped.about
       delete stripped.footer
 
+      // Newsletter auto-embed: the MVP theme reads these fields to render the
+      // [mvp-newsletter] signup form automatically on the homepage and in
+      // every blog-post sidebar — no shortcode pasting required. We push the
+      // creator's MVP user id + the enabled flag every customization save
+      // so the theme always has fresh data. When enabled is false, the
+      // theme silently skips rendering.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: nlRow } = await (supabase as any)
+        .from('newsletter_settings')
+        .select('enabled,sender_name')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const nlEnabled = !!nlRow?.enabled
+      const nlSenderName = (nlRow?.sender_name as string | null)?.trim() || null
+
       const payload = {
         ...existing,
         ...stripped,
@@ -117,6 +132,14 @@ export async function POST(req: Request) {
           ...(storedBannerUrl ? { headerBannerUrl: storedBannerUrl } : {}),
         },
         footer: { ...existingFooter, ...strippedFooter },
+        // The plugin/theme look up `newsletter.userId` to know whose form
+        // to render, and `newsletter.enabled` as the on/off switch.
+        // `newsletter.senderName` powers the form's H3 title when present.
+        newsletter: {
+          enabled: nlEnabled,
+          userId: user.id,
+          senderName: nlSenderName,
+        },
       }
 
       // Push to WordPress — direct Basic Auth, no wp-login.php fallback (Hostinger blocks it)

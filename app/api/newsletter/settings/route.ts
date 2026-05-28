@@ -12,6 +12,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { pushNewsletterToWp } from '@/lib/wp-newsletter-sync'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -67,6 +68,13 @@ export async function PUT(req: Request) {
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Push fresh status to WordPress so the auto-embedded form on the home
+  // page + every blog-post sidebar reflects the toggle immediately. Fully
+  // best-effort — if WP is offline or unreachable, the dashboard save
+  // still succeeds; the next Customize Blog save (or a manual re-toggle)
+  // re-pushes.
+  void pushNewsletterToWp(supabase, user.id)
 
   return NextResponse.json({ ok: true, settings: data })
 }

@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.14
+ * Version: 1.0.15
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.14');
+define('MVP_AFFILIATE_VERSION', '1.0.15');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -1041,9 +1041,11 @@ if (!function_exists('mvp_affiliate_rest_self_update')) {
 add_shortcode('mvp-newsletter', 'mvp_newsletter_shortcode');
 if (!function_exists('mvp_newsletter_shortcode')) {
     function mvp_newsletter_shortcode($atts) {
-        // Parse attrs — only `user` (the creator's MVP user id, a UUID) is
-        // currently honored. `title` + `subtitle` let creators override the
-        // default copy per-placement without editing the plugin.
+        // Parse attrs — `user` (the creator's MVP user id, a UUID) is
+        // OPTIONAL now: when missing, we read it from the customizations
+        // option (1.0.15+, pushed by MVP automatically). `title` +
+        // `subtitle` + `button` let creators override the default copy
+        // per-placement without editing the plugin.
         $atts = shortcode_atts([
             'user'     => '',
             'title'    => 'Get the next review in your inbox',
@@ -1052,29 +1054,65 @@ if (!function_exists('mvp_newsletter_shortcode')) {
         ], $atts, 'mvp-newsletter');
 
         $user_id = trim($atts['user']);
-        // Validate UUID shape so a typo in the shortcode doesn't ship a
-        // form that hits the API with garbage on every submit.
-        if (!preg_match('/^[0-9a-f-]{36}$/i', $user_id)) {
-            return '<div style="padding:12px;border:1px solid #f5c6cb;background:#fdecea;color:#a94442;border-radius:8px;font-size:13px;">[mvp-newsletter] is missing a valid user id. Make sure the shortcode reads <code>[mvp-newsletter user="…"]</code> with your MVP user id.</div>';
+        // Auto-fill from customizations.newsletter.userId when the
+        // shortcode omitted the attribute (the new auto-embed flow).
+        if ($user_id === '') {
+            $cust = get_option('affiliateos_customizations', []);
+            $nl = is_array($cust['newsletter'] ?? null) ? $cust['newsletter'] : [];
+            $user_id = is_string($nl['userId'] ?? null) ? trim($nl['userId']) : '';
         }
+        if (!preg_match('/^[0-9a-f-]{36}$/i', $user_id)) {
+            return '<div style="padding:12px;border:1px solid #f5c6cb;background:#fdecea;color:#a94442;border-radius:8px;font-size:13px;">[mvp-newsletter] is missing a valid user id. Make sure the shortcode reads <code>[mvp-newsletter user="…"]</code> with your MVP user id — or enable the newsletter in your MVP dashboard so the user id auto-populates.</div>';
+        }
+        return mvp_affiliate_render_newsletter_form([
+            'user_id'  => $user_id,
+            'title'    => $atts['title'],
+            'subtitle' => $atts['subtitle'],
+            'button'   => $atts['button'],
+        ]);
+    }
+}
+
+// Shared renderer used by BOTH the [mvp-newsletter] shortcode AND the MVP
+// theme's auto-embed (homepage + sidebar). Single source of truth for the
+// form's HTML / inline CSS / submit JS — change the form here and every
+// surface updates.
+//
+// Args (associative array):
+//   user_id   string — the creator's MVP user id (UUID). Required.
+//   title     string — H3 above the form.
+//   subtitle  string — supporting line below the title.
+//   button    string — submit button label.
+//
+// Returns escaped HTML ready to echo. Returns '' if user_id is invalid
+// (so callers don't render a broken form).
+if (!function_exists('mvp_affiliate_render_newsletter_form')) {
+    function mvp_affiliate_render_newsletter_form($args = []) {
+        $user_id  = isset($args['user_id'])  ? trim((string) $args['user_id']) : '';
+        if (!preg_match('/^[0-9a-f-]{36}$/i', $user_id)) {
+            return '';
+        }
+        $title    = isset($args['title'])    ? (string) $args['title']    : 'Get the next review in your inbox';
+        $subtitle = isset($args['subtitle']) ? (string) $args['subtitle'] : 'No spam. One short email when there’s a new post worth your time.';
+        $button   = isset($args['button'])   ? (string) $args['button']   : 'Subscribe';
 
         // The API base — same domain that runs this plugin's REST sister
         // endpoints (customizations, status, self-update). Filterable for dev.
         $api_base = apply_filters('mvp_affiliate_api_base', 'https://www.mvpaffiliate.io');
         $form_id  = 'mvp-newsletter-' . wp_generate_uuid4();
 
-        // All inline so the shortcode works whether or not the MVP theme
+        // All inline so the form works whether or not the MVP theme
         // is active. Esc’d aggressively — every attribute is creator-supplied.
         ob_start();
         ?>
 <div class="mvp-newsletter" id="<?php echo esc_attr($form_id); ?>" style="max-width:480px;margin:24px auto;padding:24px;border-radius:14px;background:#ffffff;border:1px solid rgba(0,0,0,0.08);box-shadow:0 1px 2px rgba(0,0,0,0.04);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d1f;">
-  <h3 style="margin:0 0 6px;font-size:18px;line-height:1.3;color:#1d1d1f;"><?php echo esc_html($atts['title']); ?></h3>
-  <p style="margin:0 0 14px;font-size:13px;line-height:1.5;color:#6e6e73;"><?php echo esc_html($atts['subtitle']); ?></p>
+  <h3 style="margin:0 0 6px;font-size:18px;line-height:1.3;color:#1d1d1f;"><?php echo esc_html($title); ?></h3>
+  <p style="margin:0 0 14px;font-size:13px;line-height:1.5;color:#6e6e73;"><?php echo esc_html($subtitle); ?></p>
   <form class="mvp-newsletter-form" novalidate style="display:flex;gap:8px;flex-wrap:wrap;">
     <input type="email" name="email" required placeholder="you@email.com" autocomplete="email" style="flex:1 1 200px;min-width:0;padding:11px 12px;border:1px solid rgba(0,0,0,0.15);border-radius:10px;font-size:14px;color:#1d1d1f;background:#fff;outline:none;" />
     <!-- Honeypot: hidden via inline CSS; bots fill it, we silently drop their signups server-side. -->
     <input type="text" name="hp" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;width:0;opacity:0;" />
-    <button type="submit" style="padding:11px 18px;border:none;border-radius:10px;background:#0071e3;color:#ffffff;font-size:14px;font-weight:600;cursor:pointer;"><?php echo esc_html($atts['button']); ?></button>
+    <button type="submit" style="padding:11px 18px;border:none;border-radius:10px;background:#0071e3;color:#ffffff;font-size:14px;font-weight:600;cursor:pointer;"><?php echo esc_html($button); ?></button>
   </form>
   <p class="mvp-newsletter-msg" role="status" aria-live="polite" style="margin:10px 0 0;font-size:12px;line-height:1.5;color:#6e6e73;min-height:1.5em;"></p>
 </div>

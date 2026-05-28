@@ -57,7 +57,18 @@ get_header();
           dynamic_sidebar('sidebar-1');
       }
 
-      // 3. Render MVP Affiliate sidebar ad blocks
+      // 3. Newsletter signup form — sits between the WP widgets and the
+      //    ad blocks so it gets prime sidebar real estate without being
+      //    the very first thing in the sidebar. Renders only when the
+      //    creator has enabled the newsletter (silent no-op otherwise),
+      //    so disabling on the MVP dashboard removes it from every post
+      //    without theme edits.
+      echo mvp_affiliate_render_newsletter_inline([
+          'title'    => 'Get reviews in your inbox',
+          'subtitle' => 'No spam. One short email per new post worth your time.',
+      ]);
+
+      // 4. Render MVP Affiliate sidebar ad blocks
       $blocks = mvp_affiliate_sidebar_blocks();
       foreach ($blocks as $block) {
           echo mvp_affiliate_render_block($block);

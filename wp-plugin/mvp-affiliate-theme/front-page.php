@@ -158,6 +158,21 @@ $used_ids = [];
   </section>
   <?php endif; ?>
 
+  <?php /* ─── Newsletter signup (auto-embedded). Renders only when the
+            creator has enabled the newsletter in their MVP dashboard.
+            Sits right after the 3-up ad strip so it gets prime above-the-
+            fold real estate without competing with the editor's pick. ─ */ ?>
+  <?php
+  $newsletter_html = mvp_affiliate_render_newsletter_inline();
+  if ($newsletter_html !== ''):
+  ?>
+  <section class="mvp-section mvp-newsletter-section">
+    <div class="mvp-container">
+      <?php echo $newsletter_html; ?>
+    </div>
+  </section>
+  <?php endif; ?>
+
   <?php /* ─── BY CATEGORY — for each category w/ ≥1 unused post, show 3 ─ */ ?>
   <?php
   $categories = get_categories([
