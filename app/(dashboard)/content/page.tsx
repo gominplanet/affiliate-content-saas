@@ -523,7 +523,7 @@ function GenerateButton({
   /** YouTube native id — lets the extension grab real HD frames for the
    *  in-article photos (retouched by AI). Optional. */
   youtubeVideoId?: string
-  existingPost?: { url: string; title: string; postId?: string } | null
+  existingPost?: { url: string; title: string; postId?: string; indexed?: boolean | null; coverage?: string | null } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
   userTier: 'trial' | 'creator' | 'pro' | 'admin'
   onDone: (url: string, title: string, postId: string) => void
@@ -653,6 +653,20 @@ function GenerateButton({
         <a href={result.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-medium text-[#34c759] hover:underline">
           <CheckCircle size={13} /> View post <ExternalLink size={11} />
         </a>
+        {/* Google indexing status (from the nightly cron + on-demand re-checks).
+            ✓ = in Google's index. ⚠️ = not in the index yet (new posts can take
+            days; old ones that flip back to this state may have been dropped).
+            Null/undefined = no signal yet → hide the badge. */}
+        {result.indexed === true && (
+          <span className="inline-flex items-center text-[#34c759]" title="Indexed by Google — it shows in search results.">
+            <CheckCircle size={12} />
+          </span>
+        )}
+        {result.indexed === false && (
+          <span className="inline-flex items-center text-[#ff9500]" title={result.coverage || 'Not in Google’s index yet — new posts can take days to weeks. Open the SEO page to request indexing.'}>
+            <AlertCircle size={12} />
+          </span>
+        )}
         {/* Rewrite is Pro-only and one-shot per post. Non-Pro users
             see no button — they manually edit the post in WordPress. */}
         {isPro && (
@@ -1631,7 +1645,7 @@ function VideoCard({
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
+  post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
   wpSiteUrl: string
   fbConnected: boolean
   pinterestConnected: boolean
@@ -2454,7 +2468,7 @@ export default function ContentPage() {
       return all
     }
 
-    const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp] = await Promise.all([
+    const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp, { data: seoCache }] = await Promise.all([
       fetchAllVideos(),
       sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tier').eq('user_id', user.id).single(),
@@ -2462,6 +2476,11 @@ export default function ContentPage() {
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
       fetch('/api/blog/live-post-ids').then(r => r.ok ? r.json() : null).catch(() => null),
+      // Indexing status per published post — refreshed nightly by the cron
+      // /api/cron/refresh-indexing and on-demand by the SEO page's Check button.
+      // Lets us show a ✓ / ⏳ / ✗ badge on the Content page so users don't have
+      // to leave to know whether Google has indexed each post.
+      sb.from('post_seo').select('post_id,indexed_state,coverage_state').eq('user_id', user.id),
     ])
 
     const b = brand as Record<string, unknown> | null
@@ -2511,15 +2530,25 @@ export default function ContentPage() {
     // keep everything (a transient error must never hide real posts).
     const liveIds: Set<number> | null = (liveResp && Array.isArray(liveResp.liveIds)) ? new Set<number>(liveResp.liveIds) : null
 
-    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
+    // Map post_seo by post_id so each video card knows its Google indexing status.
+    const seoByPostId = new Map<string, { indexed: boolean | null; coverage: string | null }>()
+    for (const r of (seoCache ?? []) as Array<{ post_id: string; indexed_state: string | null; coverage_state: string | null }>) {
+      const indexed = r.indexed_state === 'indexed' ? true : r.indexed_state === 'not_indexed' ? false : null
+      seoByPostId.set(r.post_id, { indexed, coverage: r.coverage_state })
+    }
+
+    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number)) continue  // deleted/trashed in WordPress
       if (p.video_id && p.wordpress_url) {
+        const idx = seoByPostId.get(p.id as string)
         postMap[p.video_id as string] = {
           url: p.wordpress_url as string,
           title: p.title as string,
           postId: p.id as string,
           wpPostId: p.wordpress_post_id as number | undefined,
+          indexed: idx?.indexed ?? null,
+          coverage: idx?.coverage ?? null,
           facebookPostId: p.facebook_post_id as string | undefined,
           pinterestPinId: p.pinterest_pin_id as string | undefined,
           threadsPostId: p.threads_post_id as string | undefined,
