@@ -18,11 +18,14 @@ interface PostRow {
   score: number; checks: Check[]
   indexed: boolean | null; coverageState: string | null
   inSitemap: boolean | null
+  /** Set when the nightly cron saw this post flip indexed → not_indexed; cleared
+   *  when it comes back. Used for the "Recently dropped" alert on the SEO page. */
+  droppedAt: string | null
   clicks: number; impressions: number; position: number | null; ctr: number | null
 }
 interface Overview {
   connected: boolean; property: string | null
-  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; sitemapFound: boolean; totalClicks: number; totalImpressions: number }
+  summary: { total: number; avgScore: number; indexed: number; notIndexed: number; unknown: number; notInSitemap: number; recentlyDropped: number; sitemapFound: boolean; totalClicks: number; totalImpressions: number }
   posts: PostRow[]
 }
 
@@ -244,6 +247,30 @@ export default function SeoPage() {
             </div>
           )}
 
+          {/* Recently dropped — posts Google had indexed but de-indexed in the
+              last 7 days. This is the rare-but-real alert that warrants action
+              (canonical, broken link, quality drop, manual action). The nightly
+              cron stamps droppedAt the moment a post flips indexed → not_indexed. */}
+          {data.connected && data.summary.recentlyDropped > 0 && (
+            <div className="card p-4 border border-[#ff3b30]/30 bg-[#ff3b30]/5 flex items-start gap-3">
+              <AlertCircle size={16} className="text-[#ff3b30] mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
+                  {data.summary.recentlyDropped} post{data.summary.recentlyDropped !== 1 ? 's' : ''} dropped from Google’s index in the last 7 days
+                </p>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2 leading-relaxed">
+                  Google removed {data.summary.recentlyDropped === 1 ? 'a previously-indexed post' : 'previously-indexed posts'} from its index. Common causes: a broken canonical, a 404, accidental noindex, or a manual quality flag. Filter the list to <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> below to see which ones — rows with a red “Dropped” pill are the affected posts.
+                </p>
+                <button
+                  onClick={() => setFilterNotIndexed(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#ff3b30] hover:opacity-90 transition-opacity"
+                >
+                  <AlertCircle size={12} /> Show the affected posts
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Missing-from-sitemap warning — Google can't discover what isn't there */}
           {data.summary.sitemapFound && data.summary.notInSitemap > 0 && (
             <div className="card p-4 border border-[#ff9500]/30 bg-[#ff9500]/5 flex items-start gap-3">
@@ -337,6 +364,14 @@ export default function SeoPage() {
                     {p.inSitemap === false && (
                       <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#ff9500] flex-shrink-0" title="Not in your sitemap — Google may not discover it">
                         <AlertCircle size={12} /> No sitemap
+                      </span>
+                    )}
+                    {/* "Dropped" pill — this post was indexed and the cron caught
+                        it falling out of the index in the last 7 days. Distinct
+                        from a "Not indexed" badge (which is the steady state). */}
+                    {p.droppedAt && p.indexed === false && (Date.now() - new Date(p.droppedAt).getTime()) < 7 * 24 * 60 * 60 * 1000 && (
+                      <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#ff3b30] flex-shrink-0" title={`Google de-indexed this post on ${new Date(p.droppedAt).toLocaleDateString()}`}>
+                        <AlertCircle size={12} /> Dropped
                       </span>
                     )}
                     {data.connected && <IndexBadge indexed={p.indexed} coverage={p.coverageState} />}

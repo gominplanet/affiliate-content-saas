@@ -147,6 +147,10 @@ export async function GET() {
       indexed: indexedState === 'indexed' ? true : indexedState === 'not_indexed' ? false : null,
       inSitemap: !sitemap.found ? null : (sitemapComplete ? true : sitemap.slugs.has((p.slug || '').toLowerCase())),
       coverageState, lastCrawl,
+      // When the nightly cron sees a post flip indexed → not_indexed, it stamps
+      // dropped_at. Cleared (null) when the post comes back. The SEO page uses
+      // this for the "recently dropped" banner + a per-row pill.
+      droppedAt: (cached?.dropped_at as string | null | undefined) ?? null,
       clicks: perf?.clicks ?? cached?.clicks ?? 0,
       impressions: perf?.impressions ?? cached?.impressions ?? 0,
       position: perf?.position ?? cached?.position ?? null,
@@ -170,6 +174,17 @@ export async function GET() {
 
   const total = out.length
   const avgScore = total ? Math.round(out.reduce((s, r) => s + (r.score as number), 0) / total) : 0
+  // "Recently dropped" = posts whose dropped_at landed in the last 7 days. The
+  // SEO page surfaces this count as an alert banner so unexpected de-indexings
+  // are visible without digging through every row.
+  const DROP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+  const now = Date.now()
+  const recentlyDropped = out.filter(r => {
+    const d = r.droppedAt as string | null
+    if (!d) return false
+    const t = new Date(d).getTime()
+    return Number.isFinite(t) && (now - t) < DROP_WINDOW_MS && r.indexed === false
+  }).length
   const summary = {
     total,
     avgScore,
@@ -177,6 +192,7 @@ export async function GET() {
     notIndexed: out.filter(r => r.indexed === false).length,
     unknown: out.filter(r => r.indexed === null).length,
     notInSitemap: out.filter(r => r.inSitemap === false).length,
+    recentlyDropped,
     sitemapFound: sitemap.found,
     totalClicks: out.reduce((s, r) => s + (r.clicks as number), 0),
     totalImpressions: out.reduce((s, r) => s + (r.impressions as number), 0),

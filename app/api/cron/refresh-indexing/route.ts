@@ -109,15 +109,28 @@ export async function GET(request: Request) {
         totalInspected++
         const ins = await inspectUrl(token, u.gsc_property, c.url)
         if (!ins) continue
-        toUpsert.push({
+        const oldState = cache.get(c.post.id)?.indexed_state || null
+        const newState = ins.indexed ? 'indexed' : 'not_indexed'
+        // Track de-indexing events: stamp dropped_at when a previously-indexed
+        // post falls out of the index, and clear it when it comes back. Omitted
+        // from the payload when there's no flip, so existing dropped_at values
+        // are preserved untouched (PostgREST only updates fields you send).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const row: any = {
           post_id: c.post.id,
           user_id: u.user_id,
           url: c.url,
-          indexed_state: ins.indexed ? 'indexed' : 'not_indexed',
+          indexed_state: newState,
           coverage_state: ins.coverageState,
           last_crawl: ins.lastCrawl,
           checked_at: new Date().toISOString(),
-        })
+        }
+        if (oldState === 'indexed' && newState === 'not_indexed') {
+          row.dropped_at = new Date().toISOString()
+        } else if (newState === 'indexed') {
+          row.dropped_at = null
+        }
+        toUpsert.push(row)
       }
 
       if (toUpsert.length) {
