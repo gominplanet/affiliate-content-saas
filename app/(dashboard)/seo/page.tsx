@@ -170,16 +170,33 @@ export default function SeoPage() {
   const applyFixAll = useCallback(async () => {
     setBulkApplying(true)
     let totalFixed = 0
+    // Collected per-post diagnostics for the case where the apply finds nothing
+    // to actually change (the confusing "0 fixed" path).
+    type Skipped = { title: string; reasons: string[] }
+    let lastSkipped: Skipped[] = []
+    let lastErrors: string[] = []
     try {
       for (let guard = 0; guard < 20; guard++) {
         const res = await fetch('/api/seo/fix-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
-        const d = await res.json()
+        const d = await res.json() as { error?: string; fixed?: number; remaining?: number; errors?: string[]; skipped?: Skipped[] }
         if (d.error) { setFixMsg({ ok: false, text: d.error }); break }
         totalFixed += d.fixed || 0
+        lastSkipped = d.skipped || []
+        lastErrors = d.errors || []
         if (!d.remaining || d.fixed === 0) break // done (or no further progress)
         setFixMsg({ ok: true, text: `Fixing posts… ${totalFixed} done, ${d.remaining} to go.` })
       }
-      setFixMsg({ ok: true, text: `Done — fixed ${totalFixed} post${totalFixed !== 1 ? 's' : ''} and republished.` })
+      if (totalFixed === 0 && (lastSkipped.length > 0 || lastErrors.length > 0)) {
+        const reasonLines = lastSkipped.slice(0, 5).map(s => `• "${s.title}": ${s.reasons.join(' · ')}`)
+        const errorLines = lastErrors.slice(0, 3).map(e => `⚠ ${e}`)
+        const body = [...reasonLines, ...errorLines].join('\n')
+        setFixMsg({
+          ok: false,
+          text: `Nothing was fixed. Here’s why${body ? `:\n${body}` : '.'}\n\nWhat usually causes this: every fixer thought the post was already done (existing FAQ, existing related-reviews block, alt text present), or there weren’t enough related posts to link to yet.`,
+        })
+      } else {
+        setFixMsg({ ok: true, text: `Done — fixed ${totalFixed} post${totalFixed !== 1 ? 's' : ''} and republished.` })
+      }
       await load()
     } catch { setFixMsg({ ok: false, text: 'Something went wrong.' }) }
     finally { setBulkApplying(false); setBulkPreview(null) }
@@ -226,9 +243,9 @@ export default function SeoPage() {
         <div className="flex flex-col gap-4">
           <IndexingGuide property={data.property} connected={data.connected} />
           {fixMsg && (
-            <div className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg text-sm ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
-              <span>{fixMsg.text}</span>
-              <button onClick={() => setFixMsg(null)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0"><X size={14} /></button>
+            <div className={`flex items-start justify-between gap-3 px-4 py-2.5 rounded-lg text-sm ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
+              <span className="whitespace-pre-line">{fixMsg.text}</span>
+              <button onClick={() => setFixMsg(null)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] flex-shrink-0 mt-0.5"><X size={14} /></button>
             </div>
           )}
           {/* Connect-GSC prompt when not connected — scores still work without it */}

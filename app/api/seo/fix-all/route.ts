@@ -42,7 +42,19 @@ export async function POST(request: Request) {
     .not('content', 'is', null)
     .order('created_at', { ascending: false })
     .limit(2000)
-  const posts = ((postsRaw as FixablePost[] | null) ?? []).filter(p => p.content && p.wordpress_post_id)
+  const allPosts = ((postsRaw as FixablePost[] | null) ?? []).filter(p => p.content && p.wordpress_post_id)
+
+  // Reconcile against the LIVE WordPress site so we don't try to "fix" posts
+  // the user has since deleted in WP (they linger in blog_posts but updatePost
+  // would 404). null = couldn't read the site → keep everything (a transient
+  // error must never lock out the whole bulk fixer).
+  let liveIds: Set<number> | null = null
+  try {
+    liveIds = await wpService.getPublishedPostIds()
+  } catch { liveIds = null }
+  const posts = (liveIds && liveIds.size > 0)
+    ? allPosts.filter(p => p.wordpress_post_id != null && liveIds!.has(p.wordpress_post_id))
+    : allPosts
 
   // Cheap pass: which posts have auto-fixable failing checks (no network/AI).
   const needFix = posts
@@ -64,19 +76,39 @@ export async function POST(request: Request) {
     })
   }
 
-  // Apply — batched so we stay under the time budget.
+  // Apply — batched so we stay under the time budget. Per-post outcomes are
+  // surfaced so the UI can show WHY nothing was fixed when fixed=0 (the
+  // common confusing case: every fixer hit an "already done" or "no
+  // candidates" branch and bailed). The shared engine returns reasons by
+  // fix-type even when it didn't change anything.
   let fixed = 0
   const errors: string[] = []
+  const skipped: Array<{ title: string; reasons: string[] }> = []
   const batch = needFix.slice(0, BATCH_CAP)
   for (const { post } of batch) {
     try {
       const r = await applyPostFixes({ supabase, userId: user.id, wpService, wpBase, tier: wp.tier, post, fixes: 'all' })
-      if (r.changed) fixed++
+      if (r.changed) {
+        fixed++
+      } else {
+        const reasonStrs = Object.values(r.reasons || {}).filter(Boolean) as string[]
+        skipped.push({
+          title: ((post.title || post.id) as string).slice(0, 80),
+          reasons: reasonStrs.length ? reasonStrs : ['Nothing actually changed (fixers ran but produced no diff).'],
+        })
+      }
     } catch (err) {
       errors.push(`${post.title || post.id}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
   const remaining = Math.max(0, needFix.length - batch.length)
 
-  return NextResponse.json({ success: true, fixed, remaining, attempted: batch.length, errors: errors.slice(0, 10) })
+  return NextResponse.json({
+    success: true,
+    fixed,
+    remaining,
+    attempted: batch.length,
+    errors: errors.slice(0, 10),
+    skipped: skipped.slice(0, 10),
+  })
 }
