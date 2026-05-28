@@ -595,10 +595,11 @@ async function handleGenerate(request: Request) {
   // below never ships an article with "from what we see in the video…" or
   // "watch the full video before deciding…" filler.
   {
-    const scrub = scrubVoicePatterns(content)
+    const channelUrl = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
+    const scrub = scrubVoicePatterns(content, { channelUrl })
     content = scrub.content
-    if (scrub.paragraphsRemoved + scrub.phrasesRewritten > 0) {
-      console.log(`[blog/generate] voice scrub: dropped ${scrub.paragraphsRemoved} paragraph(s), rewrote ${scrub.phrasesRewritten} phrase(s)`)
+    if (scrub.paragraphsRemoved + scrub.phrasesRewritten + scrub.handlesWrapped > 0) {
+      console.log(`[blog/generate] voice scrub: dropped ${scrub.paragraphsRemoved} paragraph(s), rewrote ${scrub.phrasesRewritten} phrase(s), wrapped ${scrub.handlesWrapped} @handle(s)`)
     }
   }
 
@@ -936,8 +937,10 @@ async function handleGenerate(request: Request) {
       if (checked && checked !== content) {
         // Re-scrub for voice patterns too — fact-check rewrites can occasionally
         // re-introduce "from what we see in the video" language while editing
-        // out a bogus spec.
-        content = scrubVoicePatterns(scrubBanned(checked)).content
+        // out a bogus spec. Pass the channel URL again so any bare @handles the
+        // fact-check leaves behind also get wrapped.
+        const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
+        content = scrubVoicePatterns(scrubBanned(checked), { channelUrl: channelUrlForRescrub }).content
         try { await wpService.updatePost(wpPost.id, { content }) } catch { /* keep prior text */ }
         if (savedPost?.id) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

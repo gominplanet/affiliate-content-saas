@@ -55,7 +55,22 @@ export interface VoiceScrubReport {
   paragraphsRemoved: number
   /** Phrase-level rewrites we applied within otherwise-good paragraphs. */
   phrasesRewritten: number
+  /** Bare @handles wrapped in <a> tags pointing at the user's channel URL. */
+  handlesWrapped: number
 }
+
+export interface VoiceScrubOptions {
+  /** The user's YouTube channel URL (e.g. https://www.youtube.com/@sebandmich).
+   *  When provided, bare @handles in body text get wrapped in <a> tags pointing
+   *  here. When absent, bare @handles are LEFT untouched (we won't invent a URL). */
+  channelUrl?: string | null
+}
+
+// Matches a bare @handle not already inside an attribute value, an existing
+// <a> tag's body, or a URL path. Negative lookbehind excludes the four
+// preceding characters that would mean "already wrapped": " (attribute value),
+// > (anchor open just before), ' (single-quoted attr), / (URL path segment).
+const HANDLE_RE = /(?<![">'/])@([A-Za-z0-9_]{3,30})\b/g
 
 /**
  * Scrub voice-betrayal patterns from a blog post body. Safe on Gutenberg HTML —
@@ -63,11 +78,13 @@ export interface VoiceScrubReport {
  * comments wrap each `<p>` and stay paired naturally when the whole block is
  * dropped). Returns the cleaned content + counts so the route can log/report.
  */
-export function scrubVoicePatterns(content: string): VoiceScrubReport {
-  if (!content) return { content: '', paragraphsRemoved: 0, phrasesRewritten: 0 }
+export function scrubVoicePatterns(content: string, opts?: VoiceScrubOptions): VoiceScrubReport {
+  if (!content) return { content: '', paragraphsRemoved: 0, phrasesRewritten: 0, handlesWrapped: 0 }
 
   let paragraphsRemoved = 0
   let phrasesRewritten = 0
+  let handlesWrapped = 0
+  const channelUrl = (opts?.channelUrl || '').trim()
 
   // Match an optional <!-- wp:paragraph --> wrapper + the <p>…</p> block + the
   // optional closing comment. If the <p> contains a killer pattern, drop the
@@ -99,8 +116,18 @@ export function scrubVoicePatterns(content: string): VoiceScrubReport {
     return match.replace(inner, rewritten)
   })
 
-  // Tidy: collapse any consecutive blank lines the paragraph drops created.
-  const tidied = scrubbed.replace(/\n{3,}/g, '\n\n')
+  // Wrap any surviving bare @handles in proper <a> tags so the body never
+  // ships a dead handle. Only runs when we know the channel URL (no inventing).
+  let withHandles = scrubbed
+  if (channelUrl) {
+    withHandles = scrubbed.replace(HANDLE_RE, (match) => {
+      handlesWrapped++
+      return `<a href="${channelUrl}" target="_blank" rel="noopener noreferrer">${match}</a>`
+    })
+  }
 
-  return { content: tidied, paragraphsRemoved, phrasesRewritten }
+  // Tidy: collapse any consecutive blank lines the paragraph drops created.
+  const tidied = withHandles.replace(/\n{3,}/g, '\n\n')
+
+  return { content: tidied, paragraphsRemoved, phrasesRewritten, handlesWrapped }
 }
