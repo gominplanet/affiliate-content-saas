@@ -1045,7 +1045,7 @@ async function handleGenerate(request: Request) {
           try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch { /* keep text-only post */ }
           if (savedPost?.id) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            try { await (supabase as any).from('blog_posts').update({ content: finalContent }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', savedPost.id) } catch { /* non-fatal */ }
           }
         }
       } catch { /* non-fatal — the published text post stands */ }
@@ -1237,30 +1237,48 @@ async function handleGenerate(request: Request) {
           }))
           const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
           heroImageUrl = uploaded[0]?.url ?? heroImageUrl
-          console.log('[blog-images] result', { produced: uploaded.length, of: slots.length, firstError: firstImgError })
+          console.log('[blog-images] result', { produced: uploaded.length, of: slots.length, firstError: firstImgError, falProduct: !!falProductImageUrl, frames: frameRefs.length })
           if (uploaded.length === 0) {
-            try { await logFailure(supabase, user.id, videoId, 'blog_body_images', `0/${slots.length} images. falProduct=${!!falProductImageUrl}. firstError=${firstImgError || 'none'}`) } catch { /* non-fatal */ }
+            try { await logFailure(supabase, user.id, videoId, 'blog_body_images', `0/${slots.length} images. falProduct=${!!falProductImageUrl}. frames=${frameRefs.length}. firstError=${firstImgError || 'none'}`) } catch { /* non-fatal */ }
           }
           if (uploaded.length > 0) {
-            const slots = autoPlacementIndices(content, uploaded.length)
+            const placementSlots = autoPlacementIndices(content, uploaded.length)
             finalContent = insertImagesAtHeadings(
               content,
               uploaded.map((img, i) => ({
-                beforeHeadingIndex: slots[i] ?? (i + 1),
+                beforeHeadingIndex: placementSlots[i] ?? (i + 1),
                 block: gutenbergImageBlock(img.url, img.alt),
               })),
             )
             // Push the image-enriched body into the live WP post + our DB.
             // updatePost with only `content` leaves the featured image / tags
             // / status untouched (WP REST partial update).
-            try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch { /* keep text-only post */ }
+            try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch (e) {
+              console.warn('[blog-images] WP updatePost (insert images) failed:', e instanceof Error ? e.message : String(e))
+            }
             if (savedPost?.id) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               try { await (supabase as any).from('blog_posts').update({ content: finalContent }).eq('id', savedPost.id) } catch { /* non-fatal */ }
             }
           }
+
+          // Diagnostic: write the produced count back to the row so the
+          // Content page can render a small "🖼 N body images" badge and we
+          // stop having to grep Vercel logs to know if image-gen worked.
+          if (savedPost?.id) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            try { await (supabase as any).from('blog_posts').update({ body_images_count: uploaded.length }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+          }
         }
-      } catch { /* non-fatal — the published text post stands */ }
+      } catch (e) {
+        // The published text post stands — but log what blew up so we can see
+        // it instead of staring at "no images" with zero signal.
+        console.warn('[blog-images] AI-generation branch threw:', e instanceof Error ? e.message : String(e))
+        if (savedPost?.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { await (supabase as any).from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+        }
+      }
     }
 
     // Upgrade the SEO meta now that images + product have resolved — promote the

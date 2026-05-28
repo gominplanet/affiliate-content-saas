@@ -522,7 +522,7 @@ function GenerateButton({
   /** YouTube native id — lets the extension grab real HD frames for the
    *  in-article photos (retouched by AI). Optional. */
   youtubeVideoId?: string
-  existingPost?: { url: string; title: string; postId?: string; indexed?: boolean | null; coverage?: string | null } | null
+  existingPost?: { url: string; title: string; postId?: string; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
   userTier: 'trial' | 'creator' | 'pro' | 'admin'
   onDone: (url: string, title: string, postId: string) => void
@@ -678,6 +678,25 @@ function GenerateButton({
         {result.indexed === false && (
           <span className="inline-flex items-center text-[#ff9500]" title={result.coverage || 'Not in Google’s index yet — new posts can take days to weeks. Open the SEO page to request indexing.'}>
             <AlertCircle size={12} />
+          </span>
+        )}
+        {/* In-article image diagnostic — read straight off blog_posts.body_images_count.
+            null  → either the user didn't tick "Include photos", or the after()
+                    block that does image-gen hasn't completed yet (legacy posts
+                    pre-this-column also stay null). Hide the badge entirely so
+                    we don't yell at people whose tick was deliberately off.
+            0     → after() ran but failed to insert anything — the actual case
+                    we shipped this column to surface (Hostinger WAF, fal
+                    hiccup, prompt empty). Orange ⚠ "Images failed".
+            >0    → green count, e.g. "🖼 3". */}
+        {typeof result.bodyImagesCount === 'number' && result.bodyImagesCount > 0 && (
+          <span className="inline-flex items-center gap-0.5 text-[#34c759]" title={`${result.bodyImagesCount} in-article image${result.bodyImagesCount === 1 ? '' : 's'} added to this post.`}>
+            <span aria-hidden>🖼</span><span className="text-[10px] font-semibold">{result.bodyImagesCount}</span>
+          </span>
+        )}
+        {result.bodyImagesCount === 0 && (
+          <span className="inline-flex items-center gap-0.5 text-[#ff9500]" title="‘Include photos’ was on but no in-article images made it in. Try ‘Refresh images’ on the post, or check your WordPress media upload (Hostinger WAF on POST /wp-json/wp/v2/media is the usual cause).">
+            <span aria-hidden>🖼</span><span className="text-[10px] font-semibold">!</span>
           </span>
         )}
         {/* Rewrite is Pro-only and one-shot per post. Non-Pro users
@@ -1658,7 +1677,7 @@ function VideoCard({
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
+  post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
   wpSiteUrl: string
   fbConnected: boolean
   pinterestConnected: boolean
@@ -2347,7 +2366,7 @@ function saveDismissed(set: Set<string>) {
 export default function ContentPage() {
   const supabase = createBrowserClient()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
   const [wpSiteUrl, setWpSiteUrl] = useState('')
   const [fbConnected, setFbConnected] = useState(false)
   const [pinterestConnected, setPinterestConnected] = useState(false)
@@ -2485,7 +2504,7 @@ export default function ContentPage() {
       fetchAllVideos(),
       sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tier').eq('user_id', user.id).single(),
-      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
+      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
       fetch('/api/blog/live-post-ids').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -2550,7 +2569,7 @@ export default function ContentPage() {
       seoByPostId.set(r.post_id, { indexed, coverage: r.coverage_state })
     }
 
-    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
+    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number)) continue  // deleted/trashed in WordPress
       if (p.video_id && p.wordpress_url) {
@@ -2562,6 +2581,13 @@ export default function ContentPage() {
           wpPostId: p.wordpress_post_id as number | undefined,
           indexed: idx?.indexed ?? null,
           coverage: idx?.coverage ?? null,
+          // Body-image diagnostic — null = generation hasn't completed yet
+          // (or wasn't requested), 0 = ran but produced nothing (real failure
+          // worth chasing), >0 = that many in-body images were inserted.
+          // Lets the GenerateButton render a small badge so the user can see
+          // at a glance whether their "Include photos" tick actually produced
+          // images, instead of needing to open the post.
+          bodyImagesCount: (p.body_images_count as number | null | undefined) ?? null,
           facebookPostId: p.facebook_post_id as string | undefined,
           pinterestPinId: p.pinterest_pin_id as string | undefined,
           threadsPostId: p.threads_post_id as string | undefined,
