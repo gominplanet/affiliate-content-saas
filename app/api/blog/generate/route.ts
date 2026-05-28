@@ -135,8 +135,13 @@ async function handleGenerate(request: Request) {
      *  URLs). When present, in-article photos are these REAL frames retouched
      *  by Nano Banana into editorial, clickable images — not product re-stages. */
     capturedFrames?: string[]
+    /** Power-user escape hatch for the no-transcript gate. When true and the
+     *  transcript fetch yields nothing, we proceed with empty transcript instead
+     *  of returning 422. The article quality will be lower (no lived experiences
+     *  to ground on), but it's there if the user really wants to force it. */
+    allowEmptyTranscript?: boolean
   }
-  const { videoId, rewriteFeedback } = body
+  const { videoId, rewriteFeedback, allowEmptyTranscript } = body
   // Default ON when omitted (older callers / bulk triggers) — the Content
   // page sends the explicit per-generation choice.
   const includeImages = body.includeImages !== false
@@ -277,9 +282,13 @@ async function handleGenerate(request: Request) {
   // filmed without an accompanying transcript" inside the article — has been
   // explicitly rejected. Fail early with an actionable message so the user
   // can fix the underlying issue rather than ship a flimsy post.
-  if (!transcript || transcript.trim().length < 80) {
+  //
+  // ESCAPE HATCH: allowEmptyTranscript=true lets a power user (or admin
+  // failures retry) force-generate anyway. The client shows a confirm with
+  // the quality caveat before retrying.
+  if ((!transcript || transcript.trim().length < 80) && !allowEmptyTranscript) {
     return NextResponse.json({
-      error: 'We couldn’t fetch a transcript for this video, so we can’t write an authentic review. Try one of these:\n  1. Enable captions in YouTube Studio → Subtitles (auto-captions usually appear within 24h of upload).\n  2. If captions exist, wait a moment and retry — the transcript service occasionally throttles.\n  3. Skip this video and pick one with captions.',
+      error: 'We couldn’t fetch a transcript for this video, so we can’t write an authentic review. Try one of these:\n  1. Enable captions in YouTube Studio → Subtitles (auto-captions usually appear within 24h of upload).\n  2. If captions exist, wait a moment and retry — the transcript service occasionally throttles.\n  3. Skip this video and pick one with captions.\n  4. Or generate anyway — the article will be shorter and less specific.',
       reason: 'no_transcript',
     }, { status: 422 })
   }

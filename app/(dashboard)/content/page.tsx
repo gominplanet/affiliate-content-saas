@@ -608,19 +608,37 @@ function GenerateButton({
           }
         } catch { /* fall back to server-side image generation */ }
       }
-      const res = await fetch('/api/blog/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId,
-          includeImages,
-          ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
-          ...(capturedFrames.length ? { capturedFrames } : {}),
-          ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
-        }),
-      })
-      let data: Record<string, unknown> = {}
-      try { data = await res.json() } catch { throw new Error(`Server error (${res.status}) — check Vercel logs`) }
+      const callGenerate = async (allowEmptyTranscript = false) => {
+        const r = await fetch('/api/blog/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoId,
+            includeImages,
+            ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
+            ...(capturedFrames.length ? { capturedFrames } : {}),
+            ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
+            ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
+          }),
+        })
+        let d: Record<string, unknown> = {}
+        try { d = await r.json() } catch { throw new Error(`Server error (${r.status}) — check Vercel logs`) }
+        return { res: r, data: d }
+      }
+      let { res, data } = await callGenerate(false)
+      // If the gate fires, give the user a one-click "generate anyway" with
+      // the quality caveat clear — they keep control without us silently
+      // proceeding.
+      if (!res.ok && data.reason === 'no_transcript') {
+        const proceed = typeof window !== 'undefined' && window.confirm(
+          'No transcript was available for this video.\n\n' +
+          'If you continue without it, the post will be shorter and less specific (no lived experiences to ground on). Recommended: enable captions in YouTube Studio → Subtitles, then retry — auto-captions usually appear within 24h.\n\n' +
+          'Generate anyway?'
+        )
+        if (proceed) {
+          ;({ res, data } = await callGenerate(true))
+        }
+      }
       if (!res.ok) {
         if (data.limitReached) {
           dispatchCapReached(
