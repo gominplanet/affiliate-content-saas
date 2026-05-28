@@ -113,6 +113,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
   // Which face the composed thumbnail locked to (Auto-match result), shown so
   // the user can confirm it picked the right person.
   const [thumbnailFaceUsed, setThumbnailFaceUsed] = useState<string | null>(null)
+  // Server-side debug (faceDebug) — on a fallback render it explains why the
+  // primary designed path didn't run, so we can diagnose without server logs.
+  const [thumbnailDebug, setThumbnailDebug] = useState<string | null>(null)
   const [sceneAnalysis, setSceneAnalysis] = useState<string | null>(null)
   const [generatingThumbnail, setGeneratingThumbnail] = useState(false)
   const [thumbnailError, setThumbnailError] = useState<string | null>(null)
@@ -424,6 +427,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
   async function applyThumbnailResult(data: Record<string, unknown>) {
     const hook = (data.overlayHook as string) || ''
     setThumbnailFaceUsed((data.faceUsed as string | null) ?? null)
+    setThumbnailDebug((data.faceDebug as string | null) ?? null)
     // Server may return one or many. Backwards-compat: single thumbnailUrl
     // when older callers / older deploys. Always normalize to array first.
     const rawList = (Array.isArray(data.thumbnailUrls) && data.thumbnailUrls.length > 0)
@@ -1585,6 +1589,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       {/* "Copy prompt" button removed — internal AI prompt
                           shouldn't be exposed to users. */}
                     </div>
+                    {/* Diagnostic: on a fallback render, show WHY the primary
+                        designed path didn't run (carried in faceDebug). */}
+                    {!!thumbnailDebug && !!thumbnailModel && thumbnailModel !== 'kontext-upload' && (thumbnailModel.startsWith('kontext-') || thumbnailModel.startsWith('ideogram-') || thumbnailModel.startsWith('flux')) && (
+                      <p className="text-[10px] text-[#86868b] mt-1 leading-snug break-words">
+                        Why fallback: {thumbnailDebug}
+                      </p>
+                    )}
                     {/* 👍 / 👎 feedback row — only when we have a styleId
                         (i.e. the overlay actually ran on this thumbnail).
                         Uploads and raw video frames without overlay skip

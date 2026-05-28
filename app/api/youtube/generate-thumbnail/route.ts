@@ -511,6 +511,10 @@ async function generateFaceCutout(supabase: any, opts: {
 }
 // Surfaced to the client console (faceDebug) so cut-out failures are visible.
 let LAST_CUTOUT_ERROR = ''
+// Why the PRIMARY composed (Nano Banana) path didn't return an image, so when we
+// fall through to a product-only fallback the UI can show exactly what happened
+// (gate skipped, threw, or compose returned nothing) — no server logs needed.
+let LAST_NB_FALLTHROUGH = ''
 
 // ── Main route ────────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
@@ -738,11 +742,20 @@ export async function POST(request: Request) {
       ? capturedFrames.filter(f => typeof f === 'string' && f.startsWith('data:image/'))
       : []
     const hasCapturedFrame = validFrames.length > 0 || (typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/'))
-    if (youtubeVideoId || hasCapturedFrame) {
+    // The composed NB path is the PRIMARY for creator+product thumbnails and no
+    // longer REQUIRES a video frame: a face model and/or a product image are
+    // enough to ground it (frame-scrubbing was removed when a face is selected).
+    // We still use the real frame when one is available. Only skip NB when there
+    // is nothing at all to ground on → product-only Kontext/Flux fallbacks.
+    const haveFaceForNB = !!faceModel || autoFaceModels.length > 0
+    LAST_NB_FALLTHROUGH = 'NB not entered: no video frame, no face model, no product image'
+    if (youtubeVideoId || hasCapturedFrame || haveFaceForNB || productImageUrl) {
+      LAST_NB_FALLTHROUGH = 'NB entered, resolving references…'
       try {
         // Pick the best real frame (clear face + product visible) when we have
-        // several; otherwise use the single frame or the uploader's maxres.
-        let baseFrame: string
+        // several; otherwise the single frame, the uploader's maxres, or — when
+        // there's no video at all — no frame (we ground on the face + product).
+        let baseFrame: string | null = null
         if (validFrames.length > 1) {
           const pick = await pickBestFrame(validFrames, { productName: productTitle || undefined, ctx: { userId: user.id, tier } })
           baseFrame = validFrames[pick] ?? validFrames[0]
@@ -750,11 +763,12 @@ export async function POST(request: Request) {
           baseFrame = validFrames[0]
         } else if (typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/')) {
           baseFrame = capturedFrameDataUrl
-        } else {
+        } else if (youtubeVideoId) {
           baseFrame = await resolveBestThumbnail(youtubeVideoId as string)
         }
-        const frameRef = await rehostToFal(baseFrame)
-        if (frameRef) {
+        const frameRef = baseFrame ? await rehostToFal(baseFrame) : null
+        // Proceed whenever we have SOMETHING to ground on (frame, face, or product).
+        if (frameRef || haveFaceForNB || productImageUrl) {
           const wantClean = textMode === 'clean'
           // Distinct headline copy per variant (unless the user locked one).
           // For 1 variant this is just a single hook.
@@ -767,8 +781,12 @@ export async function POST(request: Request) {
           // Auto-match: when the user left the face on "Auto" and has multiple
           // faces, vision-match the frame to pick the right person (Seb vs
           // Michelle) instead of guessing. Sets faceModel for everything below.
+          // Auto-match vision-picks the right person FROM the frame. With no
+          // frame we can't match, so fall back to the first available face model.
           if (!faceModel && autoFaceModels.length > 0) {
-            faceModel = await matchFaceModelToFrame(frameRef, autoFaceModels, supabase, { userId: user.id, tier })
+            faceModel = frameRef
+              ? await matchFaceModelToFrame(frameRef, autoFaceModels, supabase, { userId: user.id, tier })
+              : autoFaceModels[0]
           }
           // "Your Face" identity references: if the user has a face model, pass
           // a few of their real photos alongside the video frame so Nano Banana
@@ -804,8 +822,11 @@ export async function POST(request: Request) {
           // mixing in the lower-quality, oddly-lit video frame was letting the
           // model drift to a different-looking person. Fall back to the frame
           // only when no face photos are available.
-          const identityRefs = faceRefs.length > 0 ? faceRefs : [frameRef]
+          const identityRefs = faceRefs.length > 0 ? faceRefs : (frameRef ? [frameRef] : [])
           const refs = productRef ? [...identityRefs, productRef] : identityRefs
+          // Breadcrumb: if NB still falls through after this, the compose returned
+          // nothing despite having references — surfaced via faceDebug below.
+          LAST_NB_FALLTHROUGH = `NB entered with refs=${refs.length} (face=${faceRefs.length}, product=${productRef ? 1 : 0}, frame=${frameRef ? 1 : 0}) — compose returned no image`
 
           // ── COMPOSED thumbnail (always): recompose into a designed, high-CTR
           //    "creator-review" thumbnail — host large + expressive on one side,
@@ -938,13 +959,15 @@ Ultra-sharp, professional, photorealistic.`
               // Which face model the likeness was locked to (Auto-match result),
               // surfaced so the user can confirm it picked the right person.
               faceUsed: faceModel?.name ?? null,
-              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : 'maxres'}, face=${faceModel?.name ?? 'none'}, faceModelPhotos=${faceRefs.length}, productRef=${productRef ? 'yes' : 'no'}, title=${wantClean ? 'overlay' : 'baked'})`,
+              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceModelPhotos=${faceRefs.length}, productRef=${productRef ? 'yes' : 'no'}, title=${wantClean ? 'overlay' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
         }
       } catch (err) {
-        console.warn('[generate-thumbnail] Nano Banana frame path failed, falling through:', err)
+        const msg = err instanceof Error ? err.message : String(err)
+        LAST_NB_FALLTHROUGH = `NB threw: ${msg}`.slice(0, 240)
+        console.warn('[generate-thumbnail] Nano Banana frame path failed, falling through:', msg)
       }
     }
 
@@ -1026,13 +1049,16 @@ Ultra-sharp, professional, photorealistic.`
       : Promise.resolve(null)
     const resolveCutout = async (): Promise<{ url: string | null; debug: string }> => {
       const url = await cutoutPromise
-      const debug = !faceModelId
+      const cutoutDebug = !faceModelId
         ? 'no-faceModelId-sent (face not selected in the modal)'
         : !faceModel
           ? 'faceModelId sent but model not found / has no source photos'
           : !url
             ? `cut-out GENERATION FAILED: ${LAST_CUTOUT_ERROR || '(no error captured)'}`
             : 'ok'
+      // We're in a fallback path, so the primary designed (NB) path didn't return
+      // an image — prepend WHY so it's visible in the UI without server logs.
+      const debug = LAST_NB_FALLTHROUGH ? `${LAST_NB_FALLTHROUGH} | cutout: ${cutoutDebug}` : cutoutDebug
       return { url, debug }
     }
 
