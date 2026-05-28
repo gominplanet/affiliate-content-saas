@@ -1362,3 +1362,122 @@ a.mvp-ad-slot-filled:hover {
      padding-block bumps the effective hit box without changing the visual. */
   .mvp-single-body p a:not(.wp-block-button__link) { padding-block: 4px; }
 }
+
+/* ── Comparison tables → stacked cards on mobile ─────────────────────────
+   The MVP comparison generator emits standard <table> elements ("Product
+   X vs Y" rows). On mobile they horizontal-scroll, which most readers
+   miss — they think it ends at the right edge of the screen. Transform
+   each row into a small card on phones: header becomes the row label,
+   each cell becomes a labelled line. Pure CSS — no markup change, works
+   on any review's comparison block. */
+@media (max-width: 768px) {
+  .mvp-single-body table {
+    display: block;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+  .mvp-single-body table thead { display: none; }
+  .mvp-single-body table tbody { display: block; }
+  .mvp-single-body table tr {
+    display: block;
+    margin: 0 0 14px;
+    padding: 14px 16px;
+    background: #fafafc;
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 10px;
+  }
+  /* First cell of each row acts as the card header — bold, no label
+     prefix, slightly larger. Reviewers consistently put the product
+     name there. */
+  .mvp-single-body table tr td:first-child {
+    display: block;
+    margin: 0 0 10px;
+    padding: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1d1d1f;
+    border: 0;
+  }
+  /* Subsequent cells use the colgroup-less data-label trick — we set
+     a data-label attribute via JS below; if it isn't set, the row still
+     renders fine, just without the column label. */
+  .mvp-single-body table tr td {
+    display: block;
+    padding: 6px 0;
+    border: 0;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    font-size: 14px;
+    line-height: 1.5;
+    color: #3a3a3c;
+  }
+  .mvp-single-body table tr td:nth-child(n+2)::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8e8e93;
+  }
+}
+
+/* ── Auto-generated collapsible TOC for long posts ───────────────────────
+   Built by the inline JS at the bottom of main.js — it scans
+   .mvp-single-body for H2s, and when there are 4+, prepends a
+   collapsible <nav.mvp-toc> with anchor links. On mobile the TOC starts
+   collapsed (tap to expand); on desktop it stays expanded by default. */
+.mvp-toc {
+  margin: 0 0 28px;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 10px;
+  background: #fafafc;
+  overflow: hidden;
+}
+.mvp-toc-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1d1d1f;
+  cursor: pointer;
+  text-align: left;
+}
+.mvp-toc-toggle::after {
+  content: '▼';
+  font-size: 10px;
+  color: #8e8e93;
+  transition: transform 0.15s ease;
+}
+.mvp-toc.is-collapsed .mvp-toc-toggle::after { transform: rotate(-90deg); }
+.mvp-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 16px 14px;
+}
+.mvp-toc.is-collapsed .mvp-toc-list { display: none; }
+.mvp-toc-list li { margin: 0; padding: 0; }
+.mvp-toc-list a {
+  display: block;
+  padding: 8px 0;
+  border-top: 1px solid rgba(0,0,0,0.05);
+  font-size: 14px;
+  line-height: 1.4;
+  color: #1d1d1f;
+  text-decoration: none;
+}
+.mvp-toc-list li:first-child a { border-top: 0; }
+.mvp-toc-list a:hover { color: var(--mvp-primary); }
+@media (max-width: 768px) {
+  .mvp-toc-toggle { padding: 14px 16px; min-height: 48px; }
+  .mvp-toc-list a { padding: 10px 0; min-height: 44px; line-height: 1.35; }
+}
