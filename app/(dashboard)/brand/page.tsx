@@ -967,16 +967,16 @@ export default function BrandPage() {
             </div>
           </div>
 
-          {/* About Us Photo — round image in the footer About band */}
+          {/* About You Photo — round image in the footer About band */}
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">About Us Photo <span className="text-[#86868b] font-normal">(optional)</span></h2>
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">About You Photo <span className="text-[#86868b] font-normal">(optional)</span></h2>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              A round headshot (or your logo) shown next to your &quot;About us&quot; bio in the blog footer. Recommended <strong>500×500 px</strong> square — it&apos;s displayed circular.
+              A round headshot (or your logo) shown next to your &quot;About you&quot; bio in the blog footer. Recommended <strong>500×500 px</strong> square — it&apos;s displayed circular.
             </p>
             <div className="flex items-center gap-4">
               {data.headshot_url ? (
                 <div className="relative group w-20 h-20 rounded-full border border-gray-200 dark:border-white/10 bg-white flex items-center justify-center overflow-hidden flex-shrink-0">
-                  <img src={data.headshot_url} alt="About us photo" className="w-full h-full object-cover" />
+                  <img src={data.headshot_url} alt="About you photo" className="w-full h-full object-cover" />
                   <button
                     onClick={() => set('headshot_url', '')}
                     className="absolute top-0 right-0 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
