@@ -1,0 +1,61 @@
+/**
+ * GET    /api/thumbnail-styles                  → list { id, name, reference_url }[]
+ * POST   /api/thumbnail-styles { name, referenceUrl } → create one
+ *
+ * Saved style presets the studio's "Style reference" picker offers as one-click
+ * chips. Each preset just stores a name + the image URL the user already
+ * uploaded for a style reference — the thumbnail route extracts the visual
+ * brief on-demand when the user generates with that preset selected.
+ */
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+
+export const maxDuration = 30
+
+export async function GET() {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
+    .from('thumbnail_styles')
+    .select('id,name,reference_url,created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+  return NextResponse.json({ ok: true, styles: data ?? [] })
+}
+
+export async function POST(request: Request) {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await request.json().catch(() => ({})) as { name?: string; referenceUrl?: string }
+  const name = (body.name || '').trim().slice(0, 60)
+  const referenceUrl = (body.referenceUrl || '').trim()
+  if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
+  if (!referenceUrl || !/^https?:\/\//i.test(referenceUrl)) {
+    return NextResponse.json({ error: 'a valid referenceUrl is required' }, { status: 400 })
+  }
+
+  // Cap at 12 presets per user — sane upper bound, plenty for a creator who
+  // wants a few "review", "comparison", "review-dark" looks.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count } = await (supabase as any)
+    .from('thumbnail_styles')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+  if ((count ?? 0) >= 12) {
+    return NextResponse.json({ error: 'You\'ve reached the 12-preset limit. Delete one to add a new one.' }, { status: 422 })
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('thumbnail_styles')
+    .insert({ user_id: user.id, name, reference_url: referenceUrl })
+    .select('id,name,reference_url,created_at')
+    .single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true, style: data })
+}

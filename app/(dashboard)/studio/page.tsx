@@ -172,6 +172,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  into a style brief that gets folded into the Flux prompt. Public
    *  URL from Supabase storage. */
   const [styleReferenceUrl, setStyleReferenceUrl] = useState<string | null>(null)
+  // Saved style presets. The user can pin a small library of "looks" and one-
+  // click apply them across thumbnails for channel-wide visual consistency.
+  // loadedPresetId tracks whether the active styleReferenceUrl came from a saved
+  // preset (so we don't offer "Save as preset" on something already saved).
+  const [savedStyles, setSavedStyles] = useState<Array<{ id: string; name: string; reference_url: string }>>([])
+  const [loadedPresetId, setLoadedPresetId] = useState<string | null>(null)
+  const [savingPreset, setSavingPreset] = useState(false)
   const [styleRefUploading, setStyleRefUploading] = useState(false)
   /** "Upload your own photo" flow — the user supplies a photo of themselves
    *  WITH the product; the server cleans it up / re-renders it into a polished
@@ -217,8 +224,57 @@ function VideoStudioCard({ video, userTier, playlists }: {
     } catch { setFaceModels([]) }
   }, [])
 
+  // ── Saved thumbnail style presets ─────────────────────────────────────────
+  const loadSavedStyles = useCallback(async () => {
+    try {
+      const r = await fetch('/api/thumbnail-styles')
+      if (!r.ok) return
+      const d = await r.json() as { styles?: Array<{ id: string; name: string; reference_url: string }> }
+      setSavedStyles(d.styles ?? [])
+    } catch { /* keep what's in state */ }
+  }, [])
+
+  const applyPreset = useCallback((id: string, url: string) => {
+    setStyleReferenceUrl(url)
+    setLoadedPresetId(id)
+  }, [])
+
+  const saveCurrentAsPreset = useCallback(async () => {
+    if (!styleReferenceUrl) return
+    const name = typeof window !== 'undefined' ? window.prompt('Name this style preset (e.g. "Reviews — dark", "Product close-up")', '')?.trim() : ''
+    if (!name) return
+    setSavingPreset(true)
+    try {
+      const r = await fetch('/api/thumbnail-styles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, referenceUrl: styleReferenceUrl }),
+      })
+      const d = await r.json().catch(() => ({})) as { ok?: boolean; style?: { id: string; name: string; reference_url: string }; error?: string }
+      if (!r.ok || !d.ok || !d.style) {
+        window.alert(d.error || `Couldn't save preset (${r.status}).`)
+        return
+      }
+      setSavedStyles(prev => [d.style!, ...prev])
+      setLoadedPresetId(d.style.id)
+    } finally {
+      setSavingPreset(false)
+    }
+  }, [styleReferenceUrl])
+
+  const deletePreset = useCallback(async (id: string) => {
+    if (typeof window !== 'undefined' && !window.confirm('Delete this style preset?')) return
+    try {
+      const r = await fetch(`/api/thumbnail-styles/${id}`, { method: 'DELETE' })
+      if (!r.ok) return
+      setSavedStyles(prev => prev.filter(s => s.id !== id))
+      if (loadedPresetId === id) setLoadedPresetId(null)
+    } catch { /* no-op */ }
+  }, [loadedPresetId])
+
   // Load once on mount.
   useEffect(() => { loadFaceModels() }, [loadFaceModels])
+  useEffect(() => { loadSavedStyles() }, [loadSavedStyles])
 
   // Pull aggregated 👍/👎 history for the YouTube surface so the random
   // style picker biases toward styles this user has rewarded.
@@ -613,6 +669,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
       if (upErr) throw new Error(upErr.message)
       const { data } = sb.storage.from('headshots').getPublicUrl(path)
       setStyleReferenceUrl(data.publicUrl)
+      // Fresh upload — not (yet) from a saved preset, so the "Save as preset"
+      // button becomes available on this URL.
+      setLoadedPresetId(null)
     } catch (err) {
       setThumbnailError(err instanceof Error ? err.message : 'Style reference upload failed')
     } finally {
@@ -1292,16 +1351,57 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
                       Style reference <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — upload a thumbnail whose look you want to match)</span>
                     </label>
+                    {/* Saved presets — one-click apply a look the user has pinned
+                        before. Each chip is the saved style's reference image; the
+                        × deletes the preset. Hidden when the user has none yet. */}
+                    {savedStyles.length > 0 && (
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="text-[10px] text-[#86868b]">Presets:</span>
+                        {savedStyles.map(s => (
+                          <div
+                            key={s.id}
+                            className={`group relative flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-md border cursor-pointer transition-colors ${loadedPresetId === s.id ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]'}`}
+                            onClick={() => applyPreset(s.id, s.reference_url)}
+                            title={`Use the "${s.name}" style`}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={s.reference_url} alt={s.name} className="w-7 h-4 object-cover rounded-sm" />
+                            <span className="text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.name}</span>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); deletePreset(s.id) }}
+                              className="text-[10px] text-[#86868b] hover:text-[#ff3b30] opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Delete this preset"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {styleReferenceUrl ? (
                       <div className="flex items-center gap-2">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={styleReferenceUrl} alt="Style reference" className="w-16 h-9 object-cover rounded-md border border-gray-200 dark:border-white/10" />
                         <span className="text-[11px] text-[#34c759] flex items-center gap-1">
-                          <CheckCircle size={11} /> Style locked in
+                          <CheckCircle size={11} /> {loadedPresetId ? (savedStyles.find(s => s.id === loadedPresetId)?.name || 'Style locked in') : 'Style locked in'}
                         </span>
+                        {/* Save the current style as a named preset (only when
+                            it isn't already loaded FROM a saved preset). */}
+                        {!loadedPresetId && (
+                          <button
+                            type="button"
+                            onClick={saveCurrentAsPreset}
+                            disabled={generatingThumbnail || savingPreset}
+                            className="text-[11px] text-[#0071e3] hover:underline disabled:opacity-60 ml-1"
+                            title="Save this look as a reusable preset"
+                          >
+                            {savingPreset ? 'Saving…' : 'Save as preset'}
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setStyleReferenceUrl(null)}
+                          onClick={() => { setStyleReferenceUrl(null); setLoadedPresetId(null) }}
                           disabled={generatingThumbnail}
                           className="text-[11px] text-[#86868b] hover:text-[#ff3b30] ml-1"
                           title="Remove style reference"
