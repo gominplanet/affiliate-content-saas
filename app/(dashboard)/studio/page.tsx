@@ -686,9 +686,14 @@ function VideoStudioCard({ video, userTier, playlists }: {
     }
   }
 
-  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean' }) {
+  async function generateThumbnail(opts?: { textMode?: 'baked' | 'clean'; lockedHeadline?: string }) {
     setGeneratingThumbnail(true)
     setThumbnailError(null)
+    // Caller passes the picked headline DIRECTLY (not via setCustomHeadline +
+    // setTimeout) — React state may not have flushed yet when this function's
+    // closure reads customHeadline, which is what made the route fall back to
+    // generic hooks even after the user picked from the modal.
+    const headline = ((opts?.lockedHeadline ?? customHeadline).trim()) || undefined
     try {
       // Real video frames are only needed as the LIKENESS source when there's NO
       // face in play. With a face selected (specific or Auto), the face comes
@@ -724,7 +729,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           productDescription: product?.description ?? undefined,
           productBullets: product?.bullets ?? undefined,
           style: 'lifestyle',
-          customHeadline: customHeadline.trim() || undefined,
+          customHeadline: headline,
           variantCount,
           // "Your Face" — lock the host's likeness from their uploaded photos.
           faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto') ? selectedFaceModelId : undefined,
@@ -1919,16 +1924,21 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 </button>
                 <button
                   onClick={() => {
-                    // Commit the chosen title to customHeadline. The generate
-                    // route already reads customHeadline → server as
-                    // lockedHeadline, so the thumbnail composer leaves the
-                    // matching corner empty for this exact line.
+                    // Resolve the chosen title LOCALLY and pass it directly to
+                    // generateThumbnail — relying on setCustomHeadline + a
+                    // setTimeout leaves a stale-state race where the route
+                    // doesn't receive the headline and falls back to generic
+                    // hooks. Still mirror the value to customHeadline so the
+                    // input field reflects the pick on re-open.
+                    let pickedHeadline = ''
                     if (typeof headlinePromptChoice === 'number') {
-                      const picked = pickerTitles[headlinePromptChoice]
-                      if (picked) setCustomHeadline(picked)
+                      pickedHeadline = pickerTitles[headlinePromptChoice] || ''
+                    } else if (headlinePromptChoice === 'custom') {
+                      pickedHeadline = customHeadline.trim()
                     }
+                    if (pickedHeadline) setCustomHeadline(pickedHeadline)
                     setHeadlinePromptOpen(false)
-                    setTimeout(() => { generateThumbnail() }, 0)
+                    setTimeout(() => { generateThumbnail({ lockedHeadline: pickedHeadline || undefined }) }, 0)
                   }}
                   disabled={
                     titleOptionsLoading ||
