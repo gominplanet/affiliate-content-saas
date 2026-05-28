@@ -30,6 +30,10 @@ interface NewsletterFields {
   ctaTitle: string | null
   ctaSubtitle: string | null
   ctaButton: string | null
+  /** Up to 3 benefit bullets shown in the homepage hero's left column.
+   *  Theme falls back to defaults when all three are null. */
+  ctaBullets: Array<string>
+
   // Slot overrides — the WP theme maps these strings to specific render
   // hooks in front-page.php (homepage) and single.php (sidebar). Null on
   // either side means "use the theme's default slot for that surface".
@@ -51,7 +55,7 @@ export async function readNewsletterFields(
   const [{ data }, { count: activeCount }] = await Promise.all([
     (supabase as any)
       .from('newsletter_settings')
-      .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
+      .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,cta_bullet_1,cta_bullet_2,cta_bullet_3,homepage_placement,sidebar_placement')
       .eq('user_id', userId)
       .maybeSingle(),
     (supabase as any)
@@ -67,6 +71,11 @@ export async function readNewsletterFields(
     ctaTitle: (data?.cta_title as string | null)?.trim() || null,
     ctaSubtitle: (data?.cta_subtitle as string | null)?.trim() || null,
     ctaButton: (data?.cta_button as string | null)?.trim() || null,
+    ctaBullets: [
+      (data?.cta_bullet_1 as string | null)?.trim() || '',
+      (data?.cta_bullet_2 as string | null)?.trim() || '',
+      (data?.cta_bullet_3 as string | null)?.trim() || '',
+    ].filter(Boolean),
     homepagePlacement: (data?.homepage_placement as string | null)?.trim() || null,
     sidebarPlacement: (data?.sidebar_placement as string | null)?.trim() || null,
     subscriberCount: Number.isFinite(activeCount) ? (activeCount as number) : 0,

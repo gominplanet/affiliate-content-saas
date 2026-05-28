@@ -55,6 +55,9 @@ interface Settings {
   cta_title?: string | null
   cta_subtitle?: string | null
   cta_button?: string | null
+  cta_bullet_1?: string | null
+  cta_bullet_2?: string | null
+  cta_bullet_3?: string | null
   // Where to render the form on each surface. null = theme default
   // ('after_ads' / 'bottom').
   homepage_placement?: HomepagePlacement | null
@@ -105,18 +108,27 @@ export default function NewsletterPage() {
   const [ctaTitle, setCtaTitle] = useState('')
   const [ctaSubtitle, setCtaSubtitle] = useState('')
   const [ctaButton, setCtaButton] = useState('')
+  const [ctaBullet1, setCtaBullet1] = useState('')
+  const [ctaBullet2, setCtaBullet2] = useState('')
+  const [ctaBullet3, setCtaBullet3] = useState('')
   const [ctaSaved, setCtaSaved] = useState(false) // brief "Saved ✓" flash
   useEffect(() => {
     setCtaTitle(settings?.cta_title || '')
     setCtaSubtitle(settings?.cta_subtitle || '')
     setCtaButton(settings?.cta_button || '')
-  }, [settings?.cta_title, settings?.cta_subtitle, settings?.cta_button])
+    setCtaBullet1(settings?.cta_bullet_1 || '')
+    setCtaBullet2(settings?.cta_bullet_2 || '')
+    setCtaBullet3(settings?.cta_bullet_3 || '')
+  }, [settings?.cta_title, settings?.cta_subtitle, settings?.cta_button, settings?.cta_bullet_1, settings?.cta_bullet_2, settings?.cta_bullet_3])
   // Dirty = any field differs from the server snapshot. Enables the Save
   // button + suppresses the navigation-was-pointless case.
   const ctaDirty = (
     ctaTitle !== (settings?.cta_title || '')
     || ctaSubtitle !== (settings?.cta_subtitle || '')
     || ctaButton !== (settings?.cta_button || '')
+    || ctaBullet1 !== (settings?.cta_bullet_1 || '')
+    || ctaBullet2 !== (settings?.cta_bullet_2 || '')
+    || ctaBullet3 !== (settings?.cta_bullet_3 || '')
   )
   async function saveCta() {
     if (!ctaDirty) return
@@ -124,6 +136,9 @@ export default function NewsletterPage() {
       cta_title: ctaTitle,
       cta_subtitle: ctaSubtitle,
       cta_button: ctaButton,
+      cta_bullet_1: ctaBullet1,
+      cta_bullet_2: ctaBullet2,
+      cta_bullet_3: ctaBullet3,
     } as Partial<Settings>, 'cta')
     setCtaSaved(true)
     setTimeout(() => setCtaSaved(false), 2000)
@@ -559,6 +574,34 @@ export default function NewsletterPage() {
                 className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
               />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-[#3a3a3c] dark:text-[#d2d2d7] mb-1">Benefit bullets <span className="text-[#86868b] font-normal">(3 lines under the title in the homepage hero)</span></label>
+              <input
+                type="text"
+                value={ctaBullet1}
+                onChange={(e) => setCtaBullet1(e.target.value)}
+                maxLength={140}
+                placeholder="One short email per week — never spam"
+                className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7] mb-2"
+              />
+              <input
+                type="text"
+                value={ctaBullet2}
+                onChange={(e) => setCtaBullet2(e.target.value)}
+                maxLength={140}
+                placeholder="Skips the stuff that isn’t worth your time"
+                className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7] mb-2"
+              />
+              <input
+                type="text"
+                value={ctaBullet3}
+                onChange={(e) => setCtaBullet3(e.target.value)}
+                maxLength={140}
+                placeholder="Unsubscribe with one click, any time"
+                className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">Each bullet ≤ 140 chars. Leave a row blank to drop it. All blank = theme defaults.</p>
+            </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => void saveCta()}
@@ -591,6 +634,7 @@ export default function NewsletterPage() {
               title={ctaTitle}
               subtitle={ctaSubtitle}
               button={ctaButton}
+              bullets={[ctaBullet1, ctaBullet2, ctaBullet3]}
             />
           </div>
         </div>
@@ -1027,7 +1071,7 @@ export default function NewsletterPage() {
 // dashboard overrides → theme default). Kept here as a tiny component so
 // the editor card stays readable.
 function NewsletterFormPreview({
-  senderName, title, subtitle, button,
+  senderName, title, subtitle, button, bullets,
 }: {
   /** Current sender_name from settings — drives the title fallback. */
   senderName: string
@@ -1037,6 +1081,9 @@ function NewsletterFormPreview({
   title: string
   subtitle: string
   button: string
+  /** 3-entry array, each can be empty. Empties drop out; all empty falls
+   *  back to the theme's default trio. */
+  bullets: [string, string, string]
 }) {
   const name = senderName.trim()
   const titleFallback = name
@@ -1045,51 +1092,54 @@ function NewsletterFormPreview({
   const t = title.trim() || titleFallback
   const s = subtitle.trim() || 'No spam. One short email when there’s a new post worth your time or when there are things you might have missed online.'
   const b = button.trim() || 'Subscribe'
+  const customBullets = bullets.map(x => x.trim()).filter(Boolean)
+  const previewBullets = customBullets.length > 0 ? customBullets : [
+    'One short email per week — never spam',
+    "Skips the stuff that isn’t worth your time",
+    'Unsubscribe with one click, any time',
+  ]
   return (
+    // The dashboard preview mirrors the WP theme's mvp-newsletter-hero:
+    // gradient band background, two-column layout, copy on the left,
+    // compact form (no title/subtitle dupe) on the right. Mobile collapse
+    // is omitted — the dashboard editor is desktop-first.
     <div
-      className="rounded-2xl border border-gray-200 dark:border-white/10"
+      className="rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden"
       style={{
-        background: '#ffffff',
-        padding: '24px',
+        background: 'linear-gradient(180deg, #f5faff 0%, #ffffff 100%)',
+        padding: '20px',
         fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif',
         color: '#1d1d1f',
       }}
     >
-      <h3 style={{ margin: '0 0 6px', fontSize: '18px', lineHeight: 1.3, color: '#1d1d1f' }}>{t}</h3>
-      <p style={{ margin: '0 0 14px', fontSize: '13px', lineHeight: 1.5, color: '#6e6e73' }}>{s}</p>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <input
-          type="email"
-          placeholder="you@email.com"
-          disabled
-          style={{
-            flex: '1 1 200px',
-            minWidth: 0,
-            padding: '11px 12px',
-            border: '1px solid rgba(0,0,0,0.15)',
-            borderRadius: 10,
-            fontSize: 14,
-            color: '#1d1d1f',
-            background: '#fff',
-            outline: 'none',
-          }}
-        />
-        <button
-          type="button"
-          disabled
-          style={{
-            padding: '11px 18px',
-            border: 'none',
-            borderRadius: 10,
-            background: '#0071e3',
-            color: '#fff',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: 'default',
-          }}
-        >
-          {b}
-        </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 20, alignItems: 'center' }}>
+        <div>
+          <h3 style={{ margin: '0 0 8px', fontSize: 18, lineHeight: 1.2, color: '#1d1d1f', fontWeight: 700 }}>{t}</h3>
+          <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.5, color: '#4a4a4d' }}>{s}</p>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {previewBullets.map((line, i) => (
+              <li key={i} style={{ position: 'relative', paddingLeft: 20, fontSize: 12, lineHeight: 1.5, color: '#1d1d1f' }}>
+                <span style={{ position: 'absolute', left: 0, top: 3, width: 14, height: 14, borderRadius: 999, background: '#34c759', color: '#fff', fontSize: 8, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>✓</span>
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: 14 }}>
+          <input
+            type="email"
+            placeholder="you@email.com"
+            disabled
+            style={{ width: '100%', padding: '10px 12px', border: '1px solid rgba(0,0,0,0.15)', borderRadius: 10, fontSize: 13, color: '#1d1d1f', background: '#fff', outline: 'none', marginBottom: 8, boxSizing: 'border-box' }}
+          />
+          <button
+            type="button"
+            disabled
+            style={{ width: '100%', padding: '10px 16px', border: 'none', borderRadius: 10, background: '#0071e3', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'default' }}
+          >
+            {b}
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.18
+ * Version: 1.0.19
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.18');
+define('MVP_AFFILIATE_VERSION', '1.0.19');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -1095,6 +1095,10 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
         $title    = isset($args['title'])    ? (string) $args['title']    : 'Get the next review in your inbox';
         $subtitle = isset($args['subtitle']) ? (string) $args['subtitle'] : 'No spam. One short email when there’s a new post worth your time or when there are things you might have missed online.';
         $button   = isset($args['button'])   ? (string) $args['button']   : 'Subscribe';
+        // Compact mode skips the title + subtitle (used by the theme's
+        // hero wrapper, which renders them on the LEFT column instead —
+        // showing them again on the right would duplicate).
+        $compact  = !empty($args['compact']);
 
         // The API base — same domain that runs this plugin's REST sister
         // endpoints (customizations, status, self-update). Filterable for dev.
@@ -1106,8 +1110,10 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
         ob_start();
         ?>
 <div class="mvp-newsletter" id="<?php echo esc_attr($form_id); ?>" style="max-width:480px;margin:24px auto;padding:24px;border-radius:14px;background:#ffffff;border:1px solid rgba(0,0,0,0.08);box-shadow:0 1px 2px rgba(0,0,0,0.04);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d1d1f;">
+  <?php if (!$compact): ?>
   <h3 style="margin:0 0 6px;font-size:18px;line-height:1.3;color:#1d1d1f;"><?php echo esc_html($title); ?></h3>
   <p style="margin:0 0 14px;font-size:13px;line-height:1.5;color:#6e6e73;"><?php echo esc_html($subtitle); ?></p>
+  <?php endif; ?>
   <form class="mvp-newsletter-form" novalidate style="display:flex;gap:8px;flex-wrap:wrap;">
     <input type="email" name="email" required placeholder="you@email.com" autocomplete="email" style="flex:1 1 200px;min-width:0;padding:11px 12px;border:1px solid rgba(0,0,0,0.15);border-radius:10px;font-size:14px;color:#1d1d1f;background:#fff;outline:none;" />
     <!-- Honeypot: hidden via inline CSS; bots fill it, we silently drop their signups server-side. -->

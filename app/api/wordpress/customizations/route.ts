@@ -114,7 +114,7 @@ export async function POST(req: Request) {
       const [{ data: nlRow }, { count: nlActiveCount }] = await Promise.all([
         (supabase as any)
           .from('newsletter_settings')
-          .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
+          .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,cta_bullet_1,cta_bullet_2,cta_bullet_3,homepage_placement,sidebar_placement')
           .eq('user_id', user.id)
           .maybeSingle(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,6 +129,11 @@ export async function POST(req: Request) {
       const nlCtaTitle = (nlRow?.cta_title as string | null)?.trim() || null
       const nlCtaSubtitle = (nlRow?.cta_subtitle as string | null)?.trim() || null
       const nlCtaButton = (nlRow?.cta_button as string | null)?.trim() || null
+      const nlCtaBullets = [
+        (nlRow?.cta_bullet_1 as string | null)?.trim() || '',
+        (nlRow?.cta_bullet_2 as string | null)?.trim() || '',
+        (nlRow?.cta_bullet_3 as string | null)?.trim() || '',
+      ].filter(Boolean)
       const nlHomePlacement = (nlRow?.homepage_placement as string | null)?.trim() || null
       const nlSideBarPlacement = (nlRow?.sidebar_placement as string | null)?.trim() || null
       const nlSubscriberCount = typeof nlActiveCount === 'number' ? nlActiveCount : 0
@@ -158,6 +163,7 @@ export async function POST(req: Request) {
           ctaTitle: nlCtaTitle,
           ctaSubtitle: nlCtaSubtitle,
           ctaButton: nlCtaButton,
+          ctaBullets: nlCtaBullets,
           // Slot overrides. null → theme picks the default slot
           // ('after_ads' on homepage, 'bottom' in sidebar).
           homepagePlacement: nlHomePlacement,

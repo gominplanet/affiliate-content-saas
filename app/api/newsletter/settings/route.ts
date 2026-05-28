@@ -22,7 +22,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from('newsletter_settings')
-    .select('user_id,sender_domain,sender_local_part,sender_name,domain_status,domain_checked_at,dkim_records,enabled,mailing_address,resend_domain_id,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
+    .select('user_id,sender_domain,sender_local_part,sender_name,domain_status,domain_checked_at,dkim_records,enabled,mailing_address,resend_domain_id,cta_title,cta_subtitle,cta_button,cta_bullet_1,cta_bullet_2,cta_bullet_3,homepage_placement,sidebar_placement')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -44,6 +44,9 @@ export async function GET() {
       cta_title: null,
       cta_subtitle: null,
       cta_button: null,
+      cta_bullet_1: null,
+      cta_bullet_2: null,
+      cta_bullet_3: null,
       homepage_placement: null,
       sidebar_placement: null,
     },
@@ -68,6 +71,9 @@ export async function PUT(req: Request) {
     cta_title?: string | null
     cta_subtitle?: string | null
     cta_button?: string | null
+    cta_bullet_1?: string | null
+    cta_bullet_2?: string | null
+    cta_bullet_3?: string | null
     homepage_placement?: string | null
     sidebar_placement?: string | null
   }
@@ -85,6 +91,11 @@ export async function PUT(req: Request) {
   if (typeof body.cta_title === 'string') patch.cta_title = body.cta_title.trim().slice(0, 140) || null
   if (typeof body.cta_subtitle === 'string') patch.cta_subtitle = body.cta_subtitle.trim().slice(0, 320) || null
   if (typeof body.cta_button === 'string') patch.cta_button = body.cta_button.trim().slice(0, 40) || null
+  // Bullets — each one trimmed + capped at 140 chars (one line each).
+  // Empty string clears the override; theme fallback kicks in.
+  if (typeof body.cta_bullet_1 === 'string') patch.cta_bullet_1 = body.cta_bullet_1.trim().slice(0, 140) || null
+  if (typeof body.cta_bullet_2 === 'string') patch.cta_bullet_2 = body.cta_bullet_2.trim().slice(0, 140) || null
+  if (typeof body.cta_bullet_3 === 'string') patch.cta_bullet_3 = body.cta_bullet_3.trim().slice(0, 140) || null
   // Placement overrides — must match the whitelists or fall back to NULL
   // (= "use theme default"). Empty string from the dashboard radio
   // explicitly means "reset to default".

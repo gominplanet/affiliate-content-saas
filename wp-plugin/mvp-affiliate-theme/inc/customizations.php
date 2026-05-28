@@ -364,6 +364,13 @@ if (!function_exists('mvp_affiliate_newsletter_data')) {
             // Active subscriber count (best-effort snapshot from last sync).
             // 0 = no data yet OR genuinely empty list.
             'subscriberCount'   => is_numeric($n['subscriberCount'] ?? null) ? max(0, (int) $n['subscriberCount']) : 0,
+            // Up to 3 benefit bullets, each trimmed. Empty array → theme
+            // falls back to the default trio in render_newsletter_hero.
+            'ctaBullets'        => is_array($n['ctaBullets'] ?? null)
+                ? array_values(array_filter(array_map(function ($b) {
+                    return is_string($b) ? trim($b) : '';
+                }, $n['ctaBullets']), function ($b) { return $b !== ''; }))
+                : [],
         ];
     }
 }
@@ -450,10 +457,10 @@ if (!function_exists('mvp_affiliate_render_newsletter_hero')) {
             : 'Get the next review in your inbox';
         $title = !empty($atts['title']) ? $atts['title'] : ($n['ctaTitle'] ?: $title_default);
         $subtitle = !empty($atts['subtitle']) ? $atts['subtitle'] : ($n['ctaSubtitle'] ?: 'No spam. One short email when there’s a new post worth your time or when there are things you might have missed online.');
-        // Benefit bullets — generic enough to fit every brand. Could be
-        // dashboard-editable later; for v1 they're sane defaults that
-        // re-iterate the subtitle in scannable form.
-        $bullets = [
+        // Benefit bullets — use the creator's dashboard-edited list if
+        // any are set; otherwise ship the generic-but-good defaults so the
+        // hero never renders empty.
+        $bullets = !empty($n['ctaBullets']) ? $n['ctaBullets'] : [
             'One short email per week — never spam',
             'Skips the stuff that isn\'t worth your time',
             'Unsubscribe with one click, any time',
@@ -469,8 +476,12 @@ if (!function_exists('mvp_affiliate_render_newsletter_hero')) {
         }
         // Form lives in the right column — we render via the inline
         // helper (so the form HTML stays the single-source-of-truth in
-        // the plugin) and just wrap it in our hero layout.
-        $form_html = mvp_affiliate_render_newsletter_inline($atts);
+        // the plugin) and just wrap it in our hero layout. Pass
+        // `compact => true` so the form skips its own title + subtitle
+        // (they're already on the left in 32px and 15px); the form is
+        // just the email input + Subscribe button on the right.
+        $form_atts = array_merge($atts, ['compact' => true]);
+        $form_html = mvp_affiliate_render_newsletter_inline($form_atts);
         ob_start();
         ?>
 <div class="mvp-newsletter-hero">
@@ -532,6 +543,9 @@ if (!function_exists('mvp_affiliate_render_newsletter_inline')) {
             'title'    => $title,
             'subtitle' => $subtitle,
             'button'   => $button,
+            // Compact mode hides the title + subtitle (used by the hero
+            // wrapper so we don't duplicate them on the right column).
+            'compact'  => !empty($atts['compact']),
         ]);
     }
 }
