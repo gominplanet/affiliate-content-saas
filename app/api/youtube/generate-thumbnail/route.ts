@@ -770,13 +770,16 @@ export async function POST(request: Request) {
         // Proceed whenever we have SOMETHING to ground on (frame, face, or product).
         if (frameRef || haveFaceForNB || productImageUrl) {
           const wantClean = textMode === 'clean'
-          // Distinct headline copy per variant (unless the user locked one).
-          // For 1 variant this is just a single hook.
-          const hooks = lockedHeadline
-            ? Array.from({ length: variantCount }, () => lockedHeadline)
-            : await generateHooks(videoTitle, variantCount)
+          // FIVE distinct title options for the picker. The user clicks the one
+          // they want; on the clean (overlay) path it's re-drawn client-side on
+          // the text-free image instantly — no regeneration. A locked custom
+          // headline collapses to a single option.
+          const titleOptions = lockedHeadline ? [lockedHeadline] : await generateHooks(videoTitle, 5)
+          // `hooks` drives per-variant text (incl. baked). With variantCount=1 it's
+          // just the first option; the full set rides along as titleOptions.
+          const hooks = titleOptions
           // Representative hook for the response payload + variant scoring.
-          const overlayHookNB = hooks[0]
+          const overlayHookNB = titleOptions[0]
 
           // Auto-match: when the user left the face on "Auto" and has multiple
           // faces, vision-match the frame to pick the right person (Seb vs
@@ -938,6 +941,10 @@ Ultra-sharp, professional, photorealistic.`
               thumbnailScore: rank.topScore,
               belowThreshold: rank.belowThreshold,
               overlayHook: overlayHookNB,
+              // The 5 title options for the client-side picker. On the clean
+              // (overlay) path the user clicks one and it's re-drawn on the
+              // text-free image instantly. Omitted/ignored on the baked path.
+              titleOptions: wantClean ? titleOptions : undefined,
               // Per-variant titles + placements, aligned to rank.urls order so
               // the client overlays the matching headline + corner on each
               // variant (the host side — and so the clear corner — rotates).

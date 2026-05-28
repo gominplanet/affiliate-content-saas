@@ -143,6 +143,15 @@ function VideoStudioCard({ video, userTier, playlists }: {
   /** All generated variants (best-first, with CTR scores) for the compare
    *  grid. The large preview shows the currently-selected one (thumbnailUrl). */
   const [thumbnailVariants, setThumbnailVariants] = useState<Array<{ url: string; score: number | null }>>([])
+  // Title picker: the 5 AI title options + which one is active. On the clean
+  // (overlay) path, clicking a title re-draws it on the text-free base image
+  // instantly (no regeneration). titleOverlayCtx holds everything addTextOverlay
+  // needs except the title; null = the active thumbnail can't be re-titled
+  // client-side (baked text / upload).
+  const [titleOptions, setTitleOptions] = useState<string[]>([])
+  const [selectedTitleIdx, setSelectedTitleIdx] = useState(0)
+  const [titleOverlayCtx, setTitleOverlayCtx] = useState<{ baseUrl: string; styleIndex: number; cutoutUrl?: string; position?: HeadlinePosition; faceBox?: FaceBox } | null>(null)
+  const [retitling, setRetitling] = useState(false)
   /** Pre-generation prompt — opens when the user clicks Generate Thumbnail
    *  so they consciously decide whether to write their own headline or
    *  let MVP do it, before any AI work fires. */
@@ -448,6 +457,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
       setThumbnailPrompt((data.prompt as string) ?? null)
       setThumbnailModel((data.modelUsed as string) ?? null)
       setSceneAnalysis((data.channelStyle as string) ?? null)
+      // Baked text is IN the image — there's no text-free base to re-title, so
+      // the title picker is hidden on this path.
+      setTitleOptions([])
+      setTitleOverlayCtx(null)
       return
     }
 
@@ -494,6 +507,37 @@ function VideoStudioCard({ video, userTier, playlists }: {
     setThumbnailPrompt((data.prompt as string) ?? null)
     setThumbnailModel((data.modelUsed as string) ?? null)
     setSceneAnalysis((data.channelStyle as string) ?? null)
+
+    // Title picker: the 5 AI options + the context to re-overlay any of them on
+    // the SAME text-free base image (rawList[0]) instantly. The default preview
+    // already shows option[0] (= hook), so selectedTitleIdx starts at 0.
+    const options = (data.titleOptions as string[] | undefined)?.filter(Boolean) ?? (hook ? [hook] : [])
+    setTitleOptions(options)
+    setSelectedTitleIdx(0)
+    setTitleOverlayCtx(rawList[0]
+      ? { baseUrl: rawList[0], styleIndex, cutoutUrl, position: textPositions[0] || textPosition, faceBox }
+      : null)
+  }
+
+  // Re-overlay a different title on the text-free base image (clean path only),
+  // instantly — no regeneration. Keeps the same style + placement, swaps text.
+  async function selectTitle(i: number) {
+    if (!titleOverlayCtx || retitling || i === selectedTitleIdx) return
+    const title = titleOptions[i]
+    if (!title) return
+    setRetitling(true)
+    setSelectedTitleIdx(i)
+    try {
+      const ov = await addTextOverlay(titleOverlayCtx.baseUrl, title, titleOverlayCtx.styleIndex, titleOverlayCtx.cutoutUrl, titleOverlayCtx.position, titleOverlayCtx.faceBox)
+      setThumbnailUrl(ov.url)
+      setThumbnailStyleId(ov.styleId)
+      setThumbnailHook(title)
+      setThumbnailFeedbackSent(null)
+    } catch (err) {
+      console.warn('[retitle]', err)
+    } finally {
+      setRetitling(false)
+    }
   }
 
   /**
@@ -1382,6 +1426,30 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     <div className="rounded-xl overflow-hidden border border-gray-100 dark:border-white/10 bg-gray-50 dark:bg-white/5">
                       <img src={thumbnailUrl} alt="Generated thumbnail" className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
                     </div>
+
+                    {/* Title picker — 5 AI options. Click one to put it on the
+                        thumbnail; it's re-drawn instantly on the text-free image
+                        (no regeneration). Hidden on the baked-text path. */}
+                    {titleOptions.length > 1 && titleOverlayCtx && (
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-[#86868b]">
+                          Pick a title — click to put it on the thumbnail{retitling ? ' · applying…' : ''}
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {titleOptions.map((t, i) => (
+                            <button
+                              key={i}
+                              onClick={() => selectTitle(i)}
+                              disabled={retitling}
+                              className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold transition disabled:opacity-60 ${i === selectedTitleIdx ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                              title="Use this title on the thumbnail"
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Test & Compare grid — when 2+ variants were generated,
                         show them ranked (best-first) with their CTR score.
