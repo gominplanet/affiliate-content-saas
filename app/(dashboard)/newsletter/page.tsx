@@ -506,9 +506,9 @@ export default function NewsletterPage() {
                 value={ctaSubtitle}
                 onChange={(e) => setCtaSubtitle(e.target.value)}
                 onBlur={(e) => saveSetting({ cta_subtitle: e.target.value } as Partial<Settings>, 'cta_subtitle')}
-                maxLength={240}
-                rows={2}
-                placeholder="No spam. One short email when there’s a new post worth your time."
+                maxLength={320}
+                rows={3}
+                placeholder="No spam. One short email when there’s a new post worth your time or when there are things you might have missed online."
                 className="w-full text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
               />
             </div>
@@ -922,7 +922,7 @@ function NewsletterFormPreview({
     ? `Get the next ${name} review in your inbox`
     : 'Get the next review in your inbox'
   const t = title.trim() || titleFallback
-  const s = subtitle.trim() || 'No spam. One short email when there’s a new post worth your time.'
+  const s = subtitle.trim() || 'No spam. One short email when there’s a new post worth your time or when there are things you might have missed online.'
   const b = button.trim() || 'Subscribe'
   return (
     <div

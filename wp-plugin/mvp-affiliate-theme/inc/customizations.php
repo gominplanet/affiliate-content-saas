@@ -379,7 +379,7 @@ if (!function_exists('mvp_affiliate_render_newsletter_inline')) {
             ? sprintf('Get the next %s review in your inbox', $n['senderName'])
             : 'Get the next review in your inbox';
         $title    = !empty($atts['title'])    ? $atts['title']    : ($n['ctaTitle']    ?: $default_title);
-        $subtitle = !empty($atts['subtitle']) ? $atts['subtitle'] : ($n['ctaSubtitle'] ?: 'No spam. One short email when there’s a new post worth your time.');
+        $subtitle = !empty($atts['subtitle']) ? $atts['subtitle'] : ($n['ctaSubtitle'] ?: 'No spam. One short email when there’s a new post worth your time or when there are things you might have missed online.');
         $button   = !empty($atts['button'])   ? $atts['button']   : ($n['ctaButton']   ?: 'Subscribe');
 
         return mvp_affiliate_render_newsletter_form([

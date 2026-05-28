@@ -73,7 +73,7 @@ export async function PUT(req: Request) {
   // CTA overrides — empty string means "go back to the theme default",
   // which we model by storing NULL (a sentinel for "not customised").
   if (typeof body.cta_title === 'string') patch.cta_title = body.cta_title.trim().slice(0, 140) || null
-  if (typeof body.cta_subtitle === 'string') patch.cta_subtitle = body.cta_subtitle.trim().slice(0, 240) || null
+  if (typeof body.cta_subtitle === 'string') patch.cta_subtitle = body.cta_subtitle.trim().slice(0, 320) || null
   if (typeof body.cta_button === 'string') patch.cta_button = body.cta_button.trim().slice(0, 40) || null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

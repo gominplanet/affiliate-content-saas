@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.16
+ * Version: 1.0.17
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.16');
+define('MVP_AFFILIATE_VERSION', '1.0.17');
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
@@ -1049,7 +1049,7 @@ if (!function_exists('mvp_newsletter_shortcode')) {
         $atts = shortcode_atts([
             'user'     => '',
             'title'    => 'Get the next review in your inbox',
-            'subtitle' => 'No spam. One short email when there’s a new post worth your time.',
+            'subtitle' => 'No spam. One short email when there’s a new post worth your time or when there are things you might have missed online.',
             'button'   => 'Subscribe',
         ], $atts, 'mvp-newsletter');
 
@@ -1093,7 +1093,7 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
             return '';
         }
         $title    = isset($args['title'])    ? (string) $args['title']    : 'Get the next review in your inbox';
-        $subtitle = isset($args['subtitle']) ? (string) $args['subtitle'] : 'No spam. One short email when there’s a new post worth your time.';
+        $subtitle = isset($args['subtitle']) ? (string) $args['subtitle'] : 'No spam. One short email when there’s a new post worth your time or when there are things you might have missed online.';
         $button   = isset($args['button'])   ? (string) $args['button']   : 'Subscribe';
 
         // The API base — same domain that runs this plugin's REST sister
