@@ -276,22 +276,20 @@ async function handleGenerate(request: Request) {
     }
   }
 
-  // Hard gate: without a usable transcript we cannot write an authentic
-  // first-person review. The previous behaviour — silently proceeding with
-  // an empty transcript and producing meta-disclaimers like "this video was
-  // filmed without an accompanying transcript" inside the article — has been
-  // explicitly rejected. Fail early with an actionable message so the user
-  // can fix the underlying issue rather than ship a flimsy post.
-  //
-  // ESCAPE HATCH: allowEmptyTranscript=true lets a power user (or admin
-  // failures retry) force-generate anyway. The client shows a confirm with
-  // the quality caveat before retrying.
-  if ((!transcript || transcript.trim().length < 80) && !allowEmptyTranscript) {
-    return NextResponse.json({
-      error: 'We couldn’t fetch a transcript for this video, so we can’t write an authentic review. Try one of these:\n  1. Enable captions in YouTube Studio → Subtitles (auto-captions usually appear within 24h of upload).\n  2. If captions exist, wait a moment and retry — the transcript service occasionally throttles.\n  3. Skip this video and pick one with captions.\n  4. Or generate anyway — the article will be shorter and less specific.',
-      reason: 'no_transcript',
-    }, { status: 422 })
-  }
+  // NOTE: the hard "no transcript = 422" gate that used to live here has been
+  // removed. The YoutubeTranscript library scrapes YouTube and YouTube now
+  // blocks most scrapers (especially from Vercel's cloud IPs), so the gate was
+  // firing on legitimate videos with captions. The voice-betrayal scrub
+  // (lib/blog-voice-scrub.ts) + the explicit prompt rules in rule 8 of
+  // services/claude/index.ts together prevent the "we don't have a transcript"
+  // disclaimers and "watch the full video" filler from appearing in the body
+  // even when the transcript is empty — so the safer move is to proceed with
+  // whatever we have (description + product info) and let those guards do
+  // their job. The allowEmptyTranscript body flag is kept as a no-op for
+  // forward compat. transcriptUsed is reported back to the client so the UI
+  // can show a soft notice when the post was grounded without captions.
+  void allowEmptyTranscript
+  const transcriptUsed = !!transcript && transcript.trim().length >= 80
 
   // ── 5. Resolve the product / affiliate link ───────────────────────────────
   // Priority:
@@ -1201,6 +1199,10 @@ async function handleGenerate(request: Request) {
     title: generated.title,
     productUrl,
     hasImages: includeImages,
+    // false when YouTube blocked the transcript scraper; the article was
+    // grounded on description + product info only. The client can show a soft
+    // notice — the post is fine, just a bit shorter / less specific.
+    transcriptUsed,
   })
 }
 
