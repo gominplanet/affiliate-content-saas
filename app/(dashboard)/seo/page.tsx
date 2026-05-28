@@ -46,6 +46,9 @@ export default function SeoPage() {
   const [bulkPreview, setBulkPreview] = useState<{ total: number; toFix: number; totalFixes: number; preview: { postId: string; title: string; fixes: number }[] } | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
   const [bulkApplying, setBulkApplying] = useState(false)
+  // Per-row "Check" button — set of postIds currently being rechecked, so we
+  // can show a spinner on the right row(s) while the GSC call is in flight.
+  const [rechecking, setRechecking] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -86,6 +89,39 @@ export default function SeoPage() {
     try { await navigator.clipboard.writeText(url) } catch { /* clipboard may be blocked; the URL is still in the toast guidance */ }
     window.open('https://search.google.com/search-console', '_blank', 'noopener,noreferrer')
     setFixMsg({ ok: true, text: 'Post URL copied. In Search Console, paste it into the Inspect bar at the top, then click “Request Indexing”. (Multiple Google logins? Pick the account that owns this site first.)' })
+  }, [])
+
+  // Per-row "Check now" — fresh Google URL Inspection on a single post, updates
+  // the row in place so the user sees the new status without a full overview
+  // reload. The daily cron keeps everything current overnight; this is the
+  // "I just clicked Request Indexing — did it land?" lever.
+  const recheckIndexing = useCallback(async (postId: string) => {
+    setRechecking(prev => { const next = new Set(prev); next.add(postId); return next })
+    try {
+      const res = await fetch('/api/seo/recheck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      })
+      const r = await res.json().catch(() => ({})) as {
+        ok?: boolean; indexed?: boolean; coverageState?: string | null; lastCrawl?: string | null; error?: string
+      }
+      if (!res.ok || !r.ok) {
+        setFixMsg({ ok: false, text: r.error || `Recheck failed (${res.status}).` })
+        return
+      }
+      // Patch the single row so the IndexBadge re-renders without a full reload.
+      setData(prev => prev ? {
+        ...prev,
+        posts: prev.posts.map(p => p.postId === postId
+          ? { ...p, indexed: r.indexed ?? null, coverageState: r.coverageState ?? null, lastCrawl: r.lastCrawl ?? null }
+          : p),
+      } : prev)
+    } catch {
+      setFixMsg({ ok: false, text: 'Recheck failed — try again.' })
+    } finally {
+      setRechecking(prev => { const next = new Set(prev); next.delete(postId); return next })
+    }
   }, [])
 
   // One click: purge the host sitemap cache (so Google's sitemap is complete)
@@ -310,6 +346,19 @@ export default function SeoPage() {
                         <span className="text-[11px] text-[#86868b]">{p.position ? `pos ${p.position.toFixed(1)}` : `${p.impressions} impr`}</span>
                       </span>
                     )}
+                    {data.connected && p.url && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); recheckIndexing(p.postId as string) }}
+                        disabled={rechecking.has(p.postId as string)}
+                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#86868b] hover:text-[#0071e3] disabled:opacity-60 flex-shrink-0"
+                        title="Re-check the indexing status with Google Search Console (the daily sweep does this for you overnight)"
+                      >
+                        {rechecking.has(p.postId as string)
+                          ? <Loader2 size={11} className="animate-spin" />
+                          : <RefreshCw size={11} />}
+                        <span className="hidden md:inline">Check</span>
+                      </button>
+                    )}
                     {data.connected && p.url && p.indexed !== true && (
                       <button
                         onClick={(e) => { e.stopPropagation(); requestIndexing(p.url!) }}
@@ -462,6 +511,7 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
               <li>Optimizes every post for search &amp; AI Overviews (answer-first intros, FAQ, internal links, alt text, structured data) so it’s ready to rank.</li>
               <li>Keeps your sitemap fresh and pings it the moment you publish, so engines can find new posts fast.</li>
               <li>Instantly notifies Bing, Yandex &amp; Copilot on publish (IndexNow) — these often index within hours.</li>
+              <li>Refreshes every post’s Google indexing status overnight, so the worklist below is already current when you open this page. Hit <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Check</strong> on any row for an instant re-check.</li>
               <li>Pulls each post’s real status from Google Search Console so you can see what’s live.</li>
             </ul>
           </div>
