@@ -372,6 +372,12 @@ export class WordPressService {
         : { Authorization: this.authHeader }),
       'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${filename}"`,
+      // Browser-like UA — same as request(). Without this, Node/undici's
+      // default UA ("node" / "undici/x.y.z") trips Hostinger / Wordfence /
+      // mod_security WAFs and the media upload silently 403s while regular
+      // post writes (which DO set this UA via request()) sail through. This
+      // is why in-article images were getting dropped on Hostinger sites.
+      'User-Agent': 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)',
     })
 
     const buildUrl = (nonce?: { nonce: string }) => {
