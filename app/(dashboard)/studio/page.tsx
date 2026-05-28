@@ -1564,7 +1564,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           </button>
                         </>
                       )}
-                      {thumbnailModel === 'upload' && (
+                      {thumbnailModel === 'kontext-upload' && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">
                           📤 Your upload
                         </span>
@@ -1574,6 +1574,14 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           ⚡ Instant — your real frame
                         </span>
                       )}
+                      {/* Fallback render paths (the primary "Designed" Nano Banana
+                          path didn't return an image this time). Surfaced so we can
+                          see when the designed path falls through to a scene composite. */}
+                      {!!thumbnailModel && thumbnailModel !== 'kontext-upload' && (thumbnailModel.startsWith('kontext-') || thumbnailModel.startsWith('ideogram-') || thumbnailModel.startsWith('flux')) && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9500]/10 text-[#ff9500] font-medium" title="Rendered via the scene-composite fallback — the primary designed (Nano Banana) path didn't return an image this time.">
+                          🎨 Scene render (fallback)
+                        </span>
+                      )}
                       {/* "Copy prompt" button removed — internal AI prompt
                           shouldn't be exposed to users. */}
                     </div>
@@ -1581,7 +1589,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         (i.e. the overlay actually ran on this thumbnail).
                         Uploads and raw video frames without overlay skip
                         this. Drives the weighted style picker. */}
-                    {thumbnailModel !== 'upload' && (
+                    {thumbnailModel !== 'kontext-upload' && (
                       <div className="flex items-center gap-2 pt-1">
                         <span className="text-[10px] text-[#86868b]">Train the AI:</span>
                         <button

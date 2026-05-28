@@ -984,7 +984,10 @@ Ultra-sharp, professional, photorealistic.`
               feature: 'yt_thumb_kontext_image', model: 'fal-flux-pro-kontext', images: 1,
             })
           }
-          const rank = await rankVariants(urls, overlayHookU, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+          // Force-moody grade before ranking — every path gets a moody/contrasty
+          // background, not just the primary NB path (see applyMoodyGrade).
+          const moodyUploadUrls = await Promise.all(urls.map(applyMoodyGrade))
+          const rank = await rankVariants(moodyUploadUrls, overlayHookU, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
           return NextResponse.json({
             ok: true,
             thumbnailUrl: rank.urls[0],
@@ -1097,7 +1100,10 @@ Ultra-sharp, professional, photorealistic.`
           }
           console.log('[generate-thumbnail] Kontext results:', kontextUrls)
           const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
-          const rank = await rankVariants(kontextUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+          // Force-moody grade the scene before ranking — defence-in-depth so the
+          // fallback paths get a moody/contrasty background too (see applyMoodyGrade).
+          const moodyKontextUrls = await Promise.all(kontextUrls.map(applyMoodyGrade))
+          const rank = await rankVariants(moodyKontextUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
           return NextResponse.json({
             ok: true,
             // Primary url retained for backwards-compat with existing client
@@ -1141,7 +1147,9 @@ Ultra-sharp, professional, photorealistic.`
           })
         }
         const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
-        const rank = await rankVariants(ideoUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+        // Force-moody grade the scene before ranking (see applyMoodyGrade).
+        const moodyIdeoUrls = await Promise.all(ideoUrls.map(applyMoodyGrade))
+        const rank = await rankVariants(moodyIdeoUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
         return NextResponse.json({
           ok: true,
           thumbnailUrl: rank.urls[0],
@@ -1193,7 +1201,9 @@ Ultra-sharp, professional, photorealistic.`
     }
 
     const { url: personCutoutUrl, debug: faceDebug } = await resolveCutout()
-    const rank = await rankVariants(thumbnailUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
+    // Force-moody grade the scene before ranking (see applyMoodyGrade).
+    const moodyFluxUrls = await Promise.all(thumbnailUrls.map(applyMoodyGrade))
+    const rank = await rankVariants(moodyFluxUrls, overlayHook, { userId: TELEMETRY.userId, tier: TELEMETRY.tier })
     return NextResponse.json({
       ok: true,
       thumbnailUrl: rank.urls[0],
