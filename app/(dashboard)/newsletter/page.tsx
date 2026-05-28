@@ -392,26 +392,39 @@ export default function NewsletterPage() {
           </div>
         </div>
 
-        {/* Enable toggle */}
-        <div className="card p-5">
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-2">Newsletter status</p>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!settings?.enabled}
-              onChange={(e) => saveSetting({ enabled: e.target.checked }, 'enabled')}
-              disabled={savingField === 'enabled'}
-              className="accent-[#0071e3] w-4 h-4"
+        {/* Status — single clickable indicator, traffic-light style.
+            Red by default (the creator hasn't opted in to running a
+            newsletter yet); green once they flip it on. Whole card is
+            the click target so it's hard to miss. */}
+        <button
+          type="button"
+          onClick={() => saveSetting({ enabled: !settings?.enabled }, 'enabled')}
+          disabled={savingField === 'enabled'}
+          className="card p-5 text-left w-full transition-colors hover:border-gray-300 dark:hover:border-white/20 disabled:opacity-60 disabled:cursor-wait"
+          aria-pressed={!!settings?.enabled}
+          title={settings?.enabled ? 'Click to turn the newsletter off' : 'Click to turn the newsletter on'}
+        >
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-3">Newsletter status</p>
+          <div className="flex items-center gap-3">
+            <span
+              className={`inline-block w-3.5 h-3.5 rounded-full flex-shrink-0 ${
+                settings?.enabled
+                  ? 'bg-[#34c759] shadow-[0_0_10px_rgba(52,199,89,0.55)]'
+                  : 'bg-[#ff3b30] shadow-[0_0_10px_rgba(255,59,48,0.45)]'
+              }`}
+              aria-hidden
             />
-            <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {settings?.enabled ? 'Enabled — accepting signups' : 'Disabled'}
+            <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {settings?.enabled ? 'Newsletter is a GO' : "I'm not running a newsletter right now"}
             </span>
-            {savingField === 'enabled' && <Loader2 size={12} className="animate-spin text-[#86868b]" />}
-          </label>
+            {savingField === 'enabled' && <Loader2 size={12} className="animate-spin text-[#86868b] ml-auto" />}
+          </div>
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2 leading-relaxed">
-            When off, the embed form returns a polite &quot;not accepting signups&quot; message.
+            {settings?.enabled
+              ? 'Signup form shows on your homepage + every blog post sidebar. Click to turn off.'
+              : 'Signup form is hidden everywhere on your blog. Click to start collecting subscribers.'}
           </p>
-        </div>
+        </button>
       </div>
 
       {/* Brand display name + mailing address */}
