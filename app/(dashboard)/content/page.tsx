@@ -783,7 +783,7 @@ function GenerateButton({
           <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">
             {userImages.length > 0
               ? 'Your photos will be placed through the article.'
-              : 'By default we use real frames from your video, enhanced — or upload your own.'}
+              : 'By default we generate AI photos of the actual product in different real-world settings — or upload your own.'}
           </span>
           {imgErr && <span className="text-[10px] text-[#ff3b30]">{imgErr}</span>}
         </div>
