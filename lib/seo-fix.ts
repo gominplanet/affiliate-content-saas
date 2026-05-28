@@ -44,10 +44,22 @@ function renderFaqBlock(items: { question: string; answer: string }[]): string {
   return out
 }
 
-/** Which checks are currently failing AND have a fixer. Cheap — no network. */
+/** Which checks are currently failing AND have a fixer that can actually
+ *  fix them right now. Cheap — no network.
+ *
+ *  Subtle gotcha: title_length fails on titles BOTH under 30 chars
+ *  (too short) AND over 65 (too long), but applyTitle() only knows how
+ *  to SHORTEN — expanding a short title would mean fabricating. So we
+ *  drop title_length from the fixable set when the title is short. The
+ *  score still flags it for the dashboard; we just don't queue an
+ *  impossible fix that would then bail with a confusing skip reason. */
 export function fixableFailing(post: FixablePost, siteHost: string): SeoFixType[] {
-  const { checks } = scorePostSeo({ title: post.title || '', contentHtml: post.content || '', siteHost, postType: post.post_type || 'review' })
-  return checks.filter(c => !c.pass && (SEO_FIX_TYPES as string[]).includes(c.id)).map(c => c.id as SeoFixType)
+  const title = post.title || ''
+  const { checks } = scorePostSeo({ title, contentHtml: post.content || '', siteHost, postType: post.post_type || 'review' })
+  return checks
+    .filter(c => !c.pass && (SEO_FIX_TYPES as string[]).includes(c.id))
+    .filter(c => !(c.id === 'title_length' && title.length <= 65))
+    .map(c => c.id as SeoFixType)
 }
 
 export async function applyPostFixes(opts: {
@@ -67,7 +79,10 @@ export async function applyPostFixes(opts: {
   const reasons: Partial<Record<SeoFixType, string>> = {}
 
   const applyTitle = async (): Promise<boolean> => {
-    if (state.title.length <= 65) { reasons.title_length = 'Title is short — expand it manually so we don’t fabricate.'; return false }
+    // Auto-fixer can only shorten — expanding a short title would mean
+    // inventing a hook/spec/year that wasn't in the source. Edit it
+    // manually in WordPress (or regenerate the post from the source video).
+    if (state.title.length <= 65) { reasons.title_length = 'Title is short — edit it manually in WordPress to add a hook (we don’t auto-expand to avoid fabricating).'; return false }
     const client = createAnthropicClient()
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001', max_tokens: 60,

@@ -204,14 +204,35 @@ export default function SeoPage() {
         if (!d.remaining || d.fixed === 0) break // done (or no further progress)
         setFixMsg({ ok: true, text: `Fixing posts… ${totalFixed} done, ${d.remaining} to go.` })
       }
-      if (totalFixed === 0 && (lastSkipped.length > 0 || lastErrors.length > 0)) {
+      if (totalFixed === 0 && lastErrors.length > 0) {
+        // A real error happened on at least one post (not just "nothing to
+        // fix, expected"). Red banner.
         const reasonLines = lastSkipped.slice(0, 5).map(s => `• "${s.title}": ${s.reasons.join(' · ')}`)
         const errorLines = lastErrors.slice(0, 3).map(e => `⚠ ${e}`)
-        const body = [...reasonLines, ...errorLines].join('\n')
+        const body = [...errorLines, ...reasonLines].join('\n')
         setFixMsg({
           ok: false,
-          text: `Nothing was fixed. Here’s why${body ? `:\n${body}` : '.'}\n\nWhat usually causes this: every fixer thought the post was already done (existing FAQ, existing related-reviews block, alt text present), or there weren’t enough related posts to link to yet.`,
+          text: `Some posts errored during the fix-all run${body ? `:\n${body}` : '.'}`,
         })
+      } else if (totalFixed === 0 && lastSkipped.length > 0) {
+        // No errors — every "skip" is just "this post is already done"
+        // OR "the only remaining issue needs a manual edit (short title)".
+        // Green-tinted "good news" banner, not red.
+        const manualLines = lastSkipped
+          .filter(s => s.reasons.some(r => /manual|edit it manually|edit it yourself/i.test(r)))
+          .slice(0, 5)
+          .map(s => `• "${s.title}": ${s.reasons.join(' · ')}`)
+        const manualBody = manualLines.length
+          ? `\n\nA few posts have suggestions that need your hand:\n${manualLines.join('\n')}`
+          : ''
+        setFixMsg({
+          ok: true,
+          text: `Every post is already as good as the auto-fixer can make it. 🎉${manualBody}`,
+        })
+      } else if (totalFixed === 0) {
+        // Truly nothing to do — no skips, no errors. Should be rare (the
+        // dry-run preview catches this first). Green banner.
+        setFixMsg({ ok: true, text: 'Every post is already as good as the auto-fixer can make it. 🎉' })
       } else {
         setFixMsg({ ok: true, text: `Done — fixed ${totalFixed} post${totalFixed !== 1 ? 's' : ''} and republished.` })
       }
