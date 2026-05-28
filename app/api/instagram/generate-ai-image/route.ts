@@ -27,8 +27,8 @@ import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
-import { composeWithNanoBananaPro, composeWithNanoBanana, rehostToFal, rehostFacePhotos, NANO_BANANA_PRO_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
-import { getOrCreateIdentityAnchor } from '@/lib/identity-anchor'
+import { composeWithNanoBananaPro, composeWithNanoBanana, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_PRO_COST_MODEL, NANO_BANANA_COST_MODEL } from '@/lib/thumbnail-generators'
+import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 
 /**
@@ -375,17 +375,17 @@ export async function POST(request: Request) {
     // New instant face models store source_images (no LoRA); older ones have a
     // lora_url. We support both — source_images drive the Nano Banana Pro
     // identity path below, lora_url the legacy flux-lora path.
-    let faceModel: { trigger_token: string | null; lora_url: string | null; name: string; source_images: string[] } | null = null
+    let faceModel: { id: string; trigger_token: string | null; lora_url: string | null; name: string; source_images: string[] } | null = null
     if (faceModelId) {
       const { data: fm } = await sb
         .from('face_models')
-        .select('trigger_token,lora_url,status,name,source_images')
+        .select('id,trigger_token,lora_url,status,name,source_images')
         .eq('id', faceModelId)
         .eq('user_id', user.id)
         .single()
       const srcImages: string[] = Array.isArray(fm?.source_images) ? fm.source_images : []
       if (fm?.status === 'ready' && (fm?.lora_url || srcImages.length > 0)) {
-        faceModel = { trigger_token: fm.trigger_token ?? null, lora_url: fm.lora_url ?? null, name: fm.name, source_images: srcImages }
+        faceModel = { id: fm.id, trigger_token: fm.trigger_token ?? null, lora_url: fm.lora_url ?? null, name: fm.name, source_images: srcImages }
       }
     }
 
@@ -429,14 +429,16 @@ export async function POST(request: Request) {
     // IG image with the host's true likeness, text-free (the title is overlaid
     // crisply client-side). Mirrors the YouTube composed path. Only when the
     // face model has source photos (the instant, no-LoRA models).
-    // Identity anchor (cached, Photobooth-grade) leads as the primary likeness
-    // reference; a couple of raw photos ride along for extra angles. Falls back
-    // to raw photos if the anchor can't be built.
+    // Primary likeness reference, mirroring the YouTube path: getThumbnailFaceRef
+    // casts the creator's STARRED Photobooth shot (or an energetic excited/surprised/
+    // laughing one) — instant, no generation, and the source of that lively look —
+    // and falls back to a cached "excited" identity anchor when they have no eligible
+    // shot. A couple of raw photos ride along for extra angles.
     let igFaceRefs: string[] = []
     if (faceModel?.source_images?.length) {
-      const igAnchor = await getOrCreateIdentityAnchor(sb, user.id, faceModel.source_images, { tier })
-      const igRaw = await rehostFacePhotos(sb, faceModel.source_images, igAnchor ? 2 : 5)
-      igFaceRefs = igAnchor ? [igAnchor, ...igRaw] : igRaw
+      const igFace = await getThumbnailFaceRef(sb, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier })
+      const igRaw = await rehostFacePhotos(sb, faceModel.source_images, igFace ? 2 : 5)
+      igFaceRefs = igFace ? [igFace, ...igRaw] : igRaw
     }
     if (igFaceRefs.length > 0) {
       try {
@@ -449,7 +451,8 @@ export async function POST(request: Request) {
 The reference photos show the SAME real creator — reproduce their EXACT face and identity (bone structure, features, eye shape, nose, jaw, age, ethnicity, skin tone, hair); unmistakably this real person, photorealistic, never generic or altered. Match their skin and APPARENT AGE EXACTLY as in the photos: do NOT add wrinkles, fine lines, age spots, roughness or extra texture, and do NOT make them look older or harsher — but do NOT de-age or plastic-smooth them either. Their complexion must look natural, healthy and flattering, faithful to the photos.
 WARDROBE: use the photos ONLY for the face and identity — dress them in a FRESH, natural casual outfit that suits the scene; do NOT copy the clothing or top shown in the reference photos.
 ${igProductClause}
-COMPOSITION: a TIGHT head-and-shoulders portrait — the face fills the upper-middle and is the hero, with an energetic, expressive reaction (excited, surprised or delighted), looking at the camera, holding the product up near the face/jawline. Lived-in setting with a heavily blurred bokeh background; editorial portrait lighting, natural skin tones.
+COMPOSITION: a TIGHT head-and-shoulders portrait — the face fills the upper-middle and is the hero, with an energetic, expressive reaction (excited, surprised or delighted), looking at the camera, holding the product up near the face/jawline.
+BACKGROUND: a MOODY, cinematic setting that fits the video — richer, HIGHER-CONTRAST deeper tones, dramatic directional lighting, a soft vignette and heavily blurred bokeh. Do NOT make it a flat, bright, white or airy room. Add a subtle rim/edge light so the subject pops off the background. Editorial portrait lighting on the face, natural realistic skin tones.
 HEADLINE SPACE: leave a generous CLEAN, uncluttered area at the TOP for a headline to be added afterwards. Render ABSOLUTELY NO text, letters, words, numbers or captions anywhere.
 ${NO_BRAND_IMAGE_CLAUSE}
 Ultra-sharp, photorealistic, 4:5 portrait.`
@@ -562,6 +565,14 @@ Ultra-sharp, photorealistic, 4:5 portrait.`
     }
 
     if (!imageUrl) return NextResponse.json({ error: 'Image generation failed — please try again.' }, { status: 502 })
+
+    // Force-moody grade (mirrors the YouTube thumbnail path): a deterministic
+    // darken + contrast + radial vignette so the IG image reads moody/contrasty
+    // every time and the bright bokeh that washes out the look is gone — applied
+    // to whichever path produced the image. Best-effort (returns the original URL
+    // on failure). Persisted + analysed below, so the cached + overlay paths use
+    // the graded image. The vignette keeps the centre lit, so the face stays bright.
+    imageUrl = await applyMoodyGrade(imageUrl)
 
     // Style reference parameter is captured but currently ignored — the
     // IG prompt builder doesn't read it yet. Leaving the param on the
