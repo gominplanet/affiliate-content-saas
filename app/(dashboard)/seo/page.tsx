@@ -83,16 +83,34 @@ export default function SeoPage() {
     finally { setFixing(null) }
   }, [load])
 
-  // "Request indexing" helper. We deliberately do NOT deep-link into the URL
-  // Inspection result: Google's `inspect?id=` param expects an internal
-  // inspection hash, not a page URL, so `id=<url>` returns a hard 404. Instead
-  // we copy the post URL and open Search Console — the user pastes it into the
-  // Inspect bar at the top (one paste, never 404s).
+  // "Request indexing" helper. Two paths:
+  //
+  // 1. GSC connected → deep-link into URL Inspection for the user's specific
+  //    GSC property. `?resource_id=…&inspectionUrl=…` opens the property's
+  //    inspect tool with the post URL pre-filled. No "Welcome to Search
+  //    Console" landing page anymore — that was bouncing users who had
+  //    multiple Google accounts OR no property on the active account.
+  // 2. GSC NOT connected → fall back to the old behavior (open GSC home,
+  //    URL in clipboard), but the toast text now tells them to connect
+  //    Search Console on /seo first for one-click deep linking.
+  //
+  // Google's `?id=<url>` syntax does NOT work — that param expects an
+  // internal inspection hash and 404s on real URLs. resource_id +
+  // inspectionUrl is the documented combo that does.
   const requestIndexing = useCallback(async (url: string) => {
-    try { await navigator.clipboard.writeText(url) } catch { /* clipboard may be blocked; the URL is still in the toast guidance */ }
+    try { await navigator.clipboard.writeText(url) } catch { /* clipboard may be blocked */ }
+    const property = data?.property || null
+    if (property) {
+      // resource_id is the GSC property (either "sc-domain:host" or a
+      // "https://host/" URL-prefix). encodeURIComponent handles both.
+      const deepLink = `https://search.google.com/search-console/inspect?resource_id=${encodeURIComponent(property)}&inspectionUrl=${encodeURIComponent(url)}`
+      window.open(deepLink, '_blank', 'noopener,noreferrer')
+      setFixMsg({ ok: true, text: `Opening Search Console URL Inspection for ${url}. (If Google asks you to pick an account, choose the one that owns ${property}, then hit "Request Indexing".)` })
+      return
+    }
     window.open('https://search.google.com/search-console', '_blank', 'noopener,noreferrer')
-    setFixMsg({ ok: true, text: 'Post URL copied. In Search Console, paste it into the Inspect bar at the top, then click “Request Indexing”. (Multiple Google logins? Pick the account that owns this site first.)' })
-  }, [])
+    setFixMsg({ ok: true, text: 'Post URL copied. Connect Search Console on this page for one-click deep links — otherwise, paste the URL into the Inspect bar at the top of GSC and click "Request Indexing".' })
+  }, [data?.property])
 
   // Per-row "Check now" — fresh Google URL Inspection on a single post, updates
   // the row in place so the user sees the new status without a full overview
