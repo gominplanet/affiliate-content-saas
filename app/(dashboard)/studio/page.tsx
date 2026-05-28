@@ -12,7 +12,7 @@ import { effectiveTier } from '@/lib/view-as'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, ChevronLeft, ChevronRight, Upload, X,
+  Image, Download, Sparkles, ChevronLeft, ChevronRight, Upload, X, Search,
 } from 'lucide-react'
 
 interface DraftVideo {
@@ -2199,10 +2199,19 @@ export default function StudioPage() {
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
   const [pageHistory, setPageHistory] = useState<string[]>([]) // stack of previous page tokens
   const [currentPage, setCurrentPage] = useState(1)
+  // Server-side search across the user's entire channel (not just the
+  // currently-loaded uploads-playlist page). Debounced 350ms below so we
+  // don't hammer YouTube's search endpoint on every keystroke — that one
+  // costs ~100x more quota than the default listing.
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeQuery, setActiveQuery] = useState('') // post-debounce value driving the fetch
 
-  const load = useCallback(async (pageToken?: string) => {
+  const load = useCallback(async (opts?: { pageToken?: string; query?: string }) => {
     setLoading(true)
     setError(null)
+
+    const pageToken = opts?.pageToken
+    const query = (opts?.query ?? '').trim()
 
     if (!pageToken) {
       const { data: { user } } = await supabase.auth.getUser()
@@ -2222,7 +2231,10 @@ export default function StudioPage() {
       }
     }
 
-    const url = pageToken ? `/api/youtube/drafts?pageToken=${encodeURIComponent(pageToken)}` : '/api/youtube/drafts'
+    const params = new URLSearchParams()
+    if (pageToken) params.set('pageToken', pageToken)
+    if (query) params.set('q', query)
+    const url = params.toString() ? `/api/youtube/drafts?${params.toString()}` : '/api/youtube/drafts'
     const res = await fetch(url)
     const data = await res.json()
     if (res.status === 401 && data.needsAuth) {
@@ -2236,12 +2248,29 @@ export default function StudioPage() {
     setLoading(false)
   }, [supabase])
 
+  // Debounce search input → fetch when the user pauses typing. Empty query
+  // re-loads the default (uploads playlist + ASIN filter) page.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      const q = searchQuery.trim()
+      if (q !== activeQuery) {
+        setActiveQuery(q)
+        setPageHistory([])
+        setCurrentPage(1)
+        setNextPageToken(undefined)
+        void load({ query: q })
+      }
+    }, 350)
+    return () => clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
+
   const goNext = useCallback(() => {
     if (!nextPageToken) return
     setPageHistory(h => [...h, nextPageToken])
     setCurrentPage(p => p + 1)
-    load(nextPageToken)
-  }, [nextPageToken, load])
+    load({ pageToken: nextPageToken, query: activeQuery })
+  }, [nextPageToken, load, activeQuery])
 
   const goPrev = useCallback(() => {
     const history = [...pageHistory]
@@ -2249,15 +2278,15 @@ export default function StudioPage() {
     const prevToken = history[history.length - 1]
     setPageHistory(history)
     setCurrentPage(p => p - 1)
-    load(prevToken)
-  }, [pageHistory, load])
+    load({ pageToken: prevToken, query: activeQuery })
+  }, [pageHistory, load, activeQuery])
 
   const refresh = useCallback(() => {
     setPageHistory([])
     setCurrentPage(1)
     setNextPageToken(undefined)
-    load()
-  }, [load])
+    load({ query: activeQuery })
+  }, [load, activeQuery])
 
   useEffect(() => { load() }, [load])
 
@@ -2338,8 +2367,27 @@ export default function StudioPage() {
 
       {!needsAuth && !error && (
         <>
+          {/* Search across the whole channel (any privacy status). Empty
+              query falls back to the default ASIN-only listing of the
+              uploads playlist. Debounced 350ms — search.list costs ~100x
+              more YouTube quota than playlistItems, so we don't spam it. */}
+          <div className="relative mb-4">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search your YouTube videos by title…"
+              className="w-full text-sm pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+            />
+          </div>
+
           <div className="flex items-center justify-between mb-5">
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Page {currentPage} · {drafts.length} video{drafts.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
+              {activeQuery
+                ? `Search · ${drafts.length} result${drafts.length !== 1 ? 's' : ''} for "${activeQuery}"`
+                : `Page ${currentPage} · ${drafts.length} video${drafts.length !== 1 ? 's' : ''}`}
+            </p>
             <button onClick={refresh} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
               <RefreshCw size={11} /> Refresh
             </button>
@@ -2348,8 +2396,17 @@ export default function StudioPage() {
           {drafts.length === 0 ? (
             <div className="card p-8 text-center">
               <Youtube size={28} className="mx-auto text-[#86868b] dark:text-[#8e8e93] mb-3" />
-              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No ASIN drafts yet</p>
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">Drop an Amazon ASIN (the 10-character code like <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">B08N5WRWNW</span>) anywhere in your YouTube video title. Save the draft, hit Refresh, and it&apos;ll show up here ready to generate.</p>
+              {activeQuery ? (
+                <>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No videos matched &quot;{activeQuery}&quot;</p>
+                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">Try a different title fragment, or clear the search to see your most recent uploads.</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No ASIN drafts yet</p>
+                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">Drop an Amazon ASIN (the 10-character code like <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">B08N5WRWNW</span>) anywhere in your YouTube video title. Save the draft, hit Refresh, and it&apos;ll show up here ready to generate.</p>
+                </>
+              )}
             </div>
           ) : (
             <>

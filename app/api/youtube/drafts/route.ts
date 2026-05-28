@@ -38,10 +38,24 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const pageToken = searchParams.get('pageToken') || undefined
+    // q triggers full-catalogue search (search.list, forMine=true) instead
+    // of the default uploads-playlist listing. Trimmed + length-capped so a
+    // pathological query can't blow the YouTube quota in one call.
+    const q = (searchParams.get('q') || '').trim().slice(0, 200)
 
     const yt = createYouTubeOAuthService(token)
 
-    // Fetch one page of 50, filter for ASIN videos, return with cursor for next page
+    // When the Studio's search bar is in use we hit the search endpoint
+    // (covers the whole channel) and skip the ASIN-only filter — creators
+    // searching for a specific video shouldn't have the result hidden just
+    // because they didn't put an ASIN in the title yet.
+    if (q) {
+      const result = await yt.searchMyVideos(q, 25, pageToken)
+      return NextResponse.json({ drafts: result.videos, nextPageToken: result.nextPageToken, query: q })
+    }
+
+    // Default listing: fetch one page of 50, filter for ASIN videos,
+    // return with cursor for next page
     const ASIN_RE = /\b([A-Z0-9]{10})\b/
     const result = await yt.getDraftVideos(50, pageToken)
     const asinVideos = result.videos.filter(v => v.detectedAsin || ASIN_RE.test(v.title))

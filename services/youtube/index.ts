@@ -195,6 +195,61 @@ export class YouTubeOAuthService {
     return res.json() as Promise<T>
   }
 
+  // Full-catalogue search for the authenticated user's own videos. Hits the
+  // YouTube Data API's `search.list` endpoint with forMine=true, which
+  // matches across the user's entire channel (any privacy status) — not
+  // just the first uploads-playlist page. Used by /api/youtube/drafts when
+  // a `q=` query is present so the Studio's search bar covers everything.
+  //
+  // Cost note: search.list is 100 quota units vs 1 for playlistItems —
+  // expensive enough that we only call it for actual queries, never as
+  // the default listing. The follow-up videos.list (1 unit) gets us the
+  // privacy status that search.list omits.
+  async searchMyVideos(
+    query: string,
+    maxResults = 25,
+    pageToken?: string,
+  ): Promise<{ videos: DraftVideo[]; nextPageToken?: string }> {
+    const q = (query || '').trim()
+    if (!q) return { videos: [], nextPageToken: undefined }
+    const params: Record<string, string> = {
+      part: 'snippet',
+      forMine: 'true',
+      type: 'video',
+      q: q,
+      maxResults: String(Math.min(maxResults, 50)),
+      // YouTube requires `order` for forMine queries; date keeps results
+      // newest-first (matching the default listing) instead of relevance.
+      order: 'date',
+    }
+    if (pageToken) params.pageToken = pageToken
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const searchData = await this.get<any>('/search', params)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hits = (searchData.items ?? []) as Array<any>
+    if (hits.length === 0) return { videos: [], nextPageToken: undefined }
+    // Pull full video details for the privacy status + canonical thumbnail.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const videoIds = hits.map((h: any) => h.id?.videoId).filter(Boolean).join(',')
+    if (!videoIds) return { videos: [], nextPageToken: searchData.nextPageToken }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const videosData = await this.get<any>('/videos', { part: 'snippet,status', id: videoIds })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const videos = (videosData.items ?? []).map((v: any) => {
+      const asinMatch = v.snippet.title.match(/\b([A-Z0-9]{10})\b/)
+      return {
+        youtubeVideoId: v.id,
+        title: v.snippet.title,
+        description: v.snippet.description ?? '',
+        thumbnailUrl: v.snippet.thumbnails?.high?.url ?? v.snippet.thumbnails?.default?.url ?? '',
+        status: v.status?.privacyStatus ?? 'private',
+        publishedAt: v.snippet.publishedAt,
+        detectedAsin: asinMatch ? asinMatch[1] : null,
+      }
+    }) as DraftVideo[]
+    return { videos, nextPageToken: searchData.nextPageToken }
+  }
+
   // List videos for the authenticated user (includes private/draft), with pagination
   async getDraftVideos(
     maxResults = 25,
