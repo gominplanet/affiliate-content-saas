@@ -73,21 +73,25 @@ export async function POST(req: Request) {
   // ── Load the picked blog posts ─────────────────────────────────────────────
   let posts: NewsletterBlogPost[] = []
   if (ids.length > 0) {
+    // thumbnail_url lives on youtube_videos, NOT blog_posts — same join the
+    // /blog-posts picker route uses. Without it the email cards ship without
+    // the video thumbnail (and we ended up with a "no posts" bug in the
+    // first cut of the picker route).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: rows } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,excerpt,wordpress_url,thumbnail_url')
+      .select('id,title,excerpt,wordpress_url,youtube_videos(thumbnail_url)')
       .eq('user_id', user.id)
       .in('id', ids)
       .eq('status', 'published')
     const lookup = new Map<string, NewsletterBlogPost>()
-    for (const r of (rows as Array<{ id: string; title: string | null; excerpt: string | null; wordpress_url: string | null; thumbnail_url: string | null }> | null) ?? []) {
+    for (const r of (rows as Array<{ id: string; title: string | null; excerpt: string | null; wordpress_url: string | null; youtube_videos: { thumbnail_url: string | null } | null }> | null) ?? []) {
       if (!r.wordpress_url) continue
       lookup.set(r.id, {
         url: r.wordpress_url,
         title: (r.title || 'Untitled').trim(),
         excerpt: (r.excerpt || '').trim(),
-        imageUrl: r.thumbnail_url || null,
+        imageUrl: r.youtube_videos?.thumbnail_url || null,
         blurb: null, // filled in by Claude below
       })
     }

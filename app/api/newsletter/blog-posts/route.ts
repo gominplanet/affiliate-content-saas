@@ -1,43 +1,94 @@
 /**
- * GET /api/newsletter/blog-posts — pickable posts for the compose UI
+ * GET /api/newsletter/blog-posts        latest 10 published posts (default)
+ * GET /api/newsletter/blog-posts?q=foo  search title + excerpt across all
+ *                                       published posts (top 30)
  *
- * Returns the creator's published blog posts (newest first) — id, title,
- * excerpt, url, thumbnail. The compose page renders these as checkboxes
- * with a thumbnail + a one-line preview so the creator can scan + pick
- * the issue's lineup in seconds.
+ * Returns rich rows for the compose page's picker — id + title + summary +
+ * URL + the video's thumbnail (joined in from youtube_videos) + a
+ * product link if we can derive one from the source video's description
+ * (matches the Geniuslink / Amazon URL the creator put in the YouTube
+ * description). The picker renders each row with a checkbox.
  *
- * Capped at the most recent 80 — past that, scroll fatigue beats picking
- * accuracy. If a creator ever has more than 80 candidates per issue,
- * we'll add search/filter; for v1, recency is the right ordering.
+ * thumbnail_url lives on youtube_videos (NOT blog_posts) so the original
+ * v1 of this route silently 400'd at PostgREST and the picker rendered
+ * "No published posts yet" even when the creator had a full catalogue.
+ * The join below is the fix.
  */
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { firstProductUrl } from '@/lib/product-link'
 
-export async function GET() {
+interface RawRow {
+  id: string
+  title: string | null
+  excerpt: string | null
+  wordpress_url: string | null
+  published_at: string | null
+  youtube_videos: {
+    thumbnail_url: string | null
+    description: string | null
+    youtube_video_id: string | null
+  } | null
+}
+
+export async function GET(req: NextRequest) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const q = req.nextUrl.searchParams.get('q')?.trim() || ''
+  const limit = q ? 30 : 10
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  let query = (supabase as any)
     .from('blog_posts')
-    .select('id,title,excerpt,wordpress_url,thumbnail_url,published_at')
+    .select('id,title,excerpt,wordpress_url,published_at,youtube_videos(thumbnail_url,description,youtube_video_id)')
     .eq('user_id', user.id)
     .eq('status', 'published')
-    .order('published_at', { ascending: false, nullsFirst: false })
-    .limit(80)
+    .order('published_at', { ascending: false })
+    .limit(limit)
+
+  if (q) {
+    // ilike across title + excerpt. PostgREST's `or()` filter is the
+    // standard way — escape any % in the user's query so they can't break out.
+    const safe = q.replace(/[%_]/g, '').slice(0, 80)
+    query = query.or(`title.ilike.%${safe}%,excerpt.ilike.%${safe}%`)
+  }
+
+  const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({
-    posts: ((data as Array<{ id: string; title: string | null; excerpt: string | null; wordpress_url: string | null; thumbnail_url: string | null; published_at: string | null }>) || [])
-      .filter(p => !!p.wordpress_url)
-      .map(p => ({
+  // Need the user's WP base URL too, so that firstProductUrl can ignore
+  // links that point back to the creator's own site (they're not products).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: integ } = await (supabase as any)
+    .from('integrations').select('wordpress_url').eq('user_id', user.id).maybeSingle()
+  const wpBase = (integ?.wordpress_url as string | null) || null
+
+  const rows = (data as RawRow[] | null) || []
+  const posts = rows
+    .filter(p => !!p.wordpress_url)
+    .map(p => {
+      // Pull the first product-like URL out of the source video's
+      // description — that's where the Geniuslink / Amazon / brand-site
+      // link lives. Falls back to null when nothing useful is in there.
+      const description = p.youtube_videos?.description || ''
+      const productUrl = description ? firstProductUrl(description, wpBase) : null
+      // Excerpt cap at ~100 words for the picker preview — same as the
+      // user explicitly asked for ("a short resume of the article (under
+      // 100 words)").
+      const summary = ((p.excerpt || '').match(/\S+/g) || []).slice(0, 100).join(' ')
+      return {
         id: p.id,
         title: p.title || 'Untitled',
-        excerpt: (p.excerpt || '').slice(0, 220),
+        summary,
         url: p.wordpress_url,
-        thumbnail: p.thumbnail_url,
+        thumbnail: p.youtube_videos?.thumbnail_url || null,
+        productUrl,
         publishedAt: p.published_at,
-      })),
-  })
+        youtubeVideoId: p.youtube_videos?.youtube_video_id || null,
+      }
+    })
+
+  return NextResponse.json({ posts, query: q || null })
 }

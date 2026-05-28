@@ -25,16 +25,22 @@ import Link from 'next/link'
 import Header from '@/components/layout/Header'
 import {
   Loader2, AlertCircle, CheckCircle, Sparkles, Send, ChevronLeft,
-  Plus, X, Image as ImageIcon, MessageCircle,
+  Plus, X, Image as ImageIcon, MessageCircle, Search, ExternalLink, Tag,
 } from 'lucide-react'
 
 interface PickablePost {
   id: string
   title: string
-  excerpt: string
+  /** ≤ 100-word summary — the route trims the blog_posts.excerpt to fit. */
+  summary: string
   url: string
   thumbnail: string | null
+  /** First product-like URL scraped from the source video's description —
+   *  usually a Geniuslink or Amazon URL. Null when nothing useful is in
+   *  the description. */
+  productUrl: string | null
   publishedAt: string | null
+  youtubeVideoId: string | null
 }
 
 interface DraftPostBlock {
@@ -74,6 +80,13 @@ export default function NewsletterComposePage() {
   const [posts, setPosts] = useState<PickablePost[]>([])
   const [postsLoading, setPostsLoading] = useState(true)
   const [pickedIds, setPickedIds] = useState<string[]>([])
+  // Once a post is picked we keep its full record around in case the
+  // user searches for something else after — search results replace
+  // `posts`, but the picker UI needs the picked rows to stay rendered
+  // (with their checkbox stuck "checked") even if they're no longer in
+  // the current search hits.
+  const [pickedDetail, setPickedDetail] = useState<Record<string, PickablePost>>({})
+  const [searchQuery, setSearchQuery] = useState('')
   const [personalMessage, setPersonalMessage] = useState('')
   const [curated, setCurated] = useState<Array<{ url: string; label: string; blurb: string }>>([])
   const [activeSubs, setActiveSubs] = useState<number | null>(null)
@@ -86,7 +99,7 @@ export default function NewsletterComposePage() {
   const [sentResult, setSentResult] = useState<{ recipients: number; sent: number; failed: number } | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
 
-  // ── Load pickable posts + active sub count ─────────────────────────────────
+  // ── Initial load: latest 10 posts + active sub count ──────────────────────
   useEffect(() => {
     void (async () => {
       try {
@@ -103,6 +116,40 @@ export default function NewsletterComposePage() {
       }
     })()
   }, [])
+
+  // ── Debounced server-side search across the entire catalogue ──────────────
+  // Empty query → reload the latest 10. Non-empty → fire to the API with
+  // ?q= so PostgREST runs the ilike — works for any catalogue size, no
+  // need to load every post into memory just to filter.
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      void (async () => {
+        setPostsLoading(true)
+        try {
+          const url = searchQuery.trim()
+            ? `/api/newsletter/blog-posts?q=${encodeURIComponent(searchQuery.trim())}`
+            : '/api/newsletter/blog-posts'
+          const r = await fetch(url)
+          const d = await r.json()
+          if (r.ok) setPosts(d.posts || [])
+        } finally {
+          setPostsLoading(false)
+        }
+      })()
+    }, 280)
+    return () => clearTimeout(handle)
+  }, [searchQuery])
+
+  // When the user ticks a post, snapshot its detail so it stays available
+  // even if a subsequent search filters it out of `posts`.
+  function togglePick(p: PickablePost) {
+    setPickedIds(prev => {
+      const isPicked = prev.includes(p.id)
+      if (isPicked) return prev.filter(id => id !== p.id)
+      return [...prev, p.id]
+    })
+    setPickedDetail(prev => ({ ...prev, [p.id]: p }))
+  }
 
   // ── Edit handlers (manual tweaks AFTER Claude drafts) ──────────────────────
   // Each editor field re-renders the preview via a setter that re-builds
@@ -213,43 +260,117 @@ export default function NewsletterComposePage() {
       {/* ── Step 1: pick + write ── */}
       {!draft && (
         <>
-          {/* Posts picker */}
+          {/* Posts picker — search across the whole blog, default to the
+              latest 10. Picked posts stay rendered at the top even if the
+              user searches away from them. Each card shows the video
+              thumbnail, the ≤100-word summary, and a "View product" link
+              when we found a Geniuslink/Amazon URL in the source video's
+              description. */}
           <div className="card p-5 mb-5">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">1. Pick posts for this issue</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">Each picked post gets its own card with a thumbnail + a one-sentence "why" Claude writes for you.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">Search the entire blog or scroll the most-recent 10. Each picked post gets its own card with a thumbnail + a one-sentence &quot;why&quot; Claude writes for you.</p>
+
+            <div className="relative mb-3">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by title or summary…"
+                className="w-full text-sm pl-8 pr-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+            </div>
+
+            {/* Already-picked list — kept at the top so the user always
+                sees the issue they're building, even if their next search
+                doesn't include those posts in its hits. */}
+            {pickedIds.length > 0 && (
+              <div className="mb-3 p-3 rounded-lg bg-[#0071e3]/5 border border-[#0071e3]/20">
+                <p className="text-[11px] font-semibold text-[#0071e3] uppercase tracking-wide mb-2">{pickedIds.length} picked for this issue</p>
+                <div className="flex flex-col gap-1.5">
+                  {pickedIds.map(id => {
+                    const p = pickedDetail[id]
+                    if (!p) return null
+                    return (
+                      <div key={id} className="flex items-center gap-2 text-xs text-[#1d1d1f] dark:text-[#f5f5f7]">
+                        <CheckCircle size={12} className="text-[#34c759] flex-shrink-0" />
+                        <span className="flex-1 truncate">{p.title}</span>
+                        <button
+                          type="button"
+                          onClick={() => togglePick(p)}
+                          className="text-[#86868b] hover:text-[#ff3b30] flex-shrink-0"
+                          aria-label="Remove from issue"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {postsLoading ? (
               <div className="flex items-center gap-2 text-xs text-[#86868b]"><Loader2 size={12} className="animate-spin" /> Loading…</div>
             ) : posts.length === 0 ? (
-              <p className="text-xs text-[#86868b]">No published posts yet. Publish a review first, then come back.</p>
+              <p className="text-xs text-[#86868b]">{searchQuery.trim() ? `No posts matched "${searchQuery}".` : 'No published posts yet. Publish a review first, then come back.'}</p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="flex flex-col gap-2">
                 {posts.map(p => {
                   const checked = pickedIds.includes(p.id)
                   return (
-                    <label key={p.id} className={`flex items-start gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}>
+                    <label
+                      key={p.id}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}
+                    >
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={(e) => setPickedIds(prev => e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id))}
+                        onChange={() => togglePick(p)}
                         className="accent-[#0071e3] w-4 h-4 mt-1 flex-shrink-0"
                       />
                       {p.thumbnail ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.thumbnail} alt="" className="w-16 h-9 rounded object-cover flex-shrink-0 border border-gray-200 dark:border-white/10" />
+                        <img src={p.thumbnail} alt="" className="w-28 h-16 rounded object-cover flex-shrink-0 border border-gray-200 dark:border-white/10" />
                       ) : (
-                        <div className="w-16 h-9 rounded bg-[#f5f5f7] dark:bg-[#2c2c2e] flex items-center justify-center flex-shrink-0"><ImageIcon size={13} className="text-[#86868b]" /></div>
+                        <div className="w-28 h-16 rounded bg-[#f5f5f7] dark:bg-[#2c2c2e] flex items-center justify-center flex-shrink-0"><ImageIcon size={16} className="text-[#86868b]" /></div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-1">{p.title}</p>
-                        <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] line-clamp-1">{p.excerpt}</p>
+                        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-1">{p.title}</p>
+                        {p.summary && <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 line-clamp-3 leading-snug">{p.summary}</p>}
+                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                          {p.url && (
+                            <a
+                              href={p.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-0.5 text-[11px] text-[#0071e3] hover:underline"
+                            >
+                              View post <ExternalLink size={9} />
+                            </a>
+                          )}
+                          {p.productUrl && (
+                            <a
+                              href={p.productUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-0.5 text-[11px] text-[#34c759] hover:underline"
+                              title="The product link from the source video's description"
+                            >
+                              <Tag size={9} /> Product link
+                            </a>
+                          )}
+                          {p.publishedAt && (
+                            <span className="text-[10px] text-[#86868b]">{new Date(p.publishedAt).toLocaleDateString()}</span>
+                          )}
+                        </div>
                       </div>
                     </label>
                   )
                 })}
               </div>
-            )}
-            {pickedIds.length > 0 && (
-              <p className="text-xs text-[#0071e3] mt-2">{pickedIds.length} picked · drag from up/down later if you want a specific order (coming soon — order matches your click order for now)</p>
             )}
           </div>
 
