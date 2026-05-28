@@ -235,25 +235,56 @@ export default function SeoPage() {
           ok: false,
           text: `Some posts errored during the fix-all run${body ? `:\n${body}` : '.'}`,
         })
-      } else if (totalFixed === 0 && lastSkipped.length > 0) {
-        // No errors — every "skip" is just "this post is already done"
-        // OR "the only remaining issue needs a manual edit (short title)".
-        // Green-tinted "good news" banner, not red.
+      } else if (totalFixed === 0) {
+        // Auto-fixer is tapped out. WHETHER that's good news depends on
+        // the score — at 95+ avg it really IS celebration-worthy, but at
+        // 58 there's plenty of room left, it just needs manual work
+        // (longer posts, more H2s, better titles). Branch on the score
+        // and aggregate WHAT'S failing across the catalogue so creators
+        // know what to do next.
+        const avgScore = data?.summary?.avgScore ?? 100
+        const posts = data?.posts ?? []
+        // Count each failing check across the catalogue. Skip checks the
+        // auto-fixer CAN handle (we'd have fixed them; if we didn't, the
+        // skip reason is already in lastSkipped). Surface only the
+        // unfixable ones — the ones that genuinely need the user.
+        const AUTO_FIXABLE = new Set(['internal_links', 'has_faq', 'has_alt', 'has_table'])
+        const fails = new Map<string, { count: number; label: string; hint: string }>()
+        for (const p of posts) {
+          for (const c of p.checks ?? []) {
+            if (c.pass) continue
+            if (AUTO_FIXABLE.has(c.id)) continue
+            const cur = fails.get(c.id) || { count: 0, label: c.label || c.id, hint: c.hint || '' }
+            cur.count++
+            fails.set(c.id, cur)
+          }
+        }
+        const breakdown = [...fails.values()]
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 4)
+          .map(f => `• ${f.count} post${f.count === 1 ? '' : 's'}: ${f.label}${f.hint ? ` — ${f.hint}` : ''}`)
         const manualLines = lastSkipped
           .filter(s => s.reasons.some(r => /manual|edit it manually|edit it yourself/i.test(r)))
           .slice(0, 5)
           .map(s => `• "${s.title}": ${s.reasons.join(' · ')}`)
-        const manualBody = manualLines.length
-          ? `\n\nA few posts have suggestions that need your hand:\n${manualLines.join('\n')}`
-          : ''
-        setFixMsg({
-          ok: true,
-          text: `Every post is already as good as the auto-fixer can make it. 🎉${manualBody}`,
-        })
-      } else if (totalFixed === 0) {
-        // Truly nothing to do — no skips, no errors. Should be rare (the
-        // dry-run preview catches this first). Green banner.
-        setFixMsg({ ok: true, text: 'Every post is already as good as the auto-fixer can make it. 🎉' })
+
+        if (avgScore >= 90) {
+          const tail = breakdown.length ? `\n\nA few small things still need your hand:\n${breakdown.join('\n')}` : ''
+          setFixMsg({ ok: true, text: `Every post is in great shape (avg ${Math.round(avgScore)}/100) — auto-fixer can't push further. 🎉${tail}` })
+        } else if (avgScore >= 70) {
+          const tail = breakdown.length
+            ? `\n\nThe remaining points need YOUR hand:\n${breakdown.join('\n')}`
+            : manualLines.length ? `\n\n${manualLines.join('\n')}` : ''
+          setFixMsg({ ok: true, text: `Auto-fixer's done what it can (avg ${Math.round(avgScore)}/100).${tail}` })
+        } else {
+          // Score < 70 — DO NOT celebrate. Be direct: the auto-fixer is
+          // tapped out AND there's lots of room left. The remaining points
+          // are not script-able — they need content / structure work.
+          const tail = breakdown.length
+            ? `\n\nMost of what's missing:\n${breakdown.join('\n')}\n\nThese aren't auto-fixable — they need a content pass in WordPress (or a regen from the source video).`
+            : `\n\nAuto-fixer couldn't help further on this batch.`
+          setFixMsg({ ok: false, text: `Auto-fixer is tapped out, but average score is only ${Math.round(avgScore)}/100 — plenty of room.${tail}` })
+        }
       } else {
         setFixMsg({ ok: true, text: `Done — fixed ${totalFixed} post${totalFixed !== 1 ? 's' : ''} and republished.` })
       }
