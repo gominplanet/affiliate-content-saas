@@ -45,6 +45,24 @@ get_header();
       <?php endif; ?>
 
       <?php endwhile; ?>
+
+      <?php /* ─── MOBILE-ONLY sticky "Buy" bar ────────────────────────────
+            Sits fixed at the bottom of the viewport on screens < 768px so
+            mobile readers always have the affiliate CTA in reach — they
+            don't need to scroll back to the verdict to find one. We pull
+            the first affiliate-link out of the post content (amazon /
+            geni.us / amzn.to / a.co); falls back to invisible if nothing
+            matches. The bar is CSS-hidden on desktop. */ ?>
+      <?php
+      $buy_url = mvp_affiliate_extract_affiliate_link(get_the_content());
+      if ($buy_url):
+      ?>
+      <div class="mvp-mobile-buy-bar" role="complementary" aria-label="Buy this product">
+        <a href="<?php echo esc_url($buy_url); ?>" target="_blank" rel="noopener sponsored nofollow" class="mvp-mobile-buy-btn">
+          Check the price →
+        </a>
+      </div>
+      <?php endif; ?>
     </article>
 
     <aside class="mvp-single-sidebar">

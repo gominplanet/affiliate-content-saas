@@ -381,6 +381,37 @@ if (!function_exists('mvp_affiliate_newsletter_data')) {
  * Returns '' silently when the newsletter is disabled OR the caller's slot
  * doesn't match the creator's selection. Callers can echo unconditionally.
  */
+/**
+ * Extract the first affiliate-looking link from a post's content for the
+ * mobile sticky Buy bar in single.php. Matches the four URL shapes the MVP
+ * blog generator wraps with rel="sponsored": Geniuslink (geni.us / gnz.),
+ * Amazon shortlinks (amzn.to / a.co), Amazon direct (/dp/ or /gp/),
+ * generic Amazon hostnames as a fallback.
+ *
+ * Returns the first matched URL or '' if none. Stripped to the bare
+ * <a href="…"> value — no decoded entities to worry about.
+ */
+if (!function_exists('mvp_affiliate_extract_affiliate_link')) {
+    function mvp_affiliate_extract_affiliate_link(string $html): string {
+        if ($html === '') return '';
+        // Capture href values in order. We bail at the first match — the
+        // verdict / buy button is almost always the FIRST sponsored link
+        // a review post wraps with, so order = relevance.
+        if (!preg_match_all('/href=[\"\']((?:https?:\/\/)?[^\"\']+)[\"\']/i', $html, $m)) return '';
+        $patterns = [
+            '/(?:^|\.)(geni\.us|gnz\.|amzn\.to|a\.co)\//i',
+            '/amazon\.[a-z\.]+\/(?:dp|gp)\//i',
+            '/amazon\.[a-z\.]+\//i',
+        ];
+        foreach ($m[1] as $href) {
+            foreach ($patterns as $p) {
+                if (preg_match($p, $href)) return $href;
+            }
+        }
+        return '';
+    }
+}
+
 if (!function_exists('mvp_affiliate_render_newsletter_at')) {
     function mvp_affiliate_render_newsletter_at(string $surface, string $slot, array $atts = []): string {
         if (!mvp_affiliate_newsletter_enabled()) return '';

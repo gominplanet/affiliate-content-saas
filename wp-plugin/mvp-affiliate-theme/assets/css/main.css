@@ -1260,3 +1260,105 @@ a.mvp-ad-slot-filled:hover {
   .mvp-newsletter .mvp-newsletter-form input[type="email"],
   .mvp-newsletter .mvp-newsletter-form button { width: 100%; }
 }
+
+/* ── Mobile-only sticky "Buy" bar ─────────────────────────────────────────
+   Fixed at the bottom of the viewport on phones so the affiliate CTA is
+   always one tap away. Renders only when the theme found an affiliate link
+   in the post content (single.php gates on mvp_affiliate_extract_affiliate_link).
+   Hidden entirely on tablet+ — desktop readers can reach the in-content
+   buttons just fine. Adds bottom padding to the article so the bar doesn't
+   cover the last paragraph. */
+.mvp-mobile-buy-bar { display: none; }
+@media (max-width: 768px) {
+  .mvp-mobile-buy-bar {
+    display: block;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(255,255,255,0.97);
+    backdrop-filter: saturate(180%) blur(14px);
+    -webkit-backdrop-filter: saturate(180%) blur(14px);
+    border-top: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.06);
+    z-index: 50;
+  }
+  .mvp-mobile-buy-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 48px;
+    padding: 12px 16px;
+    background: #ff9500;
+    color: #fff;
+    text-decoration: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    transition: background 0.15s ease;
+  }
+  .mvp-mobile-buy-btn:active { background: #e0801f; }
+  /* Don't let the sticky bar hide the last paragraph of the post. */
+  .mvp-single-content { padding-bottom: 80px; }
+}
+
+/* ── Quick Verdict highlight (first H2 in the post body) ─────────────────
+   Most reviews lead with a "Quick Verdict" / "TL;DR" / "The bottom line"
+   section. We don't change the markup the AI writes — we just style the
+   first H2 in the post body and its immediate next sibling so it reads as
+   a featured card. Subtle on desktop, prominent on mobile (where the
+   first screen is everything). */
+.mvp-single-body > h2:first-of-type {
+  position: relative;
+  margin-top: 28px;
+  margin-bottom: 12px;
+  padding: 14px 18px 14px 22px;
+  background: linear-gradient(90deg, rgba(0,113,227,0.07) 0%, rgba(0,113,227,0.02) 100%);
+  border-left: 4px solid #0071e3;
+  border-radius: 0 8px 8px 0;
+  font-family: var(--mvp-font-serif);
+}
+.mvp-single-body > h2:first-of-type + p {
+  margin-top: 0;
+  padding: 0 22px 16px;
+  background: linear-gradient(180deg, rgba(0,113,227,0.02) 0%, transparent 100%);
+  font-size: 17px;
+  line-height: 1.6;
+  color: #1d1d1f;
+}
+@media (max-width: 768px) {
+  .mvp-single-body > h2:first-of-type {
+    margin-top: 20px;
+    padding: 16px 18px 16px 20px;
+    font-size: 22px;
+    line-height: 1.25;
+    border-left-width: 5px;
+  }
+  .mvp-single-body > h2:first-of-type + p {
+    padding: 0 20px 18px;
+    font-size: 16px;
+  }
+}
+
+/* ── 44px minimum tap targets (Apple HIG + Lighthouse a11y) ──────────────
+   Bump the most-tapped interactive elements on mobile to a 44px-min
+   target, with extra padding when needed so 12px-line buttons aren't
+   thumbnail-sized. Buttons that already exceed 44px aren't affected
+   (min-height is a floor, not a ceiling). */
+@media (max-width: 768px) {
+  .mvp-single-body a[rel*="sponsored"],
+  .mvp-single-body .wp-block-button__link,
+  .mvp-single-tags .mvp-tag,
+  .mvp-single-sidebar a,
+  .mvp-newsletter button,
+  .mvp-card a,
+  .mvp-lead-link,
+  .mvp-section-pick a,
+  .mvp-ad-slot,
+  .mvp-mobile-buy-btn { min-height: 44px; }
+  /* Inline-link targets too: a paragraph link should still feel like
+     text, just with enough vertical room that a thumb hits the right one.
+     padding-block bumps the effective hit box without changing the visual. */
+  .mvp-single-body p a:not(.wp-block-button__link) { padding-block: 4px; }
+}
