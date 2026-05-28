@@ -83,34 +83,55 @@ export default function SeoPage() {
     finally { setFixing(null) }
   }, [load])
 
-  // "Request indexing" helper. Two paths:
+  // "Request indexing" — submit directly via Google's Indexing API instead
+  // of opening GSC and waiting for the user to click Request Indexing
+  // themselves. Three outcomes:
   //
-  // 1. GSC connected → deep-link into URL Inspection for the user's specific
-  //    GSC property. `?resource_id=…&inspectionUrl=…` opens the property's
-  //    inspect tool with the post URL pre-filled. No "Welcome to Search
-  //    Console" landing page anymore — that was bouncing users who had
-  //    multiple Google accounts OR no property on the active account.
-  // 2. GSC NOT connected → fall back to the old behavior (open GSC home,
-  //    URL in clipboard), but the toast text now tells them to connect
-  //    Search Console on /seo first for one-click deep linking.
+  //   1. GSC not connected at all          → tell them to connect on /seo.
+  //   2. Connected but missing the new     → 412 from the API; nudge to
+  //      indexing scope (older OAuth)        reconnect.
+  //   3. Submission accepted / failed /    → toast the per-URL outcome.
+  //      quota                              "Submitted — Google will crawl
+  //                                          within 24h." / "Quota hit."
   //
-  // Google's `?id=<url>` syntax does NOT work — that param expects an
-  // internal inspection hash and 404s on real URLs. resource_id +
-  // inspectionUrl is the documented combo that does.
+  // We DELIBERATELY don't fall back to opening GSC anymore — that flow
+  // was the whole reason this feature exists. If indexing fails, the
+  // toast tells the user what to do.
   const requestIndexing = useCallback(async (url: string) => {
-    try { await navigator.clipboard.writeText(url) } catch { /* clipboard may be blocked */ }
-    const property = data?.property || null
-    if (property) {
-      // resource_id is the GSC property (either "sc-domain:host" or a
-      // "https://host/" URL-prefix). encodeURIComponent handles both.
-      const deepLink = `https://search.google.com/search-console/inspect?resource_id=${encodeURIComponent(property)}&inspectionUrl=${encodeURIComponent(url)}`
-      window.open(deepLink, '_blank', 'noopener,noreferrer')
-      setFixMsg({ ok: true, text: `Opening Search Console URL Inspection for ${url}. (If Google asks you to pick an account, choose the one that owns ${property}, then hit "Request Indexing".)` })
-      return
+    setFixMsg({ ok: true, text: 'Submitting to Google…' })
+    try {
+      const res = await fetch('/api/seo/request-index', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: [url] }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.status === 412 || d.scopeMissing) {
+        setFixMsg({ ok: false, text: `${d.error || 'We need indexing permission.'} On /seo, click Disconnect on the Search Console card, then Connect again — Google will show a new consent screen that includes the indexing scope.` })
+        return
+      }
+      if (res.status === 429 || d.limitReached) {
+        setFixMsg({ ok: false, text: d.error || 'Daily indexing cap hit. Try again tomorrow.' })
+        return
+      }
+      if (!res.ok) {
+        setFixMsg({ ok: false, text: d.error || 'Submission failed. Try again in a moment.' })
+        return
+      }
+      const result = (d.results || [])[0]
+      if (result?.outcome === 'submitted') {
+        setFixMsg({ ok: true, text: `Submitted to Google. Crawl usually happens within 24h. (${d.dailyRemaining ?? '–'} of 50 daily submissions left.)` })
+      } else if (result?.outcome === 'quota') {
+        setFixMsg({ ok: false, text: result.message || 'Google\'s daily quota is exhausted for now.' })
+      } else if (result?.outcome === 'forbidden') {
+        setFixMsg({ ok: false, text: result.message || 'Google declined. Reconnect Search Console.' })
+      } else {
+        setFixMsg({ ok: false, text: result?.message || 'Submission failed.' })
+      }
+    } catch (e) {
+      setFixMsg({ ok: false, text: e instanceof Error ? e.message : 'Submission failed.' })
     }
-    window.open('https://search.google.com/search-console', '_blank', 'noopener,noreferrer')
-    setFixMsg({ ok: true, text: 'Post URL copied. Connect Search Console on this page for one-click deep links — otherwise, paste the URL into the Inspect bar at the top of GSC and click "Request Indexing".' })
-  }, [data?.property])
+  }, [])
 
   // Per-row "Check now" — fresh Google URL Inspection on a single post, updates
   // the row in place so the user sees the new status without a full overview

@@ -163,3 +163,64 @@ export async function querySearchAnalytics(
     return []
   }
 }
+
+// ── Indexing API ─────────────────────────────────────────────────────────────
+// Submits a URL to Google for crawl/index via the official Indexing API.
+//
+// Reality-check the user should know about: this endpoint is technically
+// scoped to JobPosting / Livestream structured data per Google's docs. In
+// practice it accepts and crawls regular URLs the user owns in their GSC
+// property — that's why every SEO tool on the market uses it the same way
+// for normal pages. Google can change their stance at any time; we surface
+// the response code either way so we never silently lie about success.
+
+/** Outcomes we surface to the dashboard. submitted = accepted by Google
+ *  (200 OK). quota = today's quota exhausted for our OAuth project (429).
+ *  forbidden = the OAuth token doesn't own this URL in GSC (403 — usually
+ *  means the indexing scope wasn't granted, or the user picked the wrong
+ *  Google account at consent). unknown = anything else. */
+export type IndexingSubmitOutcome = 'submitted' | 'quota' | 'forbidden' | 'unknown'
+export interface IndexingSubmitResult {
+  url: string
+  outcome: IndexingSubmitOutcome
+  message?: string
+}
+
+/** Submit ONE URL. We mark it URL_UPDATED — Google interprets that as a
+ *  "please re-crawl" hint. URL_DELETED is the other type, used when a
+ *  page is removed.
+ *
+ *  Errors are categorised, not thrown, so the bulk caller can iterate
+ *  without aborting on the first 403. */
+export async function submitUrlForIndexing(token: string, url: string): Promise<IndexingSubmitResult> {
+  try {
+    const res = await fetch('https://indexing.googleapis.com/v3/urlNotifications:publish', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, type: 'URL_UPDATED' }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (res.ok) return { url, outcome: 'submitted' }
+    const text = await res.text().catch(() => '')
+    if (res.status === 429) return { url, outcome: 'quota', message: 'Daily quota hit (Google caps at ~200/day per project). Try again in 24h.' }
+    if (res.status === 403) return { url, outcome: 'forbidden', message: 'Google declined — reconnect Search Console so we have permission to submit. (Account → Settings → Disconnect, then reconnect.)' }
+    return { url, outcome: 'unknown', message: `Google returned ${res.status}: ${text.slice(0, 160)}` }
+  } catch (e) {
+    return { url, outcome: 'unknown', message: e instanceof Error ? e.message : 'Submit failed' }
+  }
+}
+
+/** Quick check: does the current token carry the indexing scope? Called
+ *  before the dashboard's "Index" button so we can route GSC-connected-but-
+ *  pre-indexing-scope users back through OAuth instead of silently 403'ing. */
+export async function tokenHasIndexingScope(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`, {
+      signal: AbortSignal.timeout(8_000),
+    })
+    if (!res.ok) return false
+    const data = await res.json() as { scope?: string }
+    const scopes = (data.scope || '').split(' ')
+    return scopes.includes('https://www.googleapis.com/auth/indexing')
+  } catch { return false }
+}

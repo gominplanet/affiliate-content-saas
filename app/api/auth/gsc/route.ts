@@ -30,7 +30,16 @@ export async function GET() {
   url.searchParams.set('client_id', clientId)
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('response_type', 'code')
-  url.searchParams.set('scope', 'https://www.googleapis.com/auth/webmasters.readonly')
+  // webmasters.readonly  → Search Analytics + URL Inspection (the
+  //                        original feature set — indexed/clicks/impressions).
+  // indexing              → programmatic "Request Indexing" via the
+  //                        Indexing API (POST urlNotifications:publish).
+  //                        Lets us replace the old "open GSC, hit the button
+  //                        yourself" loop with a one-click server call.
+  url.searchParams.set('scope', [
+    'https://www.googleapis.com/auth/webmasters.readonly',
+    'https://www.googleapis.com/auth/indexing',
+  ].join(' '))
   url.searchParams.set('access_type', 'offline')
   url.searchParams.set('prompt', 'consent') // force a refresh token
   url.searchParams.set('include_granted_scopes', 'true')
