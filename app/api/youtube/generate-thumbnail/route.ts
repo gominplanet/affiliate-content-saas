@@ -18,6 +18,7 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
+import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 
 // Telemetry context — populated at request start, read by the three
 // Anthropic helpers below so each call is tagged with the right user/tier.
@@ -738,9 +739,21 @@ export async function POST(request: Request) {
     // fall through to the Kontext / Flux paths below, so this stays safe.
     // Real frames grabbed by the extension: prefer the multi-frame array
     // (vision-pick the best), then the legacy single frame, then maxres.
-    const validFrames = Array.isArray(capturedFrames)
-      ? capturedFrames.filter(f => typeof f === 'string' && f.startsWith('data:image/'))
+    let validFrames: string[] = Array.isArray(capturedFrames)
+      ? capturedFrames.filter((f): f is string => typeof f === 'string' && f.startsWith('data:image/'))
       : []
+    // Storyboard fallback: when there are no extension frames and we have a
+    // youtubeVideoId, fetch a handful of evenly-spaced key frames from YouTube's
+    // own storyboard tiles. Gives us multiple real frames from across the video
+    // for grounding + auto-match, without ffmpeg, yt-dlp, or the extension.
+    // Best-effort — YouTube blocks scrapers from some cloud IPs, in which case
+    // we silently fall back to the maxres thumbnail path below. ~1-2s, no cost.
+    if (validFrames.length === 0 && youtubeVideoId) {
+      try {
+        const sb = await fetchStoryboardFrames(youtubeVideoId as string, { maxFrames: 4 })
+        if (sb.length > 0) validFrames = sb.map(f => f.dataUrl)
+      } catch { /* best-effort */ }
+    }
     const hasCapturedFrame = validFrames.length > 0 || (typeof capturedFrameDataUrl === 'string' && capturedFrameDataUrl.startsWith('data:image/'))
     // The composed NB path is the PRIMARY for creator+product thumbnails and no
     // longer REQUIRES a video frame: a face model and/or a product image are
