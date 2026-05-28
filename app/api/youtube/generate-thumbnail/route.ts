@@ -560,6 +560,12 @@ export async function POST(request: Request) {
       textMode,
       capturedFrameDataUrl,
       capturedFrames,
+      // 3C — Multi-product reference photos + composition note. When set, these
+      // are used as the product references for Nano Banana Pro instead of the
+      // single Amazon-resolved photo. Lets creators show MULTIPLE products in
+      // one thumbnail (comparison videos), or multiple angles of one product.
+      customProductImageUrls,
+      productCompositionNote,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -618,6 +624,20 @@ export async function POST(request: Request) {
       /** Optional free-text direction for the re-render of the uploaded photo
        *  (e.g. "bright kitchen, surprised face"). */
       cleanupPrompt?: string
+      /** 3C — Up to 5 public image URLs the user uploaded as reference photos
+       *  of the actual product(s). When present, these REPLACE the single
+       *  Amazon-scraped product image as the references fed to Nano Banana
+       *  Pro. Use cases:
+       *  - Multiple angles of one product (front / side / detail)
+       *  - Multiple products in a comparison-style thumbnail (Product A vs B)
+       *  - Custom product when no Amazon ASIN exists
+       *  Public Supabase URLs. Clamped to 5 server-side. */
+      customProductImageUrls?: string[]
+      /** Optional free-text composition direction explaining how to arrange the
+       *  product references — e.g. "front view on the left, side angle on the
+       *  right" or "Product A above, Product B below". Folded into the
+       *  productRefClause so Nano Banana Pro respects it. */
+      productCompositionNote?: string
     }
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
@@ -700,6 +720,23 @@ export async function POST(request: Request) {
     let productDescription = providedProductDescription ?? ''
     let productBullets = providedProductBullets ?? []
 
+    // 3C — User-supplied product reference photos. When present, these take
+    // priority over the auto-resolved Amazon image: the creator knows what
+    // they want to show, especially for non-Amazon products or comparison
+    // thumbnails. Clamped server-side at 5. Anything not http(s) silently
+    // dropped so a malformed URL can't break the run.
+    const customProductRefs: string[] = Array.isArray(customProductImageUrls)
+      ? customProductImageUrls
+          .filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u))
+          .slice(0, 5)
+      : []
+    // Composition note — free-text direction for HOW the products should sit
+    // relative to each other in the frame. Optional. Trimmed + length-capped
+    // so a user can't shove an essay into the prompt.
+    const compositionNote: string = typeof productCompositionNote === 'string'
+      ? productCompositionNote.trim().slice(0, 400)
+      : ''
+
     if (asin) {
       try {
         const p = await fetchAmazonProduct(asin)
@@ -724,6 +761,13 @@ export async function POST(request: Request) {
       if (pageUrl) {
         productImageUrl = await fetchProductImageFromPage(pageUrl)
       }
+    }
+    // 3C — When the user uploaded their own product photos, treat the FIRST one
+    // as the "single product image" for the Kontext fallback path (which only
+    // takes one image_url). The NB Pro path below uses all of them. This means
+    // a custom upload also unblocks the Kontext fallback for non-Amazon products.
+    if (customProductRefs.length > 0) {
+      productImageUrl = customProductRefs[0]
     }
 
     // ── Fetch channel thumbnails + analyse style (best-effort) ───────────────
@@ -830,19 +874,29 @@ export async function POST(request: Request) {
             const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 2 : 5)
             faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
           }
-          // Product image as a reference so the product renders accurately (the
-          // vidIQ look). The prompt scopes the product ref to the product ONLY,
-          // so the person is taken from the frame + face photos.
-          const productRef = productImageUrl ? await rehostToFal(productImageUrl) : null
+          // Product image(s) as references so the product(s) render accurately
+          // (the vidIQ look). The prompt scopes the product refs to the
+          // product(s) ONLY — the person is taken from the frame + face photos.
+          // 3C — When the user supplied custom product photos, all of them go in
+          // as refs so Nano Banana Pro can see every angle / both products.
+          // Otherwise we fall back to the single auto-resolved Amazon image.
+          let productRefs: string[] = []
+          if (customProductRefs.length > 0) {
+            const rehosted = await Promise.all(customProductRefs.map((u) => rehostToFal(u)))
+            productRefs = rehosted.filter((u): u is string => !!u)
+          } else if (productImageUrl) {
+            const single = await rehostToFal(productImageUrl)
+            if (single) productRefs = [single]
+          }
           // When we have the creator's photos, lock identity to THOSE alone —
           // mixing in the lower-quality, oddly-lit video frame was letting the
           // model drift to a different-looking person. Fall back to the frame
           // only when no face photos are available.
           const identityRefs = faceRefs.length > 0 ? faceRefs : (frameRef ? [frameRef] : [])
-          const refs = productRef ? [...identityRefs, productRef] : identityRefs
+          const refs = [...identityRefs, ...productRefs]
           // Breadcrumb: if NB still falls through after this, the compose returned
           // nothing despite having references — surfaced via faceDebug below.
-          LAST_NB_FALLTHROUGH = `NB entered with refs=${refs.length} (face=${faceRefs.length}, product=${productRef ? 1 : 0}, frame=${frameRef ? 1 : 0}) — compose returned no image`
+          LAST_NB_FALLTHROUGH = `NB entered with refs=${refs.length} (face=${faceRefs.length}, product=${productRefs.length}, frame=${frameRef ? 1 : 0}) — compose returned no image`
 
           // ── COMPOSED thumbnail (always): recompose into a designed, high-CTR
           //    "creator-review" thumbnail — host large + expressive on one side,
@@ -871,20 +925,38 @@ export async function POST(request: Request) {
           // Vary the OUTFIT — the reference photos are for the FACE only, not the
           // wardrobe, so thumbnails don't always show the same shirt.
           const outfitNote = `WARDROBE: use the reference photos ONLY for the face and identity — dress the creator in a FRESH, natural, casual everyday outfit (e.g. a plain tee, casual shirt, polo or light sweater) that suits the scene. Do NOT copy the exact clothing, top or colour shown in the reference photos; vary it.`
-          const productRefClause = productRef
-            ? `The FINAL reference image is the PRODUCT being reviewed — render the ACTUAL PRODUCT ITEM ITSELF, matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep the brand mark and product name on the bottle/box/device so viewers immediately recognise the product). CRITICAL: if that reference is retail PACKAGING, a box, a poly-bag or a marketing infographic, depict the REAL unpackaged product (in use or as a clean hero object) — NOT the box — and do NOT reproduce any printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkboxes). The product's OWN brand/label/name STAYS; marketing collateral goes. Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.`
-            : `Render the ACTUAL product item accurately and prominently as a clean hero object — keep its own brand mark, product name, and any label/text physically printed on the product itself so viewers recognise it. Never its retail box or any marketing-infographic packaging, and no added marketing claims or feature text around it.`
+          // 3C — Multi-product reference clause. With 1 product photo we keep
+          // the old single-product wording. With 2-5 we tell the model these
+          // are ALL the product(s) to render (same product different angles,
+          // OR different products in a comparison thumbnail), and fold in any
+          // composition direction the user typed.
+          const nProducts = productRefs.length
+          const compositionDirective = compositionNote
+            ? ` COMPOSITION DIRECTION FROM THE CREATOR (follow this exactly): "${compositionNote}".`
+            : ''
+          const productRefClause = nProducts === 0
+            ? `Render the ACTUAL product item accurately and prominently as a clean hero object — keep its own brand mark, product name, and any label/text physically printed on the product itself so viewers recognise it. Never its retail box or any marketing-infographic packaging, and no added marketing claims or feature text around it.`
+            : nProducts === 1
+              ? `The FINAL reference image is the PRODUCT being reviewed — render the ACTUAL PRODUCT ITEM ITSELF, matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep the brand mark and product name on the bottle/box/device so viewers immediately recognise the product). CRITICAL: if that reference is retail PACKAGING, a box, a poly-bag or a marketing infographic, depict the REAL unpackaged product (in use or as a clean hero object) — NOT the box — and do NOT reproduce any printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkboxes). The product's OWN brand/label/name STAYS; marketing collateral goes. Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.${compositionDirective}`
+              : `The FINAL ${nProducts} reference images are PRODUCT photos supplied by the creator — they may be DIFFERENT angles of the same product, OR DIFFERENT products being compared. Render ALL ${nProducts} of them visibly in the thumbnail, each matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep brand marks and product names on bottles/boxes/devices so viewers immediately recognise the products). CRITICAL: if any reference is retail PACKAGING, a box, a poly-bag or a marketing infographic, depict the REAL unpackaged product — NOT the box — and do NOT reproduce any printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkboxes). The products' OWN brand/label/name STAYS; marketing collateral goes. Use these reference images ONLY for the products; do NOT take any person, face, hands or body from them.${compositionDirective}`
           const buildComposed = (i: number, withText: boolean): string => {
             const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
             const productSide = hostSide === 'LEFT' ? 'RIGHT' : 'LEFT'
             const headlineClause = withText
               ? `HEADLINE: bake the text EXACTLY "${hooks[i % hooks.length]}" as ${TITLE_STYLES[i % TITLE_STYLES.length]}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words.`
               : `HEADLINE SPACE: leave a generous CLEAN, uncluttered area across the TOP (especially the ${productSide === 'LEFT' ? 'upper-left' : 'upper-right'}) for a headline to be added afterwards. Render ABSOLUTELY NO text, letters, words, numbers or captions anywhere in the image.`
+            // 3C — Composition swaps between single-product (host one side,
+            // product the other) and multi-product (host smaller, products
+            // arranged on the opposite side per the composition note when
+            // given, or a sensible default arrangement when not).
+            const compositionLine = nProducts >= 2
+              ? `COMPOSITION: Put the creator on the ${hostSide} side, framed chest-up, energetic and expressive (excited, surprised or delighted), looking toward the camera. Render ALL ${nProducts} products visibly and large on the ${productSide} side of the frame, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so they pop. ${compositionNote ? `Arrange them per the creator's direction above ("${compositionNote}").` : 'Arrange them in a clean, balanced layout (side-by-side, stacked, or a small grid) so each product is clearly recognisable at thumbnail size.'} Every product must be unobscured and identifiable.`
+              : `COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, with an energetic, expressive reaction (excited, surprised or delighted), looking toward the camera — ideally holding or gesturing toward the product. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so it pops.`
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
 ${identityClause}
 ${outfitNote}
 ${productRefClause}
-COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, with an energetic, expressive reaction (excited, surprised or delighted), looking toward the camera — ideally holding or gesturing toward the product. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so it pops.
+${compositionLine}
 BACKGROUND: reimagine a MOODY, cinematic scene that fits the video "${videoTitle}" — richer and HIGHER-CONTRAST (deeper tones, dramatic directional lighting, a soft vignette around the edges and especially BEHIND the creator). Do NOT make it a flat, bright, white or airy room. Add subtle rim/edge light separating the creator from the background so the cut-out edge blends cleanly into the scene with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes.
 ${headlineClause}
 ${NO_BRAND_IMAGE_CLAUSE}
@@ -979,7 +1051,7 @@ Ultra-sharp, professional, photorealistic.`
               // Which face model the likeness was locked to (Auto-match result),
               // surfaced so the user can confirm it picked the right person.
               faceUsed: faceModel?.name ?? null,
-              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceModelPhotos=${faceRefs.length}, productRef=${productRef ? 'yes' : 'no'}, title=${wantClean ? 'overlay' : 'baked'})`,
+              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceModelPhotos=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')

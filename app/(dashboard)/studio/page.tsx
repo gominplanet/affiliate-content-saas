@@ -12,7 +12,7 @@ import { effectiveTier } from '@/lib/view-as'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, ChevronLeft, ChevronRight, Upload,
+  Image, Download, Sparkles, ChevronLeft, ChevronRight, Upload, X,
 } from 'lucide-react'
 
 interface DraftVideo {
@@ -187,6 +187,17 @@ function VideoStudioCard({ video, userTier, playlists }: {
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string | null>(null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [cleanupPrompt, setCleanupPrompt] = useState('')
+  /** 3C — Up to 5 product reference photos the user uploads to ground the
+   *  thumbnail composition on the ACTUAL product(s). Different from
+   *  uploadedPhotoUrl (which is a photo of the USER with the product); these
+   *  are clean product shots — front view, side angle, multiple products for
+   *  comparison thumbnails, etc. Public Supabase URLs. */
+  const [productImageUrls, setProductImageUrls] = useState<string[]>([])
+  const [productImagesUploading, setProductImagesUploading] = useState(false)
+  /** 3C — Optional composition direction folded into the Nano Banana Pro
+   *  prompt — e.g. "front view on the left, side angle on the right".
+   *  Only meaningful with 2+ product photos; the UI shows the input then. */
+  const [productCompositionNote, setProductCompositionNote] = useState('')
   /** User's READY face models — pulled from /api/face-models on mount.
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
@@ -710,6 +721,49 @@ function VideoStudioCard({ video, userTier, playlists }: {
     }
   }
 
+  // 3C — Upload one or more product reference photos. Reuses the same public
+  // product-images bucket as the other thumbnail uploads (server fetches them
+  // back, rehosts to fal, and passes all of them as references to Nano Banana
+  // Pro). Hard-capped at 5 — anything past the cap is silently dropped here
+  // and clamped server-side too.
+  async function handleProductImagesUpload(files: FileList | null) {
+    setThumbnailError(null)
+    if (!files || files.length === 0) return
+    const room = 5 - productImageUrls.length
+    if (room <= 0) { setThumbnailError('Up to 5 product photos.'); return }
+    setProductImagesUploading(true)
+    try {
+      const sb = createBrowserClient()
+      const { data: { user } } = await sb.auth.getUser()
+      if (!user) throw new Error('Not signed in')
+      const next: string[] = []
+      for (const f of Array.from(files).slice(0, room)) {
+        if (!f.type.startsWith('image/')) continue
+        if (f.size > 10 * 1024 * 1024) {
+          setThumbnailError(`${f.name}: ${(f.size / 1024 / 1024).toFixed(1)} MB — keep each photo under 10 MB.`)
+          continue
+        }
+        const ext = (f.name.split('.').pop() || 'jpg').toLowerCase()
+        const path = `${user.id}/thumb-product-refs/${crypto.randomUUID()}.${ext}`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: upErr } = await (sb.storage as any)
+          .from('product-images').upload(path, f, { upsert: false, cacheControl: '31536000', contentType: f.type || 'image/jpeg' })
+        if (upErr) { setThumbnailError(upErr.message); continue }
+        const { data } = sb.storage.from('product-images').getPublicUrl(path)
+        if (data?.publicUrl) next.push(data.publicUrl)
+      }
+      if (next.length) setProductImageUrls(prev => [...prev, ...next].slice(0, 5))
+    } catch (err) {
+      setThumbnailError(err instanceof Error ? err.message : 'Photo upload failed')
+    } finally {
+      setProductImagesUploading(false)
+    }
+  }
+
+  function removeProductImage(url: string) {
+    setProductImageUrls(prev => prev.filter(u => u !== url))
+  }
+
   // Pre-generation title-options fetch. Fired the moment the "Who writes the
   // thumbnail headline?" modal opens (and again on "Regenerate"). Returns 5
   // product-specific titles built from the video title + description + ASIN so
@@ -796,6 +850,12 @@ function VideoStudioCard({ video, userTier, playlists }: {
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
+          // 3C — Multi-product reference photos + optional composition note.
+          // When the user uploaded their own product photos these replace the
+          // single Amazon-scraped image as the references; the note (if any)
+          // tells the model how to arrange them.
+          customProductImageUrls: productImageUrls.length > 0 ? productImageUrls : undefined,
+          productCompositionNote: productCompositionNote.trim() || undefined,
           // Default 'clean': the composed, vidIQ-style designed scene (host +
           // hero product + reimagined background) rendered TEXT-FREE, with the
           // headline drawn by our pixel-perfect canvas overlay — guaranteed
@@ -851,6 +911,11 @@ function VideoStudioCard({ video, userTier, playlists }: {
           faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto') ? selectedFaceModelId : undefined,
           faceAuto: selectedFaceModelId === 'auto' || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
+          // 3C — Carry the user's uploaded product photos + composition note
+          // through the auto-thumbnail path too (post-metadata fire-and-forget).
+          // Same semantics as the manual Generate call below.
+          customProductImageUrls: productImageUrls.length > 0 ? productImageUrls : undefined,
+          productCompositionNote: productCompositionNote.trim() || undefined,
           // Composed scene + crisp canvas title by default (matches the manual
           // Generate button). 'Try AI-baked text' re-runs as 'baked'.
           textMode: 'clean',
@@ -1482,6 +1547,69 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       placeholder="Optional direction — e.g. bright kitchen, surprised face"
                       disabled={generatingThumbnail}
                       className="mt-1 w-full text-[11px] px-2 py-1 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                    />
+                  )}
+                </div>
+
+                {/* 3C — Product reference photos (up to 5) + composition note.
+                    Different from "Use your own photo" above: these are CLEAN
+                    product shots — front view, side angle, OR multiple products
+                    for a comparison thumbnail. The server replaces the single
+                    Amazon-scraped image with these as the references it feeds
+                    to Nano Banana Pro, so the thumbnail composes around the
+                    actual product(s) the creator wants to show. */}
+                <div className="mb-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10">
+                  <label className="block text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                    Product photos <span className="text-[#86868b] dark:text-[#8e8e93] font-normal">(optional — up to 5 — front view, side angle, OR multiple products for a comparison thumbnail)</span>
+                  </label>
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    {productImageUrls.map((u) => (
+                      <div key={u} className="relative w-16 h-9 rounded-md overflow-hidden border border-gray-200 dark:border-white/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={u} alt="Product reference" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeProductImage(u)}
+                          disabled={generatingThumbnail}
+                          aria-label="Remove product photo"
+                          className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/70 hover:bg-[#ff3b30] text-white flex items-center justify-center"
+                        >
+                          <X size={9} />
+                        </button>
+                      </div>
+                    ))}
+                    {productImageUrls.length < 5 && (
+                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${productImagesUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#0071e3]'}`}
+                        style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          multiple
+                          className="hidden"
+                          disabled={generatingThumbnail || productImagesUploading}
+                          onChange={(e) => {
+                            handleProductImagesUpload(e.target.files)
+                            e.target.value = ''
+                          }}
+                        />
+                        {productImagesUploading
+                          ? <><Loader2 size={11} className="animate-spin" /> Uploading…</>
+                          : <><Upload size={11} /> {productImageUrls.length === 0 ? 'Upload product photos' : `Add more (${productImageUrls.length}/5)`}</>}
+                      </label>
+                    )}
+                  </div>
+                  {/* Composition note only makes sense once there's more than
+                      one photo to arrange — the model needs to know how. With
+                      a single photo it's just decoration. */}
+                  {productImageUrls.length >= 2 && (
+                    <input
+                      type="text"
+                      value={productCompositionNote}
+                      onChange={(e) => setProductCompositionNote(e.target.value)}
+                      maxLength={400}
+                      placeholder='Optional composition — e.g. "front view on the left, side angle on the right"'
+                      disabled={generatingThumbnail}
+                      className="w-full text-[11px] px-2 py-1 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
                     />
                   )}
                 </div>
