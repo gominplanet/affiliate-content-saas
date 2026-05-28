@@ -539,7 +539,10 @@ function GenerateButton({
   // Per-generation choice: drop real video frames into the post body, or
   // ship a text-only post. Defaults ON (richer posts), user can opt out
   // before hitting Generate. Rewrites keep the same preference.
-  const [includeImages, setIncludeImages] = useState(true)
+  // Off by default — when the box is ticked we attempt to add 2–3 in-article
+  // photos (storyboard-frame retouches or Amazon-product re-stages). Ticked
+  // = user explicitly opts in to the longer generation + the extra AI cost.
+  const [includeImages, setIncludeImages] = useState(false)
   // Optional: bring-your-own in-article images (up to 3). When present, these
   // are placed throughout the post INSTEAD of AI-generated photos.
   const [userImages, setUserImages] = useState<string[]>([])

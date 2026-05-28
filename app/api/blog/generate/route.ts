@@ -1208,8 +1208,22 @@ async function handleGenerate(request: Request) {
                   }
                 } catch { /* keep the un-upscaled hero */ }
               }
-              const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
-              return media?.source_url ? { url: media.source_url, alt: `${altFor(i)}` } : null
+              // Try uploading to WP media first so the image lives on the user's
+              // own domain. If that fails (Hostinger / WAF often blocks the
+              // multipart POST to /wp-json/wp/v2/media even when the regular
+              // posts endpoint is open), fall back to the fal storage URL
+              // directly — the image still renders in the article via <img>,
+              // it's just hosted on fal.media instead of the user's wp-uploads.
+              let mediaUrl: string | null = null
+              try {
+                const media = await wpService.uploadImageFromUrl(falUrl, `${slug}-body${i + 1}.jpg`)
+                mediaUrl = media?.source_url || null
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e)
+                if (!firstImgError) firstImgError = `wp-media: ${msg}`
+                console.warn(`[blog-images] item ${i} WP media upload failed, embedding fal URL directly:`, msg)
+              }
+              return { url: mediaUrl || falUrl, alt: `${altFor(i)}` }
             } catch (e) {
               const msg = e instanceof Error ? e.message : String(e)
               if (!firstImgError) firstImgError = msg

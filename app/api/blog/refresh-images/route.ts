@@ -188,8 +188,16 @@ export async function POST(request: Request) {
         url = ((r.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
       }
       if (!url) return null
-      const media = await wpService.uploadImageFromUrl(url, `${post.slug || 'post'}-body${i + 1}.jpg`)
-      const finalUrl = media?.source_url || url
+      // Try WP media upload first; if it throws (Hostinger / WAF blocking the
+      // multipart POST to /wp-json/wp/v2/media is the common case), embed the
+      // fal URL directly so the image still renders.
+      let finalUrl = url
+      try {
+        const media = await wpService.uploadImageFromUrl(url, `${post.slug || 'post'}-body${i + 1}.jpg`)
+        if (media?.source_url) finalUrl = media.source_url
+      } catch (e) {
+        console.warn(`[refresh-images] item ${i} WP media upload failed, embedding fal URL directly:`, e instanceof Error ? e.message : String(e))
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       recordUsageSafe(user.id, tier, falProductRef ? 'fal-flux-pro-kontext' : (frameRefs.length > 0 ? 'nano-banana' : 'fal-flux-pro-v1.1'))
       return { url: finalUrl, alt: `${altBase} — ${shot}` }
