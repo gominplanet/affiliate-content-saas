@@ -6,6 +6,7 @@ import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/yout
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
+import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
@@ -268,6 +269,19 @@ async function handleGenerate(request: Request) {
     } catch {
       transcript = ''
     }
+  }
+
+  // Hard gate: without a usable transcript we cannot write an authentic
+  // first-person review. The previous behaviour — silently proceeding with
+  // an empty transcript and producing meta-disclaimers like "this video was
+  // filmed without an accompanying transcript" inside the article — has been
+  // explicitly rejected. Fail early with an actionable message so the user
+  // can fix the underlying issue rather than ship a flimsy post.
+  if (!transcript || transcript.trim().length < 80) {
+    return NextResponse.json({
+      error: 'We couldn’t fetch a transcript for this video, so we can’t write an authentic review. Try one of these:\n  1. Enable captions in YouTube Studio → Subtitles (auto-captions usually appear within 24h of upload).\n  2. If captions exist, wait a moment and retry — the transcript service occasionally throttles.\n  3. Skip this video and pick one with captions.',
+      reason: 'no_transcript',
+    }, { status: 422 })
   }
 
   // ── 5. Resolve the product / affiliate link ───────────────────────────────
@@ -574,6 +588,19 @@ async function handleGenerate(request: Request) {
   let content = generated.content
     .replace('{{LIFESTYLE_IMAGE}}', '')
     .replace('{{SETTING_IMAGE}}', '')
+
+  // Deterministic voice-betrayal scrub — drops paragraphs that violate the
+  // "you ARE the person in the video" rule (the prompt forbids these but the
+  // model occasionally slips past). Belt-and-suspenders so the WP publish
+  // below never ships an article with "from what we see in the video…" or
+  // "watch the full video before deciding…" filler.
+  {
+    const scrub = scrubVoicePatterns(content)
+    content = scrub.content
+    if (scrub.paragraphsRemoved + scrub.phrasesRewritten > 0) {
+      console.log(`[blog/generate] voice scrub: dropped ${scrub.paragraphsRemoved} paragraph(s), rewrote ${scrub.phrasesRewritten} phrase(s)`)
+    }
+  }
 
   // ── 6.1. Topical internal linking (SEO #15) — pick the 2–3 most relevant of
   //         the user's existing posts by token overlap and splice a "Related
@@ -907,7 +934,10 @@ async function handleGenerate(request: Request) {
     try {
       const checked = await claude.factCheckProductClaims(content, transcript, productResearch, { userId: user.id, tier: (wp?.tier as string) ?? null })
       if (checked && checked !== content) {
-        content = scrubBanned(checked)
+        // Re-scrub for voice patterns too — fact-check rewrites can occasionally
+        // re-introduce "from what we see in the video" language while editing
+        // out a bogus spec.
+        content = scrubVoicePatterns(scrubBanned(checked)).content
         try { await wpService.updatePost(wpPost.id, { content }) } catch { /* keep prior text */ }
         if (savedPost?.id) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
