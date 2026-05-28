@@ -16,6 +16,7 @@
 
 import { createAnthropicClient } from './anthropic'
 import { recordAnthropicUsage } from './ai-usage'
+import { scrubBanned } from './scrub'
 
 export interface TitleOptionsCtx {
   userId: string | null
@@ -51,7 +52,7 @@ RULES (each title):
 - 2 to 6 words. Complete punchy phrase. ALL CAPS.
 - MUST mention or directly evoke this exact product/topic. A reader who has never seen the video should be able to guess what it's about from the title alone.
 - DIFFERENT angles across the ${count} — e.g. curiosity, problem, value/price, comparison, transformation/result, surprise.
-- No spammy hype (NEVER use AMAZING / INSANE / INCREDIBLE / HONEST).
+- No spammy hype. NEVER use any of: AMAZING / INSANE / INCREDIBLE / GAME-CHANGER. And NEVER use any form of "honest" (HONEST, HONESTLY, HONESTY) — that word is permanently banned everywhere in MVP, no exceptions.
 - No invented results, no time-based brags ("after 30 days", "lost 10 lbs", "before/after").
 - No retailer / brand-name claims you can't verify from the title.
 
@@ -76,9 +77,14 @@ Return ONLY a JSON array of exactly ${count} strings. No prose around it.`
     const m = text.match(/\[[\s\S]*\]/)
     if (!m) throw new Error('no JSON array in response')
     const arr = JSON.parse(m[0]) as unknown[]
+    // Belt-and-suspenders: even with the explicit ban in the prompt, the model
+    // sometimes slips "HONESTLY" / "HONEST" through. scrubBanned removes those
+    // words and tidies the surrounding whitespace, so "TESTED HONESTLY" → "TESTED".
+    // Anything that ends up too short / empty post-scrub gets dropped.
     const titles = arr
-      .map(t => String(t || '').trim().replace(/^["']|["']$/g, '').toUpperCase())
-      .filter(t => t.length > 0 && t.length <= 60)
+      .map(t => String(t || '').trim().replace(/^["']|["']$/g, ''))
+      .map(t => scrubBanned(t).toUpperCase().trim())
+      .filter(t => t.length >= 4 && t.length <= 60)
     if (titles.length === 0) throw new Error('empty title list')
     // Dedupe while preserving order — repeated outputs occasionally slip through.
     const seen = new Set<string>()
@@ -94,7 +100,7 @@ Return ONLY a JSON array of exactly ${count} strings. No prose around it.`
       `${stub} REVIEW`,
       `IS IT WORTH IT?`,
       `BEFORE YOU BUY`,
-      `MY HONEST TAKE`.replace('HONEST ', ''),  // strip the banned word defensively
+      `MY REAL TAKE`,
       `${stub.split(' ')[0]} — WATCH FIRST`,
     ].slice(0, count)
   }
