@@ -1481,3 +1481,71 @@ a.mvp-ad-slot-filled:hover {
   .mvp-toc-toggle { padding: 14px 16px; min-height: 48px; }
   .mvp-toc-list a { padding: 10px 0; min-height: 44px; line-height: 1.35; }
 }
+
+/* ── Mobile polish pass ──────────────────────────────────────────────────
+   The desktop theme was inheriting too much vertical/horizontal space
+   when viewed on phones — 56px section padding × N sections = brutal on
+   a 6" screen, and the lead title at 34px was eating the whole first
+   viewport. Plus a handful of small things that matter on iOS Safari
+   specifically (text-size-adjust, overflow protection, header spacing,
+   safe-area padding for the new sticky Buy bar).
+
+   Three tiers:
+     ≤ 900px (small tablets + landscape phones)
+     ≤ 640px (most phones)
+     ≤ 380px (tiny phones — iPhone SE etc.)
+
+   Read each block top-down — the tightening compounds. */
+@media (max-width: 900px) {
+  body { overflow-wrap: break-word; word-wrap: break-word; }
+  .mvp-section { padding: 36px 0; }
+  .mvp-hero { padding: 36px 0 20px; }
+  .mvp-section-header { margin-bottom: 18px; }
+}
+@media (max-width: 640px) {
+  body { font-size: 16px; line-height: 1.55; }
+  /* Single-post: tighter spacing + smaller dek for the first screen */
+  .mvp-single-header { margin-bottom: 16px; }
+  .mvp-single-title { font-size: clamp(24px, 7.5vw, 32px); margin: 6px 0 10px; }
+  .mvp-single-dek { font-size: 16px; line-height: 1.45; margin: 0 0 14px; }
+  .mvp-single-meta { font-size: 13px; }
+  .mvp-single-content { padding-top: 4px; }
+  /* Lead hero on the homepage — was 34px (still big), now scales */
+  .mvp-lead-title { font-size: clamp(22px, 7vw, 30px); }
+  .mvp-lead-dek { font-size: 15px; line-height: 1.5; }
+  .mvp-lead-image { border-radius: 8px; }
+  /* Section spacing — tighter to make scrolling feel snappier */
+  .mvp-section { padding: 28px 0; }
+  /* Section-header (big bordered titles like "Editor's Picks") get a
+     smaller bottom border so they don't crowd the cards underneath */
+  .mvp-section-header { margin-bottom: 14px; padding-bottom: 8px; }
+  .mvp-section-header h2 { font-size: 22px; line-height: 1.2; }
+  /* Newsletter hero on mobile — make sure the section padding is its
+     own rule so the gradient band still reads as designed */
+  .mvp-section.mvp-newsletter-section { padding: 24px 0; }
+  /* 3-up ad strip — vertical stack with smaller labels */
+  .mvp-ad-strip-label { font-size: 11px; }
+  /* Generic body cards: bump font + tighten padding */
+  .mvp-card .mvp-card-title { font-size: 17px; line-height: 1.3; }
+  .mvp-card .mvp-card-dek { font-size: 14px; line-height: 1.45; }
+  /* Footer rhythm */
+  .mvp-footer { padding: 32px 0; }
+}
+@media (max-width: 380px) {
+  /* Tiny screens — drop a few more pixels everywhere */
+  .mvp-container { padding: 0 14px; }
+  .mvp-single-title { font-size: 22px; }
+  .mvp-lead-title { font-size: 20px; }
+  .mvp-section { padding: 22px 0; }
+}
+
+/* iOS Safari: prevent rubber-banding from revealing the sticky Buy bar's
+   background, and respect bottom safe-area inset on devices with a home
+   indicator (iPhone X+). We already set safe-area-inset padding on the
+   sticky bar itself; this rule just makes sure the article gets enough
+   bottom space when the bar's rendered. */
+@supports (padding: max(0px)) {
+  @media (max-width: 768px) {
+    .mvp-single-content { padding-bottom: max(80px, calc(64px + env(safe-area-inset-bottom))); }
+  }
+}
