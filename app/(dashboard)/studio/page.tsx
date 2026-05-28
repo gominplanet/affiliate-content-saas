@@ -156,7 +156,18 @@ function VideoStudioCard({ video, userTier, playlists }: {
    *  so they consciously decide whether to write their own headline or
    *  let MVP do it, before any AI work fires. */
   const [headlinePromptOpen, setHeadlinePromptOpen] = useState(false)
-  const [headlinePromptChoice, setHeadlinePromptChoice] = useState<'auto' | 'manual'>('auto')
+  // Headline picker: index into pickerTitles, or 'custom' for write-your-own.
+  // Defaults to 0 (the first AI-suggested option) so the modal feels "ready"
+  // the moment titles load — Start can be clicked immediately.
+  const [headlinePromptChoice, setHeadlinePromptChoice] = useState<number | 'custom'>(0)
+  // Five product-specific title options fetched from /api/youtube/generate-titles
+  // when the modal opens (or when the user hits Regenerate). Named pickerTitles
+  // (not titleOptions) to avoid colliding with the post-generation swap-chip
+  // state above — these two title sets are independent by design (the modal
+  // ones lock the headline pre-render; the swap chips re-overlay post-render).
+  const [pickerTitles, setPickerTitles] = useState<string[]>([])
+  const [titleOptionsLoading, setTitleOptionsLoading] = useState(false)
+  const [titleOptionsError, setTitleOptionsError] = useState<string | null>(null)
   /** Optional style-reference image URL — Haiku vision distills it
    *  into a style brief that gets folded into the Flux prompt. Public
    *  URL from Supabase storage. */
@@ -637,6 +648,41 @@ function VideoStudioCard({ video, userTier, playlists }: {
       setThumbnailError(err instanceof Error ? err.message : 'Photo upload failed')
     } finally {
       setPhotoUploading(false)
+    }
+  }
+
+  // Pre-generation title-options fetch. Fired the moment the "Who writes the
+  // thumbnail headline?" modal opens (and again on "Regenerate"). Returns 5
+  // product-specific titles built from the video title + description + ASIN so
+  // the creator picks the line BEFORE the thumbnail is composed.
+  async function loadTitleOptions() {
+    setPickerTitles([])
+    setTitleOptionsError(null)
+    setTitleOptionsLoading(true)
+    try {
+      const res = await fetch('/api/youtube/generate-titles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoTitle: editTitle || video.title,
+          videoDescription: video.description,
+          asin: video.detectedAsin ?? undefined,
+          count: 5,
+        }),
+      })
+      const data = await res.json().catch(() => ({})) as { ok?: boolean; titles?: string[]; error?: string }
+      if (!res.ok || !Array.isArray(data.titles) || data.titles.length === 0) {
+        throw new Error(data.error || 'No titles returned')
+      }
+      setPickerTitles(data.titles)
+      // Default-select the first AI option so Start is immediately clickable —
+      // unless the user already had a custom headline typed, in which case
+      // keep them on the "Write your own" radio.
+      if (!customHeadline.trim()) setHeadlinePromptChoice(0)
+    } catch (err) {
+      setTitleOptionsError(err instanceof Error ? err.message : 'Failed to load title options')
+    } finally {
+      setTitleOptionsLoading(false)
     }
   }
 
@@ -1339,10 +1385,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
                   <button
                     onClick={() => {
-                      // Open the headline-decision modal first — generation
-                      // only fires once the user explicitly picks auto/manual.
-                      setHeadlinePromptChoice(customHeadline.trim() ? 'manual' : 'auto')
+                      // Open the headline-decision modal first; fire the
+                      // title-options fetch in parallel so the 5 product-
+                      // specific options are ready by the time the user
+                      // looks at the modal.
+                      setHeadlinePromptChoice(customHeadline.trim() ? 'custom' : 0)
                       setHeadlinePromptOpen(true)
+                      void loadTitleOptions()
                     }}
                     disabled={generatingThumbnail}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
@@ -1772,38 +1821,55 @@ function VideoStudioCard({ video, userTier, playlists }: {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-              Who writes the thumbnail headline?
+              Pick a thumbnail headline
             </h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              The headline is the text that gets overlaid on top of the thumbnail. Pick now so the AI knows whether to leave you negative space.
+              Five product-specific options written for THIS video — pick the one you like, or write your own. The AI then composes around your choice so the title sits where it should.
             </p>
 
-            <div className="flex flex-col gap-2 mb-4">
-              <label
-                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                  headlinePromptChoice === 'auto'
-                    ? 'border-[#0071e3] bg-[#0071e3]/5'
-                    : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="headline-choice"
-                  checked={headlinePromptChoice === 'auto'}
-                  onChange={() => setHeadlinePromptChoice('auto')}
-                  className="mt-1"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Let MVP write it</p>
-                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                    AI generates a 2-3 word punchy hook based on your video title.
-                  </p>
+            <div className="flex flex-col gap-2 mb-4 max-h-[60vh] overflow-y-auto pr-1">
+              {/* Loading — fires the moment the modal opens. */}
+              {titleOptionsLoading && (
+                <div className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#ebebf0] p-3 rounded-lg border border-dashed border-gray-200 dark:border-white/10">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Reading the video and writing 5 title options…</span>
                 </div>
-              </label>
+              )}
 
+              {/* Error — user can still write their own. */}
+              {!titleOptionsLoading && titleOptionsError && (
+                <div className="text-xs p-3 rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 text-[#ff9500]">
+                  Couldn&apos;t load AI title options ({titleOptionsError}). You can still write your own below.
+                </div>
+              )}
+
+              {/* The five product-specific options. Default-selected = index 0. */}
+              {!titleOptionsLoading && pickerTitles.map((title, idx) => (
+                <label
+                  key={idx}
+                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    headlinePromptChoice === idx
+                      ? 'border-[#0071e3] bg-[#0071e3]/5'
+                      : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="headline-choice"
+                    checked={headlinePromptChoice === idx}
+                    onChange={() => setHeadlinePromptChoice(idx)}
+                    className="mt-1"
+                  />
+                  <p className="text-sm font-semibold uppercase tracking-wide text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    {title}
+                  </p>
+                </label>
+              ))}
+
+              {/* Always-available "Write your own" — works even when the AI batch fails. */}
               <label
                 className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                  headlinePromptChoice === 'manual'
+                  headlinePromptChoice === 'custom'
                     ? 'border-[#0071e3] bg-[#0071e3]/5'
                     : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
                 }`}
@@ -1811,16 +1877,16 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 <input
                   type="radio"
                   name="headline-choice"
-                  checked={headlinePromptChoice === 'manual'}
-                  onChange={() => setHeadlinePromptChoice('manual')}
+                  checked={headlinePromptChoice === 'custom'}
+                  onChange={() => setHeadlinePromptChoice('custom')}
                   className="mt-1"
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">I&apos;ll write my own title</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Write my own</p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-2">
                     Type the exact text. We&apos;ll overlay it crisply on the AI-generated background.
                   </p>
-                  {headlinePromptChoice === 'manual' && (
+                  {headlinePromptChoice === 'custom' && (
                     <input
                       type="text"
                       value={customHeadline}
@@ -1835,32 +1901,45 @@ function VideoStudioCard({ video, userTier, playlists }: {
               </label>
             </div>
 
-            {/* Face picker removed — thumbnails now ground on the real video
-                frame (the creator + product are already in it), so no face
-                upload is needed. */}
-
-            <div className="flex items-center justify-end gap-2">
+            <div className="flex items-center justify-between gap-2">
               <button
-                onClick={() => setHeadlinePromptOpen(false)}
-                className="px-3 py-2 rounded-lg text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+                onClick={() => loadTitleOptions()}
+                disabled={titleOptionsLoading}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#86868b] hover:text-[#0071e3] disabled:opacity-60 transition-colors"
+                title="Generate a fresh batch of 5 title options"
               >
-                Cancel
+                <RefreshCw size={11} className={titleOptionsLoading ? 'animate-spin' : ''} /> Regenerate
               </button>
-              <button
-                onClick={() => {
-                  // Apply the choice: blank headline if "auto", or whatever
-                  // the user typed if "manual". Then fire the existing
-                  // generate flow which already reads customHeadline state.
-                  if (headlinePromptChoice === 'auto') setCustomHeadline('')
-                  setHeadlinePromptOpen(false)
-                  // Defer the fetch so the customHeadline state update lands first.
-                  setTimeout(() => { generateThumbnail() }, 0)
-                }}
-                disabled={headlinePromptChoice === 'manual' && customHeadline.trim().length === 0}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <Sparkles size={11} /> Start generation
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setHeadlinePromptOpen(false)}
+                  className="px-3 py-2 rounded-lg text-xs font-medium text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    // Commit the chosen title to customHeadline. The generate
+                    // route already reads customHeadline → server as
+                    // lockedHeadline, so the thumbnail composer leaves the
+                    // matching corner empty for this exact line.
+                    if (typeof headlinePromptChoice === 'number') {
+                      const picked = pickerTitles[headlinePromptChoice]
+                      if (picked) setCustomHeadline(picked)
+                    }
+                    setHeadlinePromptOpen(false)
+                    setTimeout(() => { generateThumbnail() }, 0)
+                  }}
+                  disabled={
+                    titleOptionsLoading ||
+                    (headlinePromptChoice === 'custom' && customHeadline.trim().length === 0) ||
+                    (typeof headlinePromptChoice === 'number' && !pickerTitles[headlinePromptChoice])
+                  }
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Sparkles size={11} /> Start generation
+                </button>
+              </div>
             </div>
           </div>
         </div>
