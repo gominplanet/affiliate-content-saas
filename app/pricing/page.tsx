@@ -1,20 +1,22 @@
-'use client'
+/**
+ * Public pricing page. Converted to a Server Component (#47) — the entire
+ * static layout (hero, three plan cards, feature lists, price-lock callout,
+ * footer) ships as RSC HTML. Only the Stripe-checkout CTA hydrates as a
+ * tiny client island (`./CheckoutButton`). The Rewardful effect, the loading
+ * state and the signed-in-or-not bounce live inside that island so they
+ * stay client-side without dragging the whole page bundle along.
+ *
+ * Net effect: substantially smaller per-page JS for a route that drives
+ * conversions — better LCP, better Lighthouse on mobile, no behaviour
+ * change from the user's side.
+ */
 
-import { useState, useEffect } from 'react'
+import type { Metadata } from 'next'
 import { CheckCircle, Zap } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@/lib/supabase/client'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
+import { CheckoutButton } from './CheckoutButton'
 
-// Rewardful injects a global `Rewardful` object once the script is ready.
-// Declared here so TypeScript stops complaining about the access below.
-declare global {
-  interface Window {
-    Rewardful?: { referral?: string | null }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rewardful?: (event: string, cb: () => void) => void
-  }
-}
+export const metadata: Metadata = { title: 'Pricing — MVP Affiliate' }
 
 type Plan = {
   tier: 'trial' | 'creator' | 'pro'
@@ -96,53 +98,6 @@ const plans: PlanExt[] = [
 ]
 
 export default function PricingPage() {
-  const router = useRouter()
-  const [loading, setLoading] = useState<string | null>(null)
-  const [referral, setReferral] = useState<string | null>(null)
-
-  // Capture Rewardful referral ID once the tracking script signals ready.
-  // We pass this to Stripe checkout below so the conversion gets attributed.
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.rewardful) return
-    window.rewardful('ready', () => {
-      setReferral(window.Rewardful?.referral ?? null)
-    })
-  }, [])
-
-  async function handleCheckout(tier: Plan['tier']) {
-    if (tier === 'trial') {
-      // No checkout needed — just send them to signup. After signup they land
-      // on /dashboard with the default trial tier.
-      router.push('/signup?next=/dashboard')
-      return
-    }
-
-    setLoading(tier)
-    try {
-      // Check auth client-side first. If we just POST to /api/stripe/checkout
-      // while logged out, middleware redirects to /login (307) and fetch
-      // silently follows the redirect, leaving the user staring at a
-      // do-nothing button. So we bounce them to signup ourselves.
-      const supabase = createBrowserClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push(`/signup?next=/pricing&tier=${tier}`)
-        return
-      }
-
-      const res = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier, referral }),
-      })
-      const { url, error } = await res.json()
-      if (error) { alert(error); return }
-      if (url) window.location.href = url
-    } finally {
-      setLoading(null)
-    }
-  }
-
   return (
     <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000] flex flex-col items-center px-4 py-16">
       <div className="text-center mb-12 max-w-2xl">
@@ -210,17 +165,15 @@ export default function PricingPage() {
               ))}
             </ul>
 
-            <button
-              onClick={() => handleCheckout(plan.tier)}
-              disabled={loading === plan.tier || SALES_PAUSED}
-              className={`w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                plan.highlight
-                  ? 'bg-white dark:bg-[#1c1c1e] text-[#0071e3] hover:bg-blue-50'
-                  : 'bg-[#0071e3] text-white hover:bg-[#0062c4]'
-              }`}
-            >
-              {SALES_PAUSED ? 'Sales paused' : loading === plan.tier ? 'Redirecting…' : plan.ctaLabel}
-            </button>
+            {/* The only client island on this page — keeps Rewardful + the
+                signed-in check + Stripe redirect on the client, while the
+                card around it stays server-rendered. */}
+            <CheckoutButton
+              tier={plan.tier}
+              highlight={plan.highlight}
+              salesPaused={SALES_PAUSED}
+              ctaLabel={plan.ctaLabel}
+            />
           </div>
         ))}
       </div>

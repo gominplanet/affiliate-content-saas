@@ -1,15 +1,21 @@
-'use client'
-
 /**
  * All-in-one tutorial page. Lists every TUTORIALS entry (lib/tutorials.ts)
  * with its embed + a deep link to the page it lives on. Sidebar reaches
  * it between Analytics and Visit Blog.
+ *
+ * Converted to an RSC (#47) — no state, no effects, no handlers, just a map
+ * over a constant. Removing 'use client' takes this whole page out of the
+ * client bundle (Header + the lucide icons + Link all server-render fine),
+ * shrinking the dashboard's per-route JS for one of the most-linked
+ * sidebar destinations.
  */
 
 import Link from 'next/link'
 import { ArrowRight, GraduationCap } from 'lucide-react'
 import Header from '@/components/layout/Header'
 import { TUTORIALS } from '@/lib/tutorials'
+
+export const metadata = { title: 'Tutorials' }
 
 export default function TutorialsPage() {
   return (
