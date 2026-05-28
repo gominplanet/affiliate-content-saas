@@ -44,6 +44,18 @@ export interface SendEmailArgs {
   from?: string
   /** Set this when the email should be a reply-to address users can actually reach. */
   replyTo?: string
+  /** Raw RFC 822 headers to attach. Used by the newsletter pipeline to set
+   *  List-Unsubscribe + List-Unsubscribe-Post (RFC 8058 one-click). Resend
+   *  passes them through to the recipient verbatim. */
+  headers?: Record<string, string>
+  /** Server-side tags on the email — surfaced back in Resend's webhook
+   *  payloads so we can attribute a delivered/bounced/opened/clicked event
+   *  to the broadcast that fired it. Each tag is { name, value }, max 50
+   *  per email per Resend's docs. We always pass at least
+   *    { name: 'kind', value: '…' } and
+   *    { name: 'broadcast_id', value: '…' }
+   *  for newsletter sends. */
+  tags?: Array<{ name: string; value: string }>
 }
 
 /**
@@ -60,6 +72,7 @@ export async function sendEmail(args: SendEmailArgs): Promise<{ id: string }> {
   const client = getClient()
   const from = args.from ?? process.env.EMAIL_FROM ?? DEFAULT_FROM
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = await client.emails.send({
     from,
     to: Array.isArray(args.to) ? args.to : [args.to],
@@ -67,7 +80,10 @@ export async function sendEmail(args: SendEmailArgs): Promise<{ id: string }> {
     html: args.html,
     text: args.text,
     replyTo: args.replyTo,
-  })
+    ...(args.headers ? { headers: args.headers } : {}),
+    ...(args.tags ? { tags: args.tags } : {}),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any)
 
   if (result.error) {
     throw new Error(`Resend send failed: ${result.error.message ?? JSON.stringify(result.error)}`)

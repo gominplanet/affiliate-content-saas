@@ -193,13 +193,23 @@ export async function POST(req: Request) {
         subject,
         html,
         text,
-        // List-Unsubscribe + List-Unsubscribe-Post are the RFC 8058 headers
-        // Gmail / Yahoo / Outlook use to render the one-click button next
-        // to the sender name. Massively improves deliverability for bulk
-        // senders. The POST verb is handled by /api/newsletter/unsubscribe.
-        // NOTE: sendEmail doesn't currently expose `headers` — if Resend
-        // SDK supports it we'd add it here. For v1, the visible footer
-        // link suffices; one-click is a follow-up.
+        // RFC 8058 — Gmail, Yahoo, Outlook, Apple Mail render a one-click
+        // "Unsubscribe" button next to the sender name when these two
+        // headers are present. The POST body { token } is handled by
+        // /api/newsletter/unsubscribe. Huge deliverability win for bulk
+        // senders since Feb 2024 (the Gmail/Yahoo bulk-sender rules).
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+        // Tags surface back in Resend's webhook payloads so we can
+        // attribute every delivered/bounced/opened/clicked event to the
+        // right broadcast row (driving the counters on /newsletter).
+        tags: [
+          { name: 'kind', value: 'newsletter_broadcast' },
+          { name: 'broadcast_id', value: broadcastId },
+          { name: 'user_id', value: user.id },
+        ],
       })
     }))
     for (const r of results) {

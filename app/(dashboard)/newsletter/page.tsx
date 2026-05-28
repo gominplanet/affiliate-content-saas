@@ -67,6 +67,11 @@ export default function NewsletterPage() {
   const [counts, setCounts] = useState<Counts>({ active: 0, pending: 0, unsubscribed: 0 })
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // Paste-list importer state — opens a modal so creators can paste a
+  // Mailchimp / Substack / ConvertKit export (or just a list of emails)
+  // straight from clipboard without saving a CSV file first.
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Recent broadcasts table (Milestone 3) — the creator's last 30 sends.
@@ -284,11 +289,16 @@ export default function NewsletterPage() {
     setSubs(prev => prev.filter(s => s.id !== id))
   }
 
-  async function handleImport(file: File) {
+  // Single import handler — accepts either a File (from the CSV uploader)
+  // or a raw string (from the paste-list modal). The /import API already
+  // parses both shapes the same way (first column of every line + plain
+  // newline-separated emails), so the only difference is where the body
+  // comes from.
+  async function handleImport(source: File | string) {
     setImporting(true)
     setImportMsg(null)
     try {
-      const csv = await file.text()
+      const csv = typeof source === 'string' ? source : await source.text()
       const r = await fetch('/api/newsletter/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -311,6 +321,14 @@ export default function NewsletterPage() {
     } finally {
       setImporting(false)
     }
+  }
+
+  async function handlePasteImport() {
+    const text = pasteText.trim()
+    if (!text) { setImportMsg({ ok: false, text: 'Paste some emails first.' }); return }
+    setPasteOpen(false)
+    setPasteText('')
+    await handleImport(text)
   }
 
   function copyShortcode() {
@@ -621,6 +639,14 @@ export default function NewsletterPage() {
             >
               <Download size={11} /> Export CSV
             </a>
+            <button
+              onClick={() => setPasteOpen(true)}
+              disabled={importing}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#3a3a3c] dark:text-[#d2d2d7] disabled:opacity-60"
+              title="Paste emails from Mailchimp, Substack, ConvertKit, or any list — no file needed"
+            >
+              <Copy size={11} /> Paste list
+            </button>
             <label className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border cursor-pointer ${importing ? 'opacity-60 cursor-wait' : 'hover:border-[#0071e3]'}`}
               style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
               <input
@@ -689,6 +715,47 @@ export default function NewsletterPage() {
           </div>
         )}
       </div>
+
+      {/* Paste-list modal — fastest path for creators moving over from
+          Mailchimp / Substack / ConvertKit. The /import API already handles
+          newline-separated emails OR a CSV first column, so they can just
+          copy the "Email" column from their existing dashboard and paste. */}
+      {pasteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/40" onClick={() => setPasteOpen(false)}>
+          <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-xl w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Paste subscribers</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+              Paste a list of emails — one per line, or the first column of a CSV. Works straight from Mailchimp, Substack, ConvertKit, Beehiiv, or anywhere else you exported a list. Imported subscribers come in as <strong>active</strong> (we trust they consented on the other platform).
+            </p>
+            <textarea
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              rows={10}
+              placeholder={"alice@example.com\nbob@example.com\ncarol@example.com\n…"}
+              className="w-full text-sm font-mono px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              autoFocus
+            />
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">
+              Tier cap respected — anything beyond your limit is skipped (we&apos;ll tell you how many).
+            </p>
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                onClick={() => { setPasteOpen(false); setPasteText('') }}
+                className="px-3 py-1.5 rounded-md text-xs font-medium text-[#3a3a3c] dark:text-[#d2d2d7] hover:bg-gray-100 dark:hover:bg-white/5"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handlePasteImport()}
+                disabled={!pasteText.trim() || importing}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60"
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Recent broadcasts — Milestone 3. Empty until the creator sends
           their first issue, then shows the last 30 with delivery counters. */}
