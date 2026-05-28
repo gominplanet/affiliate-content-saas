@@ -42,6 +42,7 @@ import {
   Scale,
   Gauge,
   Mail,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -59,51 +60,93 @@ import { COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
 // values; active highlighting uses the query param.
 type NavMatchKind = 'exact' | 'prefix' | 'setup-wp' | 'setup-int'
 type NavItem = { href: string; label: string; icon: LucideIcon; matchKind: NavMatchKind; badge?: string }
-type NavGroup = { id: string; label: string; items: NavItem[] }
+type NavGroup = {
+  id: string
+  /** Shown in caps in the sidebar header — kept short so the label fits
+   *  on one line at 240px sidebar width. */
+  label: string
+  /** Icon rendered to the LEFT of the label in a small coloured chip.
+   *  Keeps each section visually distinct without a full background tint. */
+  icon: LucideIcon
+  /** Accent colour for the chip + (subtly) the uppercase label. Each
+   *  section gets its own colour so the eye lands quickly. */
+  accent: string
+  items: NavItem[]
+}
 
+// Dashboard sits alone at the very top — it's the home view, not a
+// workflow section. AI Assistant moved into "Learn & Help" below.
 const pinnedNav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, matchKind: 'exact' },
-  { href: '/assistant', label: 'AI Assistant', icon: Bot, matchKind: 'prefix' },
 ]
 
 const navGroups: NavGroup[] = [
   {
     id: 'setup',
-    label: 'Set Up & Brand',
+    label: 'Set Up',
+    icon: Wrench,
+    accent: '#5856d6', // indigo — "configure"
     items: [
       { href: '/setup', label: 'Blog Set Up', icon: Wrench, matchKind: 'setup-wp' },
       { href: '/setup?tab=integrations', label: 'Integrations', icon: Plug, matchKind: 'setup-int' },
       { href: '/brand', label: 'Brand Profile', icon: Palette, matchKind: 'prefix' },
       { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' },
+      { href: '/photobooth', label: 'Photobooth', icon: Camera, matchKind: 'prefix' },
       { href: '/learn', label: 'Learning', icon: GraduationCap, matchKind: 'prefix' },
     ],
   },
   {
     id: 'create',
     label: 'Create & Publish',
+    icon: Sparkles,
+    accent: '#af52de', // purple — "create"
     items: [
-      { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' },
-      { href: '/comparison', label: 'Compare & Guides', icon: Scale, matchKind: 'prefix' },
       { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' },
+      { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' },
+      { href: '/comparison', label: 'Comparison & Guides', icon: Scale, matchKind: 'prefix' },
       { href: '/instagram-burner', label: 'Instagram Burner', icon: Flame, matchKind: 'prefix' },
-      { href: '/photobooth', label: 'Photobooth', icon: Camera, matchKind: 'prefix' },
     ],
   },
   {
     id: 'grow',
     label: 'Grow & Earn',
+    icon: TrendingUp,
+    accent: '#34c759', // green — "grow"
     items: [
       { href: '/seo', label: 'SEO & Indexing', icon: Gauge, matchKind: 'prefix' },
+      { href: '/analytics', label: 'GL Analytics', icon: TrendingUp, matchKind: 'prefix' },
+    ],
+  },
+  {
+    id: 'collaborate',
+    label: 'Collaborate',
+    icon: Handshake,
+    accent: '#ff9500', // orange — "deals"
+    items: [
+      { href: '/campaigns', label: 'Creator Connections & EPC', icon: Megaphone, matchKind: 'prefix' },
+      { href: '/collaborations', label: 'Brand Deals', icon: Handshake, matchKind: 'prefix' },
+    ],
+  },
+  {
+    id: 'communicate',
+    label: 'Communicate',
+    icon: Mail,
+    accent: '#ff2d55', // pink — "send"
+    items: [
       { href: '/newsletter', label: 'Newsletter', icon: Mail, matchKind: 'prefix' },
-      { href: '/campaigns', label: 'Creator Campaigns', icon: Megaphone, matchKind: 'prefix' },
-      { href: '/collaborations', label: 'Collaborations', icon: Handshake, matchKind: 'prefix' },
-      { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' },
+    ],
+  },
+  {
+    id: 'learn',
+    label: 'Learn & Help',
+    icon: GraduationCap,
+    accent: '#ffcc00', // yellow — "discover"
+    items: [
+      { href: '/assistant', label: 'AI Assistant', icon: Bot, matchKind: 'prefix' },
+      { href: '/tutorials', label: 'Tutorials', icon: GraduationCap, matchKind: 'prefix' },
     ],
   },
 ]
-
-// Standalone link rendered after the groups (not part of any phase).
-const tutorialsNav: NavItem = { href: '/tutorials', label: 'Tutorials', icon: GraduationCap, matchKind: 'prefix' }
 
 const SIDEBAR_GROUPS_KEY = 'mvp_sidebar_groups'
 
@@ -302,18 +345,37 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         {/* Collapsible workflow groups: Set Up & Brand → Create & Publish →
             Grow & Earn. The group containing the current page is always open;
             other collapses are remembered per browser. */}
+        {/* Workflow sections. Each header shows a small coloured chip with
+            the section's icon + the label in bold uppercase tracking. The
+            chip colour is the section's accent — different for each — so
+            the eye can find the right section without re-reading every
+            label. The group containing the current page is always open;
+            other collapses are remembered per browser. */}
         {navGroups.map((group) => {
           const isOpen = activeGroupId === group.id || (openGroups[group.id] ?? true)
+          const GroupIcon = group.icon
           return (
-            <div key={group.id} className="mt-3">
+            <div key={group.id} className="mt-4">
               <button
                 type="button"
                 onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center justify-between gap-2 px-2 mb-1 section-label hover:opacity-80 transition-opacity"
+                className="w-full flex items-center gap-2 px-2 mb-1.5 hover:opacity-80 transition-opacity"
                 aria-expanded={isOpen}
               >
-                <span>{group.label}</span>
-                <ChevronDown size={13} className={cn('flex-shrink-0 transition-transform', !isOpen && '-rotate-90')} />
+                <span
+                  className="inline-flex items-center justify-center w-5 h-5 rounded-md flex-shrink-0"
+                  style={{ background: `${group.accent}1f`, color: group.accent }}
+                  aria-hidden
+                >
+                  <GroupIcon size={12} strokeWidth={2.5} />
+                </span>
+                <span
+                  className="text-[11px] font-bold uppercase tracking-[0.08em] flex-1 text-left"
+                  style={{ color: group.accent }}
+                >
+                  {group.label}
+                </span>
+                <ChevronDown size={12} className={cn('flex-shrink-0 transition-transform opacity-50', !isOpen && '-rotate-90')} />
               </button>
               {isOpen && (
                 <div className="flex flex-col gap-0.5">
@@ -323,9 +385,6 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
             </div>
           )
         })}
-
-        {/* Tutorials — standalone, after the workflow groups */}
-        <div className="mt-3">{renderNavLink(tutorialsNav)}</div>
 
         {/* Community — the MVP Affiliate Facebook group hub (internal page). */}
         <Link
