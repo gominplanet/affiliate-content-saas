@@ -43,6 +43,7 @@ import {
   Gauge,
   Mail,
   Sparkles,
+  FileVideo,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
@@ -101,6 +102,9 @@ const navGroups: NavGroup[] = [
     icon: Sparkles,
     accent: '#af52de', // purple — "create"
     items: [
+      // Script generator is the FIRST step of the creator workflow —
+      // sits before Co-Pilot (which is post-production metadata).
+      { href: '/script', label: 'Video Script & Shot List', icon: FileVideo, matchKind: 'prefix' },
       { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' },
       { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' },
       { href: '/comparison', label: 'Comparison & Guides', icon: Scale, matchKind: 'prefix' },
