@@ -628,6 +628,12 @@ export async function POST(request: Request) {
         `Thanks for watching! If this was useful, hit subscribe + like — it really helps the channel.`,
       )
     }
+    // Blog backlink — creates a loop between every YouTube video and the user's
+    // blog. Read from their saved Blog URL (brand_profiles.website_url). Skipped
+    // when the user hasn't set one.
+    if (websiteUrl) {
+      descParts.push(`----------`, `For more in depth reviews, make sure to check out my blog: ${websiteUrl}`)
+    }
     if (collabLine) descParts.push(`----------`, collabLine)
     if (isProduct) {
       descParts.push(`----------`, `Product ASIN: ${trimmedAsin}`, `----------`, `Product Description:`, contentResult.productDescription)

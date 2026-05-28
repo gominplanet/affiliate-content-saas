@@ -546,12 +546,12 @@ export default function BrandPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Website URL</label>
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Blog URL</label>
                 <input
                   type="url"
                   value={data.website_url}
                   onChange={(e) => set('website_url', e.target.value)}
-                  placeholder="https://yourdomain.com"
+                  placeholder="https://yourblog.com"
                   className="input-field"
                 />
               </div>
@@ -629,9 +629,9 @@ export default function BrandPage() {
                   className="mt-1"
                 />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Send them to my website</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Send them to my blog</p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                    Uses the <span className="font-mono text-[11px]">Website URL</span> field above ({data.website_url || <em className="opacity-60">not set yet</em>}).
+                    Uses the <span className="font-mono text-[11px]">Blog URL</span> field above ({data.website_url || <em className="opacity-60">not set yet</em>}).
                   </p>
                 </div>
               </label>
@@ -653,10 +653,10 @@ export default function BrandPage() {
               </label>
             </div>
             {data.contact_preference === 'website' && !data.website_url && (
-              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up — set your Website URL above or generated YouTube descriptions will fall back to your email.</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up — set your Blog URL above or generated YouTube descriptions will fall back to your email.</p>
             )}
             {data.contact_preference === 'email' && !data.contact_email && (
-              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up — set your Contact email below or generated YouTube descriptions will fall back to your website.</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 mt-3">Heads up — set your Contact email below or generated YouTube descriptions will fall back to your blog.</p>
             )}
           </div>
 
