@@ -20,6 +20,7 @@ import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type Lin
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { fal } from '@fal-ai/client'
 import { recordUsage } from '@/lib/ai-usage'
+import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 
 /** Distinct camera perspectives cycled across a post's in-body images so
@@ -672,6 +673,11 @@ async function handleGenerate(request: Request) {
     await logFailure(supabase, user.id, videoId, 'wp_publish', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
+
+  // Fire IndexNow (Bing / Copilot / Yandex) for near-instant crawling of the new
+  // URL — fire-and-forget so a slow or rejected ping NEVER blocks the response.
+  // Google doesn't participate; the daily GSC sweep covers Google.
+  void pingIndexNowForUrl(supabase, user.id, wpPost.link).catch(() => {})
 
   // ── 8.5. Upload YouTube thumbnail as featured image ───────────────────────
   const youtubeVideoId = (v as Record<string, unknown>).youtube_video_id as string

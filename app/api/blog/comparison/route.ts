@@ -23,6 +23,7 @@ import { checkUsageLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
+import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { fal } from '@fal-ai/client'
 
@@ -523,6 +524,9 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   } catch (err) {
     return NextResponse.json({ error: `WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
   }
+
+  // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.
+  void pingIndexNowForUrl(supabase, user.id, wpPost.link).catch(() => {})
 
   // ── Save blog_posts row (post_type distinguishes it; counts as 1 post) ──────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

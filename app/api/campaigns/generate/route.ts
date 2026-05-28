@@ -28,6 +28,7 @@ import { researchProduct } from '@/services/research'
 import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 import { buildCampaignHero } from '@/lib/hero-image'
+import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 
 export const maxDuration = 300
 
@@ -276,6 +277,9 @@ export async function POST(request: Request) {
     } catch (err) {
       return fail(`WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}`)
     }
+
+    // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.
+    void pingIndexNowForUrl(supabase, user.id, wpPost.link).catch(() => {})
 
     // Featured image — a 16:9 hero (AI from the hero prompt, else the
     // product photo letterboxed to 16:9). PATCH only featured_media so
