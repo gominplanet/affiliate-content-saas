@@ -23,7 +23,7 @@ import Link from 'next/link'
 import Header from '@/components/layout/Header'
 import {
   Loader2, Mail, CheckCircle, AlertCircle, Upload, Download,
-  Copy, Trash2, RefreshCw, ShieldCheck, Globe,
+  Copy, Trash2, RefreshCw, ShieldCheck, Globe, Send, ExternalLink,
 } from 'lucide-react'
 
 interface DkimRecord {
@@ -69,6 +69,12 @@ export default function NewsletterPage() {
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Recent broadcasts table (Milestone 3) — the creator's last 30 sends.
+  const [broadcasts, setBroadcasts] = useState<Array<{
+    id: string; subject: string; status: string;
+    recipients_total: number; recipients_delivered: number; recipients_bounced: number;
+    sent_at: string | null; created_at: string; error_message: string | null;
+  }>>([])
   // Sender-domain card state (Milestone 2)
   const [domainInput, setDomainInput] = useState('')
   const [domainBusy, setDomainBusy] = useState<'add' | 'verify' | 'remove' | null>(null)
@@ -81,17 +87,20 @@ export default function NewsletterPage() {
     setLoading(true)
     setError(null)
     try {
-      const [sRes, lRes] = await Promise.all([
+      const [sRes, lRes, bRes] = await Promise.all([
         fetch('/api/newsletter/settings'),
         fetch('/api/newsletter/subscribers'),
+        fetch('/api/newsletter/broadcasts'),
       ])
       const sData = await sRes.json()
       const lData = await lRes.json()
+      const bData = await bRes.json().catch(() => ({}))
       if (!sRes.ok) throw new Error(sData.error || 'Failed to load settings')
       if (!lRes.ok) throw new Error(lData.error || 'Failed to load subscribers')
       setSettings(sData.settings)
       setSubs(lData.subscribers || [])
       setCounts(lData.counts || { active: 0, pending: 0, unsubscribed: 0 })
+      if (bRes.ok) setBroadcasts(bData.broadcasts || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
     } finally {
@@ -338,16 +347,25 @@ export default function NewsletterPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        {/* Subscriber counts */}
+        {/* Subscriber counts + Compose CTA */}
         <div className="card p-5 lg:col-span-2">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-full bg-[#0071e3]/10 flex items-center justify-center">
-              <Mail size={16} className="text-[#0071e3]" />
+          <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-[#0071e3]/10 flex items-center justify-center">
+                <Mail size={16} className="text-[#0071e3]" />
+              </div>
+              <div>
+                <p className="text-xs text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Your audience</p>
+                <p className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{counts.active.toLocaleString()} subscribers</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Your audience</p>
-              <p className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{counts.active.toLocaleString()} subscribers</p>
-            </div>
+            <Link
+              href="/newsletter/compose"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4]"
+              title="Compose and send the next issue"
+            >
+              <Send size={13} /> Compose
+            </Link>
           </div>
           <div className="flex gap-6 text-xs">
             <span className="text-[#34c759]">✓ {counts.active} active</span>
@@ -671,6 +689,47 @@ export default function NewsletterPage() {
           </div>
         )}
       </div>
+
+      {/* Recent broadcasts — Milestone 3. Empty until the creator sends
+          their first issue, then shows the last 30 with delivery counters. */}
+      {broadcasts.length > 0 && (
+        <div className="card p-5 mt-6">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Recent broadcasts</p>
+          <div className="overflow-x-auto -mx-5">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-[#86868b] dark:text-[#8e8e93] border-b border-gray-200 dark:border-white/10">
+                  <th className="font-medium px-5 py-2">Subject</th>
+                  <th className="font-medium px-3 py-2">Status</th>
+                  <th className="font-medium px-3 py-2 text-right">Delivered</th>
+                  <th className="font-medium px-3 py-2 text-right">Bounced</th>
+                  <th className="font-medium px-5 py-2">Sent</th>
+                </tr>
+              </thead>
+              <tbody>
+                {broadcasts.map(b => (
+                  <tr key={b.id} className="border-b border-gray-100 dark:border-white/5">
+                    <td className="px-5 py-2 text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {b.subject}
+                      {b.error_message && <p className="text-[10px] text-[#ff9500] mt-0.5">{b.error_message}</p>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`text-[11px] px-1.5 py-0.5 rounded-md ${b.status === 'sent' ? 'bg-[#34c759]/10 text-[#34c759]' : b.status === 'sending' ? 'bg-[#0071e3]/10 text-[#0071e3]' : b.status === 'failed' ? 'bg-[#ff3b30]/10 text-[#ff3b30]' : 'bg-gray-200 text-[#6e6e73]'}`}>
+                        {b.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-[#3a3a3c] dark:text-[#d2d2d7]">{b.recipients_delivered} / {b.recipients_total}</td>
+                    <td className="px-3 py-2 text-right text-xs text-[#3a3a3c] dark:text-[#d2d2d7]">{b.recipients_bounced || 0}</td>
+                    <td className="px-5 py-2 text-[#6e6e73] dark:text-[#ebebf0] text-xs">
+                      {b.sent_at ? new Date(b.sent_at).toLocaleDateString() : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   )
 }
