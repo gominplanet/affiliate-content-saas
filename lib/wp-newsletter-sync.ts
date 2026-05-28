@@ -35,6 +35,10 @@ interface NewsletterFields {
   // either side means "use the theme's default slot for that surface".
   homepagePlacement: string | null
   sidebarPlacement: string | null
+  // Subscriber count — refreshed every time we push. The theme uses it
+  // for the "Join N readers" social-proof line on the homepage hero
+  // (only renders when N >= 50 so we don't reveal a small list).
+  subscriberCount: number
 }
 
 /** Read the row + return the shape the WP option expects. Single source
@@ -44,11 +48,18 @@ export async function readNewsletterFields(
   userId: string,
 ): Promise<NewsletterFields> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
-    .from('newsletter_settings')
-    .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
-    .eq('user_id', userId)
-    .maybeSingle()
+  const [{ data }, { count: activeCount }] = await Promise.all([
+    (supabase as any)
+      .from('newsletter_settings')
+      .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    (supabase as any)
+      .from('newsletter_subscribers')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('status', 'active'),
+  ])
   return {
     enabled: !!data?.enabled,
     userId,
@@ -58,6 +69,7 @@ export async function readNewsletterFields(
     ctaButton: (data?.cta_button as string | null)?.trim() || null,
     homepagePlacement: (data?.homepage_placement as string | null)?.trim() || null,
     sidebarPlacement: (data?.sidebar_placement as string | null)?.trim() || null,
+    subscriberCount: Number.isFinite(activeCount) ? (activeCount as number) : 0,
   }
 }
 

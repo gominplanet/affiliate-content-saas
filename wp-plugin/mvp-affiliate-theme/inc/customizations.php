@@ -361,6 +361,9 @@ if (!function_exists('mvp_affiliate_newsletter_data')) {
             // Resolved slots — already validated, safe to compare directly.
             'homepagePlacement' => $home,
             'sidebarPlacement'  => $side,
+            // Active subscriber count (best-effort snapshot from last sync).
+            // 0 = no data yet OR genuinely empty list.
+            'subscriberCount'   => is_numeric($n['subscriberCount'] ?? null) ? max(0, (int) $n['subscriberCount']) : 0,
         ];
     }
 }
@@ -384,7 +387,82 @@ if (!function_exists('mvp_affiliate_render_newsletter_at')) {
         $n = mvp_affiliate_newsletter_data();
         $picked = $surface === 'homepage' ? $n['homepagePlacement'] : $n['sidebarPlacement'];
         if ($picked !== $slot) return '';
-        return mvp_affiliate_render_newsletter_inline($atts);
+        // Homepage gets the two-column hero treatment; sidebar keeps the
+        // compact inline form (narrow column doesn't fit two columns).
+        return $surface === 'homepage'
+            ? mvp_affiliate_render_newsletter_hero($atts)
+            : mvp_affiliate_render_newsletter_inline($atts);
+    }
+}
+
+/**
+ * Two-column homepage newsletter hero. Left column = brand promise (title,
+ * benefit bullets, optional "Join N readers" social-proof when the list is
+ * past 50). Right column = the standard form.
+ *
+ * Wrapped in its own .mvp-newsletter-hero section with a soft gradient
+ * background (styled in assets/css/main.css) so the section reads as
+ * intentional design instead of a small card floating in white space.
+ *
+ * Falls back to the compact inline form when the newsletter is off (silent
+ * no-op via mvp_affiliate_render_newsletter_inline's enabled-check).
+ */
+if (!function_exists('mvp_affiliate_render_newsletter_hero')) {
+    function mvp_affiliate_render_newsletter_hero(array $atts = []): string {
+        if (!mvp_affiliate_newsletter_enabled()) return '';
+        $n = mvp_affiliate_newsletter_data();
+        $brand = $n['senderName'] !== '' ? $n['senderName'] : '';
+        // Title fallback echoes the form's default; subtitle defaults are
+        // resolved by render_newsletter_inline (creator overrides win).
+        $title_default = $brand
+            ? sprintf('Get the next %s review in your inbox', $brand)
+            : 'Get the next review in your inbox';
+        $title = !empty($atts['title']) ? $atts['title'] : ($n['ctaTitle'] ?: $title_default);
+        $subtitle = !empty($atts['subtitle']) ? $atts['subtitle'] : ($n['ctaSubtitle'] ?: 'No spam. One short email when there’s a new post worth your time or when there are things you might have missed online.');
+        // Benefit bullets — generic enough to fit every brand. Could be
+        // dashboard-editable later; for v1 they're sane defaults that
+        // re-iterate the subtitle in scannable form.
+        $bullets = [
+            'One short email per week — never spam',
+            'Skips the stuff that isn\'t worth your time',
+            'Unsubscribe with one click, any time',
+        ];
+        // Show "Join N readers" only past the threshold so a small list
+        // doesn't broadcast that it's small. Rounded down to the nearest
+        // 10 for visual cleanliness.
+        $sub_count = (int) $n['subscriberCount'];
+        $social_line = '';
+        if ($sub_count >= 50) {
+            $rounded = intdiv($sub_count, 10) * 10;
+            $social_line = sprintf('Join %d+ readers already on the list', $rounded);
+        }
+        // Form lives in the right column — we render via the inline
+        // helper (so the form HTML stays the single-source-of-truth in
+        // the plugin) and just wrap it in our hero layout.
+        $form_html = mvp_affiliate_render_newsletter_inline($atts);
+        ob_start();
+        ?>
+<div class="mvp-newsletter-hero">
+  <div class="mvp-newsletter-hero-grid">
+    <div class="mvp-newsletter-hero-copy">
+      <?php if ($social_line !== ''): ?>
+        <p class="mvp-newsletter-hero-eyebrow"><?php echo esc_html($social_line); ?></p>
+      <?php endif; ?>
+      <h2 class="mvp-newsletter-hero-title"><?php echo esc_html($title); ?></h2>
+      <p class="mvp-newsletter-hero-dek"><?php echo esc_html($subtitle); ?></p>
+      <ul class="mvp-newsletter-hero-bullets">
+        <?php foreach ($bullets as $b): ?>
+          <li><?php echo esc_html($b); ?></li>
+        <?php endforeach; ?>
+      </ul>
+    </div>
+    <div class="mvp-newsletter-hero-form">
+      <?php echo $form_html; ?>
+    </div>
+  </div>
+</div>
+        <?php
+        return ob_get_clean();
     }
 }
 

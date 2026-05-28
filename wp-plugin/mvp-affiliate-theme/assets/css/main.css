@@ -1150,3 +1150,113 @@ a.mvp-ad-slot-filled:hover {
 .gr-video-wrap .gr-video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
 .gr-video-label { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #555; }
 .gr-video-label::before { content: '▶'; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: #FF0000; color: #fff; border-radius: 4px; font-size: 10px; }
+
+/* ── Newsletter homepage hero ─────────────────────────────────────────────
+   Two-column section that wraps the signup form on the homepage. Reads as
+   a designed band of the page (gradient + ample padding) instead of a
+   small card floating in white space. Left column: title + bullets +
+   optional social-proof eyebrow. Right column: the standard form.
+
+   The .mvp-newsletter-section wrapper around it (in front-page.php) is the
+   outer .mvp-section, so vertical rhythm is consistent with the rest of
+   the page. */
+.mvp-section.mvp-newsletter-section {
+  background: linear-gradient(180deg, #f5faff 0%, #ffffff 100%);
+}
+.mvp-newsletter-hero {
+  padding: 12px 0;
+}
+.mvp-newsletter-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: center;
+}
+.mvp-newsletter-hero-copy { max-width: 480px; }
+.mvp-newsletter-hero-eyebrow {
+  display: inline-block;
+  margin: 0 0 12px;
+  padding: 4px 12px;
+  background: rgba(52, 199, 89, 0.12);
+  color: #1d8a4a;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.mvp-newsletter-hero-title {
+  margin: 0 0 12px;
+  font-family: var(--mvp-font-serif);
+  font-size: 32px;
+  line-height: 1.2;
+  color: #1d1d1f;
+  font-weight: 700;
+}
+.mvp-newsletter-hero-dek {
+  margin: 0 0 18px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: #4a4a4d;
+}
+.mvp-newsletter-hero-bullets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mvp-newsletter-hero-bullets li {
+  position: relative;
+  padding-left: 24px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #1d1d1f;
+}
+.mvp-newsletter-hero-bullets li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  background: #34c759;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.mvp-newsletter-hero-form .mvp-newsletter {
+  /* Override the standalone form's max-width so it uses the column it
+     sits in rather than centering at its own 480px. */
+  max-width: 100%;
+  margin: 0;
+}
+
+/* Mobile: stack the columns vertically, hide the bullets to save space
+   (the dek covers the same ground), make the form's email + button stack
+   full-width instead of side-by-side — bigger tap targets, no
+   thumbnail-sized button. */
+@media (max-width: 768px) {
+  .mvp-newsletter-hero-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    text-align: left;
+  }
+  .mvp-newsletter-hero-title { font-size: 26px; }
+  .mvp-newsletter-hero-bullets { display: none; }
+  .mvp-newsletter-hero-form .mvp-newsletter .mvp-newsletter-form { flex-direction: column; }
+  .mvp-newsletter-hero-form .mvp-newsletter .mvp-newsletter-form input[type="email"],
+  .mvp-newsletter-hero-form .mvp-newsletter .mvp-newsletter-form button { width: 100%; }
+}
+/* Apply the stacked email+button to ALL placements on mobile, including
+   the sidebar form and standalone shortcode renders. */
+@media (max-width: 768px) {
+  .mvp-newsletter .mvp-newsletter-form { flex-direction: column; }
+  .mvp-newsletter .mvp-newsletter-form input[type="email"],
+  .mvp-newsletter .mvp-newsletter-form button { width: 100%; }
+}

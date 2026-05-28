@@ -111,11 +111,19 @@ export async function POST(req: Request) {
       // so the theme always has fresh data. When enabled is false, the
       // theme silently skips rendering.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: nlRow } = await (supabase as any)
-        .from('newsletter_settings')
-        .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
-        .eq('user_id', user.id)
-        .maybeSingle()
+      const [{ data: nlRow }, { count: nlActiveCount }] = await Promise.all([
+        (supabase as any)
+          .from('newsletter_settings')
+          .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,homepage_placement,sidebar_placement')
+          .eq('user_id', user.id)
+          .maybeSingle(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any)
+          .from('newsletter_subscribers')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('status', 'active'),
+      ])
       const nlEnabled = !!nlRow?.enabled
       const nlSenderName = (nlRow?.sender_name as string | null)?.trim() || null
       const nlCtaTitle = (nlRow?.cta_title as string | null)?.trim() || null
@@ -123,6 +131,7 @@ export async function POST(req: Request) {
       const nlCtaButton = (nlRow?.cta_button as string | null)?.trim() || null
       const nlHomePlacement = (nlRow?.homepage_placement as string | null)?.trim() || null
       const nlSideBarPlacement = (nlRow?.sidebar_placement as string | null)?.trim() || null
+      const nlSubscriberCount = typeof nlActiveCount === 'number' ? nlActiveCount : 0
 
       const payload = {
         ...existing,
@@ -153,6 +162,10 @@ export async function POST(req: Request) {
           // ('after_ads' on homepage, 'bottom' in sidebar).
           homepagePlacement: nlHomePlacement,
           sidebarPlacement: nlSideBarPlacement,
+          // Active-subscriber count for the homepage hero's social-proof
+          // line. Theme suppresses it below 50 so small lists don't
+          // self-sabotage.
+          subscriberCount: nlSubscriberCount,
         },
       }
 
