@@ -227,7 +227,7 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
             disabled={busy}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
             style={{ background: '#FF2D78' }}
-            title="Replace the product photo the AI uses to render the exact product"
+            title="Replace the product photo MVP uses to render the exact product"
           >
             {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Replace photo
           </button>
@@ -239,7 +239,7 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
           disabled={busy}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
           style={{ background: '#FF2D78' }}
-          title="Upload a clean product photo so the AI builds an exact representation of the product"
+          title="Upload a clean product photo so MVP builds an exact representation of the product"
         >
           {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload product photo
         </button>

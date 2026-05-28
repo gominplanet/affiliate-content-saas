@@ -297,7 +297,7 @@ export default function PhotoboothPage() {
     <>
       <Header
         title="Photobooth"
-        subtitle="Teach the AI your face once — then put the real you in every thumbnail, post, and studio-quality headshot."
+        subtitle="Teach MVP your face once — then put the real you in every thumbnail, post, and studio-quality headshot."
       />
 
       {!isPaid && (
@@ -321,14 +321,14 @@ export default function PhotoboothPage() {
 
         {/* ── Explainer ─────────────────────────────────────────────────────── */}
         <div className="card p-5">
-          <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Start here: teach the AI your face</h2>
+          <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Start here: teach MVP your face</h2>
           <p className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0] mb-3">
-            Before MVP can put <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">you</strong> in your thumbnails and posts, it has to learn what you look like. Set this up once and the AI will cast the real you everywhere — thumbnails, Instagram images, and the headshots below — instead of a stock-photo stranger.
+            Before MVP can put <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">you</strong> in your thumbnails and posts, it has to learn what you look like. Set this up once and MVP will cast the real you everywhere — thumbnails, Instagram images, and the headshots below — instead of a stock-photo stranger.
           </p>
           <ul className="text-[13px] leading-relaxed text-[#3a3a3c] dark:text-[#ebebf0] flex flex-col gap-1.5 list-disc pl-5">
             <li>Click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Add a face</strong> and upload <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">{MIN_IMAGES}–{MAX_IMAGES} clear photos</strong> of yourself. More is better — mix angles, expressions, and lighting.</li>
             <li>It&apos;s ready <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">instantly</strong> — no training wait.</li>
-            <li>From then on it&apos;s the reference for your face everywhere the AI casts you. More (and clearer) photos = stronger likeness.</li>
+            <li>From then on it&apos;s the reference for your face everywhere MVP casts you. More (and clearer) photos = stronger likeness.</li>
           </ul>
           <p className="text-[12px] text-[#86868b] dark:text-[#8e8e93] mt-3">
             This is the highest-leverage thing you can set up — a real, recognizable face dramatically out-clicks a generic one.

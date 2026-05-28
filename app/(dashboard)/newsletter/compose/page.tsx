@@ -268,7 +268,7 @@ export default function NewsletterComposePage() {
               description. */}
           <div className="card p-5 mb-5">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">1. Pick posts for this issue</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">Search the entire blog or scroll the most-recent 10. Each picked post gets its own card with a thumbnail + a one-sentence &quot;why&quot; Claude writes for you.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">Search the entire blog or scroll the most-recent 10. Each picked post gets its own card with a thumbnail + a one-sentence &quot;why&quot; MVP writes for you.</p>
 
             <div className="relative mb-3">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b]" />
@@ -377,7 +377,7 @@ export default function NewsletterComposePage() {
           {/* Personal message */}
           <div className="card p-5 mb-5">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">2. Anything to tell your readers? <span className="text-[#86868b] font-normal">(optional)</span></p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">A short note that appears verbatim in the email — Claude will reference it naturally in the intro.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">A short note that appears verbatim in the email — MVP will reference it naturally in the intro.</p>
             <textarea
               value={personalMessage}
               onChange={(e) => setPersonalMessage(e.target.value)}
@@ -445,7 +445,7 @@ export default function NewsletterComposePage() {
           )}
 
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Claude drafts the subject + intro + per-post blurbs + sign-off in your voice.</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">MVP drafts the subject + intro + per-post blurbs + sign-off in your voice.</p>
             <button
               onClick={() => void handleDraft()}
               disabled={drafting || (pickedIds.length === 0 && curated.length === 0 && !personalMessage.trim())}

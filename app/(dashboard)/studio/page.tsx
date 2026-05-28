@@ -394,7 +394,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
       const isOverload = (d: Record<string, unknown>) =>
         typeof d.error === 'string' && /overload/i.test(d.error as string)
       for (let i = 0; !res.ok && isOverload(data) && i < 2; i++) {
-        setError(`Claude is overloaded — auto-retrying (${i + 1}/2)…`)
+        setError(`MVP is overloaded — auto-retrying (${i + 1}/2)…`)
         await new Promise(r => setTimeout(r, 8000 + i * 4000))
         res = await callOnce()
         data = await safeJson(res)
@@ -1165,7 +1165,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2 text-xs text-[#0071e3] font-medium">
                   <Loader2 size={12} className="animate-spin" />
-                  Running AI agent swarm…
+                  Running MVP agent swarm…
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {(video.detectedAsin
@@ -1805,9 +1805,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
                             onClick={() => generateThumbnail({ textMode: 'baked' })}
                             disabled={generatingThumbnail}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#5856d6] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
-                            title="Re-render with the headline baked into the image by the AI (more integrated, but may have typos)"
+                            title="Re-render with the headline baked into the image by MVP (more integrated, but may have typos)"
                           >
-                            <RefreshCw size={12} /> Try AI-baked text
+                            <RefreshCw size={12} /> Try MVP-baked text
                           </button>
                         </>
                       )}
@@ -2057,7 +2057,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               Pick a thumbnail headline
             </h3>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Five product-specific options written for THIS video — pick the one you like, or write your own. The AI then composes around your choice so the title sits where it should.
+              Five product-specific options written for THIS video — pick the one you like, or write your own. MVP then composes around your choice so the title sits where it should.
             </p>
 
             <div className="flex flex-col gap-2 mb-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -2072,7 +2072,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               {/* Error — user can still write their own. */}
               {!titleOptionsLoading && titleOptionsError && (
                 <div className="text-xs p-3 rounded-lg border border-[#ff9500]/30 bg-[#ff9500]/5 text-[#ff9500]">
-                  Couldn&apos;t load AI title options ({titleOptionsError}). You can still write your own below.
+                  Couldn&apos;t load MVP title options ({titleOptionsError}). You can still write your own below.
                 </div>
               )}
 
@@ -2117,7 +2117,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Write my own</p>
                   <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-2">
-                    Type the exact text. We&apos;ll overlay it crisply on the AI-generated background.
+                    Type the exact text. We&apos;ll overlay it crisply on the MVP-generated background.
                   </p>
                   {headlinePromptChoice === 'custom' && (
                     <input

@@ -90,7 +90,7 @@ export default function LearnPage() {
       const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error || 'Refresh failed')
       if (d.evolved) {
-        setEvolveResult(`AI filled ${d.fieldsFilled} empty field${d.fieldsFilled === 1 ? '' : 's'} based on your published posts. Reloading…`)
+        setEvolveResult(`MVP filled ${d.fieldsFilled} empty field${d.fieldsFilled === 1 ? '' : 's'} based on your published posts. Reloading…`)
         setTimeout(() => load(), 800)
       } else {
         setEvolveResult(d.reason || 'Nothing to add right now.')
@@ -139,7 +139,7 @@ export default function LearnPage() {
     <>
       <Header
         title="Learning"
-        subtitle="Train the blog writer in your voice. Every field here is read by the AI on every post — be specific."
+        subtitle="Train the blog writer in your voice. Every field here is read by MVP on every post — be specific."
       />
 
       <TutorialVideo sectionKey="learning" />
@@ -150,9 +150,9 @@ export default function LearnPage() {
             <Sparkles size={16} className="text-[#5856d6]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Let the AI fill in the gaps</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Let MVP fill in the gaps</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-              Once you&apos;ve published a few posts, the AI can read them and suggest answers for the fields you haven&apos;t filled in yet. Your existing answers are never overwritten — gaps only.
+              Once you&apos;ve published a few posts, MVP can read them and suggest answers for the fields you haven&apos;t filled in yet. Your existing answers are never overwritten — gaps only.
             </p>
             <div className="flex items-center gap-3 mt-3 flex-wrap">
               <button
@@ -162,7 +162,7 @@ export default function LearnPage() {
               >
                 {evolving
                   ? <><Loader2 size={11} className="animate-spin" /> Reading your posts…</>
-                  : <><Sparkles size={11} /> Refresh AI suggestions</>}
+                  : <><Sparkles size={11} /> Refresh MVP suggestions</>}
               </button>
               {evolveResult && (
                 <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{evolveResult}</span>

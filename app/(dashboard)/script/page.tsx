@@ -196,7 +196,7 @@ export default function ScriptPage() {
         )}
 
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Claude writes it in your brand voice, grounded in the product info we scrape.</p>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">MVP writes it in your brand voice, grounded in the product info we scrape.</p>
           <button
             onClick={() => void generate()}
             disabled={generating || !input.trim()}
@@ -216,7 +216,7 @@ export default function ScriptPage() {
       {recent.length > 0 && (
         <div className="card p-5 mt-6">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Recent scripts</p>
-          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">Click any to re-open it. The script body stays exactly as Claude wrote it the first time — no re-generation, no token cost.</p>
+          <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">Click any to re-open it. The script body stays exactly as MVP wrote it the first time — no re-generation, no token cost.</p>
           <div className="flex flex-col gap-1.5">
             {recent.map(s => {
               const meta = STYLE_META[s.style]
