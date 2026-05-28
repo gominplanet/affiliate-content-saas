@@ -387,7 +387,7 @@ function CategoryPicker({
 // ── Generation status badge ───────────────────────────────────────────────────
 type GenStatus = 'idle' | 'generating' | 'done' | 'error'
 
-const GEN_STEPS = ['Reading transcript…', 'Generating blog post…', 'Publishing to WordPress…']
+const GEN_STEPS = ['Reading transcript…', 'Generating blog post…', 'Publishing to WordPress…', 'Adding product photos…']
 
 /** Pro-only modal that collects "what was missing" feedback before
  *  the one-shot AI rewrite fires. Submit is disabled until the user
@@ -650,6 +650,39 @@ function GenerateButton({
         throw new Error(errText(data.error) || 'Generation failed')
       }
       setResult({ url: data.wordpressUrl as string, title: data.title as string })
+
+      // The AI in-article image step lives inside the generate route's
+      // after() block. Vercel routinely cuts that block off before the slow
+      // fal calls (~30-90s of work after the response ships) — so on most
+      // initial generations the post lands text-only even when "Include
+      // photos" was ticked. Refresh-images is the exact same image-gen
+      // path running as a fresh synchronous request, which works
+      // reliably. Auto-trigger it here so the user gets images on the
+      // FIRST attempt instead of having to manually hit "Refresh images"
+      // after every post. Skipped when the user uploaded their own
+      // images (those flow through a different, fast branch that does
+      // complete inside after()).
+      if (includeImages && userImages.length === 0 && data.wordpressPostId) {
+        setStepIdx(GEN_STEPS.length - 1) // "Adding product photos…"
+        try {
+          const imgRes = await fetch('/api/blog/refresh-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wordpressPostId: data.wordpressPostId }),
+          })
+          const imgData: Record<string, unknown> = await imgRes.json().catch(() => ({}))
+          if (imgRes.ok && typeof imgData.count === 'number') {
+            const count = imgData.count
+            // Reflect the count on the badge straight away so the user
+            // sees "🖼 N" without a Content-page reload.
+            setResult((prev) => prev ? { ...prev, bodyImagesCount: count } : prev)
+          }
+        } catch {
+          // Non-fatal — the post is already published. Worst case the
+          // user hits Refresh images manually; the badge will then update.
+        }
+      }
+
       setStatus('done')
       onDone(data.wordpressUrl as string, data.title as string, data.postId as string)
     } catch (err: unknown) {
