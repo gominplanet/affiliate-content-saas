@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   const sb = supabase as any
   const { data: video } = await sb
     .from('youtube_videos')
-    .select('id,title,description,instagram_video_url,instagram_reel_id,instagram_story_id')
+    .select('id,title,description,instagram_video_url,instagram_reel_id,instagram_story_id,youtube_video_id')
     .eq('id', videoId)
     .eq('user_id', user.id)
     .maybeSingle()
@@ -72,9 +72,10 @@ export async function GET(request: Request) {
   const videoUrl = (video.instagram_video_url as string | null) ?? null
   if (!videoUrl) {
     return NextResponse.json({
-      error: 'No vertical MP4 yet — upload one for this Short first.',
+      error: 'No vertical MP4 yet — download this Short from YouTube Studio and drop it here.',
       noVideo: true,
       title: video.title,
+      youtubeVideoId: video.youtube_video_id ?? null,
     })
   }
 
@@ -102,6 +103,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     title: video.title,
     videoUrl,
+    youtubeVideoId: video.youtube_video_id ?? null,
     defaultCaption: result.caption,
     hashtags: result.hashtags,
     hook: result.hook,

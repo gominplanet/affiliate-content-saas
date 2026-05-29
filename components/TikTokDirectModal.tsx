@@ -15,7 +15,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
-  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package, Download,
+  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package,
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 
@@ -35,6 +35,9 @@ interface CreatorInfo {
 interface VideoMeta {
   title: string
   videoUrl: string | null
+  /** 11-char YouTube video id — used to deep-link into YouTube Studio
+   *  where the creator can hit Download to grab the original MP4. */
+  youtubeVideoId?: string | null
   defaultCaption: string
   hashtags: string[]
   hook: string
@@ -87,10 +90,9 @@ export function TikTokDirectModal({
   const [publishStatus, setPublishStatus] = useState<'idle' | 'processing' | 'published' | 'failed'>('idle')
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
-  // YouTube Short import state — for rows with no IG video URL yet and
-  // for "re-import a fresh copy" when the stored video is wrong.
-  const [importing, setImporting] = useState(false)
-  const [importError, setImportError] = useState<string | null>(null)
+  // 11-char YouTube id stashed separately so we can build the Studio link
+  // even on the error path (where `meta` is null).
+  const [youtubeId, setYoutubeId] = useState<string | null>(null)
 
   const loadMeta = useCallback(async () => {
     setLoading(true)
@@ -108,6 +110,7 @@ export function TikTokDirectModal({
       }
       setInfo(infoJson.info as CreatorInfo)
       const metaJson = await metaRes.json()
+      setYoutubeId((metaJson.youtubeVideoId as string | null) ?? null)
       if (metaRes.ok && metaJson.videoUrl) {
         setMeta(metaJson as VideoMeta)
         setCaption((metaJson.defaultCaption as string) || '')
@@ -124,30 +127,6 @@ export function TikTokDirectModal({
   }, [videoId])
 
   useEffect(() => { void loadMeta() }, [loadMeta])
-
-  // Import / re-import the Short from YouTube. See /api/youtube/import-short
-  // for the streaming-download + Supabase Storage upload mechanics.
-  const importFromYoutube = useCallback(async () => {
-    setImporting(true)
-    setImportError(null)
-    try {
-      const res = await fetch('/api/youtube/import-short', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId }),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.ok) {
-        setImportError(json.error || 'Import failed.')
-        return
-      }
-      await loadMeta()
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : 'Import failed.')
-    } finally {
-      setImporting(false)
-    }
-  }, [videoId, loadMeta])
 
   // Poll publish status after kicking off Direct Post.
   useEffect(() => {
@@ -274,34 +253,26 @@ export function TikTokDirectModal({
                   </a>
                 )}
               </div>
-              {/* Import-from-YouTube — best-effort first try. YouTube
-                  protects videos on data-center IPs so this hits a wall
-                  about 50% of the time. We surface it but make the upload
-                  fallback equally prominent. */}
+              {/* Studio download + drop. Studio's Download button hands
+                  the creator the original MP4 they uploaded — no quality
+                  loss, no bot-wall drama. */}
               {!reconnectRequired && (
                 <>
-                  <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-3">
-                    <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">This Short is already on your YouTube channel. We can try to pull it directly.</p>
-                    {importError && <p className="text-xs text-[#ff3b30]">{importError}</p>}
-                    <button
-                      type="button"
-                      onClick={() => void importFromYoutube()}
-                      disabled={importing}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60"
-                    >
-                      {importing
-                        ? <><Loader2 size={14} className="animate-spin" /> Pulling from YouTube… (15-60s)</>
-                        : <><Download size={14} /> Try import from YouTube</>
-                      }
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-3 my-1">
-                    <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
-                    <span className="text-[10px] uppercase tracking-wide text-[#86868b] font-semibold">or</span>
-                    <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
-                  </div>
-
+                  {youtubeId && (
+                    <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-2.5">
+                      <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">
+                        Open this Short in YouTube Studio, hit <strong>⋮ → Download</strong>, then drop the MP4 in the zone below.
+                      </p>
+                      <a
+                        href={`https://studio.youtube.com/video/${youtubeId}/edit`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4]"
+                      >
+                        Open in YouTube Studio <ExternalLink size={14} />
+                      </a>
+                    </div>
+                  )}
                   <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} />
                 </>
               )}
@@ -331,19 +302,17 @@ export function TikTokDirectModal({
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                     <video src={meta.videoUrl} controls playsInline className="w-full h-full" />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void importFromYoutube()}
-                    disabled={importing}
-                    className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1 disabled:opacity-50"
-                    title="Try replacing with a fresh copy from YouTube"
-                  >
-                    {importing
-                      ? <><Loader2 size={10} className="animate-spin" /> Re-importing…</>
-                      : <><Download size={10} /> Wrong video? Try re-import from YouTube</>
-                    }
-                  </button>
-                  {importError && <p className="text-[10px] text-[#ff3b30]">{importError}</p>}
+                  {(youtubeId || meta.youtubeVideoId) && (
+                    <a
+                      href={`https://studio.youtube.com/video/${youtubeId || meta.youtubeVideoId}/edit`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1"
+                      title="Open this Short in YouTube Studio to download the original MP4"
+                    >
+                      <ExternalLink size={10} /> Wrong video? Open in YouTube Studio to grab the right one
+                    </a>
+                  )}
                   <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} compact />
                 </div>
               )}

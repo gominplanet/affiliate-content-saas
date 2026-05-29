@@ -12,13 +12,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
-  RefreshCw, Package, Download,
+  RefreshCw, Package,
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 
 interface VideoMeta {
   title: string
   videoUrl: string | null
+  /** 11-char YouTube video id. Used to deep-link the creator into their
+   *  YouTube Studio so they can hit the official Download button. */
+  youtubeVideoId?: string | null
   defaultCaption: string
   hashtags: string[]
   hook: string
@@ -58,10 +61,9 @@ export function InstagramDirectModal({
   const [postError, setPostError] = useState<string | null>(null)
   const [posted, setPosted] = useState<{ reel?: string; story?: string } | null>(null)
   const [partialErrors, setPartialErrors] = useState<string[]>([])
-  // YouTube Short import state — used both when the row has no IG video URL
-  // yet AND when the user wants to re-import a fresh copy.
-  const [importing, setImporting] = useState(false)
-  const [importError, setImportError] = useState<string | null>(null)
+  // 11-char YouTube id stashed separately so we can build the Studio link
+  // even on the error path (where `meta` is null).
+  const [youtubeId, setYoutubeId] = useState<string | null>(null)
 
   const loadMeta = useCallback(async () => {
     setLoading(true)
@@ -69,6 +71,7 @@ export function InstagramDirectModal({
     try {
       const res = await fetch(`/api/instagram/post-direct-video/video-meta?videoId=${encodeURIComponent(videoId)}`)
       const json = await res.json()
+      setYoutubeId((json.youtubeVideoId as string | null) ?? null)
       if (!res.ok || !json.videoUrl) {
         setLoadError(json.error || 'No vertical video ready for this Short.')
         setMeta(null)
@@ -86,32 +89,6 @@ export function InstagramDirectModal({
   }, [videoId])
 
   useEffect(() => { void loadMeta() }, [loadMeta])
-
-  // Import / re-import the Short directly from YouTube. Server-side this
-  // calls ytdl-core, streams the bytes to Supabase Storage, then updates
-  // youtube_videos.instagram_video_url. On success we re-fetch meta so
-  // the modal preview + caption refresh automatically.
-  const importFromYoutube = useCallback(async () => {
-    setImporting(true)
-    setImportError(null)
-    try {
-      const res = await fetch('/api/youtube/import-short', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId }),
-      })
-      const json = await res.json()
-      if (!res.ok || !json.ok) {
-        setImportError(json.error || 'Import failed.')
-        return
-      }
-      await loadMeta()
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : 'Import failed.')
-    } finally {
-      setImporting(false)
-    }
-  }, [videoId, loadMeta])
 
   const regenerateCaption = useCallback(async () => {
     setRegenerating(true)
@@ -202,37 +179,27 @@ export function InstagramDirectModal({
                   </a>
                 )}
               </div>
-              {/* Import-from-YouTube — works sometimes (YouTube has bot
-                  protection on data-center IPs). We keep it as a "try this
-                  first" optimization, but the bulletproof path is the
-                  upload zone below. */}
-              <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-3">
-                <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">This Short is already on your YouTube channel. We can try to pull it directly.</p>
-                {importError && (
-                  <p className="text-xs text-[#ff3b30]">{importError}</p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void importFromYoutube()}
-                  disabled={importing}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60"
-                >
-                  {importing
-                    ? <><Loader2 size={14} className="animate-spin" /> Pulling from YouTube… (15-60s)</>
-                    : <><Download size={14} /> Try import from YouTube</>
-                  }
-                </button>
-              </div>
+              {/* The straightforward flow: download from YouTube Studio
+                  (official, always works), then drop into the zone below.
+                  Studio's Download button hands the creator the same MP4
+                  they originally uploaded — no quality loss. */}
+              {youtubeId && (
+                <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-2.5">
+                  <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">
+                    Open this Short in YouTube Studio, hit <strong>⋮ → Download</strong>, then drop the MP4 in the zone below.
+                  </p>
+                  <a
+                    href={`https://studio.youtube.com/video/${youtubeId}/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4]"
+                  >
+                    Open in YouTube Studio <ExternalLink size={14} />
+                  </a>
+                </div>
+              )}
 
-              <div className="flex items-center gap-3 my-1">
-                <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
-                <span className="text-[10px] uppercase tracking-wide text-[#86868b] font-semibold">or</span>
-                <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
-              </div>
-
-              {/* Bulletproof fallback — drag-and-drop / file picker. The
-                  MP4 is almost certainly still in the creator's Downloads
-                  folder from when they uploaded it to YouTube. */}
+              {/* Drag-and-drop / file picker — the bulletproof path. */}
               <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} />
             </div>
           ) : !meta ? null : (
@@ -253,22 +220,18 @@ export function InstagramDirectModal({
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                     <video src={meta.videoUrl} controls playsInline className="w-full h-full" />
                   </div>
-                  {/* Wrong-video escape hatches: re-import (try YouTube) or
-                      upload (always works). Both stacked tight so users
-                      don't bounce out of the modal. */}
-                  <button
-                    type="button"
-                    onClick={() => void importFromYoutube()}
-                    disabled={importing}
-                    className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1 disabled:opacity-50"
-                    title="Try replacing with a fresh copy from YouTube"
-                  >
-                    {importing
-                      ? <><Loader2 size={10} className="animate-spin" /> Re-importing…</>
-                      : <><Download size={10} /> Wrong video? Try re-import from YouTube</>
-                    }
-                  </button>
-                  {importError && <p className="text-[10px] text-[#ff3b30]">{importError}</p>}
+                  {/* Wrong-video escape hatches: Studio link + upload. */}
+                  {(youtubeId || meta.youtubeVideoId) && (
+                    <a
+                      href={`https://studio.youtube.com/video/${youtubeId || meta.youtubeVideoId}/edit`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1"
+                      title="Open this Short in YouTube Studio to download the original MP4"
+                    >
+                      <ExternalLink size={10} /> Wrong video? Open in YouTube Studio to grab the right one
+                    </a>
+                  )}
                   <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} compact />
                 </div>
               )}
