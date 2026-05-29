@@ -279,6 +279,7 @@ export default function ScriptPage() {
               <div className="text-[12px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-relaxed">
                 You&apos;ll get <strong>3 hook variants</strong> to pick from, a beat-by-beat structure with scripted hook + verdict, talking points for the middle, and a subject-only shot list.
                 {(style === 'hands_on' || style === 'long_term') && <> A <strong>vertical short cutdown</strong> is written from scratch for TikTok / Reels / YT Shorts.</>}
+                {' '}Each script applies a UGC playbook from seasoned reviewers — hook strategy, where the trade-off lives, no on-camera CTA — woven into your own voice.
               </div>
             </div>
 
@@ -289,7 +290,7 @@ export default function ScriptPage() {
             )}
 
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">MVP writes it in your brand voice, grounded in the product info we scrape.</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md leading-relaxed">Written in your brand voice, using a UGC review playbook from seasoned creators — grounded in the real product info we scrape.</p>
               <button
                 onClick={() => void generate()}
                 disabled={generating || !input.trim()}
@@ -398,7 +399,7 @@ function UpsellCard({ usage }: { usage: UsageInfo }) {
         </div>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Get film-ready scripts in your voice</h2>
         <p className="text-sm text-[#3a3a3c] dark:text-[#d2d2d7] leading-relaxed max-w-xl mb-4">
-          {usage.reason || 'Video scripts are a Pro feature.'} Paste a product, pick a style, get a 3-6 min review script with three hook variants to pick from, scripted hook and verdict, beat-by-beat talking points for the middle, and an auto vertical short for TikTok / Reels / YT Shorts.
+          {usage.reason || 'Video scripts are a Pro feature.'} Paste a product, pick a style, get a film-ready script written in your brand voice — applying a UGC review playbook built with seasoned creators so the structure, hooks, and verdict land the way reviews actually convert.
         </p>
         <ul className="text-[13px] text-[#3a3a3c] dark:text-[#d2d2d7] mb-5 flex flex-col gap-1.5 max-w-lg">
           <li className="flex items-start gap-2"><CheckCircle size={13} className="text-[#34c759] flex-shrink-0 mt-0.5" /> <span>First Look · Hands-On Test · Long-Term Review — three time-based styles</span></li>
