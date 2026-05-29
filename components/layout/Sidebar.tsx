@@ -53,9 +53,13 @@ import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
 import { resetTutorials } from '@/components/TutorialVideo'
 import { COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
 
-// Sidebar nav, grouped by workflow phase. Dashboard + AI Assistant are
-// pinned (cross-cutting daily destinations); everything else lives in a
-// collapsible group: Set Up & Brand → Create & Publish → Grow & Earn.
+// Sidebar nav, grouped by workflow phase. Dashboard is pinned at the very
+// top with Blog Set Up + Integrations directly beneath it — those two are
+// the "one-time per site" links creators jump to constantly during setup
+// and rarely after, so they belong above the workflow groups, not buried
+// inside one. Everything else lives in a collapsible group: Customize →
+// Create & Publish → Grow & Earn → Collaborate → Communicate → Learn & Help.
+//
 // Setup is split into Blog Set Up (WordPress wizard) and Integrations
 // (3rd-party social connectors) — both route to /setup with different ?tab=
 // values; active highlighting uses the query param.
@@ -75,21 +79,27 @@ type NavGroup = {
   items: NavItem[]
 }
 
-// Dashboard sits alone at the very top — it's the home view, not a
-// workflow section. AI Assistant moved into "Learn & Help" below.
+// Pinned (top of sidebar, no group header). Dashboard is the home view;
+// Blog Set Up + Integrations sit right under it because creators hit them
+// constantly while configuring a site and bury them inside a group hides
+// the most-clicked destinations during onboarding.
 const pinnedNav: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, matchKind: 'exact' },
+  { href: '/setup', label: 'Blog Set Up', icon: Wrench, matchKind: 'setup-wp' },
+  { href: '/setup?tab=integrations', label: 'Integrations', icon: Plug, matchKind: 'setup-int' },
 ]
 
 const navGroups: NavGroup[] = [
   {
     id: 'setup',
-    label: 'Set Up',
-    icon: Wrench,
-    accent: '#5856d6', // indigo — "configure"
+    // Renamed from "Set Up" → "Customize" once Blog Set Up + Integrations
+    // moved into pinnedNav. The remaining items (Brand Profile, Customize
+    // Blog, Photobooth, Learning) are all about shaping how the site /
+    // creator presents themselves — "Customize" reads truer than "Set Up".
+    label: 'Customize',
+    icon: Paintbrush,
+    accent: '#5856d6', // indigo — kept from the Set Up era for continuity
     items: [
-      { href: '/setup', label: 'Blog Set Up', icon: Wrench, matchKind: 'setup-wp' },
-      { href: '/setup?tab=integrations', label: 'Integrations', icon: Plug, matchKind: 'setup-int' },
       { href: '/brand', label: 'Brand Profile', icon: Palette, matchKind: 'prefix' },
       { href: '/customize', label: 'Customize Blog', icon: Paintbrush, matchKind: 'prefix' },
       { href: '/photobooth', label: 'Photobooth', icon: Camera, matchKind: 'prefix' },
@@ -343,12 +353,16 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
 
       {/* Primary nav */}
       <nav className="flex-1 px-3 pt-4 pb-2 flex flex-col gap-0.5">
-        {/* Pinned — cross-cutting daily destinations */}
+        {/* Pinned — Dashboard + the two one-time-per-site config destinations
+            (Blog Set Up + Integrations). These sit OUTSIDE a workflow group
+            because creators hit them constantly during onboarding and burying
+            them inside a collapsed section hides the most-clicked links. */}
         {pinnedNav.map(renderNavLink)}
 
-        {/* Collapsible workflow groups: Set Up & Brand → Create & Publish →
-            Grow & Earn. The group containing the current page is always open;
-            other collapses are remembered per browser. */}
+        {/* Collapsible workflow groups: Customize → Create & Publish → Grow &
+            Earn → Collaborate → Communicate → Learn & Help. The group
+            containing the current page is always open; other collapses are
+            remembered per browser. */}
         {/* Workflow sections. Each header shows a small coloured chip with
             the section's icon + the label in bold uppercase tracking. The
             chip colour is the section's accent — different for each — so
