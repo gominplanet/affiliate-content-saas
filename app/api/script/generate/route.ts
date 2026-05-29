@@ -94,7 +94,7 @@ const STYLE_SPEC: Record<Style, {
   first_look: {
     label: 'First Look',
     totalSec: 75,           // 60-90s vertical
-    shotCount: { min: 6, max: 8 },
+    shotCount: { min: 5, max: 7 },
     hasShort: false,        // First Look IS the vertical — no separate cutdown
     spine: [
       { id: 'hook',         label: 'Hook',                sec: 8,  scripted: true,  note: 'Open on a visual surprise or trade-off tease. 1 sentence max. Picks from the 3 hook variants above.' },
@@ -107,7 +107,7 @@ const STYLE_SPEC: Record<Style, {
   hands_on: {
     label: 'Hands-On Test',
     totalSec: 300,          // 5 min target (range 3-6 min)
-    shotCount: { min: 12, max: 14 },
+    shotCount: { min: 10, max: 13 },
     hasShort: true,
     spine: [
       { id: 'hook',         label: 'Hook',                sec: 12, scripted: true,  note: 'Pick from the 3 hook variants. 1-2 sentences. Problem-first or question — not bold claim.' },
@@ -123,7 +123,7 @@ const STYLE_SPEC: Record<Style, {
   long_term: {
     label: 'Long-Term Review',
     totalSec: 600,          // 10 min target (range 8-12 min)
-    shotCount: { min: 14, max: 18 },
+    shotCount: { min: 13, max: 16 },
     hasShort: true,
     spine: [
       { id: 'hook',         label: 'Hook',                sec: 15, scripted: true,  note: 'Pick from the 3 hook variants. Lead with the moment of doubt or the lived-in insight from weeks of use.' },
@@ -277,8 +277,8 @@ VOICE RULES (apply across hooks, scripted sections, and the short):
    - "game-changer", "mind-blowing", "next-level", "absolute banger"
 4. NEVER mention competitor product names. The review stands on its own. No "vs the [other brand]" anywhere.
 5. NEVER speak the price aloud. (Description + pinned comment handle the price.)
-6. NEVER mention "link in description / pinned comment / below". NO on-camera CTA. The close beat is 1 clean line, NOT a sign-off pitch.
-7. NEVER fabricate specs, features, numbers, materials, or experiences not in the product info above. If a detail isn't in the info, don't invent it — describe what's plausibly there ("metal hinge", "soft-touch finish") without claiming a spec.
+6. NEVER mention "link in description / pinned comment / below". NEVER plug another video, channel, full review, deep dive, or any other content the viewer should go watch. NO on-camera CTA in any form. Lines like "full breakdown is up on our channel", "watch the full review", "head to our channel", "more on the channel", "we cover that in the long version" are all banned in BOTH the long master AND the short cutdown. The close beat is 1 clean line, NOT a sign-off pitch.
+7. NEVER fabricate specs, features, numbers, materials, or experiences not in the product info above. Hard rule: do NOT name specific NUMERIC specs (degrees, watts, decibels, mAh, hours, mph, RPM) or specific MECHANISM TYPES (vibration motor, brushless motor, planetary gear, magnetic latch) unless they appear VERBATIM in the product info above. If a detail isn't in the info, use qualitative language instead — "leans back nicely", "the massage function is subtle", "the build feels solid" — never "135-degree recline", never "small vibration motor".
 8. Punchy spoken sentences. Read for the ear, not the page.
 ${writingSample ? '9. MIRROR the rhythm of the writing sample above. Same sentence lengths, same opener style.' : ''}
 
@@ -293,7 +293,8 @@ GRANULARITY
 - IMPROVISED sections (everything else) → \`script\` is an empty string. \`talkingPoints\` is 2-3 short bullet-style lines: what to cover + an optional sample line. Concrete, not generic.
 
 SHOT LIST
-- \`shots\` per section: ${spec.shotCount.min}-${spec.shotCount.max} TOTAL across the whole video — distribute across sections naturally (more on test scenarios, fewer on close).
+- HARD CAP: ${spec.shotCount.min}-${spec.shotCount.max} TOTAL shots across the entire video. Going over is a failure — keep it shootable in a single session.
+- Distribute with weight: 0-1 on hook, 1 on context, 1-2 on unbox, 2 on build, 2-3 on EACH real-use test, 1-2 on verdict, 0-1 on close. Real-use tests are where shots earn their place; the close usually needs none.
 - Subject only — "close-up of the side button" / "hands-on hero of the device on the desk" / "wide shot of the host turning it over". NO camera angles. NO lighting cues. NO framing notes. The creator decides those on the day.
 - Each shot is a single short phrase. No duplicates across the video.
 ${shortCutdownBlock}
@@ -351,6 +352,11 @@ Return ONLY a single JSON object with NO prose around it, NO markdown fences. Sh
   // ── Belt-and-braces scrub of the hard-banned phrases ──────────────────────
   // The prompt forbids these but a stray slip from the model would leak through.
   // We scrub them post-hoc rather than re-prompting on detection (cost guard).
+  //
+  // Channel-plug family is its own block — caught a "Full breakdown is up on
+  // our channel" leak in Alejandro's test run that the original "link in
+  // description" pattern didn't reach. Any sign-off pointing the viewer to
+  // another video / channel / breakdown is an on-camera CTA we banned.
   const BANNED_PATTERNS: Array<[RegExp, string]> = [
     [/\b(?:honestly|honesty|honest)\b/gi, ''],
     [/\b(?:hey guys|what['’]s up everyone|welcome back)\b[\s,.!]*/gi, ''],
@@ -358,6 +364,10 @@ Return ONLY a single JSON object with NO prose around it, NO markdown fences. Sh
     [/\b(?:smash (?:that|the) like|hit (?:that|the) bell|don['’]t forget to (?:like|subscribe))\b[\s,.!]*/gi, ''],
     [/\b(?:link in (?:the )?(?:description|bio|below)|check the description)\b[\s,.!]*/gi, ''],
     [/\b(?:game[- ]changer|mind[- ]blowing|next[- ]level|absolute banger)\b/gi, 'really good'],
+    // Channel / video-plug sign-offs.
+    [/[^.!?]*\b(?:full (?:breakdown|review|video|deep dive|version)|deep dive|long version)[^.!?]*\b(?:up on (?:our|the|my) channel|on (?:our|the|my) channel|in the (?:full )?video|over (?:on|at) (?:our|the|my) channel)[^.!?]*[.!?]?/gi, ''],
+    [/[^.!?]*\b(?:watch the full|head (?:over )?to (?:our|the|my) channel|more (?:on (?:our|the|my) channel|videos like this))[^.!?]*[.!?]?/gi, ''],
+    [/[^.!?]*\b(?:we (?:go (?:deeper|into more detail)|cover (?:more|that)) (?:in (?:the )?full|on (?:our|the|my) channel))[^.!?]*[.!?]?/gi, ''],
   ]
   const scrub = (s: string) => {
     let out = s
