@@ -107,7 +107,12 @@ const STYLE_SPEC: Record<Style, {
   hands_on: {
     label: 'Hands-On Test',
     totalSec: 300,          // 5 min target (range 3-6 min)
-    shotCount: { min: 10, max: 12 },
+    // 12-14 shots is what the model naturally lands on after the distribution
+    // rules — every shot earns its place, mostly weighted on the real-use
+    // tests. Tightened further in earlier passes (down to 10-12) but the
+    // model exceeded the cap because forcing it lower meant skimping on the
+    // test scenarios, which is where shots matter most.
+    shotCount: { min: 12, max: 14 },
     hasShort: true,
     spine: [
       { id: 'hook',         label: 'Hook',                sec: 12, scripted: true,  note: 'Pick from the 3 hook variants. 1-2 sentences. Problem-first or question — not bold claim.' },
