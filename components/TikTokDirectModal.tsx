@@ -15,7 +15,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
-  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package,
+  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package, Download,
 } from 'lucide-react'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
@@ -86,42 +86,67 @@ export function TikTokDirectModal({
   const [publishStatus, setPublishStatus] = useState<'idle' | 'processing' | 'published' | 'failed'>('idle')
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
+  // YouTube Short import state — for rows with no IG video URL yet and
+  // for "re-import a fresh copy" when the stored video is wrong.
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const [infoRes, metaRes] = await Promise.all([
-          fetch('/api/blog/tiktok-post/creator-info'),
-          fetch(`/api/blog/tiktok-post/video-meta?videoId=${encodeURIComponent(videoId)}`),
-        ])
-        const infoJson = await infoRes.json()
-        if (cancelled) return
-        if (!infoRes.ok) {
-          setLoadError(infoJson.error || 'Could not load your TikTok account info.')
-          setReconnectRequired(!!infoJson.reconnectRequired)
-          setLoading(false)
-          return
-        }
-        setInfo(infoJson.info as CreatorInfo)
-        const metaJson = await metaRes.json()
-        if (cancelled) return
-        if (metaRes.ok && metaJson.videoUrl) {
-          setMeta(metaJson as VideoMeta)
-          setCaption((metaJson.defaultCaption as string) || '')
-          setProductResolved((metaJson.productResolved as { title: string; asin: string | null } | null) || null)
-        } else {
-          setLoadError(metaJson.error || 'No vertical video file ready for this Short.')
-        }
-        setLoading(false)
-      } catch (e) {
-        if (cancelled) return
-        setLoadError(e instanceof Error ? e.message : 'Loading failed.')
-        setLoading(false)
+  const loadMeta = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const [infoRes, metaRes] = await Promise.all([
+        fetch('/api/blog/tiktok-post/creator-info'),
+        fetch(`/api/blog/tiktok-post/video-meta?videoId=${encodeURIComponent(videoId)}`),
+      ])
+      const infoJson = await infoRes.json()
+      if (!infoRes.ok) {
+        setLoadError(infoJson.error || 'Could not load your TikTok account info.')
+        setReconnectRequired(!!infoJson.reconnectRequired)
+        return
       }
-    })()
-    return () => { cancelled = true }
+      setInfo(infoJson.info as CreatorInfo)
+      const metaJson = await metaRes.json()
+      if (metaRes.ok && metaJson.videoUrl) {
+        setMeta(metaJson as VideoMeta)
+        setCaption((metaJson.defaultCaption as string) || '')
+        setProductResolved((metaJson.productResolved as { title: string; asin: string | null } | null) || null)
+      } else {
+        setMeta(null)
+        setLoadError(metaJson.error || 'No vertical video file ready for this Short.')
+      }
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Loading failed.')
+    } finally {
+      setLoading(false)
+    }
   }, [videoId])
+
+  useEffect(() => { void loadMeta() }, [loadMeta])
+
+  // Import / re-import the Short from YouTube. See /api/youtube/import-short
+  // for the streaming-download + Supabase Storage upload mechanics.
+  const importFromYoutube = useCallback(async () => {
+    setImporting(true)
+    setImportError(null)
+    try {
+      const res = await fetch('/api/youtube/import-short', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        setImportError(json.error || 'Import failed.')
+        return
+      }
+      await loadMeta()
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Import failed.')
+    } finally {
+      setImporting(false)
+    }
+  }, [videoId, loadMeta])
 
   // Poll publish status after kicking off Direct Post.
   useEffect(() => {
@@ -239,12 +264,33 @@ export function TikTokDirectModal({
               <Loader2 size={16} className="animate-spin mr-2" /> Loading + writing your caption…
             </div>
           ) : loadError ? (
-            <div className="rounded-lg border-[#ff3b30]/20 bg-[#ff3b30]/5 p-3">
-              <p className="text-sm text-[#ff3b30] flex items-start gap-2"><AlertCircle size={14} className="mt-0.5" /> {loadError}</p>
-              {reconnectRequired && (
-                <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#0071e3] hover:underline">
-                  Go to Integrations → Reconnect TikTok →
-                </a>
+            <div className="flex flex-col gap-3">
+              <div className="rounded-lg border-[#ff9500]/20 bg-[#ff9500]/5 p-3">
+                <p className="text-sm text-[#9a5d00] flex items-start gap-2"><AlertCircle size={14} className="mt-0.5" /> {loadError}</p>
+                {reconnectRequired && (
+                  <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#0071e3] hover:underline">
+                    Go to Integrations → Reconnect TikTok →
+                  </a>
+                )}
+              </div>
+              {/* Import from YouTube — only surfaces when the row needs a
+                  vertical (TikTok is fine, just no MP4 stored yet). */}
+              {!reconnectRequired && (
+                <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-3">
+                  <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">This Short is already on your YouTube channel. We can pull it directly — no upload needed.</p>
+                  {importError && <p className="text-xs text-[#ff3b30]">{importError}</p>}
+                  <button
+                    type="button"
+                    onClick={() => void importFromYoutube()}
+                    disabled={importing}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60"
+                  >
+                    {importing
+                      ? <><Loader2 size={14} className="animate-spin" /> Pulling from YouTube… (15-60s)</>
+                      : <><Download size={14} /> Import from YouTube</>
+                    }
+                  </button>
+                </div>
               )}
             </div>
           ) : !info || !meta ? null : (
@@ -267,9 +313,24 @@ export function TikTokDirectModal({
 
               {/* Video preview */}
               {meta.videoUrl && (
-                <div className="rounded-xl overflow-hidden bg-[#000] aspect-[9/16] max-w-[200px] mx-auto">
-                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                  <video src={meta.videoUrl} controls playsInline className="w-full h-full" />
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className="rounded-xl overflow-hidden bg-[#000] aspect-[9/16] max-w-[200px]">
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <video src={meta.videoUrl} controls playsInline className="w-full h-full" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void importFromYoutube()}
+                    disabled={importing}
+                    className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1 disabled:opacity-50"
+                    title="Replace this with a fresh copy from YouTube"
+                  >
+                    {importing
+                      ? <><Loader2 size={10} className="animate-spin" /> Re-importing…</>
+                      : <><Download size={10} /> Wrong video? Re-import from YouTube</>
+                    }
+                  </button>
+                  {importError && <p className="text-[10px] text-[#ff3b30]">{importError}</p>}
                 </div>
               )}
 
