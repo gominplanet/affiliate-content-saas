@@ -114,7 +114,12 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
-  const videoUrl = `${appUrl.replace(/\/$/, '')}/api/proxy-short/${videoId}`
+  // `.mp4` suffix is intentional. TikTok's PULL_FROM_URL downloader sniffs
+  // the URL extension as a first-pass content check — a bare UUID path
+  // makes its CDN flag the source as "unknown type" and abort the pull
+  // before downloading a byte. The proxy route strips the `.mp4` back off
+  // before resolving the videoId in the DB.
+  const videoUrl = `${appUrl.replace(/\/$/, '')}/api/proxy-short/${videoId}.mp4`
 
   // ── 6. Direct Post ───────────────────────────────────────────────────────
   const caption = (body.caption || '').slice(0, 2200)

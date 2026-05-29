@@ -57,10 +57,20 @@ async function serveProxy(
   params: { videoId: string },
   headOnly: boolean,
 ) {
-  const { videoId } = params
+  const t0 = Date.now()
+  // Accept either `<uuid>` or `<uuid>.mp4`. TikTok's CDN downloader sniffs
+  // the URL extension and prefers an explicit `.mp4` — bare UUIDs work in
+  // browsers but get rejected by TikTok's pull-from-URL pre-check.
+  const videoId = params.videoId.replace(/\.mp4$/i, '')
   if (!videoId || !/^[0-9a-f-]{36}$/i.test(videoId)) {
     return NextResponse.json({ error: 'Invalid videoId' }, { status: 400 })
   }
+  // Log every hit so we can see in Vercel logs whether TikTok actually
+  // reached us, what Range it asked for, and what User-Agent it sent.
+  const ua = request.headers.get('user-agent') || '-'
+  const rangeHdr = request.headers.get('range') || '-'
+  // eslint-disable-next-line no-console
+  console.log(`[proxy-short] ${headOnly ? 'HEAD' : 'GET'} videoId=${videoId} range=${rangeHdr} ua="${ua}"`)
 
   // Service role — no user context to scope by since TikTok hits this
   // route unauthenticated.
@@ -144,6 +154,8 @@ async function serveProxy(
 
   // HEAD: just headers, no body.
   if (headOnly) {
+    // eslint-disable-next-line no-console
+    console.log(`[proxy-short] HEAD done videoId=${videoId} status=${upstream.status} len=${headers['content-length'] || '?'} took=${Date.now() - t0}ms`)
     return new NextResponse(null, { status: upstream.status, headers })
   }
   // Buffer to ArrayBuffer instead of piping the ReadableStream. This
@@ -154,6 +166,8 @@ async function serveProxy(
   // Recompute Content-Length from the actual buffer in case upstream's
   // value disagreed with the bytes we got.
   headers['content-length'] = String(buf.byteLength)
+  // eslint-disable-next-line no-console
+  console.log(`[proxy-short] GET done videoId=${videoId} status=${upstream.status} bytes=${buf.byteLength} took=${Date.now() - t0}ms`)
   return new NextResponse(buf, {
     status: upstream.status,
     headers,
