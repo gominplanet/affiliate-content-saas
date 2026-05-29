@@ -1739,7 +1739,12 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
                 )
                 : <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
               }
-              Connected as <strong>{tiktok.displayName || `@${tiktok.username}`}</strong>
+              {/* Display name and username can both be blank when the OAuth
+                  scope grants only user.info.basic — TikTok returns username
+                  only with user.info.profile, which we deliberately don't
+                  request. Fall back gracefully so the card never reads as
+                  "Connected as @" with an empty handle. */}
+              Connected as <strong>{tiktok.displayName || (tiktok.username ? `@${tiktok.username}` : 'your TikTok account')}</strong>
               {tiktok.username && tiktok.displayName && <span className="text-[#86868b] font-normal text-xs">· @{tiktok.username}</span>}
             </p>
             <button onClick={disconnectTiktok} disabled={ttDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
