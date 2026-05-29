@@ -17,6 +17,7 @@ import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
   MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package, Download,
 } from 'lucide-react'
+import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
 
@@ -273,24 +274,36 @@ export function TikTokDirectModal({
                   </a>
                 )}
               </div>
-              {/* Import from YouTube — only surfaces when the row needs a
-                  vertical (TikTok is fine, just no MP4 stored yet). */}
+              {/* Import-from-YouTube — best-effort first try. YouTube
+                  protects videos on data-center IPs so this hits a wall
+                  about 50% of the time. We surface it but make the upload
+                  fallback equally prominent. */}
               {!reconnectRequired && (
-                <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-3">
-                  <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">This Short is already on your YouTube channel. We can pull it directly — no upload needed.</p>
-                  {importError && <p className="text-xs text-[#ff3b30]">{importError}</p>}
-                  <button
-                    type="button"
-                    onClick={() => void importFromYoutube()}
-                    disabled={importing}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60"
-                  >
-                    {importing
-                      ? <><Loader2 size={14} className="animate-spin" /> Pulling from YouTube… (15-60s)</>
-                      : <><Download size={14} /> Import from YouTube</>
-                    }
-                  </button>
-                </div>
+                <>
+                  <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-3">
+                    <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">This Short is already on your YouTube channel. We can try to pull it directly.</p>
+                    {importError && <p className="text-xs text-[#ff3b30]">{importError}</p>}
+                    <button
+                      type="button"
+                      onClick={() => void importFromYoutube()}
+                      disabled={importing}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60"
+                    >
+                      {importing
+                        ? <><Loader2 size={14} className="animate-spin" /> Pulling from YouTube… (15-60s)</>
+                        : <><Download size={14} /> Try import from YouTube</>
+                      }
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3 my-1">
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
+                    <span className="text-[10px] uppercase tracking-wide text-[#86868b] font-semibold">or</span>
+                    <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
+                  </div>
+
+                  <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} />
+                </>
               )}
             </div>
           ) : !info || !meta ? null : (
@@ -323,14 +336,15 @@ export function TikTokDirectModal({
                     onClick={() => void importFromYoutube()}
                     disabled={importing}
                     className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1 disabled:opacity-50"
-                    title="Replace this with a fresh copy from YouTube"
+                    title="Try replacing with a fresh copy from YouTube"
                   >
                     {importing
                       ? <><Loader2 size={10} className="animate-spin" /> Re-importing…</>
-                      : <><Download size={10} /> Wrong video? Re-import from YouTube</>
+                      : <><Download size={10} /> Wrong video? Try re-import from YouTube</>
                     }
                   </button>
                   {importError && <p className="text-[10px] text-[#ff3b30]">{importError}</p>}
+                  <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} compact />
                 </div>
               )}
 

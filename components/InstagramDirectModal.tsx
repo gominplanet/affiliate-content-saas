@@ -14,6 +14,7 @@ import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
   RefreshCw, Package, Download,
 } from 'lucide-react'
+import { ShortVideoUpload } from '@/components/ShortVideoUpload'
 
 interface VideoMeta {
   title: string
@@ -201,12 +202,12 @@ export function InstagramDirectModal({
                   </a>
                 )}
               </div>
-              {/* Import-from-YouTube CTA — surfaces whenever the row has no
-                  vertical video set (which is the most common cause of the
-                  load error above). One click pulls the Short from YouTube
-                  directly. */}
+              {/* Import-from-YouTube — works sometimes (YouTube has bot
+                  protection on data-center IPs). We keep it as a "try this
+                  first" optimization, but the bulletproof path is the
+                  upload zone below. */}
               <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-3">
-                <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">This Short is already on your YouTube channel. We can pull it directly — no upload needed.</p>
+                <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">This Short is already on your YouTube channel. We can try to pull it directly.</p>
                 {importError && (
                   <p className="text-xs text-[#ff3b30]">{importError}</p>
                 )}
@@ -218,10 +219,21 @@ export function InstagramDirectModal({
                 >
                   {importing
                     ? <><Loader2 size={14} className="animate-spin" /> Pulling from YouTube… (15-60s)</>
-                    : <><Download size={14} /> Import from YouTube</>
+                    : <><Download size={14} /> Try import from YouTube</>
                   }
                 </button>
               </div>
+
+              <div className="flex items-center gap-3 my-1">
+                <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
+                <span className="text-[10px] uppercase tracking-wide text-[#86868b] font-semibold">or</span>
+                <div className="flex-1 h-px bg-gray-200 dark:bg-white/10" />
+              </div>
+
+              {/* Bulletproof fallback — drag-and-drop / file picker. The
+                  MP4 is almost certainly still in the creator's Downloads
+                  folder from when they uploaded it to YouTube. */}
+              <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} />
             </div>
           ) : !meta ? null : (
             <div className="flex flex-col gap-4">
@@ -241,21 +253,23 @@ export function InstagramDirectModal({
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                     <video src={meta.videoUrl} controls playsInline className="w-full h-full" />
                   </div>
-                  {/* Re-import — pulls a fresh copy from YouTube. Useful when
-                      the stored video is wrong/stale from earlier testing. */}
+                  {/* Wrong-video escape hatches: re-import (try YouTube) or
+                      upload (always works). Both stacked tight so users
+                      don't bounce out of the modal. */}
                   <button
                     type="button"
                     onClick={() => void importFromYoutube()}
                     disabled={importing}
                     className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1 disabled:opacity-50"
-                    title="Replace this with a fresh copy from YouTube"
+                    title="Try replacing with a fresh copy from YouTube"
                   >
                     {importing
                       ? <><Loader2 size={10} className="animate-spin" /> Re-importing…</>
-                      : <><Download size={10} /> Wrong video? Re-import from YouTube</>
+                      : <><Download size={10} /> Wrong video? Try re-import from YouTube</>
                     }
                   </button>
                   {importError && <p className="text-[10px] text-[#ff3b30]">{importError}</p>}
+                  <ShortVideoUpload videoId={videoId} onUploaded={loadMeta} compact />
                 </div>
               )}
 
