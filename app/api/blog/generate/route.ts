@@ -321,7 +321,8 @@ async function handleGenerate(request: Request) {
   // Cache whatever we got so the next regen / rewrite is instant.
   if (transcript && transcriptSource !== 'cache') {
     try {
-      await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
         .from('youtube_videos')
         .update({ transcript, transcript_fetched_at: new Date().toISOString() })
         .eq('id', videoId)
@@ -1354,7 +1355,8 @@ async function logFailure(
   jobType: 'blog_generation' | 'wp_publish' | 'blog_body_images',
   errorMessage: string,
 ) {
-  await supabase.from('job_failures').insert({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any).from('job_failures').insert({
     user_id: userId,
     video_id: videoId,
     job_type: jobType,

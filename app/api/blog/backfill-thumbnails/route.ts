@@ -10,7 +10,9 @@ export async function POST() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: wp } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any
+    const { data: wp } = await sb
       .from('integrations')
       .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
       .eq('user_id', user.id)
@@ -19,7 +21,7 @@ export async function POST() {
     if (!wp?.wordpress_url) return NextResponse.json({ error: 'No WordPress integration' }, { status: 400 })
 
     // Get all published posts with their YouTube video IDs
-    const { data: posts } = await supabase
+    const { data: posts } = await sb
       .from('blog_posts')
       .select('id,wordpress_post_id,youtube_videos(youtube_video_id)')
       .eq('user_id', user.id)

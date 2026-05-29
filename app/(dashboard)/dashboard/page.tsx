@@ -27,8 +27,8 @@ export default async function DashboardPage() {
     { count: postCount },
     { data: integration },
   ] = await Promise.all([
-    supabase.from('youtube_videos').select('id').eq('user_id', user!.id),
-    supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
+    sb.from('youtube_videos').select('id').eq('user_id', user!.id),
+    sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user!.id),
     sb.from('integrations').select('tier,subscription_period_start,subscription_period_end,wordpress_url,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).single(),
   ])
 
@@ -113,7 +113,7 @@ export default async function DashboardPage() {
     { label: 'Platforms Connected', value: `${platformsConnected}/${platformsTotal}`, icon: Layers,  color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
   ]
 
-  const { data: recentVideos } = await supabase
+  const { data: recentVideos } = await sb
     .from('youtube_videos')
     .select('id, title, published_at, thumbnail_url, youtube_video_id')
     .eq('user_id', user!.id)
@@ -290,7 +290,8 @@ export default async function DashboardPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {recentVideos.map((video) => (
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {recentVideos.map((video: any) => (
                 <Link
                   key={video.id}
                   href={`/content`}
@@ -320,7 +321,8 @@ export default async function DashboardPage() {
           <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4">Recent Activity</h2>
           {recentVideos && recentVideos.length > 0 ? (
             <div className="flex flex-col gap-3">
-              {recentVideos.slice(0, 4).map((video) => (
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {recentVideos.slice(0, 4).map((video: any) => (
                 <div key={video.id} className="flex items-start gap-2.5">
                   <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 bg-[#0071e3]" />
                   <div className="min-w-0">

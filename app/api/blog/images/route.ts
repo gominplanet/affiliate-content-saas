@@ -92,7 +92,8 @@ async function handleImages(request: Request) {
   }
 
   // ── 5. Update blog_posts record ───────────────────────────────────────────
-  await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
     .from('blog_posts')
     .update({ has_images: true })
     .eq('id', postId)

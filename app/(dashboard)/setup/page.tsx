@@ -886,7 +886,8 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     // WordPress credentials are managed via the token flow now; don't overwrite them here.
-    const { error: err } = await supabase.from('integrations').upsert({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: err } = await (supabase as any).from('integrations').upsert({
       user_id: user.id,
       youtube_channel_id: youtubeChannelId || null,
       geniuslink_api_key: geniuslinkKey || null,

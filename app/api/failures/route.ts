@@ -25,7 +25,8 @@ export async function PATCH(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id, status } = await req.json()
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from('job_failures')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)

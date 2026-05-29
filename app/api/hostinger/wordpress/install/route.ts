@@ -11,7 +11,9 @@ export async function POST(request: Request) {
     await request.json()
 
   // Load saved Hostinger API key
-  const { data: integration } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const { data: integration } = await sb
     .from('integrations')
     .select('hostinger_api_key')
     .eq('user_id', user.id)
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
     })
 
     // Store job info and wordpress details in integrations
-    await supabase.from('integrations').upsert(
+    await sb.from('integrations').upsert(
       {
         user_id: user.id,
         wordpress_url: `https://${domain}`,

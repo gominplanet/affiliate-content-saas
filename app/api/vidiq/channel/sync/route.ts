@@ -20,7 +20,8 @@ export async function POST() {
   const snapshot = { ...SNAPSHOT, syncedAt: 'just now' }
 
   // Upsert into integrations — store snapshot as JSONB
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from('integrations')
     .upsert(
       { user_id: user.id, vidiq_snapshot: snapshot as any },
@@ -37,7 +38,8 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
     .from('integrations')
     .select('vidiq_snapshot')
     .eq('user_id', user.id)

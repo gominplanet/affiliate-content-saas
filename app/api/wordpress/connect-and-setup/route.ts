@@ -393,7 +393,9 @@ export async function POST(request: Request) {
     } catch { /* non-fatal */ }
 
     // ── 17. Save credentials + brand extras ──────────────────────────────────
-    await supabase.from('integrations').upsert(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any
+    await sb.from('integrations').upsert(
       {
         user_id: user.id,
         wordpress_url: siteUrl,
@@ -409,7 +411,7 @@ export async function POST(request: Request) {
     )
 
     // Save social/contact info + profile assets to brand_profiles for future use
-    await supabase.from('brand_profiles').update({
+    await sb.from('brand_profiles').update({
       ...(contactEmail ? { contact_email: contactEmail } : {}),
       ...(youtubeUrl ? { youtube_channel_url: youtubeUrl } : {}),
       ...(instagramUrl ? { instagram_url: instagramUrl } : {}),

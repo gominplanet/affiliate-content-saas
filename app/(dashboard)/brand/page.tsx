@@ -250,7 +250,8 @@ export default function BrandPage() {
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { data: row } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: row } = await (supabase as any)
       .from('brand_profiles')
       .select('*')
       .eq('user_id', user.id)
@@ -327,7 +328,8 @@ export default function BrandPage() {
     setData(normalized)
 
     // ── 1. Save to Supabase ─────────────────────────────────────────────────
-    const { error: dbError } = await supabase.from('brand_profiles').upsert(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: dbError } = await (supabase as any).from('brand_profiles').upsert(
       { ...normalized, user_id: user.id },
       { onConflict: 'user_id' },
     )
@@ -410,7 +412,8 @@ export default function BrandPage() {
       // hasn't been run), the upsert is rejected and the upload
       // silently reverts. Capture the error so we surface it instead
       // of pretending success.
-      const { error: saveErr } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: saveErr } = await (supabase as any)
         .from('brand_profiles')
         .update({ [column]: url })
         .eq('user_id', user.id)

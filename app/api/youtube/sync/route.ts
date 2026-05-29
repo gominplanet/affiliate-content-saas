@@ -66,7 +66,8 @@ export async function POST(request: Request) {
     const existingIds = new Set((existing ?? []).map((r: { youtube_video_id: string }) => r.youtube_video_id))
     const newVideos = videos.filter(v => !existingIds.has(v.youtubeVideoId))
 
-    const { error } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any)
       .from('youtube_videos')
       .upsert(rows, { onConflict: 'user_id,youtube_video_id' })
 

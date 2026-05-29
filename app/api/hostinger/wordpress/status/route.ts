@@ -7,7 +7,9 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: integration } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sb = supabase as any
+  const { data: integration } = await sb
     .from('integrations')
     .select('hostinger_api_key, setup_job_id, setup_subscription_id, setup_status, wordpress_url')
     .eq('user_id', user.id)
@@ -29,7 +31,7 @@ export async function GET() {
     )
 
     if (result.status === 'completed') {
-      await supabase.from('integrations').upsert(
+      await sb.from('integrations').upsert(
         { user_id: user.id, setup_status: 'wordpress_ready' },
         { onConflict: 'user_id' },
       )

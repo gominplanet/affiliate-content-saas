@@ -27,7 +27,8 @@ export async function POST(request: Request) {
     )
 
     // Save the API key to integrations
-    await supabase.from('integrations').upsert(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('integrations').upsert(
       { user_id: user.id, hostinger_api_key: apiKey },
       { onConflict: 'user_id' },
     )
