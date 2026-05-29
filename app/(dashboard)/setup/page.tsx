@@ -754,6 +754,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [instagram, setInstagram] = useState({ connected: false, username: '' })
   const [igDisconnecting, setIgDisconnecting] = useState(false)
   const [igNotice, setIgNotice] = useState<{ ok: boolean; msg: string } | null>(null)
+  // TikTok — Pro feature, Direct Post via Content Posting API
+  const [tiktok, setTiktok] = useState({ connected: false, username: '', displayName: '', avatarUrl: '' })
+  const [ttDisconnecting, setTtDisconnecting] = useState(false)
+  const [ttNotice, setTtNotice] = useState<{ ok: boolean; msg: string } | null>(null)
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
@@ -820,6 +824,12 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         connected: !!row.instagram_access_token && !!row.instagram_user_id,
         username: row.instagram_username ?? '',
       })
+      setTiktok({
+        connected: !!row.tiktok_access_token && !!row.tiktok_open_id,
+        username: row.tiktok_username ?? '',
+        displayName: row.tiktok_display_name ?? '',
+        avatarUrl: row.tiktok_avatar_url ?? '',
+      })
       setGeniuslinkKey(row.geniuslink_api_key ?? '')
       setGeniuslinkSecret(row.geniuslink_api_secret ?? '')
       setAmazonAssociatesTag(row.amazon_associates_tag ?? '')
@@ -861,6 +871,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const igError = searchParams.get('instagram_error')
     if (igConnected) { setIgNotice({ ok: true, msg: 'Instagram connected!' }); load() }
     if (igError) setIgNotice({ ok: false, msg: `Instagram error: ${decodeURIComponent(igError)}` })
+    const ttConnected = searchParams.get('tiktok_connected')
+    const ttError = searchParams.get('tiktok_error')
+    if (ttConnected) { setTtNotice({ ok: true, msg: 'TikTok connected!' }); load() }
+    if (ttError) setTtNotice({ ok: false, msg: `TikTok error: ${decodeURIComponent(ttError)}` })
     const gscConnectedParam = searchParams.get('gsc_connected')
     const gscErr = searchParams.get('gsc_error')
     const gscProp = searchParams.get('gsc_property')
@@ -1116,6 +1130,17 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         setIgNotice(null)
       }
     } finally { setIgDisconnecting(false) }
+  }
+
+  async function disconnectTiktok() {
+    setTtDisconnecting(true)
+    try {
+      const res = await fetch('/api/auth/tiktok/disconnect', { method: 'POST' })
+      if (res.ok) {
+        setTiktok({ connected: false, username: '', displayName: '', avatarUrl: '' })
+        setTtNotice(null)
+      }
+    } finally { setTtDisconnecting(false) }
   }
 
   if (loading) return (
@@ -1686,6 +1711,56 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         )}
       </div>
       )}
+
+      {/* TikTok — Pro feature. Direct Post via Content Posting API. */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#000000]">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+              <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">TikTok <span className="ml-1 text-[10px] font-medium text-[#0071e3] uppercase tracking-wider">Pro</span></p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Direct Post your vertical short reviews to your TikTok feed</p>
+          </div>
+          {tiktok.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+
+        {ttNotice && <p className={`text-xs mb-3 ${ttNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ttNotice.msg}</p>}
+
+        {tiktok.connected ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              {tiktok.avatarUrl
+                ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={tiktok.avatarUrl} alt="" className="w-5 h-5 rounded-full" />
+                )
+                : <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
+              }
+              Connected as <strong>{tiktok.displayName || `@${tiktok.username}`}</strong>
+              {tiktok.username && tiktok.displayName && <span className="text-[#86868b] font-normal text-xs">· @{tiktok.username}</span>}
+            </p>
+            <button onClick={disconnectTiktok} disabled={ttDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {ttDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+              On any post in <a href="/content" className="text-[#0071e3] hover:underline">Content</a>, click <strong>Post to TikTok</strong> to open the publish screen — pick privacy, comment / duet / stitch, commercial-content disclosure, then post.
+            </p>
+          </div>
+        ) : (
+          <a
+            href="/api/auth/tiktok"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-[#000000] hover:bg-[#1c1c1e] transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+              <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" />
+            </svg>
+            Connect TikTok
+          </a>
+        )}
+      </div>
 
       {/* YouTube OAuth — for YouTube Studio (draft video metadata) */}
       <div className="card p-5 flex flex-col gap-4">

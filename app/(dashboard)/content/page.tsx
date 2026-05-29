@@ -1706,7 +1706,7 @@ function InstagramPublishModal({
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
@@ -1720,6 +1720,7 @@ function VideoCard({
   blueskyConnected: boolean
   telegramConnected: boolean
   instagramConnected: boolean
+  tiktokConnected: boolean
   fbAccounts: Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>
   igAccounts: Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>
   userTier: 'trial' | 'creator' | 'pro' | 'admin'
@@ -2155,6 +2156,24 @@ function VideoCard({
                   locked={!tierAllowsSocial(userTier, 'instagram')}
                 />
               )}
+              {/* TikTok pill — clicking opens the dedicated /tiktok-publish
+                  screen in a new tab. The screen handles every TikTok-mandated
+                  control (live privacy dropdown, Music Usage Confirmation,
+                  commercial-content toggle, etc.). Not a modal — the screen
+                  must NOT share UI with the IG/Pinterest composer per
+                  TikTok's app-review guidelines. */}
+              {tiktokConnected && post?.postId && (
+                <SocialPill
+                  brand="#000000"
+                  icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" /></svg>}
+                  label="TikTok"
+                  postedLabel="On TikTok"
+                  posted={false}
+                  loading={false}
+                  onClick={() => window.open(`/tiktok-publish/${post.postId}`, '_blank', 'noopener')}
+                  locked={!tierAllowsSocial(userTier, 'tiktok')}
+                />
+              )}
             </div>
           )}
 
@@ -2409,6 +2428,7 @@ export default function ContentPage() {
   const [blueskyConnected, setBlueskyConnected] = useState(false)
   const [telegramConnected, setTelegramConnected] = useState(false)
   const [instagramConnected, setInstagramConnected] = useState(false)
+  const [tiktokConnected, setTiktokConnected] = useState(false)
   /** Connected Facebook Pages for the per-post account picker (Pro). Empty
    *  for non-Pro users or those with a single page — the picker only shows
    *  when there's a real choice to make. */
@@ -2536,7 +2556,7 @@ export default function ContentPage() {
     const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp, { data: seoCache }] = await Promise.all([
       fetchAllVideos(),
       sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tier').eq('user_id', user.id).single(),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', user.id).single(),
       sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
@@ -2569,6 +2589,7 @@ export default function ContentPage() {
     setBlueskyConnected(!!(i as Record<string, unknown>)?.bluesky_handle && !!(i as Record<string, unknown>)?.bluesky_app_password)
     setTelegramConnected(!!(i as Record<string, unknown>)?.telegram_channel_id)
     setInstagramConnected(metaOn && !!(i as Record<string, unknown>)?.instagram_access_token && !!(i as Record<string, unknown>)?.instagram_user_id)
+    setTiktokConnected(!!(i as Record<string, unknown>)?.tiktok_access_token && !!(i as Record<string, unknown>)?.tiktok_open_id)
     const resolvedTier = effectiveTier((i as Record<string, unknown>)?.tier as string)
     setUserTier(resolvedTier)
     // Pro multi-account: load connected Facebook Pages + Instagram accounts so
@@ -3756,6 +3777,7 @@ export default function ContentPage() {
                     blueskyConnected={blueskyConnected}
                     telegramConnected={telegramConnected}
                     instagramConnected={instagramConnected}
+                    tiktokConnected={tiktokConnected}
                     fbAccounts={fbAccounts}
                     igAccounts={igAccounts}
                     userTier={userTier}

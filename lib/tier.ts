@@ -21,7 +21,7 @@ export function normalizeTier(raw: unknown): Tier {
   return DEFAULT_TIER // 'free', null, undefined, or any unknown value → trial
 }
 
-export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky' | 'telegram' | 'instagram'
+export type Social = 'facebook' | 'threads' | 'linkedin' | 'pinterest' | 'twitter' | 'bluesky' | 'telegram' | 'instagram' | 'tiktok'
 
 export const TIERS = {
   trial:   {
@@ -136,7 +136,7 @@ export const TIERS = {
     basePosts: 140,
     bonusPosts: 60,
     sites: 1,
-    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram'] as readonly Social[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram', 'tiktok'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: true,
     publishAll: true,
@@ -164,7 +164,7 @@ export const TIERS = {
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
-    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram'] as readonly Social[],
+    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram', 'tiktok'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: true,
     publishAll: true,
