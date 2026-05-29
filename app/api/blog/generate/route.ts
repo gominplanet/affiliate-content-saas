@@ -162,16 +162,24 @@ async function handleGenerate(request: Request) {
   if (!videoId) return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
 
   // ── Detect rewrite vs fresh generation ────────────────────────────────────
+  // We also pull wordpress_post_id + slug here so the WP push below can UPDATE
+  // an existing live post (legacy posts attached via /api/blog/attach-video,
+  // or any prior generate run) instead of creating a duplicate that fights the
+  // old one for the same slug.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existingForLimit } = await (supabase as any)
     .from('blog_posts')
-    .select('id, rewrite_count')
+    .select('id, rewrite_count, wordpress_post_id, slug')
     .eq('user_id', user.id)
     .eq('video_id', videoId)
     .limit(1)
     .maybeSingle()
 
   const isRewrite = !!existingForLimit
+  // When set: skip createPost and updatePost(existingWpPostId) instead, so the
+  // live URL + Google indexing history are preserved across the rebuild.
+  const existingWpPostId: number | null = existingForLimit?.wordpress_post_id ?? null
+  const existingSlug: string | null = existingForLimit?.slug ?? null
 
   if (isRewrite) {
     // ── Rewrite gate (Pro-only, once per post) ──────────────────────────────
@@ -684,7 +692,10 @@ async function handleGenerate(request: Request) {
     }
   } catch { /* internal links are best-effort; never block generation */ }
 
-  const slug = generated.slug.slice(0, 60)
+  // Preserve the slug of any existing live WP post so rebuilds keep the same
+  // URL (and the same Google indexing history). Only fall through to the
+  // freshly-generated slug for genuinely new posts.
+  const slug = existingSlug || generated.slug.slice(0, 60)
 
   // ── 7. Resolve tag IDs ────────────────────────────────────────────────────
   const wpService = createWordPressService(
@@ -744,19 +755,36 @@ async function handleGenerate(request: Request) {
   }
 
   // ── 8. Publish text post to WordPress ────────────────────────────────────
+  // For posts that already exist on WP (legacy posts attached via
+  // /api/blog/attach-video, or any prior generate run on the same video) we
+  // PATCH the live post in place so the URL + Google indexing history don't
+  // reset. Slug is intentionally left alone in the update path even if WP
+  // would accept a new one — that's the whole point of preserving it.
   let wpPost
   try {
-    wpPost = await wpService.createPost({
-      title: generated.title,
-      slug,
-      content,
-      excerpt: generated.excerpt,
-      status: 'publish',
-      tags: tagIds,
-      categories: categoryIds,
-      comment_status: 'closed',
-      ping_status: 'closed',
-    })
+    if (existingWpPostId) {
+      const updated = await wpService.updatePost(existingWpPostId, {
+        title: generated.title,
+        content,
+        excerpt: generated.excerpt,
+        status: 'publish',
+        tags: tagIds,
+        categories: categoryIds,
+      })
+      wpPost = updated
+    } else {
+      wpPost = await wpService.createPost({
+        title: generated.title,
+        slug,
+        content,
+        excerpt: generated.excerpt,
+        status: 'publish',
+        tags: tagIds,
+        categories: categoryIds,
+        comment_status: 'closed',
+        ping_status: 'closed',
+      })
+    }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : (errToMessage(err) || 'WordPress publish failed')
     await logFailure(supabase, user.id, videoId, 'wp_publish', msg)
@@ -769,21 +797,26 @@ async function handleGenerate(request: Request) {
   void pingIndexNowForUrl(supabase, user.id, wpPost.link).catch(() => {})
 
   // ── 8.5. Upload YouTube thumbnail as featured image ───────────────────────
+  // Skip for rebuilds on legacy WP posts — the creator already has a featured
+  // image they hand-picked, and the rebuild's value is the body rewrite, not
+  // a thumbnail swap. (Fresh generates still get the YT thumb as featured.)
   const youtubeVideoId = (v as Record<string, unknown>).youtube_video_id as string
-  try {
-    const thumbUrl = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
-    let media
+  if (!existingWpPostId) {
     try {
-      media = await wpService.uploadImageFromUrl(thumbUrl, `${youtubeVideoId}.jpg`)
-    } catch {
-      const fallback = `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`
-      media = await wpService.uploadImageFromUrl(fallback, `${youtubeVideoId}.jpg`)
-    }
-    await wpService.updatePost(wpPost.id, {
-      title: generated.title, slug, content, excerpt: generated.excerpt,
-      status: 'publish', tags: tagIds, featured_media: media.id,
-    })
-  } catch { /* non-fatal — post is already published without thumbnail */ }
+      const thumbUrl = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
+      let media
+      try {
+        media = await wpService.uploadImageFromUrl(thumbUrl, `${youtubeVideoId}.jpg`)
+      } catch {
+        const fallback = `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`
+        media = await wpService.uploadImageFromUrl(fallback, `${youtubeVideoId}.jpg`)
+      }
+      await wpService.updatePost(wpPost.id, {
+        title: generated.title, slug, content, excerpt: generated.excerpt,
+        status: 'publish', tags: tagIds, featured_media: media.id,
+      })
+    } catch { /* non-fatal — post is already published without thumbnail */ }
+  }
 
   // ── 9. Save to blog_posts (upsert so re-generates update the WP post ID) ──
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

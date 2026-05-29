@@ -10,11 +10,14 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '@/components/layout/Header'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
   postId: string; title: string; slug: string; url: string | null
+  /** WordPress post id — present whenever the post is live on WP. Used by the
+   *  "Rebuild from video" modal to link a YouTube URL to this exact post. */
+  wordpressPostId: number | null
   score: number; checks: Check[]
   indexed: boolean | null; coverageState: string | null
   inSitemap: boolean | null
@@ -52,6 +55,14 @@ export default function SeoPage() {
   // Per-row "Check" button — set of postIds currently being rechecked, so we
   // can show a spinner on the right row(s) while the GSC call is in flight.
   const [rechecking, setRechecking] = useState<Set<string>>(new Set())
+  // "Rebuild from video" modal state — the user pastes a YouTube URL for a
+  // legacy post that pre-dates MVP, we link it + run the full generation
+  // pipeline against the existing WP post id (preserves URL + indexing).
+  const [rebuildTarget, setRebuildTarget] = useState<PostRow | null>(null)
+  const [rebuildUrl, setRebuildUrl] = useState('')
+  const [rebuildFeedback, setRebuildFeedback] = useState('')
+  const [rebuildStage, setRebuildStage] = useState<'' | 'linking' | 'generating'>('')
+  const [rebuildError, setRebuildError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -165,6 +176,58 @@ export default function SeoPage() {
       setRechecking(prev => { const next = new Set(prev); next.delete(postId); return next })
     }
   }, [])
+
+  // "Rebuild from video" — for legacy posts (pre-MVP or first-generation
+  // posts on a thin prompt) that score low and can't be auto-fixed. The user
+  // pastes the YouTube URL of the original video; we link it to the existing
+  // WP post and run the full generation pipeline against the SAME WP post id
+  // so the URL + Google indexing history are preserved.
+  //
+  // Two-step flow with intermediate UI state so the user understands why this
+  // takes ~60s (transcript fetch + Claude generation + WordPress push).
+  const submitRebuild = useCallback(async () => {
+    if (!rebuildTarget?.wordpressPostId) return
+    const url = rebuildUrl.trim()
+    if (!url) { setRebuildError('Paste the YouTube URL for this post.'); return }
+    setRebuildError(null); setRebuildStage('linking'); setFixMsg(null)
+    try {
+      const linkRes = await fetch('/api/blog/attach-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wordpressPostId: rebuildTarget.wordpressPostId, youtubeUrl: url }),
+      })
+      const linkJson = await linkRes.json().catch(() => ({})) as { videoId?: string; error?: string; youtubeTitle?: string }
+      if (!linkRes.ok || !linkJson.videoId) {
+        setRebuildError(linkJson.error || `Couldn't link that video (${linkRes.status}).`)
+        setRebuildStage(''); return
+      }
+      setRebuildStage('generating')
+      const genRes = await fetch('/api/blog/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId: linkJson.videoId,
+          rewriteFeedback: rebuildFeedback.trim() || undefined,
+          // Body images are slow + best-effort; the rebuild's gain is body
+          // quality (transcript-grounded, voice-tuned, comparison table,
+          // FAQ etc.). Existing featured image stays.
+          includeImages: true,
+        }),
+      })
+      const genJson = await genRes.json().catch(() => ({})) as { error?: string; wordpressUrl?: string }
+      if (!genRes.ok) {
+        setRebuildError(genJson.error || `Rebuild failed (${genRes.status}).`)
+        setRebuildStage(''); return
+      }
+      const title = linkJson.youtubeTitle ? ` ("${linkJson.youtubeTitle}")` : ''
+      setFixMsg({ ok: true, text: `Rebuilt the post${title} from the video — same URL, fresh body. Refreshing your scores…` })
+      setRebuildTarget(null); setRebuildUrl(''); setRebuildFeedback(''); setRebuildStage('')
+      await load()
+    } catch (e) {
+      setRebuildError(e instanceof Error ? e.message : 'Something went wrong.')
+      setRebuildStage('')
+    }
+  }, [rebuildTarget, rebuildUrl, rebuildFeedback, load])
 
   // One click: purge the host sitemap cache (so Google's sitemap is complete)
   // + push URLs to Bing/Copilot via IndexNow + re-check.
@@ -511,6 +574,15 @@ export default function SeoPage() {
                         Index <ExternalLink size={11} />
                       </button>
                     )}
+                    {p.wordpressPostId && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setRebuildTarget(p); setRebuildUrl(''); setRebuildFeedback(''); setRebuildError(null) }}
+                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#5856d6] hover:underline flex-shrink-0"
+                        title="Paste the original YouTube URL — we'll rebuild this post's body from the transcript while keeping the same URL and indexing history"
+                      >
+                        <Youtube size={11} /> Rebuild
+                      </button>
+                    )}
                     {p.url && (
                       <a href={p.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[#86868b] hover:text-[#0071e3] flex-shrink-0" title="Open post">
                         <ExternalLink size={14} />
@@ -527,12 +599,25 @@ export default function SeoPage() {
                           <button
                             onClick={() => runFix(p.postId, 'all')}
                             disabled={!!fixing}
-                            className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                            className="mb-3 mr-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
                           >
                             {busy ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} Fix all {fixableCount} automatically
                           </button>
                         )
                       })()}
+                      {/* Rebuild-from-video — for low-score / legacy posts where
+                          the auto-fixer can't help (no comparison table, thin
+                          body, fabricated patterns). Paste the YouTube URL and
+                          we rebuild the body in place. */}
+                      {p.wordpressPostId && (
+                        <button
+                          onClick={() => { setRebuildTarget(p); setRebuildUrl(''); setRebuildFeedback(''); setRebuildError(null) }}
+                          className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#5856d6] hover:bg-[#4845b4] transition-colors"
+                          title="Paste the original YouTube URL — we'll rebuild this post's body using the transcript while keeping the same URL"
+                        >
+                          <Youtube size={11} /> Rebuild from video
+                        </button>
+                      )}
                       <ul className="flex flex-col gap-1.5">
                         {p.checks.filter(c => c.weight > 0).map(c => {
                           const fixable = !c.pass && ['internal_links', 'faq', 'title_length', 'image_alt'].includes(c.id)
@@ -567,6 +652,79 @@ export default function SeoPage() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Rebuild-from-video modal — turn a low-score legacy post into a
+          full MVP-quality post grounded in its source video. */}
+      {rebuildTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => !rebuildStage && setRebuildTarget(null)}>
+          <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between p-5 border-b border-gray-100 dark:border-white/10">
+              <div className="flex-1 min-w-0 pr-3">
+                <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+                  <Youtube size={18} className="text-[#5856d6]" /> Rebuild from video
+                </h3>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1 leading-relaxed">
+                  Paste the YouTube URL that this post is about. We&apos;ll pull the transcript, rebuild the body in your voice, and push it back to the SAME post — the URL and Google indexing history stay intact.
+                </p>
+                <p className="text-[11px] text-[#86868b] mt-1.5 truncate">For: <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{rebuildTarget.title}</span></p>
+              </div>
+              <button onClick={() => !rebuildStage && setRebuildTarget(null)} disabled={!!rebuildStage} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] disabled:opacity-40 flex-shrink-0">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 flex flex-col gap-4 overflow-y-auto">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#6e6e73] dark:text-[#8e8e93] mb-1.5">YouTube URL</label>
+                <input
+                  type="url"
+                  value={rebuildUrl}
+                  onChange={e => setRebuildUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=…"
+                  disabled={!!rebuildStage}
+                  autoFocus
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#5856d6] disabled:opacity-60"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#6e6e73] dark:text-[#8e8e93] mb-1.5">Any guidance? (optional)</label>
+                <textarea
+                  value={rebuildFeedback}
+                  onChange={e => setRebuildFeedback(e.target.value)}
+                  placeholder="e.g. lead with the build quality, mention the included accessories, include a comparison vs the previous model"
+                  rows={3}
+                  disabled={!!rebuildStage}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#5856d6] disabled:opacity-60 resize-none"
+                />
+              </div>
+              {rebuildError && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-[#ff3b301a] text-[12px] text-[#ff3b30]">
+                  <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+                  <span>{rebuildError}</span>
+                </div>
+              )}
+              {rebuildStage && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-[#5856d61a] text-[12px] text-[#5856d6]">
+                  <Loader2 size={14} className="flex-shrink-0 mt-0.5 animate-spin" />
+                  <span>
+                    {rebuildStage === 'linking'
+                      ? 'Linking the video to your post…'
+                      : 'Rewriting the article from the transcript and pushing to WordPress (this takes about a minute)…'}
+                  </span>
+                </div>
+              )}
+              <p className="text-[11px] text-[#86868b] leading-relaxed">
+                The same one-rewrite-per-post limit applies. Featured image is left as-is; in-body images are refreshed in the background after the text goes live.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-5 border-t border-gray-100 dark:border-white/10">
+              <button onClick={() => !rebuildStage && setRebuildTarget(null)} disabled={!!rebuildStage} className="btn-secondary text-sm">Cancel</button>
+              <button onClick={submitRebuild} disabled={!!rebuildStage || !rebuildUrl.trim()} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#5856d6] hover:bg-[#4845b4] disabled:opacity-60 transition-colors">
+                {rebuildStage ? <><Loader2 size={14} className="animate-spin" /> Rebuilding…</> : <><Youtube size={14} /> Rebuild post</>}
+              </button>
+            </div>
           </div>
         </div>
       )}

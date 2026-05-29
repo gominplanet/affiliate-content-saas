@@ -143,6 +143,9 @@ export async function GET() {
 
     const row = {
       postId: p.id, title: p.title, slug: p.slug, url,
+      // Exposed so the SEO page can show "Rebuild from video" on each row —
+      // the modal needs the live WP id to POST /api/blog/attach-video.
+      wordpressPostId: p.wordpress_post_id,
       score, checks,
       indexed: indexedState === 'indexed' ? true : indexedState === 'not_indexed' ? false : null,
       inSitemap: !sitemap.found ? null : (sitemapComplete ? true : sitemap.slugs.has((p.slug || '').toLowerCase())),
