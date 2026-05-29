@@ -28,11 +28,29 @@ import { createAdminClient } from '@/lib/supabase/admin'
 // large file on a slow inbound connection.
 export const maxDuration = 300
 
-export async function GET(
+// Pass-through HEAD so TikTok / Instagram CDN crawlers can probe size +
+// content-type before initiating the actual download. Some downstream
+// fetchers reject the proxy if HEAD returns 405.
+export async function HEAD(
   _request: Request,
   { params }: { params: Promise<{ videoId: string }> },
 ) {
-  const { videoId } = await params
+  return serveProxy(_request, await params, true)
+}
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ videoId: string }> },
+) {
+  return serveProxy(request, await params, false)
+}
+
+async function serveProxy(
+  request: Request,
+  params: { videoId: string },
+  headOnly: boolean,
+) {
+  const { videoId } = params
   if (!videoId || !/^[0-9a-f-]{36}$/i.test(videoId)) {
     return NextResponse.json({ error: 'Invalid videoId' }, { status: 400 })
   }
@@ -64,39 +82,61 @@ export async function GET(
     return NextResponse.json({ error: 'Bad upstream URL' }, { status: 400 })
   }
 
-  // Stream-fetch from Supabase. We don't buffer — TikTok consumes the
-  // response in chunks the same way.
+  // Forward Range to Supabase. TikTok's downloader uses HTTP Range
+  // requests to fetch the MP4 in chunks; without this we'd always
+  // respond with the full body (200 OK) even when TikTok asked for
+  // bytes 0-1000, breaking its size handshake.
+  const range = request.headers.get('range') || undefined
+  const upstreamHeaders: Record<string, string> = {}
+  if (range) upstreamHeaders.Range = range
+
+  // Stream-fetch from Supabase.
   let upstream: Response
   try {
-    upstream = await fetch(upstreamUrl)
+    upstream = await fetch(upstreamUrl, {
+      method: headOnly ? 'HEAD' : 'GET',
+      headers: upstreamHeaders,
+    })
   } catch (e) {
     return NextResponse.json({
       error: `Upstream fetch failed: ${e instanceof Error ? e.message : 'unknown'}`,
     }, { status: 502 })
   }
-  if (!upstream.ok || !upstream.body) {
+  // 200 OK and 206 Partial Content are both valid downstream responses.
+  // Anything else is a real error.
+  if (upstream.status !== 200 && upstream.status !== 206) {
     return NextResponse.json({
       error: `Upstream returned ${upstream.status}`,
     }, { status: 502 })
   }
 
-  // Pass through Content-Type + Content-Length so TikTok's pre-flight
-  // size check passes. Hardcode MP4 if upstream doesn't report it.
-  const contentType = upstream.headers.get('content-type') || 'video/mp4'
-  const contentLength = upstream.headers.get('content-length') || undefined
-
+  // Pass-through the headers TikTok's downloader actually cares about.
+  const passThrough = [
+    'content-type',
+    'content-length',
+    'content-range',
+    'accept-ranges',
+    'etag',
+    'last-modified',
+  ] as const
   const headers: Record<string, string> = {
-    'Content-Type': contentType,
     // 1h edge cache — TikTok retries shouldn't re-burn our function time.
     'Cache-Control': 'public, max-age=3600, s-maxage=3600',
     // CORS open so the same URL can also be used as an HTML5 video src
     // on the modal preview without browser blocks.
     'Access-Control-Allow-Origin': '*',
+    // Always advertise we support byte-ranges — even if upstream didn't
+    // set Accept-Ranges, Supabase does in practice.
+    'Accept-Ranges': 'bytes',
   }
-  if (contentLength) headers['Content-Length'] = contentLength
+  for (const k of passThrough) {
+    const v = upstream.headers.get(k)
+    if (v) headers[k] = v
+  }
+  if (!headers['content-type']) headers['content-type'] = 'video/mp4'
 
-  return new NextResponse(upstream.body, {
-    status: 200,
+  return new NextResponse(headOnly ? null : upstream.body, {
+    status: upstream.status, // pass-through 200 or 206
     headers,
   })
 }
