@@ -95,6 +95,11 @@ export async function POST(request: Request) {
   }
 
   // ── 5. Resolve the vertical video URL ─────────────────────────────────────
+  // TikTok's Content Posting API rejects PULL_FROM_URL whenever the source
+  // domain isn't verified under their Domain Verification settings. We
+  // only verified mvpaffiliate.io, so we hand TikTok a URL on OUR domain
+  // (the proxy route below) instead of the raw Supabase Storage URL.
+  // The proxy server-side streams the bytes from Supabase.
   const { data: video } = await sb
     .from('youtube_videos')
     .select('id,instagram_video_url')
@@ -102,12 +107,14 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
   if (!video) return NextResponse.json({ error: 'Video not found.' }, { status: 404 })
-  const videoUrl = video.instagram_video_url as string | undefined
-  if (!videoUrl || !/^https:\/\//.test(videoUrl)) {
+  const storageUrl = video.instagram_video_url as string | undefined
+  if (!storageUrl || !/^https:\/\//.test(storageUrl)) {
     return NextResponse.json({
       error: 'No vertical video file for this Short yet. Upload the MP4 first.',
     }, { status: 400 })
   }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+  const videoUrl = `${appUrl.replace(/\/$/, '')}/api/proxy-short/${videoId}`
 
   // ── 6. Direct Post ───────────────────────────────────────────────────────
   const caption = (body.caption || '').slice(0, 2200)

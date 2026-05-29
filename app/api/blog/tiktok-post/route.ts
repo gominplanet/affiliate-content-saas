@@ -115,12 +115,26 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const yt = (post as any).youtube_videos
   const ytRow = Array.isArray(yt) ? yt[0] : yt
-  const videoUrl = ytRow?.instagram_video_url as string | undefined
-  if (!videoUrl || !/^https:\/\//.test(videoUrl)) {
+  const storageUrl = ytRow?.instagram_video_url as string | undefined
+  const ytVideoId = ytRow?.youtube_video_id as string | undefined
+  if (!storageUrl || !/^https:\/\//.test(storageUrl)) {
     return NextResponse.json({
       error: 'No vertical video file for this post yet. Upload one in the Instagram pane first — TikTok and Instagram share the same 9:16 render.',
     }, { status: 400 })
   }
+  // TikTok requires the PULL_FROM_URL source to be on a TikTok-verified
+  // domain. The Supabase Storage hostname isn't verified (we don't own
+  // it); mvpaffiliate.io is. Proxy through /api/proxy-short/<videoId> so
+  // TikTok sees the source as our verified domain.
+  void ytVideoId
+  const blogPostVideoUuid = (post as { video_id?: string }).video_id
+  if (!blogPostVideoUuid) {
+    return NextResponse.json({
+      error: 'This post is missing a linked YouTube video — can\'t resolve the vertical URL.',
+    }, { status: 400 })
+  }
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL!
+  const videoUrl = `${appUrl.replace(/\/$/, '')}/api/proxy-short/${blogPostVideoUuid}`
 
   // ── 6. Direct Post ───────────────────────────────────────────────────────
   const caption = (body.caption || '').slice(0, 2200)
