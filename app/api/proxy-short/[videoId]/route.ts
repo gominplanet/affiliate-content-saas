@@ -24,8 +24,15 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-// Stream the full upstream MP4. TikTok's pull can take 30-60s for a
-// large file on a slow inbound connection.
+// Node runtime serverless function. We buffer the upstream body to an
+// ArrayBuffer before responding instead of piping a ReadableStream —
+// that avoids Vercel's known issue with chunked-transfer-encoding on
+// binary streams (which TikTok's CDN rejected, leaving posts stuck on
+// PROCESSING_DOWNLOAD). Shorts are well under the function memory cap.
+//
+// 300s function ceiling — gives us room for a 240 MB worst-case file
+// over a slow upstream + a downstream TikTok pull that re-reads it.
+export const runtime = 'nodejs'
 export const maxDuration = 300
 
 // Pass-through HEAD so TikTok / Instagram CDN crawlers can probe size +
@@ -135,8 +142,20 @@ async function serveProxy(
   }
   if (!headers['content-type']) headers['content-type'] = 'video/mp4'
 
-  return new NextResponse(headOnly ? null : upstream.body, {
-    status: upstream.status, // pass-through 200 or 206
+  // HEAD: just headers, no body.
+  if (headOnly) {
+    return new NextResponse(null, { status: upstream.status, headers })
+  }
+  // Buffer to ArrayBuffer instead of piping the ReadableStream. This
+  // avoids the Vercel serverless chunked-transfer issue that TikTok's
+  // downloader can't handle. A finite Content-Length goes out instead
+  // of `Transfer-Encoding: chunked`.
+  const buf = await upstream.arrayBuffer()
+  // Recompute Content-Length from the actual buffer in case upstream's
+  // value disagreed with the bytes we got.
+  headers['content-length'] = String(buf.byteLength)
+  return new NextResponse(buf, {
+    status: upstream.status,
     headers,
   })
 }

@@ -217,7 +217,10 @@ export function TikTokDirectModal({
     }
   }, [canPost, videoId, caption, privacy, allowComment, allowDuet, allowStitch, isCommercial, brandedContent, brandedPartnership, info])
 
-  const closeAllowed = publishStatus !== 'processing'
+  // Cancel is always allowed — even mid-processing the user can walk
+  // away. The status keeps persisting server-side; reopening the modal
+  // resumes the poll. Stuck for >5min still needs an off-ramp.
+  const closeAllowed = true
 
   return (
     <div
@@ -445,6 +448,17 @@ export function TikTokDirectModal({
                   {rawStatus && (
                     <p className="text-[10px] text-[#86868b]">TikTok status: <span className="font-mono">{rawStatus}</span></p>
                   )}
+                  {/* Diagnostic — opens the proxy URL TikTok is pulling from
+                      in a new tab. If it plays, the proxy is fine. If it
+                      404s or hangs, that's our smoking gun. */}
+                  <a
+                    href={`/api/proxy-short/${videoId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-[#0071e3] hover:underline inline-flex items-center gap-1 self-start"
+                  >
+                    Test the proxy URL in a new tab <ExternalLink size={9} />
+                  </a>
                 </div>
               )}
               {publishStatus === 'inbox' && (
