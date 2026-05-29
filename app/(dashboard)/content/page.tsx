@@ -2062,8 +2062,62 @@ function VideoCard({
           </div>
 
           {/* Publish-to row — uniform pills, one per connected platform.
-              Only shown when a post exists and at least one social is connected. */}
-          {post && (fbConnected || pinterestConnected || threadsConnected || linkedInConnected || twitterConnected || blueskyConnected || telegramConnected) && (
+              ── HORIZONTAL videos: all connected socials get a pill (the
+              long-form review path produces blog content that fits FB,
+              Pinterest, LinkedIn, etc.).
+              ── VERTICAL videos (Shorts): we DELIBERATELY restrict the row
+              to TikTok + Instagram. Short-form vertical content doesn't
+              translate well to LinkedIn / X / Threads / Bluesky / Telegram
+              / Pinterest, and stuffing those pills onto every Short row
+              clutters the workflow. TikTok uses the DIRECT video flow
+              (no blog post needed); IG uses the existing modal which
+              requires a generated post. */}
+          {(() => {
+            const isVertical = video.is_vertical === true
+            if (isVertical) {
+              // Vertical: render the compact Shorts-only publish row.
+              // Even with NO blog post yet, the TikTok direct flow works —
+              // the only requirement is the vertical MP4 being uploaded.
+              if (!tiktokConnected && !instagramConnected) return null
+              return (
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1">Post Short to</span>
+                  {tiktokConnected && (
+                    <SocialPill
+                      brand="#000000"
+                      icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" /></svg>}
+                      label="TikTok"
+                      postedLabel="On TikTok"
+                      posted={false}
+                      loading={false}
+                      onClick={() => window.open(`/tiktok-publish/video/${video.id}`, '_blank', 'noopener')}
+                      locked={!tierAllowsSocial(userTier, 'tiktok')}
+                    />
+                  )}
+                  {instagramConnected && (
+                    <SocialPill
+                      brand="#E1306C"
+                      icon={<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>}
+                      label="Instagram"
+                      postedLabel={igReelPosted && igStoryPosted ? 'On Instagram' : igReelPosted ? 'Reel posted' : 'Story posted'}
+                      posted={igReelPosted || igStoryPosted}
+                      loading={igPosting}
+                      onClick={() => setIgModalOpen(true)}
+                      locked={!tierAllowsSocial(userTier, 'instagram')}
+                    />
+                  )}
+                </div>
+              )
+            }
+            // Horizontal: original logic — only render when a post exists +
+            // at least one non-vertical social is connected.
+            const showAny = !!post && (fbConnected || pinterestConnected || threadsConnected || linkedInConnected || twitterConnected || blueskyConnected || telegramConnected)
+            if (!showAny) return null
+            return null  // continue to the original block below
+          })()}
+          {/* Original horizontal pill block — only renders when not vertical
+              AND a post exists AND at least one social is connected. */}
+          {video.is_vertical !== true && post && (fbConnected || pinterestConnected || threadsConnected || linkedInConnected || twitterConnected || blueskyConnected || telegramConnected) && (
             <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mr-1">Publish to</span>
               {fbConnected && (
