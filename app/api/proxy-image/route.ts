@@ -27,7 +27,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: `Upstream ${res.status}` }, { status: 502 })
   }
 
+  // Bound the response size so we never buffer a multi-MB asset into the
+  // function. The allowed CDNs all serve well-formed Content-Length headers;
+  // we 413 if it's missing or oversized. 20MB covers any thumbnail / HD jpeg
+  // we'd ever composite client-side.
+  const MAX_BYTES = 20 * 1024 * 1024
+  const declared = parseInt(res.headers.get('content-length') || '0', 10)
+  if (!declared || declared > MAX_BYTES) {
+    return NextResponse.json({ error: 'Upstream asset is too large to proxy' }, { status: 413 })
+  }
   const buffer = await res.arrayBuffer()
+  if (buffer.byteLength > MAX_BYTES) {
+    return NextResponse.json({ error: 'Upstream asset is too large to proxy' }, { status: 413 })
+  }
   const contentType = res.headers.get('content-type') || 'image/jpeg'
 
   return new NextResponse(buffer, {

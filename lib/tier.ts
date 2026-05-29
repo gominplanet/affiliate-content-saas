@@ -288,56 +288,63 @@ export async function checkUsageLimit(
   // Admin — unlimited
   if (tier === 'admin') return { allowed: true }
 
-  // Free tier — 15 posts lifetime
+  // The actual gate goes through try_consume_post_quota() (migration 080) —
+  // a Postgres function that takes a per-user advisory lock + counts + decides
+  // atomically. Replaces the old check-then-write pattern that let two
+  // concurrent generates both pass when the user was 1 below their cap.
+  //
+  // resetLabel is computed here (NOT in SQL) so we can render the
+  // user-friendly "Resets Jun 1" string in the error message regardless of
+  // which gate path we took.
+  const { startISO, resetLabel } = billingWindow({
+    periodStart: ig?.subscription_period_start ?? null,
+    periodEnd: ig?.subscription_period_end ?? null,
+  })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ok } = await (supabase as any).rpc('try_consume_post_quota', {
+    p_user: userId,
+    p_lifetime: limits.lifetimeMax,
+    p_monthly: limits.postsPerMonth,
+    p_window_start: startISO,
+  })
+
+  if (ok === true) return { allowed: true }
+
+  // Quota denied — build the right reason string based on whether the cap
+  // was a lifetime or monthly one.
+  const next = nextTierFor(tier, 'postsPerMonth')
   if (limits.lifetimeMax !== null) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count } = await (supabase as any)
-      .from('blog_posts')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-
-    if ((count ?? 0) >= limits.lifetimeMax) {
-      const next = nextTierFor(tier, 'postsPerMonth')
-      const nextHint = next
-        ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} posts / month`}.`
-        : ''
-      return {
-        allowed: false,
-        reason: `You've used all ${limits.lifetimeMax} free posts.${nextHint}`,
-        tier,
-        upgrade: next,
-      }
+    const nextHint = next
+      ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} posts / month`}.`
+      : ''
+    return {
+      allowed: false,
+      reason: `You've used all ${limits.lifetimeMax} free posts.${nextHint}`,
+      tier,
+      upgrade: next,
     }
-    return { allowed: true }
   }
-
   if (limits.postsPerMonth !== null) {
-    const { startISO, resetLabel } = billingWindow({
-      periodStart: ig?.subscription_period_start ?? null,
-      periodEnd: ig?.subscription_period_end ?? null,
-    })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count } = await (supabase as any)
-      .from('blog_posts')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('published_at', startISO)
-
-    if ((count ?? 0) >= limits.postsPerMonth) {
-      const next = nextTierFor(tier, 'postsPerMonth')
-      const nextHint = next
-        ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
-        : ''
-      return {
-        allowed: false,
-        reason: `You've reached your ${limits.postsPerMonth} posts limit on the ${limits.label} plan for this billing period.${nextHint} Resets ${resetLabel}.`,
-        tier,
-        upgrade: next,
-      }
+    const nextHint = next
+      ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
+      : ''
+    return {
+      allowed: false,
+      reason: `You've reached your ${limits.postsPerMonth} posts limit on the ${limits.label} plan for this billing period.${nextHint} Resets ${resetLabel}.`,
+      tier,
+      upgrade: next,
     }
   }
 
-  return { allowed: true }
+  // No cap configured but the RPC returned false — shouldn't happen, but
+  // fail-closed and surface a generic message.
+  return {
+    allowed: false,
+    reason: 'Post quota check failed. Try again in a moment.',
+    tier,
+    upgrade: next,
+  }
 }
 
 /**

@@ -151,28 +151,17 @@ export async function POST(req: Request) {
   const admin = createAdminClient()
 
   // ── 1. Tick the broadcast counter ────────────────────────────────────────
+  // Atomic via the increment_broadcast_counter RPC (migration 080) — two
+  // concurrent webhook events for the same broadcast no longer race the
+  // counter, which used to silently undercount on busy broadcasts.
   const col = COUNTER_BY_EVENT[type]
   if (col) {
-    // Read-modify-write. Two concurrent webhook events for the same
-    // broadcast could race here and double-count once — acceptable for v1.
-    // If counter drift ever shows up in real data, swap to an SQL UPDATE
-    // with `${col} = ${col} + 1` via an .rpc() function.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row } = await (admin as any)
-      .from('newsletter_broadcasts')
-      .select(col)
-      .eq('id', broadcastId)
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (row) {
-      const current = (row as Record<string, number | null>)[col] ?? 0
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any)
-        .from('newsletter_broadcasts')
-        .update({ [col]: current + 1 })
-        .eq('id', broadcastId)
-        .eq('user_id', userId)
-    }
+    await (admin as any).rpc('increment_broadcast_counter', {
+      p_broadcast_id: broadcastId,
+      p_user: userId,
+      p_column: col,
+    })
   }
 
   // ── 2. Flip subscriber status on bounce / spam / one-click unsub ─────────

@@ -95,7 +95,7 @@ export async function POST(request: Request) {
 
     // ── 1. Set site title ─────────────────────────────────────────────────────
     try {
-      await wpService.setSiteSettings({ title: brandName, description: `${brandName} — honest product reviews` })
+      await wpService.setSiteSettings({ title: brandName, description: `${brandName} — in-depth product reviews` })
       steps.push('Site title updated')
     } catch { steps.push('Site title: skipped (permissions)') }
 

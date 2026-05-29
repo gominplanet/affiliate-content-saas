@@ -122,6 +122,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ── 4.5. Rate-limit by source IP ──────────────────────────────────────────
+  // Without this, a scraper can mass-create pending rows against a creator's
+  // list (every pending burns a slot toward the cap) until the cap-hit error
+  // locks out real signups. 5 signups/hour from one IP is generous for a
+  // family + a coffee shop NAT but cheap to enforce thanks to the partial
+  // index in migration 080.
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || null
+  if (ip) {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count: recent } = await (admin as any)
+      .from('newsletter_subscribers')
+      .select('id', { count: 'exact', head: true })
+      .eq('signup_ip_hash', hashIp(ip))
+      .gte('created_at', oneHourAgo)
+    if ((recent ?? 0) >= 5) {
+      return json({ ok: false, error: 'Too many signups from this network. Try again in a bit.' }, { status: 429 })
+    }
+  }
+
   // ── 5. Lookup existing row ────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existing } = await (admin as any)
@@ -143,7 +163,7 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: "We can't deliver to that address." }, { status: 400 })
   }
 
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || null
+  // ip is captured above in step 4.5 for the rate-limit check.
   const sourceUrl = (payload.sourceUrl || '').slice(0, 1000) || null
   const token = newToken()
 

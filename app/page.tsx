@@ -104,7 +104,7 @@ const faqs = [
   },
   {
     q: 'What\'s the built-in AI assistant?',
-    a: 'A business-aware chat assistant included in every plan (with higher limits as you move up). It already knows your brand, your recent posts and campaigns, and helps with setup, affiliate strategy, and content questions. It remembers context across chats, and you can import your history from ChatGPT or Claude so it picks up where you left off — one less $20/mo subscription to keep.',
+    a: 'A business-aware chat assistant included in every plan (with higher limits as you move up). It already knows your brand, your recent posts and campaigns, and helps with setup, affiliate strategy, and content questions. It remembers context across chats, and you can import your history from ChatGPT or any other AI tool so it picks up where you left off — one less $20/mo subscription to keep.',
   },
   {
     q: 'What are the brand-collab pitch emails?',

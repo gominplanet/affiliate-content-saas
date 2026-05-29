@@ -309,7 +309,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
       "heading": "Short heading with rank/use-case, e.g. '1. Acme Pro — Best Overall'",
       "body_html": "About 450-500 words as raw HTML <p>...</p> (and optional <ul><li>) blocks. First person. Sell this product's real features + benefits from its data. Concrete, specific, no fabricated claims.",
       "pros": ["2-4 short concrete pros, grounded in this product's real data/transcript"],
-      "cons": ["1-3 short honest drawbacks/limitations, grounded in the data (every product has trade-offs)"],
+      "cons": ["1-3 short, real drawbacks/limitations, grounded in the data (every product has trade-offs)"],
       "verdict": "one punchy sentence — the bottom line for this product"
     }
     // ... one object per product, ORDERED by your ranking (best first for comparison)

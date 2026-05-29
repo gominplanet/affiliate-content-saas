@@ -109,36 +109,63 @@ export async function GET() {
     return null
   }
 
-  let inspected = 0
   const out: Record<string, unknown>[] = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toUpsert: any[] = []
 
-  for (const p of livePosts) {
+  // ── Phase 1: synchronous scoring + decide which rows need a fresh GSC ping
+  // Build the list of work to do BEFORE we start inspecting, so we can fan
+  // out the URL Inspections concurrently with a fixed concurrency cap.
+  // Sequential was ~800ms/inspection × 25 = ~20s wall time. Parallel-of-5
+  // brings that down to ~4s without hammering GSC.
+  type Pending = {
+    post: typeof livePosts[number]
+    score: number
+    checks: ReturnType<typeof scorePostSeo>['checks']
+    url: string | null
+    perf: { clicks: number; impressions: number; position: number; ctr: number } | undefined
+    cached: ReturnType<typeof cache.get>
+    needsInspect: boolean
+  }
+  const pending: Pending[] = livePosts.map(p => {
     const { score, checks } = scorePostSeo({
       title: p.title || '', contentHtml: p.content || '', siteHost, postType: p.post_type || 'review',
-      // meta description isn't on blog_posts; the FAQ/intro checks still cover AEO.
     })
-
     const matchedPage = findPageForSlug(p.slug)
     const url = matchedPage || (wpUrl && p.slug ? `${wpUrl}/${p.slug}` : null)
     const perf = matchedPage ? perfByPage.get(matchedPage) : undefined
-
     const cached = cache.get(p.id)
+    const stale = !cached || (Date.now() - new Date(cached.checked_at || 0).getTime()) > STALE_MS
+    const needsInspect = !!(connected && token && property && url && stale)
+    return { post: p, score, checks, url, perf, cached, needsInspect }
+  })
+
+  // Apply the INSPECT_CAP — pick the first N that need inspection.
+  const toInspect = pending.filter(p => p.needsInspect).slice(0, INSPECT_CAP)
+  const inspectResults = new Map<string, Awaited<ReturnType<typeof inspectUrl>>>()
+  if (toInspect.length && token && property) {
+    const CONCURRENCY = 5
+    for (let i = 0; i < toInspect.length; i += CONCURRENCY) {
+      const chunk = toInspect.slice(i, i + CONCURRENCY)
+      const results = await Promise.all(chunk.map(async pp => {
+        const ins = await inspectUrl(token!, property!, pp.url!)
+        return [pp.post.id, ins] as const
+      }))
+      for (const [id, ins] of results) inspectResults.set(id, ins)
+    }
+  }
+
+  // ── Phase 2: assemble the output rows with whatever inspection data we got
+  for (const pp of pending) {
+    const { post: p, score, checks, url, perf, cached } = pp
     let indexedState: string = cached?.indexed_state || 'unknown'
     let coverageState: string | null = cached?.coverage_state || null
     let lastCrawl: string | null = cached?.last_crawl || null
-
-    // Refresh indexing for stale/missing rows, capped per request.
-    const stale = !cached || (Date.now() - new Date(cached.checked_at || 0).getTime()) > STALE_MS
-    if (connected && token && property && url && stale && inspected < INSPECT_CAP) {
-      inspected++
-      const ins = await inspectUrl(token, property, url)
-      if (ins) {
-        indexedState = ins.indexed ? 'indexed' : 'not_indexed'
-        coverageState = ins.coverageState
-        lastCrawl = ins.lastCrawl
-      }
+    const ins = inspectResults.get(p.id)
+    if (ins) {
+      indexedState = ins.indexed ? 'indexed' : 'not_indexed'
+      coverageState = ins.coverageState
+      lastCrawl = ins.lastCrawl
     }
 
     const row = {

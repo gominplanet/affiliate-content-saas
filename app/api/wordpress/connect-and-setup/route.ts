@@ -189,7 +189,7 @@ export async function POST(request: Request) {
         method: 'POST',
         body: JSON.stringify({
           title: brandName,
-          description: tagline || `${brandName} — honest product reviews`,
+          description: tagline || `${brandName} — in-depth product reviews`,
         }),
       })
     } catch { /* non-fatal */ }
