@@ -107,11 +107,11 @@ const STYLE_SPEC: Record<Style, {
   hands_on: {
     label: 'Hands-On Test',
     totalSec: 300,          // 5 min target (range 3-6 min)
-    shotCount: { min: 10, max: 13 },
+    shotCount: { min: 10, max: 12 },
     hasShort: true,
     spine: [
       { id: 'hook',         label: 'Hook',                sec: 12, scripted: true,  note: 'Pick from the 3 hook variants. 1-2 sentences. Problem-first or question — not bold claim.' },
-      { id: 'context',      label: 'Context / Setup-up',  sec: 25, scripted: false, note: 'WHY you got this. The problem you wanted to solve. Personal stake makes the test feel real.' },
+      { id: 'context',      label: 'Context / Set-up',    sec: 25, scripted: false, note: 'WHY you got this. The problem you wanted to solve. Personal stake makes the test feel real.' },
       { id: 'unbox',        label: 'Unboxing',            sec: 35, scripted: false, note: '30 seconds max. What is in the box, brief. Skip ceremony — most viewers do not care.' },
       { id: 'build_feel',   label: 'Build & Feel',        sec: 40, scripted: false, note: 'Hands on. Materials, weight, fit. 2-3 specific observations — not "feels premium".' },
       { id: 'test_1',       label: 'Real-Use Test #1',    sec: 60, scripted: false, note: 'First specific scenario. Not generic — name the use case. Show it working (or not).' },
@@ -277,7 +277,7 @@ VOICE RULES (apply across hooks, scripted sections, and the short):
    - "game-changer", "mind-blowing", "next-level", "absolute banger"
 4. NEVER mention competitor product names. The review stands on its own. No "vs the [other brand]" anywhere.
 5. NEVER speak the price aloud. (Description + pinned comment handle the price.)
-6. NEVER mention "link in description / pinned comment / below". NEVER plug another video, channel, full review, deep dive, or any other content the viewer should go watch. NO on-camera CTA in any form. Lines like "full breakdown is up on our channel", "watch the full review", "head to our channel", "more on the channel", "we cover that in the long version" are all banned in BOTH the long master AND the short cutdown. The close beat is 1 clean line, NOT a sign-off pitch.
+6. NEVER mention "link in description / pinned comment / below". NEVER plug another video, channel, full review, deep dive, or any other content the viewer should go watch. NO on-camera CTA in any form. Lines like "full breakdown is up on our channel", "watch the full review", "head to our channel", "more on the channel", "we cover that in the long version" are all banned in BOTH the long master AND the short cutdown. Also BANNED in the close beat: "see you in the next one", "see you next time", "catch you in the next video", "until next time", "see you soon", "see you then" — these are subscribe-bait sign-offs even though they don't name a CTA. The close beat is ONE clean line that's either brand-affirming or product-reflective — NEVER future-content-pointing. Good close patterns: brand identifier with a wry frame ("We're <hosts> — we <tag line related to the niche>"), product reflection ("And that's the chair."), wry observation about the test ("Five hours in this thing and we're not complaining."). Pick a pattern that lands, do NOT end on a sign-off pitch of any kind.
 7. NEVER fabricate specs, features, numbers, materials, or experiences not in the product info above. Hard rule: do NOT name specific NUMERIC specs (degrees, watts, decibels, mAh, hours, mph, RPM) or specific MECHANISM TYPES (vibration motor, brushless motor, planetary gear, magnetic latch) unless they appear VERBATIM in the product info above. If a detail isn't in the info, use qualitative language instead — "leans back nicely", "the massage function is subtle", "the build feels solid" — never "135-degree recline", never "small vibration motor".
 8. Punchy spoken sentences. Read for the ear, not the page.
 ${writingSample ? '9. MIRROR the rhythm of the writing sample above. Same sentence lengths, same opener style.' : ''}
@@ -368,6 +368,11 @@ Return ONLY a single JSON object with NO prose around it, NO markdown fences. Sh
     [/[^.!?]*\b(?:full (?:breakdown|review|video|deep dive|version)|deep dive|long version)[^.!?]*\b(?:up on (?:our|the|my) channel|on (?:our|the|my) channel|in the (?:full )?video|over (?:on|at) (?:our|the|my) channel)[^.!?]*[.!?]?/gi, ''],
     [/[^.!?]*\b(?:watch the full|head (?:over )?to (?:our|the|my) channel|more (?:on (?:our|the|my) channel|videos like this))[^.!?]*[.!?]?/gi, ''],
     [/[^.!?]*\b(?:we (?:go (?:deeper|into more detail)|cover (?:more|that)) (?:in (?:the )?full|on (?:our|the|my) channel))[^.!?]*[.!?]?/gi, ''],
+    // Soft-sign-off subscribe-bait family ("see you in the next one" etc.).
+    // These don't explicitly name a CTA but they're the YouTube-vernacular
+    // tell. Whole-sentence scrub so the close beat doesn't end on them.
+    [/[^.!?]*\b(?:see (?:you|ya) (?:in the next (?:one|video)|next time|soon|then|on the next one)|catch (?:you|ya) (?:in the next (?:one|video)|next time)|until (?:next time|the next one))[^.!?]*[.!?]?/gi, ''],
+    [/[^.!?]*\bwe['’]ll (?:see (?:you|ya)|catch (?:you|ya)) (?:in the next (?:one|video)|next time|soon|on the next one)[^.!?]*[.!?]?/gi, ''],
   ]
   const scrub = (s: string) => {
     let out = s
