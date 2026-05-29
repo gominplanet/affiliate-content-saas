@@ -70,10 +70,31 @@ export async function GET(request: Request) {
       .eq('user_id', user.id)
     return NextResponse.json({ status: 'failed', shareUrl: null, errorMessage: result.failureReason })
   }
+  // SEND_TO_USER_INBOX = TikTok processed the video but routed it to the
+  // creator's app inbox/drafts instead of publishing directly. Common in
+  // sandbox even with Direct Post. Treat as a SUCCESS terminal state and
+  // tell the user where to find it.
+  if (result.status === 'SEND_TO_USER_INBOX') {
+    await sb
+      .from('youtube_videos')
+      .update({
+        tiktok_publish_status: 'published',
+        tiktok_share_url: null,
+        tiktok_error_message: 'Sent to your TikTok app inbox — open TikTok and tap Publish.',
+      })
+      .eq('id', videoId)
+      .eq('user_id', user.id)
+    return NextResponse.json({
+      status: 'inbox',
+      shareUrl: null,
+      errorMessage: 'TikTok routed it to your app inbox (sandbox behavior) — open the TikTok app, find it under your drafts/inbox, tap Publish.',
+    })
+  }
 
   return NextResponse.json({
     status: 'processing',
     rawStatus: result.rawStatus,
+    failureReason: result.failureReason,
     shareUrl: null,
     errorMessage: null,
   })

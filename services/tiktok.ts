@@ -50,6 +50,7 @@ export type PublishStatus =
   | 'PROCESSING_DOWNLOAD'              // TikTok pulling the file from our CDN
   | 'PROCESSING_UPLOAD'                // Internal processing
   | 'PUBLISH_COMPLETE'                 // Video is live
+  | 'SEND_TO_USER_INBOX'               // Landed in the creator's TikTok app inbox/drafts; sandbox often routes here
   | 'FAILED'                           // Hard failure
   | 'UNKNOWN'
 
@@ -250,6 +251,7 @@ export async function pollPublishStatus(
   if (raw === 'PROCESSING_DOWNLOAD' || raw === 'DOWNLOAD_IN_PROGRESS') status = 'PROCESSING_DOWNLOAD'
   else if (raw === 'PROCESSING_UPLOAD' || raw === 'PROCESSING') status = 'PROCESSING_UPLOAD'
   else if (raw === 'PUBLISH_COMPLETE' || raw === 'PUBLISHED') status = 'PUBLISH_COMPLETE'
+  else if (raw === 'SEND_TO_USER_INBOX') status = 'SEND_TO_USER_INBOX'
   else if (raw === 'FAILED' || raw === 'PUBLISH_FAILED') status = 'FAILED'
 
   return {

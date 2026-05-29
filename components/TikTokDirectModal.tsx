@@ -87,9 +87,13 @@ export function TikTokDirectModal({
   const [posting, setPosting] = useState(false)
   const [postError, setPostError] = useState<string | null>(null)
   const [publishId, setPublishId] = useState<string | null>(null)
-  const [publishStatus, setPublishStatus] = useState<'idle' | 'processing' | 'published' | 'failed'>('idle')
+  const [publishStatus, setPublishStatus] = useState<'idle' | 'processing' | 'published' | 'failed' | 'inbox'>('idle')
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
+  // Diagnostic: what TikTok says the status is right now (PROCESSING_DOWNLOAD,
+  // PROCESSING_UPLOAD, etc.). Surfaced under the processing banner so a
+  // stuck post tells us WHY it's stuck instead of looping forever.
+  const [rawStatus, setRawStatus] = useState<string | null>(null)
   // 11-char YouTube id stashed separately so we can build the Studio link
   // even on the error path (where `meta` is null).
   const [youtubeId, setYoutubeId] = useState<string | null>(null)
@@ -130,7 +134,7 @@ export function TikTokDirectModal({
 
   // Poll publish status after kicking off Direct Post.
   useEffect(() => {
-    if (!publishId || publishStatus === 'published' || publishStatus === 'failed') return
+    if (!publishId || publishStatus === 'published' || publishStatus === 'failed' || publishStatus === 'inbox') return
     const tick = async () => {
       try {
         const res = await fetch(`/api/blog/tiktok-post/video/status?videoId=${encodeURIComponent(videoId)}`)
@@ -139,9 +143,14 @@ export function TikTokDirectModal({
           setPublishError(json.error || 'Status check failed.')
           return
         }
+        setRawStatus((json.rawStatus as string) || null)
         if (json.status === 'published') {
           setPublishStatus('published')
           setShareUrl(json.shareUrl ?? null)
+          if (onPosted) onPosted()
+        } else if (json.status === 'inbox') {
+          setPublishStatus('inbox')
+          setPublishError(json.errorMessage || 'TikTok routed it to your app inbox — open the TikTok app to publish.')
           if (onPosted) onPosted()
         } else if (json.status === 'failed') {
           setPublishStatus('failed')
@@ -428,10 +437,23 @@ export function TikTokDirectModal({
                 </div>
               )}
               {publishStatus === 'processing' && (
-                <div className="rounded-lg border-[#0071e3]/20 bg-[#0071e3]/5 p-3">
+                <div className="rounded-lg border-[#0071e3]/20 bg-[#0071e3]/5 p-3 flex flex-col gap-1">
                   <p className="text-xs text-[#0071e3] flex items-center gap-1.5">
                     <Loader2 size={12} className="animate-spin" />
                     Sent to TikTok. Processing — 1-3 min.
+                  </p>
+                  {rawStatus && (
+                    <p className="text-[10px] text-[#86868b]">TikTok status: <span className="font-mono">{rawStatus}</span></p>
+                  )}
+                </div>
+              )}
+              {publishStatus === 'inbox' && (
+                <div className="rounded-lg border-[#ff9500]/20 bg-[#ff9500]/5 p-3 flex flex-col gap-1">
+                  <p className="text-xs text-[#9a5d00] flex items-start gap-1.5">
+                    <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
+                    <span>
+                      <strong>Sent to your TikTok app inbox.</strong> Open TikTok on your phone, find the notification (or check Drafts), and tap Publish there. This is normal for sandbox.
+                    </span>
                   </p>
                 </div>
               )}
