@@ -1,43 +1,143 @@
 /**
- * POST /api/script/generate — pre-production video script + shot list
+ * POST /api/script/generate — UGC pre-production: 3-6 min script + shot list,
+ * plus an auto vertical short cutdown (written fresh, not lifted).
  *
  * Inputs:
  *   input  string  Amazon ASIN, Amazon URL, Geniuslink, or any product URL.
- *                  Length-capped + trimmed so a paste doesn't blow the prompt.
- *   style  string  'unboxing' | 'quick_test' | 'full_review'
+ *   style  string  'first_look' | 'hands_on' | 'long_term'
  *
- * Resolves the input → product info (Amazon scrape preferred; falls back to
- * a generic page scrape for non-Amazon URLs), loads the creator's brand
- * voice + the titles of their most recent posts, and asks Claude Sonnet for
- * a structured JSON script grounded in all of the above.
+ * Tier gate: Pro / Admin only. Trial / Creator get a 403 with upgrade hint
+ * (the /script page shows an upsell card instead of the generator).
  *
- * Saved to video_scripts on success; returns the row + the parsed script so
- * the UI can render immediately without a follow-up GET.
+ * Usage gate: 30 scripts / UTC calendar month for Pro. Admin uncapped.
+ *
+ * Voice + craft spec (locked in with the creator, 2026-05-28):
+ *   - First person always. Friend who tested it + excited discoverer + expert.
+ *   - HARD bans: "honest" family · "in today's video / hey guys" · "subscribe /
+ *     smash the like / don't forget to" · "game-changer / mind-blowing / next-
+ *     level" · ALL competitor product names · the price spoken aloud · ANY
+ *     on-camera CTA to a link.
+ *   - Granularity: scripted hook + verdict (word-for-word) · improvised middle
+ *     (beat directions + 2-3 suggested talking points the creator can pick or
+ *     paraphrase).
+ *   - Hook: 3 variants the creator picks from — problem-first, question / wait-
+ *     for-it, and one more in that family.
+ *   - Beat structure (hands_on / long_term): hook → unbox → setup → 2-3 real
+ *     tests → verdict-with-trade-offs → who-it's-for. No CTA section.
+ *   - Verdict bundles "Don't buy this if..." rather than a separate cons block.
+ *   - Real-use scenarios + build quality + trade-offs are the focus areas.
+ *   - Shot list: subject only (no separate B-roll, no director notes, no
+ *     lighting cues). Variable count by style.
+ *   - For hands_on + long_term: ALSO produce a 30-60s vertical short cutdown
+ *     written FRESH, not lifted from the long master. Its hook opens on a
+ *     visual surprise / strongest verdict line / trade-off tease.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
-import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
+import { resolveFinalUrl } from '@/lib/product-link'
 import { fetchProductImageFromPage } from '@/services/research'
+import { checkScriptUsage } from '@/lib/tier'
 
-type Style = 'unboxing' | 'quick_test' | 'full_review'
-const VALID_STYLES: Style[] = ['unboxing', 'quick_test', 'full_review']
+type Style = 'first_look' | 'hands_on' | 'long_term'
+const VALID_STYLES: Style[] = ['first_look', 'hands_on', 'long_term']
 
 interface ScriptSection {
   id: string
   label: string
   durationSec: number
+  /** Word-for-word voiceover. Populated for hook + verdict + who-it's-for
+   *  (the locked-in moments). Empty string for improvised middle sections. */
   script: string
+  /** Beat direction + 2-3 suggested talking points for improvised middle
+   *  sections. Empty for the scripted moments. */
+  talkingPoints: string[]
+  /** Subject-only shots ("close-up of the side button"). Creator decides
+   *  angle / framing / lighting on the day. */
   shots: string[]
-  bRoll: string[]
-  tips: string[]
 }
+
+interface ShortCutdown {
+  /** Verbatim opening 3-5s (visual cue + first spoken line). */
+  hook: string
+  /** Verbatim 25-55s short script. */
+  script: string
+  /** Subject-only shots covering the short. */
+  shots: string[]
+  durationSec: number
+}
+
 interface ScriptPayload {
   summary: string
   totalDurationSec: number
+  /** Three hook variants the creator picks ONE from before filming the long
+   *  master. Each is a complete verbatim 10-15s opener. Renderer shows them
+   *  side-by-side so the creator can scan and pick. */
+  hooks: string[]
   sections: ScriptSection[]
+  /** Auto vertical short for hands_on + long_term — undefined for first_look
+   *  (a first_look IS the vertical). */
+  shortCutdown?: ShortCutdown
+}
+
+/** Three style buckets reframed (2026-05-28) for UGC. Time-based progression
+ *  matched to buyer-research stage. */
+const STYLE_SPEC: Record<Style, {
+  label: string
+  totalSec: number
+  shotCount: { min: number; max: number }
+  hasShort: boolean
+  spine: Array<{ id: string; label: string; sec: number; scripted: boolean; note: string }>
+}> = {
+  first_look: {
+    label: 'First Look',
+    totalSec: 75,           // 60-90s vertical
+    shotCount: { min: 6, max: 8 },
+    hasShort: false,        // First Look IS the vertical — no separate cutdown
+    spine: [
+      { id: 'hook',         label: 'Hook',                sec: 8,  scripted: true,  note: 'Open on a visual surprise or trade-off tease. 1 sentence max. Picks from the 3 hook variants above.' },
+      { id: 'reveal',       label: 'Reveal',              sec: 12, scripted: false, note: 'Name the product (no price). 1-2 lines. What it is, who it is for — fast.' },
+      { id: 'first_impression', label: 'First Impression', sec: 25, scripted: false, note: 'Hands on it. Build quality + feel in 2-3 specific beats. Skip generic "feels premium" — say WHY.' },
+      { id: 'verdict',      label: 'Quick Verdict',       sec: 25, scripted: true,  note: '"Worth it if... not for you if..." Bundles the trade-off into the recommendation. No separate cons block.' },
+      { id: 'close',        label: 'Close',               sec: 5,  scripted: true,  note: '1 line. NO mention of links / subscribe / description. Just a clean ending beat.' },
+    ],
+  },
+  hands_on: {
+    label: 'Hands-On Test',
+    totalSec: 300,          // 5 min target (range 3-6 min)
+    shotCount: { min: 12, max: 14 },
+    hasShort: true,
+    spine: [
+      { id: 'hook',         label: 'Hook',                sec: 12, scripted: true,  note: 'Pick from the 3 hook variants. 1-2 sentences. Problem-first or question — not bold claim.' },
+      { id: 'context',      label: 'Context / Setup-up',  sec: 25, scripted: false, note: 'WHY you got this. The problem you wanted to solve. Personal stake makes the test feel real.' },
+      { id: 'unbox',        label: 'Unboxing',            sec: 35, scripted: false, note: '30 seconds max. What is in the box, brief. Skip ceremony — most viewers do not care.' },
+      { id: 'build_feel',   label: 'Build & Feel',        sec: 40, scripted: false, note: 'Hands on. Materials, weight, fit. 2-3 specific observations — not "feels premium".' },
+      { id: 'test_1',       label: 'Real-Use Test #1',    sec: 60, scripted: false, note: 'First specific scenario. Not generic — name the use case. Show it working (or not).' },
+      { id: 'test_2',       label: 'Real-Use Test #2',    sec: 60, scripted: false, note: 'Different scenario. Different angle on the product. Surface a small flaw if it shows up — adds trust.' },
+      { id: 'verdict',      label: 'Verdict',             sec: 45, scripted: true,  note: 'Word-for-word. "Worth it if... not for you if..." — bundles trade-offs. Names who should NOT buy.' },
+      { id: 'close',        label: 'Close',               sec: 8,  scripted: true,  note: '1 line. NO link / subscribe / description CTA. Clean ending.' },
+    ],
+  },
+  long_term: {
+    label: 'Long-Term Review',
+    totalSec: 600,          // 10 min target (range 8-12 min)
+    shotCount: { min: 14, max: 18 },
+    hasShort: true,
+    spine: [
+      { id: 'hook',         label: 'Hook',                sec: 15, scripted: true,  note: 'Pick from the 3 hook variants. Lead with the moment of doubt or the lived-in insight from weeks of use.' },
+      { id: 'context',      label: 'The Backstory',       sec: 40, scripted: false, note: 'Why you got it, how long you have had it, how often you use it. Sets the credibility frame.' },
+      { id: 'unbox',        label: 'Unboxing Recap',      sec: 35, scripted: false, note: 'Brief — what came in the box. Save the screen time for use.' },
+      { id: 'build_feel',   label: 'Build Held Up?',      sec: 50, scripted: false, note: 'After [N weeks/months] — what wore in, what wore out. Specific marks, fading, loose parts.' },
+      { id: 'test_1',       label: 'Real-Use Test #1',    sec: 110, scripted: false, note: 'Deep scenario — the main use case. Show it doing the job over time. Include the moment you doubted it.' },
+      { id: 'test_2',       label: 'Real-Use Test #2',    sec: 90, scripted: false, note: 'Second scenario — a different angle. Surface the recurring annoyance you only notice with daily use.' },
+      { id: 'test_3',       label: 'Real-Use Test #3',    sec: 80, scripted: false, note: 'Optional third — the edge case that tests the product. Where it stretched / broke / surprised.' },
+      { id: 'verdict',      label: 'Long-Term Verdict',   sec: 70, scripted: true,  note: 'Word-for-word. "Still worth it if... not for you if..." Trade-offs woven in. Mentions whether you would buy again.' },
+      { id: 'who_for',      label: 'Who This Is For',     sec: 35, scripted: true,  note: 'Word-for-word. Names the buyer who SHOULD get it. Names the buyer who should not.' },
+      { id: 'close',        label: 'Close',               sec: 10, scripted: true,  note: '1 line. NO link / subscribe / description CTA. Clean ending.' },
+    ],
+  },
 }
 
 export async function POST(req: Request) {
@@ -51,14 +151,29 @@ export async function POST(req: Request) {
   const input = (body.input || '').trim().slice(0, 500)
   if (!input) return NextResponse.json({ error: 'Paste an Amazon ASIN or product URL.' }, { status: 400 })
 
-  const style: Style = VALID_STYLES.includes(body.style as Style) ? (body.style as Style) : 'full_review'
+  // Default to hands_on (the 3-6 min "decision moment" review — the main one
+  // creators reach for). first_look is the vertical-only style; long_term is
+  // the 8-12 min deep dive after weeks of use.
+  const style: Style = VALID_STYLES.includes(body.style as Style) ? (body.style as Style) : 'hands_on'
+
+  // ── Tier + monthly cap gate ───────────────────────────────────────────────
+  // Pro-only feature. Trial / Creator return a 403 with upgrade copy that the
+  // /script page surfaces as an upsell card. Pro past 30/month gets the cap
+  // message + reset date.
+  const usage = await checkScriptUsage(supabase, user.id)
+  if (!usage.allowed) {
+    return NextResponse.json({
+      error: usage.reason,
+      limitReached: true,
+      cap: 'scripts',
+      currentTier: usage.tier,
+      upgrade: usage.upgrade,
+      used: usage.used,
+      limit: usage.cap,
+    }, { status: 403 })
+  }
 
   // ── Resolve the product ───────────────────────────────────────────────────
-  // Three paths in priority order:
-  //   1. ASIN already in the input (bare 10-char code OR inside an Amazon URL)
-  //   2. Generic short link (geni.us / amzn.to / a.co / bit.ly) → follow,
-  //      then try ASIN extraction again
-  //   3. Plain product URL → page scrape for title + image
   let asin = extractAsin(input.toUpperCase())
   let productUrl: string | null = /^https?:\/\//i.test(input) ? input : null
   if (!asin && productUrl && /(?:geni\.us|gnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(productUrl)) {
@@ -68,12 +183,7 @@ export async function POST(req: Request) {
       asin = extractAsin(resolved)
     } catch { /* keep original */ }
   }
-  if (!asin && !productUrl) {
-    // Bare string that's neither ASIN nor URL — try one last extraction
-    // for cases like "Bose QC45 B09JZS2DXJ"; otherwise we'll script
-    // text-only off the input as the product description.
-    asin = extractAsin(input)
-  }
+  if (!asin && !productUrl) asin = extractAsin(input)
 
   let productTitle = ''
   let productImage: string | null = null
@@ -91,19 +201,15 @@ export async function POST(req: Request) {
   if (!productTitle && productUrl) {
     try {
       productImage = productImage || (await fetchProductImageFromPage(productUrl))
-      // Title from product URL scrape isn't a thing we already do — use the
-      // input as the "best guess" so Claude has SOMETHING. Better than the
-      // alternative ("Untitled product") for non-Amazon links.
       productTitle = productUrl
     } catch { /* keep what we have */ }
   }
   if (!productTitle) productTitle = input
 
-  // ── Load brand voice + the last few post titles for style mirroring ───────
+  // ── Brand voice + recent post titles for hook style mirroring ─────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [{ data: brand }, { data: integ }, { data: recentPosts }] = await Promise.all([
+  const [{ data: brand }, { data: recentPosts }] = await Promise.all([
     (supabase as any).from('brand_profiles').select('name,author_name,niches,tone,writing_sample,target_audience,words_to_avoid').eq('user_id', user.id).maybeSingle(),
-    (supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle(),
     (supabase as any).from('blog_posts').select('title').eq('user_id', user.id).eq('status', 'published').order('published_at', { ascending: false, nullsFirst: false }).limit(6),
   ])
   const authorName = (brand?.author_name as string) || ''
@@ -117,61 +223,28 @@ export async function POST(req: Request) {
     .map(p => (p.title || '').trim())
     .filter(Boolean)
     .slice(0, 5)
-  const tier = (integ?.tier as string | undefined) || 'trial'
 
-  // ── Style-specific skeleton injected into the prompt ──────────────────────
-  // Each style has its own section-by-section spine + target run time, so
-  // Claude can't drift the script into a different format. Durations are
-  // suggestions — the prompt tells Claude to honour them within ±15%.
-  const skeletons: Record<Style, { runtime: number; sections: Array<{ id: string; label: string; sec: number; note: string }> }> = {
-    unboxing: {
-      runtime: 240,
-      sections: [
-        { id: 'hook',         label: 'Hook',                 sec: 15, note: 'Pattern-interrupt opener. Lead with the visceral thing — "the box weighs nothing", "this came in a tube?".' },
-        { id: 'box_intro',    label: 'The Box',              sec: 20, note: 'Brand & packaging. What you see before opening.' },
-        { id: 'unbox',        label: 'Unboxing',             sec: 60, note: 'Slow reveal of contents in order. Treat each item.' },
-        { id: 'in_hand',      label: 'In-Hand First Look',   sec: 45, note: 'Weight, build quality, surface, materials, what stands out.' },
-        { id: 'power_on',     label: 'First Power-On / Quick Use', sec: 40, note: 'Show it works. ONE quick interaction — not a full test.' },
-        { id: 'verdict',      label: 'Quick Verdict',        sec: 30, note: 'First impression only. Promise the full review for later.' },
-        { id: 'cta',          label: 'CTA',                  sec: 10, note: 'Like, subscribe, link below.' },
-      ],
-    },
-    quick_test: {
-      runtime: 360,
-      sections: [
-        { id: 'hook',         label: 'Hook',                 sec: 15, note: 'State the SPECIFIC claim you\'re testing — "the brand says X. Does it actually?"' },
-        { id: 'product_intro',label: 'What This Is',         sec: 30, note: 'Two sentences on what it is + who it\'s for.' },
-        { id: 'setup',        label: 'Setup',                sec: 45, note: 'Out-of-box → ready to use. Time it on screen.' },
-        { id: 'the_test',     label: 'The Test',             sec: 150, note: 'The MAIN thing it claims to do. One job done well > five jobs glossed over.' },
-        { id: 'results',      label: 'Results',              sec: 45, note: 'Did it work? Numbers / before-after / observation. Show, don\'t tell.' },
-        { id: 'verdict',      label: 'Verdict',              sec: 60, note: 'Buy / skip / wait — and why. Be specific about WHO should care.' },
-        { id: 'cta',          label: 'CTA',                  sec: 15, note: 'Like, subscribe, full review link if planned.' },
-      ],
-    },
-    full_review: {
-      runtime: 720,
-      sections: [
-        { id: 'hook',         label: 'Hook',                 sec: 20, note: 'The BIGGEST objection or the BIGGEST claim. Make it concrete.' },
-        { id: 'quick_verdict',label: 'Quick Verdict (TL;DR)',sec: 45, note: 'For impatient viewers — the take + the score in 45 seconds.' },
-        { id: 'who_for',      label: 'Who This Is For',      sec: 50, note: 'Target buyer, target NOT-buyer. Be ruthless.' },
-        { id: 'unbox',        label: 'What\'s in the Box',   sec: 50, note: 'Fast — accessories, manuals, anything unusual.' },
-        { id: 'build_design', label: 'Build & Design',       sec: 75, note: 'Materials, ergonomics, dimensions vs expectations.' },
-        { id: 'specs',        label: 'The Specs',            sec: 60, note: 'Tie specs to real-world stakes. "X mAh = Y hours doing Z."' },
-        { id: 'real_world',   label: 'Real-World Testing',   sec: 240, note: 'The MEAT. 3-5 distinct scenarios with specific outcomes.' },
-        { id: 'pros',         label: 'Pros',                 sec: 45, note: 'Top 3-5 strengths. One sentence each. Concrete, not generic.' },
-        { id: 'cons',         label: 'Cons',                 sec: 45, note: 'Top 3-5 weaknesses. NEVER soften — viewers spot the lie.' },
-        { id: 'vs',           label: 'vs Alternatives',      sec: 50, note: 'One or two competitors creators in this niche already know.' },
-        { id: 'verdict',      label: 'Final Verdict',        sec: 30, note: 'Buy / skip / wait + price-it-justifies. Conviction over hedging.' },
-        { id: 'cta',          label: 'CTA',                  sec: 10, note: 'Like, subscribe, link below.' },
-      ],
-    },
-  }
-  const skel = skeletons[style]
-  const skeletonLines = skel.sections.map(s => `${s.id} | ${s.label} | ${s.sec}s | ${s.note}`).join('\n')
+  // ── Build the prompt ──────────────────────────────────────────────────────
+  const spec = STYLE_SPEC[style]
+  const spineLines = spec.spine.map(s =>
+    `${s.id} | ${s.label} | ${s.sec}s | ${s.scripted ? 'SCRIPTED (word-for-word)' : 'IMPROVISED (beat direction + talking points)'} | ${s.note}`,
+  ).join('\n')
 
-  // ── Big prompt ───────────────────────────────────────────────────────────
-  const styleLabel = style === 'unboxing' ? 'Unboxing' : style === 'quick_test' ? 'Quick Test' : 'Full Review'
-  const promptBody = `You're writing a pre-production script + shot list for the creator's NEXT YouTube ${styleLabel} video. They'll read this off-camera while filming. Voice it like the creator would write it.
+  const shortCutdownBlock = spec.hasShort
+    ? `
+
+VERTICAL SHORT CUTDOWN
+A separate ~30-55s vertical short that the creator films for TikTok / Reels / YT Shorts. Write it FRESH — not lifted from the long master. Its job is to grab the scroll and pull viewers to the long video on YouTube (without saying so on camera).
+
+The short's hook (first 3 seconds) should do ONE of these:
+  (a) Show the unexpected moment — describe the visual; voice catches up after.
+  (b) Drop the strongest verdict line — emotion + judgment in 1 sentence.
+  (c) Reveal the trade-off as a tease — "There's one thing nobody tells you about this…" curiosity gap.
+
+Pick the one that fits THIS product best. The short's script is verbatim (no improvisation in 30s). 4-6 subject-only shots. No on-camera CTA.`
+    : ''
+
+  const promptBody = `You're writing a pre-production script + shot list for the creator's NEXT ${spec.label} video. They'll read this off-camera while filming. Voice it like the creator, not like a brand.
 
 CREATOR
 ${brandName ? `Channel: ${brandName}` : ''}${authorName ? `\nHost name: ${authorName}` : ''}
@@ -179,8 +252,8 @@ ${niches.length ? `Niche: ${niches.join(', ')}` : ''}
 ${audience ? `Audience: ${audience}` : ''}
 ${tone.length ? `Tone keywords: ${tone.join(', ')}` : ''}
 ${writingSample ? `Writing sample (match this rhythm + vocabulary):\n"""${writingSample}"""` : ''}
-${recentTitles.length ? `Recent video/post titles for hook style:\n${recentTitles.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}` : ''}
-${wordsToAvoid.length ? `Words to NEVER use: ${wordsToAvoid.join(', ')}` : ''}
+${recentTitles.length ? `Recent video / post titles for hook-style cues:\n${recentTitles.map((t, i) => `  ${i + 1}. ${t}`).join('\n')}` : ''}
+${wordsToAvoid.length ? `Words the creator has flagged to avoid: ${wordsToAvoid.join(', ')}` : ''}
 
 PRODUCT
 Title: ${productTitle}
@@ -188,42 +261,71 @@ ${asin ? `Amazon ASIN: ${asin}` : ''}
 ${productDescription ? `Description:\n${productDescription.slice(0, 700)}` : ''}
 ${productBullets.length ? `Key bullet points:\n${productBullets.map((b, i) => `  ${i + 1}. ${b}`).join('\n')}` : ''}
 
-STYLE: ${styleLabel}
-Target total runtime: ${skel.runtime} seconds (${Math.round(skel.runtime / 60)}+ min). Per-section durations are guides — honour them within ±15%.
+STYLE: ${spec.label}
+Target total runtime: ${spec.totalSec}s (~${Math.round(spec.totalSec / 60)} min). Per-section durations are guides — honour them within ±20%.
 
-REQUIRED SECTION SPINE (order + ids + suggested duration + intent):
-${skeletonLines}
+SECTION SPINE (order + id + label + duration + scripted/improvised + intent):
+${spineLines}
 
-VOICE RULES (apply to every \`script\` field):
-- First person. The host IS the creator — never refer to "the reviewer" or use a third person.
-- NEVER use the word "honest", "honestly", or "honesty" in any form. Banned.
-- NEVER fabricate specs, features, or numbers that aren't in the product info above.
-- Punchy sentences. Aim for spoken English, not written.
-- No corporate filler: "without further ado", "we're excited to share", "in this video we will".
-${writingSample ? '- MIRROR the rhythm of the writing sample above. Same sentence lengths, same opener style.' : ''}
+VOICE RULES (apply across hooks, scripted sections, and the short):
+1. First person always. The host IS the creator — never "the reviewer", never third person.
+2. Friend who tested it × excited discoverer × expert breakdown. Contractions. Casual phrasing. Intentional imperfection. NEVER sound like an ad-read.
+3. HARD BANS — never use ANY of these:
+   - "honest", "honestly", "honesty" (any form)
+   - "in today's video", "hey guys", "what's up everyone", "welcome back"
+   - "subscribe", "smash the like", "don't forget to", "hit that bell"
+   - "game-changer", "mind-blowing", "next-level", "absolute banger"
+4. NEVER mention competitor product names. The review stands on its own. No "vs the [other brand]" anywhere.
+5. NEVER speak the price aloud. (Description + pinned comment handle the price.)
+6. NEVER mention "link in description / pinned comment / below". NO on-camera CTA. The close beat is 1 clean line, NOT a sign-off pitch.
+7. NEVER fabricate specs, features, numbers, materials, or experiences not in the product info above. If a detail isn't in the info, don't invent it — describe what's plausibly there ("metal hinge", "soft-touch finish") without claiming a spec.
+8. Punchy spoken sentences. Read for the ear, not the page.
+${writingSample ? '9. MIRROR the rhythm of the writing sample above. Same sentence lengths, same opener style.' : ''}
 
-SHOT LIST RULES:
-- For each section, list 2-4 specific shots (\`shots\`) — frame, angle, what's in frame. Examples: "overhead flat-lay of the box on a wooden table", "close-up of the host's hands turning the dial", "three-quarter angle on the product against a softly blurred kitchen background".
-- For each section, list 2-3 B-roll suggestions (\`bRoll\`) — supplementary footage to cut to. Macro details, environmental shots, comparison props.
-- For each section, list 1-2 tips (\`tips\`) — concrete on-camera direction, light cue, or pacing note. NOT generic ("be authentic"). Specific ("hold the box up so the logo is centred", "pause for 1 second after saying the price").
+HOOK STRATEGY (3 variants the creator picks from)
+Write 3 distinct opening hooks for the long master. Each must be a verbatim 10-15s opener (the creator reads it off-camera). The 3 styles to cover:
+  • Variant 1 — PROBLEM-FIRST. "My old [thing] kept doing [problem]…" The buyer recognises themselves. Names a real pain.
+  • Variant 2 — QUESTION / WAIT-FOR-IT. "Is this $X thing actually any good?" or "I wasn't sure about this until…" Curiosity gap.
+  • Variant 3 — TRADE-OFF TEASE. "There's one thing nobody tells you about this…" or "I almost returned this, then I tried it for [use case]…" Surfaces a real flaw upfront to build trust.
 
-Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
+GRANULARITY
+- SCRIPTED sections (hook + verdict + who-it's-for + close) → \`script\` is word-for-word the creator can read off-camera. \`talkingPoints\` is empty array.
+- IMPROVISED sections (everything else) → \`script\` is an empty string. \`talkingPoints\` is 2-3 short bullet-style lines: what to cover + an optional sample line. Concrete, not generic.
+
+SHOT LIST
+- \`shots\` per section: ${spec.shotCount.min}-${spec.shotCount.max} TOTAL across the whole video — distribute across sections naturally (more on test scenarios, fewer on close).
+- Subject only — "close-up of the side button" / "hands-on hero of the device on the desk" / "wide shot of the host turning it over". NO camera angles. NO lighting cues. NO framing notes. The creator decides those on the day.
+- Each shot is a single short phrase. No duplicates across the video.
+${shortCutdownBlock}
+
+OUTPUT
+Return ONLY a single JSON object with NO prose around it, NO markdown fences. Shape EXACTLY:
 
 {
   "summary": "<two-sentence TL;DR of the video for the creator>",
-  "totalDurationSec": <integer near the target runtime>,
+  "totalDurationSec": <integer near ${spec.totalSec}>,
+  "hooks": [
+    "<verbatim problem-first hook>",
+    "<verbatim question / wait-for-it hook>",
+    "<verbatim trade-off tease hook>"
+  ],
   "sections": [
     {
-      "id": "<exact id from the spine above>",
+      "id": "<exact id from the spine>",
       "label": "<exact label from the spine>",
       "durationSec": <integer>,
-      "script": "<verbatim spoken voiceover for this section>",
-      "shots": ["<shot 1>", "<shot 2>", ...],
-      "bRoll": ["<b-roll 1>", "<b-roll 2>", ...],
-      "tips": ["<tip 1>", "<tip 2>"]
+      "script": "<verbatim voiceover OR empty string if improvised>",
+      "talkingPoints": ["<beat / line 1>", "<beat / line 2>", "<beat / line 3>"],
+      "shots": ["<shot 1>", "<shot 2>"]
     }
-    ... one object per section in the spine, IN ORDER
-  ]
+    // one per spine row, IN ORDER
+  ]${spec.hasShort ? `,
+  "shortCutdown": {
+    "hook": "<verbatim first 3-5s opener>",
+    "script": "<verbatim 25-55s short script>",
+    "shots": ["<shot 1>", "<shot 2>", "<shot 3>", "<shot 4>"],
+    "durationSec": <integer 30-60>
+  }` : ''}
 }`
 
   let parsed: ScriptPayload
@@ -231,10 +333,10 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
     const anthropic = createAnthropicClient()
     const msg = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4500,
+      max_tokens: 5500,
       messages: [{ role: 'user', content: promptBody }],
     })
-    recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'script_generate', model: 'claude-sonnet-4-6' })
+    recordAnthropicUsage(msg, { userId: user.id, tier: usage.tier, feature: 'script_generate', model: 'claude-sonnet-4-6' })
     const raw = (msg.content[0] as { type: string; text: string }).text.trim()
     const jsonStart = raw.indexOf('{')
     const jsonEnd = raw.lastIndexOf('}')
@@ -246,29 +348,58 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
     }, { status: 500 })
   }
 
-  // Defensive shape-coercion — Claude usually returns the right shape but we
-  // never trust un-validated JSON.
+  // ── Belt-and-braces scrub of the hard-banned phrases ──────────────────────
+  // The prompt forbids these but a stray slip from the model would leak through.
+  // We scrub them post-hoc rather than re-prompting on detection (cost guard).
+  const BANNED_PATTERNS: Array<[RegExp, string]> = [
+    [/\b(?:honestly|honesty|honest)\b/gi, ''],
+    [/\b(?:hey guys|what['’]s up everyone|welcome back)\b[\s,.!]*/gi, ''],
+    [/\b(?:in today['’]s video|in this video,?)\b[\s,.!]*/gi, ''],
+    [/\b(?:smash (?:that|the) like|hit (?:that|the) bell|don['’]t forget to (?:like|subscribe))\b[\s,.!]*/gi, ''],
+    [/\b(?:link in (?:the )?(?:description|bio|below)|check the description)\b[\s,.!]*/gi, ''],
+    [/\b(?:game[- ]changer|mind[- ]blowing|next[- ]level|absolute banger)\b/gi, 'really good'],
+  ]
+  const scrub = (s: string) => {
+    let out = s
+    for (const [pat, replacement] of BANNED_PATTERNS) out = out.replace(pat, replacement)
+    return out.replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1').trim()
+  }
+
+  // ── Shape-coerce & scrub ──────────────────────────────────────────────────
+  const hooksRaw = Array.isArray(parsed.hooks) ? parsed.hooks : []
+  const hooks: string[] = hooksRaw.slice(0, 3).map(h => scrub(String(h ?? ''))).filter(Boolean)
+  // Pad to 3 with the first variant if the model returned fewer (rare).
+  while (hooks.length < 3 && hooks.length > 0) hooks.push(hooks[0])
+
   const sections: ScriptSection[] = Array.isArray(parsed.sections)
     ? parsed.sections.map((s, i) => ({
         id: typeof s.id === 'string' ? s.id : `section_${i}`,
         label: typeof s.label === 'string' ? s.label : `Section ${i + 1}`,
         durationSec: Number.isFinite(s.durationSec) ? Math.max(5, Math.min(900, s.durationSec)) : 30,
-        script: typeof s.script === 'string' ? s.script : '',
-        shots: Array.isArray(s.shots) ? s.shots.map(x => String(x)).slice(0, 6) : [],
-        bRoll: Array.isArray(s.bRoll) ? s.bRoll.map(x => String(x)).slice(0, 6) : [],
-        tips: Array.isArray(s.tips) ? s.tips.map(x => String(x)).slice(0, 5) : [],
+        script: typeof s.script === 'string' ? scrub(s.script) : '',
+        talkingPoints: Array.isArray(s.talkingPoints) ? s.talkingPoints.map(x => scrub(String(x))).filter(Boolean).slice(0, 4) : [],
+        shots: Array.isArray(s.shots) ? s.shots.map(x => String(x).trim()).filter(Boolean).slice(0, 6) : [],
       }))
     : []
-  const cleaned: ScriptPayload = {
-    summary: typeof parsed.summary === 'string' ? parsed.summary.slice(0, 600) : '',
-    totalDurationSec: Number.isFinite(parsed.totalDurationSec) ? parsed.totalDurationSec : sections.reduce((sum, s) => sum + s.durationSec, 0),
-    sections,
+
+  let shortCutdown: ShortCutdown | undefined
+  if (spec.hasShort && parsed.shortCutdown && typeof parsed.shortCutdown === 'object') {
+    const sc = parsed.shortCutdown
+    shortCutdown = {
+      hook: scrub(typeof sc.hook === 'string' ? sc.hook : ''),
+      script: scrub(typeof sc.script === 'string' ? sc.script : ''),
+      shots: Array.isArray(sc.shots) ? sc.shots.map(x => String(x).trim()).filter(Boolean).slice(0, 8) : [],
+      durationSec: Number.isFinite(sc.durationSec) ? Math.max(20, Math.min(75, sc.durationSec)) : 45,
+    }
   }
 
-  // Belt-and-braces honest scrub — same as the blog generator.
-  const stripHonest = (s: string) => s.replace(/\b(?:honestly|honesty|honest)\b/gi, '').replace(/\s{2,}/g, ' ').trim()
-  cleaned.summary = stripHonest(cleaned.summary)
-  cleaned.sections.forEach(sec => { sec.script = stripHonest(sec.script) })
+  const cleaned: ScriptPayload = {
+    summary: scrub(typeof parsed.summary === 'string' ? parsed.summary.slice(0, 600) : ''),
+    totalDurationSec: Number.isFinite(parsed.totalDurationSec) ? parsed.totalDurationSec : sections.reduce((sum, s) => sum + s.durationSec, 0),
+    hooks: hooks.length > 0 ? hooks : ['', '', ''],
+    sections,
+    ...(shortCutdown ? { shortCutdown } : {}),
+  }
 
   if (sections.length === 0) {
     return NextResponse.json({ error: 'The model returned no sections. Try again in a moment.' }, { status: 500 })
@@ -290,11 +421,19 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
     })
     .select('id,created_at')
     .single()
+
+  // Usage figures the page can render without a refetch.
+  const nextUsed = (usage.used ?? 0) + 1
+  const usageOut = {
+    used: nextUsed,
+    cap: usage.cap,
+    remaining: usage.cap === null ? null : Math.max(0, usage.cap - nextUsed),
+    resetLabel: usage.resetLabel,
+  }
+
   if (insertErr || !row) {
-    // Still return the script even if persist failed — better than wasting
-    // the Claude call. UI will show without a saved row.
     console.warn('[script/generate] persist failed:', insertErr?.message)
-    return NextResponse.json({ ok: true, script: cleaned, asin, productTitle, productImage, persisted: false })
+    return NextResponse.json({ ok: true, script: cleaned, asin, productTitle, productImage, persisted: false, usage: usageOut })
   }
 
   return NextResponse.json({
@@ -306,5 +445,6 @@ Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
     productTitle,
     productImage,
     persisted: true,
+    usage: usageOut,
   })
 }

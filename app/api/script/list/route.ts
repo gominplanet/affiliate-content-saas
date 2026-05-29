@@ -8,6 +8,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { checkScriptUsage } from '@/lib/tier'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -23,5 +24,30 @@ export async function GET() {
     .limit(30)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ scripts: data || [] })
+  // Piggyback usage so the page can render the meter (or the upsell, for
+  // non-Pro tiers) on first paint without a second round-trip.
+  const usage = await checkScriptUsage(supabase, user.id)
+  const usageOut = usage.allowed
+    ? {
+        allowed: true,
+        tier: usage.tier,
+        used: usage.used,
+        cap: usage.cap,
+        remaining: usage.cap === null ? null : Math.max(0, usage.cap - usage.used),
+        resetLabel: usage.resetLabel,
+        upgrade: null,
+        reason: null,
+      }
+    : {
+        allowed: false,
+        tier: usage.tier,
+        used: usage.used,
+        cap: usage.cap,
+        remaining: 0,
+        resetLabel: null,
+        upgrade: usage.upgrade,
+        reason: usage.reason,
+      }
+
+  return NextResponse.json({ scripts: data || [], usage: usageOut })
 }

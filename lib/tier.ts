@@ -56,6 +56,11 @@ export const TIERS = {
     /** Newsletter: max broadcast SENDS per billing month. The trial gets one
      *  send so they can see the full compose → blast loop, but won't spam. */
     newsletterBroadcastsPerMonth: 1 as number | null,
+    /** Video Script & Shot List generations per calendar month. 0 = feature
+     *  off for this tier; users see a Pro-feature upsell on /script instead
+     *  of the generator. Bounds Sonnet token spend on the pre-production
+     *  tool. */
+    scriptsPerMonth: 0 as number | null,
     basePosts: 5,
     bonusPosts: 0,
     sites: 1,
@@ -87,6 +92,8 @@ export const TIERS = {
      *  trivial fraction of $49 MRR. */
     newsletterSubscribers: 1000 as number | null,
     newsletterBroadcastsPerMonth: 4 as number | null,
+    /** Video Script & Shot List — Pro feature. Creator sees the upsell card. */
+    scriptsPerMonth: 0 as number | null,
     basePosts: 40,
     bonusPosts: 0,
     sites: 1,
@@ -122,6 +129,10 @@ export const TIERS = {
      *  shared sender rep before deliverability quarantine catches it. */
     newsletterSubscribers: 10000 as number | null,
     newsletterBroadcastsPerMonth: null as number | null,
+    /** Video Script & Shot List — 30 generations / calendar month. At
+     *  ~5k Sonnet tokens per generation that's roughly $5/mo per
+     *  fully-using creator — under 3% of Pro's $199 MRR. */
+    scriptsPerMonth: 30 as number | null,
     basePosts: 140,
     bonusPosts: 60,
     sites: 1,
@@ -148,6 +159,8 @@ export const TIERS = {
     /** Newsletter: admin uncapped — internal accounts, no shared-rep risk. */
     newsletterSubscribers: null as number | null,
     newsletterBroadcastsPerMonth: null as number | null,
+    /** Video Script & Shot List — admin uncapped. */
+    scriptsPerMonth: null as number | null,
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
@@ -194,7 +207,7 @@ export function allowedNewsletterBroadcasts(tier: Tier): number | null {
  *  a user hits a cap. */
 export function nextTierFor(
   tier: Tier,
-  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth',
+  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth' | 'scriptsPerMonth',
 ): { tier: Tier; label: string; limit: number | null } | null {
   tier = normalizeTier(tier)
   const order: Tier[] = ['trial', 'creator', 'pro']
@@ -325,4 +338,76 @@ export async function checkUsageLimit(
   }
 
   return { allowed: true }
+}
+
+/**
+ * Video Script & Shot List monthly cap. Counts rows in `video_scripts` for
+ * this user since the 1st of the current UTC month, against the tier's
+ * `scriptsPerMonth`. Pro-only by design — Trial / Creator return `allowed:
+ * false` with a "Pro feature" upsell so the /script page shows the gate
+ * instead of the generator.
+ *
+ * Returns the current count + cap on success too, so the page can render a
+ * "X of 30 used this month" meter without a second query.
+ */
+export async function checkScriptUsage(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createServerClient>>,
+  userId: string,
+): Promise<
+  | { allowed: true; tier: Tier; used: number; cap: number | null; resetLabel: string }
+  | { allowed: false; reason: string; tier: Tier; used: number; cap: number | null; upgrade: ReturnType<typeof nextTierFor> }
+> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ig } = await (supabase as any)
+    .from('integrations')
+    .select('tier')
+    .eq('user_id', userId)
+    .single()
+  const tier = normalizeTier(ig?.tier)
+  const cap = TIERS[tier].scriptsPerMonth
+
+  // Calendar month window — independent of billing cycle on purpose; the
+  // script cap is small enough that a billing-aligned reset would feel arbitrary
+  // to users.
+  const now = new Date()
+  const startISO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+  const resetLabel = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count } = await (supabase as any)
+    .from('video_scripts')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .gte('created_at', startISO)
+  const used = count ?? 0
+
+  // Admin — uncapped (cap === null).
+  if (cap === null) return { allowed: true, tier, used, cap: null, resetLabel }
+
+  // Tiers with cap === 0 (trial / creator) → upsell instead of usage block.
+  if (cap === 0) {
+    const next = nextTierFor(tier, 'scriptsPerMonth')
+    return {
+      allowed: false,
+      reason: 'Video scripts are a Pro feature. Upgrade to start generating film-ready scripts in your voice.',
+      tier,
+      used: 0,
+      cap: 0,
+      upgrade: next,
+    }
+  }
+
+  if (used >= cap) {
+    return {
+      allowed: false,
+      reason: `You've used all ${cap} scripts this month on the ${TIERS[tier].label} plan. Resets ${resetLabel}.`,
+      tier,
+      used,
+      cap,
+      upgrade: nextTierFor(tier, 'scriptsPerMonth'),
+    }
+  }
+
+  return { allowed: true, tier, used, cap, resetLabel }
 }
