@@ -12,6 +12,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
+  RefreshCw, Package,
 } from 'lucide-react'
 
 interface VideoMeta {
@@ -23,6 +24,7 @@ interface VideoMeta {
   igUsername: string
   alreadyReelPosted: boolean
   alreadyStoryPosted: boolean
+  productResolved?: { title: string; asin: string | null } | null
 }
 
 type Mode = 'reel' | 'story' | 'both'
@@ -42,6 +44,11 @@ export function InstagramDirectModal({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [meta, setMeta] = useState<VideoMeta | null>(null)
   const [reconnectRequired, setReconnectRequired] = useState(false)
+
+  // Optional product context for caption regeneration.
+  const [productInput, setProductInput] = useState('')
+  const [regenerating, setRegenerating] = useState(false)
+  const [productResolved, setProductResolved] = useState<{ title: string; asin: string | null } | null>(null)
 
   const [caption, setCaption] = useState('')
   const [mode, setMode] = useState<Mode>('reel')
@@ -65,6 +72,7 @@ export function InstagramDirectModal({
         }
         setMeta(json as VideoMeta)
         setCaption((json.defaultCaption as string) || '')
+        setProductResolved((json.productResolved as { title: string; asin: string | null } | null) || null)
         setLoading(false)
       } catch (e) {
         if (cancelled) return
@@ -74,6 +82,20 @@ export function InstagramDirectModal({
     })()
     return () => { cancelled = true }
   }, [videoId])
+
+  const regenerateCaption = useCallback(async () => {
+    setRegenerating(true)
+    try {
+      const url = `/api/instagram/post-direct-video/video-meta?videoId=${encodeURIComponent(videoId)}${productInput.trim() ? `&productInput=${encodeURIComponent(productInput.trim())}` : ''}`
+      const res = await fetch(url)
+      const json = await res.json()
+      if (res.ok && json.defaultCaption) {
+        setCaption(json.defaultCaption)
+        setProductResolved(json.productResolved || null)
+      }
+    } catch { /* swallow */ }
+    finally { setRegenerating(false) }
+  }, [videoId, productInput])
 
   const submit = useCallback(async () => {
     if (!meta?.videoUrl || posting || posted) return
@@ -167,6 +189,41 @@ export function InstagramDirectModal({
                   <video src={meta.videoUrl} controls playsInline className="w-full h-full" />
                 </div>
               )}
+
+              {/* Product input — optional. */}
+              <div>
+                <label className="block text-[10px] font-semibold text-[#3a3a3c] dark:text-[#d2d2d7] uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                  <Package size={11} /> Product (optional)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={productInput}
+                    onChange={(e) => setProductInput(e.target.value)}
+                    placeholder="ASIN (B08TT4YHG1), Amazon URL, or Geniuslink"
+                    className="flex-1 text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void regenerateCaption()}
+                    disabled={regenerating}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md text-xs font-semibold text-white bg-[#5856d6] hover:bg-[#4845b4] disabled:opacity-60"
+                    title="Regenerate the caption using the product info above"
+                  >
+                    {regenerating ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                    {regenerating ? 'Writing…' : 'Refresh'}
+                  </button>
+                </div>
+                {productResolved && (
+                  <p className="text-[10px] text-[#34c759] mt-1">
+                    ✓ Using product: <strong>{productResolved.title.slice(0, 80)}{productResolved.title.length > 80 ? '…' : ''}</strong>
+                    {productResolved.asin && <span className="text-[#86868b]"> · {productResolved.asin}</span>}
+                  </p>
+                )}
+                {!productResolved && productInput && (
+                  <p className="text-[10px] text-[#86868b] mt-1">Click Refresh to apply the product to the caption.</p>
+                )}
+              </div>
 
               <div>
                 <label className="block text-[10px] font-semibold text-[#3a3a3c] dark:text-[#d2d2d7] uppercase tracking-wide mb-1.5">

@@ -47,6 +47,23 @@ export interface DirectCaptionInput {
    *  + IG both require it for affiliate content). */
   affiliateDisclaimer: string
   platform: CaptionPlatform
+  /** Optional product context. When the user pastes an ASIN / product URL
+   *  into the publish modal, we resolve it upstream (Amazon scrape or
+   *  generic page meta) and pass the structured info here. The caption
+   *  generator uses it for:
+   *    - More accurate hook (real product name, not just video title)
+   *    - Better hashtag candidates (product brand + category words)
+   *    - Stronger value line that cites a real feature instead of a
+   *      generic claim
+   *  Leave undefined to fall back to "title + description only" mode. */
+  product?: {
+    title: string
+    /** Top 3-5 bullet points from the product page. */
+    bullets?: string[]
+    /** Amazon ASIN if known — surfaced inline as #productname when
+     *  meaningful. We never put the literal ASIN string in the caption. */
+    asin?: string | null
+  }
 }
 
 export interface DirectCaptionResult {
@@ -113,13 +130,23 @@ export async function generateDirectCaption(
   const disclaimer = input.affiliateDisclaimer.trim() ||
     'Some links may be affiliate links — I may earn a small commission at no cost to you.'
 
+  const productBlock = input.product?.title
+    ? `
+
+PRODUCT (use this instead of guessing from the title)
+Title: ${input.product.title}
+${input.product.bullets && input.product.bullets.length ? `Key features:\n${input.product.bullets.slice(0, 5).map((b, i) => `  ${i + 1}. ${b}`).join('\n')}` : ''}
+
+Hook + value lines should reference the REAL product (not a generic category). Pull one specific feature from the bullets into the value line — that's what makes the caption land instead of read as generic AI fluff.`
+    : ''
+
   const prompt = `You're writing a caption for a vertical Short the creator wants to post to ${platformLabel} RIGHT NOW (no blog post involved). It needs to:
 
-1. Open with a punchy hook line — under 80 characters — that lifts the most clickable angle from the video's title.
-2. Follow with 1-2 lines of value or context. Concrete, specific. Pull from the description if useful — but never invent product details, specs, or numbers that aren't in the title or description.
+1. Open with a punchy hook line — under 80 characters — that lifts the most clickable angle from the video's title${input.product?.title ? ' or the product' : ''}.
+2. Follow with 1-2 lines of value or context. Concrete, specific.${input.product?.title ? ' Cite ONE real feature from the product bullets.' : ''} Pull from the description if useful — but never invent product details, specs, or numbers that aren't in the source material above.
 3. Then a blank line, then ${rules.hashtagCount} hashtags on one line:
    - 2-3 niche hashtags tied to ${input.niches.slice(0, 4).join(', ') || 'the topic'}
-   - 1-2 product/category hashtags pulled from the title
+   - 1-2 product/category hashtags${input.product?.title ? ' pulled from the product title — use the brand or product type as a tag' : ' pulled from the title'}
    - 1 general engagement hashtag appropriate for ${platformLabel}
    - All in #lowercase, no spaces inside the tag, no duplicate hashtags
 4. Then a blank line, then the affiliate disclaimer EXACTLY as given:
@@ -138,7 +165,7 @@ VIDEO TITLE
 ${input.videoTitle}
 
 VIDEO DESCRIPTION
-${input.videoDescription.slice(0, 1500)}
+${input.videoDescription.slice(0, 1500)}${productBlock}
 
 Return ONLY a single JSON object with NO prose around it, shaped EXACTLY:
 

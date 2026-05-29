@@ -15,7 +15,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
-  MessageSquare, Users, Scissors, Music, Lock,
+  MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package,
 } from 'lucide-react'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
@@ -37,6 +37,7 @@ interface VideoMeta {
   defaultCaption: string
   hashtags: string[]
   hook: string
+  productResolved?: { title: string; asin: string | null } | null
 }
 
 const PRIVACY_LABELS: Record<PrivacyLevel, string> = {
@@ -62,6 +63,13 @@ export function TikTokDirectModal({
   const [info, setInfo] = useState<CreatorInfo | null>(null)
   const [meta, setMeta] = useState<VideoMeta | null>(null)
   const [reconnectRequired, setReconnectRequired] = useState(false)
+
+  // Optional product context — when the user pastes an ASIN / URL we
+  // re-fetch the caption with the product info baked in. Empty = "title-
+  // only" caption mode (the default state when the modal opens).
+  const [productInput, setProductInput] = useState('')
+  const [regenerating, setRegenerating] = useState(false)
+  const [productResolved, setProductResolved] = useState<{ title: string; asin: string | null } | null>(null)
 
   const [caption, setCaption] = useState('')
   const [privacy, setPrivacy] = useState<PrivacyLevel | ''>('')
@@ -101,6 +109,7 @@ export function TikTokDirectModal({
         if (metaRes.ok && metaJson.videoUrl) {
           setMeta(metaJson as VideoMeta)
           setCaption((metaJson.defaultCaption as string) || '')
+          setProductResolved((metaJson.productResolved as { title: string; asin: string | null } | null) || null)
         } else {
           setLoadError(metaJson.error || 'No vertical video file ready for this Short.')
         }
@@ -141,6 +150,23 @@ export function TikTokDirectModal({
   }, [publishId, publishStatus, videoId, onPosted])
 
   const canPost = !!info && !!meta?.videoUrl && privacy !== '' && !posting && publishStatus === 'idle'
+
+  // Re-fetch the caption with whatever product input the user has typed.
+  // Idempotent — safe to call on every change of productInput (debounced
+  // via the button click below).
+  const regenerateCaption = useCallback(async () => {
+    setRegenerating(true)
+    try {
+      const url = `/api/blog/tiktok-post/video-meta?videoId=${encodeURIComponent(videoId)}${productInput.trim() ? `&productInput=${encodeURIComponent(productInput.trim())}` : ''}`
+      const res = await fetch(url)
+      const json = await res.json()
+      if (res.ok && json.defaultCaption) {
+        setCaption(json.defaultCaption)
+        setProductResolved(json.productResolved || null)
+      }
+    } catch { /* swallow — old caption still usable */ }
+    finally { setRegenerating(false) }
+  }, [videoId, productInput])
 
   const submit = useCallback(async () => {
     if (!canPost) return
@@ -246,6 +272,43 @@ export function TikTokDirectModal({
                   <video src={meta.videoUrl} controls playsInline className="w-full h-full" />
                 </div>
               )}
+
+              {/* Product input — optional. Paste an ASIN / Amazon URL /
+                  Geniuslink and we re-fetch the caption with real product
+                  info baked in (hook + value line + better hashtags). */}
+              <div>
+                <label className="block text-[10px] font-semibold text-[#3a3a3c] dark:text-[#d2d2d7] uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                  <Package size={11} /> Product (optional)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={productInput}
+                    onChange={(e) => setProductInput(e.target.value)}
+                    placeholder="ASIN (B08TT4YHG1), Amazon URL, or Geniuslink"
+                    className="flex-1 text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void regenerateCaption()}
+                    disabled={regenerating}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md text-xs font-semibold text-white bg-[#5856d6] hover:bg-[#4845b4] disabled:opacity-60"
+                    title="Regenerate the caption using the product info above"
+                  >
+                    {regenerating ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                    {regenerating ? 'Writing…' : 'Refresh'}
+                  </button>
+                </div>
+                {productResolved && (
+                  <p className="text-[10px] text-[#34c759] mt-1">
+                    ✓ Using product: <strong>{productResolved.title.slice(0, 80)}{productResolved.title.length > 80 ? '…' : ''}</strong>
+                    {productResolved.asin && <span className="text-[#86868b]"> · {productResolved.asin}</span>}
+                  </p>
+                )}
+                {!productResolved && productInput && (
+                  <p className="text-[10px] text-[#86868b] mt-1">Click Refresh to apply the product to the caption.</p>
+                )}
+              </div>
 
               {/* Caption */}
               <div>
