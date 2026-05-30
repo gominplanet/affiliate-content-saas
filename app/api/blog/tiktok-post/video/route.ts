@@ -131,6 +131,8 @@ export async function POST(request: Request) {
     .replace(/\/$/, '')
     .replace(/^(https?:\/\/)www\./i, '$1')
   const videoUrl = `${verifiedHost}/api/proxy-short/${videoId}.mp4`
+  // eslint-disable-next-line no-console
+  console.log(`[tiktok-publish] videoUrl=${videoUrl} privacy=${body.privacyLevel} brandContent=${!!body.brandContentToggle} brandOrganic=${!!body.brandOrganicToggle}`)
 
   // ── 6. Direct Post ───────────────────────────────────────────────────────
   const caption = (body.caption || '').slice(0, 2200)
@@ -147,8 +149,12 @@ export async function POST(request: Request) {
       videoUrl,
     })
     publishId = result.publishId
+    // eslint-disable-next-line no-console
+    console.log(`[tiktok-publish] publishId=${publishId} videoId=${videoId}`)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'TikTok publish failed.'
+    // eslint-disable-next-line no-console
+    console.log(`[tiktok-publish] init FAILED videoId=${videoId} err=${msg}`)
     return NextResponse.json({ error: msg }, { status: 502 })
   }
 
