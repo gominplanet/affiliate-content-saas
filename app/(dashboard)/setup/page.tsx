@@ -2144,6 +2144,39 @@ function SetupPageInner() {
     } catch { /* ignore */ }
   }, [mode, step, brandData, siteUrl, username, accentColor, wordpressUrl, setupComplete, completedUrl, hydrated])
 
+  // ── One-click OAuth landing handler ──────────────────────────────────────
+  // After the user approves on WordPress, /api/wordpress/oauth-callback
+  // redirects back here with `?wp_oauth=connected`. The parent's init()
+  // only fires on mount and may have run before the OAuth round-trip wrote
+  // wordpress_url to the DB — leaving setupComplete=false and the wizard
+  // showing despite a successful connect. Watch for the callback param,
+  // re-fetch the connection state, clear any stale `mode: existing` from
+  // localStorage so the connected card renders instead of the wizard.
+  useEffect(() => {
+    const wpOauth = searchParams.get('wp_oauth')
+    if (wpOauth !== 'connected' && wpOauth !== 'connected_warn_host') return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: intRow } = await (supabase as any)
+          .from('integrations')
+          .select('wordpress_url,wp_site_url')
+          .eq('user_id', user.id)
+          .single()
+        const connectedUrl = intRow?.wordpress_url || intRow?.wp_site_url
+        if (cancelled || !connectedUrl) return
+        setSetupComplete(true)
+        setCompletedUrl(connectedUrl)
+        setMode(null)   // clear any in-progress wizard mode
+        setStep(1)
+      } catch { /* ignore — init() will eventually catch up */ }
+    })()
+    return () => { cancelled = true }
+  }, [searchParams, supabase])
+
   async function handleReset() {
     // Clear Supabase wordpress_url so refresh doesn't re-detect as connected
     try {
