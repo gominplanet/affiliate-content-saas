@@ -13,12 +13,18 @@ import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import {
   getValidTikTokToken,
-  directPostVideo,
+  directPostVideoUpload,
   scopesIncludePublish,
   type DirectPostOptions,
 } from '@/services/tiktok'
 
 const POSTS_PER_24H = 25
+
+// FILE_UPLOAD path: we download the video from Supabase server-side, then
+// upload it to TikTok in the same request. Bump the Vercel ceiling so we
+// have headroom for 100MB+ videos on slow upstreams.
+export const runtime = 'nodejs'
+export const maxDuration = 300
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -113,32 +119,25 @@ export async function POST(request: Request) {
       error: 'No vertical video file for this Short yet. Upload the MP4 first.',
     }, { status: 400 })
   }
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!
-  // TikTok's PULL_FROM_URL has TWO strict checks on the URL before it
-  // ever tries to download anything:
-  //   1. The hostname must EXACTLY match a verified domain property in
-  //      our TikTok developer portal. Our verified property is the apex
-  //      `mvpaffiliate.io` — NOT `www.mvpaffiliate.io`. NEXT_PUBLIC_APP_URL
-  //      includes the www subdomain (canonical for everything else), so
-  //      we strip the `www.` here so the URL we hand TikTok matches the
-  //      verified property exactly. Vercel serves both apex and www off
-  //      the same app, so the apex URL is fully functional.
-  //   2. The URL extension is sniffed as a content-type pre-check. A
-  //      bare UUID path gets flagged as "unknown type" and the pull aborts.
-  //      Appending `.mp4` satisfies this; the proxy route strips it back
-  //      off before resolving the videoId in the DB.
-  const verifiedHost = appUrl
-    .replace(/\/$/, '')
-    .replace(/^(https?:\/\/)www\./i, '$1')
-  const videoUrl = `${verifiedHost}/api/proxy-short/${videoId}.mp4`
+  // FILE_UPLOAD path: push video bytes directly to TikTok's one-time
+  // upload_url instead of having them pull from us. We previously used
+  // PULL_FROM_URL with a proxy through our verified domain, but TikTok
+  // silently pre-rejected the URL with `video_pull_failed` for sandbox
+  // accounts no matter what hostname / extension / format we used. The
+  // FILE_UPLOAD source has no URL validation surface — TikTok just
+  // receives the bytes — so it bypasses the entire failure class.
+  //
+  // We pass the raw Supabase Storage URL because directPostVideoUpload
+  // server-side fetches the bytes from there (it never gets handed to
+  // TikTok). No verified domain needed.
   // eslint-disable-next-line no-console
-  console.log(`[tiktok-publish] videoUrl=${videoUrl} privacy=${body.privacyLevel} brandContent=${!!body.brandContentToggle} brandOrganic=${!!body.brandOrganicToggle}`)
+  console.log(`[tiktok-publish] upstreamUrl=${storageUrl} privacy=${body.privacyLevel} brandContent=${!!body.brandContentToggle} brandOrganic=${!!body.brandOrganicToggle}`)
 
-  // ── 6. Direct Post ───────────────────────────────────────────────────────
+  // ── 6. Direct Post (FILE_UPLOAD) ────────────────────────────────────────
   const caption = (body.caption || '').slice(0, 2200)
   let publishId: string
   try {
-    const result = await directPostVideo(token, {
+    const result = await directPostVideoUpload(token, {
       title: caption,
       privacyLevel: body.privacyLevel,
       disableComment: !!body.disableComment,
@@ -146,7 +145,7 @@ export async function POST(request: Request) {
       disableStitch: !!body.disableStitch,
       brandContentToggle: !!body.brandContentToggle,
       brandOrganicToggle: !!body.brandOrganicToggle,
-      videoUrl,
+      upstreamUrl: storageUrl,
     })
     publishId = result.publishId
     // eslint-disable-next-line no-console
@@ -154,7 +153,7 @@ export async function POST(request: Request) {
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'TikTok publish failed.'
     // eslint-disable-next-line no-console
-    console.log(`[tiktok-publish] init FAILED videoId=${videoId} err=${msg}`)
+    console.log(`[tiktok-publish] upload FAILED videoId=${videoId} err=${msg}`)
     return NextResponse.json({ error: msg }, { status: 502 })
   }
 

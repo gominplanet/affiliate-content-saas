@@ -221,6 +221,113 @@ export async function directPostVideo(
 }
 
 /**
+ * Direct Post a video using FILE_UPLOAD. We fetch the bytes from our
+ * upstream (Supabase Storage) server-side, ask TikTok for an upload
+ * slot, then PUT the bytes to the upload_url TikTok hands back.
+ *
+ * Why this replaces PULL_FROM_URL as the production path:
+ *   - PULL_FROM_URL silently fails with `video_pull_failed` for some
+ *     accounts/sandbox states even with a verified domain. TikTok
+ *     pre-rejects the URL before our proxy is ever hit.
+ *   - FILE_UPLOAD has no URL-side validation surface — TikTok just
+ *     receives bytes on a one-time upload URL THEY hand us. No domain
+ *     verification, no CDN pull queue, no pre-check failures.
+ *
+ * Single-chunk upload: TikTok requires chunk_size >= 5MB on multi-chunk
+ * uploads BUT permits the final chunk to be smaller, and with
+ * total_chunk_count=1 the only chunk is also the final one — so a
+ * 4.8MB video uploads fine as one chunk.
+ *
+ * Spec: https://developers.tiktok.com/doc/content-posting-api-reference-direct-post
+ */
+export async function directPostVideoUpload(
+  token: string,
+  opts: Omit<DirectPostOptions, 'videoUrl'> & { upstreamUrl: string },
+): Promise<DirectPostResult> {
+  // ── 1. Pull the video bytes from our upstream (Supabase Storage) ────────
+  let bytes: ArrayBuffer
+  let contentType = 'video/mp4'
+  try {
+    const upstream = await fetch(opts.upstreamUrl, { signal: AbortSignal.timeout(60_000) })
+    if (!upstream.ok) throw new Error(`Upstream returned ${upstream.status}`)
+    contentType = upstream.headers.get('content-type') || 'video/mp4'
+    bytes = await upstream.arrayBuffer()
+  } catch (e) {
+    throw new Error(`Could not fetch video bytes from upstream: ${e instanceof Error ? e.message : 'unknown'}`)
+  }
+  const videoSize = bytes.byteLength
+  if (videoSize < 200_000) {
+    throw new Error(`Video too small for TikTok (${videoSize} bytes; min is 200 KB).`)
+  }
+  if (videoSize > 256 * 1024 * 1024) {
+    throw new Error(`Video too large for FILE_UPLOAD (${videoSize} bytes; max we support is 256 MB).`)
+  }
+
+  // ── 2. Init with FILE_UPLOAD source — get back publish_id + upload_url ─
+  const initBody = {
+    post_info: {
+      title: opts.title.slice(0, 2200),
+      privacy_level: opts.privacyLevel,
+      disable_comment: opts.disableComment,
+      disable_duet: opts.disableDuet,
+      disable_stitch: opts.disableStitch,
+      brand_content_toggle: opts.brandContentToggle,
+      brand_organic_toggle: opts.brandOrganicToggle,
+    },
+    source_info: {
+      source: 'FILE_UPLOAD',
+      video_size: videoSize,
+      chunk_size: videoSize,
+      total_chunk_count: 1,
+    },
+  }
+  const initRes = await fetch(`${TT_BASE}/v2/post/publish/video/init/`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+    body: JSON.stringify(initBody),
+    signal: AbortSignal.timeout(20_000),
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const initJson = await initRes.json().catch(() => ({})) as any
+  if (!initRes.ok || initJson?.error?.code !== 'ok') {
+    const code = initJson?.error?.code ?? `http_${initRes.status}`
+    const msg = initJson?.error?.message ?? `TikTok returned ${initRes.status}`
+    throw new Error(`TikTok upload-init failed (${code}): ${msg}`)
+  }
+  const publishId = initJson?.data?.publish_id as string | undefined
+  const uploadUrl = initJson?.data?.upload_url as string | undefined
+  if (!publishId || !uploadUrl) {
+    throw new Error('TikTok upload-init did not return publish_id + upload_url.')
+  }
+
+  // ── 3. PUT the bytes to the upload_url (single-chunk) ───────────────────
+  // TikTok requires Content-Range even for single-chunk uploads.
+  // eslint-disable-next-line no-console
+  console.log(`[tiktok-upload] PUT ${videoSize} bytes to upload_url (publishId=${publishId})`)
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(videoSize),
+      'Content-Range': `bytes 0-${videoSize - 1}/${videoSize}`,
+    },
+    body: bytes,
+    signal: AbortSignal.timeout(120_000),
+  })
+  if (!uploadRes.ok && uploadRes.status !== 201) {
+    const errText = await uploadRes.text().catch(() => '')
+    throw new Error(`TikTok upload PUT failed (${uploadRes.status}): ${errText.slice(0, 200)}`)
+  }
+  // eslint-disable-next-line no-console
+  console.log(`[tiktok-upload] PUT done status=${uploadRes.status} publishId=${publishId}`)
+
+  return { publishId }
+}
+
+/**
  * Poll the status of a publish_id. TikTok takes minutes to process even
  * after init returns 200 — the publish screen calls this every ~5s until
  * we hit PUBLISH_COMPLETE or FAILED.
