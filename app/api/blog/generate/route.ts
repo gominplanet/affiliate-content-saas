@@ -19,6 +19,7 @@ import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
+import { injectPriceStrip } from '@/lib/price-strip'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { fal } from '@fal-ai/client'
 import { recordUsage } from '@/lib/ai-usage'
@@ -692,6 +693,23 @@ async function handleGenerate(request: Request) {
       content = insertRelatedLinks(content, renderRelatedLinksBlock(related))
     }
   } catch { /* internal links are best-effort; never block generation */ }
+
+  // ── 6.2. High-intent CTA strip immediately under the Quick Verdict.
+  //         Single biggest click target on the page — shown before the reader
+  //         has to scroll past the verdict bullets. Colors + copy switch
+  //         based on whether the affiliate URL points at Amazon vs. a direct
+  //         brand link, and we always render an above-the-fold disclaimer.
+  //         Idempotent — safe on rebuild (won't double-stack).
+  try {
+    if (productUrl) {
+      const stripIsAmazon = /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(productUrl)
+      content = injectPriceStrip(content, {
+        affiliateUrl: productUrl,
+        isAmazon: stripIsAmazon,
+        productName: (generated as { productName?: string | null }).productName || null,
+      })
+    }
+  } catch { /* price strip is best-effort; never block generation */ }
 
   // Preserve the slug of any existing live WP post so rebuilds keep the same
   // URL (and the same Google indexing history). Only fall through to the
