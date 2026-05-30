@@ -281,13 +281,38 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
 
 // ─── Existing site connect ────────────────────────────────────────────────────
 function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url: string) => void }) {
+  // ── Primary flow: WordPress core's Authorize-Application redirect.
+  //    User types their site URL → we send them to WP's native authorize
+  //    screen → they approve → WP redirects back with credentials.
+  //    No plugin install required, no copy/paste of any token.
+  // ── Fallback flow: the legacy Connection Token paste, kept behind a
+  //    collapsed "advanced" toggle for sites that have disabled Application
+  //    Passwords entirely (rare, mostly enterprise WP installs). ─────────
+  const [siteUrl, setSiteUrl] = useState('')
   const [token, setToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showTokenFallback, setShowTokenFallback] = useState(false)
 
-  const canSubmit = token.trim().length > 20 && !loading
+  // onDone is fired from the IntegrationsPanel's wp_oauth handler when the
+  // user lands back here after approving — this component just kicks off
+  // the redirect, so the unused-prop lint stays satisfied.
+  void onDone
 
-  async function handleConnect() {
+  const canSubmitOneClick = siteUrl.trim().length > 3 && !loading
+  const canSubmitToken = token.trim().length > 20 && !loading
+
+  function startOneClick(e: React.FormEvent) {
+    e.preventDefault()
+    const url = siteUrl.trim()
+    if (!url) return
+    // Hard nav so WP's Authorize-Application screen fully takes over the tab.
+    // The OAuth callback drops the user back on /setup?wp_oauth=connected,
+    // which the IntegrationsPanel detects and surfaces inline.
+    window.location.href = `/api/wordpress/oauth-start?siteUrl=${encodeURIComponent(url)}`
+  }
+
+  async function handleTokenConnect() {
     setLoading(true)
     setError(null)
     try {
@@ -312,47 +337,78 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
         <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#0071e3] hover:opacity-75 mb-4">
           <ArrowLeft size={14} /> Back
         </button>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Plug MVP into your WordPress site</h2>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your WordPress site</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Two minutes, three steps: install our plugin, generate a connection token, paste it here. After that, every review you publish syncs automatically. Nothing else on your site changes.
+          One click. We&apos;ll send you to your site&apos;s built-in authorization screen — approve there, and you&apos;re connected. No plugin install, no copy/paste, no passwords typed in.
         </p>
       </div>
 
-      {/* Step 1 — install plugin */}
-      <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4">
-        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Step 1 — Install the MVP Affiliate plugin</p>
-        <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm self-start inline-flex mb-3">
-          <Download size={14} /> Download plugin
-        </a>
-        <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside">
-          <li>In your wp-admin: Plugins → Add New Plugin → Upload Plugin</li>
-          <li>Choose the ZIP, click Install Now, then Activate Plugin</li>
-          <li>Click the new <strong>MVP Affiliate</strong> menu item in the sidebar</li>
-          <li>Click <strong>Install &amp; activate MVP Affiliate theme</strong>, then <strong>Generate Connection Token</strong></li>
-          <li>Copy the token and paste it below</li>
-        </ol>
+      {/* Primary — one-click connect */}
+      <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-5">
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect WordPress</p>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+          Enter your site URL. We&apos;ll bounce you to <code className="text-[10px] bg-white/60 dark:bg-white/10 px-1 py-0.5 rounded">wp-admin/authorize-application.php</code> — WordPress&apos;s own permission screen. Click &ldquo;Yes, I approve&rdquo; on your site and you&apos;ll land back here connected.
+        </p>
+        <form onSubmit={startOneClick} className="flex items-center gap-2">
+          <input
+            type="url"
+            value={siteUrl}
+            onChange={e => setSiteUrl(e.target.value)}
+            placeholder="https://yoursite.com"
+            className="input-field text-sm flex-1"
+            autoComplete="url"
+            inputMode="url"
+            autoFocus
+          />
+          <button type="submit" disabled={!canSubmitOneClick} className="btn-primary text-sm whitespace-nowrap">
+            <Link2 size={14} /> Connect WordPress
+          </button>
+        </form>
+        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">
+          You&apos;ll need to be signed in to your WordPress admin in the same browser (or you&apos;ll be prompted to log in there once).
+        </p>
       </div>
 
-      {/* Step 2 — paste token */}
+      {/* Fallback — Connection Token paste (collapsed) */}
       <div>
-        <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Step 2 — Paste your Connection Token</label>
-        <textarea
-          value={token}
-          onChange={e => setToken(e.target.value)}
-          placeholder="eyJ1cmwiOiJodHRwczovL... (paste full token here)"
-          rows={4}
-          className="input-field font-mono text-xs resize-y"
-        />
-        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Contains your site URL, username, and a secure Application Password — no passwords typed in.</p>
+        <button
+          type="button"
+          onClick={() => setShowTokenFallback(v => !v)}
+          className="text-xs text-[#6e6e73] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
+        >
+          {showTokenFallback ? '− Hide advanced' : '+ Use Connection Token instead (advanced — for sites that block Application Passwords)'}
+        </button>
+
+        {showTokenFallback && (
+          <div className="mt-3 rounded-xl border border-gray-200 dark:border-white/10 bg-[var(--surface-2)] p-5">
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connection Token (legacy plugin flow)</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+              Install our plugin, generate a token in wp-admin, paste it here. Only needed if your host blocks WordPress&apos;s built-in Application Passwords.
+            </p>
+            <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-secondary text-xs self-start inline-flex mb-3">
+              <Download size={12} /> Download plugin ZIP
+            </a>
+            <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside mb-3">
+              <li>wp-admin → Plugins → Add New → Upload Plugin → choose the ZIP → Activate</li>
+              <li>Click the new <strong>MVP Affiliate</strong> sidebar item → <strong>Generate Connection Token</strong></li>
+              <li>Paste the token below</li>
+            </ol>
+            <textarea
+              value={token}
+              onChange={e => setToken(e.target.value)}
+              placeholder="eyJ1cmwiOiJodHRwczovL... (paste full token here)"
+              rows={3}
+              className="input-field font-mono text-xs resize-y"
+            />
+            {error && (
+              <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2 mt-2">{error}</p>
+            )}
+            <button onClick={handleTokenConnect} disabled={!canSubmitToken} className="btn-secondary text-sm self-start mt-3">
+              {loading ? <><Loader2 size={14} className="animate-spin" /> Verifying…</> : <><Link2 size={14} /> Connect with token</>}
+            </button>
+          </div>
+        )}
       </div>
-
-      {error && (
-        <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{error}</p>
-      )}
-
-      <button onClick={handleConnect} disabled={!canSubmit} className="btn-primary self-start">
-        {loading ? <><Loader2 size={15} className="animate-spin" /> Verifying…</> : <><Link2 size={15} /> Connect site</>}
-      </button>
     </div>
   )
 }
