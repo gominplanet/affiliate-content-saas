@@ -114,12 +114,23 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
-  // `.mp4` suffix is intentional. TikTok's PULL_FROM_URL downloader sniffs
-  // the URL extension as a first-pass content check — a bare UUID path
-  // makes its CDN flag the source as "unknown type" and abort the pull
-  // before downloading a byte. The proxy route strips the `.mp4` back off
-  // before resolving the videoId in the DB.
-  const videoUrl = `${appUrl.replace(/\/$/, '')}/api/proxy-short/${videoId}.mp4`
+  // TikTok's PULL_FROM_URL has TWO strict checks on the URL before it
+  // ever tries to download anything:
+  //   1. The hostname must EXACTLY match a verified domain property in
+  //      our TikTok developer portal. Our verified property is the apex
+  //      `mvpaffiliate.io` — NOT `www.mvpaffiliate.io`. NEXT_PUBLIC_APP_URL
+  //      includes the www subdomain (canonical for everything else), so
+  //      we strip the `www.` here so the URL we hand TikTok matches the
+  //      verified property exactly. Vercel serves both apex and www off
+  //      the same app, so the apex URL is fully functional.
+  //   2. The URL extension is sniffed as a content-type pre-check. A
+  //      bare UUID path gets flagged as "unknown type" and the pull aborts.
+  //      Appending `.mp4` satisfies this; the proxy route strips it back
+  //      off before resolving the videoId in the DB.
+  const verifiedHost = appUrl
+    .replace(/\/$/, '')
+    .replace(/^(https?:\/\/)www\./i, '$1')
+  const videoUrl = `${verifiedHost}/api/proxy-short/${videoId}.mp4`
 
   // ── 6. Direct Post ───────────────────────────────────────────────────────
   const caption = (body.caption || '').slice(0, 2200)

@@ -134,7 +134,14 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
-  const videoUrl = `${appUrl.replace(/\/$/, '')}/api/proxy-short/${blogPostVideoUuid}`
+  // Strip `www.` so the hostname EXACTLY matches our TikTok-verified
+  // domain property (the apex `mvpaffiliate.io`, not the www subdomain),
+  // and append `.mp4` so TikTok's content-type pre-check passes. See
+  // /api/blog/tiktok-post/video/route.ts for the full reasoning.
+  const verifiedHost = appUrl
+    .replace(/\/$/, '')
+    .replace(/^(https?:\/\/)www\./i, '$1')
+  const videoUrl = `${verifiedHost}/api/proxy-short/${blogPostVideoUuid}.mp4`
 
   // ── 6. Direct Post ───────────────────────────────────────────────────────
   const caption = (body.caption || '').slice(0, 2200)
