@@ -789,6 +789,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectResult, setReconnectResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [showReconnect, setShowReconnect] = useState(false)
+  // One-click WordPress connect (Authorize-Application flow) ────────────────
+  // No plugin install, no token paste — just types URL → redirect → done.
+  const [oneClickUrl, setOneClickUrl] = useState('')
+  const [showTokenFallback, setShowTokenFallback] = useState(false)
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -875,6 +879,26 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const ttError = searchParams.get('tiktok_error')
     if (ttConnected) { setTtNotice({ ok: true, msg: 'TikTok connected!' }); load() }
     if (ttError) setTtNotice({ ok: false, msg: `TikTok error: ${decodeURIComponent(ttError)}` })
+    // WordPress one-click OAuth callback. /api/wordpress/oauth-callback
+    // redirects here with wp_oauth=connected | connected_warn_host |
+    // rejected | error, plus an optional wp_oauth_reason for the error case.
+    const wpOauth = searchParams.get('wp_oauth')
+    const wpOauthReason = searchParams.get('wp_oauth_reason')
+    if (wpOauth === 'connected') {
+      setReconnectResult({ ok: true, message: 'WordPress connected!' })
+      load()
+    } else if (wpOauth === 'connected_warn_host') {
+      setReconnectResult({
+        ok: true,
+        message: 'Saved — but your host may strip Authorization headers (Hostinger / mod_security). Test connection to verify.',
+      })
+      load()
+    } else if (wpOauth === 'rejected') {
+      setReconnectResult({ ok: false, message: wpOauthReason || 'Connection declined on your WordPress site.' })
+    } else if (wpOauth === 'error') {
+      setReconnectResult({ ok: false, message: wpOauthReason || 'WordPress connection failed.' })
+    }
+
     const gscConnectedParam = searchParams.get('gsc_connected')
     const gscErr = searchParams.get('gsc_error')
     const gscProp = searchParams.get('gsc_property')
@@ -1233,7 +1257,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         {wpUrl && wpAppPassword ? (
           <>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Connected as <strong>{wpUsername}</strong>. Use the buttons below to verify the connection or run maintenance. To change credentials, paste a new Connection Token from your wp-admin → MVP Affiliate → Generate Connection Token.
+              Connected as <strong>{wpUsername}</strong>. Use the buttons below to verify the connection or run maintenance. To change credentials, click <strong>Update credentials</strong> and reconnect in one click.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -1256,42 +1280,92 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </>
         ) : (
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-            No WordPress site connected yet. Install the MVP Affiliate plugin on your site, generate a Connection Token, and paste it below.
+            No WordPress site connected yet. Enter your site URL below and we&apos;ll redirect you to WordPress to approve the connection — no plugin install, no copy/paste.
           </p>
         )}
 
-        {/* Reconnect / first-connect token field */}
+        {/* One-click Connect (Authorize-Application flow) + Token fallback */}
         {(showReconnect || !wpUrl || !wpAppPassword) && (
-          <div className="mt-4 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4">
-            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Paste a Connection Token</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-              In your wp-admin → <strong>MVP Affiliate</strong> menu → click <strong>Generate Connection Token</strong> → copy → paste below.
-              {wpUrl && (
-                <>
-                  {' '}
-                  <a href={`${wpUrl.replace(/\/$/, '')}/wp-admin/admin.php?page=mvp-affiliate`} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Open MVP Affiliate page →</a>
-                </>
+          <div className="mt-4 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4 space-y-3">
+            {/* Primary: one-click connect */}
+            <div>
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Connect WordPress (one click)</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+                We&apos;ll take you to your WordPress site&apos;s built-in authorization screen. Sign in once (if needed), click &ldquo;Yes, I approve&rdquo;, and you&apos;re connected. Nothing typed back here.
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const url = oneClickUrl.trim()
+                  if (!url) return
+                  // Hard nav so WP's Authorize-Application screen fully takes over the tab.
+                  window.location.href = `/api/wordpress/oauth-start?siteUrl=${encodeURIComponent(url)}`
+                }}
+                className="flex items-center gap-2"
+              >
+                <input
+                  type="url"
+                  value={oneClickUrl}
+                  onChange={(e) => setOneClickUrl(e.target.value)}
+                  placeholder="https://yoursite.com"
+                  className="input-field text-xs flex-1"
+                  autoComplete="url"
+                  inputMode="url"
+                />
+                <button
+                  type="submit"
+                  disabled={oneClickUrl.trim().length < 4}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#0071e3] text-white rounded-lg hover:bg-[#0066cc] disabled:opacity-40 transition-colors whitespace-nowrap"
+                >
+                  <Wifi size={12} /> Connect WordPress
+                </button>
+              </form>
+              {reconnectResult && (
+                <p className={`text-xs font-medium mt-2 ${reconnectResult.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>
+                  {reconnectResult.message}
+                </p>
               )}
-            </p>
-            <textarea
-              value={reconnectToken}
-              onChange={e => setReconnectToken(e.target.value)}
-              placeholder="eyJ1cmwiOiJodHRwczovL... (paste full token here)"
-              rows={3}
-              className="input-field font-mono text-xs resize-y mb-2"
-            />
-            <div className="flex items-center gap-3">
+            </div>
+
+            {/* Fallback: Connection Token paste (collapsed by default) */}
+            <div className="pt-3 border-t border-blue-200/60 dark:border-blue-500/20">
               <button
                 type="button"
-                onClick={reconnectWithToken}
-                disabled={reconnecting || reconnectToken.trim().length < 20}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#0071e3] text-white rounded-lg hover:bg-[#0066cc] disabled:opacity-40 transition-colors"
+                onClick={() => setShowTokenFallback(v => !v)}
+                className="text-[11px] text-[#6e6e73] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
               >
-                {reconnecting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
-                Connect with token
+                {showTokenFallback ? '− Hide advanced' : '+ Use Connection Token instead (advanced — for sites that disable Application Passwords)'}
               </button>
-              {reconnectResult && (
-                <span className={`text-xs font-medium ${reconnectResult.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{reconnectResult.message}</span>
+              {showTokenFallback && (
+                <div className="mt-3">
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-2">
+                    Install the MVP Affiliate plugin on your site → wp-admin → <strong>MVP Affiliate</strong> menu → click <strong>Generate Connection Token</strong> → paste below.
+                    {wpUrl && (
+                      <>
+                        {' '}
+                        <a href={`${wpUrl.replace(/\/$/, '')}/wp-admin/admin.php?page=mvp-affiliate`} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Open MVP Affiliate page →</a>
+                      </>
+                    )}
+                  </p>
+                  <textarea
+                    value={reconnectToken}
+                    onChange={e => setReconnectToken(e.target.value)}
+                    placeholder="eyJ1cmwiOiJodHRwczovL... (paste full token here)"
+                    rows={3}
+                    className="input-field font-mono text-xs resize-y mb-2"
+                  />
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={reconnectWithToken}
+                      disabled={reconnecting || reconnectToken.trim().length < 20}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors"
+                    >
+                      {reconnecting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
+                      Connect with token
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
