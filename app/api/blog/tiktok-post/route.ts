@@ -23,12 +23,18 @@ import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import {
   getValidTikTokToken,
-  directPostVideo,
+  directPostVideoUpload,
   scopesIncludePublish,
   type DirectPostOptions,
 } from '@/services/tiktok'
 
 const POSTS_PER_24H = 25
+
+// FILE_UPLOAD path: we download the video from Supabase server-side, then
+// upload it to TikTok in the same request. Bump the Vercel ceiling so we
+// have headroom for 100MB+ videos on slow upstreams.
+export const runtime = 'nodejs'
+export const maxDuration = 300
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -122,10 +128,12 @@ export async function POST(request: Request) {
       error: 'No vertical video file for this post yet. Upload one in the Instagram pane first — TikTok and Instagram share the same 9:16 render.',
     }, { status: 400 })
   }
-  // TikTok requires the PULL_FROM_URL source to be on a TikTok-verified
-  // domain. The Supabase Storage hostname isn't verified (we don't own
-  // it); mvpaffiliate.io is. Proxy through /api/proxy-short/<videoId> so
-  // TikTok sees the source as our verified domain.
+  // FILE_UPLOAD path: push video bytes directly to TikTok's one-time
+  // upload_url instead of having them pull from us. PULL_FROM_URL was
+  // silently pre-rejecting with `video_pull_failed` even with our
+  // verified domain — see /api/blog/tiktok-post/video/route.ts for the
+  // full diagnostic that proved this. FILE_UPLOAD has no URL surface,
+  // so the entire failure class goes away.
   void ytVideoId
   const blogPostVideoUuid = (post as { video_id?: string }).video_id
   if (!blogPostVideoUuid) {
@@ -133,21 +141,14 @@ export async function POST(request: Request) {
       error: 'This post is missing a linked YouTube video — can\'t resolve the vertical URL.',
     }, { status: 400 })
   }
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!
-  // Strip `www.` so the hostname EXACTLY matches our TikTok-verified
-  // domain property (the apex `mvpaffiliate.io`, not the www subdomain),
-  // and append `.mp4` so TikTok's content-type pre-check passes. See
-  // /api/blog/tiktok-post/video/route.ts for the full reasoning.
-  const verifiedHost = appUrl
-    .replace(/\/$/, '')
-    .replace(/^(https?:\/\/)www\./i, '$1')
-  const videoUrl = `${verifiedHost}/api/proxy-short/${blogPostVideoUuid}.mp4`
+  // eslint-disable-next-line no-console
+  console.log(`[tiktok-publish] upstreamUrl=${storageUrl} privacy=${body.privacyLevel} brandContent=${!!body.brandContentToggle} brandOrganic=${!!body.brandOrganicToggle}`)
 
-  // ── 6. Direct Post ───────────────────────────────────────────────────────
+  // ── 6. Direct Post (FILE_UPLOAD) ────────────────────────────────────────
   const caption = (body.caption || '').slice(0, 2200)
   let publishId: string
   try {
-    const result = await directPostVideo(token, {
+    const result = await directPostVideoUpload(token, {
       title: caption,
       privacyLevel: body.privacyLevel,
       disableComment: !!body.disableComment,
@@ -155,11 +156,15 @@ export async function POST(request: Request) {
       disableStitch: !!body.disableStitch,
       brandContentToggle: !!body.brandContentToggle,
       brandOrganicToggle: !!body.brandOrganicToggle,
-      videoUrl,
+      upstreamUrl: storageUrl,
     })
     publishId = result.publishId
+    // eslint-disable-next-line no-console
+    console.log(`[tiktok-publish] publishId=${publishId} blogPostId=${blogPostId}`)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'TikTok publish failed.'
+    // eslint-disable-next-line no-console
+    console.log(`[tiktok-publish] upload FAILED blogPostId=${blogPostId} err=${msg}`)
     return NextResponse.json({ error: msg }, { status: 502 })
   }
 
