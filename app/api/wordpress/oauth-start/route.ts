@@ -57,7 +57,13 @@ export async function GET(request: Request) {
   //   password=<the freshly minted Application Password>
   // On reject, WP redirects to reject_url with `success=false` (we encode
   // our own `rejected=1` flag so we can show a friendly error).
-  const wpAuthUrl = new URL(`${siteUrl}/wp-admin/authorize-application.php`)
+  // Defensive: strip any trailing slash off siteUrl before concat so we
+  // don't end up with `//wp-admin/...` even if normalizeWpSiteUrl is bypassed
+  // or returns a stale shape. Some WP installs route `//` paths to wp-login
+  // with redirect_to pointing at the apex domain, which breaks the session
+  // cookie after login.
+  const cleanSiteUrl = siteUrl.replace(/\/+$/, '')
+  const wpAuthUrl = new URL(`${cleanSiteUrl}/wp-admin/authorize-application.php`)
   wpAuthUrl.searchParams.set('app_name', MVP_WP_APP_NAME)
   wpAuthUrl.searchParams.set('app_id', MVP_WP_APP_ID)
   wpAuthUrl.searchParams.set('success_url', successUrl)
