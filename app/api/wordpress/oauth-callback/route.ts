@@ -21,6 +21,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const stateRaw = searchParams.get('state')
   const rejected = searchParams.get('rejected') === '1' || searchParams.get('success') === 'false'
+  // eslint-disable-next-line no-console
+  console.log(`[wp-oauth-callback] hit state=${stateRaw ? 'present' : 'MISSING'} rejected=${rejected} site_url=${searchParams.get('site_url') || 'MISSING'} user_login=${searchParams.get('user_login') || 'MISSING'} pw=${searchParams.get('password') ? 'present' : 'MISSING'}`)
 
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io')
     .replace(/\/$/, '')
@@ -126,12 +128,16 @@ export async function GET(request: Request) {
   )
 
   if (upsertErr) {
+    // eslint-disable-next-line no-console
+    console.log(`[wp-oauth-callback] DB upsert FAILED userId=${state.userId} site=${wpSiteUrl} err=${upsertErr.message}`)
     return setupUrl({
       wp_oauth: 'error',
       wp_oauth_reason: `Saved credentials failed: ${upsertErr.message}`,
     })
   }
 
+  // eslint-disable-next-line no-console
+  console.log(`[wp-oauth-callback] SUCCESS userId=${state.userId} site=${wpSiteUrl} user=${userLogin} testOk=${testOk}`)
   return setupUrl({
     wp_oauth: testOk ? 'connected' : 'connected_warn_host',
   })
