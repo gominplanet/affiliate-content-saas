@@ -39,11 +39,17 @@ export async function GET(request: Request) {
   // which MVP user is connecting + which site URL they typed.
   const state = signState({ userId: user.id, siteUrl })
 
-  // The callback URL on OUR side. We hardcode the apex domain so it matches
-  // whatever NEXT_PUBLIC_APP_URL has — WP will append site_url, user_login,
-  // password to whatever success_url we provide.
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io')
-    .replace(/\/$/, '')
+  // The callback URL on OUR side. Critical: must use the SAME hostname the
+  // user came in on (apex vs. www), not whatever NEXT_PUBLIC_APP_URL is —
+  // otherwise the user gets redirected back to a host their auth cookie
+  // doesn't cover and shows up "logged out" after the OAuth round-trip.
+  // Falls back to NEXT_PUBLIC_APP_URL if the Host header is missing.
+  const requestUrl = new URL(request.url)
+  const reqHost = request.headers.get('host') || requestUrl.host
+  const reqProto = requestUrl.protocol || 'https:'
+  const appUrl = reqHost
+    ? `${reqProto}//${reqHost}`
+    : (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io').replace(/\/$/, '')
   const successUrl = `${appUrl}/api/wordpress/oauth-callback?state=${encodeURIComponent(state)}`
   const rejectUrl = `${appUrl}/api/wordpress/oauth-callback?state=${encodeURIComponent(state)}&rejected=1`
 

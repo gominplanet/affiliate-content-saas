@@ -24,8 +24,17 @@ export async function GET(request: Request) {
   // eslint-disable-next-line no-console
   console.log(`[wp-oauth-callback] hit state=${stateRaw ? 'present' : 'MISSING'} rejected=${rejected} site_url=${searchParams.get('site_url') || 'MISSING'} user_login=${searchParams.get('user_login') || 'MISSING'} pw=${searchParams.get('password') ? 'present' : 'MISSING'}`)
 
-  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io')
-    .replace(/\/$/, '')
+  // Always redirect back to the SAME hostname that hit this callback
+  // (apex vs. www) so the user's Supabase auth cookie still applies and
+  // the setup page can read their connection state. The /oauth-start route
+  // already mirrors this — the callback URL it builds matches the host the
+  // user came in on — so we just continue that chain.
+  const requestUrl = new URL(request.url)
+  const reqHost = request.headers.get('host') || requestUrl.host
+  const reqProto = requestUrl.protocol || 'https:'
+  const appUrl = reqHost
+    ? `${reqProto}//${reqHost}`
+    : (process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io').replace(/\/$/, '')
   const setupUrl = (params: Record<string, string>) => {
     const url = new URL(`${appUrl}/setup`)
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
