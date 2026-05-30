@@ -94,9 +94,10 @@ export class WordPressService {
     const cooldownUntil = LOGIN_BREAKER.get(key)
     if (cooldownUntil && Date.now() < cooldownUntil) {
       throw new Error(
-        'WordPress is temporarily blocking sign-in (likely your security / brute-force plugin). ' +
-        'Keep that protection ON — reconnect using an Application Password from MVP Affiliate → Generate Connection Token, ' +
-        'and make sure REST API Application Passwords are allowed. We paused login attempts to avoid locking your account.',
+        'WordPress writes are failing — your host is stripping the Authorization header on POST requests. ' +
+        'Most common fix: confirm the MVP Affiliate plugin v1.0.20+ is active in your wp-admin → Plugins (it patches this). ' +
+        'Visit /api/wordpress/debug-write to see exactly which layer is failing. ' +
+        'Login attempts paused for 15 minutes to protect your account.',
       )
     }
     const loginPassword = this.apiToken || this.password
@@ -147,9 +148,10 @@ export class WordPressService {
       // brute-force lockout. Surface an actionable message.
       LOGIN_BREAKER.set(key, Date.now() + LOGIN_COOLDOWN_MS)
       throw new Error(
-        'WordPress did not accept the connection (credentials changed, or a security/brute-force plugin blocked it). ' +
-        'Keep brute-force protection ON and reconnect via MVP Affiliate → Generate Connection Token (Application Password). ' +
-        'Further login attempts are paused for 15 minutes to avoid locking your account.',
+        'WordPress did not accept the connection — your security/brute-force plugin blocked the sign-in OR the saved Application Password is no longer valid. ' +
+        'Two paths to fix: 1) Install/update the MVP Affiliate plugin v1.0.20+ on your site (it patches the most common Authorization-header issues). ' +
+        '2) Disconnect WordPress in Site & Integrations and reconnect (the one-click flow mints a fresh Application Password). ' +
+        'Visit /api/wordpress/debug-write to see exactly which layer is failing. Further attempts paused for 15 minutes.',
       )
     }
     const seen = new Set<string>()
