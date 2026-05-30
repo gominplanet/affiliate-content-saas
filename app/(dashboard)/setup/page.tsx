@@ -339,15 +339,33 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
         </button>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your WordPress site</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          One click. We&apos;ll send you to your site&apos;s built-in authorization screen — approve there, and you&apos;re connected. No plugin install, no copy/paste, no passwords typed in.
+          Two steps: install our small plugin (so WordPress allows the redirect back to us), then click Connect. The plugin handles the bridge — you never type a password and never paste a token.
         </p>
       </div>
 
-      {/* Primary — one-click connect */}
+      {/* Step 1 — install the bridge plugin */}
       <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-5">
-        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect WordPress</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Step 1 — Install MVP Affiliate plugin</p>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#86868b]">Required once</span>
+        </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          Enter your site URL. We&apos;ll bounce you to <code className="text-[10px] bg-white/60 dark:bg-white/10 px-1 py-0.5 rounded">wp-admin/authorize-application.php</code> — WordPress&apos;s own permission screen. Click &ldquo;Yes, I approve&rdquo; on your site and you&apos;ll land back here connected.
+          WordPress blocks cross-site redirects by default — our plugin whitelists MVP so the one-click connect can work, then quietly powers theme, banner, and footer features.
+        </p>
+        <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm self-start inline-flex mb-3">
+          <Download size={14} /> Download plugin
+        </a>
+        <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside">
+          <li>In your wp-admin: Plugins → Add New Plugin → Upload Plugin → choose the ZIP → Activate</li>
+          <li>That&apos;s it. No menus to click, no settings to change. Move to Step 2 below.</li>
+        </ol>
+      </div>
+
+      {/* Step 2 — one-click connect */}
+      <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-5">
+        <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Step 2 — Connect WordPress</p>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+          Enter your site URL. We&apos;ll bounce you to <code className="text-[10px] bg-white/60 dark:bg-white/10 px-1 py-0.5 rounded">wp-admin/authorize-application.php</code> — WordPress&apos;s own permission screen. Click &ldquo;Yes, I approve&rdquo; and you&apos;ll land back here connected.
         </p>
         <form onSubmit={startOneClick} className="flex items-center gap-2">
           <input
@@ -358,7 +376,6 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
             className="input-field text-sm flex-1"
             autoComplete="url"
             inputMode="url"
-            autoFocus
           />
           <button type="submit" disabled={!canSubmitOneClick} className="btn-primary text-sm whitespace-nowrap">
             <Link2 size={14} /> Connect WordPress

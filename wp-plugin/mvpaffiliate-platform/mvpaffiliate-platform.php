@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.19
+ * Version: 1.0.20
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,24 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.19');
+define('MVP_AFFILIATE_VERSION', '1.0.20');
+
+// ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
+// WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
+// after the user clicks "Yes, I approve" — and wp_safe_redirect() silently
+// rewrites cross-domain destinations to the wp-admin dashboard unless the
+// target host is in `allowed_redirect_hosts`. That's a CSRF safeguard, but
+// it also blocks our one-click OAuth flow (user gets dumped at wp-admin and
+// the freshly minted Application Password is lost).
+//
+// Whitelist mvpaffiliate.io explicitly so the post-approval redirect carries
+// the credentials back to our /api/wordpress/oauth-callback. Scoped to just
+// our own domains — doesn't widen the allowlist for any other host.
+add_filter('allowed_redirect_hosts', function ($hosts) {
+    $hosts[] = 'mvpaffiliate.io';
+    $hosts[] = 'www.mvpaffiliate.io';
+    return $hosts;
+});
 
 // ─── 1. Authorization header fix ───────────────────────────────────────────────
 // Runs at every PHP request, before WordPress REST auth checks.
