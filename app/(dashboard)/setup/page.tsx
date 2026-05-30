@@ -2100,8 +2100,13 @@ function SetupPageInner() {
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: intRow } = await (supabase as any).from('integrations').select('wordpress_url,wp_site_url').eq('user_id', user.id).single()
-          const connectedUrl = intRow?.wordpress_url || intRow?.wp_site_url
+          // Only select `wordpress_url`. An older code path also selected
+          // `wp_site_url` which doesn't exist on the integrations table —
+          // PG returned a column-not-found error, the whole query failed,
+          // and `connectedUrl` was always undefined, so the setup page
+          // showed the wizard even when wordpress_url was set.
+          const { data: intRow } = await (supabase as any).from('integrations').select('wordpress_url').eq('user_id', user.id).single()
+          const connectedUrl = intRow?.wordpress_url
           if (connectedUrl) {
             setSetupComplete(true)
             setCompletedUrl(connectedUrl)
@@ -2163,10 +2168,10 @@ function SetupPageInner() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: intRow } = await (supabase as any)
           .from('integrations')
-          .select('wordpress_url,wp_site_url')
+          .select('wordpress_url')
           .eq('user_id', user.id)
           .single()
-        const connectedUrl = intRow?.wordpress_url || intRow?.wp_site_url
+        const connectedUrl = intRow?.wordpress_url
         if (cancelled || !connectedUrl) return
         setSetupComplete(true)
         setCompletedUrl(connectedUrl)

@@ -35,7 +35,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: rlsRow, error: rlsErr } = await (supabase as any)
     .from('integrations')
-    .select('user_id, wordpress_url, wordpress_username, wordpress_app_password, wp_site_url, setup_status')
+    .select('user_id, wordpress_url, wordpress_username, setup_status')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -45,7 +45,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: adminRow, error: adminErr } = await (admin as any)
     .from('integrations')
-    .select('user_id, wordpress_url, wordpress_username, wordpress_app_password, wp_site_url, setup_status, updated_at')
+    .select('user_id, wordpress_url, wordpress_username, setup_status, updated_at')
     .eq('user_id', user.id)
     .maybeSingle()
 
