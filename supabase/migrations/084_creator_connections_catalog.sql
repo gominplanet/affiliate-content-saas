@@ -35,9 +35,10 @@ create index if not exists creator_connections_catalog_budget_idx
   on public.creator_connections_catalog (has_budget_and_slots);
 create index if not exists creator_connections_catalog_imported_idx
   on public.creator_connections_catalog (imported_at desc);
-create index if not exists creator_connections_catalog_search_idx
-  on public.creator_connections_catalog
-  using gin (to_tsvector('english', coalesce(campaign_name, '') || ' ' || coalesce(brand, '')));
+-- (no GIN full-text index: the search route uses ILIKE on campaign_name +
+--  brand, which is served by the brand b-tree index above. A GIN tsvector
+--  index was tried initially but only slowed down bulk inserts on the
+--  weekly 196k-row Amazon export without speeding up any actual query.)
 
 alter table public.creator_connections_catalog enable row level security;
 create policy "Authenticated read" on public.creator_connections_catalog
