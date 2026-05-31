@@ -313,15 +313,36 @@ export async function renderThumbnailOverlay(
     const ctx = canvas.getContext('2d')
     if (!ctx) { reject(new Error('Canvas not supported')); return }
 
-    const text = hookText.replace(/\bhonest\b/gi, '').replace(/\s{2,}/g, ' ').trim().toUpperCase()
+    // Strip filler so a 4-word "I CAN'T STOP USING THIS" collapses to the
+    // two punchy keepers ("CAN'T STOP" / "STOP USING"). Big poppy
+    // thumbnails want 2–3 words MAX; anything longer renders tiny.
+    const FILLER = new Set([
+      'A','AN','THE','IS','ARE','WAS','WERE','BE','BEEN','BEING',
+      'IT','THIS','THAT','THESE','THOSE','I','WE','YOU','THEY','HE','SHE',
+      'OF','FOR','TO','IN','ON','AT','BY','WITH','FROM','AS','AND','OR','BUT',
+      'MY','OUR','YOUR','THEIR','HIS','HER',
+      'JUST','VERY','REALLY','SO','TOO','ALSO','ABOUT','LIKE','THAN',
+    ])
+    let text = hookText.replace(/\bhonest\b/gi, '').replace(/\s{2,}/g, ' ').trim().toUpperCase()
     if (!text) { reject(new Error('Empty hook text')); return }
-    const words = text.split(' ')
+    let words = text.split(' ').filter(Boolean)
+    // Drop filler ONLY if doing so still leaves >=2 words — never blank
+    // the headline. Stop at the first 3 keepers; keep punctuation glued
+    // to whichever word it sits on.
+    if (words.length > 3) {
+      const keepers = words.filter(w => !FILLER.has(w.replace(/[^A-Z']+/g, '')))
+      if (keepers.length >= 2) words = keepers
+    }
+    if (words.length > 3) words = words.slice(0, 3)
+    text = words.join(' ')
+    // Smart-Toaster reference stacks every word on its own line so each
+    // one renders MASSIVE. We do the same: 1→1 line, 2→2 lines (each
+    // word stacked), 3→2 lines (first word alone, last two together —
+    // keeps the second line balanced instead of three razor-thin lines).
     let lines: string[]
     if (words.length === 1) lines = [words[0]]
-    else {
-      const split = Math.ceil(words.length / 2)
-      lines = [words.slice(0, split).join(' '), words.slice(split).join(' ')].filter(Boolean)
-    }
+    else if (words.length === 2) lines = [words[0], words[1]]
+    else lines = [words[0], words.slice(1).join(' ')]
 
     const img = new window.Image()
     img.crossOrigin = 'anonymous'

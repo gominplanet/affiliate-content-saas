@@ -216,20 +216,21 @@ async function generateHook(videoTitle: string): Promise<string> {
     max_tokens: 40,
     messages: [{
       role: 'user',
-      content: `Write ONE viral, hooky YouTube thumbnail title for this video. It must be GENERAL, intriguing and FUN — built on curiosity, tension, contrast, emotion, or mystery — NOT a product-specific claim.
+      content: `Write ONE viral, poppy YouTube thumbnail title for this video. It must be GENERAL, intriguing and FUN — built on curiosity, tension, contrast, emotion, or mystery — NOT a product-specific claim.
 
 VIDEO: "${videoTitle}"
 
 STRICT RULES (breaking any = bad title):
-- 3 to 5 words, a complete punchy phrase. SHORTER IS BETTER — it must render cleanly as large baked-in thumbnail text, so avoid long phrases.
+- 2 OR 3 WORDS MAXIMUM. Hard ceiling. A 4-word title is a fail. Big poppy thumbnails (think vidIQ / MrBeast / Smart Toaster) live on 2–3 huge words, not phrases.
+- Every word must EARN its slot — no filler, no articles ("a", "the"), no connectors ("is", "was", "it").
 - NEVER mention results or outcomes (no "results", "before/after", "after X days").
 - NEVER make a health, medical, or benefit claim (no "cures", "gone", "weight loss", "hair growth", "cellulite", "detox", etc.).
-- NEVER boast about testing for a time period (no "I tried this for 30 days", "30 days later").
+- NEVER boast about testing for a time period.
 - No spammy hype words (AMAZING, INSANE, INCREDIBLE). NEVER use the word HONEST.
-- Keep it general and relatable — it should make ANYONE curious, even if they've never seen the product.
+- Relatable — makes ANYONE curious even if they've never seen the product.
 
-STYLE TO MATCH (write a FRESH one in this spirit, do not copy verbatim):
-"I Didn't Expect This" · "Why Is Nobody Talking About This?" · "This Feels Illegal" · "This Makes No Sense" · "I Wasn't Ready for This" · "This Shouldn't Be This Good" · "The Internet Was Right About This" · "Tiny Gadget. Huge Difference." · "I Think This Changes Everything" · "This Is Either Genius or Stupid" · "Amazon Sent Us THIS" · "I Can't Stop Using This" · "Why Does This Even Exist?"
+STYLE TO MATCH (write a FRESH one in this spirit, do not copy verbatim — count the words!):
+"GAME OVER" · "WORTH IT?" · "DON'T BUY" · "MUST HAVE" · "GAME CHANGER" · "MIND BLOWN" · "TOO GOOD" · "NEW FAVE" · "HIDDEN GEM" · "REAL DEAL" · "PURE GENIUS" · "FINALLY!" · "NEED THIS" · "OH WOW" · "BIG MISTAKE" · "LIFE CHANGING" · "ACTUALLY WORKS" · "TOTALLY OBSESSED" · "BEST EVER"
 
 Return ONLY the title text — no quotes, no preamble.`,
     }],
@@ -260,14 +261,14 @@ async function generateHooks(videoTitle: string, count: number): Promise<string[
 VIDEO: "${videoTitle}"
 
 STRICT RULES for EACH title (breaking any = bad):
-- 3 to 5 words, a complete punchy phrase. SHORTER IS BETTER (renders large as baked thumbnail text).
-- NEVER mention results/outcomes (no "results", "before/after", "after X days").
-- NEVER a health/medical/benefit claim. NEVER boast about testing for a time period.
+- 2 OR 3 WORDS MAXIMUM per title. Hard ceiling. A 4-word title is a fail. Big poppy thumbnails (vidIQ / MrBeast / Smart Toaster) live on 2–3 huge words, not phrases.
+- Every word EARNS its slot — no filler, no articles ("a", "the"), no connectors ("is", "was", "it").
+- NEVER mention results/outcomes. NEVER a health/medical/benefit claim. NEVER boast about testing for a time period.
 - No spammy hype words (AMAZING, INSANE, INCREDIBLE). NEVER use the word HONEST.
 - Relatable — makes ANYONE curious even if they've never seen the product.
 
-STYLE (write FRESH ones in this spirit, do not copy verbatim):
-"I Didn't Expect This" · "Why Is Nobody Talking About This?" · "This Feels Illegal" · "I Wasn't Ready for This" · "This Shouldn't Be This Good" · "Tiny Gadget. Huge Difference." · "I Can't Stop Using This" · "Why Does This Even Exist?"
+STYLE (write FRESH ones in this spirit, do not copy verbatim — count the words!):
+"GAME OVER" · "WORTH IT?" · "DON'T BUY" · "MUST HAVE" · "GAME CHANGER" · "MIND BLOWN" · "TOO GOOD" · "NEW FAVE" · "HIDDEN GEM" · "REAL DEAL" · "PURE GENIUS" · "FINALLY!" · "NEED THIS" · "OH WOW" · "BIG MISTAKE" · "LIFE CHANGING" · "ACTUALLY WORKS" · "BEST EVER"
 
 Return ONLY a JSON array of exactly ${n} strings.`,
       }],
