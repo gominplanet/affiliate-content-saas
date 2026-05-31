@@ -71,7 +71,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 8, color: '#000' },
-    baseWeight: 1.4,
+    baseWeight: 0.05, // demoted — superseded by poppy-gradient-* styles
   },
   {
     id: 'bold-yellow-center',
@@ -86,7 +86,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 8, color: '#000' },
-    baseWeight: 1.2,
+    baseWeight: 0.05,
   },
   {
     id: 'bold-white-yellow-accent',
@@ -101,7 +101,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 8, color: '#000' },
-    baseWeight: 1.6,
+    baseWeight: 0.05,
   },
   {
     id: 'bold-white-red-accent',
@@ -116,7 +116,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 7, dy: 8, color: '#000' },
-    baseWeight: 1.4,
+    baseWeight: 0.05,
   },
   {
     id: 'impact-white-center',
@@ -131,7 +131,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 6, dy: 7, color: '#000' },
-    baseWeight: 0.8,
+    baseWeight: 0.05,
   },
   // vidIQ signature: first word YELLOW, rest white — the highest-converting
   // look in the references. Weighted heavy so it's picked most often.
@@ -150,7 +150,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     hardShadow: { dx: 7, dy: 9, color: '#000' },
     accentWord: 'first',
     accentColor: '#FFE034',
-    baseWeight: 2.4,
+    baseWeight: 0.1, // demoted — see poppy-gradient-white-gold below
   },
   // First word CYAN — same energy, cooler accent for variety.
   {
@@ -168,7 +168,7 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     hardShadow: { dx: 7, dy: 9, color: '#000' },
     accentWord: 'first',
     accentColor: '#27E1FF',
-    baseWeight: 1.2,
+    baseWeight: 0.05,
   },
   // ──────────────────────────────────────────────────────────────────────
   // "Smart Toaster" tier — chunky, slightly tilted, white→gold gradient,
@@ -188,7 +188,12 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 9, dy: 11, color: '#000' },
-    baseWeight: 3.5,
+    // Dominant pick (~92%). Old flat-fill styles demoted to 0.05 each
+    // (total <0.5) so this poppy gradient + tilt + double-stroke wins
+    // almost every time. Keeps a small chance of the "fire" variant
+    // and the legacy looks for variety — and the per-user feedback
+    // weighting still works on top.
+    baseWeight: 25,
     gradientStops: [
       ['#FFFFFF', '#FFD400'], // line 1: white at top, deep gold at bottom
       ['#FFE034', '#FF8C00'], // line 2: yellow → orange-red for max punch
@@ -212,7 +217,9 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     position: 'top-left',
     gradient: false,
     hardShadow: { dx: 9, dy: 11, color: '#000' },
-    baseWeight: 2.0,
+    // ~5% of generations — same poppy energy with all-yellow-to-orange
+    // gradient, tilts the other way for visual variety.
+    baseWeight: 1.5,
     gradientStops: [
       ['#FFE034', '#FF6B00'],
       ['#FFE034', '#FF6B00'],
