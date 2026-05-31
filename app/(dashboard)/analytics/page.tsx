@@ -148,7 +148,7 @@ export default function AnalyticsPage() {
     <>
       <Header
         title="Analytics"
-        subtitle="Last 30 days of click data from your affiliate links. Refreshed live from Geniuslink."
+        subtitle="Last 30 days, human clicks only (bot/junk filtered to match Geniuslink's default). Only shortcodes tied to MVP-generated posts — your Geniuslink dashboard total will include codes from outside MVP."
         actions={
           <button onClick={load} className="btn-secondary text-sm">
             Refresh
@@ -162,7 +162,7 @@ export default function AnalyticsPage() {
           icon={MousePointerClick}
           label="Total clicks"
           value={totals.clicks.toLocaleString()}
-          sub="Last 30 days · all Geniuslink links"
+          sub="Last 30 days · human traffic on MVP-attributed posts"
           color="text-[#0071e3]"
           bg="bg-[#0071e3]/8"
         />
@@ -170,7 +170,7 @@ export default function AnalyticsPage() {
           icon={Eye}
           label="Posts with clicks"
           value={String(totals.posts)}
-          sub={`Out of ${posts.length} matched`}
+          sub={`Top ${posts.length} shown below`}
           color="text-purple-600"
           bg="bg-purple-50 dark:bg-purple-900/20"
         />
