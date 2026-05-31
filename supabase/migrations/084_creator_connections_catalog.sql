@@ -51,6 +51,46 @@ create index if not exists creator_connections_catalog_brand_trgm_idx
   on public.creator_connections_catalog
   using gin (brand gin_trgm_ops);
 
+-- Search RPC function. Centralizes the catalog search logic in Postgres
+-- so the query planner sees one deterministic query (instead of whatever
+-- PostgREST cobbles together from chained .or() calls) and can pick the
+-- right indexes consistently.
+--
+-- Used by /api/campaigns/catalog/search via supabase.rpc().
+create or replace function public.search_creator_campaigns(
+  p_keyword text,
+  p_min_commission numeric,
+  p_min_days integer,
+  p_need_budget boolean,
+  p_limit integer
+)
+returns table (
+  asin text,
+  campaign_id text,
+  campaign_name text,
+  brand text,
+  commission numeric,
+  ends_at date,
+  days_left integer
+)
+language sql
+stable
+as $$
+  select c.asin, c.campaign_id, c.campaign_name, c.brand, c.commission, c.ends_at, c.days_left
+    from public.creator_connections_catalog c
+   where c.commission >= coalesce(p_min_commission, 0)
+     and (c.days_left is null or c.days_left >= coalesce(p_min_days, 0))
+     and (not coalesce(p_need_budget, false) or c.has_budget_and_slots = true)
+     and (
+       p_keyword is null or p_keyword = ''
+       or c.campaign_name ilike '%' || p_keyword || '%'
+       or c.brand ilike '%' || p_keyword || '%'
+     )
+   order by c.commission desc nulls last
+   limit greatest(coalesce(p_limit, 500), 1);
+$$;
+grant execute on function public.search_creator_campaigns(text, numeric, integer, boolean, integer) to authenticated;
+
 alter table public.creator_connections_catalog enable row level security;
 create policy "Authenticated read" on public.creator_connections_catalog
   for select using (auth.uid() is not null);

@@ -3,8 +3,10 @@
  *
  * Filters the admin-uploaded creator_connections_catalog and returns the
  * matches the user would otherwise have gotten from uploading their own
- * .zip. Replaces the client-side filter loop in /campaigns/page.tsx with
- * a single SQL query that the user can hit instantly.
+ * .zip. Hits a Postgres RPC function (search_creator_campaigns) so the
+ * query planner sees ONE deterministic SQL statement and can pick the
+ * trigram + b-tree indexes consistently — vs. PostgREST's auto-generated
+ * SQL from chained .or() calls which kept hitting statement timeouts.
  *
  * Query params:
  *   keyword       string  — case-insensitive contains-match on brand/campaign_name
@@ -22,7 +24,7 @@ import { createServerClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-interface CatalogRow {
+interface RpcRow {
   asin: string
   campaign_id: string
   campaign_name: string | null
@@ -30,7 +32,6 @@ interface CatalogRow {
   commission: number | null
   ends_at: string | null
   days_left: number | null
-  has_budget_and_slots: boolean
 }
 
 export async function GET(request: Request) {
@@ -39,43 +40,32 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const keyword = (searchParams.get('keyword') || '').trim().toLowerCase()
+  const keyword = (searchParams.get('keyword') || '').trim()
   const minCommission = Math.max(0, Number(searchParams.get('minCommission') || 0))
   const minDays = Math.max(0, Number(searchParams.get('minDays') || 0))
   const needBudget = (searchParams.get('needBudget') || '1') === '1'
   const limit = Math.min(3000, Math.max(1, Number(searchParams.get('limit') || 500)))
 
+  // Overfetch ~4x so we have headroom for the dedupe-by-ASIN pass below;
+  // Postgres handles a LIMIT 2000 over the indexed query in <500ms.
+  const overfetch = Math.max(limit * 4, 2000)
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
-    .from('creator_connections_catalog')
-    .select('asin, campaign_id, campaign_name, brand, commission, ends_at, days_left, has_budget_and_slots')
-    .gte('commission', minCommission)
-    // Either days_left is null (unknown, kept per legacy behavior) OR >= minDays
-    .or(`days_left.is.null,days_left.gte.${minDays}`)
-    .order('commission', { ascending: false })
-    .limit(Math.max(limit * 4, 2000)) // overfetch since we dedupe by ASIN next
-
-  if (needBudget) q = q.eq('has_budget_and_slots', true)
-
-  if (keyword) {
-    // Case-insensitive substring match across campaign_name + brand.
-    // We can't simultaneously OR + ilike across two columns cleanly with
-    // PostgREST's `or()` syntax + already-applied filters, so use a
-    // tsquery via textSearch as a coarse first filter, then refine
-    // client-side below.
-    const safeKw = keyword.replace(/[%_]/g, '')
-    q = q.or(`campaign_name.ilike.%${safeKw}%,brand.ilike.%${safeKw}%`)
-  }
-
-  const { data, error } = await q
+  const { data, error } = await (supabase as any).rpc('search_creator_campaigns', {
+    p_keyword: keyword || null,
+    p_min_commission: minCommission,
+    p_min_days: minDays,
+    p_need_budget: needBudget,
+    p_limit: overfetch,
+  })
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const rows = (data ?? []) as CatalogRow[]
+  const rows = (data ?? []) as RpcRow[]
 
   // Dedupe on ASIN keeping highest commission (matches legacy behavior).
-  const byAsin = new Map<string, CatalogRow>()
+  const byAsin = new Map<string, RpcRow>()
   for (const r of rows) {
     const prev = byAsin.get(r.asin)
     if (!prev || (r.commission ?? 0) > (prev.commission ?? 0)) {
