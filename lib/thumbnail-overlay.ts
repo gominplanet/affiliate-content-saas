@@ -37,6 +37,17 @@ export interface OverlayStyle {
    *  (e.g. yellow "WINE" + white rest). When set, `accentColor` is used. */
   accentWord?: 'first' | null
   accentColor?: string | null
+  /** Vertical gradient fill per line — top color → bottom color.
+   *  When set, replaces the flat `colors[i]` fill with a gradient.
+   *  Per-line: gradientStops[i] = [topHex, bottomHex]. */
+  gradientStops?: Array<[string, string]> | null
+  /** Optional inner stroke layer drawn AFTER the outer outline but BEFORE
+   *  the fill — gives the "stickered" double-edge look (e.g. white halo
+   *  inside a black outline). Skip with null. */
+  innerStroke?: { color: string; width: number } | null
+  /** Rotation in degrees applied to the whole headline block (-5 to +5).
+   *  Slight tilt adds dynamism; matches MrBeast / vidIQ thumbnail energy. */
+  tilt?: number | null
 }
 
 /** Headline placement zones. Matches lib/thumbnail-textzone.ts TextPosition. */
@@ -158,6 +169,56 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     accentWord: 'first',
     accentColor: '#27E1FF',
     baseWeight: 1.2,
+  },
+  // ──────────────────────────────────────────────────────────────────────
+  // "Smart Toaster" tier — chunky, slightly tilted, white→gold gradient,
+  // double-stroke (black outer + white halo) + huge font. Highest weight
+  // so it's picked most often. This is the look the user shared as the
+  // target reference for what gominreviews.com thumbnails should match.
+  {
+    id: 'poppy-gradient-white-gold',
+    fontName: 'Anton',
+    fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+    weight: '400',
+    colors: ['#FFFFFF', '#FFE034'], // line 1 white, line 2 gold (fallback if no gradientStops)
+    outlineColor: '#000',
+    outlineW: 28,
+    shadowAlpha: 0.95,
+    maxPx: 200,
+    position: 'top-left',
+    gradient: false,
+    hardShadow: { dx: 9, dy: 11, color: '#000' },
+    baseWeight: 3.5,
+    gradientStops: [
+      ['#FFFFFF', '#FFD400'], // line 1: white at top, deep gold at bottom
+      ['#FFE034', '#FF8C00'], // line 2: yellow → orange-red for max punch
+    ],
+    innerStroke: { color: '#FFFFFF', width: 5 },
+    tilt: -2,
+  },
+  // Variant — all-yellow gradient (gold → orange) on EVERY line for the
+  // "burning warning" energy. Slightly less common than the white→gold but
+  // very on-brand for product reviews where you want to scream "deal".
+  {
+    id: 'poppy-gradient-fire',
+    fontName: 'Anton',
+    fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+    weight: '400',
+    colors: ['#FFE034', '#FFE034'],
+    outlineColor: '#000',
+    outlineW: 28,
+    shadowAlpha: 0.95,
+    maxPx: 195,
+    position: 'top-left',
+    gradient: false,
+    hardShadow: { dx: 9, dy: 11, color: '#000' },
+    baseWeight: 2.0,
+    gradientStops: [
+      ['#FFE034', '#FF6B00'],
+      ['#FFE034', '#FF6B00'],
+    ],
+    innerStroke: { color: '#FFFFFF', width: 5 },
+    tilt: 2, // tilts the OTHER way for variety vs the white-gold style
   },
 ]
 
@@ -343,6 +404,26 @@ export function drawHeadline(
   const hardShadow = style.hardShadow
   const accentFirst = style.accentWord === 'first'
   const accentColor = style.accentColor || LINE_COLORS[0]
+  const innerStroke = style.innerStroke
+  const gradientStops = style.gradientStops
+
+  // Optional tilt for that hand-placed-sticker / MrBeast energy. Save +
+  // restore the canvas state around the rotation so the rest of the
+  // canvas (image already drawn) is unaffected. Rotate around the
+  // headline block's vertical centre to keep it roughly in the zone.
+  const tilt = style.tilt ?? 0
+  const tiltApplied = Math.abs(tilt) > 0.001
+  if (tiltApplied) {
+    ctx.save()
+    // Pivot point — middle of the headline block on the chosen side
+    const pivotX = centered ? width / 2
+      : alignRight ? width - MARGIN_X
+      : MARGIN_X
+    const pivotY = startY + totalH / 2
+    ctx.translate(pivotX, pivotY)
+    ctx.rotate((tilt * Math.PI) / 180)
+    ctx.translate(-pivotX, -pivotY)
+  }
 
   lines.forEach((line, i) => {
     const y = startY + i * lineH
@@ -366,7 +447,7 @@ export function drawHeadline(
       ctx.fillText(line, lineStartX + hardShadow.dx, y + hardShadow.dy)
     }
 
-    // Soft blurred drop shadow + thick outline (whole line).
+    // Outer black outline + soft blurred drop shadow (whole line).
     ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
     ctx.shadowBlur = 12
     ctx.shadowOffsetX = 3
@@ -375,15 +456,39 @@ export function drawHeadline(
     ctx.strokeStyle = outlineColor
     ctx.strokeText(line, lineStartX, y)
 
-    // Fill — per word so the first word can take the accent colour.
+    // Inner halo stroke (e.g. white) — gives the "stickered" double-edge
+    // look from the Smart-Toaster reference. Drawn between the outer
+    // outline and the fill so the halo sits inside the black ring.
+    if (innerStroke) {
+      ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
+      ctx.lineWidth = innerStroke.width
+      ctx.strokeStyle = innerStroke.color
+      ctx.strokeText(line, lineStartX, y)
+    }
+
+    // Fill — gradient if configured, otherwise per-word colours so the
+    // first word can take the accent colour.
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
-    const baseColor = LINE_COLORS[i] ?? LINE_COLORS[LINE_COLORS.length - 1]
-    let cx = lineStartX
-    words.forEach((w, wi) => {
-      const isAccent = accentFirst && i === 0 && wi === 0
-      ctx.fillStyle = isAccent ? accentColor : baseColor
-      ctx.fillText(w, cx, y)
-      cx += wordWidths[wi] + spaceW
-    })
+    const lineGradient = gradientStops?.[i] ?? gradientStops?.[gradientStops.length - 1]
+    if (lineGradient) {
+      // Vertical gradient: top colour at character top, bottom colour at
+      // character bottom. Re-created per-line so it follows the wrap.
+      const g = ctx.createLinearGradient(0, y, 0, y + fs)
+      g.addColorStop(0, lineGradient[0])
+      g.addColorStop(1, lineGradient[1])
+      ctx.fillStyle = g
+      ctx.fillText(line, lineStartX, y)
+    } else {
+      const baseColor = LINE_COLORS[i] ?? LINE_COLORS[LINE_COLORS.length - 1]
+      let cx = lineStartX
+      words.forEach((w, wi) => {
+        const isAccent = accentFirst && i === 0 && wi === 0
+        ctx.fillStyle = isAccent ? accentColor : baseColor
+        ctx.fillText(w, cx, y)
+        cx += wordWidths[wi] + spaceW
+      })
+    }
   })
+
+  if (tiltApplied) ctx.restore()
 }
