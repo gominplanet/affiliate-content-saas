@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.23
+ * Version: 1.0.24
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.23');
+define('MVP_AFFILIATE_VERSION', '1.0.24');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -56,6 +56,48 @@ if (!function_exists('mvp_affiliate_activate')) {
                     . "RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]\n"
                     . "</IfModule>\n\n";
                 file_put_contents($htaccess, $fix . $content);
+            }
+        }
+
+        // ── Auto-configure LiteSpeed Cache for performance ────────────────────
+        // Most Hostinger / SiteGround / cPanel hosts ship LiteSpeed Cache with
+        // factory defaults that leave 30-50% page-speed gains on the table.
+        // We enable the proven-safe optimizations on plugin activation so the
+        // user gets the wins without ever opening the LiteSpeed admin. Only
+        // touches keys that are well-known and safe; user can override any of
+        // these later via wp-admin → LiteSpeed Cache → Cache without us
+        // overwriting their choices (this only runs on activation).
+        if (class_exists('LiteSpeed\Core') || defined('LSCWP_V') || is_plugin_active('litespeed-cache/litespeed-cache.php')) {
+            $conf = get_option('litespeed.conf', []);
+            if (!is_array($conf)) $conf = [];
+            $defaults = [
+                'optm-css_min'         => 1, // Minify CSS
+                'optm-js_min'          => 1, // Minify JS
+                'optm-html_min'        => 1, // Minify HTML
+                'optm-css_comb'        => 1, // Combine CSS
+                'optm-js_comb'         => 1, // Combine JS
+                'optm-css_async'       => 1, // Async render-blocking CSS
+                'optm-js_defer'        => 2, // Defer JS (delayed)
+                'media-lazy'           => 1, // Lazy-load images
+                'media-iframe_lazy'    => 1, // Lazy-load iframes
+                'media-lazyjs_inline'  => 1, // Inline lazy-load JS
+                'img_optm-webp_replace' => 1, // Use WebP versions of images when available
+                'img_optm-auto'        => 1, // Auto-pull image optimization (requires QUIC.cloud connection — user does that once)
+                'cache-mobile'         => 1, // Cache mobile views
+                'cache-browser'        => 1, // Browser cache
+            ];
+            $updated = false;
+            foreach ($defaults as $key => $val) {
+                if (!array_key_exists($key, $conf)) {
+                    $conf[$key] = $val;
+                    $updated = true;
+                }
+            }
+            if ($updated) {
+                update_option('litespeed.conf', $conf);
+                // LiteSpeed reads config on init; clear any cached entries
+                // pointing at the OLD options so the new ones go live.
+                if (function_exists('do_action')) do_action('litespeed_purge_all');
             }
         }
         if (!get_option('mvp_affiliate_installed_at')) {
@@ -254,6 +296,64 @@ add_filter('the_content', function ($content) {
     }
     return $output;
 });
+
+// ─── 7c. Mid-article newsletter form (every single post, configurable) ───────
+// Inline email-capture form rendered at a chosen paragraph position on every
+// single review post. Same submit endpoint + visual treatment as the
+// [mvp-newsletter] shortcode (re-uses mvp_affiliate_render_newsletter_form),
+// just placed inline-with-content instead of in the sidebar.
+//
+// Config in /customize → Mid-article newsletter (priority 8 so it slots
+// AFTER the trust block at 5 but BEFORE the in-content ads at 10).
+add_filter('the_content', function ($content) {
+    if (!is_singular('post')) return $content;
+    $data = mvp_affiliate_get_data();
+    $nl = is_array($data['newsletter'] ?? null) ? $data['newsletter'] : [];
+    $inline = is_array($nl['inlineMidArticle'] ?? null) ? $nl['inlineMidArticle'] : [];
+    if (empty($inline['enabled'])) return $content;
+    if (empty($nl['userId']) || !preg_match('/^[0-9a-f-]{36}$/i', (string) $nl['userId'])) return $content;
+
+    $after_para = max(1, min(8, intval($inline['afterParagraph'] ?? 3)));
+    $title    = trim((string) ($inline['title']    ?? 'Want the best Amazon finds in your inbox?'));
+    $subtitle = trim((string) ($inline['subtitle'] ?? 'A short monthly email with the products I tested + actually liked. No spam.'));
+    $button   = trim((string) ($inline['button']   ?? 'Subscribe'));
+    if (!$title)    $title    = 'Want the best Amazon finds in your inbox?';
+    if (!$subtitle) $subtitle = 'A short monthly email with the products I tested + actually liked. No spam.';
+    if (!$button)   $button   = 'Subscribe';
+
+    ob_start();
+    mvp_affiliate_render_newsletter_form([
+        'user_id'  => $nl['userId'],
+        'title'    => $title,
+        'subtitle' => $subtitle,
+        'button'   => $button,
+    ]);
+    $form = ob_get_clean();
+    if (!$form) return $content;
+
+    // Wrap so we can scope margin to inline placement (denser than sidebar/footer)
+    $form = '<div style="margin:32px 0">' . $form . '</div>';
+
+    // Walk paragraphs and inject after the Nth </p>
+    $parts = preg_split('/(<\/p>)/i', $content, -1, PREG_SPLIT_DELIM_CAPTURE);
+    $output = '';
+    $para_count = 0;
+    $inserted = false;
+    for ($i = 0; $i < count($parts); $i++) {
+        $output .= $parts[$i];
+        if (!$inserted && isset($parts[$i]) && strtolower($parts[$i]) === '</p>') {
+            $para_count++;
+            if ($para_count === $after_para) {
+                $output .= $form;
+                $inserted = true;
+            }
+        }
+    }
+    // If post had fewer paragraphs than the threshold, append at end so the
+    // form still has a chance to convert.
+    if (!$inserted) $output .= $form;
+    return $output;
+}, 8);
 
 // ─── 7b. Reviewer Trust Block (top of every single post) ──────────────────────
 // Renders an inline author byline directly above the post content based on

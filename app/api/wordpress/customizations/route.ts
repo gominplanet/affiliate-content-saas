@@ -168,6 +168,23 @@ export async function POST(req: Request) {
           // ('after_ads' on homepage, 'bottom' in sidebar).
           homepagePlacement: nlHomePlacement,
           sidebarPlacement: nlSideBarPlacement,
+          // Mid-article inline form. Configured per-blog in
+          // /customize → Mid-article newsletter. Plugin renders via the
+          // the_content filter at the chosen paragraph position.
+          inlineMidArticle: (() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const ni = (customizations as any)?.newsletterInline
+            if (!ni || typeof ni !== 'object') {
+              return { enabled: false, afterParagraph: 3, title: '', subtitle: '', button: '' }
+            }
+            return {
+              enabled: !!ni.enabled,
+              afterParagraph: Math.max(1, Math.min(8, Number(ni.afterParagraph) || 3)),
+              title: String(ni.title || '').slice(0, 120),
+              subtitle: String(ni.subtitle || '').slice(0, 300),
+              button: String(ni.button || '').slice(0, 40),
+            }
+          })(),
           // Active-subscriber count for the homepage hero's social-proof
           // line. Theme suppresses it below 50 so small lists don't
           // self-sabotage.

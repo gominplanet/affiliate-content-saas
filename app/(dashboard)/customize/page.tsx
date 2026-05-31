@@ -82,6 +82,21 @@ interface AuthorBlockData {
   linkLabel: string    // Display text for the link ("More about me", "Watch my reviews")
 }
 
+/**
+ * Mid-article newsletter form — appears inline at a configurable paragraph
+ * position on every single post. Uses the same submit endpoint + visual
+ * treatment as the [mvp-newsletter] sidebar shortcode; just placed in the
+ * flow of reading. Best-performing email-capture pattern for affiliate sites
+ * (1-3% conversion of post readers vs <0.5% for sidebar-only).
+ */
+interface NewsletterInlineData {
+  enabled: boolean
+  afterParagraph: number  // 1-8, where in the body it inserts
+  title: string
+  subtitle: string
+  button: string
+}
+
 interface BlogCustomizations {
   sidebar: AdBlock[]
   incontent: AdBlock[]
@@ -93,6 +108,7 @@ interface BlogCustomizations {
   homepageAdsEnabled: boolean
   about: AboutData
   authorBlock: AuthorBlockData
+  newsletterInline: NewsletterInlineData
   footer: FooterData
   pickOfDay: PickOfDayConfig
   /** Raw <meta> tags injected into the site's <head> — domain verification
@@ -117,6 +133,13 @@ const emptyAuthorBlock: AuthorBlockData = {
   photoUrl: '',
   linkUrl: '',
   linkLabel: 'More about me',
+}
+const emptyNewsletterInline: NewsletterInlineData = {
+  enabled: false,
+  afterParagraph: 3,
+  title: 'Want the best Amazon finds in your inbox?',
+  subtitle: 'A short monthly email with the products I tested + actually liked. No spam.',
+  button: 'Subscribe',
 }
 const emptyFooter: FooterData = {
   socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
@@ -159,6 +182,7 @@ const defaultCustomizations: BlogCustomizations = {
   homepageAdsEnabled: true,
   about: emptyAbout,
   authorBlock: emptyAuthorBlock,
+  newsletterInline: emptyNewsletterInline,
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
   headMetaTags: [],
@@ -449,10 +473,19 @@ export default function CustomizePage() {
         linkUrl:   bc.authorBlock?.linkUrl   ?? brandYouTube,
         linkLabel: bc.authorBlock?.linkLabel ?? 'More about me',
       }
+      // Mid-article newsletter — OFF by default; user opts in.
+      const newsletterInline: NewsletterInlineData = {
+        enabled:        typeof bc.newsletterInline?.enabled === 'boolean' ? bc.newsletterInline.enabled : false,
+        afterParagraph: Math.max(1, Math.min(8, Number(bc.newsletterInline?.afterParagraph) || 3)),
+        title:          bc.newsletterInline?.title    ?? emptyNewsletterInline.title,
+        subtitle:       bc.newsletterInline?.subtitle ?? emptyNewsletterInline.subtitle,
+        button:         bc.newsletterInline?.button   ?? emptyNewsletterInline.button,
+      }
       setData({
         ...defaultCustomizations,
         ...bc,
         authorBlock,
+        newsletterInline,
         sidebar:   (bc.sidebar   ?? []).map(migrateBlock),
         incontent: (bc.incontent ?? []).map(migrateBlock),
         homepageAds: padHomepageAds(bc.homepageAds),
@@ -505,6 +538,9 @@ export default function CustomizePage() {
 
   function updateAuthorBlock(patch: Partial<AuthorBlockData>) {
     setData(d => ({ ...d, authorBlock: { ...d.authorBlock, ...patch } }))
+  }
+  function updateNewsletterInline(patch: Partial<NewsletterInlineData>) {
+    setData(d => ({ ...d, newsletterInline: { ...d.newsletterInline, ...patch } }))
   }
   function updateAbout(patch: Partial<AboutData>) {
     setData(d => ({ ...d, about: { ...d.about, ...patch } }))
@@ -708,6 +744,83 @@ export default function CustomizePage() {
                       className="input-field w-full"
                     />
                   </div>
+                </div>
+              </>
+            )}
+          </div>
+        </Section>
+
+        {/* Mid-article newsletter form */}
+        <Section
+          title="Mid-article newsletter form"
+          description="Capture emails mid-read while attention is highest. Inserts an inline subscribe form after the Nth paragraph of every single review post. Best converting placement for affiliate sites — typically 1-3% of readers vs <0.5% sidebar-only."
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--text)]">Show on every post</p>
+                <p className="text-xs text-[var(--text-3)]">Site-wide toggle. Uses your existing MVP newsletter list — same signups as the sidebar form.</p>
+              </div>
+              <button
+                onClick={() => updateNewsletterInline({ enabled: !data.newsletterInline.enabled })}
+                className="text-[var(--text-3)]"
+                aria-label="Toggle mid-article newsletter form"
+              >
+                {data.newsletterInline.enabled
+                  ? <ToggleRight size={28} className="text-[#0071e3]" />
+                  : <ToggleLeft size={28} />}
+              </button>
+            </div>
+
+            {data.newsletterInline.enabled && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Show after paragraph</label>
+                  <select
+                    value={data.newsletterInline.afterParagraph}
+                    onChange={e => updateNewsletterInline({ afterParagraph: Number(e.target.value) })}
+                    className="input-field w-40"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                      <option key={n} value={n}>After paragraph {n}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">3-4 is the sweet spot — past the hook, before the reader bounces. If the post has fewer paragraphs than this, the form appends at the end so it still has a shot.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Headline</label>
+                  <input
+                    type="text"
+                    value={data.newsletterInline.title}
+                    onChange={e => updateNewsletterInline({ title: e.target.value })}
+                    maxLength={120}
+                    className="input-field w-full"
+                  />
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">Curiosity-driven beats generic — "Get the next review in your inbox" converts about half as well as "The 5 best Amazon finds I tested this month".</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Subtitle</label>
+                  <textarea
+                    value={data.newsletterInline.subtitle}
+                    onChange={e => updateNewsletterInline({ subtitle: e.target.value })}
+                    maxLength={300}
+                    rows={2}
+                    className="input-field w-full resize-y"
+                  />
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">One short sentence. Include the "no spam" reassurance — it lifts opt-ins.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Button label</label>
+                  <input
+                    type="text"
+                    value={data.newsletterInline.button}
+                    onChange={e => updateNewsletterInline({ button: e.target.value })}
+                    maxLength={40}
+                    className="input-field w-44"
+                  />
                 </div>
               </>
             )}
