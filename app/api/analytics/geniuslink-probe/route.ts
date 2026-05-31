@@ -17,6 +17,12 @@ import { createServerClient } from '@/lib/supabase/server'
 
 const GENIUSLINK_API = 'https://api.geni.us'
 
+// Force the route to run fresh on every hit — never cache responses to
+// the probe endpoint, otherwise we'd see yesterday's failed result when
+// we're trying to diagnose today's behavior.
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function GET(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -95,6 +101,9 @@ export async function GET(request: Request) {
         http_status: res.status,
         lifetime_clicks: clicks,
         url_sent: url,
+        // Surface the response body (or first 300 chars on non-200) so we can
+        // see WHY Geniuslink rejected it. JSON when parseable, raw text otherwise.
+        response_body: json ?? text.slice(0, 300),
       }
     } catch (e) {
       return {
