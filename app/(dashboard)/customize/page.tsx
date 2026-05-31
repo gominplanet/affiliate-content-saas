@@ -66,6 +66,22 @@ interface HomepageAd {
   linkUrl: string
 }
 
+/**
+ * Reviewer Trust Block — shows at the top of every blog post (right under
+ * the H1) when enabled. Builds E-E-A-T signals for Google, makes the
+ * "real person behind the review" obvious to readers, and bumps AI
+ * Overviews credibility. Defaults pull from brand_profiles; everything
+ * here is per-blog override.
+ */
+interface AuthorBlockData {
+  enabled: boolean
+  name: string         // "Seb & Michelle"
+  tagline: string      // 1-2 sentence credibility line, e.g. "I've personally tested 200+ Amazon products on camera since 2024"
+  photoUrl: string     // Author/host headshot
+  linkUrl: string      // Optional link — author page, YouTube channel, etc.
+  linkLabel: string    // Display text for the link ("More about me", "Watch my reviews")
+}
+
 interface BlogCustomizations {
   sidebar: AdBlock[]
   incontent: AdBlock[]
@@ -76,6 +92,7 @@ interface BlogCustomizations {
    *  theme renders "Advertise here" placeholders. */
   homepageAdsEnabled: boolean
   about: AboutData
+  authorBlock: AuthorBlockData
   footer: FooterData
   pickOfDay: PickOfDayConfig
   /** Raw <meta> tags injected into the site's <head> — domain verification
@@ -93,6 +110,14 @@ interface BlogCustomizations {
 }
 
 const emptyAbout: AboutData = { bio: '', logoUrl: '', headerBg: 'black' }
+const emptyAuthorBlock: AuthorBlockData = {
+  enabled: true,
+  name: '',
+  tagline: '',
+  photoUrl: '',
+  linkUrl: '',
+  linkLabel: 'More about me',
+}
 const emptyFooter: FooterData = {
   socials: { youtube: '', facebook: '', instagram: '', threads: '', pinterest: '', tiktok: '', twitter: '', contact: '' },
   links: [],
@@ -133,6 +158,7 @@ const defaultCustomizations: BlogCustomizations = {
   homepageAds: defaultHomepageAds,
   homepageAdsEnabled: true,
   about: emptyAbout,
+  authorBlock: emptyAuthorBlock,
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
   headMetaTags: [],
@@ -377,10 +403,15 @@ export default function CustomizePage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await (supabase as any)
       .from('brand_profiles')
-      .select('logo_url')
+      .select('logo_url, author_name, headshot_url, youtube_channel_url')
       .eq('user_id', user.id)
       .single()
     const canonicalLogoUrl: string = brandRow?.logo_url ?? ''
+    // Author block defaults pulled from Brand Profile (single source of truth
+    // for who-you-are). User can override per-blog in the form below.
+    const brandAuthorName: string = brandRow?.author_name ?? ''
+    const brandHeadshot: string = brandRow?.headshot_url ?? ''
+    const brandYouTube: string = brandRow?.youtube_channel_url ?? ''
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: row } = await (supabase as any)
       .from('integrations')
@@ -407,9 +438,21 @@ export default function CustomizePage() {
         logoUrl:  canonicalLogoUrl || bc.about?.logoUrl || bc.about?.imageUrl || '',
         headerBg: bc.about?.headerBg === 'white' ? 'white' : 'black',
       }
+      // Author block — start from brand defaults, let blog overrides win
+      // for each individual field. enabled defaults to true on first load
+      // so the trust signal is on by default.
+      const authorBlock: AuthorBlockData = {
+        enabled:   typeof bc.authorBlock?.enabled === 'boolean' ? bc.authorBlock.enabled : true,
+        name:      bc.authorBlock?.name      ?? brandAuthorName,
+        tagline:   bc.authorBlock?.tagline   ?? '',
+        photoUrl:  bc.authorBlock?.photoUrl  ?? brandHeadshot,
+        linkUrl:   bc.authorBlock?.linkUrl   ?? brandYouTube,
+        linkLabel: bc.authorBlock?.linkLabel ?? 'More about me',
+      }
       setData({
         ...defaultCustomizations,
         ...bc,
+        authorBlock,
         sidebar:   (bc.sidebar   ?? []).map(migrateBlock),
         incontent: (bc.incontent ?? []).map(migrateBlock),
         homepageAds: padHomepageAds(bc.homepageAds),
@@ -460,6 +503,9 @@ export default function CustomizePage() {
     } finally { setSaving(false) }
   }
 
+  function updateAuthorBlock(patch: Partial<AuthorBlockData>) {
+    setData(d => ({ ...d, authorBlock: { ...d.authorBlock, ...patch } }))
+  }
   function updateAbout(patch: Partial<AboutData>) {
     setData(d => ({ ...d, about: { ...d.about, ...patch } }))
   }
@@ -573,6 +619,100 @@ export default function CustomizePage() {
             asset). headerBg + logo fallback still persisted in
             data.about for backwards compat with users who haven't
             uploaded a header banner yet. */}
+
+        {/* Reviewer Trust Block — author byline at top of every post */}
+        <Section
+          title="Reviewer Trust Block"
+          description={`Shown at the top of every blog post, right under the headline. Tells Google + AI Overviews who's actually behind the review (E-E-A-T signal — big ranking lift), and tells readers "this is a real human" so they don't bounce. Defaults pull from your Brand Profile; override here per blog if you want.`}
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--text)]">Show on every post</p>
+                <p className="text-xs text-[var(--text-3)]">Turn the trust block on or off site-wide.</p>
+              </div>
+              <button
+                onClick={() => updateAuthorBlock({ enabled: !data.authorBlock.enabled })}
+                className="text-[var(--text-3)]"
+                aria-label="Toggle Reviewer Trust Block"
+              >
+                {data.authorBlock.enabled
+                  ? <ToggleRight size={28} className="text-[#0071e3]" />
+                  : <ToggleLeft size={28} />}
+              </button>
+            </div>
+
+            {data.authorBlock.enabled && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Reviewer name</label>
+                  <input
+                    type="text"
+                    value={data.authorBlock.name}
+                    onChange={e => updateAuthorBlock({ name: e.target.value })}
+                    placeholder="e.g. Seb & Michelle"
+                    className="input-field w-full"
+                  />
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">Defaults to Brand Profile → Author name.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Credibility tagline</label>
+                  <textarea
+                    value={data.authorBlock.tagline}
+                    onChange={e => updateAuthorBlock({ tagline: e.target.value })}
+                    placeholder={'1-2 sentences proving you\'re the real deal.\n\ne.g. "I\'ve personally tested 200+ Amazon products on camera since 2024. Every review here is based on hands-on use, not paid placements."'}
+                    rows={3}
+                    maxLength={300}
+                    className="input-field w-full resize-y"
+                  />
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">The single most important field — concrete numbers + how long you've been doing this beats vague "passionate about reviews" claims. {data.authorBlock.tagline.length}/300</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Photo URL</label>
+                  <input
+                    type="url"
+                    value={data.authorBlock.photoUrl}
+                    onChange={e => updateAuthorBlock({ photoUrl: e.target.value })}
+                    placeholder="https://…/your-headshot.jpg"
+                    className="input-field w-full"
+                  />
+                  <p className="text-[11px] text-[var(--text-3)] mt-1">Defaults to Brand Profile → Headshot. Use a real photo (face visible) — animated avatars hurt trust signals.</p>
+                  {data.authorBlock.photoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={data.authorBlock.photoUrl} alt="Reviewer headshot preview" className="mt-2 rounded-full object-cover border border-[var(--border-2)]" style={{ width: 56, height: 56 }} />
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Link URL <span className="text-[var(--text-3)] font-normal">(optional)</span></label>
+                    <input
+                      type="url"
+                      value={data.authorBlock.linkUrl}
+                      onChange={e => updateAuthorBlock({ linkUrl: e.target.value })}
+                      placeholder="https://youtube.com/@you"
+                      className="input-field w-full"
+                    />
+                    <p className="text-[11px] text-[var(--text-3)] mt-1">Where the "More about me" link goes — YouTube channel, About page, etc.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">Link label</label>
+                    <input
+                      type="text"
+                      value={data.authorBlock.linkLabel}
+                      onChange={e => updateAuthorBlock({ linkLabel: e.target.value })}
+                      placeholder="More about me"
+                      maxLength={40}
+                      className="input-field w-full"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </Section>
 
         {/* Pick of the Day */}
         <Section

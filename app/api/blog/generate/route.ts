@@ -20,6 +20,7 @@ import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { pickRelatedPosts, renderRelatedLinksBlock, insertRelatedLinks, type LinkCandidate } from '@/lib/internal-links'
 import { injectPriceStrip } from '@/lib/price-strip'
+import { injectAuthorBlock } from '@/lib/author-block'
 import { buildReviewSchemaGraph, parseRating, extractFaqFromHtml } from '@/lib/seo-schema'
 import { fal } from '@fal-ai/client'
 import { recordUsage } from '@/lib/ai-usage'
@@ -693,6 +694,33 @@ async function handleGenerate(request: Request) {
       content = insertRelatedLinks(content, renderRelatedLinksBlock(related))
     }
   } catch { /* internal links are best-effort; never block generation */ }
+
+  // ── 6.15. Reviewer Trust Block at the very top of the post body.
+  //          Configured in /customize → Reviewer Trust Block, with brand
+  //          profile fallbacks. Big E-E-A-T win — tells Google + readers
+  //          who's behind the review. Idempotent on rebuild.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: integForAuthor } = await (supabase as any)
+      .from('integrations')
+      .select('blog_customizations')
+      .eq('user_id', user.id)
+      .single()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ab = (integForAuthor?.blog_customizations as any)?.authorBlock
+    if (ab && ab.enabled) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const b = brand as any
+      content = injectAuthorBlock(content, {
+        enabled:   true,
+        name:      ab.name      || b?.author_name      || '',
+        tagline:   ab.tagline   || '',
+        photoUrl:  ab.photoUrl  || b?.headshot_url     || '',
+        linkUrl:   ab.linkUrl   || b?.youtube_channel_url || '',
+        linkLabel: ab.linkLabel || 'More about me',
+      })
+    }
+  } catch { /* author block is best-effort */ }
 
   // ── 6.2. High-intent CTA strip immediately under the Quick Verdict.
   //         Single biggest click target on the page — shown before the reader
