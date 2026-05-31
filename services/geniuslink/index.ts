@@ -117,6 +117,10 @@ export class GeniuslinkService {
       shortcode,
       advertiserid: '0',
       resolution: 'lifetime',
+      // Match the Geniuslink dashboard default ("Include junk traffic"
+      // UNCHECKED) — return only human clicks, not bots/scrapers. Without
+      // this our totals run ~3x higher than what users see on geni.us.
+      clicktype: 'Human',
     })
     const res = await fetch(
       `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`,
@@ -147,6 +151,9 @@ export class GeniuslinkService {
       resolution: 'daily',
       startdate: fmt(start),
       enddate: fmt(end),
+      // Match the Geniuslink dashboard default — human clicks only,
+      // bot/junk traffic filtered. See getLifetimeClicks for context.
+      clicktype: 'Human',
     })
     const res = await fetch(
       `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`,
