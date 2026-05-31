@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.21
+ * Version: 1.0.22
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.21');
+define('MVP_AFFILIATE_VERSION', '1.0.22');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -1254,7 +1254,11 @@ if (!function_exists('mvp_affiliate_render_sticky_cta')) {
 (function(){
   var bar = document.getElementById('mvp-sticky-cta');
   if (!bar) return;
-  try { if (sessionStorage.getItem('mvp-sc-dismissed')) return; } catch(e){}
+  // Per-post dismissal — clicking X hides the bar for THIS post only,
+  // not every other review in the same session. Each review is its own
+  // potential conversion; one dismiss shouldn't kill the next.
+  var key = 'mvp-sc-dismissed:' + location.pathname;
+  try { if (sessionStorage.getItem(key)) return; } catch(e){}
   var shown = false;
   function check(){ if (shown) return; if (window.scrollY > 450) { bar.style.display = 'flex'; shown = true; } }
   window.addEventListener('scroll', check, { passive: true });
@@ -1262,7 +1266,7 @@ if (!function_exists('mvp_affiliate_render_sticky_cta')) {
   var close = document.getElementById('mvp-sticky-cta-close');
   if (close) close.addEventListener('click', function(){
     bar.style.display = 'none';
-    try { sessionStorage.setItem('mvp-sc-dismissed', '1'); } catch(e){}
+    try { sessionStorage.setItem(key, '1'); } catch(e){}
   });
 })();
 </script>
