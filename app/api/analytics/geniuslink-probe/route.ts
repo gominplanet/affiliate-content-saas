@@ -33,7 +33,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'No Geniuslink credentials' }, { status: 400 })
   }
 
-  const auth = `Basic ${Buffer.from(`${intRow.geniuslink_api_key}:${intRow.geniuslink_api_secret}`).toString('base64')}`
+  // Geniuslink uses X-Api-Key + X-Api-Secret headers (NOT HTTP Basic Auth).
+  // First version of this probe got 400 on every request because of this.
+  const authHeaders: Record<string, string> = {
+    'X-Api-Key': String(intRow.geniuslink_api_key),
+    'X-Api-Secret': String(intRow.geniuslink_api_secret),
+    Accept: 'application/json',
+  }
 
   // Pick a shortcode: caller-provided OR auto-pick the user's top-performing one
   // (Purple Leaf umbrella has 978 clicks, a clear signal).
@@ -78,7 +84,7 @@ export async function GET(request: Request) {
     })
     const url = `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`
     try {
-      const res = await fetch(url, { headers: { Authorization: auth }, signal: AbortSignal.timeout(15_000) })
+      const res = await fetch(url, { headers: authHeaders, signal: AbortSignal.timeout(15_000) })
       const text = await res.text()
       let json: unknown
       try { json = JSON.parse(text) } catch { json = null }
@@ -88,7 +94,7 @@ export async function GET(request: Request) {
         label: v.label,
         http_status: res.status,
         lifetime_clicks: clicks,
-        url_sent: url.replace(intRow.geniuslink_api_key, '***'),
+        url_sent: url,
       }
     } catch (e) {
       return {
