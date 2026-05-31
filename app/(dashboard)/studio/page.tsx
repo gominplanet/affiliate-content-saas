@@ -407,7 +407,18 @@ function VideoStudioCard({ video, userTier, playlists }: {
         setError(null)
         return
       }
-      if (!res.ok) throw new Error((data.error as string) || 'Generation failed')
+      if (!res.ok) {
+        // data.error can come back as a string OR an object with .message
+        // (depends on which error path fired server-side). Without this
+        // normalization, an object error makes new Error(obj) render as
+        // "[object Object]" — the exact bug seen on the Studio card.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e = data.error as any
+        const errMsg = typeof e === 'string' ? e
+          : (e && typeof e === 'object' && typeof e.message === 'string') ? e.message
+          : 'Generation failed'
+        throw new Error(errMsg)
+      }
       setError(null)
       setCapError(null)
 
@@ -1202,7 +1213,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               <ExternalLink size={11} /> Open in YouTube
             </a>
           </div>
-          {error && <p className="text-xs text-[#ff3b30] mt-2">{error}</p>}
+          {error && <p className="text-xs text-[#ff3b30] mt-2">{typeof error === 'string' ? error : 'Something went wrong'}</p>}
           {capError && (
             <div className="mt-3">
               <CapReachedBanner
