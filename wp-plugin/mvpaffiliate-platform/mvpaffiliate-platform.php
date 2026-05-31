@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.20
+ * Version: 1.0.21
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.20');
+define('MVP_AFFILIATE_VERSION', '1.0.21');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -1191,5 +1191,81 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
 </script>
         <?php
         return ob_get_clean();
+    }
+}
+
+// ─── 20. Sticky affiliate CTA bar (every single post, scroll-triggered) ───────
+// Renders a fixed bottom-of-viewport bar with the product name + an Amazon
+// (or generic) buy button. Auto-extracts the first affiliate URL from the
+// post content — works on every existing post without re-generation. JS is
+// minimal, inline, and idempotent: shows after the user scrolls past the
+// hero, dismissable with an X (sessionStorage so it stays dismissed for
+// the rest of the visit but reappears next session).
+//
+// Wirecutter / RTINGS / The Strategist all do this; measured affiliate
+// revenue lift is typically 15-35% over static-only CTAs.
+add_action('wp_footer', 'mvp_affiliate_render_sticky_cta');
+if (!function_exists('mvp_affiliate_render_sticky_cta')) {
+    function mvp_affiliate_render_sticky_cta() {
+        if (!is_singular('post')) return;
+        $post = get_post();
+        if (!$post) return;
+
+        // First affiliate URL wins (geni.us → amzn.to → amazon.* TLD).
+        // We deliberately don't surface arbitrary outbound links — only
+        // links the user wrote with an affiliate-tracking purpose.
+        $url = null;
+        if (preg_match('#https?://(?:www\\.)?geni\\.us/[A-Za-z0-9]+#', $post->post_content, $m)) $url = $m[0];
+        if (!$url && preg_match('#https?://(?:www\\.)?amzn\\.to/[A-Za-z0-9]+#', $post->post_content, $m)) $url = $m[0];
+        if (!$url && preg_match('#https?://(?:www\\.)?amazon\\.[a-z.]+/[^\\s"\'<>]+#', $post->post_content, $m)) $url = rtrim($m[0], '.,;');
+        if (!$url) return;
+
+        $is_amazon = (bool) preg_match('/amazon\\.|amzn\\.to|geni\\.us/i', $url);
+        $cta_text  = $is_amazon ? "Check Today's Price on Amazon →" : "Get The Best Price Today →";
+        $title     = $post->post_title;
+        // Trim long titles so they don't overflow on mobile
+        if (mb_strlen($title) > 48) $title = mb_substr($title, 0, 45) . '…';
+        ?>
+<style>
+#mvp-sticky-cta{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:2px solid #FF6B00;box-shadow:0 -4px 16px rgba(0,0,0,.12);padding:10px 14px;z-index:9999;display:none;align-items:center;gap:10px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+#mvp-sticky-cta .mvp-sc-info{flex:1;min-width:0}
+#mvp-sticky-cta .mvp-sc-eyebrow{margin:0;font-size:10px;font-weight:700;color:#86868b;text-transform:uppercase;letter-spacing:.6px}
+#mvp-sticky-cta .mvp-sc-title{margin:2px 0 0;font-size:13px;font-weight:700;color:#1d1d1f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+#mvp-sticky-cta .mvp-sc-btn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FF9900 0%,#FF6B00 100%);color:#fff;padding:11px 16px;border-radius:8px;font-weight:700;text-decoration:none;font-size:13px;white-space:nowrap;min-height:44px;box-sizing:border-box;box-shadow:0 2px 6px rgba(255,107,0,.25)}
+#mvp-sticky-cta .mvp-sc-btn:hover{filter:brightness(.95);text-decoration:none;color:#fff}
+#mvp-sticky-cta .mvp-sc-close{flex-shrink:0;background:none;border:none;font-size:22px;color:#86868b;cursor:pointer;padding:0;line-height:1;min-width:32px;min-height:32px;display:flex;align-items:center;justify-content:center}
+#mvp-sticky-cta .mvp-sc-close:hover{color:#1d1d1f}
+@media (max-width:480px){
+  #mvp-sticky-cta{padding:8px 10px;gap:8px}
+  #mvp-sticky-cta .mvp-sc-eyebrow{font-size:9px}
+  #mvp-sticky-cta .mvp-sc-title{font-size:12px}
+  #mvp-sticky-cta .mvp-sc-btn{padding:10px 12px;font-size:12px}
+}
+</style>
+<div id="mvp-sticky-cta" role="region" aria-label="Buy this product">
+  <div class="mvp-sc-info">
+    <p class="mvp-sc-eyebrow">Reviewed in this post</p>
+    <p class="mvp-sc-title"><?php echo esc_html($title); ?></p>
+  </div>
+  <a class="mvp-sc-btn" href="<?php echo esc_url($url); ?>" target="_blank" rel="noopener sponsored nofollow"><?php echo esc_html($cta_text); ?></a>
+  <button type="button" class="mvp-sc-close" aria-label="Dismiss" id="mvp-sticky-cta-close">×</button>
+</div>
+<script>
+(function(){
+  var bar = document.getElementById('mvp-sticky-cta');
+  if (!bar) return;
+  try { if (sessionStorage.getItem('mvp-sc-dismissed')) return; } catch(e){}
+  var shown = false;
+  function check(){ if (shown) return; if (window.scrollY > 450) { bar.style.display = 'flex'; shown = true; } }
+  window.addEventListener('scroll', check, { passive: true });
+  check();
+  var close = document.getElementById('mvp-sticky-cta-close');
+  if (close) close.addEventListener('click', function(){
+    bar.style.display = 'none';
+    try { sessionStorage.setItem('mvp-sc-dismissed', '1'); } catch(e){}
+  });
+})();
+</script>
+        <?php
     }
 }
