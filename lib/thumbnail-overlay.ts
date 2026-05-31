@@ -180,52 +180,53 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
-    colors: ['#FFFFFF', '#FFE034'], // line 1 white, line 2 gold (fallback if no gradientStops)
+    colors: ['#FFFFFF', '#FFFFFF'], // fallback (gradientStops below override)
     outlineColor: '#000',
-    outlineW: 28,
+    outlineW: 26,
     shadowAlpha: 0.95,
-    maxPx: 200,
+    maxPx: 188,
     position: 'top-left',
     gradient: false,
-    hardShadow: { dx: 9, dy: 11, color: '#000' },
+    hardShadow: { dx: 8, dy: 10, color: '#000' },
     // Dominant pick (~92%). Old flat-fill styles demoted to 0.05 each
-    // (total <0.5) so this poppy gradient + tilt + double-stroke wins
-    // almost every time. Keeps a small chance of the "fire" variant
-    // and the legacy looks for variety — and the per-user feedback
-    // weighting still works on top.
+    // (total <0.5) so this poppy gradient + double-stroke wins almost
+    // every time. Per-user feedback weighting still applies on top.
     baseWeight: 25,
+    // Both lines use the SAME white→gold gradient — unified two-line
+    // feel rather than the previous white-then-orange split which read
+    // as clownish. The vertical gradient (white at top → gold at the
+    // baseline) is what creates the "poppy" 3D look from the Smart-
+    // Toaster reference.
     gradientStops: [
-      ['#FFFFFF', '#FFD400'], // line 1: white at top, deep gold at bottom
-      ['#FFE034', '#FF8C00'], // line 2: yellow → orange-red for max punch
+      ['#FFFFFF', '#FFC700'],
+      ['#FFFFFF', '#FFC700'],
     ],
-    innerStroke: { color: '#FFFFFF', width: 5 },
-    tilt: -2,
+    innerStroke: { color: '#FFFFFF', width: 3 },
+    tilt: 0, // no tilt — Smart-Toaster look is bold + level, not skewed
   },
-  // Variant — all-yellow gradient (gold → orange) on EVERY line for the
-  // "burning warning" energy. Slightly less common than the white→gold but
-  // very on-brand for product reviews where you want to scream "deal".
+  // Variant — first word YELLOW + rest WHITE, double-stroked, same poppy
+  // weight as the gradient style. Gives the "vidIQ accent" look variety so
+  // not every thumbnail is the same gradient.
   {
-    id: 'poppy-gradient-fire',
+    id: 'poppy-firstword-yellow',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
-    colors: ['#FFE034', '#FFE034'],
+    colors: ['#FFFFFF', '#FFFFFF'],
     outlineColor: '#000',
-    outlineW: 28,
+    outlineW: 26,
     shadowAlpha: 0.95,
-    maxPx: 195,
+    maxPx: 188,
     position: 'top-left',
     gradient: false,
-    hardShadow: { dx: 9, dy: 11, color: '#000' },
-    // ~5% of generations — same poppy energy with all-yellow-to-orange
-    // gradient, tilts the other way for visual variety.
+    hardShadow: { dx: 8, dy: 10, color: '#000' },
+    // ~5% of generations — vidIQ "yellow first word, white rest" with the
+    // same chunky outline + halo as the gradient style.
     baseWeight: 1.5,
-    gradientStops: [
-      ['#FFE034', '#FF6B00'],
-      ['#FFE034', '#FF6B00'],
-    ],
-    innerStroke: { color: '#FFFFFF', width: 5 },
-    tilt: 2, // tilts the OTHER way for variety vs the white-gold style
+    accentWord: 'first',
+    accentColor: '#FFC700',
+    innerStroke: { color: '#FFFFFF', width: 3 },
+    tilt: 0,
   },
 ]
 
