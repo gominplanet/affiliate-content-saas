@@ -117,10 +117,6 @@ export class GeniuslinkService {
       shortcode,
       advertiserid: '0',
       resolution: 'lifetime',
-      // Match the Geniuslink dashboard default ("Include junk traffic"
-      // UNCHECKED) — return only human clicks, not bots/scrapers. Without
-      // this our totals run ~3x higher than what users see on geni.us.
-      clicktype: 'Human',
     })
     const res = await fetch(
       `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`,
@@ -128,9 +124,16 @@ export class GeniuslinkService {
     )
     if (!res.ok) return 0
     const data = await res.json().catch(() => null) as
-      | { ClicksByDate?: Array<{ Value?: { Clicks?: number } }> }
+      | { ClicksByDate?: Array<{ Value?: { Clicks?: number; ClicksMinusBot?: number } }> }
       | null
-    return data?.ClicksByDate?.[0]?.Value?.Clicks ?? 0
+    // Geniuslink returns BOTH `Clicks` (raw incl. bots) and `ClicksMinusBot`
+    // (bot-filtered, matches the dashboard default). Use ClicksMinusBot so
+    // MVP's totals line up with what users see on geni.us. There's no
+    // query-parameter bot filter on this endpoint — proven by the probe at
+    // /api/analytics/geniuslink-probe; the filter lives in the response.
+    return data?.ClicksByDate?.[0]?.Value?.ClicksMinusBot
+      ?? data?.ClicksByDate?.[0]?.Value?.Clicks
+      ?? 0
   }
 
   /**
@@ -151,24 +154,23 @@ export class GeniuslinkService {
       resolution: 'daily',
       startdate: fmt(start),
       enddate: fmt(end),
-      // Match the Geniuslink dashboard default — human clicks only,
-      // bot/junk traffic filtered. See getLifetimeClicks for context.
-      clicktype: 'Human',
     })
     const res = await fetch(
       `${GENIUSLINK_API}/v1/reports/link-click-trend-by-resolution?${params.toString()}`,
       { headers: this.authHeaders },
     )
     if (!res.ok) return []
-    // Geniuslink's daily response has Key (the date) + Value.Clicks. Key
-    // shape varies: ISO "2026-05-16T00:00:00", epoch number, or .NET-style
-    // "/Date(1747353600000)/". normaliseDate handles all three.
+    // Geniuslink's daily response has Key (the date) + Value.{Clicks,ClicksMinusBot}.
+    // We use ClicksMinusBot to match the dashboard's bot-filtered default — see
+    // getLifetimeClicks for the reasoning. Key shape varies: ISO
+    // "2026-05-16T00:00:00", epoch number, or .NET-style "/Date(1747353600000)/".
+    // normaliseDate handles all three.
     const data = await res.json().catch(() => null) as
-      | { ClicksByDate?: Array<{ Key?: unknown; Value?: { Clicks?: number } }> }
+      | { ClicksByDate?: Array<{ Key?: unknown; Value?: { Clicks?: number; ClicksMinusBot?: number } }> }
       | null
     return (data?.ClicksByDate ?? []).map(b => ({
       date: normaliseDate(b.Key),
-      clicks: b.Value?.Clicks ?? 0,
+      clicks: b.Value?.ClicksMinusBot ?? b.Value?.Clicks ?? 0,
     }))
   }
 }
