@@ -19,9 +19,13 @@ create table if not exists public.creator_connections_catalog (
   budget_remain numeric default 0,
   slots_available numeric default 0,
   has_budget_and_slots boolean default false,
-  imported_at timestamptz default now(),
-  raw_row jsonb
+  imported_at timestamptz default now()
 );
+-- Note: we previously had a `raw_row jsonb` column here to preserve every
+-- Amazon CSV column. Removed because (a) it was never read by any code
+-- path and (b) it bloated the table by 1-2 GB on a 470k-row weekly export.
+-- All fields the search route actually uses are extracted into typed
+-- columns above.
 
 create unique index if not exists creator_connections_catalog_unq
   on public.creator_connections_catalog (campaign_id, asin);
