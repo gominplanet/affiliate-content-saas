@@ -295,6 +295,40 @@ function CampaignsInner() {
     }).catch(() => {})
   }
 
+  // Search the centralized catalog (admin-populated). Replaces the per-user
+  // .zip upload for 99% of the flow — the user just picks filters and we
+  // run the same dedupe/cap/order logic that the legacy zip parser did,
+  // server-side instead of in the browser. runImport (.zip path) is kept
+  // for future-proofing in case admin upload is delayed.
+  async function runCatalogSearch() {
+    setImpErr(null); setImpMsg(null); setImpMatches([]); setImpScanned(0)
+    setImpPhase('parsing')
+    try {
+      const params = new URLSearchParams({
+        keyword: impKw.trim(),
+        minCommission: String(isNaN(impMinComm) ? 0 : impMinComm),
+        minDays: String(isNaN(impMinDays) ? 0 : impMinDays),
+        needBudget: impNeedBudget ? '1' : '0',
+        limit: String(impCap),
+      })
+      const res = await fetch(`/api/campaigns/catalog/search?${params.toString()}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Search failed')
+      const matches = (data.matches ?? []) as typeof impMatches
+      setImpMatches(matches)
+      setImpScanned(data.totalScanned ?? 0)
+      setImpPhase('ready')
+      setImpMsg(
+        matches.length === 0
+          ? 'No matches with these filters. Try widening: lower the commission, shorter days-left, or untick the budget toggle.'
+          : `${matches.length.toLocaleString()} matches queued from a shared catalog of ${data.uniqueAsins.toLocaleString()} unique products.`,
+      )
+    } catch (e) {
+      setImpErr(e instanceof Error ? e.message : 'Search failed.')
+      setImpPhase('idle')
+    }
+  }
+
   async function runImport(file: File) {
     setImpErr(null); setImpMsg(null); setImpMatches([]); setImpScanned(0)
     setImpPhase('parsing')
@@ -657,10 +691,9 @@ function CampaignsInner() {
           <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Import the Amazon campaigns export (.zip)</p>
         </div>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
-          On Amazon Creator Connections click <strong>Download all available campaigns</strong>, then drop
-          the .zip here. We filter it in your browser (nothing huge is uploaded) and queue the matches.
-          The keyword matches the campaign &amp; brand name (e.g. &quot;vacuum&quot;). Leave it blank to
-          pull everything that fits the filters.
+          Search the shared catalog MVP refreshes weekly from Amazon&apos;s Creator Connections export — no
+          .zip upload required. The keyword matches the campaign &amp; brand name (e.g. &quot;vacuum&quot;).
+          Leave it blank to pull everything that fits the filters.
         </p>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
           <strong>Why fewer queue than match:</strong> Amazon lists the same product under many separate
@@ -699,16 +732,14 @@ function CampaignsInner() {
         </label>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors ${impPhase === 'parsing' || impPhase === 'pushing' ? 'bg-gray-200 text-[#86868b] cursor-default' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300'}`}>
-            {impPhase === 'parsing' ? <><Loader2 size={14} className="animate-spin" /> Reading…</> : <><Sparkles size={14} /> Choose .zip</>}
-            <input
-              type="file"
-              accept=".zip,application/zip"
-              className="hidden"
-              disabled={impPhase === 'parsing' || impPhase === 'pushing'}
-              onChange={e => { const f = e.target.files?.[0]; if (f) runImport(f); e.target.value = '' }}
-            />
-          </label>
+          <button
+            type="button"
+            onClick={runCatalogSearch}
+            disabled={impPhase === 'parsing' || impPhase === 'pushing'}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${impPhase === 'parsing' || impPhase === 'pushing' ? 'bg-gray-200 text-[#86868b]' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300'}`}
+          >
+            {impPhase === 'parsing' ? <><Loader2 size={14} className="animate-spin" /> Searching…</> : <><Sparkles size={14} /> Search catalog</>}
+          </button>
           {impPhase === 'ready' && impMatches.length > 0 && (
             <button
               onClick={pushImported}
