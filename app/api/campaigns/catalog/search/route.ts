@@ -46,9 +46,12 @@ export async function GET(request: Request) {
   const needBudget = (searchParams.get('needBudget') || '1') === '1'
   const limit = Math.min(3000, Math.max(1, Number(searchParams.get('limit') || 500)))
 
-  // Overfetch ~4x so we have headroom for the dedupe-by-ASIN pass below;
-  // Postgres handles a LIMIT 2000 over the indexed query in <500ms.
-  const overfetch = Math.max(limit * 4, 2000)
+  // Modest overfetch (2x, min 200) to leave headroom for the dedupe-by-ASIN
+  // pass below without making Postgres sort 2000+ rows just so we can throw
+  // most away. The earlier overfetch=2000 was crossing the per-statement
+  // timeout for keyword searches even with trigram indexes — each extra
+  // row in the LIMIT N means more candidates the planner has to sort.
+  const overfetch = Math.max(limit * 2, 200)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).rpc('search_creator_campaigns', {

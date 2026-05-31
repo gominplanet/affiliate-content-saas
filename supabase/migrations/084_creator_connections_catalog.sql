@@ -58,11 +58,10 @@ create index if not exists creator_connections_catalog_brand_trgm_idx
 --
 -- Used by /api/campaigns/catalog/search via supabase.rpc().
 -- plpgsql with IF/ELSE so the planner can build TWO separate query plans —
--- one for "keyword present" (starts with the trigram index, very selective)
--- and one for "no keyword" (starts with the commission b-tree). A single
--- SQL function with `p_keyword is null or ... ilike ...` would force the
--- planner to pick a plan that handles both, and the safe answer there is
--- seq scan over 470k rows → statement timeout.
+-- one for "keyword present" (starts with the trigram index) and one for
+-- "no keyword" (starts with the commission b-tree). DISTINCT ON dedupes
+-- by ASIN inside the function so the route doesn't have to overfetch
+-- (overfetch=2000 was crossing the statement timeout).
 create or replace function public.search_creator_campaigns(
   p_keyword text,
   p_min_commission numeric,
@@ -85,22 +84,32 @@ as $$
 begin
   if p_keyword is null or p_keyword = '' then
     return query
-    select c.asin, c.campaign_id, c.campaign_name, c.brand, c.commission, c.ends_at, c.days_left
-      from public.creator_connections_catalog c
-     where c.commission >= coalesce(p_min_commission, 0)
-       and (c.days_left is null or c.days_left >= coalesce(p_min_days, 0))
-       and (not coalesce(p_need_budget, false) or c.has_budget_and_slots = true)
-     order by c.commission desc nulls last
+    select d.asin, d.campaign_id, d.campaign_name, d.brand, d.commission, d.ends_at, d.days_left
+      from (
+        select distinct on (c.asin) c.asin, c.campaign_id, c.campaign_name, c.brand,
+               c.commission, c.ends_at, c.days_left
+          from public.creator_connections_catalog c
+         where c.commission >= coalesce(p_min_commission, 0)
+           and (c.days_left is null or c.days_left >= coalesce(p_min_days, 0))
+           and (not coalesce(p_need_budget, false) or c.has_budget_and_slots = true)
+         order by c.asin, c.commission desc nulls last
+      ) d
+     order by d.commission desc nulls last
      limit greatest(coalesce(p_limit, 500), 1);
   else
     return query
-    select c.asin, c.campaign_id, c.campaign_name, c.brand, c.commission, c.ends_at, c.days_left
-      from public.creator_connections_catalog c
-     where (c.campaign_name ilike '%' || p_keyword || '%' or c.brand ilike '%' || p_keyword || '%')
-       and c.commission >= coalesce(p_min_commission, 0)
-       and (c.days_left is null or c.days_left >= coalesce(p_min_days, 0))
-       and (not coalesce(p_need_budget, false) or c.has_budget_and_slots = true)
-     order by c.commission desc nulls last
+    select d.asin, d.campaign_id, d.campaign_name, d.brand, d.commission, d.ends_at, d.days_left
+      from (
+        select distinct on (c.asin) c.asin, c.campaign_id, c.campaign_name, c.brand,
+               c.commission, c.ends_at, c.days_left
+          from public.creator_connections_catalog c
+         where (c.campaign_name ilike '%' || p_keyword || '%' or c.brand ilike '%' || p_keyword || '%')
+           and c.commission >= coalesce(p_min_commission, 0)
+           and (c.days_left is null or c.days_left >= coalesce(p_min_days, 0))
+           and (not coalesce(p_need_budget, false) or c.has_budget_and_slots = true)
+         order by c.asin, c.commission desc nulls last
+      ) d
+     order by d.commission desc nulls last
      limit greatest(coalesce(p_limit, 500), 1);
   end if;
 end;
