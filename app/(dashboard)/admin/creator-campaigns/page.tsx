@@ -55,16 +55,43 @@ export default function CreatorCampaignsAdminPage() {
   async function upload(file: File) {
     setUploading(true); setResult(null)
     try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const r = await fetch('/api/admin/creator-campaigns/import', { method: 'POST', body: fd })
+      // Vercel caps multipart-body POSTs at ~4.5 MB. Amazon's weekly export
+      // is bigger than that, so upload to Supabase Storage first (no size
+      // limit), then hand the API the public URL to fetch + parse.
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not signed in.')
+      const path = `${user.id}/creator-campaigns-imports/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.zip`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: upErr } = await (supabase.storage as any)
+        .from('instagram-videos')
+        .upload(path, file, {
+          cacheControl: '60',
+          upsert: false,
+          contentType: 'application/zip',
+        })
+      if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`)
+      const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+      const upstreamUrl = urlData.publicUrl
+      if (!upstreamUrl) throw new Error('Storage did not return a public URL')
+
+      const r = await fetch('/api/admin/creator-campaigns/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upstreamUrl }),
+      })
       const d = await r.json()
-      if (!r.ok) throw new Error(d.error || 'Upload failed')
+      if (!r.ok) throw new Error(d.error || 'Import failed')
       setResult({
         ok: true,
         message: `Imported ${d.upserted.toLocaleString()} campaigns · ${d.deduped_count.toLocaleString()} unique rows · ${d.stale_deleted ?? 0} stale rows pruned.`,
       })
       await loadStats()
+
+      // Clean up the temporary zip from Storage — we have the parsed data
+      // in the catalog table now, no need to retain the source.
+      try {
+        await supabase.storage.from('instagram-videos').remove([path])
+      } catch { /* non-fatal */ }
     } catch (e) {
       setResult({ ok: false, message: e instanceof Error ? e.message : 'Upload failed' })
     } finally {
