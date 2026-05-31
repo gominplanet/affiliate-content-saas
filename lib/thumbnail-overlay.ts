@@ -171,61 +171,71 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     baseWeight: 0.05,
   },
   // ──────────────────────────────────────────────────────────────────────
-  // "Smart Toaster" tier — chunky, slightly tilted, white→gold gradient,
-  // double-stroke (black outer + white halo) + huge font. Highest weight
-  // so it's picked most often. This is the look the user shared as the
-  // target reference for what gominreviews.com thumbnails should match.
+  // vidIQ DUAL-TONE — line 1 WHITE, line 2 YELLOW, both SOLID colors.
+  // No vertical gradient (that muddied both lines into one yellow blob
+  // and read as "designer-y" rather than YouTube-punchy). The dual-tone
+  // contrast + heavy black outline + drop shadow + white inner halo is
+  // what creates the vidIQ "sticker" pop.
   {
-    id: 'poppy-gradient-white-gold',
+    id: 'vidiq-dual-white-yellow',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
-    colors: ['#FFFFFF', '#FFFFFF'], // fallback (gradientStops below override)
+    colors: ['#FFFFFF', '#FFD700'], // L1 white, L2 yellow — classic vidIQ
     outlineColor: '#000',
-    outlineW: 26,
+    outlineW: 28,
     shadowAlpha: 0.95,
-    maxPx: 188,
+    maxPx: 200,
     position: 'top-left',
     gradient: false,
-    hardShadow: { dx: 8, dy: 10, color: '#000' },
-    // Dominant pick (~92%). Old flat-fill styles demoted to 0.05 each
-    // (total <0.5) so this poppy gradient + double-stroke wins almost
-    // every time. Per-user feedback weighting still applies on top.
-    baseWeight: 25,
-    // Both lines use the SAME white→gold gradient — unified two-line
-    // feel rather than the previous white-then-orange split which read
-    // as clownish. The vertical gradient (white at top → gold at the
-    // baseline) is what creates the "poppy" 3D look from the Smart-
-    // Toaster reference.
-    gradientStops: [
-      ['#FFFFFF', '#FFC700'],
-      ['#FFFFFF', '#FFC700'],
-    ],
-    innerStroke: { color: '#FFFFFF', width: 3 },
-    tilt: 0, // no tilt — Smart-Toaster look is bold + level, not skewed
+    hardShadow: { dx: 9, dy: 10, color: '#000' },
+    // Dominant pick (~60%). The other ~40% goes to firstword-yellow
+    // (yellow ON THE FIRST WORD, rest white — flips the accent so
+    // single-line headlines like "GAME OVER" still get colour) and
+    // dual-yellow-white (yellow first / white second — reverses the
+    // colour order so variety reads as intentional).
+    baseWeight: 15,
+    innerStroke: { color: '#FFFFFF', width: 4 },
+    tilt: 0,
   },
-  // Variant — first word YELLOW + rest WHITE, double-stroked, same poppy
-  // weight as the gradient style. Gives the "vidIQ accent" look variety so
-  // not every thumbnail is the same gradient.
+  // Reverse dual-tone — line 1 YELLOW, line 2 WHITE. Variety without
+  // breaking the "high-contrast solid colours" rule.
   {
-    id: 'poppy-firstword-yellow',
+    id: 'vidiq-dual-yellow-white',
+    fontName: 'Anton',
+    fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+    weight: '400',
+    colors: ['#FFD700', '#FFFFFF'],
+    outlineColor: '#000',
+    outlineW: 28,
+    shadowAlpha: 0.95,
+    maxPx: 200,
+    position: 'top-left',
+    gradient: false,
+    hardShadow: { dx: 9, dy: 10, color: '#000' },
+    baseWeight: 6,
+    innerStroke: { color: '#FFFFFF', width: 4 },
+    tilt: 0,
+  },
+  // First-word yellow accent — works on single-line headlines too,
+  // covers the 1-2 word case where dual-tone needs 2 lines to shine.
+  {
+    id: 'vidiq-firstword-yellow',
     fontName: 'Anton',
     fontStack: '"Anton", Impact, "Arial Black", sans-serif',
     weight: '400',
     colors: ['#FFFFFF', '#FFFFFF'],
     outlineColor: '#000',
-    outlineW: 26,
+    outlineW: 28,
     shadowAlpha: 0.95,
-    maxPx: 188,
+    maxPx: 200,
     position: 'top-left',
     gradient: false,
-    hardShadow: { dx: 8, dy: 10, color: '#000' },
-    // ~5% of generations — vidIQ "yellow first word, white rest" with the
-    // same chunky outline + halo as the gradient style.
-    baseWeight: 1.5,
+    hardShadow: { dx: 9, dy: 10, color: '#000' },
+    baseWeight: 4,
     accentWord: 'first',
-    accentColor: '#FFC700',
-    innerStroke: { color: '#FFFFFF', width: 3 },
+    accentColor: '#FFD700',
+    innerStroke: { color: '#FFFFFF', width: 4 },
     tilt: 0,
   },
 ]
