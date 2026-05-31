@@ -35,10 +35,17 @@ create index if not exists creator_connections_catalog_budget_idx
   on public.creator_connections_catalog (has_budget_and_slots);
 create index if not exists creator_connections_catalog_imported_idx
   on public.creator_connections_catalog (imported_at desc);
--- (no GIN full-text index: the search route uses ILIKE on campaign_name +
---  brand, which is served by the brand b-tree index above. A GIN tsvector
---  index was tried initially but only slowed down bulk inserts on the
---  weekly 196k-row Amazon export without speeding up any actual query.)
+-- pg_trgm GIN indexes so the user-facing keyword search (ILIKE) can use
+-- an index instead of full-scanning 470k rows. Without these the search
+-- route times out on any non-trivial dataset. Trigram indexes are faster
+-- to maintain on bulk insert than tsvector GIN, so worth the upfront cost.
+create extension if not exists pg_trgm;
+create index if not exists creator_connections_catalog_name_trgm_idx
+  on public.creator_connections_catalog
+  using gin (campaign_name gin_trgm_ops);
+create index if not exists creator_connections_catalog_brand_trgm_idx
+  on public.creator_connections_catalog
+  using gin (brand gin_trgm_ops);
 
 alter table public.creator_connections_catalog enable row level security;
 create policy "Authenticated read" on public.creator_connections_catalog
