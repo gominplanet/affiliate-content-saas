@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.22
+ * Version: 1.0.23
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.22');
+define('MVP_AFFILIATE_VERSION', '1.0.23');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -254,6 +254,42 @@ add_filter('the_content', function ($content) {
     }
     return $output;
 });
+
+// ─── 7b. Reviewer Trust Block (top of every single post) ──────────────────────
+// Renders an inline author byline directly above the post content based on
+// the user's blog_customizations.authorBlock config (set in /customize on
+// the MVP dashboard). Plugin-side rendering means it shows on EVERY post —
+// including ones generated before this feature existed — and re-renders
+// instantly when the user changes their config (no post re-generation).
+//
+// Disable: customize → Reviewer Trust Block → toggle off.
+add_filter('the_content', function ($content) {
+    if (!is_singular('post')) return $content;
+    $data = mvp_affiliate_get_data();
+    $ab = $data['authorBlock'] ?? null;
+    if (!$ab || empty($ab['enabled'])) return $content;
+    $name    = trim((string) ($ab['name'] ?? ''));
+    $tagline = trim((string) ($ab['tagline'] ?? ''));
+    if (!$name || !$tagline) return $content;
+    $photo     = esc_url((string) ($ab['photoUrl']  ?? ''));
+    $link      = esc_url((string) ($ab['linkUrl']   ?? ''));
+    $linkLabel = trim((string) ($ab['linkLabel'] ?? 'More about me'));
+    if (!$linkLabel) $linkLabel = 'More about me';
+
+    ob_start(); ?>
+<div class="gr-author-block" style="display:flex;align-items:flex-start;gap:14px;padding:14px 16px;margin:0 0 24px;border:1px solid #e5e5e7;border-left:4px solid #FFC200;border-radius:6px;background:#fafafa">
+  <?php if ($photo): ?>
+    <img src="<?php echo $photo; ?>" alt="<?php echo esc_attr($name); ?>" loading="lazy" style="flex-shrink:0;width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.1)" />
+  <?php endif; ?>
+  <div style="flex:1;min-width:0">
+    <p style="margin:0;font-size:11px;font-weight:800;color:#86868b;text-transform:uppercase;letter-spacing:.8px">Reviewed by</p>
+    <p style="margin:2px 0 6px;font-size:15px;font-weight:700;color:#1d1d1f;line-height:1.2"><?php echo esc_html($name); ?></p>
+    <p style="margin:0;font-size:13px;color:#3a3a3c;line-height:1.5"><?php echo esc_html($tagline); ?><?php if ($link): ?> <a href="<?php echo $link; ?>" target="_blank" rel="noopener" style="color:#0071e3;text-decoration:none;font-weight:600;white-space:nowrap"><?php echo esc_html($linkLabel); ?> →</a><?php endif; ?></p>
+  </div>
+</div>
+    <?php
+    return ob_get_clean() . $content;
+}, 5);  // priority 5 so this runs BEFORE the in-content ads filter at 10
 
 // ─── 8. Query fixes ───────────────────────────────────────────────────────────
 add_action('pre_get_posts', function (WP_Query $query) {
