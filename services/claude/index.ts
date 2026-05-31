@@ -399,6 +399,19 @@ Use exactly this structure with {VIDEO_ID} replaced:
 @media(max-width:600px){.gr-verdict-cols{grid-template-columns:1fr}.gr-rating-box{flex-direction:column;align-items:flex-start}}
 .gr-tags{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
 .gr-tags span{display:inline-block;background:#f0f0f0;color:#555;font-size:12px;font-weight:600;padding:5px 14px;border-radius:20px;letter-spacing:.02em}
+.gr-scorecard{background:#fff;border:2px solid #111;border-radius:4px;padding:20px 24px;margin:0 0 32px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center}
+.gr-scorecard .gr-sc-overall{display:flex;flex-direction:column;align-items:center;justify-content:center;padding-right:24px;border-right:2px solid #f0f0f0}
+.gr-scorecard .gr-sc-num{font-size:54px;font-weight:900;color:#111;line-height:1;letter-spacing:-2px}
+.gr-scorecard .gr-sc-out{font-size:16px;color:#86868b;margin-top:2px}
+.gr-scorecard .gr-sc-stars{font-size:18px;color:#FFC200;margin-top:6px;letter-spacing:1px}
+.gr-scorecard .gr-sc-label{font-size:10px;font-weight:800;color:#86868b;letter-spacing:1.5px;text-transform:uppercase;margin-top:4px}
+.gr-scorecard .gr-sc-subs{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px}
+.gr-scorecard .gr-sc-sub{display:flex;align-items:center;gap:10px;font-size:13px}
+.gr-scorecard .gr-sc-sub-name{flex-shrink:0;min-width:90px;font-weight:600;color:#111}
+.gr-scorecard .gr-sc-sub-bar{flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden;position:relative}
+.gr-scorecard .gr-sc-sub-bar > span{display:block;height:100%;background:linear-gradient(90deg,#FFC200,#FF6B00);border-radius:3px}
+.gr-scorecard .gr-sc-sub-num{flex-shrink:0;font-weight:700;font-size:13px;color:#111;min-width:32px;text-align:right}
+@media(max-width:600px){.gr-scorecard{grid-template-columns:1fr;gap:18px}.gr-scorecard .gr-sc-overall{border-right:none;border-bottom:2px solid #f0f0f0;padding-right:0;padding-bottom:14px;flex-direction:row;gap:14px}.gr-scorecard .gr-sc-subs{grid-template-columns:1fr}}
 </style>
 <div class="gr-video-wrap">
   <div class="gr-video-label">Watch Our Review</div>
@@ -431,6 +444,54 @@ Use exactly this structure with {VIDEO_ID} replaced:
     </div>
   </div>
 </div>
+
+[3b] SCORECARD (HTML block, immediately after the Quick Verdict)
+This gives readers at-a-glance trust + drives Google rich snippets via the Review schema (the overall score is what shows as stars in search results). The 4 subscore bars are visual only — derived from the transcript, not invented. If the video clearly doesn't speak to one of the four dimensions, you may still infer a score from how the reviewer talks (enthusiasm, ease of setup mentions, comparisons to other products, etc.) — but ground every number in something the transcript actually shows.
+
+Score guide (1-5, decimals allowed, e.g. 4.5):
+  - Value     = price-for-what-you-get based on what the reviewer said about cost
+  - Quality   = build quality + performance the reviewer demonstrated
+  - Ease      = setup, daily use, learning curve from the transcript
+  - Durability = how it held up / how it's expected to hold up
+
+The 4 subscores should average roughly to the Overall — small differences are fine and realistic. Don't make them all the same number.
+
+Bar widths: convert score to percentage (e.g. 4.5 → 90%, 4.0 → 80%, 3.5 → 70%).
+
+Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 → "★★★★½".
+
+<!-- wp:html -->
+<div class="gr-scorecard">
+  <div class="gr-sc-overall">
+    <div class="gr-sc-num">{X.X}</div>
+    <div class="gr-sc-out">/5</div>
+    <div class="gr-sc-stars">{star row}</div>
+    <div class="gr-sc-label">Overall</div>
+  </div>
+  <div class="gr-sc-subs">
+    <div class="gr-sc-sub">
+      <span class="gr-sc-sub-name">Value</span>
+      <span class="gr-sc-sub-bar"><span style="width:{Y0}%"></span></span>
+      <span class="gr-sc-sub-num">{Y.Y}</span>
+    </div>
+    <div class="gr-sc-sub">
+      <span class="gr-sc-sub-name">Quality</span>
+      <span class="gr-sc-sub-bar"><span style="width:{Y1}%"></span></span>
+      <span class="gr-sc-sub-num">{Y.Y}</span>
+    </div>
+    <div class="gr-sc-sub">
+      <span class="gr-sc-sub-name">Ease of Use</span>
+      <span class="gr-sc-sub-bar"><span style="width:{Y2}%"></span></span>
+      <span class="gr-sc-sub-num">{Y.Y}</span>
+    </div>
+    <div class="gr-sc-sub">
+      <span class="gr-sc-sub-name">Durability</span>
+      <span class="gr-sc-sub-bar"><span style="width:{Y3}%"></span></span>
+      <span class="gr-sc-sub-num">{Y.Y}</span>
+    </div>
+  </div>
+</div>
+<!-- /wp:html -->
 
 [4] BODY — 7 REQUIRED SECTIONS (WordPress heading + paragraph blocks)
 

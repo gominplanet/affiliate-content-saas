@@ -83,11 +83,16 @@ export function injectPriceStrip(content: string, opts: PriceStripOptions): stri
   // Idempotency: avoid double-stacking on a rebuild.
   if (content.includes('class="gr-price-strip"')) return content
 
-  // Locate the close of the verdict box. The opening lives on
-  // `<div class="gr-verdict-box">`. We need the MATCHING closing </div>,
-  // not the first one we see (the verdict box contains nested divs for the
-  // buy/skip columns). Walk depth.
-  const openIdx = content.indexOf('class="gr-verdict-box"')
+  // Locate the close of the LATER of (a) the scorecard block, if present,
+  // and (b) the verdict box. The opening of each lives on
+  // `<div class="gr-scorecard">` / `<div class="gr-verdict-box">`. We need
+  // the MATCHING closing </div> — those blocks contain nested divs.
+  // Strategy: try scorecard first (newer block, comes after verdict in the
+  // template), fall back to verdict-box if no scorecard was emitted (e.g.
+  // story-format posts).
+  const scorecardIdx = content.indexOf('class="gr-scorecard"')
+  const verdictIdx = content.indexOf('class="gr-verdict-box"')
+  const openIdx = scorecardIdx !== -1 ? scorecardIdx : verdictIdx
   if (openIdx === -1) return content
   // Back up to the `<div` that owns this class attribute.
   const divStart = content.lastIndexOf('<div', openIdx)
