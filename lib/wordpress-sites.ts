@@ -29,7 +29,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/types/database'
-import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { normalizeTier, type Tier } from '@/lib/tier'
 
 type Client = SupabaseClient<Database>
 
@@ -65,8 +65,7 @@ export async function canAddSite(
   tier: Tier,
 ): Promise<{ allowed: boolean; current: number; cap: number }> {
   const { count } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
   const current = count ?? 0
@@ -84,15 +83,14 @@ export async function listSites(
   userId: string,
 ): Promise<WordPressSite[]> {
   const { data, error } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .select('id, label, url, username, app_password, api_token, is_default, display_order')
     .eq('user_id', userId)
     .order('is_default', { ascending: false })
     .order('display_order', { ascending: true })
     .order('created_at', { ascending: true })
   if (error || !data) return []
-  return (data as unknown as WordPressSiteRow[]).map(rowToSite)
+  return (data).map(rowToSite)
 }
 
 /** Default site for the user — what generations + publish actions target
@@ -108,26 +106,24 @@ export async function getDefaultSite(
 ): Promise<WordPressSite | null> {
   // 1. Prefer the new table — that's the post-migration source of truth.
   const { data } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .select('id, label, url, username, app_password, api_token, is_default, display_order')
     .eq('user_id', userId)
     .eq('is_default', true)
     .maybeSingle()
-  if (data) return rowToSite(data as unknown as WordPressSiteRow)
+  if (data) return rowToSite(data)
 
   // 2. No default? Take whatever ONE site they have — handles the edge case
   //    where a user has sites but none is_default (shouldn't happen because
   //    backfill marks one true, but a partial restore could).
   const { data: any1 } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .select('id, label, url, username, app_password, api_token, is_default, display_order')
     .eq('user_id', userId)
     .order('created_at', { ascending: true })
     .limit(1)
     .maybeSingle()
-  if (any1) return rowToSite(any1 as unknown as WordPressSiteRow)
+  if (any1) return rowToSite(any1)
 
   // 3. Bridge: read from legacy integrations columns. Lets Phase 1 ship
   //    without breaking every WP route for users whose backfill somehow
@@ -168,13 +164,12 @@ export async function getSite(
     return getDefaultSite(supabase, userId)
   }
   const { data } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .select('id, label, url, username, app_password, api_token, is_default, display_order')
     .eq('user_id', userId)
     .eq('id', siteId)
     .maybeSingle()
-  return data ? rowToSite(data as unknown as WordPressSiteRow) : null
+  return data ? rowToSite(data) : null
 }
 
 /** Mark a site as default. Atomic: clears the previous default in the
@@ -191,16 +186,14 @@ export async function setDefaultSite(
   // Clear the existing default first. The partial unique index would reject
   // the new is_default = true if we didn't unset the old one first.
   const { error: clearErr } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .update({ is_default: false })
     .eq('user_id', userId)
     .eq('is_default', true)
   if (clearErr) return { ok: false, error: clearErr.message }
 
   const { error } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .update({ is_default: true })
     .eq('user_id', userId)
     .eq('id', siteId)
@@ -234,8 +227,7 @@ export async function addSite(
   }
   const isFirst = cap.current === 0
   const { data, error } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .insert({
       user_id: userId,
       label: input.label.trim() || (isFirst ? 'Main' : `Site ${cap.current + 1}`),
@@ -249,7 +241,7 @@ export async function addSite(
     .select('id, label, url, username, app_password, api_token, is_default, display_order')
     .single()
   if (error || !data) return { ok: false, error: error?.message || 'Insert failed' }
-  return { ok: true, site: rowToSite(data as unknown as WordPressSiteRow) }
+  return { ok: true, site: rowToSite(data) }
 }
 
 /** Remove a site. Refuses to delete the last site (forces the user to
@@ -272,8 +264,7 @@ export async function removeSite(
   if (!target) return { ok: false, error: 'Site not found' }
 
   const { error } = await supabase
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .from('wordpress_sites' as any)
+    .from('wordpress_sites')
     .delete()
     .eq('user_id', userId)
     .eq('id', siteId)

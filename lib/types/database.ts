@@ -212,6 +212,7 @@ export type Database = {
           user_id: string
           video_id: string | null
           wordpress_post_id: number | null
+          wordpress_site_id: string | null
           wordpress_url: string | null
         }
         Insert: {
@@ -256,6 +257,7 @@ export type Database = {
           user_id: string
           video_id?: string | null
           wordpress_post_id?: number | null
+          wordpress_site_id?: string | null
           wordpress_url?: string | null
         }
         Update: {
@@ -300,6 +302,7 @@ export type Database = {
           user_id?: string
           video_id?: string | null
           wordpress_post_id?: number | null
+          wordpress_site_id?: string | null
           wordpress_url?: string | null
         }
         Relationships: [
@@ -315,6 +318,13 @@ export type Database = {
             columns: ["video_id"]
             isOneToOne: false
             referencedRelation: "youtube_videos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blog_posts_wordpress_site_id_fkey"
+            columns: ["wordpress_site_id"]
+            isOneToOne: false
+            referencedRelation: "wordpress_sites"
             referencedColumns: ["id"]
           },
         ]
@@ -1647,6 +1657,51 @@ export type Database = {
           script?: Json
           style?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      wordpress_sites: {
+        Row: {
+          api_token: string | null
+          app_password: string
+          blog_customizations: Json | null
+          created_at: string
+          display_order: number
+          id: string
+          is_default: boolean
+          label: string | null
+          updated_at: string
+          url: string
+          user_id: string
+          username: string
+        }
+        Insert: {
+          api_token?: string | null
+          app_password: string
+          blog_customizations?: Json | null
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_default?: boolean
+          label?: string | null
+          updated_at?: string
+          url: string
+          user_id: string
+          username: string
+        }
+        Update: {
+          api_token?: string | null
+          app_password?: string
+          blog_customizations?: Json | null
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_default?: boolean
+          label?: string | null
+          updated_at?: string
+          url?: string
+          user_id?: string
+          username?: string
         }
         Relationships: []
       }
