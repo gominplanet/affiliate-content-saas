@@ -3374,7 +3374,7 @@ export default function ContentPage() {
   return (
     <>
       <Header
-        title="Library and Social Push"
+        title="Library"
         subtitle={
           loading ? 'Loading…' :
           activeTab === 'scheduled'

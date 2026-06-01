@@ -25,14 +25,25 @@ const config: Config = {
         },
       },
       fontFamily: {
+        // Inter Variable + Geist Mono are loaded via next/font in app/layout.tsx
+        // and exposed as CSS variables. System-font fallback ONLY kicks in if
+        // next/font fails (rare) — never serves a different font to Windows /
+        // Android users like the old SF Pro stack did.
         sans: [
+          'var(--font-sans)',
           '-apple-system',
           'BlinkMacSystemFont',
-          '"SF Pro Display"',
-          '"SF Pro Text"',
-          '"Helvetica Neue"',
-          'Arial',
+          '"Segoe UI"',
+          'Roboto',
           'sans-serif',
+        ],
+        mono: [
+          'var(--font-mono)',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'monospace',
         ],
       },
       boxShadow: {

@@ -201,7 +201,7 @@ export default function CollaborationsPage() {
   return (
     <>
       <Header
-        title="Collaborations"
+        title="Brand Deals"
         subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work — ready to copy and send. Pro feature."
       />
 

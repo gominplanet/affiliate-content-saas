@@ -116,8 +116,8 @@ const navGroups: NavGroup[] = [
       // sits before Co-Pilot (which is post-production metadata).
       { href: '/script', label: 'Video Script & Shot List', icon: FileVideo, matchKind: 'prefix' },
       { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' },
-      { href: '/content', label: 'Library & Social Push', icon: PlaySquare, matchKind: 'prefix' },
-      { href: '/comparison', label: 'Comparison & Guides', icon: Scale, matchKind: 'prefix' },
+      { href: '/content', label: 'Library', icon: PlaySquare, matchKind: 'prefix' },
+      { href: '/comparison', label: 'Compare & Guides', icon: Scale, matchKind: 'prefix' },
       { href: '/instagram-burner', label: 'Instagram Burner', icon: Flame, matchKind: 'prefix' },
     ],
   },
@@ -128,7 +128,7 @@ const navGroups: NavGroup[] = [
     accent: '#34c759', // green — "grow"
     items: [
       { href: '/seo', label: 'SEO & Indexing', icon: Gauge, matchKind: 'prefix' },
-      { href: '/analytics', label: 'GL Analytics', icon: TrendingUp, matchKind: 'prefix' },
+      { href: '/analytics', label: 'Analytics', icon: TrendingUp, matchKind: 'prefix' },
     ],
   },
   {
@@ -137,7 +137,7 @@ const navGroups: NavGroup[] = [
     icon: Handshake,
     accent: '#ff9500', // orange — "deals"
     items: [
-      { href: '/campaigns', label: 'Creator Connections & EPC', icon: Megaphone, matchKind: 'prefix' },
+      { href: '/campaigns', label: 'Creator Campaigns', icon: Megaphone, matchKind: 'prefix' },
       { href: '/collaborations', label: 'Brand Deals', icon: Handshake, matchKind: 'prefix' },
     ],
   },

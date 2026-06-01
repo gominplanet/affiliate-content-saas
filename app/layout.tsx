@@ -1,7 +1,24 @@
 import type { Metadata, Viewport } from 'next'
+import { Inter, Geist_Mono } from 'next/font/google'
 import Script from 'next/script'
 import { ThemeProvider } from 'next-themes'
 import './globals.css'
+
+// Self-hosted, subset-optimized, variable fonts via next/font. Loading these
+// at the root layout means every page (dashboard + marketing) gets crisp,
+// consistent typography on every OS — including Windows + Android, which
+// don't have SF Pro and were rendering Arial under the old stack.
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-sans',
+})
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-mono',
+})
 
 export const metadata: Metadata = {
   title: {
@@ -26,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // dev/preview builds without the env var don't fire the script.
   const rewardfulKey = process.env.NEXT_PUBLIC_REWARDFUL_KEY
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${geistMono.variable}`}>
       <body suppressHydrationWarning>
         {rewardfulKey && (
           <>

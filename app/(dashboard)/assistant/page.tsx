@@ -161,7 +161,7 @@ export default function AssistantPage() {
           <button onClick={newChat} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]">
             <Plus size={13} /> New chat
           </button>
-          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40" title="What the assistant remembers about you — view, import from ChatGPT/others, or clear">
+          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40" title="What MVP remembers about you — view, import from another AI tool, or clear">
             <Brain size={13} /> Memory
           </button>
           <div className="flex-1 overflow-y-auto flex flex-col gap-1">
@@ -254,7 +254,7 @@ export default function AssistantPage() {
               </div>
               <button onClick={() => setMemoryOpen(false)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"><X size={16} /></button>
             </div>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">This is what your assistant remembers about you across all chats. It updates itself as you talk — and you can seed it by importing your history from ChatGPT, Claude, or anywhere else.</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">This is what MVP remembers about you across all chats. It updates itself as you talk — and you can seed it by importing your history from any AI tool you&apos;ve been using.</p>
 
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#86868b] mb-1">Current memory</label>
             <div className="rounded-lg border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#0a0a0a] p-3 text-xs text-[#1d1d1f] dark:text-[#f5f5f7] whitespace-pre-wrap min-h-[60px] mb-4">
@@ -267,7 +267,7 @@ export default function AssistantPage() {
               value={importText}
               onChange={e => setImportText(e.target.value)}
               rows={5}
-              placeholder="Paste your ChatGPT/Claude export or notes here…"
+              placeholder="Paste your assistant export or notes here…"
               className="input-field w-full text-xs mb-2"
             />
             <input ref={fileRef} type="file" accept=".txt,.md,.json,.csv,text/plain" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const t = await f.text(); setImportText(prev => (prev ? prev + '\n\n' : '') + t.slice(0, 200000)) } e.target.value = '' }} />

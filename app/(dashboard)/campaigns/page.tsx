@@ -861,7 +861,7 @@ function CampaignsInner() {
                       </span>
                     )}
                     {c.hero_kind === 'product' && (
-                      <span className="inline-flex items-center gap-1 text-[#ff9500]" title="OpenAI was unavailable — used the product photo letterboxed to 16:9 instead of an AI hero">
+                      <span className="inline-flex items-center gap-1 text-[#ff9500]" title="MVP couldn't generate an AI hero this time — used the product photo letterboxed to 16:9 instead.">
                         <AlertCircle size={10} /> Product photo (no AI hero)
                       </span>
                     )}
