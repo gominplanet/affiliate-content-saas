@@ -163,21 +163,32 @@ export const KNOWN_PLUGINS: Record<string, PluginFix> = {
   },
 }
 
-/** Edge-layer (CDN/WAF) block — the request never reaches WordPress PHP.
- *  Detected when /wp-json/ returns HTML instead of JSON (a security
- *  interstitial / "you have been blocked" page). The fix is host-side
- *  and not plugin-specific. */
+/** Edge-layer (CDN/WAF/security plugin) block — the request never reaches
+ *  WordPress REST API. Detected when /wp-json/ returns HTML instead of
+ *  JSON (a security interstitial / "you have been blocked" page).
+ *
+ *  Multiple things can produce this signature: a CDN (Cloudflare),
+ *  a host WAF (Hostinger / SiteGround managed firewall), or a
+ *  security PLUGIN that runs before REST routing (Wordfence's
+ *  "Live Traffic block" can serve an HTML interstitial too).
+ *
+ *  Steps walk through the most-common causes in order of probability
+ *  for affiliate creators. Wordfence is #1 because it's installed on
+ *  ~30% of WP sites and its default settings block server-IP requests
+ *  to /wp-json/. */
 export const EDGE_BLOCK_FIX: PluginFix = {
   id: 'edge-block',
-  label: 'CDN / WAF (edge block)',
-  summary: 'A CDN or WAF is blocking server-to-server requests to your /wp-json/ entirely — WordPress never sees them.',
+  label: 'CDN, WAF, or security plugin (edge block)',
+  summary: 'Something between MVP and your WordPress REST API is blocking server-to-server requests — usually a security plugin like Wordfence, a host WAF (SiteGround, Hostinger), or a CDN (Cloudflare).',
   severity: 'block',
   steps: [
-    'Identify your CDN / WAF: in a browser, open developer tools → Network → reload your homepage → check response headers for cf-ray (Cloudflare), server: cloudflare, x-sucuri-id (Sucuri), or server: LiteSpeed (Hostinger/SiteGround).',
+    'Identify what is blocking. (a) In wp-admin → Plugins, check if Wordfence or SiteGround Security is active. (b) In a browser, open developer tools → Network → reload your homepage → check response headers for cf-ray (Cloudflare), x-sucuri-id (Sucuri), or server: LiteSpeed (Hostinger/SiteGround).',
+    'WORDFENCE (most common — try this first if installed): wp-admin → Wordfence → All Options → search the page for "Allowlisted URLs" (under Firewall Options) → add this exact line: */wp-json/* → Save Changes. Then check Wordfence → Tools → Live Traffic for recent server-IP blocks and unblock them if you see any.',
+    'SITEGROUND SECURITY plugin (different from Site Scanner — Site Scanner is SG\'s paid malware scanner, not relevant here): wp-admin → SG Security → Site Security → turn OFF "Limit Login Attempts" temporarily, and disable any "Block XML-RPC" or "REST API" toggles.',
+    'SITEGROUND host WAF: Site Tools (in your SiteGround client area, not WordPress) → Security → Web Application Firewall → disable for your domain OR add /wp-json/* to allowed URLs.',
     'CLOUDFLARE: dash.cloudflare.com → your domain → Security → WAF → Custom Rules → create rule: When URI Path "starts with" /wp-json/, Action: Skip (check all WAF features). Also: Security → Bots → turn OFF Bot Fight Mode.',
     'HOSTINGER: hPanel → Security → Web Application Firewall → either disable WAF OR add /wp-json/* to allowed URLs.',
-    'SITEGROUND: Site Tools → Security → Site Scanner / Web App Firewall — disable REST API protection for your domain.',
-    'After making the change, wait 1–2 minutes for it to deploy, then click "Re-test connection".',
+    'After making the change, wait 1–2 minutes for it to deploy, then click "Re-test connection" above.',
   ],
 }
 
