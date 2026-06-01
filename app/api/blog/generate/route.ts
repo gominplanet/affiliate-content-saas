@@ -168,7 +168,7 @@ async function handleGenerate(request: Request) {
   // or any prior generate run) instead of creating a duplicate that fights the
   // old one for the same slug.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existingForLimit } = await (supabase as any)
+  const { data: existingForLimit } = await supabase
     .from('blog_posts')
     .select('id, rewrite_count, wordpress_post_id, slug')
     .eq('user_id', user.id)
@@ -187,7 +187,7 @@ async function handleGenerate(request: Request) {
     // Manual editing in WordPress is always available; this gate stops the
     // expensive AI rewrite path from being triggered by non-Pro tiers.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('tier')
       .eq('user_id', user.id)
@@ -295,7 +295,7 @@ async function handleGenerate(request: Request) {
   if (!transcript && youtubeVideoIdForTranscript) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: integ } = await (supabase as any)
+      const { data: integ } = await supabase
         .from('integrations')
         .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
         .eq('user_id', user.id).single()
@@ -328,7 +328,7 @@ async function handleGenerate(request: Request) {
   if (transcript && transcriptSource !== 'cache') {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
+      await supabase
         .from('youtube_videos')
         .update({ transcript, transcript_fetched_at: new Date().toISOString() })
         .eq('id', videoId)
@@ -459,7 +459,7 @@ async function handleGenerate(request: Request) {
   }
   if (productUrl) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('youtube_videos').update({ product_url: productUrl }).eq('id', videoId)
+    await supabase.from('youtube_videos').update({ product_url: productUrl }).eq('id', videoId)
   }
 
   // ── Persistent feedback: every "what was missing" note this user
@@ -467,7 +467,7 @@ async function handleGenerate(request: Request) {
   // and apply to every new generation — the AI keeps learning what
   // this user actually wants.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: feedbackRows } = await (supabase as any)
+  const { data: feedbackRows } = await supabase
     .from('blog_posts')
     .select('last_rewrite_feedback,published_at')
     .eq('user_id', user.id)
@@ -486,7 +486,7 @@ async function handleGenerate(request: Request) {
   // mirror) and posts without content. Shortened to ~1200 chars each
   // to keep the prompt budget reasonable.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: priorRows } = await (supabase as any)
+  const { data: priorRows } = await supabase
     .from('blog_posts')
     .select('title,content,video_id')
     .eq('user_id', user.id)
@@ -511,7 +511,7 @@ async function handleGenerate(request: Request) {
   // AFTER it's written and surface the best 2–3 as a "Related reviews" block —
   // real topical internal linking, not random related. Best-effort.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: linkRows } = await (supabase as any)
+  const { data: linkRows } = await supabase
     .from('blog_posts')
     .select('title,wordpress_url,seo_keyword,post_type,content')
     .eq('user_id', user.id)
@@ -850,7 +850,7 @@ async function handleGenerate(request: Request) {
 
   // ── 9. Save to blog_posts (upsert so re-generates update the WP post ID) ──
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existingPost } = await (supabase as any)
+  const { data: existingPost } = await supabase
     .from('blog_posts')
     .select('id')
     .eq('user_id', user.id)
@@ -905,7 +905,7 @@ async function handleGenerate(request: Request) {
   let savedPost
   if (ep?.id) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from('blog_posts')
       .update(blogPayload)
       .eq('id', ep.id)
@@ -914,7 +914,7 @@ async function handleGenerate(request: Request) {
     savedPost = data
   } else {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from('blog_posts')
       .insert(blogPayload)
       .select()
@@ -930,7 +930,7 @@ async function handleGenerate(request: Request) {
   if (savedPost?.id && (generated.seoKeyword || generated.metaDescription)) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
+      await supabase
         .from('blog_posts')
         .update({
           seo_keyword: generated.seoKeyword || null,
@@ -961,7 +961,7 @@ async function handleGenerate(request: Request) {
     // it writes to their own channel; needs YouTube OAuth. Fully best-effort.
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: ytRow } = await (supabase as any)
+      const { data: ytRow } = await supabase
         .from('integrations')
         .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry,yt_backlink_enabled')
         .eq('user_id', user.id)
@@ -1074,7 +1074,7 @@ async function handleGenerate(request: Request) {
         try { await wpService.updatePost(wpPost.id, { content }) } catch { /* keep prior text */ }
         if (savedPost?.id) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          try { await (supabase as any).from('blog_posts').update({ content }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+          try { await supabase.from('blog_posts').update({ content }).eq('id', savedPost.id) } catch { /* non-fatal */ }
         }
       }
     } catch { /* non-fatal — keep the generated text */ }
@@ -1114,7 +1114,7 @@ async function handleGenerate(request: Request) {
           try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch { /* keep text-only post */ }
           if (savedPost?.id) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            try { await supabase.from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', savedPost.id) } catch { /* non-fatal */ }
           }
         }
       } catch { /* non-fatal — the published text post stands */ }
@@ -1327,7 +1327,7 @@ async function handleGenerate(request: Request) {
             }
             if (savedPost?.id) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              try { await (supabase as any).from('blog_posts').update({ content: finalContent }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+              try { await supabase.from('blog_posts').update({ content: finalContent }).eq('id', savedPost.id) } catch { /* non-fatal */ }
             }
           }
 
@@ -1336,7 +1336,7 @@ async function handleGenerate(request: Request) {
           // stop having to grep Vercel logs to know if image-gen worked.
           if (savedPost?.id) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            try { await (supabase as any).from('blog_posts').update({ body_images_count: uploaded.length }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            try { await supabase.from('blog_posts').update({ body_images_count: uploaded.length }).eq('id', savedPost.id) } catch { /* non-fatal */ }
           }
         }
       } catch (e) {
@@ -1345,7 +1345,7 @@ async function handleGenerate(request: Request) {
         console.warn('[blog-images] AI-generation branch threw:', e instanceof Error ? e.message : String(e))
         if (savedPost?.id) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          try { await (supabase as any).from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+          try { await supabase.from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }
         }
       }
     }
@@ -1391,7 +1391,7 @@ async function logFailure(
   errorMessage: string,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('job_failures').insert({
+  await supabase.from('job_failures').insert({
     user_id: userId,
     video_id: videoId,
     job_type: jobType,
