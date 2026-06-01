@@ -12,6 +12,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { metaEnabled } from '@/lib/feature-flags'
 import { Suspense } from 'react'
 import { TutorialVideo } from '@/components/TutorialVideo'
+import WordPressSitesManager from '@/components/dashboard/WordPressSitesManager'
 
 type Mode = 'existing' | 'new' | null
 type Step = 1 | 2 | 3 | 4 | 5
@@ -2236,6 +2237,26 @@ function SetupPageInner() {
         <TabBar />
         <TutorialVideo sectionKey="integrations" />
         <IntegrationsPanel onLoad={() => {}} />
+        {/* Multi-site WordPress manager — Pro feature. Renders only if the
+            user has at least one WP site connected; otherwise the existing
+            IntegrationsPanel above handles the empty-state connect flow. */}
+        <WordPressSitesManager />
+
+        {/* Connection doctor link — surfaces the diagnostic page that
+            detects security plugins / CDN WAFs blocking writes. Always
+            visible after Integrations so users can self-serve when
+            anything goes wrong with WP. */}
+        <div className="card p-4 mt-4 border border-gray-200 dark:border-white/10 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Posting trouble?</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
+              Run the connection doctor — it pinpoints the exact plugin or firewall blocking writes and gives you click-by-click fix steps.
+            </p>
+          </div>
+          <a href="/setup/wp-doctor" className="btn-secondary text-xs flex-shrink-0">
+            Run doctor →
+          </a>
+        </div>
       </div>
     )
   }
