@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { RefreshCw, TrendingUp, Users, Eye, PlaySquare } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { formatNumber } from '@/lib/utils'
 
 interface ChannelStatsData {
@@ -92,9 +93,17 @@ export default function ChannelStats() {
         <div className="flex items-center gap-2">
           <TrendingUp size={14} className="text-[#34c759]" />
           <span className="text-xs font-medium text-[#34c759]">Live</span>
-          <button onClick={handleSync} disabled={syncing} className="btn-secondary text-xs px-2.5 py-1.5 ml-1">
-            <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
-          </button>
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={handleSync}
+            disabled={syncing}
+            loading={syncing}
+            aria-label="Sync YouTube channel stats"
+            className="ml-1 h-8 w-8"
+            leftIcon={!syncing ? <RefreshCw size={12} /> : undefined}
+          />
+
         </div>
       </div>
 

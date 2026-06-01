@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
@@ -226,25 +227,29 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={url} alt="Product reference" className="w-7 h-7 rounded object-cover border border-gray-200 dark:border-white/10" />
           <button
+            type="button"
             onClick={() => inputRef.current?.click()}
             disabled={busy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-            style={{ background: '#FF2D78' }}
             title="Replace the product photo MVP uses to render the exact product"
+            className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-white whitespace-nowrap bg-[#FF2D78] hover:bg-[#ff4790] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Replace photo
+            {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+            Replace photo
           </button>
-          <button onClick={remove} disabled={busy} className="text-[11px] text-[#86868b] hover:text-[#ff3b30] disabled:opacity-60">Remove</button>
+          <Button variant="ghost" size="sm" onClick={remove} disabled={busy} className="text-[11px] text-[#86868b] hover:text-[#ff3b30] hover:bg-transparent">
+            Remove
+          </Button>
         </>
       ) : (
         <button
+          type="button"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-          style={{ background: '#FF2D78' }}
           title="Upload a clean product photo so MVP builds an exact representation of the product"
+          className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-white whitespace-nowrap bg-[#FF2D78] hover:bg-[#ff4790] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload product photo
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+          Upload product photo
         </button>
       )}
       {err && <span className="text-[10px] text-[#ff3b30]">{err}</span>}
@@ -1995,26 +2000,25 @@ function VideoCard({
                   {publishAllStep || 'Working…'}
                 </div>
               ) : publishAllUnlocked ? (
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={handlePublishAll}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
-                  style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+                  leftIcon={<Sparkles size={12} />}
                   title={post ? 'Post to all connected platforms that haven\'t been posted yet' : 'Generate blog post and publish to all connected platforms'}
                 >
-                  <Sparkles size={12} />
                   {post ? 'Publish to all' : 'Generate + publish all'}
-                </button>
+                </Button>
               ) : (
-                <a
+                <Link
                   href="/pricing"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90 relative"
-                  style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)', opacity: 0.85 }}
                   title="Publish All is a Pro feature — click to upgrade"
+                  className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-white whitespace-nowrap bg-gradient-to-br from-[#0071e3] to-[#7b61ff] opacity-90 hover:opacity-100 hover:shadow-md transition-all"
                 >
                   <Sparkles size={12} />
                   {post ? 'Publish to all' : 'Generate + publish all'}
                   <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-yellow-300 text-[#1d1d1f]">Pro</span>
-                </a>
+                </Link>
               ))}
               {/* Visit Link or Product — opens the first affiliate / product
                   link found in the video's description (Geniuslink, amzn.to,
@@ -2028,9 +2032,8 @@ function VideoCard({
                     href={link}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-[#1d1d1f] transition-opacity hover:opacity-90"
-                    style={{ background: '#FFC200' }}
                     title="Open the first product / affiliate link from the video description"
+                    className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-[#1d1d1f] whitespace-nowrap bg-[#FFC200] hover:bg-[#FFD000] hover:shadow-md transition-all"
                   >
                     <ExternalLink size={12} /> Visit Link or Product
                   </a>
@@ -3390,30 +3393,37 @@ export default function ContentPage() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={previewFixCategories}
+              loading={catPreviewLoading}
               disabled={catPreviewLoading || fixingCategories}
-              className="btn-secondary text-sm"
               title="Preview which category each post will be assigned to before applying"
             >
-              {catPreviewLoading
-                ? <><Loader2 size={14} className="animate-spin" /> Loading preview…</>
-                : 'Fix Categories'}
-            </button>
-            <button
+              {catPreviewLoading ? 'Loading preview…' : 'Fix Categories'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={previewFixAffiliate}
+              loading={affPreviewLoading}
               disabled={affPreviewLoading || affApplying}
-              className="btn-secondary text-sm"
               title="Scan published posts for broken affiliate links and repair them"
             >
-              {affPreviewLoading
-                ? <><Loader2 size={14} className="animate-spin" /> Scanning links…</>
-                : 'Fix Affiliate Links'}
-            </button>
+              {affPreviewLoading ? 'Scanning links…' : 'Fix Affiliate Links'}
+            </Button>
             {(activeTab === 'horizontal' || activeTab === 'vertical') && (
-              <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-sm">
-                {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing {syncProgress ? `(${syncProgress.pulled})` : ''}…</> : <><RefreshCw size={14} /> Sync videos</>}
-              </button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={syncVideos}
+                loading={syncing}
+                disabled={syncing}
+                leftIcon={!syncing ? <RefreshCw size={14} /> : undefined}
+              >
+                {syncing ? `Syncing${syncProgress ? ` (${syncProgress.pulled})` : ''}…` : 'Sync videos'}
+              </Button>
             )}
           </div>
         }
