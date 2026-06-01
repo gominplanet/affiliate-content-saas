@@ -14,7 +14,7 @@
  * Spec: https://developers.facebook.com/docs/development/create-an-app/app-dashboard/data-deletion-callback
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createHmac, timingSafeEqual } from 'crypto'
 
 function base64UrlDecode(s: string): Buffer {
@@ -76,9 +76,14 @@ export async function POST(request: NextRequest) {
   const userId = typeof payload.user_id === 'string' ? payload.user_id : null
 
   if (userId) {
-    const supabase = await createServerClient()
+    // Meta hits this endpoint server-to-server with NO Supabase cookie, so an
+    // SSR client gets the anon role and RLS blocks the UPDATE silently.
+    // Service-role client bypasses RLS, which is correct here: we've already
+    // verified the HMAC signature against FACEBOOK_APP_SECRET so we know the
+    // caller is Meta.
+    const admin = createAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').update({
+    await (admin as any).from('integrations').update({
       threads_access_token: null,
       threads_user_id: null,
     }).eq('threads_user_id', userId)

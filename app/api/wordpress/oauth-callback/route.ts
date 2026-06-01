@@ -22,7 +22,11 @@ export async function GET(request: Request) {
   const stateRaw = searchParams.get('state')
   const rejected = searchParams.get('rejected') === '1' || searchParams.get('success') === 'false'
   // eslint-disable-next-line no-console
-  console.log(`[wp-oauth-callback] hit state=${stateRaw ? 'present' : 'MISSING'} rejected=${rejected} site_url=${searchParams.get('site_url') || 'MISSING'} user_login=${searchParams.get('user_login') || 'MISSING'} pw=${searchParams.get('password') ? 'present' : 'MISSING'}`)
+  // Don't log user_login (PII — WP username) or site_url (creator's domain) at
+  // info level. Vercel logs are visible to anyone on the project + Vercel
+  // staff; we only need to know whether the params are present for
+  // troubleshooting, not their values.
+  console.log(`[wp-oauth-callback] hit state=${stateRaw ? 'present' : 'MISSING'} rejected=${rejected} site_url=${searchParams.get('site_url') ? 'present' : 'MISSING'} user_login=${searchParams.get('user_login') ? 'present' : 'MISSING'} pw=${searchParams.get('password') ? 'present' : 'MISSING'}`)
 
   // Always redirect back to the SAME hostname that hit this callback
   // (apex vs. www) so the user's Supabase auth cookie still applies and
@@ -146,7 +150,9 @@ export async function GET(request: Request) {
   }
 
   // eslint-disable-next-line no-console
-  console.log(`[wp-oauth-callback] SUCCESS userId=${state.userId} site=${wpSiteUrl} user=${userLogin} testOk=${testOk}`)
+  // Drop the WP username (PII) + site URL (identifies creator's domain) — log
+  // only userId (already in Vercel logs as part of session) + testOk for ops.
+  console.log(`[wp-oauth-callback] SUCCESS userId=${state.userId} testOk=${testOk}`)
   return setupUrl({
     wp_oauth: testOk ? 'connected' : 'connected_warn_host',
   })

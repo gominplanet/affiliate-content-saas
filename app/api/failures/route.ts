@@ -25,6 +25,14 @@ export async function PATCH(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id, status } = await req.json()
+  // Allowlist — the column is a free-form text in PG so without this any
+  // string the client sends becomes the new status. Most consumers gate
+  // logic off `status === 'dismissed'`, but a stray value would still
+  // accumulate noise + leave the row in a state no UI knows how to render.
+  const ALLOWED = new Set(['dismissed', 'resolved', 'open'])
+  if (typeof status !== 'string' || !ALLOWED.has(status)) {
+    return NextResponse.json({ error: 'Invalid status value' }, { status: 400 })
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('job_failures')

@@ -18,7 +18,11 @@ export async function GET(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
-  if (!allowed.some(h => hostname.endsWith(h))) {
+  // Tight match — `hostname.endsWith('fal.ai')` ALSO matches `evilfal.ai`,
+  // turning the proxy into an attacker-controlled image laundromat. Require
+  // an exact host match OR a real subdomain (suffix preceded by a literal
+  // dot), so `cdn.fal.ai` passes but `evilfal.ai` fails.
+  if (!allowed.some(h => hostname === h || hostname.endsWith('.' + h))) {
     return NextResponse.json({ error: 'URL not allowed' }, { status: 403 })
   }
 

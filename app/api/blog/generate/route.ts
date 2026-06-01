@@ -852,7 +852,13 @@ async function handleGenerate(request: Request) {
     .eq('video_id', videoId)
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+    // maybeSingle (not single) — first generate against a video has zero
+    // rows in blog_posts. single() throws PGRST116 on the zero-row case,
+    // which we logged but didn't act on, leaving existingPost undefined
+    // implicitly. Switching to maybeSingle returns { data: null, error: null }
+    // cleanly so the downstream "if (existingPost) update else insert"
+    // logic actually works on fresh videos.
+    .maybeSingle()
 
   // Extract the Geniuslink shortcode from the YouTube description so we can
   // tie it back to this post in /api/analytics/clicks. The link itself is
