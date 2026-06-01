@@ -1,35 +1,32 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 300
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-      .eq('user_id', user.id)
-      .single()
-
-    const wp = integration as Record<string, string> | null
-    if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+    // Multi-site: siteId targets a specific site. Omitted → default.
+    const body = await req.json().catch(() => ({})) as { siteId?: string | null }
+    const site = await getWordPressCredentials(supabase, user.id, body.siteId)
+    if (!site) {
       return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
     }
 
     const wpService = createWordPressService(
-      wp.wordpress_url,
-      wp.wordpress_username,
-      wp.wordpress_app_password,
-      wp.wordpress_api_token || undefined,
+      site.wordpress_url,
+      site.wordpress_username,
+      site.wordpress_app_password,
+      site.wordpress_api_token || undefined,
     )
 
-    const base = wp.wordpress_url.replace(/\/$/, '')
-    const auth = Buffer.from(`${wp.wordpress_username}:${wp.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')
+    const base = site.wordpress_url.replace(/\/$/, '')
+    const auth = Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')
     const headers = { Authorization: `Basic ${auth}` }
 
     const cssMarkers = [

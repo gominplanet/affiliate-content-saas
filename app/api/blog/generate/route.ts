@@ -25,6 +25,7 @@ import { fal } from '@fal-ai/client'
 import { recordUsage } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 /** Distinct camera perspectives cycled across a post's in-body images so
  *  no two shots look alike — each Kontext/flux call gets a different angle
@@ -142,8 +143,12 @@ async function handleGenerate(request: Request) {
      *  of returning 422. The article quality will be lower (no lived experiences
      *  to ground on), but it's there if the user really wants to force it. */
     allowEmptyTranscript?: boolean
+    /** Multi-site (Pro): UUID of the wordpress_sites row to publish this post
+     *  to. Omit / null → the user's default site (same behaviour as before
+     *  multi-site existed). Single-site users never send this. */
+    siteId?: string | null
   }
-  const { videoId, rewriteFeedback, allowEmptyTranscript } = body
+  const { videoId, rewriteFeedback, allowEmptyTranscript, siteId } = body
   // Default ON when omitted (older callers / bulk triggers) — the Content
   // page sends the explicit per-generation choice.
   const includeImages = body.includeImages !== false
@@ -170,7 +175,7 @@ async function handleGenerate(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existingForLimit } = await supabase
     .from('blog_posts')
-    .select('id, rewrite_count, wordpress_post_id, slug')
+    .select('id, rewrite_count, wordpress_post_id, slug, wordpress_site_id')
     .eq('user_id', user.id)
     .eq('video_id', videoId)
     .limit(1)
@@ -181,6 +186,14 @@ async function handleGenerate(request: Request) {
   // live URL + Google indexing history are preserved across the rebuild.
   const existingWpPostId: number | null = existingForLimit?.wordpress_post_id ?? null
   const existingSlug: string | null = existingForLimit?.slug ?? null
+  // Multi-site: if this is a rewrite and the existing post is tied to a
+  // specific wordpress_sites row, ROUTE THE REGENERATE TO THE SAME SITE
+  // regardless of which is currently default. Without this, a /content
+  // "Generate post" click on a Wine-blog post would re-publish to Main
+  // because that's the current default. body.siteId still wins when the
+  // caller explicitly picks a different site (we trust the caller's intent).
+  const existingSiteId: string | null =
+    (existingForLimit as { wordpress_site_id?: string | null } | null)?.wordpress_site_id ?? null
 
   if (isRewrite) {
     // ── Rewrite gate (Pro-only, once per post) ──────────────────────────────
@@ -268,7 +281,17 @@ async function handleGenerate(request: Request) {
   // Function-scope tier (the rewrite gate above has its own narrow copy).
   // Drives the per-tier in-body image ceiling via allowedBlogImages.
   const tier = normalizeTier(wp?.tier)
-  if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+  // Multi-site: resolve which WordPress site this generation publishes to.
+  // Priority order:
+  //   1. body.siteId — caller explicitly picked a site (UI dropdown).
+  //   2. existingSiteId — REWRITE of an existing post → stay on that site.
+  //   3. default site — fresh generation, no preference.
+  // The helper falls back to legacy integrations.wordpress_* if
+  // wordpress_sites hasn't been backfilled yet, so single-site users see
+  // no behaviour change.
+  const effectiveSiteId = siteId ?? existingSiteId
+  const site = await getWordPressCredentials(supabase, user.id, effectiveSiteId)
+  if (!site) {
     return NextResponse.json(
       { error: 'WordPress not connected. Add your WordPress credentials in Settings.' },
       { status: 400 },
@@ -370,7 +393,7 @@ async function handleGenerate(request: Request) {
     asinOverride = titleAsin || descAsin || null
     destination = `https://www.amazon.com/dp/${asinOverride}`
   } else {
-    const directProductUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
+    const directProductUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
     if (directProductUrl) {
       if (/(?:geni\.us|\bgnz\.)/i.test(directProductUrl)) {
         // Already a Geniuslink (could point anywhere) — keep it as-is.
@@ -544,7 +567,7 @@ async function handleGenerate(request: Request) {
   //         product facts. Creator/Pro/Admin (not Trial); best-effort.
   let productResearch: string | null = null
   if (tier === 'creator' || tier === 'pro' || tier === 'admin') {
-    const pUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
+    const pUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
     if (pUrl) {
       // HARD TIME BUDGET: research is best-effort enrichment, but the
       // fallback web_search can run 60–90s with no cap. Left unbounded it
@@ -728,11 +751,15 @@ async function handleGenerate(request: Request) {
   const slug = existingSlug || generated.slug.slice(0, 60)
 
   // ── 7. Resolve tag IDs ────────────────────────────────────────────────────
+  // Credentials come from `site` (multi-site resolver), not the legacy `wp`
+  // bag. This is how we route a generate to a specific WordPress site when
+  // siteId is provided in the body — the rest of `wp` (tier, amazon tag,
+  // geniuslink keys) is still per-user, not per-site.
   const wpService = createWordPressService(
-    wp.wordpress_url,
-    wp.wordpress_username,
-    wp.wordpress_app_password,
-    wp.wordpress_api_token || undefined,
+    site.wordpress_url,
+    site.wordpress_username,
+    site.wordpress_app_password,
+    site.wordpress_api_token || undefined,
   )
 
   // ── 7.05. Auto in-body images are generated AFTER the response is sent
@@ -824,7 +851,9 @@ async function handleGenerate(request: Request) {
   // Fire IndexNow (Bing / Copilot / Yandex) for near-instant crawling of the new
   // URL — fire-and-forget so a slow or rejected ping NEVER blocks the response.
   // Google doesn't participate; the daily GSC sweep covers Google.
-  void pingIndexNowForUrl(supabase, user.id, wpPost.link).catch(() => {})
+  // Multi-site: ping the SPECIFIC site's IndexNow key (each WP install has
+  // its own key). Pass effectiveSiteId so a Wine-blog post pings Wine's key.
+  void pingIndexNowForUrl(supabase, user.id, wpPost.link, effectiveSiteId).catch(() => {})
 
   // ── 8.5. Upload YouTube thumbnail as featured image ───────────────────────
   // Skip for rebuilds on legacy WP posts — the creator already has a featured
@@ -883,6 +912,12 @@ async function handleGenerate(request: Request) {
     status: 'published',
     wordpress_post_id: wpPost.id,
     wordpress_url: wpPost.link,
+    // Tag the post with the wordpress_sites row it was published to so
+    // /content can show "Wine Reviews" badges and per-site filters. Skip
+    // the 'legacy' sentinel (Phase-3 bridge): that means the user is still
+    // on legacy integrations.wordpress_* with no wordpress_sites row yet,
+    // and writing 'legacy' to a uuid column would error.
+    ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
     ai_model: 'claude-sonnet-4-6',
     generation_prompt_version: 'v3.0',
     published_at: new Date().toISOString(),
@@ -997,7 +1032,7 @@ async function handleGenerate(request: Request) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const b = brand as Record<string, any>
         const vrow = v as Record<string, unknown>
-        const wpBaseUrl = (wp.wordpress_url || '').replace(/\/$/, '')
+        const wpBaseUrl = (site.wordpress_url || '').replace(/\/$/, '')
         const catSlug = (generated.category || '').toLowerCase().replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
         const graph = buildReviewSchemaGraph({
           pageUrl: wpPost.link,
@@ -1017,7 +1052,7 @@ async function handleGenerate(request: Request) {
           },
           publisher: {
             name: (b.name as string) || 'MVP Affiliate',
-            url: wp.wordpress_url,
+            url: site.wordpress_url,
             logoUrl: (b.logo_url as string) || null,
             sameAs: [b.youtube_url, b.instagram_url, b.tiktok_url, b.website_url]
               .filter((u): u is string => typeof u === 'string' && /^https?:\/\//.test(u)),
@@ -1040,7 +1075,7 @@ async function handleGenerate(request: Request) {
           },
           faq: extractFaqFromHtml(content),
           breadcrumb: [
-            { name: 'Home', url: wpBaseUrl || wp.wordpress_url },
+            { name: 'Home', url: wpBaseUrl || site.wordpress_url },
             ...(generated.category && catSlug ? [{ name: generated.category, url: `${wpBaseUrl}/category/${catSlug}/` }] : []),
             { name: generated.title, url: wpPost.link },
           ],
@@ -1181,7 +1216,7 @@ async function handleGenerate(request: Request) {
           // instead of a text-only guess (the #1 cause of "wrong product"). The
           // Amazon path above already covers ASIN products; this fills the gap.
           if (!falProductImageUrl) {
-            let pageUrl = firstProductUrl(rawDescription, wp?.wordpress_url ?? null)
+            let pageUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
             if (pageUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
               pageUrl = await resolveFinalUrl(pageUrl) // unwrap short/geni.us links to the real page
             }

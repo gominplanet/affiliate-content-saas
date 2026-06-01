@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 300
 
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { dryRun = false } = await request.json().catch(() => ({}))
+    const { dryRun = false, siteId = null } = await request.json().catch(() => ({})) as { dryRun?: boolean; siteId?: string | null }
 
     // ── Fetch brand niches (the allowed category labels) ─────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,27 +42,24 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    // ── Fetch WP credentials ─────────────────────────────────────────────
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,tier')
-      .eq('user_id', user.id)
-      .single()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const wp = integration as Record<string, string> | null
-    if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+    // ── Fetch WP credentials (multi-site: pass siteId to target a specific
+    //    site; omit → default site). This bulk action operates on ONE site
+    //    per call — multi-site users run it once per site they want to
+    //    re-categorize. Splitting prevents accidental cross-site category
+    //    merges (a Wine site shouldn't borrow the Tech site's categories).
+    const site = await getWordPressCredentials(supabase, user.id, siteId)
+    if (!site) {
       return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
     }
 
-    const wpBase = wp.wordpress_url.replace(/\/$/, '')
-    const authHeader = `Basic ${Buffer.from(`${wp.wordpress_username}:${wp.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
+    const wpBase = site.wordpress_url.replace(/\/$/, '')
+    const authHeader = `Basic ${Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
 
     const wpService = createWordPressService(
-      wp.wordpress_url,
-      wp.wordpress_username,
-      wp.wordpress_app_password,
-      wp.wordpress_api_token || undefined,
+      site.wordpress_url,
+      site.wordpress_username,
+      site.wordpress_app_password,
+      site.wordpress_api_token || undefined,
     )
 
     // ── Fetch all published posts ────────────────────────────────────────
@@ -153,8 +151,13 @@ ${titlesList}`,
       }],
     })
 
+    // Tier comes from per-user integrations (separate from per-site creds).
+    // Fetched lazily here because the rest of bulk-categorize doesn't need it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tierRow } = await supabase
+      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     recordAnthropicUsage(response, {
-      userId: user.id, tier: wp?.tier,
+      userId: user.id, tier: (tierRow as { tier?: string } | null)?.tier,
       feature: 'bulk_categorize', model: 'claude-haiku-4-5-20251001',
     })
     const raw = (response.content[0] as { type: string; text: string }).text.trim()

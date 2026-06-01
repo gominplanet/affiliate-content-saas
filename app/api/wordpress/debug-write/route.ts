@@ -21,8 +21,9 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createServerClient()
   const { data: { user }, error: userErr } = await supabase.auth.getUser()
   if (userErr || !user) {
@@ -33,14 +34,14 @@ export async function GET() {
     }, { status: 401 })
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await supabase
-    .from('integrations')
-    .select('wordpress_url, wordpress_username, wordpress_app_password')
-    .eq('user_id', user.id)
-    .maybeSingle()
+  // Multi-site: ?siteId=<uuid> targets a specific site; omitted → default.
+  // Diagnostic runs against ONE site at a time — multi-site users can switch
+  // siteId in the URL to diagnose each install separately.
+  const url = new URL(req.url)
+  const siteId = url.searchParams.get('siteId')
+  const site = await getWordPressCredentials(supabase, user.id, siteId)
 
-  if (!integ?.wordpress_url || !integ?.wordpress_username || !integ?.wordpress_app_password) {
+  if (!site) {
     return NextResponse.json({
       ok: false,
       stage: 'no_connection',
@@ -48,9 +49,9 @@ export async function GET() {
     })
   }
 
-  const siteUrl = String(integ.wordpress_url).replace(/\/$/, '')
-  const username = String(integ.wordpress_username)
-  const password = String(integ.wordpress_app_password).replace(/\s+/g, '')
+  const siteUrl = site.wordpress_url.replace(/\/$/, '')
+  const username = site.wordpress_username
+  const password = site.wordpress_app_password.replace(/\s+/g, '')
   const basic = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
   const ua = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
 

@@ -20,6 +20,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import {
   renderNewsletterHtml,
   renderNewsletterText,
@@ -100,11 +101,14 @@ export async function POST(req: Request) {
   }
 
   // ── Load brand context for the Claude prompt + the email shell ─────────────
+  // wordpress_url comes from the default site (multi-site users have many;
+  // newsletter footer points at the default brand). Tier is per-user.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [{ data: brand }, { data: integ }, { data: nlSettings }] = await Promise.all([
+  const [{ data: brand }, { data: integ }, { data: nlSettings }, defaultSite] = await Promise.all([
     supabase.from('brand_profiles').select('name,author_name,niches,tone,writing_sample,headshot_url,logo_url').eq('user_id', user.id).maybeSingle(),
-    supabase.from('integrations').select('wordpress_url,tier').eq('user_id', user.id).maybeSingle(),
+    supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle(),
     supabase.from('newsletter_settings').select('sender_name,mailing_address').eq('user_id', user.id).maybeSingle(),
+    getWordPressCredentials(supabase, user.id),
   ])
 
   const brandName = (nlSettings?.sender_name as string) || (brand?.name as string) || 'My Newsletter'
@@ -211,7 +215,7 @@ RULES:
     curatedLinks,
     brand: {
       name: brandName,
-      siteUrl: (integ?.wordpress_url as string) || null,
+      siteUrl: defaultSite?.wordpress_url ?? null,
       logoUrl: (brand?.logo_url as string) || (brand?.headshot_url as string) || null,
       mailingAddress: (nlSettings?.mailing_address as string) || null,
       byline: authorName || null,

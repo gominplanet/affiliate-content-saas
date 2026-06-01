@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 // Uses the YouTube thumbnail as the featured image — no AI generation needed
 export const maxDuration = 30
@@ -39,23 +40,23 @@ async function handleImages(request: Request) {
 
   if (!videoId) return NextResponse.json({ error: 'No YouTube video linked to this post' }, { status: 400 })
 
-  // ── 2. Load WordPress credentials ────────────────────────────────────────
-  const { data: integration } = await supabase
-    .from('integrations')
-    .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-    .eq('user_id', user.id)
-    .single()
-
-  const wp = integration as Record<string, string> | null
-  if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+  // ── 2. Load WordPress credentials for the SAME site this post lives on
+  //       (multi-site: each post can be on a different WP install). The
+  //       post row already carries wordpress_site_id from publish-time.
+  const site = await getWordPressCredentials(
+    supabase,
+    user.id,
+    (p as { wordpress_site_id?: string | null }).wordpress_site_id,
+  )
+  if (!site) {
     return NextResponse.json({ error: 'WordPress credentials missing' }, { status: 400 })
   }
 
   const wpService = createWordPressService(
-    wp.wordpress_url,
-    wp.wordpress_username,
-    wp.wordpress_app_password,
-    wp.wordpress_api_token || undefined,
+    site.wordpress_url,
+    site.wordpress_username,
+    site.wordpress_app_password,
+    site.wordpress_api_token || undefined,
   )
 
   // ── 3. Upload YouTube thumbnail as featured image ─────────────────────────

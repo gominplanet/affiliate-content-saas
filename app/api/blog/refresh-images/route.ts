@@ -22,6 +22,7 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 import { fal } from '@fal-ai/client'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 300
 
@@ -38,23 +39,32 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: post } = await supabase
     .from('blog_posts')
-    .select('id,video_id,title,slug,content,image_prompts')
+    .select('id,video_id,title,slug,content,image_prompts,wordpress_site_id')
     .eq('user_id', user.id)
     .eq('wordpress_post_id', wordpressPostId)
     .maybeSingle()
   if (!post?.content) return NextResponse.json({ error: 'Post not found, or it has no stored content to update.' }, { status: 404 })
 
+  // We STILL need the integrations row for tier + amazon_associates_tag —
+  // those are per-user, not per-site. WP credentials come from the
+  // wordpress_sites row associated with this post (multi-site routing:
+  // refreshing a post on the Wine blog must hit Wine, not the default).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: wp } = await supabase
     .from('integrations')
-    .select('tier,wordpress_url,wordpress_username,wordpress_app_password,amazon_associates_tag')
+    .select('tier,amazon_associates_tag')
     .eq('user_id', user.id)
     .single()
-  if (!wp?.wordpress_url || !wp?.wordpress_app_password) {
+  const tier = normalizeTier(wp?.tier)
+  const site = await getWordPressCredentials(
+    supabase,
+    user.id,
+    (post as { wordpress_site_id?: string | null }).wordpress_site_id,
+  )
+  if (!site) {
     return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
   }
-  const tier = normalizeTier(wp.tier)
-  const wpService = createWordPressService(wp.wordpress_url ?? '', wp.wordpress_username ?? '', wp.wordpress_app_password ?? '')
+  const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '')
 
   // ── Resolve the product image (uploaded photo → Amazon → linked store page) ─
   let productTitle = (post.title as string) || ''
@@ -81,7 +91,7 @@ export async function POST(request: Request) {
   if (vid?.product_image_url) productImageUrl = vid.product_image_url as string
   if (!productImageUrl) {
     let asin = extractAsin((vid?.title as string || '').toUpperCase())
-    let pageUrl = firstProductUrl(description, wp.wordpress_url ?? null)
+    let pageUrl = firstProductUrl(description, site.wordpress_url ?? null)
     if (pageUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
       try { pageUrl = await resolveFinalUrl(pageUrl) } catch { /* keep */ }
     }

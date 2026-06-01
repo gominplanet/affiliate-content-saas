@@ -88,57 +88,93 @@ export async function readNewsletterFields(
  *  option, so we read-modify-write to avoid clobbering other fields the
  *  user already configured (homepage ads, sidebar blocks, footer, etc.).
  *
+ *  MULTI-SITE: when the user has multiple wordpress_sites connected, this
+ *  pushes the newsletter status to ALL of them — the creator's intent is
+ *  "show the signup form on every blog I own," not just the default site.
+ *  Each site's push is isolated: one slow/failing site doesn't block the
+ *  others.
+ *
  *  Returns the result so callers can surface it if they want; never
- *  throws. */
+ *  throws. The boolean is "did we push to at least one site?"; reason
+ *  surfaces partial-failure detail when relevant. */
 export async function pushNewsletterToWp(
   supabase: AnySupabase,
   userId: string,
-): Promise<{ pushed: boolean; reason?: string }> {
+): Promise<{ pushed: boolean; reason?: string; sites?: Array<{ siteId: string; ok: boolean; reason?: string }> }> {
+  // Try the new multi-site path first.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await supabase
-    .from('integrations')
-    .select('wordpress_url, wordpress_username, wordpress_app_password')
+  const { data: rows } = await supabase
+    .from('wordpress_sites')
+    .select('id, url, username, app_password')
     .eq('user_id', userId)
-    .single()
-  if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
-    return { pushed: false, reason: 'wordpress-not-connected' }
+
+  type SiteRow = { id: string; url: string; username: string; app_password: string }
+  const siteRows: SiteRow[] = Array.isArray(rows) ? (rows as SiteRow[]) : []
+
+  // Legacy fallback: no wordpress_sites rows yet → use integrations.wordpress_*
+  if (siteRows.length === 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: intRow } = await supabase
+      .from('integrations')
+      .select('wordpress_url, wordpress_username, wordpress_app_password')
+      .eq('user_id', userId)
+      .single()
+    if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
+      return { pushed: false, reason: 'wordpress-not-connected' }
+    }
+    siteRows.push({
+      id: 'legacy',
+      url: intRow.wordpress_url as string,
+      username: intRow.wordpress_username as string,
+      app_password: intRow.wordpress_app_password as string,
+    })
   }
 
-  const wpBase = (intRow.wordpress_url as string).replace(/\/$/, '')
-  const cleanPw = (intRow.wordpress_app_password as string).replace(/\s+/g, '')
-  const authHeader = `Basic ${Buffer.from(`${intRow.wordpress_username}:${cleanPw}`).toString('base64')}`
+  const newsletter = await readNewsletterFields(supabase, userId)
+
   // Hostinger's WAF blocks REST writes from "bare" Vercel User-Agents; the
   // browser-style UA we use everywhere else (see services/wordpress) gets
   // through. Same trick here.
   const ua = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
 
-  let existing: Record<string, unknown> = {}
-  try {
-    const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
-      headers: { Authorization: authHeader, 'User-Agent': ua },
-    })
-    if (getRes.ok) existing = await getRes.json() as Record<string, unknown>
-  } catch { /* start fresh — better than failing the toggle */ }
+  const results = await Promise.all(siteRows.map(async (s) => {
+    const wpBase = s.url.replace(/\/$/, '')
+    const cleanPw = s.app_password.replace(/\s+/g, '')
+    const authHeader = `Basic ${Buffer.from(`${s.username}:${cleanPw}`).toString('base64')}`
 
-  const newsletter = await readNewsletterFields(supabase, userId)
-  const merged = { ...existing, newsletter }
+    let existing: Record<string, unknown> = {}
+    try {
+      const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+        headers: { Authorization: authHeader, 'User-Agent': ua },
+      })
+      if (getRes.ok) existing = await getRes.json() as Record<string, unknown>
+    } catch { /* start fresh — better than failing the toggle */ }
 
-  try {
-    const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-        'User-Agent': ua,
-      },
-      body: JSON.stringify(merged),
-    })
-    if (!postRes.ok) {
-      const text = await postRes.text().catch(() => '')
-      return { pushed: false, reason: `wp-${postRes.status}: ${text.slice(0, 120)}` }
+    const merged = { ...existing, newsletter }
+
+    try {
+      const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authHeader,
+          'User-Agent': ua,
+        },
+        body: JSON.stringify(merged),
+      })
+      if (!postRes.ok) {
+        const text = await postRes.text().catch(() => '')
+        return { siteId: s.id, ok: false, reason: `wp-${postRes.status}: ${text.slice(0, 120)}` }
+      }
+      return { siteId: s.id, ok: true }
+    } catch (e) {
+      return { siteId: s.id, ok: false, reason: e instanceof Error ? e.message : 'fetch-failed' }
     }
-    return { pushed: true }
-  } catch (e) {
-    return { pushed: false, reason: e instanceof Error ? e.message : 'fetch-failed' }
-  }
+  }))
+
+  const anyOk = results.some(r => r.ok)
+  const allOk = results.every(r => r.ok)
+  if (allOk) return { pushed: true, sites: results }
+  if (anyOk) return { pushed: true, reason: 'partial', sites: results }
+  return { pushed: false, reason: results[0]?.reason ?? 'all-sites-failed', sites: results }
 }

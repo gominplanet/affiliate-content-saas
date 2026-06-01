@@ -25,6 +25,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getValidGscToken, inspectUrl } from '@/lib/gsc'
+import { listSites } from '@/lib/wordpress-sites'
 
 export const maxDuration = 300
 
@@ -62,17 +63,27 @@ export async function GET(request: Request) {
     try {
       const token = await getValidGscToken(supabase, u.user_id)
       if (!token) continue
-      const wpBase = String(u.wordpress_url).replace(/\/$/, '')
+
+      // Multi-site: load this user's connected sites so we can build the
+      // right post URL per post. Legacy posts (wordpress_site_id null)
+      // fall back to the user's default site / legacy integrations.wp_url.
+      // Build a fast id→base lookup so we don't refetch per post.
+      const userSites = await listSites(supabase, u.user_id)
+      const siteBaseById = new Map<string, string>(
+        userSites.map(s => [s.id, s.url.replace(/\/$/, '')]),
+      )
+      const legacyBase = String(u.wordpress_url).replace(/\/$/, '')
+      const defaultSiteBase = (userSites.find(s => s.isDefault)?.url ?? userSites[0]?.url ?? u.wordpress_url).replace(/\/$/, '')
 
       // Published posts + their existing cache rows.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: postsRaw } = await supabase
         .from('blog_posts')
-        .select('id,slug')
+        .select('id,slug,wordpress_site_id')
         .eq('user_id', u.user_id)
         .not('wordpress_post_id', 'is', null)
         .not('slug', 'is', null)
-      const posts = (postsRaw ?? []) as Array<{ id: string; slug: string }>
+      const posts = (postsRaw ?? []) as Array<{ id: string; slug: string; wordpress_site_id: string | null }>
       if (posts.length === 0) continue
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,6 +106,11 @@ export async function GET(request: Request) {
         const checked = c?.checked_at ? new Date(c.checked_at).getTime() : 0
         const age = checked ? Date.now() - checked : Number.POSITIVE_INFINITY
         const priority = c?.indexed_state === 'indexed' ? 1 : 0
+        // Multi-site URL build: prefer the post's specific site's base, then
+        // the user's default site, then the legacy integrations.wordpress_url.
+        const wpBase = p.wordpress_site_id
+          ? (siteBaseById.get(p.wordpress_site_id) ?? defaultSiteBase ?? legacyBase)
+          : (defaultSiteBase || legacyBase)
         return { post: p, age, priority, url: `${wpBase}/${p.slug}` }
       })
       .filter(c => c.age > STALE_MS) // anything inspected within 24h stays fresh

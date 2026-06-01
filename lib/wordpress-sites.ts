@@ -151,6 +151,52 @@ export async function getDefaultSite(
   return null
 }
 
+/** Drop-in replacement for the legacy
+ *  `select('wordpress_url, wordpress_username, wordpress_app_password, wordpress_api_token').from('integrations')`
+ *  pattern. Returns credentials in the SAME snake_case shape so every WP route
+ *  can swap a 4-line `from('integrations')` call for a 1-line helper call
+ *  without renaming anything downstream.
+ *
+ *  PASS A siteId WHEN: the route is targeting a specific user-picked site
+ *  (e.g. content-page "publish to my Wine blog" dropdown sends siteId in body).
+ *  OMIT siteId WHEN: there's no user choice in scope and the action should
+ *  go to the user's default site (cron jobs, backfills, single-site users).
+ *
+ *  RESOLUTION ORDER:
+ *  1. siteId provided → that exact site (RLS-scoped to the user).
+ *  2. siteId 'legacy' / 'default' / null / undefined → default site.
+ *  3. No default but exactly one site exists → that single site.
+ *  4. No rows at all → legacy integrations.wordpress_* (Phase-3 bridge).
+ *  5. Still nothing → returns null. Caller must surface "WordPress not connected".
+ *
+ *  RETURNS site_id + site_label alongside the credentials so routes that
+ *  WRITE to blog_posts can populate wordpress_site_id without a second query. */
+export async function getWordPressCredentials(
+  supabase: Client,
+  userId: string,
+  siteId?: string | null,
+): Promise<{
+  wordpress_url: string
+  wordpress_username: string
+  wordpress_app_password: string
+  wordpress_api_token: string | null
+  site_id: string
+  site_label: string
+} | null> {
+  const site = siteId
+    ? await getSite(supabase, userId, siteId)
+    : await getDefaultSite(supabase, userId)
+  if (!site) return null
+  return {
+    wordpress_url: site.url,
+    wordpress_username: site.username,
+    wordpress_app_password: site.appPassword,
+    wordpress_api_token: site.apiToken,
+    site_id: site.id,
+    site_label: site.label,
+  }
+}
+
 /** Specific site by id, scoped to the user (RLS enforces same; this
  *  query just makes the not-found case explicit for the caller). */
 export async function getSite(

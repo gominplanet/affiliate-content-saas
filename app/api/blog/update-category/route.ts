@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export async function POST(request: Request) {
   try {
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await supabase
       .from('blog_posts')
-      .select('id,wordpress_post_id')
+      .select('id,wordpress_post_id,wordpress_site_id')
       .eq('user_id', user.id)
       .eq('video_id', videoId)
       .limit(1)
@@ -59,23 +60,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, pushedToWp: false, reason: 'no_published_post' })
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: wp } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-      .eq('user_id', user.id)
-      .single()
-    if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+    // Multi-site: push the category change to the SAME site the post lives
+    // on (not the user's default). Category names CAN diverge across sites
+    // — a Wine site might call it "Cabernet" while Tech calls it "Laptops".
+    const site = await getWordPressCredentials(
+      supabase,
+      user.id,
+      (post as { wordpress_site_id?: string | null }).wordpress_site_id,
+    )
+    if (!site) {
       // DB updated but we can't reach WP — that's fine, next generate-side
       // sync will fix it. Surface as a warning.
       return NextResponse.json({ ok: true, pushedToWp: false, warning: 'WordPress not connected — category saved locally only.' })
     }
 
     const wpService = createWordPressService(
-      wp.wordpress_url,
-      wp.wordpress_username,
-      wp.wordpress_app_password,
-      wp.wordpress_api_token || undefined,
+      site.wordpress_url,
+      site.wordpress_username,
+      site.wordpress_app_password,
+      site.wordpress_api_token || undefined,
     )
 
     try {

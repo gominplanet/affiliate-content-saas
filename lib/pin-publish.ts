@@ -20,7 +20,17 @@ interface PublishArgs {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   p: any   // blog_posts row (needs title, wordpress_url, wordpress_post_id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ig: any  // integrations row (pinterest + wordpress creds)
+  ig: any  // integrations row (Pinterest tokens + per-user settings)
+  /** Optional: per-site WP credentials for fetching THIS post's WP categories.
+   *  When the post's wordpress_site_id is known, pass the resolved site so
+   *  the category lookup hits the right WP install. When absent, we skip
+   *  category-based board resolution (still works via fallback board chain). */
+  site?: {
+    wordpress_url: string
+    wordpress_username: string
+    wordpress_app_password: string
+    wordpress_api_token: string | null
+  } | null
   title: string
   description: string
   imageBase64?: string | null
@@ -29,7 +39,7 @@ interface PublishArgs {
 }
 
 export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: string }> {
-  const { p, ig } = args
+  const { p, ig, site } = args
   if (!ig?.pinterest_access_token) throw new PinPublishError('Pinterest not connected', 400)
   // A board is NOT a precondition — it's resolved below (category board,
   // then the saved board, then a default we create). Fresh and sandbox
@@ -57,9 +67,16 @@ export async function publishPinForPost(args: PublishArgs): Promise<{ pinId: str
   // accounts start with zero boards.
   let targetBoardId = ''
   try {
-    if (p.wordpress_post_id && ig.wordpress_url) {
+    // Multi-site: category lookup must hit the SAME WP install the post
+    // lives on. Use the per-site credentials passed in; fall back to ig's
+    // legacy fields when no site was resolved (covers single-site users).
+    const wpUrl = site?.wordpress_url ?? ig.wordpress_url
+    const wpUser = site?.wordpress_username ?? ig.wordpress_username
+    const wpPass = site?.wordpress_app_password ?? ig.wordpress_app_password
+    const wpToken = site?.wordpress_api_token ?? ig.wordpress_api_token
+    if (p.wordpress_post_id && wpUrl) {
       const wpSvc = createWordPressService(
-        ig.wordpress_url, ig.wordpress_username, ig.wordpress_app_password, ig.wordpress_api_token || undefined,
+        wpUrl, wpUser, wpPass, wpToken || undefined,
       )
       const cats = await wpSvc.getPostCategoryNames(p.wordpress_post_id)
       const cat = cats.map((c: string) => (c || '').trim()).find((c: string) => c && !GENERIC.test(c))

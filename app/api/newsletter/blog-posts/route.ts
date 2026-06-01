@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { firstProductUrl } from '@/lib/product-link'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 interface RawRow {
   id: string
@@ -60,10 +61,13 @@ export async function GET(req: NextRequest) {
 
   // Need the user's WP base URL too, so that firstProductUrl can ignore
   // links that point back to the creator's own site (they're not products).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await supabase
-    .from('integrations').select('wordpress_url').eq('user_id', user.id).maybeSingle()
-  const wpBase = (integ?.wordpress_url as string | null) || null
+  // Multi-site: defaults to the user's default site. Edge case: in
+  // multi-site setups the firstProductUrl filter still treats only the
+  // default site as "own" — links pointing to OTHER connected sites will
+  // be treated as external products. That's a minor side effect; for
+  // tightening, we'd thread all of the user's site URLs through here.
+  const defaultSite = await getWordPressCredentials(supabase, user.id)
+  const wpBase = defaultSite?.wordpress_url ?? null
 
   const rows = (data as RawRow[] | null) || []
   const posts = rows

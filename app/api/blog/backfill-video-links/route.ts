@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 120
 
@@ -7,25 +8,26 @@ export const maxDuration = 120
 // Matches each orphaned WP post to a youtube_video via:
 //   1. Thumbnail filename = {youtubeVideoId}.jpg (11-char YouTube ID)
 //   2. Title similarity fallback
-export async function POST() {
+//
+// MULTI-SITE: this route targets ONE WordPress site per call (the backfill
+// is site-specific — orphaned posts on Wine come from Wine's WP, not Main's).
+// Pass `siteId` to target a specific site; omitted → user's default site.
+// Multi-site users run it once per site they want to backfill.
+export async function POST(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const body = await request.json().catch(() => ({})) as { siteId?: string | null }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
 
-  const { data: integration } = await sb
-    .from('integrations')
-    .select('wordpress_url,wordpress_username,wordpress_app_password')
-    .eq('user_id', user.id)
-    .single()
+  const site = await getWordPressCredentials(supabase, user.id, body.siteId)
+  if (!site) return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
 
-  const wp = integration as Record<string, string> | null
-  if (!wp?.wordpress_url) return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
-
-  const base = wp.wordpress_url.replace(/\/$/, '')
-  const auth = Buffer.from(`${wp.wordpress_username}:${wp.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')
+  const base = site.wordpress_url.replace(/\/$/, '')
+  const auth = Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')
   const headers = { Authorization: `Basic ${auth}` }
 
   // ── 1. Fetch all WP posts ─────────────────────────────────────────────────
@@ -227,6 +229,10 @@ export async function POST() {
       video_id: videoId,
       wordpress_post_id: p.id,
       wordpress_url: p.link,
+      // Tag the backfilled row with the wordpress_sites row we sourced it
+      // from so future actions (refresh-images, delete, fix-affiliate-links)
+      // route to the right site automatically.
+      ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
       title: p.title.rendered,
       slug,
       status: 'published',

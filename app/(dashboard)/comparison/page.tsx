@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react'
 import Header from '@/components/layout/Header'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Scale, Plus, X, Loader2, ExternalLink, Trophy, ListChecks } from 'lucide-react'
+import { SitePicker } from '@/components/SitePicker'
 
 const MAX_URLS = 10
 
@@ -23,6 +24,9 @@ export default function ComparisonPage() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ url: string; title: string; productCount: number; mode: string } | null>(null)
   const [tier, setTier] = useState<string | null>(null)
+  // Multi-site: which WordPress site to publish this comparison to. Null
+  // → SitePicker auto-selects the user's default. Hidden for single-site users.
+  const [siteId, setSiteId] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -47,7 +51,7 @@ export default function ComparisonPage() {
       const res = await fetch('/api/blog/comparison', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrls: urls.map(u => u.trim()).filter(Boolean), format: mode, topic: topic.trim() || undefined, heroImageDataUrl: heroDataUrl || undefined }),
+        body: JSON.stringify({ videoUrls: urls.map(u => u.trim()).filter(Boolean), format: mode, topic: topic.trim() || undefined, heroImageDataUrl: heroDataUrl || undefined, siteId }),
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       if (!res.ok) { setError(data.error || 'Generation failed'); return }
@@ -179,6 +183,10 @@ export default function ComparisonPage() {
             </a>
           </div>
         )}
+
+        {/* Multi-site picker: invisible for single-site users; dropdown
+            with default pre-selected for Pro multi-site users. */}
+        <SitePicker value={siteId} onChange={setSiteId} label="Publish to" />
 
         <button
           onClick={generate}

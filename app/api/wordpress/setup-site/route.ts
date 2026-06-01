@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { generateHomePage } from '@/lib/wordpress-home-template'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 30
 
@@ -11,38 +12,34 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { accentColor = '#f5a623' } = await request.json()
+    const { accentColor = '#f5a623', siteId = null } = await request.json() as { accentColor?: string; siteId?: string | null }
 
     // ── Load brand + WP credentials ──────────────────────────────────────────
-    const [{ data: brand }, { data: integration }] = await Promise.all([
-      supabase.from('brand_profiles').select('name,niches').eq('user_id', user.id).single(),
-      supabase.from('integrations')
-        .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-        .eq('user_id', user.id).single(),
-    ])
-
+    // Multi-site: siteId picks which connected WP install to initialize.
+    // Omitted → default site (covers single-site users transparently).
+    const { data: brand } = await supabase
+      .from('brand_profiles').select('name,niches').eq('user_id', user.id).single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const b = brand as any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const wp = integration as any
+    const wpSite = await getWordPressCredentials(supabase, user.id, siteId)
 
-    if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+    if (!wpSite) {
       return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
     }
 
     const brandName = b?.name || 'My Review Blog'
     const niches: string[] = Array.isArray(b?.niches) ? b.niches : []
-    const siteUrl = wp.wordpress_url as string
+    const siteUrl = wpSite.wordpress_url
 
     const wpService = createWordPressService(
       siteUrl,
-      wp.wordpress_username,
-      wp.wordpress_app_password,
-      wp.wordpress_api_token || undefined,
+      wpSite.wordpress_username,
+      wpSite.wordpress_app_password,
+      wpSite.wordpress_api_token || undefined,
     )
 
     // Verify credentials and role before doing anything
-    const encoded = Buffer.from(`${wp.wordpress_username}:${wp.wordpress_app_password}`).toString('base64')
+    const encoded = Buffer.from(`${wpSite.wordpress_username}:${wpSite.wordpress_app_password}`).toString('base64')
     const meRes = await fetch(`${siteUrl}/wp-json/wp/v2/users/me`, {
       headers: { Authorization: `Basic ${encoded}` },
     })

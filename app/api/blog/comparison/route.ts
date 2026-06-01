@@ -25,6 +25,7 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { fal } from '@fal-ai/client'
 
 export const maxDuration = 300
@@ -100,13 +101,15 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { videoUrls, format, topic, heroImageDataUrl } = (await request.json()) as {
+  const { videoUrls, format, topic, heroImageDataUrl, siteId } = (await request.json()) as {
     videoUrls?: string[]
     format?: 'comparison' | 'guide'
     topic?: string
     /** Optional user-uploaded hero image (data URL). When present we use it as
      *  the featured image instead of generating one. */
     heroImageDataUrl?: string
+    /** Multi-site (Pro): target wordpress_sites row. Omit → default site. */
+    siteId?: string | null
   }
   const mode = format === 'guide' ? 'guide' : 'comparison'
   const ids = Array.from(new Set((videoUrls || []).map(extractVideoId).filter((x): x is string => !!x))).slice(0, 10)
@@ -130,7 +133,11 @@ export async function POST(request: Request) {
       limitReached: true, cap: 'posts', currentTier: tier,
     }, { status: 403 })
   }
-  if (!wp?.wordpress_url || !wp?.wordpress_app_password) {
+  // Multi-site: resolve target site (default if siteId omitted). See
+  // app/api/blog/generate for the full pattern; comparison is a thin
+  // variant that follows it.
+  const site = await getWordPressCredentials(supabase, user.id, siteId)
+  if (!site) {
     return NextResponse.json({ error: 'Connect your WordPress site first (Site & Integrations).' }, { status: 400 })
   }
 
@@ -154,7 +161,10 @@ export async function POST(request: Request) {
     '📌 As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links — I may earn a small commission at no extra cost to you.'
 
   const ctx = { userId: user.id, tier }
-  const genius = (wp.geniuslink_api_key && wp.geniuslink_api_secret)
+  // wp may be null if the integrations row exists but doesn't have geniuslink
+  // creds — the WP credential check is now on `site` (see above), so we
+  // optional-chain wp here for the per-user Geniuslink fields.
+  const genius = (wp?.geniuslink_api_key && wp?.geniuslink_api_secret)
     ? createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
     : null
 
@@ -208,7 +218,10 @@ export async function POST(request: Request) {
       let matched = false
 
       const titleAsin = extractAsin((videoTitle || '').toUpperCase())
-      const candidates = allProductLinks(description, wp?.wordpress_url ?? null)
+      // site is narrowed non-null by the early-return above, but TS loses the
+      // narrowing inside this async closure — re-assert it here. Same pattern
+      // applies wherever `site` is used inside resolveOne.
+      const candidates = allProductLinks(description, site!.wordpress_url ?? null)
       // Walk the candidate links in order; keep the first whose product matches
       // what the video reviews. Title ASIN is tried first when present.
       const ordered = titleAsin ? [`https://www.amazon.com/dp/${titleAsin}`, ...candidates] : candidates
@@ -348,7 +361,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   }
 
   // ── Assemble the WordPress (Gutenberg) HTML ─────────────────────────────────
-  const wpService = createWordPressService(wp?.wordpress_url ?? '', wp?.wordpress_username ?? '', wp?.wordpress_app_password ?? '')
+  const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '')
   const para = (html: string) => `<!-- wp:paragraph -->${html}<!-- /wp:paragraph -->`
   const scrub = (s: string) => scrubBanned(s || '')
   // Responsive YouTube embed block — shows the video thumbnail + plays inline.
@@ -470,7 +483,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
 
   // ── JSON-LD: BlogPosting + ItemList (ranked products) + FAQPage ─────────────
   // Rendered in <head> by the MVP plugin via the mvp_jsonld post meta.
-  const siteBase = (wp?.wordpress_url || '').replace(/\/$/, '')
+  const siteBase = (site.wordpress_url || '').replace(/\/$/, '')
   const postUrl = `${siteBase}/${slug}/`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graph: any[] = [
@@ -526,7 +539,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   }
 
   // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.
-  void pingIndexNowForUrl(supabase, user.id, wpPost.link).catch(() => {})
+  void pingIndexNowForUrl(supabase, user.id, wpPost.link, siteId).catch(() => {})
 
   // ── Save blog_posts row (post_type distinguishes it; counts as 1 post) ──────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -541,6 +554,9 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     post_type: mode,
     wordpress_post_id: wpPost.id,
     wordpress_url: wpPost.link,
+    // Tag with site (skip legacy sentinel — that means no wordpress_sites
+    // row exists yet, can't FK-write to a uuid column).
+    ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
     ai_model: 'claude-sonnet-4-6',
     generation_prompt_version: 'comparison-v1',
     published_at: new Date().toISOString(),

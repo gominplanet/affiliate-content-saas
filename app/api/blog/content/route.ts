@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export async function GET(request: Request) {
   try {
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await supabase
       .from('blog_posts')
-      .select('id,wordpress_post_id')
+      .select('id,wordpress_post_id,wordpress_site_id')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -70,20 +71,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, pushedToWp: false, reason: 'no_wp_post' })
     }
 
-    const { data: wpRow } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-      .eq('user_id', user.id)
-      .single()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const wp = wpRow as any
-    if (!wp?.wordpress_url) {
+    // Multi-site: push to the SAME site the post lives on (not the user's
+    // default). Edits to a Wine post must hit the Wine site's WP API.
+    const site = await getWordPressCredentials(
+      supabase,
+      user.id,
+      (post as { wordpress_site_id?: string | null }).wordpress_site_id,
+    )
+    if (!site) {
       return NextResponse.json({ ok: true, pushedToWp: false, warning: 'Saved, but WordPress not connected.' })
     }
 
     try {
       const wpService = createWordPressService(
-        wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password, wp.wordpress_api_token || undefined,
+        site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined,
       )
       await wpService.updatePost(post.wordpress_post_id, { content })
       return NextResponse.json({ ok: true, pushedToWp: true })

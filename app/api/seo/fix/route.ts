@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { applyPostFixes, SEO_FIX_TYPES, type SeoFixType, type FixablePost } from '@/lib/seo-fix'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 120
 
@@ -26,26 +27,33 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: post } = await supabase
     .from('blog_posts')
-    .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id')
+    .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id')
     .eq('user_id', user.id).eq('id', postId).maybeSingle()
   if (!post?.content || !post.wordpress_post_id) {
     return NextResponse.json({ error: 'Post not found or not published.' }, { status: 404 })
   }
 
+  // Tier comes from per-user integrations; WP credentials route to the
+  // specific site this post lives on (multi-site fix routing).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: wp } = await supabase
     .from('integrations')
-    .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,tier')
+    .select('tier')
     .eq('user_id', user.id).single()
-  if (!wp?.wordpress_url || !wp?.wordpress_app_password) {
+  const site = await getWordPressCredentials(
+    supabase,
+    user.id,
+    (post as { wordpress_site_id?: string | null }).wordpress_site_id,
+  )
+  if (!site) {
     return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
   }
-  const wpBase = wp.wordpress_url.replace(/\/$/, '')
-  const wpService = createWordPressService(wp.wordpress_url ?? '', wp.wordpress_username ?? '', wp.wordpress_app_password ?? '', wp.wordpress_api_token || undefined)
+  const wpBase = site.wordpress_url.replace(/\/$/, '')
+  const wpService = createWordPressService(site.wordpress_url ?? '', site.wordpress_username ?? '', site.wordpress_app_password ?? '', site.wordpress_api_token || undefined)
 
   try {
     const result = await applyPostFixes({
-      supabase, userId: user.id, wpService, wpBase, tier: wp.tier,
+      supabase, userId: user.id, wpService, wpBase, tier: wp?.tier,
       post: post as FixablePost,
       fixes: fix === 'all' ? 'all' : [fix as SeoFixType],
     })

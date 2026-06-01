@@ -29,6 +29,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, allowedNewsletterBroadcasts } from '@/lib/tier'
 import { sendEmail, isEmailConfigured } from '@/services/email'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import {
   renderNewsletterHtml,
   renderNewsletterText,
@@ -78,9 +79,14 @@ export async function POST(req: Request) {
   }
 
   // ── Tier cap: broadcasts per billing month ────────────────────────────────
+  // Tier is per-user; siteUrl for the newsletter footer comes from the
+  // user's default WordPress site (multi-site users: footer points at the
+  // default brand site). Single-site users get the same site they always
+  // had.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await supabase
-    .from('integrations').select('tier,wordpress_url').eq('user_id', user.id).maybeSingle()
+    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const defaultSite = await getWordPressCredentials(supabase, user.id)
   const tier = normalizeTier(integ?.tier as string | undefined)
   const monthlyCap = allowedNewsletterBroadcasts(tier)
   if (monthlyCap !== null) {
@@ -137,7 +143,7 @@ export async function POST(req: Request) {
     posts, curatedLinks,
     brand: {
       name: (nl?.sender_name as string) || (brand?.name as string) || 'Newsletter',
-      siteUrl: (integ?.wordpress_url as string) || null,
+      siteUrl: defaultSite?.wordpress_url ?? null,
       logoUrl: (brand?.logo_url as string) || (brand?.headshot_url as string) || null,
       mailingAddress: (nl?.mailing_address as string) || null,
       byline: (brand?.author_name as string) || null,

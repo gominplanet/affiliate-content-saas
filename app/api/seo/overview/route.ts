@@ -10,6 +10,12 @@
  *
  * Results are cached in post_seo; stale/missing rows are refreshed on demand.
  * Works without GSC — you still get the content score.
+ *
+ * MULTI-SITE: each post's wordpress_site_id determines which WP install
+ * provides its sitemap + live-id reconciliation + base URL. The same GSC
+ * property is queried for all sites (creators typically GSC-verify ONE
+ * property covering their network; if they have separate properties we'd
+ * need per-site GSC properties which is out of scope for v1).
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -17,6 +23,7 @@ import { getValidGscToken, querySearchAnalytics, inspectUrl } from '@/lib/gsc'
 import { scorePostSeo } from '@/lib/seo-score'
 import { fetchSitemapSlugs } from '@/lib/sitemap'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials, listSites } from '@/lib/wordpress-sites'
 
 export const maxDuration = 120
 
@@ -25,46 +32,89 @@ const STALE_MS = 24 * 60 * 60 * 1000
 
 function ymd(d: Date): string { return d.toISOString().slice(0, 10) }
 
+// Per-site context cached during the overview call so we don't re-fetch a
+// sitemap / live-id list for every post on the same site.
+interface SiteContext {
+  wpBase: string
+  liveIds: Set<number> | null
+  sitemapSlugs: Set<string>
+  sitemapFound: boolean
+}
+
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Per-user: GSC property only. WP credentials are per-site (loaded below).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await supabase
     .from('integrations')
-    .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,gsc_property,gsc_oauth_access_token')
+    .select('gsc_property')
     .eq('user_id', user.id)
     .single()
-  const wpUrl: string = (integ?.wordpress_url || '').replace(/\/$/, '')
-  const siteHost = wpUrl
   const property: string | null = integ?.gsc_property || null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: postsRaw } = await supabase
     .from('blog_posts')
-    .select('id,title,slug,content,post_type,wordpress_post_id,published_at')
+    .select('id,title,slug,content,post_type,wordpress_post_id,wordpress_site_id,published_at')
     .eq('user_id', user.id)
     .not('wordpress_post_id', 'is', null)
     .order('published_at', { ascending: false })
-  type Post = { id: string; title: string; slug: string; content: string; post_type: string | null; wordpress_post_id: number | null; published_at: string | null }
+  type Post = { id: string; title: string; slug: string; content: string; post_type: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null }
   const posts = (postsRaw as Post[] | null) ?? []
+
+  // ── Multi-site setup: resolve every site referenced by these posts, once.
+  // Build siteCache keyed by wordpress_sites.id (or LEGACY_BUCKET for nulls).
+  const sites = await listSites(supabase, user.id)
+  const defaultSiteId = sites.find(s => s.isDefault)?.id ?? sites[0]?.id ?? null
+  const LEGACY_BUCKET = '__legacy__'
+  const referencedSiteIds = new Set<string>()
+  for (const p of posts) referencedSiteIds.add(p.wordpress_site_id ?? defaultSiteId ?? LEGACY_BUCKET)
+
+  const siteCache = new Map<string, SiteContext | null>()
+  for (const key of referencedSiteIds) {
+    const lookupId = key === LEGACY_BUCKET ? null : key
+    const creds = await getWordPressCredentials(supabase, user.id, lookupId)
+    if (!creds) {
+      siteCache.set(key, null)
+      continue
+    }
+    const wpBase = creds.wordpress_url.replace(/\/$/, '')
+    // Live IDs (reconcile catalog vs what's actually live in WP).
+    let liveIds: Set<number> | null = null
+    try {
+      const wpSvc = createWordPressService(
+        creds.wordpress_url,
+        creds.wordpress_username,
+        creds.wordpress_app_password,
+        creds.wordpress_api_token || undefined,
+      )
+      liveIds = await wpSvc.getPublishedPostIds()
+    } catch { liveIds = null }
+    // Sitemap slugs (the discovery path for Google).
+    const sm = wpBase ? await fetchSitemapSlugs(wpBase) : { slugs: new Set<string>(), found: false }
+    siteCache.set(key, { wpBase, liveIds, sitemapSlugs: sm.slugs, sitemapFound: sm.found })
+  }
+
+  // Per-post site context resolver — same pattern as fix-all/indexnow.
+  function siteFor(p: Post): SiteContext | null {
+    const key = p.wordpress_site_id ?? defaultSiteId ?? LEGACY_BUCKET
+    return siteCache.get(key) ?? null
+  }
 
   // Reconcile against the LIVE site: a post deleted/trashed in WordPress still
   // lingers in blog_posts and would score as a phantom 404 here. Drop any
-  // catalog row whose WP post no longer exists. If the site's REST can't be
-  // read (liveIds === null) or returns nothing usable, show everything — never
-  // hide real posts on a transient error.
-  let liveIds: Set<number> | null = null
-  if (integ?.wordpress_url && integ?.wordpress_username && integ?.wordpress_app_password) {
-    try {
-      const wpSvc = createWordPressService(integ.wordpress_url, integ.wordpress_username, integ.wordpress_app_password, integ.wordpress_api_token || undefined)
-      liveIds = await wpSvc.getPublishedPostIds()
-    } catch { liveIds = null }
-  }
-  const livePosts = (liveIds && liveIds.size > 0)
-    ? posts.filter(p => p.wordpress_post_id != null && liveIds.has(p.wordpress_post_id))
-    : posts
+  // catalog row whose WP post no longer exists ON ITS SITE. If the site's
+  // REST can't be read (liveIds === null) or returns nothing usable, show
+  // everything from that site — never hide real posts on a transient error.
+  const livePosts = posts.filter(p => {
+    const ctx = siteFor(p)
+    if (!ctx) return true     // unreachable site → still surface its posts
+    if (!ctx.liveIds || ctx.liveIds.size === 0) return true
+    return p.wordpress_post_id != null && ctx.liveIds.has(p.wordpress_post_id)
+  })
 
   // Existing cache (for serving stale indexing without re-inspecting).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,17 +138,6 @@ export async function GET() {
     }
   }
   const connected = !!(property && token)
-
-  // Which post slugs are actually in the site's sitemap (Google's discovery
-  // path). `found:false` → couldn't read a sitemap, so we don't flag "missing".
-  const sitemap = wpUrl ? await fetchSitemapSlugs(wpUrl) : { slugs: new Set<string>(), found: false }
-  // Guard against false "missing" positives from slug drift: WordPress can
-  // store a permalink slug that differs from the one MVP recorded (dedupe
-  // suffixes like "-2", manual edits). If the sitemap clearly holds at least as
-  // many URLs as we have posts, it's complete — treat every post as present
-  // rather than alarming on a slug mismatch. We only flag specific posts when
-  // the sitemap genuinely has fewer entries than the catalog.
-  const sitemapComplete = sitemap.found && sitemap.slugs.size >= livePosts.length
 
   // Match a post's slug to a GSC page URL.
   const findPageForSlug = (slug: string): string | null => {
@@ -126,18 +165,21 @@ export async function GET() {
     perf: { clicks: number; impressions: number; position: number; ctr: number } | undefined
     cached: ReturnType<typeof cache.get>
     needsInspect: boolean
+    siteCtx: SiteContext | null
   }
   const pending: Pending[] = livePosts.map(p => {
+    const siteCtx = siteFor(p)
+    const wpBase = siteCtx?.wpBase ?? ''
     const { score, checks } = scorePostSeo({
-      title: p.title || '', contentHtml: p.content || '', siteHost, postType: p.post_type || 'review',
+      title: p.title || '', contentHtml: p.content || '', siteHost: wpBase, postType: p.post_type || 'review',
     })
     const matchedPage = findPageForSlug(p.slug)
-    const url = matchedPage || (wpUrl && p.slug ? `${wpUrl}/${p.slug}` : null)
+    const url = matchedPage || (wpBase && p.slug ? `${wpBase}/${p.slug}` : null)
     const perf = matchedPage ? perfByPage.get(matchedPage) : undefined
     const cached = cache.get(p.id)
     const stale = !cached || (Date.now() - new Date(cached.checked_at || 0).getTime()) > STALE_MS
     const needsInspect = !!(connected && token && property && url && stale)
-    return { post: p, score, checks, url, perf, cached, needsInspect }
+    return { post: p, score, checks, url, perf, cached, needsInspect, siteCtx }
   })
 
   // Apply the INSPECT_CAP — pick the first N that need inspection.
@@ -155,9 +197,22 @@ export async function GET() {
     }
   }
 
+  // Per-site sitemapComplete pre-computation — same logic as before but
+  // per-site, since each post's "is it in MY sitemap" depends on its own site.
+  const sitemapCompleteBySite = new Map<string, boolean>()
+  for (const [key, ctx] of siteCache.entries()) {
+    if (!ctx) { sitemapCompleteBySite.set(key, false); continue }
+    const sitePostCount = livePosts.filter(p => (p.wordpress_site_id ?? defaultSiteId ?? LEGACY_BUCKET) === key).length
+    sitemapCompleteBySite.set(key, ctx.sitemapFound && ctx.sitemapSlugs.size >= sitePostCount)
+  }
+  function sitemapCompleteFor(p: Post): boolean {
+    const key = p.wordpress_site_id ?? defaultSiteId ?? LEGACY_BUCKET
+    return sitemapCompleteBySite.get(key) ?? false
+  }
+
   // ── Phase 2: assemble the output rows with whatever inspection data we got
   for (const pp of pending) {
-    const { post: p, score, checks, url, perf, cached } = pp
+    const { post: p, score, checks, url, perf, cached, siteCtx } = pp
     let indexedState: string = cached?.indexed_state || 'unknown'
     let coverageState: string | null = cached?.coverage_state || null
     let lastCrawl: string | null = cached?.last_crawl || null
@@ -168,14 +223,21 @@ export async function GET() {
       lastCrawl = ins.lastCrawl
     }
 
+    const inSitemap = !siteCtx?.sitemapFound
+      ? null
+      : (sitemapCompleteFor(p) ? true : siteCtx.sitemapSlugs.has((p.slug || '').toLowerCase()))
+
     const row = {
       postId: p.id, title: p.title, slug: p.slug, url,
       // Exposed so the SEO page can show "Rebuild from video" on each row —
       // the modal needs the live WP id to POST /api/blog/attach-video.
       wordpressPostId: p.wordpress_post_id,
+      // Site identity so the UI can show "Wine Reviews" / "Tech Picks" pill
+      // next to each row when the user has multi-site connected.
+      wordpressSiteId: p.wordpress_site_id,
       score, checks,
       indexed: indexedState === 'indexed' ? true : indexedState === 'not_indexed' ? false : null,
-      inSitemap: !sitemap.found ? null : (sitemapComplete ? true : sitemap.slugs.has((p.slug || '').toLowerCase())),
+      inSitemap,
       coverageState, lastCrawl,
       // When the nightly cron sees a post flip indexed → not_indexed, it stamps
       // dropped_at. Cleared (null) when the post comes back. The SEO page uses
@@ -215,6 +277,10 @@ export async function GET() {
     const t = new Date(d).getTime()
     return Number.isFinite(t) && (now - t) < DROP_WINDOW_MS && r.indexed === false
   }).length
+  // sitemapFound is true if ANY of the user's sites has a readable sitemap.
+  // (The per-row inSitemap is still per-site accurate; this is the global
+  // UI flag for the "couldn't read your sitemap" banner.)
+  const anySitemapFound = Array.from(siteCache.values()).some(c => c?.sitemapFound === true)
   const summary = {
     total,
     avgScore,
@@ -223,10 +289,12 @@ export async function GET() {
     unknown: out.filter(r => r.indexed === null).length,
     notInSitemap: out.filter(r => r.inSitemap === false).length,
     recentlyDropped,
-    sitemapFound: sitemap.found,
+    sitemapFound: anySitemapFound,
     totalClicks: out.reduce((s, r) => s + (r.clicks as number), 0),
     totalImpressions: out.reduce((s, r) => s + (r.impressions as number), 0),
   }
 
-  return NextResponse.json({ connected, property, summary, posts: out })
+  // Expose the connected sites so the SEO page can render a per-site filter.
+  const exposedSites = sites.map(s => ({ id: s.id, label: s.label, isDefault: s.isDefault }))
+  return NextResponse.json({ connected, property, summary, posts: out, sites: exposedSites })
 }

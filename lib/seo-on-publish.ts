@@ -12,28 +12,32 @@
 // Caller pattern (do NOT await):
 //   void pingIndexNowForUrl(supabase, userId, postUrl).catch(() => {})
 import { submitToIndexNow } from './indexnow'
+import { getWordPressCredentials } from './wordpress-sites'
 
 /**
  * Submit a single URL to IndexNow on behalf of `userId`. Reads WP creds + the
  * plugin's hosted IndexNow key, then submits. Resolves `true` on success,
  * `false` on any failure (including the plugin being too old to expose a key).
+ *
+ * MULTI-SITE: pass `siteId` to ping IndexNow on a SPECIFIC site (each WP
+ * install hosts its own IndexNow key). Omit → user's default site. The
+ * blog/generate hook passes `site.site_id` here so a freshly-published post
+ * on the Wine blog pings Wine's key, not Main's.
  */
 export async function pingIndexNowForUrl(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   userId: string,
   url: string,
+  siteId?: string | null,
 ): Promise<boolean> {
   if (!url || !/^https?:\/\//i.test(url)) return false
   try {
-    const { data: wp } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password')
-      .eq('user_id', userId).single()
-    if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) return false
+    const site = await getWordPressCredentials(supabase, userId, siteId)
+    if (!site) return false
 
-    const wpBase = String(wp.wordpress_url).replace(/\/$/, '')
-    const auth = `Basic ${Buffer.from(`${wp.wordpress_username}:${String(wp.wordpress_app_password).replace(/\s+/g, '')}`).toString('base64')}`
+    const wpBase = site.wordpress_url.replace(/\/$/, '')
+    const auth = `Basic ${Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
 
     // Plugin v1.0.11+ exposes the per-site IndexNow key at /wp-json/affiliateos/v1/status.
     const sRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/status`, {

@@ -1,27 +1,27 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 120
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: integration } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password')
-      .eq('user_id', user.id)
-      .single()
-
-    const wp = integration as Record<string, string> | null
-    if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+    // Multi-site: ?siteId=<uuid> targets a specific site; omitted → default.
+    // Used by /attach-video modal — Pro multi-site users pick which site's
+    // legacy posts to list. Single-site users see no UI affordance.
+    const url = new URL(req.url)
+    const siteId = url.searchParams.get('siteId')
+    const site = await getWordPressCredentials(supabase, user.id, siteId)
+    if (!site) {
       return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
     }
 
-    const base = wp.wordpress_url.replace(/\/$/, '')
-    const auth = Buffer.from(`${wp.wordpress_username}:${wp.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')
+    const base = site.wordpress_url.replace(/\/$/, '')
+    const auth = Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')
     const headers = { Authorization: `Basic ${auth}` }
 
     type RawPost = { id: number; title: { rendered: string }; link: string; date: string; featured_media: number }

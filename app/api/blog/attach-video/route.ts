@@ -23,6 +23,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 60
 
@@ -169,7 +170,7 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { wordpressPostId?: number; youtubeUrl?: string }
+  let body: { wordpressPostId?: number; youtubeUrl?: string; siteId?: string | null }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
   const wpPostId = Number(body.wordpressPostId)
@@ -193,19 +194,15 @@ export async function POST(request: Request) {
   }
 
   // ── Look up WP credentials ──────────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await supabase
-    .from('integrations')
-    .select('wordpress_url,wordpress_username,wordpress_app_password')
-    .eq('user_id', user.id)
-    .single()
-  const wp = integ as Record<string, string> | null
-  if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+  // Multi-site: if the user has multiple sites, the modal should pass siteId
+  // identifying WHICH site this legacy post lives on. Omitted → default site.
+  const site = await getWordPressCredentials(supabase, user.id, body.siteId)
+  if (!site) {
     return NextResponse.json({ error: 'Connect WordPress in Settings before linking videos.' }, { status: 400 })
   }
-  const base = wp.wordpress_url.replace(/\/$/, '')
+  const base = site.wordpress_url.replace(/\/$/, '')
   const authHeader = 'Basic ' + Buffer.from(
-    `${wp.wordpress_username}:${wp.wordpress_app_password.replace(/\s+/g, '')}`,
+    `${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`,
   ).toString('base64')
 
   // ── Pull the legacy WP post (need title/slug/content for the blog_posts row)
@@ -316,6 +313,10 @@ export async function POST(request: Request) {
         video_id: videoRowId,
         wordpress_post_id: wpPostId,
         wordpress_url: wpPost.link,
+        // Tag with the wordpress_sites row this legacy post lives on so
+        // future actions (refresh-images, generate rewrite) route to the
+        // correct site automatically.
+        ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
         title: wpPost.title,
         slug: wpPost.slug,
         content: wpPost.content,

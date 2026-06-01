@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 import { isValidAsin } from '@/services/amazon'
 import { resolveAffiliateUrl, resolveTrueDestination } from '@/lib/affiliate-resolve'
@@ -55,20 +56,39 @@ export async function POST(request: Request) {
     const dryRun = body.dryRun === true
     const selectedFixes = Array.isArray(body.fixes) ? body.fixes : null
 
+    // Per-user settings (tier, Amazon tag, Geniuslink keys). WP credentials
+    // are resolved per-post below — multi-site users have posts on different
+    // sites and we need the SAME site's WP API for each write.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: integration } = await supabase
       .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
+      .select('tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const wp = integration as Record<string, any> | null
-    if (!wp?.wordpress_url || !wp?.wordpress_username || !wp?.wordpress_app_password) {
+
+    // Per-site service cache so we resolve credentials + build wpService once
+    // per site, not once per post (could be hundreds in a bulk fix).
+    // user.id captured here to avoid TS losing narrowing inside the closure.
+    const userId = user.id
+    const siteCache = new Map<string, { wpService: ReturnType<typeof createWordPressService>; ownSite: string } | null>()
+    async function siteFor(postSiteId: string | null | undefined) {
+      const key = postSiteId ?? '__default__'
+      if (siteCache.has(key)) return siteCache.get(key)!
+      const s = await getWordPressCredentials(supabase, userId, postSiteId ?? null)
+      if (!s) { siteCache.set(key, null); return null }
+      const svc = createWordPressService(s.wordpress_url, s.wordpress_username, s.wordpress_app_password, s.wordpress_api_token || undefined)
+      const entry = { wpService: svc, ownSite: s.wordpress_url }
+      siteCache.set(key, entry)
+      return entry
+    }
+    // Validate that at least the default site is reachable so we fail fast
+    // when WP is fully unconnected (vs the per-post failure mode below).
+    const defaultEntry = await siteFor(null)
+    if (!defaultEntry) {
       return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
     }
-    const wpService = createWordPressService(
-      wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password, wp.wordpress_api_token || undefined,
-    )
 
     // ── Targeted apply ───────────────────────────────────────────────────────
     // The client sends back ONLY the previewed fixes the user kept checked
@@ -84,7 +104,7 @@ export async function POST(request: Request) {
           if (!f?.postId || !f?.oldUrl || !/^https?:\/\//i.test(f?.newUrl || '')) continue
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: row } = await supabase
-            .from('blog_posts').select('id,content,wordpress_post_id,video_id')
+            .from('blog_posts').select('id,content,wordpress_post_id,video_id,wordpress_site_id')
             .eq('user_id', user.id).eq('id', f.postId).maybeSingle()
           if (!row?.content) continue
           const original = row.content as string
@@ -94,7 +114,11 @@ export async function POST(request: Request) {
             (href) => (badAmazonAsin(href) ? `href="${f.newUrl}"` : href),
           )
           if (updated === original) continue
-          if (row.wordpress_post_id) await wpService.updatePost(row.wordpress_post_id, { content: updated } as never)
+          if (row.wordpress_post_id) {
+            // Push the update to the SAME site this post lives on (multi-site).
+            const ctx = await siteFor((row as { wordpress_site_id?: string | null }).wordpress_site_id)
+            if (ctx) await ctx.wpService.updatePost(row.wordpress_post_id, { content: updated } as never)
+          }
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await supabase.from('blog_posts').update({ content: updated }).eq('id', row.id)
           fixed++
@@ -111,10 +135,13 @@ export async function POST(request: Request) {
     }
 
     // ── Load published posts that have a body + a WP id ──────────────────────
+    // wordpress_site_id is pulled so each post resolves its OWN ownSite below
+    // (multi-site users have posts on different sites — self-link filtering
+    // must compare against the post's actual site, not the user's default).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: posts } = await supabase
       .from('blog_posts')
-      .select('id,video_id,title,slug,content,wordpress_post_id')
+      .select('id,video_id,title,slug,content,wordpress_post_id,wordpress_site_id')
       .eq('user_id', user.id)
       .not('wordpress_post_id', 'is', null)
       .not('content', 'is', null)
@@ -174,15 +201,19 @@ export async function POST(request: Request) {
           if (!broken) return
 
           // Re-resolve the RIGHT product + the user's own affiliate link.
+          // ownSite = THIS post's site (multi-site self-link filter). Fall
+          // back to the default site when wordpress_site_id is null (legacy
+          // pre-Phase-3 row).
+          const postSite = await siteFor((post as PostRow & { wordpress_site_id?: string | null }).wordpress_site_id)
           const { affiliateUrl } = await resolveAffiliateUrl({
             title: video.title || post.title || '',
             description: video.description || '',
-            ownSite: wp.wordpress_url,
+            ownSite: postSite?.ownSite ?? defaultEntry.ownSite,
             userId: user.id,
-            tier: wp.tier,
-            amazonTag: wp.amazon_associates_tag,
-            geniuslinkApiKey: wp.geniuslink_api_key,
-            geniuslinkApiSecret: wp.geniuslink_api_secret,
+            tier: wp?.tier,
+            amazonTag: wp?.amazon_associates_tag,
+            geniuslinkApiKey: wp?.geniuslink_api_key,
+            geniuslinkApiSecret: wp?.geniuslink_api_secret,
             unwrapSourceLinks: true,
           })
           if (!affiliateUrl || affiliateUrl === oldUrl || badAmazonAsin(affiliateUrl)) {
