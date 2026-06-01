@@ -141,13 +141,20 @@ export default function LandingPreview() {
           0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
           50%      { opacity: 0.0; transform: translate(-50%, -50%) scale(1.25); }
         }
+        @keyframes mvp-play-pulse {
+          0%   { transform: scale(1);    opacity: 0.5; }
+          70%  { transform: scale(1.6);  opacity: 0;   }
+          100% { transform: scale(1.6);  opacity: 0;   }
+        }
+        html { scroll-behavior: smooth; }
       `}</style>
 
       <Nav theme={theme} onToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
       <Hero />
+      <DemoVideoSection />
 
-      {/* Placeholder for sections 2–9. Looks like a banner so when you
-          scroll past the hero the page doesn't feel suspiciously short. */}
+      {/* Placeholder for sections 3–9. Looks like a banner so when you
+          scroll past the demo the page doesn't feel suspiciously short. */}
       <section className="px-8 py-24 max-w-5xl mx-auto text-center">
         <div
           className="rounded-2xl border px-8 py-12"
@@ -159,14 +166,142 @@ export default function LandingPreview() {
         >
           <Sparkles size={20} className="mx-auto mb-3 text-[#7C3AED]" />
           <p className="text-[13px] uppercase tracking-[0.18em] mb-3" style={{ color: 'var(--text-faint)' }}>
-            Sections 2 – 9 coming next
+            Sections 3 – 9 coming next
           </p>
           <p className="text-[15px] max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            We&apos;re locking each section&apos;s copy in chat before building. Section 2 is &ldquo;The roles MVP plays&rdquo; (planner / scheduler / collaborator / script writer / social generator / WordPress publisher / SEO optimizer / thumbnail studio). After you approve it, I&apos;ll extend this page.
+            Hero + demo video are locked. Next up: &ldquo;The roles MVP plays&rdquo; (planner / scheduler / collaborator / script writer / social generator / WordPress publisher / SEO optimizer / thumbnail studio). After you approve copy for it, I&apos;ll extend this page.
           </p>
         </div>
       </section>
     </div>
+  )
+}
+
+/** Demo video section — large centered video frame with a clickable play
+ *  overlay. Currently a CSS-styled placeholder (gradient backdrop + mock
+ *  dashboard hint + play button); swap the inner content for a real video
+ *  poster image / embed when the demo is recorded. The play button has a
+ *  gentle breathing pulse so it reads as "alive and clickable" from any
+ *  distance on the page. */
+function DemoVideoSection() {
+  return (
+    <section id="demo" className="px-6 lg:px-8 pb-24 -mt-8 relative">
+      <div className="max-w-5xl mx-auto">
+        {/* Section eyebrow + heading */}
+        <div className="text-center mb-8">
+          <p
+            className="text-[11px] uppercase tracking-[0.18em] font-medium mb-3"
+            style={{ color: 'var(--text-faint)' }}
+          >
+            See it in motion
+          </p>
+          <h2
+            className="text-[28px] lg:text-[36px] font-semibold tracking-tight leading-tight max-w-2xl mx-auto"
+            style={{ color: 'var(--text)' }}
+          >
+            One review video.{' '}
+            <span style={{ color: 'var(--text-soft)' }}>Nine outputs.</span>{' '}
+            <span style={{ color: 'var(--text-soft)' }}>Ten minutes.</span>
+          </h2>
+        </div>
+
+        {/* The video frame. Wrapper provides the violet outer glow + soft
+            shadow. Inner div is what the visitor clicks. */}
+        <div
+          className="relative rounded-2xl overflow-hidden cursor-pointer group transition-transform duration-200 hover:scale-[1.005]"
+          style={{
+            boxShadow: '0 24px 80px -16px rgba(124,58,237,0.35), 0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--border)',
+          }}
+          onClick={() => {
+            // Hook up to a real video modal or YouTube embed here.
+            // For now, the click is just a visual indicator.
+          }}
+        >
+          {/* Aspect ratio holder (16:9). All visual layers stack inside. */}
+          <div className="relative aspect-video w-full overflow-hidden bg-[#0E0E11]">
+            {/* Mesh gradient backdrop — same family as hero, slightly
+                offset so the demo doesn't look like a copy of the hero. */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `
+                  radial-gradient(45% 65% at 30% 30%, rgba(124,58,237,0.40), transparent 60%),
+                  radial-gradient(40% 60% at 75% 60%, rgba(192,38,211,0.32), transparent 65%),
+                  radial-gradient(60% 50% at 50% 95%, rgba(99,102,241,0.25), transparent 70%),
+                  linear-gradient(180deg, #0E0E11, #1A1A22)
+                `,
+              }}
+            />
+
+            {/* Faint UI-chrome hint at the top — gives the impression of a
+                real product screenshot underneath without committing to one.
+                Three tiny circles like a macOS window. */}
+            <div className="absolute top-4 left-4 flex gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-white/15" />
+              <span className="w-2.5 h-2.5 rounded-full bg-white/15" />
+              <span className="w-2.5 h-2.5 rounded-full bg-white/15" />
+            </div>
+
+            {/* Mock dashboard preview hint — three subtle rectangular
+                "cards" that imply "this is the actual MVP interface" without
+                trying to fake a screenshot. */}
+            <div className="absolute inset-x-12 top-12 bottom-20 grid grid-cols-3 gap-3 opacity-30">
+              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
+              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
+              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
+            </div>
+
+            {/* Play button — large, violet, with a soft breathing pulse so
+                it reads as the focal point from any scroll position. */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="relative">
+                {/* Outer pulsing ring */}
+                <span
+                  className="absolute inset-0 rounded-full"
+                  style={{
+                    backgroundColor: 'rgba(124,58,237,0.35)',
+                    animation: 'mvp-play-pulse 2.5s ease-out infinite',
+                  }}
+                />
+                {/* The button itself */}
+                <button
+                  type="button"
+                  aria-label="Play demo video"
+                  className="relative w-20 h-20 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] flex items-center justify-center text-white transition-all duration-200 group-hover:scale-105"
+                  style={{ boxShadow: '0 12px 32px rgba(124,58,237,0.55)' }}
+                >
+                  <Play size={28} fill="currentColor" className="ml-1" />
+                </button>
+              </div>
+            </div>
+
+            {/* Bottom-right: mock timestamp pill — adds credibility ("this
+                is a 1:30 video, not a sales pitch") at a glance. */}
+            <div
+              className="absolute bottom-4 right-4 px-2 py-1 rounded text-[11px] font-medium tabular-nums text-white/85 backdrop-blur-sm"
+              style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+            >
+              0:00 · 1:30
+            </div>
+
+            {/* Bottom progress bar — empty for now, decorative. Implies
+                "this is a video player, ready to play." */}
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
+              <div className="h-full bg-[#7C3AED]" style={{ width: '0%' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Caption below the video — sets expectations so visitors who
+            don't click still get the value prop. */}
+        <p
+          className="text-center mt-6 text-[14px] max-w-xl mx-auto leading-relaxed"
+          style={{ color: 'var(--text-subtle)' }}
+        >
+          90 seconds. No talking head. Just the workflow: drop a YouTube URL → MVP turns it into 9 platforms → click publish.
+        </p>
+      </div>
+    </section>
   )
 }
 
