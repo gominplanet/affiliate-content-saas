@@ -1,7 +1,8 @@
 /**
  * /preview/dashboard — the home view in the new aesthetic.
- * Layout chrome (sidebar + topbar + multi-site picker) lives in
- * app/preview/layout.tsx so every preview page shares it.
+ *
+ * Theme: all colors reference CSS variables set by app/preview/layout.tsx,
+ * so the same JSX renders correctly in both dark and light mode.
  */
 'use client'
 
@@ -18,10 +19,11 @@ export default function DashboardPreviewPage() {
   return (
     <>
       {/* Hero banner */}
-      <header className="relative overflow-hidden border-b border-white/[0.06]">
+      <header className="relative overflow-hidden border-b" style={{ borderColor: 'var(--border)' }}>
         <div
-          className="absolute inset-0 opacity-[0.35]"
+          className="absolute inset-0"
           style={{
+            opacity: 'var(--hero-opacity)',
             background: `
               radial-gradient(60% 80% at 15% 20%, rgba(124, 58, 237, 0.45), transparent 60%),
               radial-gradient(50% 70% at 85% 10%, rgba(192, 38, 211, 0.35), transparent 65%),
@@ -30,11 +32,19 @@ export default function DashboardPreviewPage() {
           }}
         />
         <div className="relative px-8 pt-12 pb-10">
-          <p className="text-xs uppercase tracking-[0.18em] text-white/50 mb-3">Saturday, June 1</p>
-          <h1 className="text-[40px] leading-[1.1] font-semibold tracking-tight text-white">
+          <p
+            className="text-xs uppercase tracking-[0.18em] mb-3"
+            style={{ color: 'var(--text-subtle)' }}
+          >
+            Saturday, June 1
+          </p>
+          <h1
+            className="text-[40px] leading-[1.1] font-semibold tracking-tight"
+            style={{ color: 'var(--text)' }}
+          >
             Welcome back, Sebastien.
           </h1>
-          <p className="text-[15px] text-white/60 mt-2">
+          <p className="text-[15px] mt-2" style={{ color: 'var(--text-subtle)' }}>
             3 sites connected · Pro plan · 42 posts this month
           </p>
         </div>
@@ -44,13 +54,21 @@ export default function DashboardPreviewPage() {
         {/* AI prompt strip */}
         <section className="-mt-4">
           <div className="relative">
-            <Sparkles size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7C3AED]" />
+            <Sparkles
+              size={16}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-[#7C3AED]"
+            />
             <input
               type="text"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="What do you want to work on today?"
-              className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] text-[15px] text-white placeholder:text-white/40 focus:outline-none focus:border-[#7C3AED]/50 focus:bg-white/[0.06] transition-colors"
+              className="w-full pl-11 pr-4 py-3.5 rounded-2xl border text-[15px] focus:outline-none transition-colors"
+              style={{
+                backgroundColor: 'var(--surface)',
+                borderColor: 'var(--border-bright)',
+                color: 'var(--text)',
+              }}
             />
           </div>
           <div className="flex flex-wrap gap-2 mt-3">
@@ -64,18 +82,31 @@ export default function DashboardPreviewPage() {
 
         {/* Smart suggestion */}
         <section>
-          <div className="rounded-2xl bg-gradient-to-r from-[#7C3AED]/10 to-[#C026D3]/5 border border-[#7C3AED]/20 px-5 py-4 flex items-start gap-3">
+          <div
+            className="rounded-2xl border px-5 py-4 flex items-start gap-3"
+            style={{
+              backgroundColor: 'rgba(124, 58, 237, 0.08)',
+              borderColor: 'rgba(124, 58, 237, 0.25)',
+            }}
+          >
             <Sparkles size={16} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-[14px] text-white">
+              <p className="text-[14px]" style={{ color: 'var(--text)' }}>
                 You have <span className="font-semibold">2 unprocessed videos</span> from this week, and your
                 <span className="font-semibold"> &quot;YETI Cooler Review&quot;</span> is missing in-article images.
               </p>
-              <p className="text-[12px] text-white/55 mt-1">
+              <p className="text-[12px] mt-1" style={{ color: 'var(--text-subtle)' }}>
                 Process all three in one click — fully automated, ~3 minutes total.
               </p>
             </div>
-            <button className="px-3 py-1.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.12] border border-white/[0.08] text-[12px] font-medium text-white inline-flex items-center gap-1 transition-colors">
+            <button
+              className="px-3 py-1.5 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1 transition-colors"
+              style={{
+                backgroundColor: 'var(--surface-bright)',
+                borderColor: 'var(--border)',
+                color: 'var(--text)',
+              }}
+            >
               Run all <ArrowUpRight size={11} />
             </button>
           </div>
@@ -94,7 +125,7 @@ export default function DashboardPreviewPage() {
           <Card>
             <div className="flex items-center gap-2 mb-4">
               <CheckCircle2 size={15} className="text-[#10B981]" />
-              <h2 className="text-[13px] font-semibold tracking-tight text-white">Today&apos;s wins</h2>
+              <h2 className="text-[13px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Today&apos;s wins</h2>
             </div>
             <ul className="flex flex-col gap-3">
               <WinRow text="“Best Electric Dirt Bike” crossed 1,000 views" meta="Up from 850 yesterday · +18%" />
@@ -105,7 +136,7 @@ export default function DashboardPreviewPage() {
           <Card>
             <div className="flex items-center gap-2 mb-4">
               <AlertCircle size={15} className="text-[#F59E0B]" />
-              <h2 className="text-[13px] font-semibold tracking-tight text-white">Needs attention</h2>
+              <h2 className="text-[13px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Needs attention</h2>
             </div>
             <ul className="flex flex-col gap-3">
               <AttentionRow text="Wine Reviews — last publish failed" cta="Run doctor" href="/preview/setup" />
@@ -118,8 +149,12 @@ export default function DashboardPreviewPage() {
         {/* Recent posts */}
         <section>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[13px] font-semibold tracking-tight text-white">Recent posts</h2>
-            <a href="/preview/library" className="text-[12px] text-white/60 hover:text-white inline-flex items-center gap-1">
+            <h2 className="text-[13px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Recent posts</h2>
+            <a
+              href="/preview/library"
+              className="text-[12px] inline-flex items-center gap-1 transition-colors"
+              style={{ color: 'var(--text-subtle)' }}
+            >
               View all <ArrowUpRight size={11} />
             </a>
           </div>
@@ -136,7 +171,22 @@ export default function DashboardPreviewPage() {
 
 function ActionChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-[12px] text-white/80 hover:text-white transition-colors">
+    <button
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[12px] transition-colors"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        color: 'var(--text-muted)',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
+        e.currentTarget.style.color = 'var(--text)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = 'var(--surface)'
+        e.currentTarget.style.color = 'var(--text-muted)'
+      }}
+    >
       {icon}
       {label}
     </button>
@@ -147,17 +197,31 @@ function StatTile({ icon, label, value, delta, deltaLabel }: { icon: React.React
   const isPositive = delta.startsWith('+')
   return (
     <div
-      className="rounded-2xl px-5 py-5 bg-white/[0.03] border border-white/[0.06] transition-colors hover:bg-white/[0.05]"
-      style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)' }}
+      className="rounded-2xl px-5 py-5 border transition-colors"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
     >
-      <div className="flex items-center gap-2 text-white/50 mb-3">
+      <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--text-subtle)' }}>
         {icon}
         <span className="text-[11px] uppercase tracking-[0.12em]">{label}</span>
       </div>
-      <p className="text-[32px] font-semibold tracking-tight text-white tabular-nums leading-none">{value}</p>
+      <p
+        className="text-[32px] font-semibold tracking-tight tabular-nums leading-none"
+        style={{ color: 'var(--text)' }}
+      >
+        {value}
+      </p>
       <div className="flex items-center gap-1.5 mt-3">
-        <span className={`text-[11px] font-medium tabular-nums ${isPositive ? 'text-[#10B981]' : 'text-[#F43F5E]'}`}>{delta}</span>
-        <span className="text-[11px] text-white/45">{deltaLabel}</span>
+        <span
+          className="text-[11px] font-medium tabular-nums"
+          style={{ color: isPositive ? '#10B981' : '#F43F5E' }}
+        >
+          {delta}
+        </span>
+        <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{deltaLabel}</span>
       </div>
     </div>
   )
@@ -166,8 +230,12 @@ function StatTile({ icon, label, value, delta, deltaLabel }: { icon: React.React
 function Card({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="rounded-2xl px-5 py-5 bg-white/[0.03] border border-white/[0.06]"
-      style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)' }}
+      className="rounded-2xl px-5 py-5 border"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
     >
       {children}
     </div>
@@ -179,8 +247,8 @@ function WinRow({ text, meta }: { text: string; meta: string }) {
     <li className="flex items-start gap-3">
       <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] mt-2 flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] text-white leading-snug">{text}</p>
-        <p className="text-[11px] text-white/45 mt-0.5">{meta}</p>
+        <p className="text-[13px] leading-snug" style={{ color: 'var(--text)' }}>{text}</p>
+        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>{meta}</p>
       </div>
     </li>
   )
@@ -191,7 +259,7 @@ function AttentionRow({ text, cta, href }: { text: string; cta: string; href: st
     <li className="flex items-start gap-3">
       <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] mt-2 flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] text-white leading-snug">{text}</p>
+        <p className="text-[13px] leading-snug" style={{ color: 'var(--text)' }}>{text}</p>
       </div>
       <a href={href} className="text-[12px] font-medium text-[#7C3AED] hover:text-[#9D6BFF] inline-flex items-center gap-1 flex-shrink-0">
         {cta} <ArrowUpRight size={11} />
@@ -204,17 +272,24 @@ function PostCard({ title, site, siteColor, views, daysAgo, gradient }: { title:
   return (
     <a
       href="#"
-      className="group block rounded-2xl overflow-hidden bg-white/[0.03] border border-white/[0.06] transition-all duration-200 hover:bg-white/[0.05] hover:-translate-y-0.5"
-      style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)' }}
+      className="group block rounded-2xl overflow-hidden border transition-all duration-200 hover:-translate-y-0.5"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
     >
       <div className={`aspect-video bg-gradient-to-br ${gradient} relative`}>
-        <div className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider text-white" style={{ backgroundColor: `${siteColor}33`, border: `1px solid ${siteColor}55` }}>
+        <div
+          className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider text-white"
+          style={{ backgroundColor: `${siteColor}33`, border: `1px solid ${siteColor}55` }}
+        >
           {site}
         </div>
       </div>
       <div className="p-4">
-        <p className="text-[13px] font-medium text-white leading-snug line-clamp-2 mb-2 group-hover:text-white">{title}</p>
-        <div className="flex items-center gap-2 text-[11px] text-white/45">
+        <p className="text-[13px] font-medium leading-snug line-clamp-2 mb-2" style={{ color: 'var(--text)' }}>{title}</p>
+        <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-faint)' }}>
           <Eye size={11} />
           <span className="tabular-nums">{views.toLocaleString()}</span>
           <span>·</span>

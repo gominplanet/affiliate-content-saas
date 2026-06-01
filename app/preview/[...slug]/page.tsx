@@ -1,11 +1,6 @@
 /**
- * Catch-all for /preview/* pages we haven't mocked yet. Renders a stub
- * with the page name from the URL + a "Coming next" placeholder so the
- * sidebar nav never dead-ends during the preview review.
- *
- * The dynamic param is at the END of the route table — built-in pages
- * (/preview/dashboard, /preview/library, etc.) take precedence over
- * this catch-all per Next.js routing rules.
+ * Catch-all for /preview/* pages we haven't mocked yet. Theme-aware via
+ * CSS variables set by app/preview/layout.tsx.
  */
 'use client'
 
@@ -73,30 +68,38 @@ export default function PreviewStub() {
   return (
     <main className="px-8 py-10 max-w-3xl mx-auto">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-white/70">
+        <div
+          className="w-10 h-10 rounded-xl border flex items-center justify-center"
+          style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text-soft)' }}
+        >
           {meta.icon}
         </div>
-        <h1 className="text-[28px] font-semibold tracking-tight text-white">{meta.label}</h1>
+        <h1 className="text-[28px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>{meta.label}</h1>
       </div>
-      <p className="text-[13px] text-white/55 mb-8">
+      <p className="text-[13px] mb-8" style={{ color: 'var(--text-subtle)' }}>
         This page lives in the real app — the preview just hasn&apos;t been mocked yet.
       </p>
 
       <div
-        className="rounded-2xl bg-white/[0.03] border border-white/[0.06] p-6"
-        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)' }}
+        className="rounded-2xl border p-6"
+        style={{
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--border)',
+          boxShadow: 'var(--card-shadow)',
+        }}
       >
         <div className="flex items-center gap-2 mb-3">
           <Sparkles size={14} className="text-[#7C3AED]" />
-          <p className="text-[11px] uppercase tracking-[0.15em] text-white/45">Design direction</p>
+          <p className="text-[11px] uppercase tracking-[0.15em]" style={{ color: 'var(--text-faint)' }}>Design direction</p>
         </div>
-        <p className="text-[14px] text-white/85 leading-relaxed">{meta.note}</p>
+        <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>{meta.note}</p>
       </div>
 
       <div className="mt-6 flex gap-3">
         <a
           href="/preview/dashboard"
-          className="px-3.5 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-[12px] text-white inline-flex items-center gap-1.5 transition-colors"
+          className="px-3.5 py-2 rounded-lg border text-[12px] inline-flex items-center gap-1.5 transition-colors"
+          style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
         >
           ← Back to dashboard
         </a>

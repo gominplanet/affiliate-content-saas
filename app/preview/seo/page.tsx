@@ -1,20 +1,11 @@
 /**
- * /preview/seo — SEO hub redesign.
- *
- * Three stacked sections:
- *   1. Aggregate stats — overall health at a glance
- *   2. Recently dropped — the most urgent thing to act on
- *   3. Per-post table — every published post with score, indexed state, clicks
- *
- * Filter by site (Pro multi-site). Click any row → opens post detail with
- * AI fix suggestions inline. "Fix all" sweeps every fixable issue across
- * every post (using the existing seo/fix-all engine).
+ * /preview/seo — SEO hub redesign. Theme-aware via CSS variables.
  */
 'use client'
 
 import { useState } from 'react'
 import {
-  TrendingUp, AlertCircle, CheckCircle2, Search, ArrowUpRight,
+  TrendingUp, AlertCircle, CheckCircle2, Search,
   Sparkles, Wand2, ExternalLink, RefreshCw,
 } from 'lucide-react'
 
@@ -56,11 +47,16 @@ export default function SeoPreviewPage() {
     <main className="px-8 py-10 flex flex-col gap-8">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-[28px] font-semibold tracking-tight text-white">SEO</h1>
-          <p className="text-[13px] text-white/55 mt-1">Per-post scoring, Google indexing status, and one-click fixes.</p>
+          <h1 className="text-[28px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>SEO</h1>
+          <p className="text-[13px] mt-1" style={{ color: 'var(--text-subtle)' }}>
+            Per-post scoring, Google indexing status, and one-click fixes.
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="px-3 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-[12px] text-white inline-flex items-center gap-1.5 transition-colors">
+          <button
+            className="px-3 py-2 rounded-lg border text-[12px] inline-flex items-center gap-1.5 transition-colors"
+            style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
+          >
             <RefreshCw size={11} /> Re-check all
           </button>
           <button className="px-3.5 py-2 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white inline-flex items-center gap-1.5 transition-colors">
@@ -69,7 +65,6 @@ export default function SeoPreviewPage() {
         </div>
       </header>
 
-      {/* Aggregate stats */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatTile icon={<TrendingUp size={14} />} label="Avg score" value="84" delta="+3 pts" deltaLabel="vs last week" positive />
         <StatTile icon={<CheckCircle2 size={14} />} label="Indexed" value={`${indexedCount}/${ROWS.length}`} delta="+2" deltaLabel="this week" positive />
@@ -77,42 +72,53 @@ export default function SeoPreviewPage() {
         <StatTile icon={<AlertCircle size={14} />} label="Fixable issues" value={totalFixable.toString()} delta="across 5 posts" deltaLabel="" warn />
       </section>
 
-      {/* Smart suggestion / alert */}
-      <div className="rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/25 px-4 py-3 flex items-center gap-3">
+      <div
+        className="rounded-xl border px-4 py-3 flex items-center gap-3"
+        style={{
+          backgroundColor: 'rgba(245, 158, 11, 0.10)',
+          borderColor: 'rgba(245, 158, 11, 0.3)',
+        }}
+      >
         <AlertCircle size={14} className="text-[#F59E0B] flex-shrink-0" />
-        <p className="text-[13px] text-white flex-1">
+        <p className="text-[13px] flex-1" style={{ color: 'var(--text)' }}>
           <span className="font-semibold">Hydro Flask vs YETI</span> hasn&apos;t been picked up by Google yet (7 days old). Submit it to IndexNow + check the sitemap?
         </p>
-        <button className="text-[12px] font-medium text-white/85 hover:text-white px-2.5 py-1 rounded bg-white/[0.06] hover:bg-white/[0.1]">
+        <button
+          className="text-[12px] font-medium px-2.5 py-1 rounded"
+          style={{ backgroundColor: 'var(--surface-bright)', color: 'var(--text)' }}
+        >
           Submit now
         </button>
       </div>
 
-      {/* Search + filter */}
       <div className="flex items-center justify-between gap-3">
         <div className="relative">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-faint)' }} />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search posts by title"
-            className="pl-8 pr-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[13px] text-white placeholder:text-white/35 focus:outline-none focus:border-[#7C3AED]/50 w-72"
+            className="pl-8 pr-3 py-2 rounded-lg border text-[13px] focus:outline-none w-72"
+            style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
           />
         </div>
-        <p className="text-[11px] text-white/40 tabular-nums">
+        <p className="text-[11px] tabular-nums" style={{ color: 'var(--text-faint)' }}>
           {filtered.length} of {ROWS.length} posts
         </p>
       </div>
 
-      {/* Table */}
       <div
-        className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden"
-        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)' }}
+        className="rounded-xl border overflow-hidden"
+        style={{
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--border)',
+          boxShadow: 'var(--card-shadow)',
+        }}
       >
         <table className="w-full">
           <thead>
-            <tr className="border-b border-white/[0.06]">
+            <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
               <Th>Title</Th>
               <Th className="w-28">Site</Th>
               <Th className="w-16">Score</Th>
@@ -138,17 +144,21 @@ function StatTile({ icon, label, value, delta, deltaLabel, positive, warn }: { i
   const deltaColor = warn ? '#F59E0B' : positive ? '#10B981' : '#F43F5E'
   return (
     <div
-      className="rounded-2xl px-5 py-5 bg-white/[0.03] border border-white/[0.06] transition-colors hover:bg-white/[0.05]"
-      style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)' }}
+      className="rounded-2xl px-5 py-5 border transition-colors"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
     >
-      <div className="flex items-center gap-2 text-white/50 mb-3">
+      <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--text-subtle)' }}>
         {icon}
         <span className="text-[11px] uppercase tracking-[0.12em]">{label}</span>
       </div>
-      <p className="text-[32px] font-semibold tracking-tight text-white tabular-nums leading-none">{value}</p>
+      <p className="text-[32px] font-semibold tracking-tight tabular-nums leading-none" style={{ color: 'var(--text)' }}>{value}</p>
       <div className="flex items-center gap-1.5 mt-3">
         <span className="text-[11px] font-medium tabular-nums" style={{ color: deltaColor }}>{delta}</span>
-        {deltaLabel && <span className="text-[11px] text-white/45">{deltaLabel}</span>}
+        {deltaLabel && <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{deltaLabel}</span>}
       </div>
     </div>
   )
@@ -156,7 +166,10 @@ function StatTile({ icon, label, value, delta, deltaLabel, positive, warn }: { i
 
 function Th({ children, className = '' }: { children?: React.ReactNode; className?: string }) {
   return (
-    <th className={`text-left px-3 py-2.5 text-[10px] font-medium uppercase tracking-[0.1em] text-white/40 ${className}`}>
+    <th
+      className={`text-left px-3 py-2.5 text-[10px] font-medium uppercase tracking-[0.1em] ${className}`}
+      style={{ color: 'var(--text-faint)' }}
+    >
       {children}
     </th>
   )
@@ -165,14 +178,19 @@ function Th({ children, className = '' }: { children?: React.ReactNode; classNam
 function SeoRowTr({ row }: { row: SeoRow }) {
   const scoreColor = row.score >= 90 ? '#10B981' : row.score >= 75 ? '#F59E0B' : '#F43F5E'
   return (
-    <tr className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.025] transition-colors">
+    <tr
+      className="border-b last:border-0 transition-colors"
+      style={{ borderColor: 'var(--border)' }}
+      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
+      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+    >
       <td className="px-3 py-3 max-w-md">
-        <a href="#" className="text-[13px] text-white hover:text-[#9D6BFF] line-clamp-1">
+        <a href="#" className="text-[13px] line-clamp-1 hover:text-[#9D6BFF]" style={{ color: 'var(--text)' }}>
           {row.title}
         </a>
       </td>
       <td className="px-3 py-3">
-        <span className="inline-flex items-center gap-1.5 text-[11px] text-white/70">
+        <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-soft)' }}>
           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SITE_COLORS[row.site] }} />
           {row.site}
         </span>
@@ -180,19 +198,17 @@ function SeoRowTr({ row }: { row: SeoRow }) {
       <td className="px-3 py-3">
         <span className="text-[14px] font-semibold tabular-nums" style={{ color: scoreColor }}>{row.score}</span>
       </td>
-      <td className="px-3 py-3">
-        <IndexedPill state={row.indexed} />
-      </td>
-      <td className="px-3 py-3 text-[12px] text-white/80 tabular-nums">{row.clicks}</td>
-      <td className="px-3 py-3 text-[12px] text-white/60 tabular-nums">{row.impressions.toLocaleString()}</td>
-      <td className="px-3 py-3 text-[12px] text-white/60 tabular-nums">{row.position?.toFixed(1) ?? '—'}</td>
+      <td className="px-3 py-3"><IndexedPill state={row.indexed} /></td>
+      <td className="px-3 py-3 text-[12px] tabular-nums" style={{ color: 'var(--text-muted)' }}>{row.clicks}</td>
+      <td className="px-3 py-3 text-[12px] tabular-nums" style={{ color: 'var(--text-soft)' }}>{row.impressions.toLocaleString()}</td>
+      <td className="px-3 py-3 text-[12px] tabular-nums" style={{ color: 'var(--text-soft)' }}>{row.position?.toFixed(1) ?? '—'}</td>
       <td className="px-3 py-3">
         {row.fixable > 0 ? (
-          <button className="text-[11px] font-medium text-[#7C3AED] hover:text-[#9D6BFF] inline-flex items-center gap-1">
+          <button className="text-[11px] font-medium text-[#7C3AED] inline-flex items-center gap-1">
             <Sparkles size={10} /> Fix {row.fixable}
           </button>
         ) : (
-          <a href="#" className="text-[11px] text-white/45 hover:text-white inline-flex items-center gap-1">
+          <a href="#" className="text-[11px] inline-flex items-center gap-1" style={{ color: 'var(--text-faint)' }}>
             View <ExternalLink size={10} />
           </a>
         )}

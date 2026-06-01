@@ -1,17 +1,13 @@
 /**
- * /preview/library — the post catalog redesign.
- *
- * Key shift from the current Library: data-density first. Tables instead
- * of cards for the main grid (you can see 12+ posts at once), tabbed site
- * filter at the top (Pro multi-site), bulk action bar that appears when
- * you select rows, and quiet AI suggestions inline.
+ * /preview/library — the post catalog redesign. Theme-aware via CSS
+ * variables set by app/preview/layout.tsx.
  */
 'use client'
 
 import { useState } from 'react'
 import {
   Search, Filter, Sparkles, ArrowUpRight,
-  Eye, RefreshCw, ImageIcon, Share2, Trash2,
+  RefreshCw, ImageIcon, Share2, Trash2,
   ChevronDown, MoreHorizontal, ExternalLink, CheckSquare,
 } from 'lucide-react'
 
@@ -68,41 +64,49 @@ export default function LibraryPreviewPage() {
 
   return (
     <main className="px-8 py-10 flex flex-col gap-6">
-      {/* Page header — quiet, doesn't take 200px of space. */}
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-[28px] font-semibold tracking-tight text-white">Library</h1>
-          <p className="text-[13px] text-white/55 mt-1">Every published, scheduled, and draft post across your sites.</p>
+          <h1 className="text-[28px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Library</h1>
+          <p className="text-[13px] mt-1" style={{ color: 'var(--text-subtle)' }}>
+            Every published, scheduled, and draft post across your sites.
+          </p>
         </div>
         <button className="px-3.5 py-2 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white inline-flex items-center gap-1.5 transition-colors">
           <Sparkles size={13} /> Generate new
         </button>
       </header>
 
-      {/* Smart suggestion — quietly surfaces an opportunity */}
-      <div className="rounded-xl bg-gradient-to-r from-[#7C3AED]/10 to-[#C026D3]/5 border border-[#7C3AED]/20 px-4 py-3 flex items-center gap-3">
+      <div
+        className="rounded-xl border px-4 py-3 flex items-center gap-3"
+        style={{
+          backgroundColor: 'rgba(124, 58, 237, 0.08)',
+          borderColor: 'rgba(124, 58, 237, 0.25)',
+        }}
+      >
         <Sparkles size={14} className="text-[#7C3AED] flex-shrink-0" />
-        <p className="text-[13px] text-white flex-1">
+        <p className="text-[13px] flex-1" style={{ color: 'var(--text)' }}>
           Your <span className="font-semibold">Outdoor</span> posts are getting 2.3× more views than average — consider <span className="font-semibold">generating 3 more</span> from your unprocessed Outdoor videos.
         </p>
-        <button className="text-[12px] text-white/70 hover:text-white">Dismiss</button>
-        <button className="text-[12px] font-medium text-[#7C3AED] hover:text-[#9D6BFF] inline-flex items-center gap-1">
+        <button className="text-[12px]" style={{ color: 'var(--text-soft)' }}>Dismiss</button>
+        <button className="text-[12px] font-medium text-[#7C3AED] inline-flex items-center gap-1">
           See videos <ArrowUpRight size={11} />
         </button>
       </div>
 
-      {/* Controls row: site filter tabs + search + filter */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1 p-1 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div
+          className="flex items-center gap-1 p-1 rounded-lg border"
+          style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+        >
           {SITE_FILTERS.map(filter => (
             <button
               key={filter}
               onClick={() => setActiveFilter(filter)}
-              className={`px-3 py-1 rounded text-[12px] transition-colors ${
-                activeFilter === filter
-                  ? 'bg-white/[0.08] text-white'
-                  : 'text-white/55 hover:text-white'
-              }`}
+              className="px-3 py-1 rounded text-[12px] transition-colors"
+              style={{
+                backgroundColor: activeFilter === filter ? 'var(--surface-bright)' : 'transparent',
+                color: activeFilter === filter ? 'var(--text)' : 'var(--text-subtle)',
+              }}
             >
               {filter === 'All sites' ? filter : (
                 <span className="inline-flex items-center gap-1.5">
@@ -115,26 +119,43 @@ export default function LibraryPreviewPage() {
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-faint)' }} />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search posts"
-              className="pl-8 pr-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[12px] text-white placeholder:text-white/35 focus:outline-none focus:border-[#7C3AED]/50 w-56"
+              className="pl-8 pr-3 py-1.5 rounded-lg border text-[12px] focus:outline-none w-56"
+              style={{
+                backgroundColor: 'var(--surface)',
+                borderColor: 'var(--border-bright)',
+                color: 'var(--text)',
+              }}
             />
           </div>
-          <button className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-[12px] text-white/70 hover:text-white inline-flex items-center gap-1.5 transition-colors">
+          <button
+            className="px-3 py-1.5 rounded-lg border text-[12px] inline-flex items-center gap-1.5 transition-colors"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--border-bright)',
+              color: 'var(--text-soft)',
+            }}
+          >
             <Filter size={11} /> Filter
             <ChevronDown size={11} />
           </button>
         </div>
       </div>
 
-      {/* Bulk action bar — only appears when something is selected */}
       {selected.size > 0 && (
-        <div className="rounded-lg bg-[#7C3AED]/10 border border-[#7C3AED]/30 px-4 py-2.5 flex items-center gap-3">
-          <p className="text-[12px] text-white">
+        <div
+          className="rounded-lg border px-4 py-2.5 flex items-center gap-3"
+          style={{
+            backgroundColor: 'rgba(124, 58, 237, 0.10)',
+            borderColor: 'rgba(124, 58, 237, 0.35)',
+          }}
+        >
+          <p className="text-[12px]" style={{ color: 'var(--text)' }}>
             <span className="font-semibold tabular-nums">{selected.size}</span> selected
           </p>
           <div className="flex items-center gap-2 ml-2">
@@ -143,23 +164,26 @@ export default function LibraryPreviewPage() {
             <BulkButton icon={<Share2 size={11} />} label="Push to social" />
             <BulkButton icon={<Trash2 size={11} />} label="Delete" danger />
           </div>
-          <button onClick={() => setSelected(new Set())} className="ml-auto text-[12px] text-white/50 hover:text-white">
+          <button onClick={() => setSelected(new Set())} className="ml-auto text-[12px]" style={{ color: 'var(--text-subtle)' }}>
             Clear
           </button>
         </div>
       )}
 
-      {/* Table — the main density move. Each row: checkbox · title · site · status · views · SEO · social · age · row actions */}
       <div
-        className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden"
-        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)' }}
+        className="rounded-xl border overflow-hidden"
+        style={{
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--border)',
+          boxShadow: 'var(--card-shadow)',
+        }}
       >
         <table className="w-full">
           <thead>
-            <tr className="border-b border-white/[0.06]">
+            <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
               <th className="text-left px-4 py-2.5 w-8">
-                <button onClick={toggleAll} className="text-white/40 hover:text-white">
-                  <CheckSquare size={13} className={allSelected ? 'text-[#7C3AED]' : 'opacity-40'} />
+                <button onClick={toggleAll} style={{ color: allSelected ? '#7C3AED' : 'var(--text-faint)' }}>
+                  <CheckSquare size={13} />
                 </button>
               </th>
               <Th>Title</Th>
@@ -178,7 +202,7 @@ export default function LibraryPreviewPage() {
             ))}
             {filteredPosts.length === 0 && (
               <tr>
-                <td colSpan={9} className="text-center py-12 text-[13px] text-white/45">
+                <td colSpan={9} className="text-center py-12 text-[13px]" style={{ color: 'var(--text-faint)' }}>
                   No posts match this filter.
                 </td>
               </tr>
@@ -187,8 +211,7 @@ export default function LibraryPreviewPage() {
         </table>
       </div>
 
-      {/* Footer summary */}
-      <p className="text-[11px] text-white/40 tabular-nums">
+      <p className="text-[11px] tabular-nums" style={{ color: 'var(--text-faint)' }}>
         Showing {filteredPosts.length} of {POSTS.length} posts
       </p>
     </main>
@@ -197,7 +220,10 @@ export default function LibraryPreviewPage() {
 
 function Th({ children, className = '' }: { children?: React.ReactNode; className?: string }) {
   return (
-    <th className={`text-left px-3 py-2.5 text-[10px] font-medium uppercase tracking-[0.1em] text-white/40 ${className}`}>
+    <th
+      className={`text-left px-3 py-2.5 text-[10px] font-medium uppercase tracking-[0.1em] ${className}`}
+      style={{ color: 'var(--text-faint)' }}
+    >
       {children}
     </th>
   )
@@ -205,34 +231,44 @@ function Th({ children, className = '' }: { children?: React.ReactNode; classNam
 
 function PostRow({ post, selected, onToggle }: { post: Post; selected: boolean; onToggle: () => void }) {
   return (
-    <tr className={`border-b border-white/[0.04] last:border-0 hover:bg-white/[0.025] transition-colors ${selected ? 'bg-[#7C3AED]/[0.06]' : ''}`}>
+    <tr
+      className="border-b last:border-0 transition-colors"
+      style={{
+        borderColor: 'var(--border)',
+        backgroundColor: selected ? 'var(--surface-selected)' : 'transparent',
+      }}
+      onMouseEnter={(e) => {
+        if (!selected) e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = selected ? 'var(--surface-selected)' : 'transparent'
+      }}
+    >
       <td className="px-4 py-3">
-        <button onClick={onToggle} className="text-white/40 hover:text-white">
-          <CheckSquare size={13} className={selected ? 'text-[#7C3AED]' : 'opacity-40'} />
+        <button onClick={onToggle} style={{ color: selected ? '#7C3AED' : 'var(--text-faint)' }}>
+          <CheckSquare size={13} />
         </button>
       </td>
       <td className="px-3 py-3 max-w-md">
-        <a href="#" className="text-[13px] text-white hover:text-[#9D6BFF] line-clamp-1">
+        <a href="#" className="text-[13px] line-clamp-1 hover:text-[#9D6BFF]" style={{ color: 'var(--text)' }}>
           {post.title}
         </a>
       </td>
       <td className="px-3 py-3">
-        <span className="inline-flex items-center gap-1.5 text-[11px] text-white/70">
+        <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-soft)' }}>
           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: SITE_COLORS[post.site] }} />
           {post.site}
         </span>
       </td>
+      <td className="px-3 py-3"><StatusPill status={post.status} /></td>
+      <td className="px-3 py-3 text-[12px] tabular-nums" style={{ color: 'var(--text-muted)' }}>{post.views.toLocaleString()}</td>
       <td className="px-3 py-3">
-        <StatusPill status={post.status} />
+        {post.status === 'published' ? <SeoScore score={post.seoScore} /> : <span className="text-[12px]" style={{ color: 'var(--text-dim)' }}>—</span>}
       </td>
-      <td className="px-3 py-3 text-[12px] text-white/80 tabular-nums">{post.views.toLocaleString()}</td>
+      <td className="px-3 py-3 text-[12px] tabular-nums" style={{ color: 'var(--text-soft)' }}>{post.socialPosts || '—'}</td>
+      <td className="px-3 py-3 text-[12px]" style={{ color: 'var(--text-subtle)' }}>{post.publishedAt}</td>
       <td className="px-3 py-3">
-        {post.status === 'published' ? <SeoScore score={post.seoScore} /> : <span className="text-[12px] text-white/30">—</span>}
-      </td>
-      <td className="px-3 py-3 text-[12px] text-white/60 tabular-nums">{post.socialPosts || '—'}</td>
-      <td className="px-3 py-3 text-[12px] text-white/55">{post.publishedAt}</td>
-      <td className="px-3 py-3">
-        <button className="p-1 rounded text-white/40 hover:text-white hover:bg-white/[0.06]">
+        <button className="p-1 rounded" style={{ color: 'var(--text-faint)' }}>
           <MoreHorizontal size={13} />
         </button>
       </td>
@@ -256,21 +292,14 @@ function StatusPill({ status }: { status: Post['status'] }) {
 
 function SeoScore({ score }: { score: number }) {
   const color = score >= 90 ? '#10B981' : score >= 75 ? '#F59E0B' : '#F43F5E'
-  return (
-    <span className="text-[12px] font-medium tabular-nums" style={{ color }}>
-      {score}
-    </span>
-  )
+  return <span className="text-[12px] font-medium tabular-nums" style={{ color }}>{score}</span>
 }
 
 function BulkButton({ icon, label, danger }: { icon: React.ReactNode; label: string; danger?: boolean }) {
   return (
     <button
-      className={`px-2.5 py-1 rounded text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors ${
-        danger
-          ? 'text-[#F43F5E] hover:bg-[#F43F5E]/10'
-          : 'text-white hover:bg-white/[0.08]'
-      }`}
+      className="px-2.5 py-1 rounded text-[11px] font-medium inline-flex items-center gap-1.5 transition-colors"
+      style={{ color: danger ? '#F43F5E' : 'var(--text)' }}
     >
       {icon}
       {label}

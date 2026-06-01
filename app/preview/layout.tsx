@@ -3,18 +3,25 @@
  * /preview/* with the same sidebar + topbar so you can navigate between
  * mockups and feel the cross-page consistency.
  *
+ * THEME: a sun/moon toggle in the topbar swaps the whole preview between
+ * a warm-dark and a warm-light mode. Colors are CSS variables set on the
+ * outermost wrapper so no per-page class refactor was needed — pages
+ * reference `var(--surface)`, `var(--text)`, etc. via Tailwind's arbitrary
+ * value syntax.
+ *
  * Once the redesign is approved, this layout (or a near-clone) replaces
  * the current (dashboard)/layout.tsx and the per-page contents move into
  * the real route files.
  */
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
   Settings, CreditCard, Bot, ChevronsLeft, ChevronsRight,
   Bell, ChevronDown, Sparkles, PenLine, Scale, Calendar,
+  Sun, Moon,
 } from 'lucide-react'
 
 /** Nav-item shape. `path` is the full route inc. /preview prefix; `badge`
@@ -63,31 +70,98 @@ const NAV_GROUPS: Array<{ label: string; items: NavItemDef[] }> = [
   },
 ]
 
+/** Per-theme CSS variable definitions. Components reference these via
+ *  `bg-[color:var(--surface)]` etc. so flipping a theme is one state
+ *  change instead of editing every JSX color string. */
+const DARK_VARS: React.CSSProperties = {
+  ['--bg' as string]: '#0E0E11',
+  ['--bg-sidebar' as string]: '#0B0B0E',
+  ['--surface' as string]: 'rgba(255,255,255,0.03)',
+  ['--surface-hover' as string]: 'rgba(255,255,255,0.05)',
+  ['--surface-bright' as string]: 'rgba(255,255,255,0.07)',
+  ['--surface-selected' as string]: 'rgba(124,58,237,0.10)',
+  ['--border' as string]: 'rgba(255,255,255,0.06)',
+  ['--border-bright' as string]: 'rgba(255,255,255,0.10)',
+  ['--text' as string]: '#F5F5F7',
+  ['--text-muted' as string]: 'rgba(255,255,255,0.85)',
+  ['--text-soft' as string]: 'rgba(255,255,255,0.70)',
+  ['--text-subtle' as string]: 'rgba(255,255,255,0.55)',
+  ['--text-faint' as string]: 'rgba(255,255,255,0.40)',
+  ['--text-dim' as string]: 'rgba(255,255,255,0.30)',
+  ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)',
+  ['--hero-opacity' as string]: '0.35',
+  ['--kbd-bg' as string]: 'rgba(255,255,255,0.06)',
+}
+
+const LIGHT_VARS: React.CSSProperties = {
+  ['--bg' as string]: '#FAFAF8',
+  ['--bg-sidebar' as string]: '#F4F2EE',
+  ['--surface' as string]: '#FFFFFF',
+  ['--surface-hover' as string]: 'rgba(0,0,0,0.025)',
+  ['--surface-bright' as string]: 'rgba(0,0,0,0.04)',
+  ['--surface-selected' as string]: 'rgba(124,58,237,0.08)',
+  ['--border' as string]: 'rgba(0,0,0,0.08)',
+  ['--border-bright' as string]: 'rgba(0,0,0,0.14)',
+  ['--text' as string]: '#1D1D1F',
+  ['--text-muted' as string]: 'rgba(0,0,0,0.82)',
+  ['--text-soft' as string]: 'rgba(0,0,0,0.66)',
+  ['--text-subtle' as string]: 'rgba(0,0,0,0.52)',
+  ['--text-faint' as string]: 'rgba(0,0,0,0.40)',
+  ['--text-dim' as string]: 'rgba(0,0,0,0.30)',
+  ['--card-shadow' as string]: '0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02)',
+  ['--hero-opacity' as string]: '0.18',
+  ['--kbd-bg' as string]: 'rgba(0,0,0,0.05)',
+}
+
 export default function PreviewLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
   const [activeSite, setActiveSite] = useState('Main')
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const pathname = usePathname() || ''
 
+  // Persist theme choice across page navigations within the preview
+  // (we use sessionStorage so it resets on a fresh visit — keeps the
+  // preview discoverable for new viewers).
+  useEffect(() => {
+    const saved = sessionStorage.getItem('mvp-preview-theme')
+    if (saved === 'light' || saved === 'dark') setTheme(saved)
+  }, [])
+  useEffect(() => {
+    sessionStorage.setItem('mvp-preview-theme', theme)
+  }, [theme])
+
   return (
-    <div className="min-h-screen bg-[#0E0E11] text-[#F5F5F7] font-[Inter,system-ui,sans-serif] flex">
+    <div
+      style={{
+        ...(theme === 'dark' ? DARK_VARS : LIGHT_VARS),
+        backgroundColor: 'var(--bg)',
+        color: 'var(--text)',
+      }}
+      className="min-h-screen font-[Inter,system-ui,sans-serif] flex"
+    >
       {/* ── Sidebar ───────────────────────────────────────────────────── */}
       <aside
-        className={`${collapsed ? 'w-[68px]' : 'w-[232px]'} flex-shrink-0 border-r border-white/[0.06] bg-[#0B0B0E] flex flex-col transition-[width] duration-200 sticky top-0 h-screen`}
+        className={`${collapsed ? 'w-[68px]' : 'w-[232px]'} flex-shrink-0 border-r flex flex-col transition-[width] duration-200 sticky top-0 h-screen`}
+        style={{ backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)' }}
       >
         <div className="px-4 pt-5 pb-4 flex items-center justify-between">
           <a href="/preview/dashboard" className="flex items-center gap-2">
             <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-semibold text-white text-[13px]">M</span>
-            {!collapsed && <span className="font-semibold text-white text-[14px] tracking-tight">MVP Affiliate</span>}
+            {!collapsed && (
+              <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text)' }}>
+                MVP Affiliate
+              </span>
+            )}
           </a>
           {!collapsed && (
-            <button onClick={() => setCollapsed(true)} className="text-white/30 hover:text-white/70">
+            <button onClick={() => setCollapsed(true)} className="opacity-40 hover:opacity-90 transition-opacity">
               <ChevronsLeft size={14} />
             </button>
           )}
         </div>
 
         {collapsed && (
-          <button onClick={() => setCollapsed(false)} className="mx-auto mb-3 text-white/30 hover:text-white/70">
+          <button onClick={() => setCollapsed(false)} className="mx-auto mb-3 opacity-40 hover:opacity-90 transition-opacity">
             <ChevronsRight size={14} />
           </button>
         )}
@@ -96,7 +170,10 @@ export default function PreviewLayout({ children }: { children: React.ReactNode 
           {NAV_GROUPS.map(group => (
             <div key={group.label}>
               {!collapsed && (
-                <p className="px-2.5 mb-1.5 text-[10px] uppercase tracking-[0.15em] font-medium text-white/35">
+                <p
+                  className="px-2.5 mb-1.5 text-[10px] uppercase tracking-[0.15em] font-medium"
+                  style={{ color: 'var(--text-faint)' }}
+                >
                   {group.label}
                 </p>
               )}
@@ -114,16 +191,21 @@ export default function PreviewLayout({ children }: { children: React.ReactNode 
           ))}
         </nav>
 
-        <div className="border-t border-white/[0.06] p-3">
-          <div className={`flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.04] cursor-pointer transition-colors ${collapsed ? 'justify-center' : ''}`}>
+        <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
+          <div
+            className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${collapsed ? 'justify-center' : ''}`}
+            style={{ backgroundColor: 'transparent' }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center text-[12px] font-semibold text-white">S</div>
             {!collapsed && (
               <>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-medium text-white truncate">Sebastien</p>
-                  <p className="text-[10px] text-white/45 truncate">Pro plan</p>
+                  <p className="text-[12px] font-medium truncate" style={{ color: 'var(--text)' }}>Sebastien</p>
+                  <p className="text-[10px] truncate" style={{ color: 'var(--text-faint)' }}>Pro plan</p>
                 </div>
-                <ChevronDown size={12} className="text-white/30" />
+                <ChevronDown size={12} style={{ color: 'var(--text-dim)' }} />
               </>
             )}
           </div>
@@ -132,26 +214,89 @@ export default function PreviewLayout({ children }: { children: React.ReactNode 
 
       {/* ── Main column ───────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="border-b border-white/[0.06] px-8 py-3 flex items-center gap-3 bg-[#0E0E11]/80 backdrop-blur-md sticky top-0 z-10">
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.06] text-[12px] text-white transition-colors">
+        <div
+          className="border-b px-8 py-3 flex items-center gap-3 backdrop-blur-md sticky top-0 z-10"
+          style={{
+            borderColor: 'var(--border)',
+            backgroundColor: theme === 'dark' ? 'rgba(14,14,17,0.8)' : 'rgba(250,250,248,0.8)',
+          }}
+        >
+          <button
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[12px] transition-colors"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--border)',
+              color: 'var(--text)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
             {activeSite}
-            <ChevronDown size={11} className="text-white/40" />
+            <ChevronDown size={11} style={{ color: 'var(--text-faint)' }} />
           </button>
           <button
             onClick={() => setActiveSite(activeSite === 'Main' ? 'Outdoor' : activeSite === 'Outdoor' ? 'Wine Reviews' : 'Main')}
-            className="text-[11px] text-white/40 hover:text-white/70 transition-colors"
+            className="text-[11px] transition-colors"
+            style={{ color: 'var(--text-faint)' }}
           >
             (click to swap sites — demo)
           </button>
 
           <div className="ml-auto flex items-center gap-3">
-            <button className="px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.06] text-[11px] text-white/60 inline-flex items-center gap-2 transition-colors">
+            {/* Theme toggle — sun/moon. Persists in sessionStorage. */}
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="p-1.5 rounded-lg transition-colors"
+              style={{ color: 'var(--text-soft)' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
+                e.currentTarget.style.color = 'var(--text)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+                e.currentTarget.style.color = 'var(--text-soft)'
+              }}
+              title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            >
+              {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
+
+            <button
+              className="px-2.5 py-1.5 rounded-lg border text-[11px] inline-flex items-center gap-2 transition-colors"
+              style={{
+                backgroundColor: 'var(--surface)',
+                borderColor: 'var(--border)',
+                color: 'var(--text-soft)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
+            >
               <Sparkles size={11} className="text-[#7C3AED]" />
               Ask anything
-              <kbd className="px-1 py-0.5 rounded text-[9px] bg-white/[0.06] border border-white/[0.08] font-mono text-white/40">⌘K</kbd>
+              <kbd
+                className="px-1 py-0.5 rounded text-[9px] border font-mono"
+                style={{
+                  backgroundColor: 'var(--kbd-bg)',
+                  borderColor: 'var(--border-bright)',
+                  color: 'var(--text-faint)',
+                }}
+              >
+                ⌘K
+              </kbd>
             </button>
-            <button className="relative p-1.5 rounded-lg hover:bg-white/[0.06] text-white/60 hover:text-white transition-colors">
+            <button
+              className="relative p-1.5 rounded-lg transition-colors"
+              style={{ color: 'var(--text-soft)' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
+                e.currentTarget.style.color = 'var(--text)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+                e.currentTarget.style.color = 'var(--text-soft)'
+              }}
+            >
               <Bell size={14} />
               <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />
             </button>
@@ -164,24 +309,39 @@ export default function PreviewLayout({ children }: { children: React.ReactNode 
   )
 }
 
-/** Sidebar nav row. Active state: thin violet bar on the left + brighter
- *  text. Collapsed mode uses the native title attr for tooltips. */
 function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolean; collapsed: boolean }) {
   return (
     <a
       href={item.path}
       title={collapsed ? item.label : undefined}
-      className={`relative flex items-center gap-2.5 ${collapsed ? 'justify-center' : 'px-2.5'} py-1.5 rounded-lg text-[13px] transition-colors ${
-        active
-          ? 'bg-white/[0.06] text-white'
-          : 'text-white/55 hover:text-white hover:bg-white/[0.04]'
-      }`}
+      className={`relative flex items-center gap-2.5 ${collapsed ? 'justify-center' : 'px-2.5'} py-1.5 rounded-lg text-[13px] transition-colors`}
+      style={{
+        backgroundColor: active ? 'var(--surface-bright)' : 'transparent',
+        color: active ? 'var(--text)' : 'var(--text-subtle)',
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
+          e.currentTarget.style.color = 'var(--text)'
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.currentTarget.style.backgroundColor = 'transparent'
+          e.currentTarget.style.color = 'var(--text-subtle)'
+        }
+      }}
     >
       {active && <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r bg-[#7C3AED]" />}
       <span className="flex-shrink-0">{item.icon}</span>
       {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
       {!collapsed && item.badge !== undefined && (
-        <span className="text-[10px] tabular-nums text-white/40 px-1.5 py-0.5 rounded bg-white/[0.06]">{item.badge}</span>
+        <span
+          className="text-[10px] tabular-nums px-1.5 py-0.5 rounded"
+          style={{ backgroundColor: 'var(--surface-bright)', color: 'var(--text-faint)' }}
+        >
+          {item.badge}
+        </span>
       )}
     </a>
   )
