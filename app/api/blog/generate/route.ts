@@ -282,9 +282,14 @@ async function handleGenerate(request: Request) {
   // themselves; the scraper picks up auto-captions YouTube generates (which
   // the Data API often refuses to download). transcriptSource is reported
   // back to the client so the UI can show what we used.
-  let transcript = (video as Record<string, string>).transcript || ''
+  // Pull the cached transcript + ID off the row. We type-narrow with
+  // Record<string, unknown> rather than the strict typed row because
+  // the column list here is dynamic (different code paths select
+  // different subsets of `youtube_videos`).
+  const videoRow = video as Record<string, unknown>
+  let transcript = (videoRow.transcript as string | null) || ''
   let transcriptSource: 'cache' | 'youtube_api' | 'scraper' | 'none' = transcript ? 'cache' : 'none'
-  const youtubeVideoIdForTranscript = (video as Record<string, string>).youtube_video_id
+  const youtubeVideoIdForTranscript = (videoRow.youtube_video_id as string | undefined) ?? ''
 
   // Layer 1: official YouTube Data API.
   if (!transcript && youtubeVideoIdForTranscript) {

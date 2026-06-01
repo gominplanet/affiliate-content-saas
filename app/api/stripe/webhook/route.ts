@@ -44,8 +44,7 @@ export async function POST(request: NextRequest) {
       subscription: string
     }
     const { user_id, tier } = session.metadata
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any).from('integrations').upsert(
+    await admin.from('integrations').upsert(
       {
         user_id,
         tier,
@@ -97,11 +96,9 @@ export async function POST(request: NextRequest) {
       // stripe_customer_id). Otherwise fall back to matching by customer id
       // (renewals / older subscriptions without our metadata).
       if (userId) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin as any).from('integrations').upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' })
+        await admin.from('integrations').upsert({ user_id: userId, ...fields }, { onConflict: 'user_id' })
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (admin as any).from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
+        await admin.from('integrations').update(fields).eq('stripe_customer_id', sub.customer)
       }
     } else {
       console.warn('[stripe-webhook] subscription event with no resolvable tier', { priceId, subId: sub.id, hasMetaTier: !!sub.metadata?.tier })
@@ -111,8 +108,7 @@ export async function POST(request: NextRequest) {
   if (event.type === 'customer.subscription.deleted') {
     const sub = event.data.object as { customer: string }
     // Downgrade to the free Trial when subscription cancelled
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any).from('integrations')
+    await admin.from('integrations')
       .update({
         tier: 'trial',
         stripe_subscription_id: null,
@@ -128,8 +124,7 @@ export async function POST(request: NextRequest) {
     // Mark as past_due so the UI can show a warning. We do NOT downgrade
     // immediately — Stripe will retry per the dunning settings, and emit
     // customer.subscription.deleted if it eventually gives up.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any).from('integrations')
+    await admin.from('integrations')
       .update({ subscription_status: 'past_due' })
       .eq('stripe_customer_id', invoice.customer)
   }

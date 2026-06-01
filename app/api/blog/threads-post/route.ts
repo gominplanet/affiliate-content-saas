@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     // Threads auto-publish is Creator+ (Creator, Pro, Admin).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any)
+    const { data: tierRow } = await supabase
       .from('integrations')
       .select('tier')
       .eq('user_id', user.id)
@@ -41,15 +41,15 @@ export async function POST(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: post }, { data: integration }] = await Promise.all([
-      (supabase as any).from('blog_posts').select('*, youtube_videos(thumbnail_url)').eq('id', postId).single(),
-      (supabase as any).from('integrations').select('*').eq('user_id', user.id).single(),
+      supabase.from('blog_posts').select('*, youtube_videos(thumbnail_url)').eq('id', postId).single(),
+      supabase.from('integrations').select('*').eq('user_id', user.id).single(),
     ])
 
     const p = post as any
     const ig = integration as any
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('learn_profile')
       .eq('user_id', user.id)
@@ -114,7 +114,7 @@ Write ONLY the post text, nothing else. Do not include a disclaimer or #ad tag.`
     const result = await threads.createPost(fullText, imageUrl ?? undefined)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('blog_posts').update({ threads_post_id: result.id }).eq('id', postId)
+    await supabase.from('blog_posts').update({ threads_post_id: result.id }).eq('id', postId)
     await incrementSocialCount(supabase, postId!, 'threads')
 
     return NextResponse.json({

@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     // ── Tier gate ───────────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any)
+    const { data: tierRow } = await supabase
       .from('integrations')
       .select('tier,telegram_channel_id')
       .eq('user_id', user.id)
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
     // ── Fetch post + thumbnail ──────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: postRow } = await (supabase as any)
+    const { data: postRow } = await supabase
       .from('blog_posts')
       .select('id,title,excerpt,content,wordpress_url,social_publish_counts,youtube_videos(thumbnail_url)')
       .eq('id', postId)
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
 
     // ── Fetch brand voice ───────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
@@ -170,7 +170,7 @@ Return ONLY the post text.`,
 
     // ── Save message id on the blog row ─────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
+    await supabase
       .from('blog_posts')
       .update({ telegram_message_id: String(result.messageId) })
       .eq('id', postId)

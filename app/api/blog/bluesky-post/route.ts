@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     // Bluesky auto-publish is Creator+ (free for us to run, but gives Creator
     // a meaningful extra channel over Starter).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any)
+    const { data: tierRow } = await supabase
       .from('integrations')
       .select('tier')
       .eq('user_id', user.id)
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     // ── 1. Fetch blog post ─────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: postRow } = await (supabase as any)
+    const { data: postRow } = await supabase
       .from('blog_posts')
       .select('id,title,excerpt,content,wordpress_url,social_publish_counts')
       .eq('id', postId)
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 
     // ── 2. Fetch brand voice ───────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     // ── 3. Fetch Bluesky credentials (skip on dryRun — preview doesn't publish) ─
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('bluesky_handle,bluesky_app_password,bluesky_did')
       .eq('user_id', user.id)
@@ -158,7 +158,7 @@ Return ONLY the post text.`,
 
     // ── 6. Save post URI on the blog row ───────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
+    await supabase
       .from('blog_posts')
       .update({ bluesky_post_uri: result.uri })
       .eq('id', postId)

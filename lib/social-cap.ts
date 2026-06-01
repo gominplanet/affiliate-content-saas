@@ -53,13 +53,19 @@ export type SocialPlatform =
   | 'facebook' | 'threads' | 'twitter' | 'linkedin'
   | 'bluesky' | 'telegram' | 'instagram' | 'pinterest'
 
-/** Read the current count for `platform` off a blog_posts row. */
+/** Read the current count for `platform` off a blog_posts row.
+ *
+ * The signature accepts `unknown` for the counts column so it works with
+ * BOTH the typed Supabase row (where the column is `Json`) and any old
+ * hand-rolled shape that uses `Record<string, number>` directly. The
+ * runtime guard inside handles whatever shape actually shows up. */
 export function readSocialCount(
-  row: { social_publish_counts?: Record<string, number> | null } | null | undefined,
+  row: { social_publish_counts?: unknown } | null | undefined,
   platform: SocialPlatform,
 ): number {
-  const map = row?.social_publish_counts || {}
-  const n = (map as Record<string, number>)[platform]
+  const map = row?.social_publish_counts
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return 0
+  const n = (map as Record<string, unknown>)[platform]
   return typeof n === 'number' && n >= 0 ? n : 0
 }
 

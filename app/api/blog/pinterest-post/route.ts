@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: tierRow } = await (supabase as any)
+  const { data: tierRow } = await supabase
     .from('integrations').select('tier').eq('user_id', user.id).single()
   const tier = (tierRow?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'pinterest')) {
@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    (supabase as any).from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,social_publish_counts').eq('id', postId).single(),
-    (supabase as any).from('integrations').select('pinterest_access_token,pinterest_board_id,wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token').eq('user_id', user.id).single(),
+    supabase.from('blog_posts').select('id,title,wordpress_url,wordpress_post_id,social_publish_counts').eq('id', postId).single(),
+    supabase.from('integrations').select('pinterest_access_token,pinterest_board_id,wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token').eq('user_id', user.id).single(),
   ])
   if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       p: post, ig: integration, title, description, imageBase64, mediaType, fallbackImageUrl,
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)
+    await supabase.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)
     await incrementSocialCount(supabase, postId, 'pinterest')
     return NextResponse.json({
       ok: true,

@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
     // Tier gate (same as the immediate-publish endpoints)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any)
+    const { data: tierRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).single()
     const tier = (tierRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsSocial(tier, platform)) {
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
 
     // Make sure the post actually exists and belongs to the user
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: postRow } = await (supabase as any)
+    const { data: postRow } = await supabase
       .from('blog_posts').select('id').eq('id', postId).eq('user_id', user.id).maybeSingle()
     if (!postRow) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     let resolvedAccountId: string | null = null
     if (socialAccountId && ['pro', 'admin'].includes(normalizeTier(tier))) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: acct } = await (supabase as any)
+      const { data: acct } = await supabase
         .from('social_accounts')
         .select('id')
         .eq('id', socialAccountId)
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
 
     // Insert the scheduled row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: inserted, error: insertErr } = await (supabase as any)
+    const { data: inserted, error: insertErr } = await supabase
       .from('scheduled_posts')
       .insert({
         user_id: user.id,

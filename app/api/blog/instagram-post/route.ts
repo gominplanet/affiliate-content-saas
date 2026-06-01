@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
 
     // ── Tier gate + integration fetch ───────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('tier,instagram_user_id,instagram_access_token,instagram_token_expiry,instagram_username,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
       .eq('user_id', user.id)
@@ -103,13 +103,13 @@ export async function POST(request: NextRequest) {
         const refreshed = await refreshLongLivedToken(igToken)
         igToken = refreshed.accessToken
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any)
+        await supabase
           .from('integrations')
           .update({ instagram_access_token: refreshed.accessToken, instagram_token_expiry: refreshed.expiresAt })
           .eq('user_id', user.id)
         // Keep the mirrored social_accounts row's token fresh too.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any)
+        await supabase
           .from('social_accounts')
           .update({ access_token: refreshed.accessToken, updated_at: new Date().toISOString() })
           .eq('user_id', user.id).eq('platform', 'instagram').eq('external_id', igUserId)
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
 
     // ── Fetch post + linked video ───────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: postRow } = await (supabase as any)
+    const { data: postRow } = await supabase
       .from('blog_posts')
       .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts,youtube_videos(instagram_video_url,instagram_image_url,instagram_story_image_url,thumbnail_url,title)')
       .eq('id', postId)
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
@@ -292,7 +292,7 @@ Return ONLY the caption text + hashtags.`,
           results.reelId = reelId
           results.reelCaption = feedCaption ?? undefined
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any).from('blog_posts').update({ instagram_reel_id: reelId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_reel_id: reelId }).eq('id', postId)
         } catch (err) {
           results.warnings.push(`Reel publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -308,7 +308,7 @@ Return ONLY the caption text + hashtags.`,
           results.storyId = storyId
           results.affiliateUrl = affiliateUrl
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any).from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId)
         } catch (err) {
           results.warnings.push(`Story publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -330,7 +330,7 @@ Return ONLY the caption text + hashtags.`,
           results.imagePostId = imagePostId
           results.reelCaption = feedCaption ?? undefined
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any).from('blog_posts').update({ instagram_image_post_id: imagePostId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_image_post_id: imagePostId }).eq('id', postId)
         } catch (err) {
           results.warnings.push(`Image post publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -346,7 +346,7 @@ Return ONLY the caption text + hashtags.`,
           results.storyId = storyId
           results.affiliateUrl = affiliateUrl
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any).from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId)
+          await supabase.from('blog_posts').update({ instagram_story_id: storyId }).eq('id', postId)
         } catch (err) {
           results.warnings.push(`Story publish failed: ${err instanceof Error ? err.message : String(err)}`)
         }

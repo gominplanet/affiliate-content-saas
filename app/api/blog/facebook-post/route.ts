@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     // ── 1. Fetch blog post ────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: postRow } = await (supabase as any)
+    const { data: postRow } = await supabase
       .from('blog_posts')
       .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts')
       .eq('id', postId)
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     // ── 2. Fetch video for thumbnail ──────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: videoRow } = await (supabase as any)
+    const { data: videoRow } = await supabase
       .from('youtube_videos')
       .select('youtube_video_id,thumbnail_url')
       .eq('id', post.video_id)
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     // ── 3. Fetch brand for disclaimer ─────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('affiliate_disclaimer,name,learn_profile')
       .eq('user_id', user.id)
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
 
     // ── 4. Fetch Facebook credentials ─────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('facebook_page_id,facebook_page_access_token,tier')
       .eq('user_id', user.id)
@@ -180,7 +180,7 @@ Topic: ${(post.content as string).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').
 
     // ── 9. Save facebook_post_id ──────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
+    await supabase
       .from('blog_posts')
       .update({ facebook_post_id: result.id })
       .eq('id', postId)

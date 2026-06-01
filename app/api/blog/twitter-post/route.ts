@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
     // X / Twitter auto-publish is a Pro-only feature.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any)
+    const { data: tierRow } = await supabase
       .from('integrations')
       .select('tier')
       .eq('user_id', user.id)
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     // ── 1. Fetch blog post ─────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: postRow } = await (supabase as any)
+    const { data: postRow } = await supabase
       .from('blog_posts')
       .select('id,title,excerpt,content,wordpress_url,social_publish_counts')
       .eq('id', postId)
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
 
     // ── 2. Fetch brand voice ───────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     // ── 3. Fetch X credentials ─────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('twitter_access_token,twitter_refresh_token,twitter_expires_at')
       .eq('user_id', user.id)
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
         accessToken = refreshed.access_token
         const newExpiry = new Date(Date.now() + refreshed.expires_in * 1000).toISOString()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('integrations').update({
+        await supabase.from('integrations').update({
           twitter_access_token: refreshed.access_token,
           twitter_refresh_token: refreshed.refresh_token ?? integration.twitter_refresh_token,
           twitter_expires_at: newExpiry,
@@ -180,7 +180,7 @@ Return ONLY the tweet text.`,
 
     // ── 6. Save tweet id on the post ───────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
+    await supabase
       .from('blog_posts')
       .update({ twitter_post_id: tweet.id })
       .eq('id', postId)

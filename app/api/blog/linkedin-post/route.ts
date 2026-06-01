@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
 
     // LinkedIn posting is Creator+ (Creator, Pro, Admin).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any)
+    const { data: tierRow } = await supabase
       .from('integrations')
       .select('tier')
       .eq('user_id', user.id)
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     // ── 1. Fetch blog post ────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: postRow } = await (supabase as any)
+    const { data: postRow } = await supabase
       .from('blog_posts')
       .select('id,title,excerpt,content,wordpress_url,video_id,social_publish_counts')
       .eq('id', postId)
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     // ── 2. Fetch brand voice ──────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('name,voice_summary,learn_profile')
       .eq('user_id', user.id)
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     // ── 3. Fetch LinkedIn credentials ─────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('linkedin_access_token,linkedin_person_id,linkedin_person_name')
       .eq('user_id', user.id)
@@ -145,7 +145,7 @@ Return ONLY the post text, no extra commentary.`,
 
     // ── 6. Save linkedin_post_id ──────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
+    await supabase
       .from('blog_posts')
       .update({ linkedin_post_id: result.id })
       .eq('id', postId)
