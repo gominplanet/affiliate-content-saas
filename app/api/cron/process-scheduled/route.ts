@@ -88,7 +88,7 @@ export async function GET(request: Request) {
 
   // 1. Atomic claim — flip due+pending rows to 'processing' in one update.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: claimed, error: claimErr } = await (admin as any)
+  const { data: claimed, error: claimErr } = await admin
     .from('scheduled_posts')
     .update({ status: 'processing', claimed_at: nowIso, last_attempt_at: nowIso })
     .eq('status', 'pending')
@@ -100,7 +100,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })
   }
 
-  const rows: ScheduledRow[] = claimed ?? []
+  // claimed comes back with platform typed as `string` (RPC return shape);
+  // narrow to the ScheduledRow discriminated union at the boundary.
+  const rows: ScheduledRow[] = (claimed ?? []) as ScheduledRow[]
   if (rows.length === 0) {
     return NextResponse.json({ ok: true, processed: 0 })
   }
@@ -112,7 +114,7 @@ export async function GET(request: Request) {
     try {
       const result = await publishOne(admin, row)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any)
+      await admin
         .from('scheduled_posts')
         .update({
           status: 'completed',
@@ -125,7 +127,7 @@ export async function GET(request: Request) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[cron/process-scheduled] publish failed', { id: row.id, platform: row.platform, error: msg })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any)
+      await admin
         .from('scheduled_posts')
         .update({
           status: 'failed',

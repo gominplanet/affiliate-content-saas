@@ -322,7 +322,7 @@ export async function checkUsageLimit(
   | { allowed: false; reason: string; tier: Tier; upgrade: ReturnType<typeof nextTierFor> }
 > {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: ig } = await (supabase as any)
+  const { data: ig } = await supabase
     .from('integrations')
     .select('tier,subscription_period_start,subscription_period_end')
     .eq('user_id', userId)
@@ -347,11 +347,14 @@ export async function checkUsageLimit(
     periodEnd: ig?.subscription_period_end ?? null,
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: ok } = await (supabase as any).rpc('try_consume_post_quota', {
+  // The RPC's bigint params can't be null; null in our tier config means
+  // "no cap" (admin). Coerce to a number bigger than any real monthly
+  // post volume so the SQL UPDATE ... < cap predicate always passes.
+  const NO_CAP = 1_000_000_000
+  const { data: ok } = await supabase.rpc('try_consume_post_quota', {
     p_user: userId,
-    p_lifetime: limits.lifetimeMax,
-    p_monthly: limits.postsPerMonth,
+    p_lifetime: limits.lifetimeMax ?? NO_CAP,
+    p_monthly: limits.postsPerMonth ?? NO_CAP,
     p_window_start: startISO,
   })
 
@@ -411,7 +414,7 @@ export async function checkScriptUsage(
   | { allowed: false; reason: string; tier: Tier; used: number; cap: number | null; upgrade: ReturnType<typeof nextTierFor> }
 > {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: ig } = await (supabase as any)
+  const { data: ig } = await supabase
     .from('integrations')
     .select('tier')
     .eq('user_id', userId)
@@ -428,7 +431,7 @@ export async function checkScriptUsage(
     .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count } = await (supabase as any)
+  const { count } = await supabase
     .from('video_scripts')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)

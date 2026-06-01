@@ -36,16 +36,16 @@ export async function POST(request: Request) {
   if (!wordpressPostId) return NextResponse.json({ error: 'wordpressPostId required' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: post } = await (supabase as any)
+  const { data: post } = await supabase
     .from('blog_posts')
-    .select('id,video_id,title,slug,content')
+    .select('id,video_id,title,slug,content,image_prompts')
     .eq('user_id', user.id)
     .eq('wordpress_post_id', wordpressPostId)
     .maybeSingle()
   if (!post?.content) return NextResponse.json({ error: 'Post not found, or it has no stored content to update.' }, { status: 404 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: wp } = await (supabase as any)
+  const { data: wp } = await supabase
     .from('integrations')
     .select('tier,wordpress_url,wordpress_username,wordpress_app_password,amazon_associates_tag')
     .eq('user_id', user.id)
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
   }
   const tier = normalizeTier(wp.tier)
-  const wpService = createWordPressService(wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password)
+  const wpService = createWordPressService(wp.wordpress_url ?? '', wp.wordpress_username ?? '', wp.wordpress_app_password ?? '')
 
   // ── Resolve the product image (uploaded photo → Amazon → linked store page) ─
   let productTitle = (post.title as string) || ''
@@ -65,16 +65,16 @@ export async function POST(request: Request) {
   let vid: any = null
   {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from('youtube_videos').select('youtube_video_id,title,description,product_image_url')
-      .eq('user_id', user.id).eq('id', post.video_id).maybeSingle()
+      .eq('user_id', user.id).eq('id', post.video_id ?? '').maybeSingle()
     vid = data
   }
   if (!vid) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from('youtube_videos').select('youtube_video_id,title,description,product_image_url')
-      .eq('user_id', user.id).eq('youtube_video_id', post.video_id).maybeSingle()
+      .eq('user_id', user.id).eq('youtube_video_id', post.video_id ?? '').maybeSingle()
     vid = data
   }
   const description = (vid?.description as string) || ''
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
   // "Refresh images" works on them too.
   if (!productImageUrl) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: camp } = await (supabase as any)
+    const { data: camp } = await supabase
       .from('campaigns').select('asin').eq('user_id', user.id).eq('blog_post_id', post.id).maybeSingle()
     if (camp?.asin) {
       try { const p = await fetchAmazonProduct(camp.asin); if (p.title) productTitle = p.title; productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null } catch { /* ignore */ }
@@ -224,7 +224,7 @@ export async function POST(request: Request) {
   // post whose initial generation died at 0 images would keep showing the
   // orange ⚠ even after the user successfully re-rolled them.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  try { await (supabase as any).from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', post.id) } catch { /* non-fatal */ }
+  try { await supabase.from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', post.id) } catch { /* non-fatal */ }
 
   return NextResponse.json({ ok: true, count: uploaded.length })
 }

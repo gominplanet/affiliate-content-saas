@@ -253,13 +253,14 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
     // 2. Also fetch from Supabase so we pick up changes from other sessions
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(supabase as any)
+      // Type inferred from .maybeSingle() — drop the manual Record<string,string>
+      // annotation that no longer matches the regenerated row shape.
+      supabase
         .from('integrations')
         .select('wordpress_url,tier,geniuslink_api_key,geniuslink_api_secret')
         .eq('user_id', user.id)
         .maybeSingle()
-        .then(({ data }: { data: Record<string, string> | null }) => {
+        .then(({ data }) => {
           const url = data?.wordpress_url || null
           if (url) setWpSiteUrl(url)
           setIsAdmin(data?.tier === 'admin')

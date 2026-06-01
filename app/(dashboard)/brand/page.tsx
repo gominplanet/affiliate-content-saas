@@ -253,7 +253,7 @@ export default function BrandPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row } = await (supabase as any)
+    const { data: row } = await supabase
       .from('brand_profiles')
       .select('*')
       .eq('user_id', user.id)
@@ -271,8 +271,10 @@ export default function BrandPage() {
         affiliate_disclaimer: row.affiliate_disclaimer ?? DEFAULT.affiliate_disclaimer,
         primary_color: row.primary_color ?? '#7C3AED',
         secondary_color: row.secondary_color ?? '#34c759',
-        gear_sections: row.gear_sections ?? [],
-        facebook_groups: row.facebook_groups ?? [],
+        // gear_sections + facebook_groups are JSONB; we always write the
+        // typed shape but the schema returns Json. Narrow at the read.
+        gear_sections: (row.gear_sections ?? []) as unknown as GearSection[],
+        facebook_groups: (row.facebook_groups ?? []) as unknown as FacebookGroup[],
         logo_url: row.logo_url ?? '',
         header_banner_url: row.header_banner_url ?? '',
         headshot_url: row.headshot_url ?? '',
@@ -331,8 +333,11 @@ export default function BrandPage() {
 
     // ── 1. Save to Supabase ─────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: dbError } = await (supabase as any).from('brand_profiles').upsert(
-      { ...normalized, user_id: user.id },
+    const { error: dbError } = await supabase.from('brand_profiles').upsert(
+      // BrandData carries typed JSONB sub-shapes (GearSection[], FacebookGroup[])
+      // that don't structurally satisfy the schema's Json union; narrow at the
+      // insert boundary — payload is schema-correct at runtime.
+      { ...normalized, user_id: user.id } as never,
       { onConflict: 'user_id' },
     )
     if (dbError) {
@@ -415,9 +420,9 @@ export default function BrandPage() {
       // silently reverts. Capture the error so we surface it instead
       // of pretending success.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: saveErr } = await (supabase as any)
+      const { error: saveErr } = await supabase
         .from('brand_profiles')
-        .update({ [column]: url })
+        .update({ [column]: url } as never)  // dynamic column key needs boundary narrow
         .eq('user_id', user.id)
       if (saveErr) throw new Error(saveErr.message)
 

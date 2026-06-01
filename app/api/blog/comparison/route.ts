@@ -116,7 +116,7 @@ export async function POST(request: Request) {
 
   // ── Integration + brand context ────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: wp } = await (supabase as any)
+  const { data: wp } = await supabase
     .from('integrations')
     .select('tier,wordpress_url,wordpress_username,wordpress_app_password,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
     .eq('user_id', user.id)
@@ -144,7 +144,7 @@ export async function POST(request: Request) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: brand } = await (supabase as any)
+  const { data: brand } = await supabase
     .from('brand_profiles')
     .select('learn_profile,affiliate_disclaimer,name,niches,author_name')
     .eq('user_id', user.id)
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
     try {
       // Prefer the synced row (title + description + transcript); fall back to oEmbed.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: vid } = await (supabase as any)
+      const { data: vid } = await supabase
         .from('youtube_videos')
         .select('title,description,transcript')
         .eq('user_id', user!.id)
@@ -208,7 +208,7 @@ export async function POST(request: Request) {
       let matched = false
 
       const titleAsin = extractAsin((videoTitle || '').toUpperCase())
-      const candidates = allProductLinks(description, wp.wordpress_url ?? null)
+      const candidates = allProductLinks(description, wp?.wordpress_url ?? null)
       // Walk the candidate links in order; keep the first whose product matches
       // what the video reviews. Title ASIN is tried first when present.
       const ordered = titleAsin ? [`https://www.amazon.com/dp/${titleAsin}`, ...candidates] : candidates
@@ -236,7 +236,7 @@ export async function POST(request: Request) {
               try { affiliateUrl = (await genius.createAsinLinkWithCode(asin!, productName)).url } catch { /* ignore */ }
             }
             if (!affiliateUrl) {
-              affiliateUrl = wp.amazon_associates_tag
+              affiliateUrl = wp?.amazon_associates_tag
                 ? `https://www.amazon.com/dp/${asin}?tag=${wp.amazon_associates_tag}`
                 : `https://www.amazon.com/dp/${asin}`
             }
@@ -348,7 +348,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   }
 
   // ── Assemble the WordPress (Gutenberg) HTML ─────────────────────────────────
-  const wpService = createWordPressService(wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password)
+  const wpService = createWordPressService(wp?.wordpress_url ?? '', wp?.wordpress_username ?? '', wp?.wordpress_app_password ?? '')
   const para = (html: string) => `<!-- wp:paragraph -->${html}<!-- /wp:paragraph -->`
   const scrub = (s: string) => scrubBanned(s || '')
   // Responsive YouTube embed block — shows the video thumbnail + plays inline.
@@ -470,7 +470,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
 
   // ── JSON-LD: BlogPosting + ItemList (ranked products) + FAQPage ─────────────
   // Rendered in <head> by the MVP plugin via the mvp_jsonld post meta.
-  const siteBase = (wp.wordpress_url || '').replace(/\/$/, '')
+  const siteBase = (wp?.wordpress_url || '').replace(/\/$/, '')
   const postUrl = `${siteBase}/${slug}/`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graph: any[] = [
@@ -530,7 +530,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
 
   // ── Save blog_posts row (post_type distinguishes it; counts as 1 post) ──────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('blog_posts').insert({
+  await supabase.from('blog_posts').insert({
     user_id: user.id,
     video_id: resolved[0].videoId,
     title,

@@ -17,7 +17,7 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row } = await (supabase as any)
+    const { data: row } = await supabase
       .from('brand_profiles')
       .select('writing_sample,author_bio,target_audience,words_to_avoid,learn_profile')
       .eq('user_id', user.id)
@@ -55,14 +55,14 @@ export async function POST(request: Request) {
     // existing /api/profile convention and UPDATE (not upsert — avoids
     // tripping NOT NULL columns this endpoint doesn't own).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('brand_profiles')
       .update({
         writing_sample: str(body.writing_sample),
         author_bio: str(body.author_bio),
         target_audience: str(body.target_audience),
         words_to_avoid: str(body.words_to_avoid),
-        learn_profile: normalizeLearnProfile(body.learn_profile),
+        learn_profile: normalizeLearnProfile(body.learn_profile) as never,
       })
       .eq('user_id', user.id)
 

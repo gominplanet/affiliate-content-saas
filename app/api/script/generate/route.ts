@@ -214,8 +214,8 @@ export async function POST(req: Request) {
   // ── Brand voice + recent post titles for hook style mirroring ─────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: brand }, { data: recentPosts }] = await Promise.all([
-    (supabase as any).from('brand_profiles').select('name,author_name,niches,tone,writing_sample,target_audience,words_to_avoid').eq('user_id', user.id).maybeSingle(),
-    (supabase as any).from('blog_posts').select('title').eq('user_id', user.id).eq('status', 'published').order('published_at', { ascending: false, nullsFirst: false }).limit(6),
+    supabase.from('brand_profiles').select('name,author_name,niches,tone,writing_sample,target_audience,words_to_avoid').eq('user_id', user.id).maybeSingle(),
+    supabase.from('blog_posts').select('title').eq('user_id', user.id).eq('status', 'published').order('published_at', { ascending: false, nullsFirst: false }).limit(6),
   ])
   const authorName = (brand?.author_name as string) || ''
   const brandName = (brand?.name as string) || ''
@@ -427,7 +427,7 @@ Return ONLY a single JSON object with NO prose around it, NO markdown fences. Sh
 
   // ── Persist ───────────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row, error: insertErr } = await (supabase as any)
+  const { data: row, error: insertErr } = await supabase
     .from('video_scripts')
     .insert({
       user_id: user.id,
@@ -436,7 +436,7 @@ Return ONLY a single JSON object with NO prose around it, NO markdown fences. Sh
       asin: asin || null,
       product_title: productTitle.slice(0, 300),
       product_image_url: productImage,
-      script: cleaned,
+      script: cleaned as never,  // ScriptPayload → Json column
       ai_model: 'claude-sonnet-4-6',
     })
     .select('id,created_at')

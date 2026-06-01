@@ -527,7 +527,7 @@ export async function POST(request: Request) {
 
     // Tier + billing window for usage-cap check + telemetry.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any)
+    const { data: tierRow } = await supabase
       .from('integrations')
       .select('tier,subscription_period_start,subscription_period_end')
       .eq('user_id', user.id)
@@ -655,19 +655,23 @@ export async function POST(request: Request) {
     let autoFaceModels: Array<{ id: string; name: string; source_images: string[] }> = []
     if (faceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: fm } = await (supabase as any)
+      const { data: fm } = await supabase
         .from('face_models')
         .select('name,source_images')
         .eq('id', faceModelId)
         .eq('user_id', user.id)
         .single()
-      const srcImages: string[] = Array.isArray(fm?.source_images) ? fm.source_images : []
+      // face_models.source_images is JSONB Json[]; we always write string[].
+      // Filter at the read so downstream consumers get the narrow type.
+      const srcImages: string[] = Array.isArray(fm?.source_images)
+        ? (fm.source_images as unknown[]).filter((x): x is string => typeof x === 'string')
+        : []
       if (fm && srcImages.length > 0) {
         faceModel = { id: faceModelId, name: fm.name, source_images: srcImages }
       }
     } else if (faceAuto) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: fms } = await (supabase as any)
+      const { data: fms } = await supabase
         .from('face_models')
         .select('id,name,source_images,status')
         .eq('user_id', user.id)

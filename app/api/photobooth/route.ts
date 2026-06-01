@@ -23,7 +23,7 @@ async function loadPhotoboothUsage(
   supabase: any, userId: string,
 ): Promise<{ tier: Tier; limit: number | null; used: number; remaining: number | null; resetLabel: string }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (supabase as any)
+  const { data: row } = await supabase
     .from('integrations')
     .select('tier,subscription_period_start,subscription_period_end')
     .eq('user_id', userId)
@@ -171,13 +171,17 @@ export async function POST(request: Request) {
 
     // ── Load the face's reference photos ──────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: fm } = await (supabase as any)
+    const { data: fm } = await supabase
       .from('face_models')
       .select('name,source_images')
       .eq('id', body.faceModelId)
       .eq('user_id', user.id)
       .single()
-    const srcImages: string[] = Array.isArray(fm?.source_images) ? fm.source_images : []
+    // face_models.source_images is JSONB; we always write string[] but
+    // schema types it Json[]. Filter to strings at the read boundary.
+    const srcImages: string[] = Array.isArray(fm?.source_images)
+      ? (fm.source_images as unknown[]).filter((x): x is string => typeof x === 'string')
+      : []
     if (!fm || srcImages.length === 0) {
       return NextResponse.json({ error: 'That face has no photos. Add one under "Your Face" first.' }, { status: 400 })
     }

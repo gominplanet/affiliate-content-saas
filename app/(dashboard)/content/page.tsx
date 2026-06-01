@@ -190,7 +190,7 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
       // Cache-bust so a replaced photo (same path) refreshes in the UI.
       const publicUrl = `${urlData.publicUrl}?v=${Date.now()}`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: updErr } = await (supabase as any).from('youtube_videos').update({ product_image_url: publicUrl }).eq('id', videoId)
+      const { error: updErr } = await supabase.from('youtube_videos').update({ product_image_url: publicUrl }).eq('id', videoId)
       if (updErr) throw new Error(updErr.message || 'Save failed')
       setUrl(publicUrl)
     } catch (e) {
@@ -204,7 +204,7 @@ function ProductPhotoUpload({ videoId, initialUrl }: { videoId: string; initialU
     setBusy(true); setErr(null)
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('youtube_videos').update({ product_image_url: null }).eq('id', videoId)
+      await supabase.from('youtube_videos').update({ product_image_url: null }).eq('id', videoId)
       setUrl(null)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Remove failed')
@@ -1052,7 +1052,7 @@ function InstagramPublishModal({
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: intRow } = await (supabase as any)
+        const { data: intRow } = await supabase
           .from('integrations').select('tier').eq('user_id', user.id).single()
         setAiTier(effectiveTier(intRow?.tier as string))
         const fmRes = await fetch('/api/face-models')
@@ -1070,7 +1070,7 @@ function InstagramPublishModal({
           let nicheParam = ''
           try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { data: catRow } = await (supabase as any).from('youtube_videos')
+            const { data: catRow } = await supabase.from('youtube_videos')
               .select('selected_category').eq('id', videoDbId).single()
             const cat = (catRow?.selected_category as string | null)?.trim()
             if (cat) nicheParam = `&niche=${encodeURIComponent(cat)}`
@@ -1189,7 +1189,7 @@ function InstagramPublishModal({
   useEffect(() => {
     const col = videoKind === 'horizontal' ? 'instagram_image_url' : 'instagram_video_url'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(supabase as any).from('youtube_videos').select(col).eq('id', videoDbId).single().then(({ data }: { data: Record<string, string | null> | null }) => {
+    ;supabase.from('youtube_videos').select(col).eq('id', videoDbId).single().then(({ data }: { data: Record<string, string | null> | null }) => {
       const url = data?.[col]
       if (url) setExistingUrl(url)
     })
@@ -1251,7 +1251,7 @@ function InstagramPublishModal({
       const publicUrl = urlData.publicUrl
       // Persist on youtube_videos so the publish route can read it
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: updateErr } = await (supabase as any).from('youtube_videos').update({ instagram_video_url: publicUrl }).eq('id', videoDbId)
+      const { error: updateErr } = await supabase.from('youtube_videos').update({ instagram_video_url: publicUrl }).eq('id', videoDbId)
       if (updateErr) throw new Error(updateErr.message || 'Save failed')
       setExistingUrl(publicUrl)
       setUploadProgress('')
@@ -2856,10 +2856,10 @@ export default function ContentPage() {
       // (the WP posts API fallback misses many posts due to thumbnail naming)
       const wpPostIds = (data.posts ?? []).map((p: { id: number }) => p.id)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: sbPosts } = await (supabase as any)
+      const { data: sbPosts } = await supabase
         .from('blog_posts')
         .select('wordpress_post_id,video_id')
-        .eq('user_id', user?.id)
+        .eq('user_id', user?.id ?? '')
         .in('wordpress_post_id', wpPostIds)
         .not('video_id', 'is', null)
 

@@ -10,9 +10,9 @@ export async function GET() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: profile }, { data: brand }, { data: integration }] = await Promise.all([
-      (supabase as any).from('profiles').select('full_name').eq('id', user.id).single(),
-      (supabase as any).from('brand_profiles').select('author_name,author_bio,logo_url,headshot_url').eq('user_id', user.id).single(),
-      (supabase as any).from('integrations').select('notification_preferences').eq('user_id', user.id).single(),
+      supabase.from('profiles').select('full_name').eq('id', user.id).single(),
+      supabase.from('brand_profiles').select('author_name,author_bio,logo_url,headshot_url').eq('user_id', user.id).single(),
+      supabase.from('integrations').select('notification_preferences').eq('user_id', user.id).single(),
     ])
 
     const fullName: string = profile?.full_name ?? ''
@@ -28,7 +28,10 @@ export async function GET() {
       authorBio: brand?.author_bio ?? '',
       logoUrl: brand?.logo_url ?? '',
       headshotUrl: brand?.headshot_url ?? '',
-      notifications: integration?.notification_preferences ?? {
+      // notification_preferences was added to the UI before the schema; the
+      // column doesn't exist on `integrations` yet. Return defaults until
+      // a migration adds it.
+      notifications: {
         new_video: true,
         post_published: true,
         job_failures: true,

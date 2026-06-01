@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   const { dryRun = false } = await request.json().catch(() => ({}))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: wp } = await (supabase as any)
+  const { data: wp } = await supabase
     .from('integrations')
     .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,tier')
     .eq('user_id', user.id).single()
@@ -31,10 +31,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'WordPress not connected.' }, { status: 400 })
   }
   const wpBase = wp.wordpress_url.replace(/\/$/, '')
-  const wpService = createWordPressService(wp.wordpress_url, wp.wordpress_username, wp.wordpress_app_password, wp.wordpress_api_token || undefined)
+  const wpService = createWordPressService(wp.wordpress_url ?? '', wp.wordpress_username ?? '', wp.wordpress_app_password ?? '', wp.wordpress_api_token || undefined)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: postsRaw } = await (supabase as any)
+  const { data: postsRaw } = await supabase
     .from('blog_posts')
     .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id')
     .eq('user_id', user.id)

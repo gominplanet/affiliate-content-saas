@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+    const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).single()
     const tier = normalizeTier(intRow?.tier) as Tier
     if (tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({ error: 'Batch scheduling is a Pro feature.', limitReached: true, cap: 'instagram_burner', currentTier: tier, upgrade: { tier: 'pro', label: 'Pro', limit: null } }, { status: 403 })
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     }))
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any).from('ig_burn_jobs').insert(rows)
+    const { error } = await supabase.from('ig_burn_jobs').insert(rows as never[])
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ ok: true, queued: rows.length, firstAt: rows[0].scheduled_at, lastAt: rows[rows.length - 1].scheduled_at })
@@ -72,7 +72,7 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from('ig_burn_jobs')
       .select('id,caption_text,status,scheduled_at,result_url,ig_published,error_message,created_at')
       .eq('user_id', user.id)
