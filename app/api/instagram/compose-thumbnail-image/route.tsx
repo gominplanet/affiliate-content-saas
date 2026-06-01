@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
   // Pro gate — tier lives on the integrations row in this codebase
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations').select('tier').eq('user_id', user.id).single()
   const tier = (intRow?.tier as Tier) ?? 'trial'
   if (!tierAllowsSocial(tier, 'instagram')) {
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
   // Pull the YouTube video row (thumbnail + title)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: video, error: videoErr } = await (supabase as any)
+  const { data: video, error: videoErr } = await supabase
     .from('youtube_videos')
     .select('id,youtube_video_id,title,thumbnail_url')
     .eq('id', videoDbId)
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   // contains the ASIN, brand tag, etc) and use the post's excerpt as the
   // tagline below the thumbnail.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: blogPost } = await (supabase as any)
+  const { data: blogPost } = await supabase
     .from('blog_posts')
     .select('title,excerpt')
     .eq('video_id', videoDbId)
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
 
   // Brand assets
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: brand } = await (supabase as any)
+  const { data: brand } = await supabase
     .from('brand_profiles')
     .select('author_name,logo_url,primary_color,secondary_color')
     .eq('user_id', user.id)
@@ -145,7 +145,7 @@ export async function POST(request: Request) {
   const storyUrl = admin.storage.from('instagram-images').getPublicUrl(storyPath).data.publicUrl
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: updateErr } = await (supabase as any)
+  const { error: updateErr } = await supabase
     .from('youtube_videos')
     .update({ instagram_image_url: feedUrl, instagram_story_image_url: storyUrl })
     .eq('id', videoDbId)

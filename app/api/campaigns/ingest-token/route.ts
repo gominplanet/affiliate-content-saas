@@ -20,7 +20,7 @@ async function getOrCreate(force: boolean) {
   if (!user) return { error: 'Unauthorized', status: 401 as const }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (supabase as any)
+  const { data: row } = await supabase
     .from('integrations')
     .select('cc_ingest_token')
     .eq('user_id', user.id)
@@ -30,7 +30,7 @@ async function getOrCreate(force: boolean) {
   if (!token || force) {
     token = mint()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('integrations')
       .upsert({ user_id: user.id, cc_ingest_token: token }, { onConflict: 'user_id' })
     if (error) return { error: error.message, status: 500 as const }

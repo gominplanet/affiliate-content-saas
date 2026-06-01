@@ -53,12 +53,12 @@ export async function readNewsletterFields(
 ): Promise<NewsletterFields> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data }, { count: activeCount }] = await Promise.all([
-    (supabase as any)
+    supabase
       .from('newsletter_settings')
       .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,cta_bullet_1,cta_bullet_2,cta_bullet_3,homepage_placement,sidebar_placement')
       .eq('user_id', userId)
       .maybeSingle(),
-    (supabase as any)
+    supabase
       .from('newsletter_subscribers')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
@@ -95,7 +95,7 @@ export async function pushNewsletterToWp(
   userId: string,
 ): Promise<{ pushed: boolean; reason?: string }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations')
     .select('wordpress_url, wordpress_username, wordpress_app_password')
     .eq('user_id', userId)

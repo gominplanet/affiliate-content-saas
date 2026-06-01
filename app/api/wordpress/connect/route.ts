@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   // Save credentials — the WordPress service handles auth automatically:
   // it tries Basic auth first, then falls back to session-based login (works on Hostinger)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).from('integrations').upsert(
+  const { error } = await supabase.from('integrations').upsert(
     {
       user_id: user.id,
       wordpress_url: siteUrl,

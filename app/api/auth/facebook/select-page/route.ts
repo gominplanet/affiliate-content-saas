@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   if (!pageId) return NextResponse.json({ error: 'pageId required' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (supabase as any)
+  const { data: row } = await supabase
     .from('integrations')
     .select('facebook_pages_json')
     .eq('user_id', user.id)
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   if (!page) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('integrations').upsert(
+  await supabase.from('integrations').upsert(
     { user_id: user.id, facebook_page_id: page.id, facebook_page_name: page.name, facebook_page_access_token: page.access_token },
     { onConflict: 'user_id' },
   )

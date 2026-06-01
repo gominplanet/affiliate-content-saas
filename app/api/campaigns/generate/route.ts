@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
     // ── Pro gate + integration creds ────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('tier,wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
       .eq('user_id', user.id)
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brand } = await (supabase as any)
+    const { data: brand } = await supabase
       .from('brand_profiles').select('*').eq('user_id', user.id).single()
     if (!brand) {
       return NextResponse.json({ error: 'Brand profile not set up. Complete it first.' }, { status: 400 })
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       // 'published', a generation is in flight or already done, so we return
       // its post instead of creating a DUPLICATE (the double-submit bug).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: reused } = await (supabase as any)
+      const { data: reused } = await supabase
         .from('campaigns')
         .update({
           status: 'researching',
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
         campaignId = reused.id as string
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: existing } = await (supabase as any)
+        const { data: existing } = await supabase
           .from('campaigns').select('id,status,wordpress_url').eq('id', body.campaignId).eq('user_id', user.id).maybeSingle()
         if (existing) {
           return NextResponse.json({
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
       // No reusable campaign. Soft guard against a double-submit for the same
       // ASIN: if one is already in flight, don't start a second.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: inflight } = await (supabase as any)
+      const { data: inflight } = await supabase
         .from('campaigns').select('id,status,wordpress_url')
         .eq('user_id', user.id).eq('asin', asin).eq('status', 'researching')
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
@@ -127,7 +127,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, status: 'researching', message: 'A post for this product is already being generated — skipped to avoid a duplicate.' })
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: campaignRow } = await (supabase as any)
+      const { data: campaignRow } = await supabase
         .from('campaigns')
         .insert({
           user_id: user.id,
@@ -145,7 +145,7 @@ export async function POST(request: Request) {
     async function fail(message: string, code = 500) {
       if (campaignId) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('campaigns')
+        await supabase.from('campaigns')
           .update({ status: 'failed', error_message: message.slice(0, 500), updated_at: new Date().toISOString() })
           .eq('id', campaignId)
       }
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
     }
     if (campaignId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('campaigns').update({ product_title: product.title }).eq('id', campaignId)
+      await supabase.from('campaigns').update({ product_title: product.title }).eq('id', campaignId)
     }
 
     // ── 2. Web research ─────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ export async function POST(request: Request) {
     // ── 4. Generate the blog post ───────────────────────────────────────────
     if (campaignId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('campaigns').update({ status: 'generating' }).eq('id', campaignId)
+      await supabase.from('campaigns').update({ status: 'generating' }).eq('id', campaignId)
     }
     const claude = createClaudeService()
     let generated
@@ -307,7 +307,7 @@ export async function POST(request: Request) {
     // blog_posts.id). Capture the insert error explicitly — swallowing it
     // is what made "pills not showing" undebuggable.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: blogRow, error: blogErr } = await (supabase as any)
+    const { data: blogRow, error: blogErr } = await supabase
       .from('blog_posts')
       .insert({
         user_id: user.id,
@@ -329,7 +329,7 @@ export async function POST(request: Request) {
     const blogLinked = !!blogRow?.id
     if (campaignId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('campaigns').update({
+      await supabase.from('campaigns').update({
         status: 'published',
         blog_post_id: blogRow?.id ?? null,
         wordpress_url: wpPost.link,

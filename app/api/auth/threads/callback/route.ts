@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     step = 'save_token'
     // Save the core credentials first — this must always succeed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: saveErr } = await (supabase as any).from('integrations').upsert(
+    const { error: saveErr } = await supabase.from('integrations').upsert(
       { user_id: user.id, threads_access_token: access_token, threads_user_id: user_id },
       { onConflict: 'user_id' },
     )
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       const profile = await fetchThreadsProfile(access_token)
       if (profile.username) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('integrations')
+        await supabase.from('integrations')
           .update({ threads_username: profile.username })
           .eq('user_id', user.id)
       }

@@ -18,7 +18,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  const { data } = await supabase
     .from('thumbnail_styles')
     .select('id,name,reference_url,created_at')
     .eq('user_id', user.id)
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
   // Cap at 12 presets per user — sane upper bound, plenty for a creator who
   // wants a few "review", "comparison", "review-dark" looks.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count } = await (supabase as any)
+  const { count } = await supabase
     .from('thumbnail_styles')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('thumbnail_styles')
     .insert({ user_id: user.id, name, reference_url: referenceUrl })
     .select('id,name,reference_url,created_at')

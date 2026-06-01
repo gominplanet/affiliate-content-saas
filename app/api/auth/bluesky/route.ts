@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const session = await createSession(cleanHandle, appPassword.trim())
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    await supabase.from('integrations').upsert(
       {
         user_id: user.id,
         bluesky_handle: session.handle,

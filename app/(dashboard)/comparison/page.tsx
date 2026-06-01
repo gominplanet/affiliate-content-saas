@@ -28,7 +28,7 @@ export default function ComparisonPage() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(supabase as any).from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+      ;supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
         .then(({ data }: { data: { tier?: string } | null }) => setTier(data?.tier ?? 'trial'))
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps

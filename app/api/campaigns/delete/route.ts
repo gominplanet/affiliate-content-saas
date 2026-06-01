@@ -46,7 +46,7 @@ export async function DELETE(request: Request) {
     const admin = createAdminClient()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: campaign } = await (admin as any)
+    const { data: campaign } = await admin
       .from('campaigns')
       .select('id,blog_post_id,wordpress_url')
       .eq('id', campaignId)
@@ -62,7 +62,7 @@ export async function DELETE(request: Request) {
     let resolvedWpPostId: number | null = null
     if (blogPostId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: postRow } = await (admin as any)
+      const { data: postRow } = await admin
         .from('blog_posts')
         .select('wordpress_post_id')
         .eq('id', blogPostId)
@@ -97,11 +97,11 @@ export async function DELETE(request: Request) {
 
     if (blogPostId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any).from('blog_posts').delete().eq('id', blogPostId).eq('user_id', user.id)
+      await admin.from('blog_posts').delete().eq('id', blogPostId).eq('user_id', user.id)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: delErr } = await (admin as any)
+    const { error: delErr } = await admin
       .from('campaigns')
       .delete()
       .eq('id', campaignId)

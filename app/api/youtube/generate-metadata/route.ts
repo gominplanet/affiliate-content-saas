@@ -336,7 +336,7 @@ export async function POST(request: Request) {
         .eq('user_id', user.id)
         .single(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any)
+      supabase
         .from('integrations')
         .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,tier,subscription_period_start,subscription_period_end')
         .eq('user_id', user.id)
@@ -497,7 +497,7 @@ export async function POST(request: Request) {
     // agents below match their channel voice over time. Excludes the
     // current video (would self-mirror on re-runs).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: priorMetaRows } = await (supabase as any)
+    const { data: priorMetaRows } = await supabase
       .from('youtube_videos')
       .select('generated_title,generated_description,generated_pinned_comment,youtube_video_id')
       .eq('user_id', user.id)
@@ -647,7 +647,7 @@ export async function POST(request: Request) {
     if (youtubeVideoId) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any)
+        await supabase
           .from('youtube_videos')
           .update({
             generated_title: titleResult.best,

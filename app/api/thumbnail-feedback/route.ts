@@ -43,19 +43,19 @@ export async function POST(request: Request) {
   let niche: string | null = null
   if (body.videoId) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: vid } = await (supabase as any)
+    const { data: vid } = await supabase
       .from('youtube_videos').select('selected_category').eq('id', body.videoId).eq('user_id', user.id).single()
     niche = (vid?.selected_category as string | null)?.trim() || null
   }
   if (!niche) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brand } = await (supabase as any)
+    const { data: brand } = await supabase
       .from('brand_profiles').select('niches').eq('user_id', user.id).single()
     niche = (brand?.niches as string[] | null)?.[0] ?? null
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('thumbnail_feedback')
     .insert({
       user_id: user.id,
@@ -82,7 +82,7 @@ export async function GET(request: Request) {
   const niche = url.searchParams.get('niche')?.trim() || null // optional: bias to this niche
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q = (supabase as any)
+  let q = supabase
     .from('thumbnail_feedback')
     .select('reaction,style_id,surface,niche')
     .eq('user_id', user.id)

@@ -28,7 +28,7 @@ export async function GET() {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: tierRow } = await (supabase as any)
+  const { data: tierRow } = await supabase
     .from('integrations')
     .select('tier')
     .eq('user_id', user.id)

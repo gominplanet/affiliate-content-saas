@@ -25,7 +25,7 @@ async function flipToUnsubscribed(token: string): Promise<'ok' | 'not-found'> {
   if (!token) return 'not-found'
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (admin as any)
+  const { data: row } = await admin
     .from('newsletter_subscribers')
     .select('id,status')
     .eq('unsub_token', token)
@@ -34,7 +34,7 @@ async function flipToUnsubscribed(token: string): Promise<'ok' | 'not-found'> {
   // Idempotent — if they're already unsubscribed, just succeed.
   if (row.status === 'unsubscribed') return 'ok'
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin as any)
+  await admin
     .from('newsletter_subscribers')
     .update({
       status: 'unsubscribed',

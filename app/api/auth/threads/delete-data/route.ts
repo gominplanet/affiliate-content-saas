@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     // caller is Meta.
     const admin = createAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any).from('integrations').update({
+    await admin.from('integrations').update({
       threads_access_token: null,
       threads_user_id: null,
     }).eq('threads_user_id', userId)

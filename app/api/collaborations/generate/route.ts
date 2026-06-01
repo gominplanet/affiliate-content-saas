@@ -20,8 +20,8 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: intRow }, { data: brand }] = await Promise.all([
-      (supabase as any).from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).single(),
-      (supabase as any).from('brand_profiles').select('*').eq('user_id', user.id).single(),
+      supabase.from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).single(),
+      supabase.from('brand_profiles').select('*').eq('user_id', user.id).single(),
     ])
     const tier = normalizeTier(intRow?.tier)
     if (!tierAllowsPublishAll(tier)) {
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         periodEnd: (intRow as Record<string, unknown> | null)?.subscription_period_end as string | null,
       })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { count } = await (supabase as any)
+      const { count } = await supabase
         .from('collaborations')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
     const { subject, body: emailBody, email, citations } = await generateCollabEmail(input, brand, { userId: user.id, tier })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row } = await (supabase as any)
+    const { data: row } = await supabase
       .from('collaborations')
       .insert({
         user_id: user.id,

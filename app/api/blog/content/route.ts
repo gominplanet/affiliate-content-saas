@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: post } = await (supabase as any)
+    const { data: post } = await supabase
       .from('blog_posts')
       .select('content,title')
       .eq('id', postId)
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: post } = await (supabase as any)
+    const { data: post } = await supabase
       .from('blog_posts')
       .select('id,wordpress_post_id')
       .eq('id', postId)
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: updErr } = await (supabase as any)
+    const { error: updErr } = await supabase
       .from('blog_posts')
       .update({ content, updated_at: new Date().toISOString() })
       .eq('id', postId)

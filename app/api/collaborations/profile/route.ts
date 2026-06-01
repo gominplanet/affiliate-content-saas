@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       : []
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('brand_profiles')
       .update({
         collab_track_record: str(body.collabsDone),

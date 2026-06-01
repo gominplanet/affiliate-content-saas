@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    await supabase.from('integrations').upsert(
       {
         user_id: userId,
         twitter_access_token: tokens.access_token,

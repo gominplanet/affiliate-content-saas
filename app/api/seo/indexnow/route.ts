@@ -19,7 +19,7 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: wp } = await (supabase as any)
+  const { data: wp } = await supabase
     .from('integrations')
     .select('wordpress_url,wordpress_username,wordpress_app_password')
     .eq('user_id', user.id).single()
@@ -41,7 +41,7 @@ export async function POST() {
 
   // Build the list of published post URLs from their slugs.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: posts } = await (supabase as any)
+  const { data: posts } = await supabase
     .from('blog_posts')
     .select('slug')
     .eq('user_id', user.id)

@@ -78,7 +78,7 @@ export async function POST(req: Request) {
     // the video thumbnail (and we ended up with a "no posts" bug in the
     // first cut of the picker route).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: rows } = await (supabase as any)
+    const { data: rows } = await supabase
       .from('blog_posts')
       .select('id,title,excerpt,wordpress_url,youtube_videos(thumbnail_url)')
       .eq('user_id', user.id)
@@ -102,9 +102,9 @@ export async function POST(req: Request) {
   // ── Load brand context for the Claude prompt + the email shell ─────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: brand }, { data: integ }, { data: nlSettings }] = await Promise.all([
-    (supabase as any).from('brand_profiles').select('name,author_name,niches,tone,writing_sample,headshot_url,logo_url').eq('user_id', user.id).maybeSingle(),
-    (supabase as any).from('integrations').select('wordpress_url,tier').eq('user_id', user.id).maybeSingle(),
-    (supabase as any).from('newsletter_settings').select('sender_name,mailing_address').eq('user_id', user.id).maybeSingle(),
+    supabase.from('brand_profiles').select('name,author_name,niches,tone,writing_sample,headshot_url,logo_url').eq('user_id', user.id).maybeSingle(),
+    supabase.from('integrations').select('wordpress_url,tier').eq('user_id', user.id).maybeSingle(),
+    supabase.from('newsletter_settings').select('sender_name,mailing_address').eq('user_id', user.id).maybeSingle(),
   ])
 
   const brandName = (nlSettings?.sender_name as string) || (brand?.name as string) || 'My Newsletter'

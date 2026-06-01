@@ -26,7 +26,7 @@ export async function POST(request: Request) {
 
   // GSC + WP must both be configured (we need the property AND the post URL).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (supabase as any)
+  const { data: integ } = await supabase
     .from('integrations')
     .select('gsc_property,wordpress_url')
     .eq('user_id', user.id).single()
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
   // Resolve the post URL from its slug, scoped to the requesting user.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: post } = await (supabase as any)
+  const { data: post } = await supabase
     .from('blog_posts')
     .select('id,slug')
     .eq('id', postId).eq('user_id', user.id).single()
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   // Upsert touches ONLY the indexing fields — leave seo_score / clicks / etc.
   // intact for the overview route's on-load refresh.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('post_seo').upsert({
+  await supabase.from('post_seo').upsert({
     post_id: post.id,
     user_id: user.id,
     url,

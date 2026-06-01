@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: model } = await (supabase as any)
+  const { data: model } = await supabase
     .from('face_models')
     .select('*')
     .eq('id', id)
@@ -50,7 +50,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
           || null
         if (loraUrl) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any)
+          await supabase
             .from('face_models')
             .update({ status: 'ready', lora_url: loraUrl, updated_at: new Date().toISOString() })
             .eq('id', id)
@@ -58,7 +58,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
           model.lora_url = loraUrl
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any)
+          await supabase
             .from('face_models')
             .update({ status: 'failed', failure_reason: 'Training finished but no LoRA URL returned.', updated_at: new Date().toISOString() })
             .eq('id', id)
@@ -67,7 +67,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         }
       } else if (status?.status === 'FAILED') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any)
+        await supabase
           .from('face_models')
           .update({ status: 'failed', failure_reason: status.error || 'Training failed.', updated_at: new Date().toISOString() })
           .eq('id', id)
@@ -91,7 +91,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
   // Confirm ownership and grab source paths before deleting.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: model } = await (supabase as any)
+  const { data: model } = await supabase
     .from('face_models').select('source_images').eq('id', id).eq('user_id', user.id).single()
   if (!model) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -102,7 +102,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('face_models').delete().eq('id', id).eq('user_id', user.id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

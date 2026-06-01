@@ -2230,7 +2230,7 @@ export default function StudioPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const intResult = await (supabase as any).from('integrations').select('geniuslink_api_key,tier').eq('user_id', user.id).single()
+        const intResult = await supabase.from('integrations').select('geniuslink_api_key,tier').eq('user_id', user.id).single()
         setHasGeniuslink(!!intResult.data?.geniuslink_api_key)
         const tier = effectiveTier(intResult.data?.tier as string)
         setUserTier(tier)

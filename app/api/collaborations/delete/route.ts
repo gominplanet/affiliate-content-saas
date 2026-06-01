@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error, count } = await (supabase as any)
+    const { error, count } = await supabase
       .from('collaborations')
       .delete({ count: 'exact' })
       .eq('user_id', user.id)

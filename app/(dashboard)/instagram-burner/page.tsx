@@ -63,7 +63,7 @@ export default function InstagramBurnerPage() {
     if (user) {
       // Select only non-sensitive columns — never the access token.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any).from('integrations').select('tier,instagram_username').eq('user_id', user.id).single()
+      const { data } = await supabase.from('integrations').select('tier,instagram_username').eq('user_id', user.id).single()
       resolvedTier = (data?.tier as string) || 'trial'
       setIgUsername((data?.instagram_username as string) || null)
     }

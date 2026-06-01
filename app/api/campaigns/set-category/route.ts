@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: campaign } = await (supabase as any)
+    const { data: campaign } = await supabase
       .from('campaigns')
       .select('id,blog_post_id')
       .eq('id', campaignId)
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     if (!campaign) return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: updErr } = await (supabase as any)
+    const { error: updErr } = await supabase
       .from('campaigns')
       .update({ category: normalized, updated_at: new Date().toISOString() })
       .eq('id', campaignId)
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: post } = await (supabase as any)
+    const { data: post } = await supabase
       .from('blog_posts')
       .select('wordpress_post_id')
       .eq('id', campaign.blog_post_id)

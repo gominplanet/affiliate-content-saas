@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     if (!(await metaEnabledForUser(supabase, user))) return NextResponse.json({ error: 'Instagram publishing is temporarily unavailable while our Meta integration is under review.' }, { status: 503 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('tier,instagram_user_id,instagram_access_token,instagram_username')
       .eq('user_id', user.id).single()

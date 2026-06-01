@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   const limit = q ? 30 : 10
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase as any)
+  let query = supabase
     .from('blog_posts')
     .select('id,title,excerpt,wordpress_url,published_at,youtube_videos(thumbnail_url,description,youtube_video_id)')
     .eq('user_id', user.id)
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
   // Need the user's WP base URL too, so that firstProductUrl can ignore
   // links that point back to the creator's own site (they're not products).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (supabase as any)
+  const { data: integ } = await supabase
     .from('integrations').select('wordpress_url').eq('user_id', user.id).maybeSingle()
   const wpBase = (integ?.wordpress_url as string | null) || null
 

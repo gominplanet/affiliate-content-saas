@@ -194,7 +194,7 @@ export async function POST(request: Request) {
 
   // ── Look up WP credentials ──────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (supabase as any)
+  const { data: integ } = await supabase
     .from('integrations')
     .select('wordpress_url,wordpress_username,wordpress_app_password')
     .eq('user_id', user.id)

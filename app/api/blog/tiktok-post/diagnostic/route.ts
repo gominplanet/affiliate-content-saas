@@ -42,7 +42,7 @@ export async function GET(request: Request) {
   // ── 1. Pull the integrations row (tokens, scopes, ids) ───────────────────
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (admin as any)
+  const { data: integ } = await admin
     .from('integrations')
     .select('tiktok_open_id, tiktok_username, tiktok_display_name, tiktok_access_token, tiktok_refresh_token, tiktok_token_expiry, tiktok_refresh_expiry, tiktok_scopes')
     .eq('user_id', user.id)
@@ -124,7 +124,7 @@ export async function GET(request: Request) {
   let stuckVideos: Array<{ id: string; title?: string; tiktok_publish_id?: string; tiktok_publish_status?: string; tiktok_share_url?: string | null; tiktok_error_message?: string | null; tiktok_posted_at?: string; instagram_video_url?: string }>
   if (requestedVideoId) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (admin as any)
+    const { data } = await admin
       .from('youtube_videos')
       .select('id, title, tiktok_publish_id, tiktok_publish_status, tiktok_share_url, tiktok_error_message, tiktok_posted_at, instagram_video_url')
       .eq('user_id', user.id)

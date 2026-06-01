@@ -16,7 +16,7 @@ export async function POST() {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('integrations')
       .update({ telegram_channel_id: null, telegram_channel_title: null })
       .eq('user_id', user.id)

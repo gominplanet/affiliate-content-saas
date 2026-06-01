@@ -30,7 +30,7 @@ export async function POST(request: Request) {
 
   // Read the user's tier so usage gets billed to the right bucket.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (supabase as any)
+  const { data: integ } = await supabase
     .from('integrations')
     .select('tier').eq('user_id', user.id).single()
   const tier = (integ?.tier as string) ?? 'trial'

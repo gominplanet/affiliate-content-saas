@@ -8,7 +8,7 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('integrations').upsert(
+  await supabase.from('integrations').upsert(
     {
       user_id: user.id,
       facebook_page_id: null,

@@ -18,7 +18,7 @@ export async function GET() {
 
     // Gate to Pro+ (Publish All / batch-apply is a Pro-tier feature).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('tier,youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
       .eq('user_id', user.id)

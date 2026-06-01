@@ -7,7 +7,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  const { data } = await supabase
     .from('integrations')
     .select('blog_customizations')
     .eq('user_id', user.id)
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
   // Save to Supabase
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: dbError } = await (supabase as any)
+  const { error: dbError } = await supabase
     .from('integrations')
     .update({ blog_customizations: customizations })
     .eq('user_id', user.id)
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
   // Push to WordPress if connected
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations')
     .select('wordpress_url, wordpress_username, wordpress_app_password, wordpress_api_token')
     .eq('user_id', user.id)
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       // Profile. We seed + re-assert it here so no Customize save can ever
       // revert the banner to the small logo again.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: brandRow } = await (supabase as any)
+      const { data: brandRow } = await supabase
         .from('brand_profiles')
         .select('header_banner_url, logo_url')
         .eq('user_id', user.id)
@@ -112,13 +112,13 @@ export async function POST(req: Request) {
       // theme silently skips rendering.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const [{ data: nlRow }, { count: nlActiveCount }] = await Promise.all([
-        (supabase as any)
+        supabase
           .from('newsletter_settings')
           .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,cta_bullet_1,cta_bullet_2,cta_bullet_3,homepage_placement,sidebar_placement')
           .eq('user_id', user.id)
           .maybeSingle(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase as any)
+        supabase
           .from('newsletter_subscribers')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id)

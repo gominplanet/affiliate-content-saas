@@ -8,7 +8,7 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: ig } = await (supabase as any)
+  const { data: ig } = await supabase
     .from('integrations')
     .select('stripe_customer_id')
     .eq('user_id', user.id)

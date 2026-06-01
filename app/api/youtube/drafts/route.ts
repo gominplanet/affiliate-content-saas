@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations')
     .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
     .eq('user_id', user.id)
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     // Persist refreshed token
     if (needsRefresh) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
+      await supabase
         .from('integrations')
         .update({
           youtube_oauth_access_token: token,

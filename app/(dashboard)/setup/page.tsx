@@ -871,7 +871,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any).from('integrations').select('*').eq('user_id', user.id).single()
+    const { data } = await supabase.from('integrations').select('*').eq('user_id', user.id).single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = data as any
     setMetaUnlocked(metaEnabled({ tier: row?.tier, email: user.email }))
@@ -998,7 +998,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     if (!user) return
     // WordPress credentials are managed via the token flow now; don't overwrite them here.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: err } = await (supabase as any).from('integrations').upsert({
+    const { error: err } = await supabase.from('integrations').upsert({
       user_id: user.id,
       youtube_channel_id: youtubeChannelId || null,
       geniuslink_api_key: geniuslinkKey || null,
@@ -1092,7 +1092,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').update({ pinterest_fallback_board: name.trim() || null }).eq('user_id', user.id)
+    await supabase.from('integrations').update({ pinterest_fallback_board: name.trim() || null }).eq('user_id', user.id)
   }
 
   async function saveYtBacklink(enabled: boolean) {
@@ -1100,7 +1100,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').update({ yt_backlink_enabled: enabled }).eq('user_id', user.id)
+    await supabase.from('integrations').update({ yt_backlink_enabled: enabled }).eq('user_id', user.id)
   }
 
   async function disconnectYoutube() {
@@ -2106,7 +2106,7 @@ function SetupPageInner() {
           // PG returned a column-not-found error, the whole query failed,
           // and `connectedUrl` was always undefined, so the setup page
           // showed the wizard even when wordpress_url was set.
-          const { data: intRow } = await (supabase as any).from('integrations').select('wordpress_url').eq('user_id', user.id).single()
+          const { data: intRow } = await supabase.from('integrations').select('wordpress_url').eq('user_id', user.id).single()
           const connectedUrl = intRow?.wordpress_url
           if (connectedUrl) {
             setSetupComplete(true)
@@ -2167,7 +2167,7 @@ function SetupPageInner() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: intRow } = await (supabase as any)
+        const { data: intRow } = await supabase
           .from('integrations')
           .select('wordpress_url')
           .eq('user_id', user.id)
@@ -2189,7 +2189,7 @@ function SetupPageInner() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('integrations').update({
+        await supabase.from('integrations').update({
           wordpress_url: null,
           wordpress_username: null,
           wordpress_app_password: null,

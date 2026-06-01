@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get('status') // 'pending' | 'active' | 'unsubscribed' | 'bounced'
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase as any)
+  let query = supabase
     .from('newsletter_subscribers')
     .select('id,email,status,source,source_url,confirmed_at,unsubscribed_at,created_at')
     .eq('user_id', user.id)
@@ -80,9 +80,9 @@ export async function GET(req: NextRequest) {
   // separate count queries is fine at the per-user volumes we'd see.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [activeCount, pendingCount, unsubCount] = await Promise.all([
-    (supabase as any).from('newsletter_subscribers').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active'),
-    (supabase as any).from('newsletter_subscribers').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'pending'),
-    (supabase as any).from('newsletter_subscribers').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'unsubscribed'),
+    supabase.from('newsletter_subscribers').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active'),
+    supabase.from('newsletter_subscribers').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'pending'),
+    supabase.from('newsletter_subscribers').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'unsubscribed'),
   ])
 
   return NextResponse.json({
@@ -106,7 +106,7 @@ export async function DELETE(req: NextRequest) {
   // RLS scopes to user_id automatically, so a creator can't delete someone
   // else's subscriber even by guessing the id.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('newsletter_subscribers')
     .delete()
     .eq('id', id)

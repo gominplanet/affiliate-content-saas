@@ -21,7 +21,7 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations')
     .select('wordpress_url, wordpress_username, wordpress_app_password')
     .eq('user_id', user.id)

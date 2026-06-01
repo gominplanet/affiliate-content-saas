@@ -7,7 +7,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations')
     .select('youtube_channel_id')
     .eq('user_id', user.id)
@@ -37,7 +37,7 @@ export async function GET() {
     // Count videos published in last 30 days from our DB
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count: recentVideos } = await (supabase as any)
+    const { count: recentVideos } = await supabase
       .from('youtube_videos')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)

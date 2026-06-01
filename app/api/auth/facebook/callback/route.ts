@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     // Save the first page by default (user can switch in settings)
     const page = pages[0]
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    await supabase.from('integrations').upsert(
       {
         user_id: user.id,
         facebook_page_id: page.id,

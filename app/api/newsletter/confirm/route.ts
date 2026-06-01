@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (admin as any)
+  const { data: row } = await admin
     .from('newsletter_subscribers')
     .select('id,user_id,status')
     .eq('confirm_token', token)
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (admin as any)
+  await admin
     .from('newsletter_subscribers')
     .update({
       status: 'active',

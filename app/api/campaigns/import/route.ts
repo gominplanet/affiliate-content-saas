@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).single()
     const tier = (intRow?.tier as Tier) ?? 'trial'
     if (!tierAllowsCampaigns(tier)) {
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
 
     // Skip ASINs that already have a non-failed campaign row.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existing } = await (supabase as any)
+    const { data: existing } = await supabase
       .from('campaigns')
       .select('asin,status')
       .eq('user_id', user.id)
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     let inserted = 0
     if (toInsert.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error, count } = await (supabase as any)
+      const { error, count } = await supabase
         .from('campaigns').insert(toInsert, { count: 'exact' })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       inserted = count ?? toInsert.length

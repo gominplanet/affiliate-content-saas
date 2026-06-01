@@ -24,7 +24,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (supabase as any)
+  const { data: integ } = await supabase
     .from('integrations')
     .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
     .eq('user_id', user.id)

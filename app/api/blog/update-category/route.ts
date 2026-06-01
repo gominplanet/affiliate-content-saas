@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
     // 1. Persist on the youtube_videos row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: updateErr } = await (supabase as any)
+    const { error: updateErr } = await supabase
       .from('youtube_videos')
       .update({ selected_category: normalized })
       .eq('id', videoId)
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: post } = await (supabase as any)
+    const { data: post } = await supabase
       .from('blog_posts')
       .select('id,wordpress_post_id')
       .eq('user_id', user.id)
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: wp } = await (supabase as any)
+    const { data: wp } = await supabase
       .from('integrations')
       .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
       .eq('user_id', user.id)

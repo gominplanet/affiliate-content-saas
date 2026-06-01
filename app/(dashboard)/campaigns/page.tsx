@@ -255,7 +255,7 @@ function CampaignsInner() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+        const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).single()
         const t = effectiveTier(data?.tier as string)
         setIsPro(t === 'pro' || t === 'admin')
       } catch { /* stay locked */ }

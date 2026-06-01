@@ -13,20 +13,20 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data, error }, { data: intg }, { data: brand }] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from('campaigns')
       .select('id,asin,cc_campaign_id,product_title,campaign_name,epc,ends_at,status,error_message,wordpress_url,blog_post_id,category,hero_kind,created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from('integrations')
       .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,pinterest_access_token,pinterest_board_id')
       .eq('user_id', user.id)
       .single(),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from('brand_profiles')
       .select('niches,custom_categories')
       .eq('user_id', user.id)

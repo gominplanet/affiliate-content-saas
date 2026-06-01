@@ -132,7 +132,7 @@ export async function GET(request: Request) {
   const refreshExpiry = now + (tokens.refresh_expires_in ?? 31536000) * 1000 // 365d fallback
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: upsertErr } = await (supabase as any)
+  const { error: upsertErr } = await supabase
     .from('integrations')
     .upsert(
       {

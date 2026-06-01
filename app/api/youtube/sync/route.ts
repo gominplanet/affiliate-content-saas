@@ -17,7 +17,7 @@ export async function POST(request: Request) {
 
   // Read per-user channel ID from integrations table
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations')
     .select('youtube_channel_id')
     .eq('user_id', user.id)
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     const newVideos = videos.filter(v => !existingIds.has(v.youtubeVideoId))
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('youtube_videos')
       .upsert(rows, { onConflict: 'user_id,youtube_video_id' })
 

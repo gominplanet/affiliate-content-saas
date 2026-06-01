@@ -43,7 +43,7 @@ export async function GET(request: Request) {
 
   // Atomic claim of one due job.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: claimed, error: claimErr } = await (admin as any)
+  const { data: claimed, error: claimErr } = await admin
     .from('ig_burn_jobs')
     .update({ status: 'processing', claimed_at: nowIso })
     .eq('status', 'pending')
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
 
     // 3. Publish the Reel to the user's connected Instagram (default account).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integ } = await (admin as any)
+    const { data: integ } = await admin
       .from('integrations')
       .select('instagram_user_id,instagram_access_token')
       .eq('user_id', job.user_id)
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any).from('ig_burn_jobs').update({
+    await admin.from('ig_burn_jobs').update({
       status: 'completed', result_url: burned.url, reel_caption: reelCaption, ig_published: true,
     }).eq('id', job.id)
     return NextResponse.json({ ok: true, processed: 1, jobId: job.id })
@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[cron/process-burn-jobs] failed', { jobId: job.id, error: msg })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any).from('ig_burn_jobs').update({ status: 'failed', error_message: msg.slice(0, 500) }).eq('id', job.id)
+    await admin.from('ig_burn_jobs').update({ status: 'failed', error_message: msg.slice(0, 500) }).eq('id', job.id)
     return NextResponse.json({ ok: false, processed: 1, jobId: job.id, error: msg })
   }
 }

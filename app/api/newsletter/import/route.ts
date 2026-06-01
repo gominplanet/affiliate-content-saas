@@ -34,12 +34,12 @@ export async function POST(req: Request) {
 
   // ── Tier cap pre-flight ────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (supabase as any)
+  const { data: integ } = await supabase
     .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(integ?.tier as string | undefined)
   const cap = allowedNewsletterSubscribers(tier)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count: currentCount } = await (supabase as any)
+  const { count: currentCount } = await supabase
     .from('newsletter_subscribers')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
@@ -91,7 +91,7 @@ export async function POST(req: Request) {
 
   // ── Find which of the candidates already exist (so we can report skipped) ─
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existingRows } = await (supabase as any)
+  const { data: existingRows } = await supabase
     .from('newsletter_subscribers')
     .select('email')
     .eq('user_id', user.id)
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
     confirmed_at: new Date().toISOString(),
   }))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: insertErr } = await (supabase as any)
+  const { error: insertErr } = await supabase
     .from('newsletter_subscribers')
     .insert(rows)
   if (insertErr) {

@@ -92,7 +92,7 @@ export default function PhotoboothPage() {
     let resolvedTier = 'trial'
     if (user) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+      const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).single()
       resolvedTier = (data?.tier as string) || 'trial'
     }
     setTier(effectiveTier(resolvedTier))

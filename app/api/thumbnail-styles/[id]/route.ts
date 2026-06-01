@@ -18,7 +18,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('thumbnail_styles')
     .delete()
     .eq('id', id)

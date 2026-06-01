@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: 'Not logged in' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations')
     .select('geniuslink_api_key, geniuslink_api_secret')
     .eq('user_id', user.id)
@@ -53,7 +53,7 @@ export async function GET(request: Request) {
   let shortcode = (searchParams.get('shortcode') || '').trim()
   if (!shortcode) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: pickPost } = await (supabase as any)
+    const { data: pickPost } = await supabase
       .from('blog_posts')
       .select('geniuslink_code')
       .eq('user_id', user.id)

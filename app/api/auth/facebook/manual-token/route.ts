@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   const page = await res.json() as { id: string; name: string }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('integrations').upsert(
+  await supabase.from('integrations').upsert(
     {
       user_id: user.id,
       facebook_page_id: page.id,

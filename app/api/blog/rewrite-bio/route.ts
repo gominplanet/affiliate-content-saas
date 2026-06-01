@@ -49,7 +49,7 @@ Write a polished "About Me" bio based on this. Keep it natural and personal. Do 
     // tier is fetched ad-hoc here — no integrations query in this route's
     // happy path, and a single extra select beats leaving the call un-tagged.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+    const { data: intRow } = await supabase.from('integrations').select('tier').eq('user_id', user.id).single()
     recordAnthropicUsage(message, {
       userId: user.id, tier: intRow?.tier,
       feature: 'rewrite_bio', model: 'claude-sonnet-4-6',

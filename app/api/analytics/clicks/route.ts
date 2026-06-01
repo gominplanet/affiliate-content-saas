@@ -47,7 +47,7 @@ export async function GET() {
 
     // Geniuslink creds
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (supabase as any)
+    const { data: intRow } = await supabase
       .from('integrations')
       .select('geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
@@ -64,7 +64,7 @@ export async function GET() {
     // Pull every published post for this user with enough columns to do
     // the backfill in-process.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: postsRaw } = await (supabase as any)
+    const { data: postsRaw } = await supabase
       .from('blog_posts')
       .select('id,title,wordpress_url,geniuslink_code,content')
       .eq('user_id', user.id)
@@ -85,7 +85,7 @@ export async function GET() {
     if (backfills.length > 0) {
       await Promise.all(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        backfills.map(b => (supabase as any)
+        backfills.map(b => supabase
           .from('blog_posts')
           .update({ geniuslink_code: b.code })
           .eq('id', b.id)

@@ -17,7 +17,7 @@ export async function POST() {
   // Best-effort revoke on TikTok's side — we don't block on failure.
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integ } = await (supabase as any)
+    const { data: integ } = await supabase
       .from('integrations')
       .select('tiktok_access_token')
       .eq('user_id', user.id)
@@ -39,7 +39,7 @@ export async function POST() {
   } catch { /* non-fatal */ }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('integrations')
     .update({
       tiktok_open_id: null,

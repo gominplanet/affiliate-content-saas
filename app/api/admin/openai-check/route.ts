@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: caller } = await (supabase as any)
+    const { data: caller } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).single()
     if (caller?.tier !== 'admin') {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 })

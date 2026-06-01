@@ -77,7 +77,7 @@ export function ShortVideoUpload({
       if (!publicUrl) throw new Error('Storage did not return a public URL.')
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: dbErr } = await (supabase as any)
+      const { error: dbErr } = await supabase
         .from('youtube_videos')
         .update({ instagram_video_url: publicUrl })
         .eq('id', videoId)

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
     // Admin gate — must be admin tier in their integrations row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: caller } = await (supabase as any)
+    const { data: caller } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).single()
     if (caller?.tier !== 'admin') {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 })
@@ -47,9 +47,9 @@ export async function POST(request: Request) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: integration }, { count: postCount }, { data: profile }] = await Promise.all([
-      (admin as any).from('integrations').select('tier,wordpress_url').eq('user_id', targetId).maybeSingle(),
-      (admin as any).from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', targetId),
-      (admin as any).from('brand_profiles').select('name,author_name').eq('user_id', targetId).maybeSingle(),
+      admin.from('integrations').select('tier,wordpress_url').eq('user_id', targetId).maybeSingle(),
+      admin.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', targetId),
+      admin.from('brand_profiles').select('name,author_name').eq('user_id', targetId).maybeSingle(),
     ])
 
     return NextResponse.json({

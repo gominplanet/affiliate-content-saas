@@ -76,7 +76,7 @@ async function serveProxy(
   // route unauthenticated.
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (admin as any)
+  const { data: row } = await admin
     .from('youtube_videos')
     .select('instagram_video_url')
     .eq('id', videoId)

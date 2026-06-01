@@ -18,7 +18,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('newsletter_broadcasts')
     .select('id,subject,status,recipients_total,recipients_delivered,recipients_bounced,recipients_opened,recipients_clicked,sent_at,created_at,error_message')
     .eq('user_id', user.id)

@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: post }, { data: integration }] = await Promise.all([
-    (supabase as any).from('blog_posts').select('*').eq('id', postId).single(),
-    (supabase as any).from('integrations').select('*').eq('user_id', user.id).single(),
+    supabase.from('blog_posts').select('*').eq('id', postId).single(),
+    supabase.from('integrations').select('*').eq('user_id', user.id).single(),
   ])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = post as any

@@ -34,7 +34,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: 'Invalid status value' }, { status: 400 })
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('job_failures')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', id)

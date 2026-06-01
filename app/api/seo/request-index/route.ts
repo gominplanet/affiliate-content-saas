@@ -54,7 +54,7 @@ export async function POST(req: Request) {
   // burning the shared project quota in one creator's afternoon.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count } = await (supabase as any)
+  const { count } = await supabase
     .from('indexing_submissions')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
     // recent attempt timestamp so creators can see "submitted 3 hours ago"
     // on individual posts.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('indexing_submissions').insert({
+    await supabase.from('indexing_submissions').insert({
       user_id: user.id,
       url: r.url,
       outcome: r.outcome,

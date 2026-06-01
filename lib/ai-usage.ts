@@ -149,7 +149,7 @@ export function recordUsage(o: RecordOpts): void {
   try {
     const admin = createAdminClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    void (admin as any).from('ai_usage').insert({
+    void admin.from('ai_usage').insert({
       user_id: o.userId ?? null,
       tier: o.tier ?? null,
       feature: o.feature,

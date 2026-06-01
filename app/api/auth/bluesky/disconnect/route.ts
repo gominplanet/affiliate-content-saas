@@ -7,7 +7,7 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('integrations').update({
+  await supabase.from('integrations').update({
     bluesky_handle: null,
     bluesky_app_password: null,
     bluesky_did: null,

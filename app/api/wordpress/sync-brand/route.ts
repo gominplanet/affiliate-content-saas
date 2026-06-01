@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   } = body
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations')
     .select('wordpress_url, wordpress_username, wordpress_app_password')
     .eq('user_id', user.id)
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
   // logo-only upload) or a failed customizations-GET can never drop the
   // header banner the user already saved.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: brandRow } = await (supabase as any)
+  const { data: brandRow } = await supabase
     .from('brand_profiles')
     .select('header_banner_url, logo_url')
     .eq('user_id', user.id)

@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
     // Pull current brand row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brand } = await (supabase as any)
+    const { data: brand } = await supabase
       .from('brand_profiles')
       .select('custom_categories')
       .eq('user_id', user.id)
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     const next = [...existing, trimmed]
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: updateErr } = await (supabase as any)
+    const { error: updateErr } = await supabase
       .from('brand_profiles')
       .update({ custom_categories: next })
       .eq('user_id', user.id)

@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     step = 'save_token'
     const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: saveErr } = await (supabase as any).from('integrations').upsert(
+    const { error: saveErr } = await supabase.from('integrations').upsert(
       {
         user_id: userId,
         linkedin_access_token: accessToken,

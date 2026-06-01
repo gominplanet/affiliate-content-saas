@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
     // ── Fetch brand niches (the allowed category labels) ─────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('niches')
       .eq('user_id', user.id)
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
     // ── Fetch WP credentials ─────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integration } = await (supabase as any)
+    const { data: integration } = await supabase
       .from('integrations')
       .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,tier')
       .eq('user_id', user.id)

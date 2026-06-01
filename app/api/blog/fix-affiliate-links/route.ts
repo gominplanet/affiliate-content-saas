@@ -56,7 +56,7 @@ export async function POST(request: Request) {
     const selectedFixes = Array.isArray(body.fixes) ? body.fixes : null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integration } = await (supabase as any)
+    const { data: integration } = await supabase
       .from('integrations')
       .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,tier,amazon_associates_tag,geniuslink_api_key,geniuslink_api_secret')
       .eq('user_id', user.id)
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
         try {
           if (!f?.postId || !f?.oldUrl || !/^https?:\/\//i.test(f?.newUrl || '')) continue
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: row } = await (supabase as any)
+          const { data: row } = await supabase
             .from('blog_posts').select('id,content,wordpress_post_id,video_id')
             .eq('user_id', user.id).eq('id', f.postId).maybeSingle()
           if (!row?.content) continue
@@ -96,13 +96,13 @@ export async function POST(request: Request) {
           if (updated === original) continue
           if (row.wordpress_post_id) await wpService.updatePost(row.wordpress_post_id, { content: updated } as never)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase as any).from('blog_posts').update({ content: updated }).eq('id', row.id)
+          await supabase.from('blog_posts').update({ content: updated }).eq('id', row.id)
           fixed++
           // Best-effort: refresh the video's stored product link (single reviews
           // store the UUID in video_id; comparison posts store a youtube id and
           // simply won't match — harmless).
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          try { if (row.video_id) await (supabase as any).from('youtube_videos').update({ product_url: f.newUrl }).eq('user_id', user.id).eq('id', row.video_id) } catch { /* non-fatal */ }
+          try { if (row.video_id) await supabase.from('youtube_videos').update({ product_url: f.newUrl }).eq('user_id', user.id).eq('id', row.video_id) } catch { /* non-fatal */ }
         } catch (err) {
           errs.push(`${f.postId}: ${err instanceof Error ? err.message : String(err)}`)
         }
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
 
     // ── Load published posts that have a body + a WP id ──────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: posts } = await (supabase as any)
+    const { data: posts } = await supabase
       .from('blog_posts')
       .select('id,video_id,title,slug,content,wordpress_post_id')
       .eq('user_id', user.id)
@@ -126,12 +126,12 @@ export async function POST(request: Request) {
     const resolveVideo = async (videoId: string | null) => {
       if (!videoId) return null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let { data } = await (supabase as any)
+      let { data } = await supabase
         .from('youtube_videos').select('id,title,description,product_url')
         .eq('user_id', user.id).eq('id', videoId).maybeSingle()
       if (!data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = await (supabase as any)
+        const r = await supabase
           .from('youtube_videos').select('id,title,description,product_url')
           .eq('user_id', user.id).eq('youtube_video_id', videoId).maybeSingle()
         data = r.data

@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Tier gate
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: tierRow } = await (supabase as any)
+    const { data: tierRow } = await supabase
       .from('integrations')
       .select('tier')
       .eq('user_id', user.id)
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     // Save
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: upErr } = await (supabase as any)
+    const { error: upErr } = await supabase
       .from('integrations')
       .upsert(
         {

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     // Only allow cancelling rows that are still pending — once they
     // move to processing/completed/failed/cancelled it's a no-op.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('scheduled_posts')
       .update({ status: 'cancelled', updated_at: new Date().toISOString() })
       .eq('id', id)

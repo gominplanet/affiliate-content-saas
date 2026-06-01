@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     step = 'resolve_property'
     const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: integ } = await (supabase as any)
+    const { data: integ } = await supabase
       .from('integrations').select('wordpress_url').eq('user_id', userId).single()
     let property: string | null = null
     try {
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     step = 'save_token'
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: saveErr } = await (supabase as any).from('integrations').upsert(
+    const { error: saveErr } = await supabase.from('integrations').upsert(
       {
         user_id: userId,
         gsc_oauth_access_token: tokens.access_token,

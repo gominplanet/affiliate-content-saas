@@ -36,7 +36,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  const { data } = await supabase
     .from('face_models')
     .select('id,name,trigger_token,status,lora_url,failure_reason,source_images,created_at')
     .eq('user_id', user.id)
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
   // ── Paid-tier gate (maxFaces 0 = feature off for this tier) ───────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await (supabase as any)
+  const { data: intRow } = await supabase
     .from('integrations').select('tier').eq('user_id', user.id).single()
   const tier = normalizeTier(intRow?.tier)
   const maxFaces = TIERS[tier].maxFaces
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   // ── Face count cap (cost guard — each face seeds cached gpt-image anchors) ─
   if (maxFaces !== null) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count } = await (supabase as any)
+    const { count } = await supabase
       .from('face_models').select('id', { count: 'exact', head: true }).eq('user_id', user.id)
     if ((count ?? 0) >= maxFaces) {
       return NextResponse.json({
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
 
   // ── Persist the face_models row (ready immediately) ───────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row, error: insertErr } = await (supabase as any)
+  const { data: row, error: insertErr } = await supabase
     .from('face_models')
     .insert({
       user_id: user.id,

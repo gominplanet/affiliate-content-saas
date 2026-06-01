@@ -45,7 +45,7 @@ export default function CreatorCampaignsAdminPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { setIsAdmin(false); return }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data } = await (supabase as any).from('integrations').select('tier').eq('user_id', user.id).single()
+        const { data } = await supabase.from('integrations').select('tier').eq('user_id', user.id).single()
         setIsAdmin(data?.tier === 'admin')
         if (data?.tier === 'admin') loadStats()
       } catch { setIsAdmin(false) }

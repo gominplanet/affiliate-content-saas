@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   const { id: threadsUserId, username } = await meRes.json() as { id: string; username: string }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('integrations').upsert(
+  await supabase.from('integrations').upsert(
     { user_id: user.id, threads_access_token: accessToken.trim(), threads_user_id: threadsUserId },
     { onConflict: 'user_id' },
   )

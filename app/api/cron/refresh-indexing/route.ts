@@ -44,7 +44,7 @@ export async function GET(request: Request) {
   // Users with GSC connected AND WordPress wired (we need wp_url to build the
   // canonical post URL).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: usersRaw } = await (supabase as any)
+  const { data: usersRaw } = await supabase
     .from('integrations')
     .select('user_id,gsc_property,wordpress_url')
     .not('gsc_oauth_access_token', 'is', null)
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
 
       // Published posts + their existing cache rows.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: postsRaw } = await (supabase as any)
+      const { data: postsRaw } = await supabase
         .from('blog_posts')
         .select('id,slug')
         .eq('user_id', u.user_id)
@@ -76,7 +76,7 @@ export async function GET(request: Request) {
       if (posts.length === 0) continue
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: cacheRowsRaw } = await (supabase as any)
+      const { data: cacheRowsRaw } = await supabase
         .from('post_seo')
         .select('post_id,indexed_state,checked_at')
         .eq('user_id', u.user_id)
@@ -138,7 +138,7 @@ export async function GET(request: Request) {
         // (seo_score, clicks, impressions, top_queries) are left intact for
         // the overview route to refresh on user load.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (supabase as any).from('post_seo').upsert(toUpsert, { onConflict: 'post_id' })
+        await supabase.from('post_seo').upsert(toUpsert, { onConflict: 'post_id' })
         totalRefreshed += toUpsert.length
       }
     } catch (err) {

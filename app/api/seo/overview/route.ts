@@ -31,7 +31,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (supabase as any)
+  const { data: integ } = await supabase
     .from('integrations')
     .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token,gsc_property,gsc_oauth_access_token')
     .eq('user_id', user.id)
@@ -41,7 +41,7 @@ export async function GET() {
   const property: string | null = integ?.gsc_property || null
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: postsRaw } = await (supabase as any)
+  const { data: postsRaw } = await supabase
     .from('blog_posts')
     .select('id,title,slug,content,post_type,wordpress_post_id,published_at')
     .eq('user_id', user.id)
@@ -68,7 +68,7 @@ export async function GET() {
 
   // Existing cache (for serving stale indexing without re-inspecting).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: cacheRows } = await (supabase as any)
+  const { data: cacheRows } = await supabase
     .from('post_seo').select('*').eq('user_id', user.id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cache = new Map<string, any>((cacheRows ?? []).map((r: any) => [r.post_id, r]))
@@ -199,7 +199,7 @@ export async function GET() {
   // Persist the snapshot (best-effort; never block the response).
   if (toUpsert.length) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    try { await (supabase as any).from('post_seo').upsert(toUpsert, { onConflict: 'post_id' }) } catch { /* non-fatal */ }
+    try { await supabase.from('post_seo').upsert(toUpsert, { onConflict: 'post_id' }) } catch { /* non-fatal */ }
   }
 
   const total = out.length

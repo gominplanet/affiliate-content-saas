@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    await supabase.from('integrations').upsert(
       {
         user_id: user.id,
         instagram_user_id: tokens.userId,

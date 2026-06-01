@@ -93,7 +93,7 @@ export async function POST(request: Request) {
 
     // Save credentials
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('integrations').upsert(
+    await supabase.from('integrations').upsert(
       {
         user_id: user.id,
         wordpress_url: siteUrl,

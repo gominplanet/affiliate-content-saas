@@ -102,7 +102,7 @@ export async function applyPostFixes(opts: {
     // The token set in pickRelatedPosts was too narrow when both posts had
     // no seo_keyword and short titles — the body widens the signal.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: others } = await (supabase as any)
+    const { data: others } = await supabase
       .from('blog_posts').select('title,slug,seo_keyword,post_type,content')
       .eq('user_id', userId).not('wordpress_post_id', 'is', null).neq('id', post.id).limit(200)
     // Strip HTML + cap to first 800 chars per candidate — token-overlap math
@@ -185,12 +185,12 @@ export async function applyPostFixes(opts: {
   if (changed && post.wordpress_post_id) await wpService.updatePost(post.wordpress_post_id, wpUpdate)
   if (Object.keys(dbUpdate).length) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('blog_posts').update(dbUpdate).eq('id', post.id)
+    await supabase.from('blog_posts').update(dbUpdate).eq('id', post.id)
   }
 
   const { score, checks } = scorePostSeo({ title: state.title, contentHtml: state.content, siteHost: wpBase, postType })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  try { await (supabase as any).from('post_seo').update({ seo_score: score, score_detail: checks, checked_at: new Date().toISOString() }).eq('post_id', post.id) } catch { /* non-fatal */ }
+  try { await supabase.from('post_seo').update({ seo_score: score, score_detail: checks, checked_at: new Date().toISOString() }).eq('post_id', post.id) } catch { /* non-fatal */ }
 
   return { applied, reasons, score, changed }
 }

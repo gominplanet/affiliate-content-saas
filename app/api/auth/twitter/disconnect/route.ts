@@ -7,7 +7,7 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('integrations').update({
+  await supabase.from('integrations').update({
     twitter_access_token: null,
     twitter_refresh_token: null,
     twitter_user_id: null,

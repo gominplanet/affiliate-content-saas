@@ -14,20 +14,20 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: rows }, { data: intg }, { data: brand }] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from('collaborations')
       .select('id,brand_name,platforms,generated_email,created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from('integrations')
       .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,pinterest_access_token,instagram_user_id')
       .eq('user_id', user.id)
       .single(),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any)
+    supabase
       .from('brand_profiles')
       .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes,collab_livestreams,collab_livestream_link')
       .eq('user_id', user.id)

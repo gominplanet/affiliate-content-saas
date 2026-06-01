@@ -33,7 +33,7 @@ export async function GET() {
 
   // ── 1. Read with the user's RLS-scoped session (what init() sees) ────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: rlsRow, error: rlsErr } = await (supabase as any)
+  const { data: rlsRow, error: rlsErr } = await supabase
     .from('integrations')
     .select('user_id, wordpress_url, wordpress_username, setup_status')
     .eq('user_id', user.id)
@@ -43,7 +43,7 @@ export async function GET() {
   //      whether the row genuinely doesn't exist vs. RLS hiding it ─────────
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: adminRow, error: adminErr } = await (admin as any)
+  const { data: adminRow, error: adminErr } = await admin
     .from('integrations')
     .select('user_id, wordpress_url, wordpress_username, setup_status, updated_at')
     .eq('user_id', user.id)
@@ -53,7 +53,7 @@ export async function GET() {
   //      catches the "callback wrote to a different user_id" case. We
   //      only return the user_ids (not the URLs), enough to prove it ─────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: allConnected } = await (admin as any)
+  const { data: allConnected } = await admin
     .from('integrations')
     .select('user_id, wordpress_url')
     .not('wordpress_url', 'is', null)

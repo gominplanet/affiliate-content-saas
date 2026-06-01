@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     const admin = createAdminClient()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await (admin as any)
+    const { data: intRow } = await admin
       .from('integrations')
       .select('user_id,tier')
       .eq('cc_ingest_token', token)
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
 
     // Skip ASINs that already have a live (non-failed) campaign row.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existing } = await (admin as any)
+    const { data: existing } = await admin
       .from('campaigns')
       .select('asin,status')
       .eq('user_id', userId)
@@ -114,7 +114,7 @@ export async function POST(request: Request) {
     let inserted = 0
     if (toInsert.length > 0) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error, count } = await (admin as any)
+      const { error, count } = await admin
         .from('campaigns')
         .insert(toInsert, { count: 'exact' })
       if (error) {

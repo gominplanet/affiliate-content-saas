@@ -14,7 +14,7 @@ export async function POST() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (supabase as any)
+  const { data: row } = await supabase
     .from('integrations')
     .select('gsc_oauth_access_token,gsc_oauth_refresh_token')
     .eq('user_id', user.id)
@@ -32,7 +32,7 @@ export async function POST() {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('integrations').update({
+  await supabase.from('integrations').update({
     gsc_oauth_access_token: null,
     gsc_oauth_refresh_token: null,
     gsc_oauth_token_expiry: null,
