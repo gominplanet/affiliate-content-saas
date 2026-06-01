@@ -51,7 +51,18 @@ export async function GET() {
   url.searchParams.set('client_key', clientKey)
   url.searchParams.set('response_type', 'code')
   // Comma-separated — TikTok ignores spaces.
-  url.searchParams.set('scope', 'user.info.basic,video.upload,video.publish')
+  //
+  // SCOPE SET (must mirror what's enabled on the TikTok developer-portal app).
+  //   user.info.basic    — Login Kit identity (open_id, display_name, avatar)
+  //   user.info.profile  — bio + verified flag, shown in Settings → Integrations
+  //   video.upload       — drops a video into the user's TikTok inbox as a DRAFT;
+  //                        the user finalizes (caption / privacy / audience) in
+  //                        the TikTok app. Direct posting via `video.publish`
+  //                        is gated behind a separate TikTok audit — apply for
+  //                        it AFTER production review is approved, then add it
+  //                        to this string AND swap services/tiktok.ts back to
+  //                        the /v2/post/publish/video/init/ endpoint.
+  url.searchParams.set('scope', 'user.info.basic,user.info.profile,video.upload')
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('state', state)
 

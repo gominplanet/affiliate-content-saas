@@ -1859,7 +1859,8 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       </div>
       )}
 
-      {/* TikTok — Pro feature. Direct Post via Content Posting API. */}
+      {/* TikTok — Pro feature. Inbox/draft mode (video.upload scope) until
+          TikTok approves us for video.publish direct-posting. */}
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#000000]">
@@ -1869,7 +1870,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">TikTok <span className="ml-1 text-[10px] font-medium text-[#0071e3] uppercase tracking-wider">Pro</span></p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Direct Post your vertical short reviews to your TikTok feed</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Send your vertical short reviews to your TikTok inbox as drafts — finalize the caption + privacy in the TikTok app</p>
           </div>
           {tiktok.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
@@ -1886,11 +1887,12 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
                 )
                 : <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" />
               }
-              {/* Display name and username can both be blank when the OAuth
-                  scope grants only user.info.basic — TikTok returns username
-                  only with user.info.profile, which we deliberately don't
-                  request. Fall back gracefully so the card never reads as
-                  "Connected as @" with an empty handle. */}
+              {/* Display name and username can both be blank for connections
+                  that pre-date the user.info.profile scope we now request —
+                  TikTok returns username only with user.info.profile. Fall
+                  back gracefully so the card never reads as "Connected as @"
+                  with an empty handle; existing users still see something
+                  useful and a reconnect populates the richer fields. */}
               Connected as <strong>{tiktok.displayName || (tiktok.username ? `@${tiktok.username}` : 'your TikTok account')}</strong>
               {tiktok.username && tiktok.displayName && <span className="text-[#86868b] font-normal text-xs">· @{tiktok.username}</span>}
             </p>
@@ -1898,7 +1900,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               {ttDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
             </button>
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-              On any post in <a href="/content" className="text-[#0071e3] hover:underline">Content</a>, click <strong>Post to TikTok</strong> to open the publish screen — pick privacy, comment / duet / stitch, commercial-content disclosure, then post.
+              On any post in <a href="/content" className="text-[#0071e3] hover:underline">Content</a>, click <strong>Post to TikTok</strong>. MVP sends the video to your TikTok app&apos;s drafts inbox — open TikTok on your phone, tap the draft, tweak the caption + privacy, and publish. Direct-to-feed posting is in TikTok&apos;s review queue and will unlock automatically once approved.
             </p>
           </div>
         ) : (

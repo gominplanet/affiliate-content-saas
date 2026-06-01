@@ -13,6 +13,28 @@
 const TT_BASE = 'https://open.tiktokapis.com'
 const TT_TOKEN_URL = `${TT_BASE}/v2/oauth/token/`
 
+/**
+ * Direct Post vs Inbox/Draft mode.
+ *
+ * TikTok gates the `video.publish` scope (direct posting straight to a
+ * creator's feed) behind a separate audit that's only available AFTER
+ * an app passes standard production review. Without `video.publish`,
+ * the `/v2/post/publish/video/init/` endpoint returns scope_not_authorized.
+ *
+ * Until our `video.publish` audit clears, we route every publish through
+ * `/v2/post/publish/inbox/video/init/` — the video lands in the creator's
+ * TikTok app DRAFTS, and they finalize caption / privacy / audience there.
+ * This needs only `video.upload` (which we DO have today).
+ *
+ * To flip back to direct posting once approved:
+ *   1. Flip USE_INBOX_MODE to false.
+ *   2. Add `video.publish` back to the OAuth scope string in
+ *      app/api/auth/tiktok/route.ts.
+ *   3. Existing connected users have to disconnect + reconnect to get
+ *      the new scope into their token.
+ */
+const USE_INBOX_MODE = true
+
 /** What we mirror back to the dashboard / publish UI from creator_info. */
 export interface CreatorInfo {
   username: string
@@ -182,23 +204,37 @@ export async function directPostVideo(
   token: string,
   opts: DirectPostOptions,
 ): Promise<DirectPostResult> {
-  const body = {
-    post_info: {
-      title: opts.title.slice(0, 2200),
-      privacy_level: opts.privacyLevel,
-      disable_comment: opts.disableComment,
-      disable_duet: opts.disableDuet,
-      disable_stitch: opts.disableStitch,
-      brand_content_toggle: opts.brandContentToggle,
-      brand_organic_toggle: opts.brandOrganicToggle,
-    },
-    source_info: {
-      source: 'PULL_FROM_URL',
-      video_url: opts.videoUrl,
-    },
-  }
+  // Inbox mode (the default until video.publish is approved): TikTok
+  // ignores post_info entirely and the creator picks caption + privacy
+  // in the TikTok app's drafts inbox. Direct mode: TikTok publishes
+  // straight to feed using the post_info we provide.
+  const body = USE_INBOX_MODE
+    ? {
+        source_info: {
+          source: 'PULL_FROM_URL',
+          video_url: opts.videoUrl,
+        },
+      }
+    : {
+        post_info: {
+          title: opts.title.slice(0, 2200),
+          privacy_level: opts.privacyLevel,
+          disable_comment: opts.disableComment,
+          disable_duet: opts.disableDuet,
+          disable_stitch: opts.disableStitch,
+          brand_content_toggle: opts.brandContentToggle,
+          brand_organic_toggle: opts.brandOrganicToggle,
+        },
+        source_info: {
+          source: 'PULL_FROM_URL',
+          video_url: opts.videoUrl,
+        },
+      }
 
-  const res = await fetch(`${TT_BASE}/v2/post/publish/video/init/`, {
+  const endpoint = USE_INBOX_MODE
+    ? `${TT_BASE}/v2/post/publish/inbox/video/init/`
+    : `${TT_BASE}/v2/post/publish/video/init/`
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -264,24 +300,38 @@ export async function directPostVideoUpload(
   }
 
   // ── 2. Init with FILE_UPLOAD source — get back publish_id + upload_url ─
-  const initBody = {
-    post_info: {
-      title: opts.title.slice(0, 2200),
-      privacy_level: opts.privacyLevel,
-      disable_comment: opts.disableComment,
-      disable_duet: opts.disableDuet,
-      disable_stitch: opts.disableStitch,
-      brand_content_toggle: opts.brandContentToggle,
-      brand_organic_toggle: opts.brandOrganicToggle,
-    },
-    source_info: {
-      source: 'FILE_UPLOAD',
-      video_size: videoSize,
-      chunk_size: videoSize,
-      total_chunk_count: 1,
-    },
-  }
-  const initRes = await fetch(`${TT_BASE}/v2/post/publish/video/init/`, {
+  // See note above directPostVideo() — inbox mode drops post_info and
+  // routes to the inbox endpoint until video.publish audit clears.
+  const initBody = USE_INBOX_MODE
+    ? {
+        source_info: {
+          source: 'FILE_UPLOAD',
+          video_size: videoSize,
+          chunk_size: videoSize,
+          total_chunk_count: 1,
+        },
+      }
+    : {
+        post_info: {
+          title: opts.title.slice(0, 2200),
+          privacy_level: opts.privacyLevel,
+          disable_comment: opts.disableComment,
+          disable_duet: opts.disableDuet,
+          disable_stitch: opts.disableStitch,
+          brand_content_toggle: opts.brandContentToggle,
+          brand_organic_toggle: opts.brandOrganicToggle,
+        },
+        source_info: {
+          source: 'FILE_UPLOAD',
+          video_size: videoSize,
+          chunk_size: videoSize,
+          total_chunk_count: 1,
+        },
+      }
+  const initEndpoint = USE_INBOX_MODE
+    ? `${TT_BASE}/v2/post/publish/inbox/video/init/`
+    : `${TT_BASE}/v2/post/publish/video/init/`
+  const initRes = await fetch(initEndpoint, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
