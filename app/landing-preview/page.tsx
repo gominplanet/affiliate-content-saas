@@ -16,6 +16,7 @@ import {
   FileText, Image as ImageIcon, Music2, Instagram, Mail, Scale, Calendar,
   Play, Sun, Moon, Sparkles, ArrowRight, Bookmark,
   Twitter, AtSign, Cloud, Send, Facebook,
+  Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -152,9 +153,9 @@ export default function LandingPreview() {
       <Nav theme={theme} onToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
       <Hero />
       <DemoVideoSection />
+      <RolesSection />
 
-      {/* Placeholder for sections 3–9. Looks like a banner so when you
-          scroll past the demo the page doesn't feel suspiciously short. */}
+      {/* Placeholder for sections 4–9. */}
       <section className="px-8 py-24 max-w-5xl mx-auto text-center">
         <div
           className="rounded-2xl border px-8 py-12"
@@ -166,10 +167,10 @@ export default function LandingPreview() {
         >
           <Sparkles size={20} className="mx-auto mb-3 text-[#7C3AED]" />
           <p className="text-[13px] uppercase tracking-[0.18em] mb-3" style={{ color: 'var(--text-faint)' }}>
-            Sections 3 – 9 coming next
+            Sections 4 – 9 coming next
           </p>
           <p className="text-[15px] max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            Hero + demo video are locked. Next up: &ldquo;The roles MVP plays&rdquo; (planner / scheduler / collaborator / script writer / social generator / WordPress publisher / SEO optimizer / thumbnail studio). After you approve copy for it, I&apos;ll extend this page.
+            Sections 1, 2, 3 locked. Next: workflow → multi-site → comparison vs old way → pricing → social proof → FAQ → final CTA.
           </p>
         </div>
       </section>
@@ -302,6 +303,151 @@ function DemoVideoSection() {
         </p>
       </div>
     </section>
+  )
+}
+
+/** Section 3 — "Roles MVP plays".
+ *
+ *  Frames the product as a TEAM of specialists you already have on payroll
+ *  the moment you subscribe. Eight roles, 4×2 grid, glass cards. Each card:
+ *  icon → role label → one product-led line that says what MVP actually
+ *  does for that role.
+ *
+ *  Copy intent: every line passes the "would a creator hire this?" test —
+ *  concrete deliverable, no vague benefit-speak.
+ */
+function RolesSection() {
+  return (
+    <section id="roles" className="px-6 lg:px-8 pt-24 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        {/* Section header — eyebrow + headline + sub. Centered, same
+            rhythm as the hero but slightly tighter. */}
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <Sparkles size={10} />
+            One hub. Many hats.
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            MVP is many roles.
+            <br />
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              One subscription.
+            </span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Every role you&apos;d hire for to run a serious affiliate operation — baked into one workflow. No tabs to juggle. No tools to stitch together.
+          </p>
+        </div>
+
+        {/* 4×2 grid of role cards. Drops to 2×4 on tablet, 1×8 on phone. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {ROLES.map((role) => (
+            <RoleCard key={role.label} {...role} />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface Role {
+  icon: React.ReactNode
+  label: string
+  line: string
+}
+
+const ROLES: Role[] = [
+  {
+    icon: <Compass size={18} />,
+    label: 'Planner',
+    line: 'Picks what to make next from your trending products and gaps in your library.',
+  },
+  {
+    icon: <Calendar size={18} />,
+    label: 'Scheduler',
+    line: 'Queues posts across every platform — set the cadence, walk away.',
+  },
+  {
+    icon: <HeartHandshake size={18} />,
+    label: 'Collaborator',
+    line: 'Drafts brand pitches built from a playbook proven at +$3M/yr in affiliate sales.',
+  },
+  {
+    icon: <PenLine size={18} />,
+    label: 'Script writer',
+    line: 'Turns one transcript into a tight, on-brand video script — your voice, every time.',
+  },
+  {
+    icon: <Share2 size={18} />,
+    label: 'Social generator',
+    line: '9 posts in 10 minutes — TikTok, IG, X, Threads, Pinterest, Bluesky, Telegram, FB.',
+  },
+  {
+    icon: <Globe size={18} />,
+    label: 'WordPress publisher',
+    line: 'Hits publish on your own site — multi-site, multi-niche, fully owned by you.',
+  },
+  {
+    icon: <TrendingUp size={18} />,
+    label: 'SEO optimizer',
+    line: 'Scores every post for Google Search Console and submits it before indexing slips.',
+  },
+  {
+    icon: <Wand2 size={18} />,
+    label: 'Thumbnail studio',
+    line: 'Frame-grounded thumbnails with your face baked in — banner titles, dual-tone, click-ready.',
+  },
+]
+
+function RoleCard({ icon, label, line }: Role) {
+  return (
+    <div
+      className="rounded-2xl border p-5 h-full flex flex-col gap-3 transition-all duration-200 hover:-translate-y-0.5"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(124,58,237,0.35)')}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+    >
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{
+          background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
+          color: '#C4B5FD',
+          border: '1px solid rgba(124,58,237,0.25)',
+        }}
+      >
+        {icon}
+      </div>
+      <h3 className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+        {label}
+      </h3>
+      <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+        {line}
+      </p>
+    </div>
   )
 }
 
