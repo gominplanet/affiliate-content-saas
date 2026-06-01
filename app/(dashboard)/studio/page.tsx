@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
@@ -263,7 +264,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
       })
       const d = await r.json().catch(() => ({})) as { ok?: boolean; style?: { id: string; name: string; reference_url: string }; error?: string }
       if (!r.ok || !d.ok || !d.style) {
-        window.alert(d.error || `Couldn't save preset (${r.status}).`)
+        toast.error(d.error || `Couldn't save preset (${r.status}).`)
         return
       }
       setSavedStyles(prev => [d.style!, ...prev])

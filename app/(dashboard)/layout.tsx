@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/layout/Sidebar'
+import { Toaster } from '@/components/ui/toaster'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerClient()
@@ -32,6 +33,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </div>
       </main>
+      {/* Single Toaster mount for every dashboard route — see
+          components/ui/toaster.tsx for usage. */}
+      <Toaster />
     </div>
   )
 }

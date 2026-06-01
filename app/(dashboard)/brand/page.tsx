@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
 import Header from '@/components/layout/Header'
 import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -235,13 +236,14 @@ export default function BrandPage() {
       const res = await fetch('/api/wordpress/purge-cache', { method: 'POST' })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
-        alert(json.error || 'Cache purge failed.')
+        toast.error(json.error || 'Cache purge failed.')
         return
       }
       setPurged(true)
+      toast.success('Cache purged across your site.')
       setTimeout(() => setPurged(false), 2500)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Cache purge failed.')
+      toast.error(e instanceof Error ? e.message : 'Cache purge failed.')
     } finally {
       setPurging(false)
     }
@@ -440,7 +442,7 @@ export default function BrandPage() {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Upload failed')
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setBusy(false)
     }

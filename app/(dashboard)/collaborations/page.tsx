@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
@@ -105,7 +106,7 @@ export default function CollaborationsPage() {
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Save failed') }
       setTrackSaved(true); setTimeout(() => setTrackSaved(false), 2000)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Save failed')
+      toast.error(e instanceof Error ? e.message : 'Save failed')
     } finally {
       setSavingTrack(false)
     }
@@ -141,7 +142,7 @@ export default function CollaborationsPage() {
       setHistory(prev => prev.filter(h => !selected.has(h.id)))
       setSelected(new Set())
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Delete failed')
+      toast.error(e instanceof Error ? e.message : 'Delete failed')
     } finally {
       setDeleting(false)
     }

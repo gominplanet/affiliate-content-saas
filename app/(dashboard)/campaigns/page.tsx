@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo, Suspense } from 'react'
+import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
@@ -495,7 +496,7 @@ function CampaignsInner() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Generation failed')
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Generation failed')
+      toast.error(e instanceof Error ? e.message : 'Generation failed')
     } finally {
       setGenRow(null)
       await load()
@@ -513,9 +514,9 @@ function CampaignsInner() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Could not set category')
-      if (data.warning) alert(data.warning)
+      if (data.warning) toast.warning(data.warning)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Could not set category')
+      toast.error(e instanceof Error ? e.message : 'Could not set category')
       await load()
     } finally {
       setCatBusy(null)
@@ -538,7 +539,7 @@ function CampaignsInner() {
       }
       setItems(prev => (prev ?? []).filter(x => x.id !== c.id))
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Delete failed')
+      toast.error(e instanceof Error ? e.message : 'Delete failed')
     } finally {
       setDeleting(null)
     }
@@ -581,7 +582,7 @@ function CampaignsInner() {
     }
     setSelected(new Set(failed))
     setBulkDeleting(false)
-    if (failed.length) alert(`${failed.length} of ${ids.length} could not be deleted — left selected so you can retry.`)
+    if (failed.length) toast.warning(`${failed.length} of ${ids.length} could not be deleted — left selected so you can retry.`)
   }
 
   return (

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { toast } from 'sonner'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -510,8 +511,10 @@ export default function CustomizePage() {
     try {
       const res = await fetch('/api/wordpress/purge-cache', { method: 'POST' })
       const json = await res.json()
-      if (json.error) { alert(json.error); return }
-      setPurged(true); setTimeout(() => setPurged(false), 3000)
+      if (json.error) { toast.error(json.error); return }
+      setPurged(true)
+      toast.success('Cache purged across your site.')
+      setTimeout(() => setPurged(false), 3000)
     } finally { setPurging(false) }
   }
 
@@ -525,7 +528,7 @@ export default function CustomizePage() {
         body: JSON.stringify(data),
       })
       const json = await res.json()
-      if (json.error) { alert(json.error); return }
+      if (json.error) { toast.error(json.error); return }
       if (json.wordpress === 'failed') {
         setWpPushError(json.wordpressError || 'WordPress push failed — check your credentials in Site & Integrations.')
       } else {
@@ -574,7 +577,7 @@ export default function CustomizePage() {
       const url = await uploadImage(file, userId, 'homepage-ads')
       updateHomepageAd(index, { imageUrl: url })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Image upload failed.')
+      toast.error(err instanceof Error ? err.message : 'Image upload failed.')
     }
   }
 

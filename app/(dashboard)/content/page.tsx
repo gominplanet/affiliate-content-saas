@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -1946,9 +1947,9 @@ function VideoCard({
         body: JSON.stringify({ postId: post.postId }),
       })
       const d = await res.json()
-      if (!res.ok) { alert(d.error || 'Failed to generate pin preview'); return }
+      if (!res.ok) { toast.error(d.error || 'Failed to generate pin preview'); return }
       onPinPreview({ postId: post.postId, ...d })
-    } catch { alert('Failed to generate pin preview') }
+    } catch { toast.error('Failed to generate pin preview') }
     finally { setPinLoading(false) }
   }
 
@@ -2829,7 +2830,7 @@ export default function ContentPage() {
       // Reflect locally — flip status to cancelled
       setScheduledItems(items => items?.map(i => i.id === id ? { ...i, status: 'cancelled' as const } : i) ?? null)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Cancel failed')
+      toast.error(err instanceof Error ? err.message : 'Cancel failed')
     }
   }
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
 import Header from '@/components/layout/Header'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -90,9 +91,9 @@ export default function BillingPage() {
     try {
       const res = await fetch('/api/stripe/portal', { method: 'POST' })
       const { url, error } = await res.json()
-      if (error) { alert(error); return }
+      if (error) { toast.error(error); return }
       window.location.href = url
-    } catch { alert('Something went wrong. Please try again.') }
+    } catch { toast.error('Something went wrong. Please try again.') }
     finally { setPortalLoading(false) }
   }
 
@@ -105,9 +106,9 @@ export default function BillingPage() {
         body: JSON.stringify({ tier: t }),
       })
       const { url, error } = await res.json()
-      if (error) { alert(error); return }
+      if (error) { toast.error(error); return }
       window.location.href = url
-    } catch { alert('Something went wrong. Please try again.') }
+    } catch { toast.error('Something went wrong. Please try again.') }
     finally { setCheckoutLoading(null) }
   }
 
