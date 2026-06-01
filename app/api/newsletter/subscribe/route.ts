@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
   // payload so a scraper can't repoint creatorUserId at another account).
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: settings } = await (admin as any)
+  const { data: settings } = await admin
     .from('newsletter_settings')
     .select('user_id,enabled,sender_domain,sender_local_part,sender_name,domain_status')
     .eq('user_id', creatorUserId)
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
     return json({ ok: false, error: "This newsletter isn't accepting signups right now." }, { status: 404 })
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (admin as any)
+  const { data: integ } = await admin
     .from('integrations')
     .select('tier')
     .eq('user_id', creatorUserId)
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
   const cap = allowedNewsletterSubscribers(tier)
   if (cap !== null) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count } = await (admin as any)
+    const { count } = await admin
       .from('newsletter_subscribers')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', creatorUserId)
@@ -131,11 +131,16 @@ export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || null
   if (ip) {
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count: recent } = await (admin as any)
+    // hashIp narrows nullable IPs to null, but `ip` is already non-null
+    // inside this branch — pull the hash up + short-circuit if it's null
+    // (defensive — shouldn't happen with non-empty ip but the signature
+    // allows it).
+    const ipHash = hashIp(ip)
+    if (!ipHash) return json({ ok: false, error: 'Internal error' }, { status: 500 })
+    const { count: recent } = await admin
       .from('newsletter_subscribers')
       .select('id', { count: 'exact', head: true })
-      .eq('signup_ip_hash', hashIp(ip))
+      .eq('signup_ip_hash', ipHash)
       .gte('created_at', oneHourAgo)
     if ((recent ?? 0) >= 5) {
       return json({ ok: false, error: 'Too many signups from this network. Try again in a bit.' }, { status: 429 })
@@ -144,7 +149,7 @@ export async function POST(req: NextRequest) {
 
   // ── 5. Lookup existing row ────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existing } = await (admin as any)
+  const { data: existing } = await admin
     .from('newsletter_subscribers')
     .select('id,status,confirm_token')
     .eq('user_id', creatorUserId)
@@ -170,7 +175,7 @@ export async function POST(req: NextRequest) {
   if (existing) {
     // Pending or unsubscribed → reset token + re-send confirmation.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any)
+    await admin
       .from('newsletter_subscribers')
       .update({
         status: 'pending',
@@ -184,7 +189,7 @@ export async function POST(req: NextRequest) {
       .eq('id', existing.id)
   } else {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: insertErr } = await (admin as any)
+    const { error: insertErr } = await admin
       .from('newsletter_subscribers')
       .insert({
         user_id: creatorUserId,

@@ -157,7 +157,7 @@ export async function POST(req: Request) {
   const col = COUNTER_BY_EVENT[type]
   if (col) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (admin as any).rpc('increment_broadcast_counter', {
+    await admin.rpc('increment_broadcast_counter', {
       p_broadcast_id: broadcastId,
       p_user: userId,
       p_column: col,
@@ -172,10 +172,13 @@ export async function POST(req: Request) {
       const email = normaliseEmail(recipient)
       const patch: Record<string, unknown> = { status: newStatus }
       if (newStatus === 'unsubscribed') patch.unsubscribed_at = new Date().toISOString()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (admin as any)
+      // patch is Record<string, unknown> here because we conditionally
+      // add fields; cast to never at the call site so the typed client
+      // accepts the schema-correct payload without complaining about
+      // the literal shape.
+      await admin
         .from('newsletter_subscribers')
-        .update(patch)
+        .update(patch as never)
         .eq('user_id', userId)
         .eq('email', email)
     }

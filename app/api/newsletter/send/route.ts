@@ -79,7 +79,7 @@ export async function POST(req: Request) {
 
   // ── Tier cap: broadcasts per billing month ────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await (supabase as any)
+  const { data: integ } = await supabase
     .from('integrations').select('tier,wordpress_url').eq('user_id', user.id).maybeSingle()
   const tier = normalizeTier(integ?.tier as string | undefined)
   const monthlyCap = allowedNewsletterBroadcasts(tier)
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     monthStart.setUTCDate(1)
     monthStart.setUTCHours(0, 0, 0, 0)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { count } = await (supabase as any)
+    const { count } = await supabase
       .from('newsletter_broadcasts')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
@@ -105,8 +105,8 @@ export async function POST(req: Request) {
   // ── Load sender settings + brand context ──────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: nl }, { data: brand }] = await Promise.all([
-    (supabase as any).from('newsletter_settings').select('enabled,sender_domain,sender_local_part,sender_name,domain_status,mailing_address').eq('user_id', user.id).maybeSingle(),
-    (supabase as any).from('brand_profiles').select('name,author_name,logo_url,headshot_url').eq('user_id', user.id).maybeSingle(),
+    supabase.from('newsletter_settings').select('enabled,sender_domain,sender_local_part,sender_name,domain_status,mailing_address').eq('user_id', user.id).maybeSingle(),
+    supabase.from('brand_profiles').select('name,author_name,logo_url,headshot_url').eq('user_id', user.id).maybeSingle(),
   ])
   if (!nl?.enabled) return NextResponse.json({ error: 'Enable the newsletter on the dashboard first.' }, { status: 400 })
 
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
 
   // ── Load active subscribers ───────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: subs } = await (supabase as any)
+  const { data: subs } = await supabase
     .from('newsletter_subscribers')
     .select('id,email,unsub_token')
     .eq('user_id', user.id)
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
   })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: bRow, error: bErr } = await (supabase as any)
+  const { data: bRow, error: bErr } = await supabase
     .from('newsletter_broadcasts')
     .insert({
       user_id: user.id,
@@ -165,7 +165,7 @@ export async function POST(req: Request) {
       plain_text: snapshotText,
       blog_post_ids: posts.map(p => (p as unknown as { id?: string }).id).filter(Boolean) as string[],
       personal_message: personalMessage,
-      curated_links: curatedLinks,
+      curated_links: curatedLinks as never,  // Json column; typed array doesn't satisfy Json recursively
       status: 'sending',
       recipients_total: recipients.length,
     })
@@ -220,7 +220,7 @@ export async function POST(req: Request) {
 
   // ── Finalise ──────────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any)
+  await supabase
     .from('newsletter_broadcasts')
     .update({
       status: failed === recipients.length ? 'failed' : 'sent',

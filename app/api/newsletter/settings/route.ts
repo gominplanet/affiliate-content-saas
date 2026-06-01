@@ -20,7 +20,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  const { data } = await supabase
     .from('newsletter_settings')
     .select('user_id,sender_domain,sender_local_part,sender_name,domain_status,domain_checked_at,dkim_records,enabled,mailing_address,resend_domain_id,cta_title,cta_subtitle,cta_button,cta_bullet_1,cta_bullet_2,cta_bullet_3,homepage_placement,sidebar_placement')
     .eq('user_id', user.id)
@@ -108,10 +108,12 @@ export async function PUT(req: Request) {
     patch.sidebar_placement = (SIDEBAR_PLACEMENTS as readonly string[]).includes(v) ? v : null
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  // patch is built incrementally as Record<string, unknown>; the typed
+  // Supabase client rejects literal-vs-narrowed-shape so we narrow at the
+  // call boundary. Field names ARE schema-correct.
+  const { data, error } = await supabase
     .from('newsletter_settings')
-    .upsert(patch, { onConflict: 'user_id' })
+    .upsert(patch as never, { onConflict: 'user_id' })
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

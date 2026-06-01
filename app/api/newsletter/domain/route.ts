@@ -65,7 +65,7 @@ export async function POST(req: Request) {
   // remove the old one first. Prevents silently abandoning Resend domains
   // that we lose track of (and that count against our Resend quota).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: existing } = await (supabase as any)
+  const { data: existing } = await supabase
     .from('newsletter_settings')
     .select('resend_domain_id,sender_domain,domain_status')
     .eq('user_id', user.id)
@@ -97,10 +97,12 @@ export async function POST(req: Request) {
     domain_checked_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  // patch.dkim_records is a typed ResendDnsRecord[]; the schema column is
+  // Json (JSONB). Cast at the boundary — the runtime payload IS valid JSON,
+  // it just doesn't satisfy TS's recursive Json type structurally.
+  const { data, error } = await supabase
     .from('newsletter_settings')
-    .upsert(patch, { onConflict: 'user_id' })
+    .upsert(patch as never, { onConflict: 'user_id' })
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -120,7 +122,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (supabase as any)
+  const { data: row } = await supabase
     .from('newsletter_settings')
     .select('resend_domain_id')
     .eq('user_id', user.id)
@@ -152,10 +154,10 @@ export async function GET() {
     domain_checked_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
+  // Same Json-vs-typed-array boundary as the upsert above.
+  const { data, error } = await supabase
     .from('newsletter_settings')
-    .update(patch)
+    .update(patch as never)
     .eq('user_id', user.id)
     .select()
     .single()
@@ -175,7 +177,7 @@ export async function DELETE() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: row } = await (supabase as any)
+  const { data: row } = await supabase
     .from('newsletter_settings')
     .select('resend_domain_id')
     .eq('user_id', user.id)
@@ -190,7 +192,7 @@ export async function DELETE() {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('newsletter_settings')
     .update({
       sender_domain: null,
