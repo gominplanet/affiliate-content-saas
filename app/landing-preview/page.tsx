@@ -15,6 +15,7 @@ import { useState, useEffect } from 'react'
 import {
   FileText, Image as ImageIcon, Music2, Instagram, Mail, Scale, Calendar,
   Play, Sun, Moon, Sparkles, ArrowRight, Bookmark,
+  Twitter, AtSign, Cloud, Send, Facebook,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -52,10 +53,14 @@ const LIGHT_VARS: React.CSSProperties = {
 }
 
 /** Hub diagram constants. Computed once so the SVG and the absolutely
- *  positioned spoke nodes share the same geometry. */
-const CX = 360
-const CY = 260
-const RADIUS = 220
+ *  positioned spoke nodes share the same geometry. Bumped from 8 spokes
+ *  to 13 (full social coverage) — container + radius widened so the pills
+ *  don't crowd each other. */
+const CX = 380
+const CY = 290
+const RADIUS = 250
+const VIEW_W = 760
+const VIEW_H = 580
 
 interface Spoke {
   /** Angle in degrees, 0 = right, 90 = down, -90 = up. */
@@ -64,15 +69,24 @@ interface Spoke {
   icon: React.ReactNode
 }
 
+/** 13 spokes total, ~27.7° apart. Layout flows clockwise starting at
+ *  top: 5 content outputs (blog/thumbnail/comparison/newsletter/scheduled),
+ *  then 8 social platforms. Labels kept short so the pills don't overlap
+ *  at the equator. */
 const SPOKES: Spoke[] = [
-  { angle: -90, label: 'Blog post',       icon: <FileText size={13} /> },
-  { angle: -45, label: 'Thumbnail',       icon: <ImageIcon size={13} /> },
-  { angle:   0, label: 'TikTok',          icon: <Music2 size={13} /> },
-  { angle:  45, label: 'Instagram Reel',  icon: <Instagram size={13} /> },
-  { angle:  90, label: 'Pinterest pin',   icon: <Bookmark size={13} /> },
-  { angle: 135, label: 'Newsletter',      icon: <Mail size={13} /> },
-  { angle: 180, label: 'Comparison post', icon: <Scale size={13} /> },
-  { angle: 225, label: 'Scheduled queue', icon: <Calendar size={13} /> },
+  { angle:  -90.0, label: 'Blog post',  icon: <FileText size={13} /> },
+  { angle:  -62.3, label: 'Thumbnail',  icon: <ImageIcon size={13} /> },
+  { angle:  -34.6, label: 'Comparison', icon: <Scale size={13} /> },
+  { angle:   -6.9, label: 'Newsletter', icon: <Mail size={13} /> },
+  { angle:   20.8, label: 'Scheduled',  icon: <Calendar size={13} /> },
+  { angle:   48.5, label: 'TikTok',     icon: <Music2 size={13} /> },
+  { angle:   76.2, label: 'Instagram',  icon: <Instagram size={13} /> },
+  { angle:  103.8, label: 'Pinterest',  icon: <Bookmark size={13} /> },
+  { angle:  131.5, label: 'X',          icon: <Twitter size={13} /> },
+  { angle:  159.2, label: 'Threads',    icon: <AtSign size={13} /> },
+  { angle:  186.9, label: 'Bluesky',    icon: <Cloud size={13} /> },
+  { angle:  214.6, label: 'Telegram',   icon: <Send size={13} /> },
+  { angle:  242.3, label: 'FB Groups',  icon: <Facebook size={13} /> },
 ]
 
 /** Convert an angle to {x,y} on the spoke circle. */
@@ -219,12 +233,12 @@ function Hero() {
         }}
       />
 
-      <div className="relative max-w-7xl mx-auto px-8 pt-20 pb-28 grid lg:grid-cols-[1fr_720px] gap-12 items-center">
+      <div className="relative max-w-7xl mx-auto px-8 pt-20 pb-28 grid lg:grid-cols-[1fr_760px] gap-12 items-center">
         {/* ── Left: copy + CTAs ────────────────────────────────────── */}
         <div>
           {/* Pill */}
           <div
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] uppercase tracking-[0.16em] font-medium mb-6"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] uppercase tracking-[0.16em] font-medium mb-4"
             style={{
               backgroundColor: 'var(--surface)',
               borderColor: 'var(--border)',
@@ -234,6 +248,13 @@ function Hero() {
             <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
             For affiliate creators
           </div>
+
+          {/* Trust strip — lifted to live above the headline. Establishes
+              credibility BEFORE the bold value claim, so the headline
+              lands on a primed visitor. */}
+          <p className="mb-6 text-[12px] font-medium" style={{ color: 'var(--text-subtle)' }}>
+            Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. No card to start.
+          </p>
 
           {/* Main + Secondary headlines */}
           <h1
@@ -258,33 +279,36 @@ function Hero() {
             From one review video: a published blog post, a CTR-tested thumbnail, 9 social variants, a newsletter draft, and a full week of scheduled posts. In ten minutes. <span style={{ color: 'var(--text)' }}>Grounded in what you actually said.</span>
           </p>
 
-          {/* CTAs */}
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <a
-              href="/signup"
-              className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]"
-            >
-              Start your free trial — keep your WordPress site forever
-              <ArrowRight size={14} />
-            </a>
-            <a
-              href="#demo"
-              className="px-5 py-3 rounded-xl border text-[14px] font-medium inline-flex items-center gap-2 transition-colors"
-              style={{
-                backgroundColor: 'var(--surface)',
-                borderColor: 'var(--border)',
-                color: 'var(--text)',
-              }}
-            >
-              <Play size={13} fill="currentColor" />
-              Watch the 90-second demo
-            </a>
+          {/* CTAs — primary button + its supporting reassurance live as
+              separate elements so the button stays readable and the
+              "yours forever" promise sits clearly below both CTAs. */}
+          <div className="mt-8">
+            <div className="flex flex-wrap items-center gap-3">
+              <a
+                href="/signup"
+                className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]"
+              >
+                Start your free trial
+                <ArrowRight size={14} />
+              </a>
+              <a
+                href="#demo"
+                className="px-5 py-3 rounded-xl border text-[14px] font-medium inline-flex items-center gap-2 transition-colors"
+                style={{
+                  backgroundColor: 'var(--surface)',
+                  borderColor: 'var(--border)',
+                  color: 'var(--text)',
+                }}
+              >
+                <Play size={13} fill="currentColor" />
+                Watch the 90-second demo
+              </a>
+            </div>
+            <p className="mt-3 text-[12px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
+              <span className="w-1 h-1 rounded-full bg-[#10B981]" />
+              Keep your WordPress site forever.
+            </p>
           </div>
-
-          {/* Trust strip */}
-          <p className="mt-6 text-[12px]" style={{ color: 'var(--text-faint)' }}>
-            Built by a $3M/yr affiliate creator. No card to start.
-          </p>
         </div>
 
         {/* ── Right: animated hub diagram ───────────────────────────── */}
@@ -306,9 +330,9 @@ function Hero() {
  */
 function HubDiagram() {
   return (
-    <div className="relative w-full max-w-[720px] mx-auto" style={{ height: 520 }}>
+    <div className="relative w-full mx-auto" style={{ maxWidth: VIEW_W, height: VIEW_H }}>
       <svg
-        viewBox="0 0 720 520"
+        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         className="absolute inset-0 w-full h-full pointer-events-none"
         aria-hidden="true"
       >
