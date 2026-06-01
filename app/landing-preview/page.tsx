@@ -17,6 +17,7 @@ import {
   Play, Sun, Moon, Sparkles, ArrowRight, Bookmark,
   Twitter, AtSign, Cloud, Send, Facebook,
   Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
+  Youtube, ShieldCheck, Zap, Upload,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -154,8 +155,9 @@ export default function LandingPreview() {
       <Hero />
       <DemoVideoSection />
       <RolesSection />
+      <WorkflowSection />
 
-      {/* Placeholder for sections 4–9. */}
+      {/* Placeholder for sections 5–9. */}
       <section className="px-8 py-24 max-w-5xl mx-auto text-center">
         <div
           className="rounded-2xl border px-8 py-12"
@@ -167,10 +169,10 @@ export default function LandingPreview() {
         >
           <Sparkles size={20} className="mx-auto mb-3 text-[#7C3AED]" />
           <p className="text-[13px] uppercase tracking-[0.18em] mb-3" style={{ color: 'var(--text-faint)' }}>
-            Sections 4 – 9 coming next
+            Sections 5 – 9 coming next
           </p>
           <p className="text-[15px] max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            Sections 1, 2, 3 locked. Next: workflow → multi-site → comparison vs old way → pricing → social proof → FAQ → final CTA.
+            Sections 1, 2, 3, 4 locked. Next: multi-site → comparison vs old way → pricing → social proof → FAQ → final CTA.
           </p>
         </div>
       </section>
@@ -355,7 +357,7 @@ function RolesSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Every role you&apos;d hire for to run a serious affiliate operation — baked into one workflow. No tabs to juggle. No tools to stitch together.
+            Plans, writes, schedules, optimizes, publishes — so you focus on what only you can do.
           </p>
         </div>
 
@@ -380,42 +382,42 @@ const ROLES: Role[] = [
   {
     icon: <Compass size={18} />,
     label: 'Planner',
-    line: 'Picks what to make next from your trending products and gaps in your library.',
+    line: 'See your whole content pipeline. Plan a month in one view.',
   },
   {
     icon: <Calendar size={18} />,
     label: 'Scheduler',
-    line: 'Queues posts across every platform — set the cadence, walk away.',
+    line: 'Schedule once. MVP fires off every platform at the perfect time.',
   },
   {
     icon: <HeartHandshake size={18} />,
     label: 'Collaborator',
-    line: 'Drafts brand pitches built from a playbook proven at +$3M/yr in affiliate sales.',
+    line: 'Your AI partner — trained on your voice. Always ready to think with you.',
   },
   {
     icon: <PenLine size={18} />,
     label: 'Script writer',
-    line: 'Turns one transcript into a tight, on-brand video script — your voice, every time.',
+    line: 'Long-form video scripts in your voice. From idea to teleprompter in minutes.',
   },
   {
     icon: <Share2 size={18} />,
     label: 'Social generator',
-    line: '9 posts in 10 minutes — TikTok, IG, X, Threads, Pinterest, Bluesky, Telegram, FB.',
+    line: 'Nine social platforms. Each post written native to that one — no copy-paste.',
   },
   {
     icon: <Globe size={18} />,
     label: 'WordPress publisher',
-    line: 'Hits publish on your own site — multi-site, multi-niche, fully owned by you.',
+    line: 'Publish straight to your WordPress. Pro: up to 5 sites from one account.',
   },
   {
     icon: <TrendingUp size={18} />,
     label: 'SEO optimizer',
-    line: 'Scores every post for Google Search Console and submits it before indexing slips.',
+    line: 'Per-post SEO scoring + one-click "fix all" across your entire catalog.',
   },
   {
     icon: <Wand2 size={18} />,
     label: 'Thumbnail studio',
-    line: 'Frame-grounded thumbnails with your face baked in — banner titles, dual-tone, click-ready.',
+    line: 'CTR-tested thumbnails and titles. AI-picked from your actual video frames.',
   },
 ]
 
@@ -447,6 +449,186 @@ function RoleCard({ icon, label, line }: Role) {
       <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
         {line}
       </p>
+    </div>
+  )
+}
+
+/** Section 4 — "The 4-minute workflow."
+ *
+ *  Horizontal timeline of 4 numbered steps with a connecting line through
+ *  the center. The line uses a violet→fuchsia gradient that fades at both
+ *  ends so it visually starts at step 1 and ends at step 4 without
+ *  dangling past either side.
+ *
+ *  Layout:
+ *  - Desktop (lg): 4 columns side-by-side, connecting line is horizontal
+ *    behind the number circles.
+ *  - Mobile/tablet: stacked vertically. Connecting line becomes a vertical
+ *    bar on the left, number circles offset right.
+ *
+ *  Number circles use position: relative + z-index to sit on top of the
+ *  line. Each step card is a glass card matching Section 3's rhythm.
+ */
+function WorkflowSection() {
+  return (
+    <section id="how-it-works" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-16">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <Zap size={10} />
+            How it works
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            The{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              4-minute
+            </span>{' '}
+            workflow.
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            From video to nine outputs — fact-grounded and in your voice.
+          </p>
+        </div>
+
+        {/* Timeline container — relative so the line can be absolutely
+            positioned. The line lives in two flavors that toggle by media
+            query so we get one horizontal track on desktop and one vertical
+            track on mobile. */}
+        <div className="relative">
+          {/* Horizontal line (desktop only). Sits at ~y=44px to align with
+              the center of the number circles. Fades at both edges so it
+              visually originates from step 1 and dies into step 4. */}
+          <div
+            className="hidden lg:block absolute top-[44px] left-[12.5%] right-[12.5%] h-px"
+            style={{
+              background:
+                'linear-gradient(90deg, transparent 0%, rgba(124,58,237,0.55) 12%, rgba(192,38,211,0.55) 88%, transparent 100%)',
+            }}
+            aria-hidden
+          />
+          {/* Vertical line (mobile/tablet). Same gradient logic, rotated. */}
+          <div
+            className="lg:hidden absolute top-12 bottom-12 left-[26px] w-px"
+            style={{
+              background:
+                'linear-gradient(180deg, transparent 0%, rgba(124,58,237,0.55) 8%, rgba(192,38,211,0.55) 92%, transparent 100%)',
+            }}
+            aria-hidden
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-4">
+            {STEPS.map((step, i) => (
+              <StepCard key={step.title} index={i + 1} step={step} />
+            ))}
+          </div>
+        </div>
+
+        {/* Footnote below the timeline — sets expectations and re-affirms
+            the "no copy-paste" pattern. */}
+        <p
+          className="text-center mt-12 text-[13px]"
+          style={{ color: 'var(--text-faint)' }}
+        >
+          One channel. One workflow. Nine outputs. Zero copy-paste.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+interface Step {
+  icon: React.ReactNode
+  title: string
+  body: string
+}
+
+const STEPS: Step[] = [
+  {
+    icon: <Youtube size={18} />,
+    title: 'Pick a video.',
+    body: 'MVP already has your YouTube channel synced — transcript, product, gallery, and timestamps are pre-loaded. No URLs to paste. No copy-paste.',
+  },
+  {
+    icon: <ShieldCheck size={18} />,
+    title: 'It grounds everything in real facts.',
+    body: 'No invented features. No fabricated stories. Just what you actually said in the video — pulled straight from the transcript and the scraped product data.',
+  },
+  {
+    icon: <Sparkles size={18} />,
+    title: 'Generate 9 outputs in one click.',
+    body: 'Blog post, comparison, thumbnail, newsletter, plus 6 native social posts — all in your voice, all in about four minutes.',
+  },
+  {
+    icon: <Upload size={18} />,
+    title: 'Publish or schedule.',
+    body: 'Hit your WordPress site, the social queue, or the calendar — your call. Everything you make stays yours, on your domain, forever.',
+  },
+]
+
+function StepCard({ index, step }: { index: number; step: Step }) {
+  return (
+    <div className="relative pl-16 lg:pl-0">
+      {/* Number circle. On mobile, sits flush left of the card and the
+          vertical line passes through it. On desktop, centered above the
+          card title. The solid background covers the connecting line so
+          the circles read as nodes on a wire. */}
+      <div
+        className="absolute lg:relative top-0 left-0 lg:left-auto lg:mx-auto w-[52px] h-[52px] rounded-full flex items-center justify-center mb-0 lg:mb-5 z-10"
+        style={{
+          background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+          boxShadow: '0 0 0 6px var(--bg), 0 6px 20px rgba(124,58,237,0.35)',
+        }}
+      >
+        <span className="text-white text-[16px] font-semibold tabular-nums">{index}</span>
+      </div>
+
+      <div
+        className="rounded-2xl border p-5 lg:p-6 h-full flex flex-col gap-3 transition-all duration-200 hover:-translate-y-0.5"
+        style={{
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--border)',
+          boxShadow: 'var(--card-shadow)',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(124,58,237,0.35)')}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+      >
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
+            color: '#C4B5FD',
+            border: '1px solid rgba(124,58,237,0.25)',
+          }}
+        >
+          {step.icon}
+        </div>
+        <h3 className="text-[16px] font-semibold tracking-tight leading-snug" style={{ color: 'var(--text)' }}>
+          {step.title}
+        </h3>
+        <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+          {step.body}
+        </p>
+      </div>
     </div>
   )
 }
