@@ -61,7 +61,7 @@ export default function LoginForm() {
             <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-6">
               We sent a password reset link to <strong>{email}</strong>.
             </p>
-            <button onClick={() => { setResetMode(false); setResetSent(false) }} className="text-sm text-[#0071e3] hover:underline">
+            <button onClick={() => { setResetMode(false); setResetSent(false) }} className="text-sm text-[#7C3AED] hover:underline">
               Back to sign in
             </button>
           </div>
@@ -95,7 +95,7 @@ export default function LoginForm() {
             </form>
 
             <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
-              <button onClick={() => setResetMode(false)} className="text-[#0071e3] hover:underline font-medium">
+              <button onClick={() => setResetMode(false)} className="text-[#7C3AED] hover:underline font-medium">
                 Back to sign in
               </button>
             </p>
@@ -129,7 +129,7 @@ export default function LoginForm() {
             <button
               type="button"
               onClick={() => setResetMode(true)}
-              className="text-xs text-[#0071e3] hover:underline"
+              className="text-xs text-[#7C3AED] hover:underline"
             >
               Forgot password?
             </button>
@@ -157,7 +157,7 @@ export default function LoginForm() {
 
       <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
         Don&apos;t have an account?{' '}
-        <Link href="/signup" className="text-[#0071e3] hover:underline font-medium">
+        <Link href="/signup" className="text-[#7C3AED] hover:underline font-medium">
           Sign up
         </Link>
       </p>

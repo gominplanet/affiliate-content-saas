@@ -64,9 +64,9 @@ export default function TermsPage() {
           </p>
           <p className="mt-3">
             You agree that your use of Pinterest features through MVP Affiliate is subject to the{' '}
-            <a href="https://policy.pinterest.com/en/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Pinterest Terms of Service</a>,{' '}
-            <a href="https://policy.pinterest.com/en/community-guidelines" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Community Guidelines</a>, and{' '}
-            <a href="https://developers.pinterest.com/_/_/policy/developer-guidelines" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Developer Guidelines</a>.
+            <a href="https://policy.pinterest.com/en/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Pinterest Terms of Service</a>,{' '}
+            <a href="https://policy.pinterest.com/en/community-guidelines" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Community Guidelines</a>, and{' '}
+            <a href="https://developers.pinterest.com/_/_/policy/developer-guidelines" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Developer Guidelines</a>.
           </p>
         </div>
 
@@ -93,9 +93,9 @@ export default function TermsPage() {
           </p>
           <p className="mt-3">
             You agree that your use of TikTok features through MVP Affiliate is subject to the{' '}
-            <a href="https://www.tiktok.com/legal/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">TikTok Terms of Service</a>,{' '}
-            <a href="https://www.tiktok.com/community-guidelines" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">TikTok Community Guidelines</a>, and{' '}
-            <a href="https://developers.tiktok.com/doc/tiktok-api-terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">TikTok Developer Terms of Service</a>.
+            <a href="https://www.tiktok.com/legal/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">TikTok Terms of Service</a>,{' '}
+            <a href="https://www.tiktok.com/community-guidelines" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">TikTok Community Guidelines</a>, and{' '}
+            <a href="https://developers.tiktok.com/doc/tiktok-api-terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">TikTok Developer Terms of Service</a>.
           </p>
         </div>
 
@@ -195,7 +195,7 @@ export default function TermsPage() {
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">16. Contact</h2>
           <p>
             Questions about these Terms? Contact us at{' '}
-            <a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>.
+            <a href="mailto:us@gominplanet.com" className="text-[#7C3AED] hover:underline">us@gominplanet.com</a>.
           </p>
         </div>
 

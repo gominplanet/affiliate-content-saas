@@ -70,7 +70,7 @@ export default function AnalyticsPage() {
       <>
         <Header title="Analytics" subtitle="Click data from your affiliate links." />
         <div className="card p-12 flex flex-col items-center gap-2 text-sm text-[#86868b]">
-          <Loader2 size={20} className="animate-spin text-[#0071e3]" />
+          <Loader2 size={20} className="animate-spin text-[#7C3AED]" />
           <span>Loading click data from Geniuslink…</span>
         </div>
       </>
@@ -86,7 +86,7 @@ export default function AnalyticsPage() {
           <AlertCircle size={20} className="text-[#ff3b30]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Couldn&apos;t load analytics</p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{error}</p>
-          <button onClick={load} className="text-xs text-[#0071e3] hover:underline">Retry</button>
+          <button onClick={load} className="text-xs text-[#7C3AED] hover:underline">Retry</button>
         </div>
       </>
     )
@@ -98,8 +98,8 @@ export default function AnalyticsPage() {
       <>
         <Header title="Analytics" subtitle="Click data from your affiliate links." />
         <div className="card p-8 max-w-lg flex flex-col items-center text-center gap-4">
-          <div className="w-12 h-12 rounded-full bg-[#0071e3]/10 flex items-center justify-center">
-            <Link2 size={22} className="text-[#0071e3]" />
+          <div className="w-12 h-12 rounded-full bg-[#7C3AED]/10 flex items-center justify-center">
+            <Link2 size={22} className="text-[#7C3AED]" />
           </div>
           <div>
             <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect Geniuslink to see your data</p>
@@ -112,7 +112,7 @@ export default function AnalyticsPage() {
           <Link href="/setup?tab=integrations" className="btn-primary text-sm">
             Connect Geniuslink
           </Link>
-          <a href="https://geni.us/Y70p9R" target="_blank" rel="noopener noreferrer" className="text-xs text-[#0071e3] hover:underline">
+          <a href="https://geni.us/Y70p9R" target="_blank" rel="noopener noreferrer" className="text-xs text-[#7C3AED] hover:underline">
             Don&apos;t have an account? Sign up for Geniuslink
           </a>
         </div>
@@ -132,7 +132,7 @@ export default function AnalyticsPage() {
             Publish a few reviews, share them on socials, and clicks will start appearing here.
             Geniuslink updates click counts within a few minutes of each click.
           </p>
-          <button onClick={load} className="text-xs text-[#0071e3] hover:underline">Refresh</button>
+          <button onClick={load} className="text-xs text-[#7C3AED] hover:underline">Refresh</button>
         </div>
       </>
     )
@@ -163,8 +163,8 @@ export default function AnalyticsPage() {
           label="Total clicks"
           value={totals.clicks.toLocaleString()}
           sub="Last 30 days · human traffic on MVP-attributed posts"
-          color="text-[#0071e3]"
-          bg="bg-[#0071e3]/8"
+          color="text-[#7C3AED]"
+          bg="bg-[#7C3AED]/8"
         />
         <StatCard
           icon={Eye}
@@ -205,12 +205,12 @@ export default function AnalyticsPage() {
                   {String(i + 1).padStart(2, '0')}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] font-medium truncate group-hover:text-[#0071e3] transition-colors">
+                  <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] font-medium truncate group-hover:text-[#7C3AED] transition-colors">
                     {p.title || <span className="italic text-[#86868b]">Untitled</span>}
                   </p>
                   <div className="mt-1.5 h-1 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#0071e3] to-[#5856d6]"
+                      className="h-full rounded-full bg-gradient-to-r from-[#7C3AED] to-[#5856d6]"
                       style={{ width: `${Math.max(sharePct, 1)}%` }}
                     />
                   </div>
@@ -223,7 +223,7 @@ export default function AnalyticsPage() {
                   <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">clicks</span>
                 </div>
                 {p.url && (
-                  <ExternalLink size={12} className="text-[#86868b] dark:text-[#8e8e93] flex-shrink-0 group-hover:text-[#0071e3] transition-colors" />
+                  <ExternalLink size={12} className="text-[#86868b] dark:text-[#8e8e93] flex-shrink-0 group-hover:text-[#7C3AED] transition-colors" />
                 )}
               </a>
             )

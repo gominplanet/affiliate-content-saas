@@ -80,7 +80,7 @@ function SetupGate({ checks }: { checks: ReadinessCheck }) {
 
 function GateItem({ done, label, desc, href }: { done: boolean; label: string; desc: string; href: string }) {
   return (
-    <a href={done ? '#' : href} className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${done ? 'bg-[#34c759]/5 border-[#34c759]/20 cursor-default' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}>
+    <a href={done ? '#' : href} className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${done ? 'bg-[#34c759]/5 border-[#34c759]/20 cursor-default' : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}>
       <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-[#34c759]' : 'bg-gray-100'}`}>
         {done ? <CheckCircle size={15} className="text-white" /> : <ChevronRight size={13} className="text-[#86868b] dark:text-[#8e8e93]" />}
       </div>
@@ -355,7 +355,7 @@ function CategoryPicker({
       <select
         value={value}
         onChange={e => handleChange(e.target.value)}
-        className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#0071e3] focus:outline-none max-w-[180px]"
+        className="text-xs px-2 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 dark:hover:border-white/20 focus:border-[#7C3AED] focus:outline-none max-w-[180px]"
         title={hasPublishedPost ? 'Change the category on this published post' : 'Pick a category before generating'}
       >
         <option value="">— Category —</option>
@@ -435,7 +435,7 @@ function RewriteFeedbackModal({
           rows={5}
           autoFocus
           placeholder="e.g. The post focused too much on price — I wanted more on the build quality and a stronger opening hook. Also missing: comparison to the model I mentioned at minute 4."
-          className="w-full text-sm p-3 rounded-lg bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none leading-relaxed"
+          className="w-full text-sm p-3 rounded-lg bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none leading-relaxed"
         />
         <div className="flex items-center justify-end gap-2 mt-4">
           <button
@@ -447,7 +447,7 @@ function RewriteFeedbackModal({
           <button
             onClick={onSubmit}
             disabled={value.trim().length === 0}
-            className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Rewrite now
           </button>
@@ -490,7 +490,7 @@ function SocialPill({
       <a
         href="/pricing"
         title={`${label} publishing is on a higher plan — upgrade to unlock`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-gray-300 dark:border-white/15 text-[#86868b] hover:border-[#0071e3]/40 hover:text-[#0071e3] transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-gray-300 dark:border-white/15 text-[#86868b] hover:border-[#7C3AED]/40 hover:text-[#7C3AED] transition-colors"
       >
         <span style={{ display: 'inline-flex', opacity: 0.55 }}>{icon}</span>
         <span>{label}</span>
@@ -745,7 +745,7 @@ function GenerateButton({
         {isPro && (
           <button
             onClick={() => { setRewriteFeedback(''); setRewriteOpen(true) }}
-            className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors"
+            className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors"
             title="Rewrite this post once with fresh AI content based on your feedback"
           >
             <RefreshCw size={11} /> Rewrite
@@ -770,7 +770,7 @@ function GenerateButton({
   if (status === 'generating') {
     return (
       <div className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-        <Loader2 size={13} className="animate-spin text-[#0071e3]" />
+        <Loader2 size={13} className="animate-spin text-[#7C3AED]" />
         <span>{GEN_STEPS[stepIdx]}</span>
       </div>
     )
@@ -779,14 +779,14 @@ function GenerateButton({
     return (
       <div className="flex flex-col gap-1">
         <p className="text-xs text-[#ff3b30] line-clamp-3">{error}</p>
-        <button onClick={() => generate()} className="text-xs text-[#0071e3] hover:underline text-left">Retry →</button>
+        <button onClick={() => generate()} className="text-xs text-[#7C3AED] hover:underline text-left">Retry →</button>
       </div>
     )
   }
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2.5 flex-wrap">
-        <button onClick={() => generate()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0071e3] text-white text-xs font-semibold rounded-lg hover:bg-[#0071e3]/90 transition-colors">
+        <button onClick={() => generate()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#7C3AED] text-white text-xs font-semibold rounded-lg hover:bg-[#7C3AED]/90 transition-colors">
           <Wand2 size={12} /> Generate post
         </button>
         <label
@@ -797,7 +797,7 @@ function GenerateButton({
             type="checkbox"
             checked={includeImages}
             onChange={(e) => setIncludeImages(e.target.checked)}
-            className="accent-[#0071e3] w-3.5 h-3.5"
+            className="accent-[#7C3AED] w-3.5 h-3.5"
           />
           Include photos in the article
         </label>
@@ -814,7 +814,7 @@ function GenerateButton({
             <button
               onClick={() => imgInputRef.current?.click()}
               disabled={imgBusy || userImages.length >= 3}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-white/10 text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3] disabled:opacity-50 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-white/10 text-[11px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] disabled:opacity-50 transition-colors"
               title="Upload up to 3 of your own photos to use throughout the article instead of the AI ones"
             >
               {imgBusy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
@@ -923,7 +923,7 @@ function ManualEdit({ postId }: { postId?: string }) {
     <div className={open ? 'basis-full order-last mt-1' : ''}>
       <button
         onClick={toggle}
-        className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors"
+        className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors"
       >
         <Edit3 size={11} /> {open ? 'Close editor' : 'Manual edit'}
       </button>
@@ -939,13 +939,13 @@ function ManualEdit({ postId }: { postId?: string }) {
                 ref={ref}
                 contentEditable
                 suppressContentEditableWarning
-                className="max-w-none min-h-[220px] max-h-[480px] overflow-auto text-sm leading-relaxed text-[#1d1d1f] dark:text-[#f5f5f7] outline-none rounded-lg border border-gray-100 dark:border-white/5 p-3 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5 [&_h3]:font-semibold [&_a]:text-[#0071e3] [&_a]:underline [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2"
+                className="max-w-none min-h-[220px] max-h-[480px] overflow-auto text-sm leading-relaxed text-[#1d1d1f] dark:text-[#f5f5f7] outline-none rounded-lg border border-gray-100 dark:border-white/5 p-3 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5 [&_h3]:font-semibold [&_a]:text-[#7C3AED] [&_a]:underline [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:mb-2"
               />
               <div className="flex items-center gap-3 mt-3 flex-wrap">
                 <button
                   onClick={save}
                   disabled={saving || !postId}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
                 >
                   {saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : <><Save size={12} /> Save changes</>}
                 </button>
@@ -1370,7 +1370,7 @@ function InstagramPublishModal({
                   setSelectedIgAccountId(v)
                   try { localStorage.setItem('mvp_ig_account_choice', v) } catch { /* ignore */ }
                 }}
-                className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#0071e3] focus:outline-none"
+                className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none"
               >
                 {igAccounts.map(a => (
                   <option key={a.id} value={a.id}>{a.displayName || 'Instagram account'}</option>
@@ -1412,7 +1412,7 @@ function InstagramPublishModal({
                           {aiGenerating ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate AI image
                         </button>
                       ) : (
-                        <button onClick={handleGenerateImage} disabled={generatingImage} className="text-[11px] text-[#0071e3] hover:underline inline-flex items-center gap-1 disabled:opacity-60 self-start">
+                        <button onClick={handleGenerateImage} disabled={generatingImage} className="text-[11px] text-[#7C3AED] hover:underline inline-flex items-center gap-1 disabled:opacity-60 self-start">
                           {generatingImage ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate
                         </button>
                       )}
@@ -1472,7 +1472,7 @@ function InstagramPublishModal({
                   <p className="text-xs text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
                     <CheckCircle size={12} className="text-[#34c759]" /> Video ready
                   </p>
-                  <button onClick={() => { setExistingUrl(null); resetPreview() }} className="text-[11px] text-[#0071e3] hover:underline">
+                  <button onClick={() => { setExistingUrl(null); resetPreview() }} className="text-[11px] text-[#7C3AED] hover:underline">
                     Replace
                   </button>
                 </div>
@@ -1589,11 +1589,11 @@ function InstagramPublishModal({
                 )}
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#0071e3] cursor-pointer transition-colors">
+              <label className="flex flex-col items-center justify-center p-6 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 hover:border-[#7C3AED] cursor-pointer transition-colors">
                 <input type="file" accept="video/*" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(e.target.files[0])} disabled={uploading} />
                 {uploading ? (
                   <>
-                    <Loader2 size={20} className="animate-spin text-[#0071e3] mb-2" />
+                    <Loader2 size={20} className="animate-spin text-[#7C3AED] mb-2" />
                     <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{uploadProgress || 'Uploading…'}</p>
                   </>
                 ) : (
@@ -1672,7 +1672,7 @@ function InstagramPublishModal({
                     className="w-full text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#E1306C] focus:outline-none leading-relaxed font-mono"
                     placeholder="Caption will appear here once preview is generated"
                   />
-                  <button onClick={previewContent} disabled={previewing} className="text-[10px] text-[#0071e3] hover:underline mt-1 inline-flex items-center gap-1 disabled:opacity-60">
+                  <button onClick={previewContent} disabled={previewing} className="text-[10px] text-[#7C3AED] hover:underline mt-1 inline-flex items-center gap-1 disabled:opacity-60">
                     {previewing ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate
                   </button>
                 </div>
@@ -1681,7 +1681,7 @@ function InstagramPublishModal({
               {(mode === 'story' || mode === 'both') && previewedAffiliateUrl && (
                 <div className="rounded-lg border border-[#E1306C]/30 bg-[#E1306C]/5 p-3 mb-3">
                   <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Story link (you&apos;ll add this as a Link Sticker after publish)</p>
-                  <code className="text-[11px] font-mono text-[#0071e3] break-all">{previewedAffiliateUrl}</code>
+                  <code className="text-[11px] font-mono text-[#7C3AED] break-all">{previewedAffiliateUrl}</code>
                   <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
                     The Story video publishes automatically. Instagram&apos;s API doesn&apos;t expose link stickers, so you&apos;ll tap to copy this URL after publish and paste it into a Link sticker on your phone (5 sec).
                   </p>
@@ -1995,7 +1995,7 @@ function VideoCard({
           {video.is_vertical !== true && (
             <div className="flex items-center gap-2 flex-wrap">
               {showPublishAll && (publishingAll ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#0071e3] to-[#5856d6] text-white opacity-80">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-[#7C3AED] to-[#5856d6] text-white opacity-80">
                   <Loader2 size={12} className="animate-spin" />
                   {publishAllStep || 'Working…'}
                 </div>
@@ -2013,7 +2013,7 @@ function VideoCard({
                 <Link
                   href="/pricing"
                   title="Publish All is a Pro feature — click to upgrade"
-                  className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-white whitespace-nowrap bg-gradient-to-br from-[#0071e3] to-[#7b61ff] opacity-90 hover:opacity-100 hover:shadow-md transition-all"
+                  className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg text-white whitespace-nowrap bg-gradient-to-br from-[#7C3AED] to-[#7b61ff] opacity-90 hover:opacity-100 hover:shadow-md transition-all"
                 >
                   <Sparkles size={12} />
                   {post ? 'Publish to all' : 'Generate + publish all'}
@@ -2072,7 +2072,7 @@ function VideoCard({
               <>
                 <ManualEdit postId={post.postId} />
                 {editorUrl && (
-                  <a href={editorUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
+                  <a href={editorUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
                     <ExternalLink size={11} /> Edit in WP
                   </a>
                 )}
@@ -2166,7 +2166,7 @@ function VideoCard({
                     try { localStorage.setItem('mvp_fb_account_choice', v) } catch { /* ignore */ }
                   }}
                   title="Which Facebook Page to publish to"
-                  className="text-[10px] px-1.5 py-1 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none max-w-[150px]"
+                  className="text-[10px] px-1.5 py-1 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none max-w-[150px]"
                 >
                   {fbAccounts.map(a => (
                     <option key={a.id} value={a.id}>{a.displayName || 'Facebook Page'}</option>
@@ -2360,7 +2360,7 @@ function VideoCard({
                   Instagram&apos;s API doesn&apos;t expose link stickers. Open Instagram → your Story → tap sticker icon → Link sticker → paste:
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <code className="text-[11px] font-mono px-2 py-1 rounded bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#0071e3] truncate max-w-[260px]">
+                  <code className="text-[11px] font-mono px-2 py-1 rounded bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#7C3AED] truncate max-w-[260px]">
                     {igStorySticker}
                   </code>
                   <button
@@ -2398,7 +2398,7 @@ const PLATFORM_META: Record<ScheduledItem['platform'], { label: string; color: s
 
 const STATUS_PILL: Record<ScheduledItem['status'], { label: string; bg: string; fg: string }> = {
   pending:    { label: 'Pending',    bg: 'bg-[#ff9500]/10', fg: 'text-[#9a5d00]' },
-  processing: { label: 'Publishing', bg: 'bg-[#0071e3]/10', fg: 'text-[#0071e3]' },
+  processing: { label: 'Publishing', bg: 'bg-[#7C3AED]/10', fg: 'text-[#7C3AED]' },
   completed:  { label: 'Published',  bg: 'bg-[#34c759]/10', fg: 'text-[#1f8a3a]' },
   failed:     { label: 'Failed',     bg: 'bg-[#ff3b30]/10', fg: 'text-[#ff3b30]' },
   cancelled:  { label: 'Cancelled',  bg: 'bg-gray-100',     fg: 'text-[#86868b]' },
@@ -2425,7 +2425,7 @@ function ScheduledList({
       <div className="card p-6 max-w-md flex flex-col items-center text-center gap-3">
         <AlertCircle size={20} className="text-[#ff3b30]" />
         <p className="text-xs text-[#ff3b30]">{error}</p>
-        <button onClick={onRefresh} className="text-xs text-[#0071e3] hover:underline">Retry</button>
+        <button onClick={onRefresh} className="text-xs text-[#7C3AED] hover:underline">Retry</button>
       </div>
     )
   }
@@ -2456,7 +2456,7 @@ function ScheduledList({
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
           {items.filter(i => i.status === 'pending').length} pending · {items.length} total
         </p>
-        <button onClick={onRefresh} className="text-xs text-[#0071e3] hover:underline inline-flex items-center gap-1">
+        <button onClick={onRefresh} className="text-xs text-[#7C3AED] hover:underline inline-flex items-center gap-1">
           <RefreshCw size={11} /> Refresh
         </button>
       </div>
@@ -3450,7 +3450,7 @@ export default function ContentPage() {
             }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === key
-                ? 'border-[#0071e3] text-[#0071e3]'
+                ? 'border-[#7C3AED] text-[#7C3AED]'
                 : 'border-transparent text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
             }`}
           >
@@ -3495,7 +3495,7 @@ export default function ContentPage() {
                 value={postSearch}
                 onChange={e => setPostSearch(e.target.value)}
                 placeholder={`Search ${allBlogPosts.length} posts by title…`}
-                className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#0071e3]"
+                className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#7C3AED]"
               />
               {postSearch && (
                 <button onClick={() => setPostSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#86868b] hover:text-[#ff3b30]" title="Clear">
@@ -3541,7 +3541,7 @@ export default function ContentPage() {
                     <button
                       onClick={bulkRewriteSelected}
                       disabled={bulkRewriting || bulkDeleting}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0071e3] text-white rounded-lg hover:bg-[#0071e3]/90 disabled:opacity-60 transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#7C3AED] text-white rounded-lg hover:bg-[#7C3AED]/90 disabled:opacity-60 transition-colors"
                     >
                       {bulkRewriting
                         ? <><Loader2 size={11} className="animate-spin" /> Rewriting {bulkRewriteProgress?.done ?? 0}/{bulkRewriteProgress?.total ?? 0}…</>
@@ -3573,15 +3573,15 @@ export default function ContentPage() {
           ) : filteredPosts.length === 0 ? (
             <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">No posts match &ldquo;{postSearch}&rdquo;</p>
-              <button onClick={() => setPostSearch('')} className="text-xs text-[#0071e3] hover:underline">Clear search</button>
+              <button onClick={() => setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">Clear search</button>
             </div>
           ) : filteredPosts.map(post => (
-            <div key={post.id} className={`card p-4 flex items-center gap-3 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#0071e3]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
+            <div key={post.id} className={`card p-4 flex items-center gap-3 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#7C3AED]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
               <input
                 type="checkbox"
                 checked={selectedPostIds.has(post.id)}
                 onChange={() => toggleSelect(post.id)}
-                className="flex-shrink-0 w-4 h-4 rounded accent-[#0071e3] cursor-pointer"
+                className="flex-shrink-0 w-4 h-4 rounded accent-[#7C3AED] cursor-pointer"
               />
               <div className="w-24 h-14 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-[#2c2c2e]">
                 {post.thumbnail
@@ -3615,7 +3615,7 @@ export default function ContentPage() {
                   <button
                     onClick={() => { setRewriteModalFeedback(''); setRewriteModal({ wpPostId: post.id, videoId: post.videoId! }) }}
                     disabled={rewritingPostId === post.id}
-                    className="text-xs text-[#86868b] hover:text-[#0071e3] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                    className="text-xs text-[#86868b] hover:text-[#7C3AED] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                   >
                     {rewritingPostId === post.id ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                     {rewritingPostId === post.id ? 'Rewriting…' : 'Rewrite'}
@@ -3642,7 +3642,7 @@ export default function ContentPage() {
                     href={`${new URL(post.link).origin}/wp-admin/post.php?post=${post.id}&action=edit`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-[#86868b] hover:text-[#0071e3] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                    className="text-xs text-[#86868b] hover:text-[#7C3AED] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
                     title="Edit this post manually in WordPress"
                   >
                     <Edit3 size={11} /> Edit
@@ -3697,13 +3697,13 @@ export default function ContentPage() {
               value={videoSearch}
               onChange={e => setVideoSearch(e.target.value)}
               placeholder="Search title, channel, description…"
-              className="flex-1 min-w-[180px] text-xs px-3 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+              className="flex-1 min-w-[180px] text-xs px-3 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
             />
             {tabChannels.length > 1 && (
               <select
                 value={videoChannel}
                 onChange={e => setVideoChannel(e.target.value)}
-                className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none max-w-[200px]"
+                className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none max-w-[200px]"
                 title="Filter by YouTube channel"
               >
                 <option value="">All channels ({tabChannels.length})</option>
@@ -3713,7 +3713,7 @@ export default function ContentPage() {
             <select
               value={videoGenFilter}
               onChange={e => setVideoGenFilter(e.target.value as 'all' | 'ungenerated' | 'generated')}
-              className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+              className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
               title="Filter by post status"
             >
               <option value="all">All status</option>
@@ -3723,7 +3723,7 @@ export default function ContentPage() {
             <select
               value={videoSort}
               onChange={e => setVideoSort(e.target.value as 'newest' | 'oldest' | 'views' | 'title')}
-              className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+              className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
               title="Sort videos"
             >
               <option value="newest">Newest first</option>
@@ -3743,7 +3743,7 @@ export default function ContentPage() {
 
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <div className="flex items-center gap-2 text-sm">
-              <Sparkles size={14} className="text-[#0071e3]" />
+              <Sparkles size={14} className="text-[#7C3AED]" />
               <span className="text-[#6e6e73] dark:text-[#ebebf0]">
                 {filtersActive
                   ? `Showing ${displayVideos.length} of ${currentTabVideos.length} videos`
@@ -3800,7 +3800,7 @@ export default function ContentPage() {
                       <button
                         onClick={bulkGenerateSelected}
                         disabled={bulkBusy}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0071e3] text-white rounded-lg hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#7C3AED] text-white rounded-lg hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
                       >
                         {bulkGenerating
                           ? <><Loader2 size={11} className="animate-spin" /> Generating {bulkGenerateProgress?.done ?? 0}/{bulkGenerateProgress?.total ?? 0}…</>
@@ -3870,7 +3870,7 @@ export default function ContentPage() {
                   type="checkbox"
                   checked={isSelected}
                   onChange={() => toggleVideoSelect(video.id as string)}
-                  className="mt-5 flex-shrink-0 w-4 h-4 rounded accent-[#0071e3] cursor-pointer"
+                  className="mt-5 flex-shrink-0 w-4 h-4 rounded accent-[#7C3AED] cursor-pointer"
                   title="Select for bulk actions"
                 />
                 <div className="flex-1 min-w-0">
@@ -3953,7 +3953,7 @@ export default function ContentPage() {
                 {catPreview.map((row, i) => (
                   <li key={i} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e]">
                     <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex-1 line-clamp-2">{row.title}</p>
-                    <span className="text-xs font-semibold text-[#0071e3] whitespace-nowrap mt-0.5">→ {row.category}</span>
+                    <span className="text-xs font-semibold text-[#7C3AED] whitespace-nowrap mt-0.5">→ {row.category}</span>
                   </li>
                 ))}
               </ul>
@@ -4002,7 +4002,7 @@ export default function ContentPage() {
             </div>
 
             <div className="px-5 pt-3 flex items-center gap-3 text-xs">
-              <button onClick={() => setAffSelected(new Set(affPreview.map(r => r.postId)))} className="text-[#0071e3] hover:underline">Select all</button>
+              <button onClick={() => setAffSelected(new Set(affPreview.map(r => r.postId)))} className="text-[#7C3AED] hover:underline">Select all</button>
               <span className="text-[#d2d2d7] dark:text-white/15">·</span>
               <button onClick={() => setAffSelected(new Set())} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] hover:underline">Select none</button>
               <span className="ml-auto text-[#86868b]">{affSelected.size} of {affPreview.length} selected</span>
@@ -4022,7 +4022,7 @@ export default function ContentPage() {
                         type="checkbox"
                         checked={checked}
                         onChange={() => {}}
-                        className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#0071e3] cursor-pointer"
+                        className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#7C3AED] cursor-pointer"
                       />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] mb-1 line-clamp-2">{row.title}</p>

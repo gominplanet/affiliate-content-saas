@@ -223,7 +223,7 @@ export default function LearnPage() {
               const btn = (side: string) =>
                 `flex-1 text-xs font-medium px-3 py-2 rounded-lg border transition-colors ${
                   cur === side
-                    ? 'bg-[#0071e3] border-[#0071e3] text-white'
+                    ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
                     : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300'
                 }`
               return (
@@ -264,7 +264,7 @@ export default function LearnPage() {
         <button
           onClick={save}
           disabled={saving}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[#0071e3] text-white hover:bg-[#0077ed] disabled:opacity-60 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-[#7C3AED] text-white hover:bg-[#8B5CF6] disabled:opacity-60 transition-colors"
         >
           {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><Save size={14} /> Save</>}
         </button>
@@ -296,7 +296,7 @@ function ChipGroup({
               onClick={() => onToggle(it.key)}
               className={`text-xs font-medium px-3 py-2 rounded-lg border transition-colors ${
                 on
-                  ? 'bg-[#0071e3] border-[#0071e3] text-white'
+                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
                   : 'bg-white dark:bg-[#1c1c1e] border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300'
               }`}
             >

@@ -29,8 +29,8 @@ export default function TutorialsPage() {
         {TUTORIALS.map(t => (
           <section key={t.sectionKey} className="card p-5">
             <div className="flex items-start gap-3 mb-4">
-              <div className="w-8 h-8 rounded-full bg-[#0071e3]/10 flex items-center justify-center flex-shrink-0">
-                <GraduationCap size={16} className="text-[#0071e3]" />
+              <div className="w-8 h-8 rounded-full bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
+                <GraduationCap size={16} className="text-[#7C3AED]" />
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{t.title}</h2>

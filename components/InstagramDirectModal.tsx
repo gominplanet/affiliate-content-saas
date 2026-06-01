@@ -174,7 +174,7 @@ export function InstagramDirectModal({
               <div className="rounded-lg border-[#ff9500]/20 bg-[#ff9500]/5 p-3">
                 <p className="text-sm text-[#9a5d00] flex items-start gap-2"><AlertCircle size={14} className="mt-0.5" /> {loadError}</p>
                 {reconnectRequired && (
-                  <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#0071e3] hover:underline">
+                  <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
                     Go to Integrations → Reconnect Instagram →
                   </a>
                 )}
@@ -184,7 +184,7 @@ export function InstagramDirectModal({
                   Studio's Download button hands the creator the same MP4
                   they originally uploaded — no quality loss. */}
               {youtubeId && (
-                <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-2.5">
+                <div className="rounded-lg border border-[#7C3AED]/20 bg-[#7C3AED]/5 p-4 flex flex-col items-center gap-2.5">
                   <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">
                     Open this Short in YouTube Studio, hit <strong>⋮ → Download</strong>, then drop the MP4 in the zone below.
                   </p>
@@ -192,7 +192,7 @@ export function InstagramDirectModal({
                     href={`https://studio.youtube.com/video/${youtubeId}/edit`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4]"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9]"
                   >
                     Open in YouTube Studio <ExternalLink size={14} />
                   </a>
@@ -226,7 +226,7 @@ export function InstagramDirectModal({
                       href={`https://studio.youtube.com/video/${youtubeId || meta.youtubeVideoId}/edit`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1"
+                      className="text-[10px] text-[#86868b] hover:text-[#7C3AED] inline-flex items-center gap-1"
                       title="Open this Short in YouTube Studio to download the original MP4"
                     >
                       <ExternalLink size={10} /> Wrong video? Open in YouTube Studio to grab the right one
@@ -321,7 +321,7 @@ export function InstagramDirectModal({
                     {posted.reel && !posted.story && 'Reel live on Instagram.'}
                     {!posted.reel && posted.story && 'Story live on Instagram.'}
                   </p>
-                  <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-[#0071e3] hover:underline self-start">
+                  <a href="https://www.instagram.com/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED] hover:underline self-start">
                     Open Instagram <ExternalLink size={10} />
                   </a>
                 </div>

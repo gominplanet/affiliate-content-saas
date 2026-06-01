@@ -372,7 +372,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       const wBtn = wProd.affiliateUrl
         ? ` <a href="${wProd.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener"><strong>Check price →</strong></a>`
         : ''
-      body += `<!-- wp:group {"style":{"color":{"background":"#f0f7ff"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#0071e3","width":"4px"}}},"layout":{"type":"constrained"}} -->\n<div class="wp-block-group has-background" style="border-left-color:#0071e3;border-left-width:4px;background-color:#f0f7ff;padding:16px 20px"><!-- wp:paragraph --><p>🏆 <strong>Our #1 pick: ${wName}.</strong> ${wWhy}${wBtn}</p><!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n`
+      body += `<!-- wp:group {"style":{"color":{"background":"#f0f7ff"},"spacing":{"padding":{"top":"16px","bottom":"16px","left":"20px","right":"20px"}},"border":{"left":{"color":"#7C3AED","width":"4px"}}},"layout":{"type":"constrained"}} -->\n<div class="wp-block-group has-background" style="border-left-color:#7C3AED;border-left-width:4px;background-color:#f0f7ff;padding:16px 20px"><!-- wp:paragraph --><p>🏆 <strong>Our #1 pick: ${wName}.</strong> ${wWhy}${wBtn}</p><!-- /wp:paragraph --></div>\n<!-- /wp:group -->\n`
     }
   }
 

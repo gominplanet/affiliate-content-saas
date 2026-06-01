@@ -56,8 +56,8 @@ export default function ChannelStats() {
       value: formatNumber(stats.currentStats.subscribers),
       sub: 'total',
       icon: Users,
-      color: 'text-[#0071e3]',
-      bg: 'bg-[#0071e3]/8',
+      color: 'text-[#7C3AED]',
+      bg: 'bg-[#7C3AED]/8',
     },
     {
       label: 'Total Views',

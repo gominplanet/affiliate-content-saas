@@ -29,7 +29,7 @@ export default function NewsletterConfirmedPage() {
         </p>
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] transition-colors"
+          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] transition-colors"
         >
           Back to the site
         </Link>

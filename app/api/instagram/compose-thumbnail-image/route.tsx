@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .single()
 
-  const primaryColor: string = brand?.primary_color || '#0071e3'
+  const primaryColor: string = brand?.primary_color || '#7C3AED'
   const authorName: string = brand?.author_name || ''
   const logoUrl: string | null = brand?.logo_url || null
   const title: string = (blogPost?.title as string) || video.title || ''

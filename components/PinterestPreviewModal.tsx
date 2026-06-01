@@ -141,7 +141,7 @@ export function PinterestPreviewModal({
             <div>
               <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide mb-1">Links to (blog post)</p>
               {data.link ? (
-                <a href={data.link} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#0071e3] hover:underline break-all">{data.link}</a>
+                <a href={data.link} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[#7C3AED] hover:underline break-all">{data.link}</a>
               ) : (
                 <p className="text-[11px] text-[#ff3b30]">No blog URL — this post can&apos;t be pinned.</p>
               )}

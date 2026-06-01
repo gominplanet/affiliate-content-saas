@@ -10,14 +10,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Legacy "apple.*" token names retained so any existing consumers
+        // keep working — the values were re-skinned to the new violet
+        // brand accent (matching the --accent CSS var in globals.css).
         apple: {
-          blue: '#0071e3',
-          'blue-hover': '#0077ed',
+          blue: '#7C3AED',
+          'blue-hover': '#6D28D9',
           gray: '#f5f5f7',
           'gray-mid': '#d2d2d7',
-          text: '#1d1d1f',
-          'text-secondary': '#6e6e73',
-          'text-tertiary': '#86868b',
+          text: '#18181B',
+          'text-secondary': '#52525B',
+          'text-tertiary': '#71717A',
           red: '#ff3b30',
           green: '#34c759',
           orange: '#ff9500',

@@ -259,7 +259,7 @@ function BannerBlockEditor({
       <div className="flex items-center justify-between px-4 py-3 bg-[var(--surface-2)]">
         <div className="flex items-center gap-3">
           <button onClick={() => onChange({ ...block, enabled: !block.enabled })} className="text-[var(--text-3)]">
-            {block.enabled ? <ToggleRight size={20} className="text-[#0071e3]" /> : <ToggleLeft size={20} />}
+            {block.enabled ? <ToggleRight size={20} className="text-[#7C3AED]" /> : <ToggleLeft size={20} />}
           </button>
           <span className="text-sm font-medium text-[var(--text)]">Affiliate Banner</span>
           {!block.enabled && <span className="text-xs text-[var(--text-3)]">(disabled — won't show on site)</span>}
@@ -293,7 +293,7 @@ function BannerBlockEditor({
                     key={preset}
                     type="button"
                     onClick={() => onChange({ ...block, label: preset })}
-                    className="px-2 py-1 text-[10px] rounded-md border border-[var(--border-2)] text-[var(--text-3)] hover:text-[#0071e3] hover:border-[#0071e3]/40 transition-colors whitespace-nowrap"
+                    className="px-2 py-1 text-[10px] rounded-md border border-[var(--border-2)] text-[var(--text-3)] hover:text-[#7C3AED] hover:border-[#7C3AED]/40 transition-colors whitespace-nowrap"
                   >
                     {preset}
                   </button>
@@ -307,13 +307,13 @@ function BannerBlockEditor({
           <div className="flex rounded-lg border border-[var(--border-2)] overflow-hidden w-fit">
             <button
               onClick={() => onChange({ ...block, type: 'image' })}
-              className={`px-4 py-1.5 text-xs font-medium transition-colors ${!isHtml ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
+              className={`px-4 py-1.5 text-xs font-medium transition-colors ${!isHtml ? 'bg-[#7C3AED] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
             >
               Image
             </button>
             <button
               onClick={() => onChange({ ...block, type: 'html' })}
-              className={`px-4 py-1.5 text-xs font-medium transition-colors ${isHtml ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
+              className={`px-4 py-1.5 text-xs font-medium transition-colors ${isHtml ? 'bg-[#7C3AED] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
             >
               HTML Code
             </button>
@@ -332,14 +332,14 @@ function BannerBlockEditor({
                 </div>
               ) : (
                 <div
-                  className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-[var(--border-2)] hover:border-[#0071e3]'}`}
+                  className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-[var(--border-2)] hover:border-[#7C3AED]'}`}
                   onDragOver={e => { e.preventDefault(); setDragging(true) }}
                   onDragLeave={() => setDragging(false)}
                   onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
                 >
                   <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
                     className="w-full flex flex-col items-center gap-2 py-8 text-[var(--text-3)] hover:text-[var(--text)] transition-colors">
-                    {uploading ? <Loader2 size={22} className="animate-spin text-[#0071e3]" /> : <Upload size={22} />}
+                    {uploading ? <Loader2 size={22} className="animate-spin text-[#7C3AED]" /> : <Upload size={22} />}
                     <span className="text-xs font-medium">{uploading ? 'Uploading…' : 'Click to upload or drag an image here'}</span>
                     <span className="text-[11px] text-[var(--text-3)]">PNG, JPG, GIF, WebP · displayed at 350px wide</span>
                   </button>
@@ -633,7 +633,7 @@ export default function CustomizePage() {
           <div>
             <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Saved to dashboard, but WordPress push failed</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{wpPushError}</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1">Check your WordPress credentials in <a href="/setup?tab=integrations" className="text-[#0071e3] hover:underline">Site & Integrations</a>, then save again.</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1">Check your WordPress credentials in <a href="/setup?tab=integrations" className="text-[#7C3AED] hover:underline">Site & Integrations</a>, then save again.</p>
           </div>
         </div>
       )}
@@ -644,11 +644,11 @@ export default function CustomizePage() {
 
         {/* Cross-link banner */}
         <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 px-4 py-3 flex items-start gap-3">
-          <Sparkles size={16} className="text-[#0071e3] flex-shrink-0 mt-0.5" />
+          <Sparkles size={16} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Brand stuff lives in Brand Profile</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-              Your logo, header banner, bio, social links, brand name, tagline, fonts, and colors are all managed in <a href="/brand" className="text-[#0071e3] hover:underline font-medium">Brand Profile</a>. This page is for blog-specific layout: sidebar/in-content ads, Pick of the Day, and custom footer links.
+              Your logo, header banner, bio, social links, brand name, tagline, fonts, and colors are all managed in <a href="/brand" className="text-[#7C3AED] hover:underline font-medium">Brand Profile</a>. This page is for blog-specific layout: sidebar/in-content ads, Pick of the Day, and custom footer links.
             </p>
           </div>
         </div>
@@ -676,7 +676,7 @@ export default function CustomizePage() {
                 aria-label="Toggle Reviewer Trust Block"
               >
                 {data.authorBlock.enabled
-                  ? <ToggleRight size={28} className="text-[#0071e3]" />
+                  ? <ToggleRight size={28} className="text-[#7C3AED]" />
                   : <ToggleLeft size={28} />}
               </button>
             </div>
@@ -770,7 +770,7 @@ export default function CustomizePage() {
                 aria-label="Toggle mid-article newsletter form"
               >
                 {data.newsletterInline.enabled
-                  ? <ToggleRight size={28} className="text-[#0071e3]" />
+                  ? <ToggleRight size={28} className="text-[#7C3AED]" />
                   : <ToggleLeft size={28} />}
               </button>
             </div>
@@ -847,7 +847,7 @@ export default function CustomizePage() {
                 aria-label="Toggle Pick of the Day"
               >
                 {data.pickOfDay.enabled
-                  ? <ToggleRight size={28} className="text-[#0071e3]" />
+                  ? <ToggleRight size={28} className="text-[#7C3AED]" />
                   : <ToggleLeft size={28} />}
               </button>
             </div>
@@ -871,7 +871,7 @@ export default function CustomizePage() {
                           key={preset}
                           type="button"
                           onClick={() => updatePickOfDay({ label: preset })}
-                          className="px-2 py-1 text-[10px] rounded-md border border-[var(--border-2)] text-[var(--text-3)] hover:text-[#0071e3] hover:border-[#0071e3]/40 transition-colors whitespace-nowrap"
+                          className="px-2 py-1 text-[10px] rounded-md border border-[var(--border-2)] text-[var(--text-3)] hover:text-[#7C3AED] hover:border-[#7C3AED]/40 transition-colors whitespace-nowrap"
                         >
                           {preset}
                         </button>
@@ -881,24 +881,24 @@ export default function CustomizePage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <label className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border-2)] cursor-pointer hover:border-[#0071e3]/40 transition-colors">
+                  <label className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border-2)] cursor-pointer hover:border-[#7C3AED]/40 transition-colors">
                     <input
                       type="checkbox"
                       checked={data.pickOfDay.showOnSidebar}
                       onChange={e => updatePickOfDay({ showOnSidebar: e.target.checked })}
-                      className="w-4 h-4 accent-[#0071e3]"
+                      className="w-4 h-4 accent-[#7C3AED]"
                     />
                     <div>
                       <p className="text-sm font-medium text-[var(--text)]">Show in sidebar</p>
                       <p className="text-xs text-[var(--text-3)]">On every single post page.</p>
                     </div>
                   </label>
-                  <label className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border-2)] cursor-pointer hover:border-[#0071e3]/40 transition-colors">
+                  <label className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border-2)] cursor-pointer hover:border-[#7C3AED]/40 transition-colors">
                     <input
                       type="checkbox"
                       checked={data.pickOfDay.showOnHomepage}
                       onChange={e => updatePickOfDay({ showOnHomepage: e.target.checked })}
-                      className="w-4 h-4 accent-[#0071e3]"
+                      className="w-4 h-4 accent-[#7C3AED]"
                     />
                     <div>
                       <p className="text-sm font-medium text-[var(--text)]">Show on homepage</p>
@@ -921,7 +921,7 @@ export default function CustomizePage() {
                           key={opt.key}
                           type="button"
                           onClick={() => updatePickOfDay({ rotation: opt.key })}
-                          className={`px-4 py-1.5 text-xs font-medium transition-colors ${active ? 'bg-[#0071e3] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
+                          className={`px-4 py-1.5 text-xs font-medium transition-colors ${active ? 'bg-[#7C3AED] text-white' : 'text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-2)]'}`}
                         >
                           {opt.label}
                         </button>
@@ -968,7 +968,7 @@ export default function CustomizePage() {
               />
             ))}
             <button onClick={addSidebarBlock}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#7C3AED] hover:text-[#7C3AED] transition-colors">
               <Plus size={15} /> Add sidebar banner
             </button>
           </div>
@@ -986,7 +986,7 @@ export default function CustomizePage() {
               type="checkbox"
               checked={data.homepageAdsEnabled}
               onChange={(e) => setData(d => ({ ...d, homepageAdsEnabled: e.target.checked }))}
-              className="w-4 h-4 rounded accent-[#0071e3]"
+              className="w-4 h-4 rounded accent-[#7C3AED]"
             />
             <span className="text-sm font-medium text-[var(--text-1)]">
               Show this strip on the homepage
@@ -1013,7 +1013,7 @@ export default function CustomizePage() {
                     >×</button>
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center aspect-video rounded-lg border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] cursor-pointer transition-colors text-center px-3">
+                  <label className="flex flex-col items-center justify-center aspect-video rounded-lg border-2 border-dashed border-[var(--border-2)] text-xs text-[var(--text-3)] hover:border-[#7C3AED] hover:text-[#7C3AED] cursor-pointer transition-colors text-center px-3">
                     <ImageIcon size={18} className="mb-1.5 opacity-50" />
                     <span>Upload JPG or PNG</span>
                     <span className="text-[10px] opacity-70 mt-0.5">16:9 — same shape as a post thumbnail</span>
@@ -1055,7 +1055,7 @@ export default function CustomizePage() {
               />
             ))}
             <button onClick={addIncontentBlock}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#7C3AED] hover:text-[#7C3AED] transition-colors">
               <Plus size={15} /> Add in-content banner
             </button>
           </div>
@@ -1079,7 +1079,7 @@ export default function CustomizePage() {
               </div>
             ))}
             <button onClick={addCustomLink}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors">
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#7C3AED] hover:text-[#7C3AED] transition-colors">
               <Plus size={15} /> Add link
             </button>
           </div>
@@ -1116,7 +1116,7 @@ export default function CustomizePage() {
             ))}
             <button
               onClick={() => setData(d => ({ ...d, headMetaTags: [...d.headMetaTags, ''] }))}
-              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#0071e3] hover:text-[#0071e3] transition-colors"
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-2)] text-sm text-[var(--text-3)] hover:border-[#7C3AED] hover:text-[#7C3AED] transition-colors"
             >
               <Plus size={15} /> Add meta tag
             </button>
@@ -1146,7 +1146,7 @@ export default function CustomizePage() {
                 onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, ga4Id: e.target.value.trim().toUpperCase() } }))}
                 placeholder="G-XXXXXXXXXX"
                 spellCheck={false}
-                className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#0071e3]"
+                className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#7C3AED]"
               />
               {data.analytics.ga4Id && !/^G-[A-Z0-9]{4,12}$/.test(data.analytics.ga4Id) && (
                 <p className="text-xs text-[#ff9500]">⚠ That doesn&apos;t look like a GA4 Measurement ID — it should be <code>G-</code> followed by letters/numbers (e.g. <code>G-ABC123XYZ</code>). A <code>GTM-</code> ID goes in the box below instead. It won&apos;t inject until the format is valid.</p>
@@ -1155,7 +1155,7 @@ export default function CustomizePage() {
               <details className="mt-1 rounded-lg border border-[var(--border-2)] bg-[var(--surface-2)] p-3 text-xs text-[var(--text-2)] leading-relaxed">
                 <summary className="cursor-pointer font-medium text-[var(--text)] select-none">How do I find my GA4 Measurement ID? (step by step)</summary>
                 <ol className="list-decimal ml-4 mt-3 flex flex-col gap-2">
-                  <li>Go to <a href="https://analytics.google.com" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">analytics.google.com</a> and sign in with the Google account you want to own your stats.</li>
+                  <li>Go to <a href="https://analytics.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">analytics.google.com</a> and sign in with the Google account you want to own your stats.</li>
                   <li><b>First time using Analytics?</b> Click <b>Start measuring</b>, then create an <b>Account</b> (your name or brand) and a <b>Property</b> (your blog) — set your country, currency, and time zone.</li>
                   <li>When it asks what you want to measure, choose <b>Web</b>. Enter your blog&apos;s full URL (e.g. <code>https://yourblog.com</code>) and a stream name, then click <b>Create stream</b>.</li>
                   <li>You&apos;ll land on <b>Web stream details</b>. Your <b>Measurement ID</b> is at the top right — it looks like <code>G-XXXXXXXXXX</code>. Copy it.</li>
@@ -1179,13 +1179,13 @@ export default function CustomizePage() {
                 onChange={e => setData(d => ({ ...d, analytics: { ...d.analytics, gtmId: e.target.value.trim().toUpperCase() } }))}
                 placeholder="GTM-XXXXXXX"
                 spellCheck={false}
-                className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#0071e3]"
+                className="w-full max-w-xs px-3 py-2 rounded-lg border border-[var(--border-2)] bg-[var(--surface)] text-sm font-mono focus:outline-none focus:border-[#7C3AED]"
               />
               {data.analytics.gtmId && !/^GTM-[A-Z0-9]{4,12}$/.test(data.analytics.gtmId) && (
                 <p className="text-xs text-[#ff9500]">⚠ ID format looks off — should be <code>GTM-</code> followed by uppercase letters/numbers (e.g. <code>GTM-P9NPW64B</code>). It won&apos;t inject until the format is valid.</p>
               )}
               <p className="text-xs text-[var(--text-3)] leading-relaxed">
-                Only needed if you want to manage <b>several</b> tags in one place (Google Ads, Facebook/Meta Pixel, Pinterest tag, custom conversions). Create a free <b>Web</b> container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">tagmanager.google.com</a>, copy the <code>GTM-XXXXXXX</code> ID, and paste it here — the theme injects both GTM snippets (head + body) automatically. You&apos;d then add your GA4 tag inside GTM. <b>If you just want Google Analytics, use the GA4 box above and leave this blank.</b>
+                Only needed if you want to manage <b>several</b> tags in one place (Google Ads, Facebook/Meta Pixel, Pinterest tag, custom conversions). Create a free <b>Web</b> container at <a href="https://tagmanager.google.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">tagmanager.google.com</a>, copy the <code>GTM-XXXXXXX</code> ID, and paste it here — the theme injects both GTM snippets (head + body) automatically. You&apos;d then add your GA4 tag inside GTM. <b>If you just want Google Analytics, use the GA4 box above and leave this blank.</b>
               </p>
             </div>
           </div>

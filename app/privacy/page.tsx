@@ -17,7 +17,7 @@ export default function PrivacyPage() {
             Gominplanet Holdings Ltd, an exempted company incorporated in Anguilla, British West Indies under the
             Business Companies Act, 2022 (company no. A000003427), registered office: The Hansa Bank Building, 1st Floor,
             PO Box 886, Landsome Road, The Valley, AI-2640, Anguilla, BWI
-            (<a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>).
+            (<a href="mailto:us@gominplanet.com" className="text-[#7C3AED] hover:underline">us@gominplanet.com</a>).
           </p>
         </div>
 
@@ -92,17 +92,17 @@ export default function PrivacyPage() {
             change anything in the background, and never use YouTube data for advertising or to
             train AI/ML models. You can revoke access at any time from the App&apos;s Settings page
             (we delete the stored tokens on disconnection) and via your Google Account at{' '}
-            <a href="https://myaccount.google.com/permissions" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">myaccount.google.com/permissions</a>.
+            <a href="https://myaccount.google.com/permissions" className="text-[#7C3AED] hover:underline" target="_blank" rel="noopener noreferrer">myaccount.google.com/permissions</a>.
           </p>
           <p className="mt-3">
             MVP Affiliate&apos;s use and transfer of information received from Google APIs to any
             other app will adhere to the{' '}
-            <a href="https://developers.google.com/terms/api-services-user-data-policy" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>,
+            <a href="https://developers.google.com/terms/api-services-user-data-policy" className="text-[#7C3AED] hover:underline" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>,
             including the Limited Use requirements. Your use of YouTube features is also subject to
             the{' '}
-            <a href="https://www.youtube.com/t/terms" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">YouTube Terms of Service</a>{' '}
+            <a href="https://www.youtube.com/t/terms" className="text-[#7C3AED] hover:underline" target="_blank" rel="noopener noreferrer">YouTube Terms of Service</a>{' '}
             and the{' '}
-            <a href="https://policies.google.com/privacy" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.
+            <a href="https://policies.google.com/privacy" className="text-[#7C3AED] hover:underline" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.
           </p>
         </div>
 
@@ -131,9 +131,9 @@ export default function PrivacyPage() {
             any time from the Settings page in the App, which immediately deletes the stored token.
             You can also revoke MVP Affiliate&apos;s access directly from your TikTok account settings
             under &quot;Manage app permissions&quot;. Your use of TikTok features is also subject to the{' '}
-            <a href="https://www.tiktok.com/legal/terms-of-service" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">TikTok Terms of Service</a>{' '}
+            <a href="https://www.tiktok.com/legal/terms-of-service" className="text-[#7C3AED] hover:underline" target="_blank" rel="noopener noreferrer">TikTok Terms of Service</a>{' '}
             and the{' '}
-            <a href="https://www.tiktok.com/legal/privacy-policy" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">TikTok Privacy Policy</a>.
+            <a href="https://www.tiktok.com/legal/privacy-policy" className="text-[#7C3AED] hover:underline" target="_blank" rel="noopener noreferrer">TikTok Privacy Policy</a>.
           </p>
         </div>
 
@@ -167,7 +167,7 @@ export default function PrivacyPage() {
           <p>
             We retain your data for as long as your account is active. To delete your account and all
             associated data, email{' '}
-            <a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>{' '}
+            <a href="mailto:us@gominplanet.com" className="text-[#7C3AED] hover:underline">us@gominplanet.com</a>{' '}
             from the address registered to the account. We will delete your account and all associated
             data within 30 days of receiving the request, including any Pinterest, Facebook, and other
             third-party tokens we hold for you.
@@ -237,7 +237,7 @@ export default function PrivacyPage() {
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">14. Contact</h2>
           <p>
             For privacy questions, deletion requests, or any other concerns, contact us at{' '}
-            <a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>.
+            <a href="mailto:us@gominplanet.com" className="text-[#7C3AED] hover:underline">us@gominplanet.com</a>.
           </p>
         </div>
 

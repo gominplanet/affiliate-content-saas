@@ -107,7 +107,7 @@ export default function WpUpdateBanner() {
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">One last manual update</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
               Your installed plugin predates one-click updates. Reinstall it once from{' '}
-              <a href="/setup" className="text-[#0071e3] hover:underline">Setup</a> (and the theme),
+              <a href="/setup" className="text-[#7C3AED] hover:underline">Setup</a> (and the theme),
               and from then on every update is a single button here — no wp-admin, ever again.
             </p>
           </div>
@@ -135,9 +135,9 @@ export default function WpUpdateBanner() {
   if (pluginUpd) parts.push(`plugin ${status.plugin!.installed} → ${status.plugin!.latest}`)
 
   return (
-    <div className="card mb-6 p-5 border border-[#0071e3]/30 bg-[#0071e3]/5">
+    <div className="card mb-6 p-5 border border-[#7C3AED]/30 bg-[#7C3AED]/5">
       <div className="flex items-start gap-3">
-        <ArrowUpCircle size={18} className="text-[#0071e3] mt-0.5 flex-shrink-0" />
+        <ArrowUpCircle size={18} className="text-[#7C3AED] mt-0.5 flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Site update available</p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
@@ -148,7 +148,7 @@ export default function WpUpdateBanner() {
             <button
               onClick={runUpdate}
               disabled={updating}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
             >
               {updating
                 ? <><Loader2 size={11} className="animate-spin" /> Updating…</>

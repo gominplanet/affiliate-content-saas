@@ -440,8 +440,8 @@ export default function NewsletterPage() {
         <div className="card p-5 lg:col-span-2">
           <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-[#0071e3]/10 flex items-center justify-center">
-                <Mail size={16} className="text-[#0071e3]" />
+              <div className="w-9 h-9 rounded-full bg-[#7C3AED]/10 flex items-center justify-center">
+                <Mail size={16} className="text-[#7C3AED]" />
               </div>
               <div>
                 <p className="text-xs text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Your audience</p>
@@ -450,7 +450,7 @@ export default function NewsletterPage() {
             </div>
             <Link
               href="/newsletter/compose"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4]"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9]"
               title="Compose and send the next issue"
             >
               <Send size={13} /> Compose
@@ -608,7 +608,7 @@ export default function NewsletterPage() {
                 disabled={!ctaDirty || savingField === 'cta'}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
                   ctaDirty
-                    ? 'bg-[#0071e3] text-white hover:bg-[#0062c4]'
+                    ? 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'
                     : 'bg-gray-100 dark:bg-white/5 text-[#86868b] cursor-default'
                 } disabled:opacity-60`}
               >
@@ -658,7 +658,7 @@ export default function NewsletterPage() {
                 const current = (settings?.homepage_placement || 'after_ads') as HomepagePlacement
                 const selected = current === slot
                 return (
-                  <label key={slot} className={`flex items-start gap-2 p-2 rounded-md border cursor-pointer transition-colors ${selected ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}>
+                  <label key={slot} className={`flex items-start gap-2 p-2 rounded-md border cursor-pointer transition-colors ${selected ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}>
                     <input
                       type="radio"
                       name="homepage_placement"
@@ -666,7 +666,7 @@ export default function NewsletterPage() {
                       checked={selected}
                       onChange={() => saveSetting({ homepage_placement: slot } as Partial<Settings>, 'homepage_placement')}
                       disabled={savingField === 'homepage_placement'}
-                      className="accent-[#0071e3] mt-0.5 flex-shrink-0"
+                      className="accent-[#7C3AED] mt-0.5 flex-shrink-0"
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{meta.label}</p>
@@ -687,7 +687,7 @@ export default function NewsletterPage() {
                 const current = (settings?.sidebar_placement || 'bottom') as SidebarPlacement
                 const selected = current === slot
                 return (
-                  <label key={slot} className={`flex items-start gap-2 p-2 rounded-md border cursor-pointer transition-colors ${selected ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}>
+                  <label key={slot} className={`flex items-start gap-2 p-2 rounded-md border cursor-pointer transition-colors ${selected ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}>
                     <input
                       type="radio"
                       name="sidebar_placement"
@@ -695,7 +695,7 @@ export default function NewsletterPage() {
                       checked={selected}
                       onChange={() => saveSetting({ sidebar_placement: slot } as Partial<Settings>, 'sidebar_placement')}
                       disabled={savingField === 'sidebar_placement'}
-                      className="accent-[#0071e3] mt-0.5 flex-shrink-0"
+                      className="accent-[#7C3AED] mt-0.5 flex-shrink-0"
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{meta.label}</p>
@@ -717,7 +717,7 @@ export default function NewsletterPage() {
           (c) Verified → green badge + the from-address + remove option */}
       <div className="card p-5 mb-6">
         <div className="flex items-center gap-2 mb-1">
-          <Globe size={14} className="text-[#0071e3]" />
+          <Globe size={14} className="text-[#7C3AED]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Sender domain</p>
           {settings?.sender_domain && settings.domain_status === 'verified' && (
             <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-[#34c759]/10 text-[#34c759]">
@@ -757,7 +757,7 @@ export default function NewsletterPage() {
             <button
               onClick={() => void addDomain()}
               disabled={domainBusy === 'add' || !domainInput.trim()}
-              className="px-3 py-2 rounded-md text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors"
+              className="px-3 py-2 rounded-md text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 transition-colors"
             >
               {domainBusy === 'add' ? <><Loader2 size={11} className="animate-spin inline mr-1" /> Adding…</> : 'Add domain'}
             </button>
@@ -776,7 +776,7 @@ export default function NewsletterPage() {
                 <button
                   onClick={() => void verifyDomain()}
                   disabled={domainBusy === 'verify'}
-                  className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors"
+                  className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 transition-colors"
                 >
                   {domainBusy === 'verify' ? <><Loader2 size={11} className="animate-spin inline mr-1" /> Checking…</> : <>Verify</>}
                 </button>
@@ -805,7 +805,7 @@ export default function NewsletterPage() {
                       DKIM value, which is a pain to copy from the table cell). */}
                   <button
                     onClick={downloadZoneFile}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] hover:border-[#0071e3] text-[#0071e3] flex-shrink-0"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2e] hover:border-[#7C3AED] text-[#7C3AED] flex-shrink-0"
                     title="Download as a BIND zone file — import into Cloudflare / Route 53 / Google DNS in one shot"
                   >
                     <Download size={11} /> Download zone file
@@ -837,7 +837,7 @@ export default function NewsletterPage() {
                             <td className="px-3 py-2 text-right whitespace-nowrap">
                               <button
                                 onClick={() => copyRecord(key, r.value)}
-                                className="inline-flex items-center gap-1 text-[11px] text-[#0071e3] hover:underline"
+                                className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED] hover:underline"
                               >
                                 {copiedRecord === key ? <><CheckCircle size={11} /> Copied</> : <><Copy size={11} /> Copy value</>}
                               </button>
@@ -878,7 +878,7 @@ export default function NewsletterPage() {
           </code>
           <button
             onClick={copyShortcode}
-            className="flex items-center gap-1 text-xs px-2 py-1 rounded-md hover:bg-white dark:hover:bg-[#1c1c1e] text-[#0071e3] flex-shrink-0"
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded-md hover:bg-white dark:hover:bg-[#1c1c1e] text-[#7C3AED] flex-shrink-0"
           >
             {copied ? <><CheckCircle size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
           </button>
@@ -892,26 +892,26 @@ export default function NewsletterPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => void load()}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#3a3a3c] dark:text-[#d2d2d7]"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#3a3a3c] dark:text-[#d2d2d7]"
               title="Refresh the list"
             >
               <RefreshCw size={11} /> Refresh
             </button>
             <a
               href="/api/newsletter/subscribers?format=csv"
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#3a3a3c] dark:text-[#d2d2d7]"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#3a3a3c] dark:text-[#d2d2d7]"
             >
               <Download size={11} /> Export CSV
             </a>
             <button
               onClick={() => setPasteOpen(true)}
               disabled={importing}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#3a3a3c] dark:text-[#d2d2d7] disabled:opacity-60"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#3a3a3c] dark:text-[#d2d2d7] disabled:opacity-60"
               title="Paste emails from Mailchimp, Substack, ConvertKit, or any list — no file needed"
             >
               <Copy size={11} /> Paste list
             </button>
-            <label className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border cursor-pointer ${importing ? 'opacity-60 cursor-wait' : 'hover:border-[#0071e3]'}`}
+            <label className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border cursor-pointer ${importing ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED]'}`}
               style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
               <input
                 type="file"
@@ -938,7 +938,7 @@ export default function NewsletterPage() {
         {subs.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-sm text-[#86868b] dark:text-[#8e8e93] mb-3">No subscribers yet. Once you paste the shortcode on your blog and someone signs up, they&apos;ll show here.</p>
-            <Link href="/setup" className="text-xs text-[#0071e3] hover:underline">Go to Setup → embed the form →</Link>
+            <Link href="/setup" className="text-xs text-[#7C3AED] hover:underline">Go to Setup → embed the form →</Link>
           </div>
         ) : (
           <div className="overflow-x-auto -mx-5">
@@ -1012,7 +1012,7 @@ export default function NewsletterPage() {
               <button
                 onClick={() => void handlePasteImport()}
                 disabled={!pasteText.trim() || importing}
-                className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60"
+                className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60"
               >
                 Import
               </button>
@@ -1045,7 +1045,7 @@ export default function NewsletterPage() {
                       {b.error_message && <p className="text-[10px] text-[#ff9500] mt-0.5">{b.error_message}</p>}
                     </td>
                     <td className="px-3 py-2">
-                      <span className={`text-[11px] px-1.5 py-0.5 rounded-md ${b.status === 'sent' ? 'bg-[#34c759]/10 text-[#34c759]' : b.status === 'sending' ? 'bg-[#0071e3]/10 text-[#0071e3]' : b.status === 'failed' ? 'bg-[#ff3b30]/10 text-[#ff3b30]' : 'bg-gray-200 text-[#6e6e73]'}`}>
+                      <span className={`text-[11px] px-1.5 py-0.5 rounded-md ${b.status === 'sent' ? 'bg-[#34c759]/10 text-[#34c759]' : b.status === 'sending' ? 'bg-[#7C3AED]/10 text-[#7C3AED]' : b.status === 'failed' ? 'bg-[#ff3b30]/10 text-[#ff3b30]' : 'bg-gray-200 text-[#6e6e73]'}`}>
                         {b.status}
                       </span>
                     </td>
@@ -1135,7 +1135,7 @@ function NewsletterFormPreview({
           <button
             type="button"
             disabled
-            style={{ width: '100%', padding: '10px 16px', border: 'none', borderRadius: 10, background: '#0071e3', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'default' }}
+            style={{ width: '100%', padding: '10px 16px', border: 'none', borderRadius: 10, background: '#7C3AED', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'default' }}
           >
             {b}
           </button>

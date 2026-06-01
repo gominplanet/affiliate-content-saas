@@ -59,7 +59,7 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
     return (
       <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2.5 pt-2.5 border-t border-gray-100 dark:border-white/5">
         Connect a social (Facebook · Threads · X · LinkedIn · Bluesky · Telegram · Pinterest) in{' '}
-        <a href="/setup?tab=integrations" className="text-[#0071e3] hover:underline">Setup</a> to fan this post out.
+        <a href="/setup?tab=integrations" className="text-[#7C3AED] hover:underline">Setup</a> to fan this post out.
       </p>
     )
   }
@@ -153,7 +153,7 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
         <button
           onClick={publishAll}
           disabled={publishingAll || posting !== null}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-70 transition-all"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-70 transition-all"
         >
           {publishingAll ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
           Publish all
@@ -194,7 +194,7 @@ function CampaignSocialPills({ postId, connected }: { postId: string; connected:
 
 const STATUS: Record<Campaign['status'], { label: string; bg: string; fg: string }> = {
   pending:     { label: 'Queued',      bg: 'bg-gray-100',      fg: 'text-[#6e6e73]' },
-  researching: { label: 'Researching', bg: 'bg-[#0071e3]/10',  fg: 'text-[#0071e3]' },
+  researching: { label: 'Researching', bg: 'bg-[#7C3AED]/10',  fg: 'text-[#7C3AED]' },
   generating:  { label: 'Writing',     bg: 'bg-[#5856d6]/10',  fg: 'text-[#5856d6]' },
   published:   { label: 'Published',   bg: 'bg-[#34c759]/10',  fg: 'text-[#1f8a3a]' },
   failed:      { label: 'Failed',      bg: 'bg-[#ff3b30]/10',  fg: 'text-[#ff3b30]' },
@@ -611,7 +611,7 @@ function CampaignsInner() {
             onClick={() => setTab(t.k)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
               tab === t.k
-                ? 'border-[#0071e3] text-[#0071e3]'
+                ? 'border-[#7C3AED] text-[#7C3AED]'
                 : 'border-transparent text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
             }`}
           >
@@ -644,7 +644,7 @@ function CampaignsInner() {
         </a>
 
         <details className="mb-3 group">
-          <summary className="text-[11px] font-medium text-[#0071e3] cursor-pointer select-none">
+          <summary className="text-[11px] font-medium text-[#7C3AED] cursor-pointer select-none">
             How to install (1 min — no Chrome Web Store needed)
           </summary>
           <ol className="list-decimal ml-5 mt-2 space-y-1 text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
@@ -688,7 +688,7 @@ function CampaignsInner() {
       {tab === 'cc' && (
       <div className="card p-5 mb-6 max-w-3xl">
         <div className="flex items-center gap-2 mb-2">
-          <Sparkles size={14} className="text-[#0071e3]" />
+          <Sparkles size={14} className="text-[#7C3AED]" />
           <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Import the Amazon campaigns export (.zip)</p>
         </div>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
@@ -747,7 +747,7 @@ function CampaignsInner() {
           {impPhase === 'ready' && impMatches.length > 0 && (
             <button
               onClick={pushImported}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] transition-colors"
             >
               <Sparkles size={14} /> Queue {impMatches.length}
             </button>
@@ -795,7 +795,7 @@ function CampaignsInner() {
               type="checkbox"
               checked={allSelected}
               onChange={toggleSelectAll}
-              className="accent-[#0071e3]"
+              className="accent-[#7C3AED]"
             />
             {allSelected ? 'Clear selection' : `Select all (${items.length})`}
           </label>
@@ -829,13 +829,13 @@ function CampaignsInner() {
             const pill = STATUS[c.status]
             const expired = c.ends_at && new Date(c.ends_at) < new Date()
             return (
-              <div key={c.id} className={`card p-4 ${selected.has(c.id) ? 'ring-1 ring-[#0071e3]' : ''}`}>
+              <div key={c.id} className={`card p-4 ${selected.has(c.id) ? 'ring-1 ring-[#7C3AED]' : ''}`}>
                <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
                   checked={selected.has(c.id)}
                   onChange={() => toggleSel(c.id)}
-                  className="mt-1 shrink-0 accent-[#0071e3]"
+                  className="mt-1 shrink-0 accent-[#7C3AED]"
                   aria-label="Select campaign"
                 />
                 <div className="flex-1 min-w-0">
@@ -857,7 +857,7 @@ function CampaignsInner() {
                       </span>
                     )}
                     {c.hero_kind === 'ai' && (
-                      <span className="inline-flex items-center gap-1 text-[#0071e3]" title="Featured image: AI-generated 16:9 hero">
+                      <span className="inline-flex items-center gap-1 text-[#7C3AED]" title="Featured image: AI-generated 16:9 hero">
                         <Sparkles size={10} /> AI hero
                       </span>
                     )}
@@ -899,7 +899,7 @@ function CampaignsInner() {
                     target="_blank"
                     rel="noopener noreferrer"
                     title="Open this product on Amazon"
-                    className="inline-flex items-center gap-1 text-xs font-medium text-[#86868b] hover:text-[#0071e3] transition-colors"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#86868b] hover:text-[#7C3AED] transition-colors"
                   >
                     Product Page <ExternalLink size={10} />
                   </a>
@@ -907,7 +907,7 @@ function CampaignsInner() {
                     <button
                       onClick={() => generateRow(c)}
                       disabled={genRow === c.id}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
                     >
                       {genRow === c.id
                         ? <><Loader2 size={12} className="animate-spin" /> Starting…</>

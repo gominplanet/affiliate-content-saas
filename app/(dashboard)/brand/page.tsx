@@ -52,7 +52,7 @@ const TONE_OPTIONS = [
 // ─── Color palette ────────────────────────────────────────────────────────────
 const COLORS = [
   // Blues
-  '#0071e3', '#0ea5e9', '#3b82f6', '#6366f1',
+  '#7C3AED', '#0ea5e9', '#3b82f6', '#6366f1',
   // Greens
   '#34c759', '#10b981', '#22c55e', '#84cc16',
   // Reds / Pinks
@@ -191,7 +191,7 @@ const DEFAULT: BrandData = {
   post_length: 'medium',
   cta_style: 'soft_recommendation',
   affiliate_disclaimer: 'This post contains affiliate links. I may earn a commission at no extra cost to you.',
-  primary_color: '#0071e3',
+  primary_color: '#7C3AED',
   secondary_color: '#34c759',
   gear_sections: [],
   facebook_groups: [],
@@ -269,7 +269,7 @@ export default function BrandPage() {
         post_length: row.post_length ?? 'medium',
         cta_style: row.cta_style ?? 'soft_recommendation',
         affiliate_disclaimer: row.affiliate_disclaimer ?? DEFAULT.affiliate_disclaimer,
-        primary_color: row.primary_color ?? '#0071e3',
+        primary_color: row.primary_color ?? '#7C3AED',
         secondary_color: row.secondary_color ?? '#34c759',
         gear_sections: row.gear_sections ?? [],
         facebook_groups: row.facebook_groups ?? [],
@@ -601,8 +601,8 @@ export default function BrandPage() {
                     onClick={() => toggleArray('niches', niche)}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                       active
-                        ? 'bg-[#0071e3]/10 text-[#0071e3] border-[#0071e3]/30'
-                        : 'bg-white dark:bg-[#1c1c1e] text-[#6e6e73] dark:text-[#ebebf0] border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 hover:text-[#0071e3]'
+                        ? 'bg-[#7C3AED]/10 text-[#7C3AED] border-[#7C3AED]/30'
+                        : 'bg-white dark:bg-[#1c1c1e] text-[#6e6e73] dark:text-[#ebebf0] border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 hover:text-[#7C3AED]'
                     }`}
                   >
                     {niche}
@@ -624,8 +624,8 @@ export default function BrandPage() {
               How should brands reach you when they want to collaborate? This is what gets put in your YouTube descriptions and collab emails.
             </p>
             <div className="flex flex-col gap-3">
-              <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:border-[#0071e3]/40"
-                style={{ borderColor: data.contact_preference === 'website' ? '#0071e3' : 'var(--border-2, #d2d2d7)' }}>
+              <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:border-[#7C3AED]/40"
+                style={{ borderColor: data.contact_preference === 'website' ? '#7C3AED' : 'var(--border-2, #d2d2d7)' }}>
                 <input
                   type="radio"
                   name="contact_preference"
@@ -640,8 +640,8 @@ export default function BrandPage() {
                   </p>
                 </div>
               </label>
-              <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:border-[#0071e3]/40"
-                style={{ borderColor: data.contact_preference === 'email' ? '#0071e3' : 'var(--border-2, #d2d2d7)' }}>
+              <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:border-[#7C3AED]/40"
+                style={{ borderColor: data.contact_preference === 'email' ? '#7C3AED' : 'var(--border-2, #d2d2d7)' }}>
                 <input
                   type="radio"
                   name="contact_preference"
@@ -703,7 +703,7 @@ export default function BrandPage() {
               <button
                 type="button"
                 onClick={() => set('facebook_groups', [...data.facebook_groups, { name: '', url: '' }])}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-[#0071e3] hover:underline"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#7C3AED] hover:underline"
               >
                 <Plus size={12} /> Add group
               </button>
@@ -804,7 +804,7 @@ export default function BrandPage() {
               <button
                 type="button"
                 onClick={() => set('gear_sections', [...data.gear_sections, { title: '', items: [{ name: '', url: '' }] }])}
-                className="flex items-center gap-1 text-xs text-[#0071e3] hover:underline"
+                className="flex items-center gap-1 text-xs text-[#7C3AED] hover:underline"
               >
                 <Plus size={12} /> Add section
               </button>
@@ -884,7 +884,7 @@ export default function BrandPage() {
                         updated[si].items.push({ name: '', url: '' })
                         set('gear_sections', updated)
                       }}
-                      className="flex items-center gap-1 text-xs text-[#0071e3] hover:underline self-start mt-1"
+                      className="flex items-center gap-1 text-xs text-[#7C3AED] hover:underline self-start mt-1"
                     >
                       <Plus size={11} /> Add item
                     </button>
@@ -921,7 +921,7 @@ export default function BrandPage() {
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${logoUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#7C3AED] hover:bg-[#7C3AED]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${logoUploading ? 'opacity-50 pointer-events-none' : ''}`}>
                   <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" onChange={e => handleImageUpload(e, 'logo', 'logo_url', setLogoUploading)} />
                   {logoUploading
                     ? <><Upload size={13} className="animate-pulse" /> Uploading…</>
@@ -956,7 +956,7 @@ export default function BrandPage() {
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${bannerUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#7C3AED] hover:bg-[#7C3AED]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${bannerUploading ? 'opacity-50 pointer-events-none' : ''}`}>
                   <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => handleImageUpload(e, 'header-banner', 'header_banner_url', setBannerUploading)} />
                   {bannerUploading
                     ? <><Upload size={13} className="animate-pulse" /> Uploading…</>
@@ -995,7 +995,7 @@ export default function BrandPage() {
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#0071e3] hover:bg-[#0071e3]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${headshotUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                <label className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-white/20 cursor-pointer hover:border-[#7C3AED] hover:bg-[#7C3AED]/5 transition-colors text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] w-fit ${headshotUploading ? 'opacity-50 pointer-events-none' : ''}`}>
                   <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => handleImageUpload(e, 'about-photo', 'headshot_url', setHeadshotUploading)} />
                   {headshotUploading
                     ? <><Upload size={13} className="animate-pulse" /> Uploading…</>
@@ -1021,7 +1021,7 @@ export default function BrandPage() {
                     <div
                       onClick={() => toggleArray('tone', tone)}
                       className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 cursor-pointer transition-colors ${
-                        active ? 'bg-[#0071e3] border-[#0071e3]' : 'border-gray-300'
+                        active ? 'bg-[#7C3AED] border-[#7C3AED]' : 'border-gray-300'
                       }`}
                     >
                       {active && <Check size={10} className="text-white" />}
@@ -1119,8 +1119,8 @@ export default function BrandPage() {
                     onClick={() => set('font_theme', theme.key)}
                     className={`text-left p-3 rounded-xl border transition-colors ${
                       active
-                        ? 'border-[#0071e3] bg-[#0071e3]/5'
-                        : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'
+                        ? 'border-[#7C3AED] bg-[#7C3AED]/5'
+                        : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
@@ -1130,7 +1130,7 @@ export default function BrandPage() {
                       >
                         {theme.name}
                       </span>
-                      {active && <Check size={14} className="text-[#0071e3] flex-shrink-0" />}
+                      {active && <Check size={14} className="text-[#7C3AED] flex-shrink-0" />}
                     </div>
                     <p
                       className="text-xs text-[#6e6e73] dark:text-[#ebebf0] m-0"

@@ -193,13 +193,13 @@ export default function InstagramBurnerPage() {
 
       {!isPro && (
         <div className="card p-5 mb-6 flex items-start gap-3" style={{ background: 'linear-gradient(180deg, rgba(0,113,227,0.05) 0%, transparent 100%)', borderColor: 'rgba(0,113,227,0.25)' }}>
-          <div className="w-9 h-9 rounded-full bg-[#0071e3]/15 flex items-center justify-center flex-shrink-0">
-            <Sparkles size={18} className="text-[#0071e3]" />
+          <div className="w-9 h-9 rounded-full bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
+            <Sparkles size={18} className="text-[#7C3AED]" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Instagram Burner is a Pro feature</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-3">Add an on-screen “Link in bio” caption to your videos and download them ready to post.</p>
-            <Link href="/pricing" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]"><Sparkles size={11} /> Upgrade to Pro</Link>
+            <Link href="/pricing" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]"><Sparkles size={11} /> Upgrade to Pro</Link>
           </div>
         </div>
       )}
@@ -218,13 +218,13 @@ export default function InstagramBurnerPage() {
             ) : (
               <div className="flex items-center gap-2 mb-4 rounded-lg border border-gray-200 dark:border-white/10 px-3 py-2 w-fit">
                 <Instagram size={15} className="text-[#86868b] flex-shrink-0" />
-                <span className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">No Instagram connected — <Link href="/setup?tab=integrations" className="text-[#0071e3] font-semibold hover:underline">connect under Setup → Integrations</Link> to publish.</span>
+                <span className="text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">No Instagram connected — <Link href="/setup?tab=integrations" className="text-[#7C3AED] font-semibold hover:underline">connect under Setup → Integrations</Link> to publish.</span>
               </div>
             )}
 
             <div className="flex gap-2 mb-4">
-              <button onClick={() => setMode('single')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'single' ? 'border-[#0071e3] bg-[#0071e3]/5 text-[#0071e3]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Single video</button>
-              <button onClick={() => setMode('batch')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'batch' ? 'border-[#0071e3] bg-[#0071e3]/5 text-[#0071e3]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Batch &amp; schedule · up to 5</button>
+              <button onClick={() => setMode('single')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'single' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Single video</button>
+              <button onClick={() => setMode('batch')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${mode === 'batch' ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0]'}`}>Batch &amp; schedule · up to 5</button>
             </div>
             {mode === 'batch' ? (
               <BatchBurner supabase={supabase} />
@@ -239,7 +239,7 @@ export default function InstagramBurnerPage() {
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-gray-300 dark:border-white/15 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3] transition-colors disabled:opacity-60"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-dashed border-gray-300 dark:border-white/15 text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED] transition-colors disabled:opacity-60"
                 >
                   {uploading ? <><Loader2 size={14} className="animate-spin" /> Uploading…</> : sourceUrl ? <><Video size={14} className="text-[#34c759]" /> Video ready — pick another</> : <><UploadCloud size={14} /> Upload video</>}
                 </button>
@@ -258,13 +258,13 @@ export default function InstagramBurnerPage() {
                 />
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {CAPTION_PRESETS.map(p => (
-                    <button key={p} onClick={() => setCaption(p)} className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${caption === p ? 'border-[#0071e3] bg-[#0071e3]/5 text-[#0071e3]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>{p}</button>
+                    <button key={p} onClick={() => setCaption(p)} className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${caption === p ? 'border-[#7C3AED] bg-[#7C3AED]/5 text-[#7C3AED]' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}>{p}</button>
                   ))}
                 </div>
                 {/* Style */}
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   {STYLES.map(s => (
-                    <button key={s.key} onClick={() => setStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${style === s.key ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
+                    <button key={s.key} onClick={() => setStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${style === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
                       <span className="block text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
                       <span className="block text-[10px] text-[#86868b] dark:text-[#8e8e93]">{s.desc}</span>
                     </button>
@@ -277,7 +277,7 @@ export default function InstagramBurnerPage() {
                 <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">3. Position</label>
                 <div className="grid grid-cols-2 gap-2">
                   {POSITIONS.map(p => (
-                    <button key={p.key} onClick={() => setPosition(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${position === p.key ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
+                    <button key={p.key} onClick={() => setPosition(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${position === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
                       <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{p.label}</span>
                       <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">{p.desc}</span>
                     </button>
@@ -303,7 +303,7 @@ export default function InstagramBurnerPage() {
               <button
                 onClick={burn}
                 disabled={burning || uploading || !sourceUrl}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors w-full justify-center"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 transition-colors w-full justify-center"
               >
                 {burning ? <><Loader2 size={14} className="animate-spin" /> Burning… (~20–40s)</> : <><Flame size={14} /> Burn caption</>}
               </button>
@@ -322,7 +322,7 @@ export default function InstagramBurnerPage() {
                     <div className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Reel caption</span>
-                        <button onClick={copyCaption} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline">
+                        <button onClick={copyCaption} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline">
                           {copied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Copy</>}
                         </button>
                       </div>
@@ -432,7 +432,7 @@ function defaultStartLocal(): string {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  pending: 'text-[#0071e3] bg-[#0071e3]/10',
+  pending: 'text-[#7C3AED] bg-[#7C3AED]/10',
   processing: 'text-[#ff9500] bg-[#ff9500]/10',
   completed: 'text-[#34c759] bg-[#34c759]/10',
   failed: 'text-[#ff3b30] bg-[#ff3b30]/10',
@@ -535,14 +535,14 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">1. Videos <span className="font-normal text-[#86868b]">({items.length}/5)</span></label>
-            <button onClick={addItem} disabled={items.length >= 5} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline disabled:opacity-40"><Plus size={11} /> Add video</button>
+            <button onClick={addItem} disabled={items.length >= 5} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-40"><Plus size={11} /> Add video</button>
           </div>
           <div className="space-y-2">
             {items.map((it, i) => (
               <div key={it.id} className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5 space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-semibold text-[#86868b] w-4">{i + 1}.</span>
-                  <label className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-dashed text-[12px] cursor-pointer ${it.url ? 'border-[#34c759]/40 text-[#34c759]' : 'border-gray-300 dark:border-white/15 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#0071e3]'}`}>
+                  <label className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-dashed text-[12px] cursor-pointer ${it.url ? 'border-[#34c759]/40 text-[#34c759]' : 'border-gray-300 dark:border-white/15 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#7C3AED]'}`}>
                     <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadItem(it.id, f); e.currentTarget.value = '' }} />
                     {it.uploading ? <><Loader2 size={12} className="animate-spin" /> Uploading…</> : it.url ? <><Video size={12} /> Ready</> : <><UploadCloud size={12} /> Upload</>}
                   </label>
@@ -560,7 +560,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
           <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">2. Style (all videos)</label>
           <div className="grid grid-cols-2 gap-2">
             {STYLES.map(s => (
-              <button key={s.key} onClick={() => setBStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${bStyle === s.key ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
+              <button key={s.key} onClick={() => setBStyle(s.key)} className={`text-left p-2 rounded-lg border transition-colors ${bStyle === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
                 <span className="block text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
               </button>
             ))}
@@ -572,7 +572,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
           <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">3. Position (all videos)</label>
           <div className="grid grid-cols-2 gap-2">
             {POSITIONS.map(p => (
-              <button key={p.key} onClick={() => setBPos(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${bPos === p.key ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
+              <button key={p.key} onClick={() => setBPos(p.key)} className={`text-left p-2.5 rounded-lg border transition-colors ${bPos === p.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}>
                 <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{p.label}</span>
               </button>
             ))}
@@ -605,7 +605,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
         {err && <p className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {err}</p>}
         {msg && <p className="text-xs text-[#34c759] flex items-center gap-1.5"><CheckCircle size={12} /> {msg}</p>}
 
-        <button onClick={openReview} disabled={submitting || !items.some(it => it.url)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors w-full justify-center">
+        <button onClick={openReview} disabled={submitting || !items.some(it => it.url)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 transition-colors w-full justify-center">
           <Clock size={14} /> Review &amp; schedule
         </button>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] text-center">You’ll review every post before anything is scheduled. Each video is then burned, captioned, and posted to Instagram at its scheduled time.</p>
@@ -615,7 +615,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
       <div className="card p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Queue</h3>
-          <button onClick={loadJobs} className="text-[11px] text-[#0071e3] hover:underline">Refresh</button>
+          <button onClick={loadJobs} className="text-[11px] text-[#7C3AED] hover:underline">Refresh</button>
         </div>
         {jobs.length === 0 ? (
           <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">No scheduled videos yet.</p>
@@ -647,7 +647,7 @@ function BatchBurner({ supabase }: { supabase: ReturnType<typeof createBrowserCl
                 <div key={it.id} className="rounded-lg border border-gray-200 dark:border-white/10 p-2.5">
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Post {i + 1} · “{it.caption.trim() || 'LINK IN BIO'}”</span>
-                    <span className="text-[10px] font-medium text-[#0071e3] flex-shrink-0">{scheduledAt(i).toLocaleString()}</span>
+                    <span className="text-[10px] font-medium text-[#7C3AED] flex-shrink-0">{scheduledAt(i).toLocaleString()}</span>
                   </div>
                   <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
                     {it.product.trim()

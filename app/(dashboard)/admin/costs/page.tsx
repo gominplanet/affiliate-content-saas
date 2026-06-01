@@ -62,7 +62,7 @@ export default function AdminCostsPage() {
             key={d}
             onClick={() => setDays(d)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              days === d ? 'bg-[#0071e3] text-white' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'
+              days === d ? 'bg-[#7C3AED] text-white' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'
             }`}
           >
             Last {d}d

@@ -55,7 +55,7 @@ export default function AmazonSitesReminder({ siteUrl }: { siteUrl?: string | nu
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <span className="text-[11px] text-[#86868b]">Your blog URL:</span>
               <code className="text-[11px] px-2 py-1 rounded bg-gray-100 dark:bg-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]">{siteUrl}</code>
-              <button onClick={copyUrl} className="inline-flex items-center gap-1 text-[11px] text-[#0071e3] hover:underline">
+              <button onClick={copyUrl} className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED] hover:underline">
                 {copied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
               </button>
             </div>
@@ -64,7 +64,7 @@ export default function AmazonSitesReminder({ siteUrl }: { siteUrl?: string | nu
           <div className="mt-3 rounded-lg bg-white/60 dark:bg-white/5 border border-gray-100 dark:border-white/10 p-3">
             <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">How to add it (≈1 minute):</p>
             <ol className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed list-decimal pl-4 space-y-0.5">
-              <li>Sign in to <a href="https://affiliate-program.amazon.com" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Amazon Associates Central</a>.</li>
+              <li>Sign in to <a href="https://affiliate-program.amazon.com" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Amazon Associates Central</a>.</li>
               <li>Top-right, open the menu under your email → <strong>Manage Your Account</strong>.</li>
               <li>Choose <strong>&ldquo;Edit Your Website, Mobile App, and Alexa Skill List&rdquo;</strong>.</li>
               <li>Paste your blog URL into the website list and <strong>Add</strong> / <strong>Save</strong>.</li>

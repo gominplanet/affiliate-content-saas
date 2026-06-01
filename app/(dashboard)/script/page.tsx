@@ -92,7 +92,7 @@ interface UsageInfo {
 const STYLE_META: Record<AnyStyle, { label: string; tag: string; runtime: string; icon: typeof Smartphone; accent: string }> = {
   // New (post 2026-05-28)
   first_look: { label: 'First Look',       tag: 'Just got it',         runtime: '60-90 sec',  icon: Smartphone, accent: '#5856d6' },
-  hands_on:   { label: 'Hands-On Test',    tag: 'Decision moment',     runtime: '3-6 min',    icon: Hand,       accent: '#0071e3' },
+  hands_on:   { label: 'Hands-On Test',    tag: 'Decision moment',     runtime: '3-6 min',    icon: Hand,       accent: '#7C3AED' },
   long_term:  { label: 'Long-Term Review', tag: 'After weeks of use',  runtime: '8-12 min',   icon: Calendar,   accent: '#34c759' },
   // Legacy — kept for old rows so the recent strip doesn't crash. Not
   // selectable from the style picker.
@@ -255,7 +255,7 @@ export default function ScriptPage() {
                     key={s}
                     type="button"
                     onClick={() => setStyle(s)}
-                    className={`flex items-start gap-2.5 p-3 rounded-lg border-2 text-left transition-all ${active ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}
+                    className={`flex items-start gap-2.5 p-3 rounded-lg border-2 text-left transition-all ${active ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}
                   >
                     <span
                       className="inline-flex items-center justify-center w-7 h-7 rounded-md flex-shrink-0"
@@ -294,7 +294,7 @@ export default function ScriptPage() {
               <button
                 onClick={() => void generate()}
                 disabled={generating || !input.trim()}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50"
               >
                 {generating ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Sparkles size={13} /> Generate script</>}
               </button>
@@ -367,7 +367,7 @@ export default function ScriptPage() {
 function UsageMeter({ used, cap, resetLabel }: { used: number; cap: number; resetLabel: string | null }) {
   const pct = Math.min(100, Math.round((used / cap) * 100))
   const remaining = Math.max(0, cap - used)
-  const accent = pct >= 90 ? '#ff3b30' : pct >= 70 ? '#ff9500' : '#0071e3'
+  const accent = pct >= 90 ? '#ff3b30' : pct >= 70 ? '#ff9500' : '#7C3AED'
   return (
     <div className="card p-4 mb-5 flex items-center gap-4">
       <div className="flex-1 min-w-0">
@@ -392,7 +392,7 @@ function UsageMeter({ used, cap, resetLabel }: { used: number; cap: number; rese
 function UpsellCard({ usage }: { usage: UsageInfo }) {
   return (
     <div className="card p-6 mb-5 relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-[#5856d6]/10 via-transparent to-[#0071e3]/10 pointer-events-none" aria-hidden />
+      <div className="absolute inset-0 bg-gradient-to-br from-[#5856d6]/10 via-transparent to-[#7C3AED]/10 pointer-events-none" aria-hidden />
       <div className="relative">
         <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#5856d6]/15 text-[#5856d6] text-[11px] font-semibold uppercase tracking-wide mb-3">
           <Lock size={11} /> Pro feature
@@ -485,7 +485,7 @@ function ScriptOutput({
             </span>
             <span className="inline-flex items-center gap-0.5 text-[11px] text-[#6e6e73]"><Clock size={11} /> {fmtDuration(script.totalDurationSec)}</span>
             {asin && (
-              <a href={`https://www.amazon.com/dp/${asin}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[11px] text-[#0071e3] hover:underline">
+              <a href={`https://www.amazon.com/dp/${asin}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-[11px] text-[#7C3AED] hover:underline">
                 {asin} <ExternalLink size={9} />
               </a>
             )}
@@ -495,7 +495,7 @@ function ScriptOutput({
         </div>
         <button
           onClick={copyEntireScript}
-          className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#3a3a3c] dark:text-[#d2d2d7] flex-shrink-0"
+          className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#3a3a3c] dark:text-[#d2d2d7] flex-shrink-0"
         >
           {copiedKey === 'whole' ? <><CheckCircle size={11} /> Copied</> : <><Copy size={11} /> Copy all</>}
         </button>
@@ -528,7 +528,7 @@ function ScriptOutput({
                   <p className="text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug">{h}</p>
                   <button
                     onClick={(e) => { e.stopPropagation(); copy(h, `hook-${i}`) }}
-                    className="mt-2 text-[10px] text-[#0071e3] hover:underline inline-flex items-center gap-0.5"
+                    className="mt-2 text-[10px] text-[#7C3AED] hover:underline inline-flex items-center gap-0.5"
                   >
                     {copiedKey === `hook-${i}` ? <><CheckCircle size={9} /> Copied</> : <><Copy size={9} /> Copy this hook</>}
                   </button>
@@ -576,7 +576,7 @@ function ScriptOutput({
                         <p className="text-[10px] uppercase tracking-wide text-[#86868b] font-semibold flex items-center gap-1"><FileText size={10} /> Script (read off-camera)</p>
                         <button
                           onClick={() => copy(renderedScript, `${sec.id}:script`)}
-                          className="text-[10px] text-[#0071e3] hover:underline flex items-center gap-0.5"
+                          className="text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5"
                         >
                           {copiedKey === `${sec.id}:script` ? <><CheckCircle size={9} /> Copied</> : <><Copy size={9} /> Copy</>}
                         </button>
@@ -602,7 +602,7 @@ function ScriptOutput({
                       <ul className="flex flex-col gap-1">
                         {sec.shots.map((s, i) => (
                           <li key={i} className="flex items-start gap-1.5 text-[13px] text-[#3a3a3c] dark:text-[#d2d2d7]">
-                            <span className="text-[#0071e3] flex-shrink-0 mt-0.5">•</span> {s}
+                            <span className="text-[#7C3AED] flex-shrink-0 mt-0.5">•</span> {s}
                           </li>
                         ))}
                       </ul>

@@ -1,7 +1,7 @@
 // MVP Affiliate — Button primitive.
 //
-// Use this everywhere instead of hand-rolled `<button className="bg-[#0071e3]
-// hover:bg-[#0062c4] ...">` patterns. Variants cover the 5 button shapes
+// Use this everywhere instead of hand-rolled `<button className="bg-[#7C3AED]
+// hover:bg-[#6D28D9] ...">` patterns. Variants cover the 5 button shapes
 // the dashboard actually uses; sizes cover the 3 we actually render.
 //
 // Loading state shows a spinner in place of (optional) leading icon and
@@ -21,7 +21,7 @@ const buttonVariants = cva(
   // variants so a disabled `primary` doesn't suddenly read as `secondary`.
   'inline-flex items-center justify-center gap-2 rounded-lg font-medium ' +
     'transition-all duration-150 outline-none ' +
-    'focus-visible:ring-2 focus-visible:ring-[#0071e3]/40 focus-visible:ring-offset-2 ' +
+    'focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40 focus-visible:ring-offset-2 ' +
     'focus-visible:ring-offset-[var(--bg)] ' +
     'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ' +
     'whitespace-nowrap select-none',
@@ -30,7 +30,7 @@ const buttonVariants = cva(
       variant: {
         // The blue→violet brand gradient. Use sparingly — one per view.
         primary:
-          'bg-gradient-to-br from-[#0071e3] to-[#7b61ff] text-white shadow-sm ' +
+          'bg-gradient-to-br from-[#7C3AED] to-[#7b61ff] text-white shadow-sm ' +
           'hover:shadow-md hover:brightness-110 active:brightness-95',
         // Default action button — neutral surface with border. The dashboard
         // default for "do the thing" when there's already a primary above.
@@ -50,13 +50,13 @@ const buttonVariants = cva(
         // Outlined — same shape as primary but bordered, for secondary CTAs
         // that still want the brand color.
         outline:
-          'bg-transparent text-[#0071e3] border border-[#0071e3]/30 ' +
-          'hover:bg-[#0071e3]/10 active:bg-[#0071e3]/15 ' +
+          'bg-transparent text-[#7C3AED] border border-[#7C3AED]/30 ' +
+          'hover:bg-[#7C3AED]/10 active:bg-[#7C3AED]/15 ' +
           'dark:text-[#5fa5ff] dark:border-[#5fa5ff]/30 dark:hover:bg-[#5fa5ff]/10',
         // Link — looks like a text link but participates in button focus +
         // size rules. For "Forgot password" etc.
         link:
-          'bg-transparent text-[#0071e3] hover:underline underline-offset-2 ' +
+          'bg-transparent text-[#7C3AED] hover:underline underline-offset-2 ' +
           'dark:text-[#5fa5ff] px-0 py-0',
       },
       size: {

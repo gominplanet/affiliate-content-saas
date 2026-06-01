@@ -77,8 +77,8 @@ export function TutorialVideo({ sectionKey, videoId, title, description }: Props
   return (
     <div className="card p-4 mb-6 relative max-w-3xl mx-auto" style={{ background: 'linear-gradient(180deg, rgba(0,113,227,0.04) 0%, transparent 100%)' }}>
       <div className="flex items-start gap-3 mb-3">
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#0071e3]/10 flex items-center justify-center">
-          <GraduationCap size={16} className="text-[#0071e3]" />
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#7C3AED]/10 flex items-center justify-center">
+          <GraduationCap size={16} className="text-[#7C3AED]" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">

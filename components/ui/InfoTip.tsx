@@ -63,7 +63,7 @@ export function InfoTip({
         type="button"
         aria-label="More info"
         onClick={() => setOpen(o => !o)}
-        className="text-[#86868b] hover:text-[#0071e3] dark:hover:text-[#4ea3ff] transition-colors inline-flex items-center"
+        className="text-[#86868b] hover:text-[#7C3AED] dark:hover:text-[#4ea3ff] transition-colors inline-flex items-center"
       >
         <Info size={size} />
       </button>

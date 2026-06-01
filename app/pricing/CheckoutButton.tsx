@@ -102,8 +102,8 @@ export function CheckoutButton({
       disabled={loading || salesPaused}
       className={`w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
         highlight
-          ? 'bg-white dark:bg-[#1c1c1e] text-[#0071e3] hover:bg-blue-50'
-          : 'bg-[#0071e3] text-white hover:bg-[#0062c4]'
+          ? 'bg-white dark:bg-[#1c1c1e] text-[#7C3AED] hover:bg-blue-50'
+          : 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'
       }`}
     >
       {salesPaused ? 'Sales paused' : loading ? 'Redirecting…' : ctaLabel}

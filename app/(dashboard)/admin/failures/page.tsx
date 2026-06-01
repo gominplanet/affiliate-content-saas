@@ -20,7 +20,7 @@ interface Failure {
 }
 
 const jobTypeLabel: Record<JobType, { label: string; color: string }> = {
-  blog_generation: { label: 'Content creation', color: 'bg-[#0071e3]/8 text-[#0071e3]' },
+  blog_generation: { label: 'Content creation', color: 'bg-[#7C3AED]/8 text-[#7C3AED]' },
   wp_publish:      { label: 'Blog publishing',  color: 'bg-[#ff9500]/8 text-[#ff9500]' },
   social_draft:    { label: 'Social posts',     color: 'bg-purple-50 text-purple-600' },
   youtube_sync:    { label: 'YouTube sync',     color: 'bg-red-50 text-red-500' },
@@ -28,7 +28,7 @@ const jobTypeLabel: Record<JobType, { label: string; color: string }> = {
 
 const statusConfig: Record<FailureStatus, { label: string; style: string }> = {
   pending_retry: { label: 'Will retry',  style: 'bg-[#ff9500]/10 text-[#ff9500]' },
-  retrying:      { label: 'Retrying…',   style: 'bg-[#0071e3]/10 text-[#0071e3]' },
+  retrying:      { label: 'Retrying…',   style: 'bg-[#7C3AED]/10 text-[#7C3AED]' },
   resolved:      { label: 'Resolved',    style: 'bg-[#34c759]/10 text-[#34c759]' },
   dismissed:     { label: 'Dismissed',   style: 'bg-gray-100 text-[#86868b]' },
 }
@@ -165,7 +165,7 @@ function FailureRow({
               <button
                 onClick={handleRetry}
                 disabled={retrying}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#0071e3]/8 text-[#0071e3] hover:bg-[#0071e3]/15 transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#7C3AED]/8 text-[#7C3AED] hover:bg-[#7C3AED]/15 transition-colors disabled:opacity-50"
               >
                 {retrying ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                 {retrying ? 'Retrying…' : 'Retry'}

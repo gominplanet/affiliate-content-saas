@@ -40,7 +40,7 @@ const platforms = [
 
 const statusBadge: Record<typeof platforms[number]['status'], { text: string; bg: string; fg: string }> = {
   live:    { text: 'Live now',     bg: 'bg-[#34c759]/10',  fg: 'text-[#1f8a3a]' },
-  pro:     { text: 'Pro plan',     bg: 'bg-[#0071e3]/10',  fg: 'text-[#0071e3]' },
+  pro:     { text: 'Pro plan',     bg: 'bg-[#7C3AED]/10',  fg: 'text-[#7C3AED]' },
   soon:    { text: 'Coming soon',  bg: 'bg-[#ff9500]/10',  fg: 'text-[#9a5d00]' },
   roadmap: { text: 'On roadmap',   bg: 'bg-gray-100',      fg: 'text-[#6e6e73]' },
 }
@@ -164,7 +164,7 @@ export default function LandingPage() {
               Sign-ups paused
             </span>
           ) : (
-            <Link href="/signup" className="text-sm font-semibold bg-[#0071e3] hover:bg-[#0062c4] text-white px-4 py-2 rounded-xl transition-colors">
+            <Link href="/signup" className="text-sm font-semibold bg-[#7C3AED] hover:bg-[#6D28D9] text-white px-4 py-2 rounded-xl transition-colors">
               Start free
             </Link>
           )}
@@ -173,23 +173,23 @@ export default function LandingPage() {
 
       {/* ── Hero ───────────────────────────────────────────────────────────── */}
       <section className="pt-28 sm:pt-36 pb-12 sm:pb-20 px-5 sm:px-6 relative overflow-hidden bg-gradient-to-b from-[#f0f7ff] via-white to-white">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1100px] h-[600px] bg-[#0071e3]/8 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1100px] h-[600px] bg-[#7C3AED]/8 rounded-full blur-[120px] pointer-events-none" />
         <div className="relative max-w-5xl mx-auto flex flex-col items-center text-center">
 
           {/* Free-posts pill */}
-          <div className="inline-flex items-center gap-2 bg-white border border-[#0071e3]/20 rounded-full px-3 py-1.5 text-xs sm:text-sm text-[#0071e3] font-medium mb-6 shadow-sm">
+          <div className="inline-flex items-center gap-2 bg-white border border-[#7C3AED]/20 rounded-full px-3 py-1.5 text-xs sm:text-sm text-[#7C3AED] font-medium mb-6 shadow-sm">
             <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
             5 free posts. No card. No catch.
           </div>
 
           {/* Main title */}
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6 text-[#1d1d1f]">
-            One real video in.<br className="hidden sm:block" /> A whole <span className="text-[#0071e3]">affiliate engine</span> out.
+            One real video in.<br className="hidden sm:block" /> A whole <span className="text-[#7C3AED]">affiliate engine</span> out.
           </h1>
 
           {/* Positioning line — the moat, up front */}
-          <p className="text-base sm:text-lg font-semibold text-[#0071e3] max-w-3xl mb-8">
-            Every other AI spins content from keywords and thumbnails from prompts. MVP builds it all from your <span className="underline decoration-[#0071e3]/30 underline-offset-2">actual review video</span> — so it&apos;s grounded in what you really said and showed, and fact-checked against your own words. Never fabricated.
+          <p className="text-base sm:text-lg font-semibold text-[#7C3AED] max-w-3xl mb-8">
+            Every other AI spins content from keywords and thumbnails from prompts. MVP builds it all from your <span className="underline decoration-[#7C3AED]/30 underline-offset-2">actual review video</span> — so it&apos;s grounded in what you really said and showed, and fact-checked against your own words. Never fabricated.
           </p>
 
           {/* Centered infographic */}
@@ -227,7 +227,7 @@ export default function LandingPage() {
                 Sign-ups paused — back soon
               </span>
             ) : (
-              <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#0071e3] hover:bg-[#0062c4] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#0071e3]/25">
+              <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#7C3AED]/25">
                 Start free — 5 posts <ArrowRight size={17} />
               </Link>
             )}
@@ -335,11 +335,11 @@ export default function LandingPage() {
 
       {/* ── Army of agents ─────────────────────────────────────────────────── */}
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-[#0a0a0a] text-white relative overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-[#0071e3]/15 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-[#7C3AED]/15 rounded-full blur-[120px] pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-[#5856d6]/15 rounded-full blur-[120px] pointer-events-none" />
         <div className="relative max-w-6xl mx-auto">
           <div className="text-center mb-14">
-            <span className="inline-block text-sm font-semibold text-[#4ea3ff] uppercase tracking-wider mb-4 px-3 py-1 rounded-full bg-[#0071e3]/15 border border-[#0071e3]/30">
+            <span className="inline-block text-sm font-semibold text-[#4ea3ff] uppercase tracking-wider mb-4 px-3 py-1 rounded-full bg-[#7C3AED]/15 border border-[#7C3AED]/30">
               The MVP Affiliate difference
             </span>
             <h2 className="text-5xl sm:text-6xl md:text-7xl font-black mb-6 leading-[1.05] tracking-tight text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.8)]">
@@ -353,7 +353,7 @@ export default function LandingPage() {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            <AgentCard color="#0071e3" name="Researcher" job="Pulls product specs, pricing, reviews" />
+            <AgentCard color="#7C3AED" name="Researcher" job="Pulls product specs, pricing, reviews" />
             <AgentCard color="#5856d6" name="Outline Architect" job="Designs the review structure for SEO + flow" />
             <AgentCard color="#34c759" name="Voice Matcher" job="Reads your brand profile and writes in your tone" />
             <AgentCard color="#ff9500" name="Body Drafter" job="Writes the long-form review section by section" />
@@ -486,7 +486,7 @@ export default function LandingPage() {
               icon={<Sparkles size={20} />}
               title="We write the pitch"
               desc="A personalized outreach email with a brand-specific angle, your reach across every platform, and a clean ask — written in your voice, not a generic template."
-              accent="#0071e3"
+              accent="#7C3AED"
             />
             <StepCard
               n="03"
@@ -576,7 +576,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
 
           <div>
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0071e3] uppercase tracking-wider mb-3">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#7C3AED] uppercase tracking-wider mb-3">
               <LayoutTemplate size={14} /> Included on every plan
             </span>
             <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-[#1d1d1f]">A real editorial site, not a default blog</h2>
@@ -600,7 +600,7 @@ export default function LandingPage() {
                 Sign-ups paused — back soon
               </span>
             ) : (
-              <Link href="/signup" className="inline-flex items-center gap-2 text-[#0071e3] font-semibold hover:gap-3 transition-all">
+              <Link href="/signup" className="inline-flex items-center gap-2 text-[#7C3AED] font-semibold hover:gap-3 transition-all">
                 Start with the themed site free <ArrowRight size={16} />
               </Link>
             )}
@@ -618,11 +618,11 @@ export default function LandingPage() {
       <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-[#f7f9fc] to-white">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14 max-w-3xl mx-auto">
-            <span className="inline-block text-xs font-bold text-[#0071e3] uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-[#0071e3]/10">
+            <span className="inline-block text-xs font-bold text-[#7C3AED] uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-[#7C3AED]/10">
               Stack consolidation
             </span>
             <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">
-              You&apos;re already paying <span className="text-[#0071e3]">$223/mo</span> for this.
+              You&apos;re already paying <span className="text-[#7C3AED]">$223/mo</span> for this.
             </h2>
             <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
               Most active affiliate creators are running 5 separate tools to do what MVP does in one click.
@@ -654,14 +654,14 @@ export default function LandingPage() {
             {/* MIDDLE — divider with arrow */}
             <div className="flex lg:flex-col items-center justify-center gap-2 py-2">
               <span className="hidden lg:block text-xs font-bold text-[#86868b] uppercase tracking-widest">vs</span>
-              <ArrowRight size={28} className="text-[#0071e3] hidden lg:block" />
+              <ArrowRight size={28} className="text-[#7C3AED] hidden lg:block" />
               <span className="lg:hidden text-xs font-bold text-[#86868b] uppercase tracking-widest">↓ becomes ↓</span>
             </div>
 
             {/* RIGHT — MVP all-in-one */}
             <div
               className="rounded-2xl p-6 sm:p-7 shadow-xl text-white relative overflow-hidden"
-              style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
             >
               <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl pointer-events-none" />
               <p className="relative text-xs font-semibold text-white/80 uppercase tracking-wider mb-4">One tool. Same job.</p>
@@ -715,7 +715,7 @@ export default function LandingPage() {
               <thead>
                 <tr className="bg-[#f7f9fc] text-sm uppercase tracking-wider text-[#6e6e73]">
                   <th className="p-4 font-semibold">What you need</th>
-                  <th className="p-4 font-semibold text-[#0071e3]">MVP Affiliate</th>
+                  <th className="p-4 font-semibold text-[#7C3AED]">MVP Affiliate</th>
                   <th className="p-4 font-semibold">Keyword AI writers</th>
                   <th className="p-4 font-semibold">AI thumbnail / YT tools</th>
                   <th className="p-4 font-semibold">Stitch 4+ tools together</th>
@@ -798,7 +798,7 @@ export default function LandingPage() {
                 key={plan.tier}
                 className={`rounded-2xl p-7 flex flex-col ${
                   plan.highlight
-                    ? 'bg-[#0071e3] text-white shadow-2xl scale-[1.03]'
+                    ? 'bg-[#7C3AED] text-white shadow-2xl scale-[1.03]'
                     : 'bg-white border border-gray-200 shadow-sm'
                 }`}
               >
@@ -823,7 +823,7 @@ export default function LandingPage() {
                     </span>
                   </p>
                 )}
-                <p className={`text-sm font-medium ${plan.highlight ? 'text-blue-100' : 'text-[#0071e3]'}`}>{plan.limit}</p>
+                <p className={`text-sm font-medium ${plan.highlight ? 'text-blue-100' : 'text-[#7C3AED]'}`}>{plan.limit}</p>
                 {plan.bonus && (
                   <p className={`text-xs font-medium mb-3 ${plan.highlight ? 'text-yellow-300' : 'text-[#34c759]'}`}>
                     ↑ {plan.bonus}
@@ -842,8 +842,8 @@ export default function LandingPage() {
                   href={plan.href}
                   className={`w-full py-2.5 rounded-xl font-semibold text-sm text-center transition-colors ${
                     plan.highlight
-                      ? 'bg-white text-[#0071e3] hover:bg-blue-50'
-                      : 'bg-[#0071e3] text-white hover:bg-[#0062c4]'
+                      ? 'bg-white text-[#7C3AED] hover:bg-blue-50'
+                      : 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'
                   }`}
                 >
                   {plan.cta}
@@ -856,8 +856,8 @@ export default function LandingPage() {
             * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
             Included on Creator &amp; Pro at no extra cost once approved.
           </p>
-          <div className="mt-6 max-w-2xl mx-auto rounded-2xl bg-[#0071e3]/5 border border-[#0071e3]/20 p-5">
-            <p className="text-center text-sm font-semibold text-[#0071e3] mb-1.5">🔒 Price-lock guarantee</p>
+          <div className="mt-6 max-w-2xl mx-auto rounded-2xl bg-[#7C3AED]/5 border border-[#7C3AED]/20 p-5">
+            <p className="text-center text-sm font-semibold text-[#7C3AED] mb-1.5">🔒 Price-lock guarantee</p>
             <p className="text-center text-sm text-[#3a3a3c] leading-relaxed">
               When you subscribe at these Early Access rates, your price stays locked in for as long as
               you keep your plan — even if we raise prices later. The rate only changes if you choose to
@@ -865,7 +865,7 @@ export default function LandingPage() {
             </p>
           </div>
           <p className="mt-3 text-center text-sm text-[#86868b] dark:text-[#8e8e93]">
-            Want all the details? <Link href="/pricing" className="text-[#0071e3] font-semibold hover:underline">See full pricing →</Link>
+            Want all the details? <Link href="/pricing" className="text-[#7C3AED] font-semibold hover:underline">See full pricing →</Link>
           </p>
         </div>
       </section>
@@ -879,7 +879,7 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-col gap-3">
             {faqs.map((f) => (
-              <details key={f.q} className="group rounded-xl border border-gray-200 bg-white p-6 hover:border-[#0071e3]/40 transition-colors">
+              <details key={f.q} className="group rounded-xl border border-gray-200 bg-white p-6 hover:border-[#7C3AED]/40 transition-colors">
                 <summary className="flex items-center justify-between cursor-pointer list-none">
                   <span className="text-lg font-semibold text-[#1d1d1f]">{f.q}</span>
                   <span className="text-[#86868b] group-open:rotate-180 transition-transform">
@@ -955,7 +955,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── Final CTA ──────────────────────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-br from-[#0071e3] to-[#5856d6] text-white">
+      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-br from-[#7C3AED] to-[#5856d6] text-white">
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-bold mb-4 leading-[1.1]">Stop writing descriptions. Start shipping reviews.</h2>
           <p className="text-blue-100 text-base sm:text-lg mb-8 max-w-xl mx-auto">
@@ -969,7 +969,7 @@ export default function LandingPage() {
           ) : (
             <Link
               href="/signup"
-              className="inline-flex items-center justify-center gap-2 bg-white hover:bg-blue-50 text-[#0071e3] font-semibold px-8 py-4 rounded-2xl text-base transition-colors shadow-2xl"
+              className="inline-flex items-center justify-center gap-2 bg-white hover:bg-blue-50 text-[#7C3AED] font-semibold px-8 py-4 rounded-2xl text-base transition-colors shadow-2xl"
             >
               Start free <ArrowRight size={17} />
             </Link>
@@ -1081,13 +1081,13 @@ function StackPerk({ label }: { label: string }) {
 
 function AnatomyCallout({ n, icon, title, desc }: { n: number; icon: React.ReactNode; title: string; desc: string }) {
   return (
-    <div className="flex items-start gap-3 p-3 rounded-xl bg-white border border-gray-100 hover:border-[#0071e3]/30 transition-colors">
-      <span className="w-7 h-7 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+    <div className="flex items-start gap-3 p-3 rounded-xl bg-white border border-gray-100 hover:border-[#7C3AED]/30 transition-colors">
+      <span className="w-7 h-7 rounded-full bg-[#7C3AED] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
         {n}
       </span>
       <div className="flex-1">
         <p className="flex items-center gap-1.5 text-base font-semibold text-[#1d1d1f]">
-          <span className="text-[#0071e3]">{icon}</span>
+          <span className="text-[#7C3AED]">{icon}</span>
           {title}
         </p>
         <p className="text-sm text-[#3a3a3c] mt-1 leading-relaxed">{desc}</p>
@@ -1101,7 +1101,7 @@ function BrowserFrame() {
   return (
     <div className="relative">
       {/* Stacked depth shadow */}
-      <div className="absolute inset-2 rounded-2xl bg-[#0071e3]/10 blur-2xl" />
+      <div className="absolute inset-2 rounded-2xl bg-[#7C3AED]/10 blur-2xl" />
       <div className="relative rounded-2xl shadow-2xl bg-white border border-gray-200 overflow-hidden">
         {/* Browser chrome */}
         <div className="flex items-center gap-1.5 px-3 py-2.5 bg-gray-50 border-b border-gray-100">
@@ -1172,7 +1172,7 @@ function BrowserFrame() {
 function SitePreviewFrame() {
   return (
     <div className="relative">
-      <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-[#0071e3]/10 to-[#5856d6]/10 blur-2xl" />
+      <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-[#7C3AED]/10 to-[#5856d6]/10 blur-2xl" />
       <div className="relative rounded-2xl shadow-2xl bg-white border border-gray-200 overflow-hidden">
         <div className="flex items-center gap-1.5 px-3 py-2.5 bg-gray-50 border-b border-gray-100">
           <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
@@ -1286,7 +1286,7 @@ function ReviewAnatomy() {
         <Pin n={4} side="right">
           <p className="text-[10px] leading-relaxed text-[#333] mb-2">
             I cook a lot. My kitchen floor is tile. Hard, cold, unforgiving tile.
-            Then I picked up the <span className="text-[#0071e3] underline">TranquilRelax Kitchen Mats</span>{' '}
+            Then I picked up the <span className="text-[#7C3AED] underline">TranquilRelax Kitchen Mats</span>{' '}
             and genuinely wondered why I waited this long.
           </p>
           <p className="text-[10px] leading-relaxed text-[#333] mb-3">
@@ -1410,7 +1410,7 @@ function CompareRow({ label, us, gen, free, diy }: { label: string; us: string; 
   return (
     <tr>
       <td className="p-4 font-semibold text-[#1d1d1f]">{label}</td>
-      <td className="p-4 bg-[#0071e3]/5"><CompareCell value={us} highlight /></td>
+      <td className="p-4 bg-[#7C3AED]/5"><CompareCell value={us} highlight /></td>
       <td className="p-4"><CompareCell value={gen} /></td>
       <td className="p-4"><CompareCell value={free} /></td>
       <td className="p-4"><CompareCell value={diy} /></td>
@@ -1419,17 +1419,17 @@ function CompareRow({ label, us, gen, free, diy }: { label: string; us: string; 
 }
 
 function CompareCell({ value, highlight }: { value: string; highlight?: boolean }) {
-  if (value === 'check') return <CheckCircle size={20} className={highlight ? 'text-[#0071e3]' : 'text-[#34c759]'} />
+  if (value === 'check') return <CheckCircle size={20} className={highlight ? 'text-[#7C3AED]' : 'text-[#34c759]'} />
   if (value === 'cross') return <span className="inline-flex items-center justify-center w-5 h-5 text-[#86868b]">—</span>
   if (value === 'manual') return <span className="text-sm text-[#ff9500] font-medium">manual</span>
-  return <span className={`text-sm font-semibold ${highlight ? 'text-[#0071e3]' : 'text-[#1d1d1f]'}`}>{value}</span>
+  return <span className={`text-sm font-semibold ${highlight ? 'text-[#7C3AED]' : 'text-[#1d1d1f]'}`}>{value}</span>
 }
 
 function Pin({ n, side, children }: { n: number; side: 'left' | 'right'; children: React.ReactNode }) {
   return (
     <div className="relative">
       <span
-        className={`absolute top-1 ${side === 'left' ? '-left-3' : '-right-3'} w-6 h-6 rounded-full bg-[#0071e3] text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white shadow-md z-10`}
+        className={`absolute top-1 ${side === 'left' ? '-left-3' : '-right-3'} w-6 h-6 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white shadow-md z-10`}
       >
         {n}
       </span>

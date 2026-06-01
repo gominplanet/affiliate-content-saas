@@ -142,7 +142,7 @@ export default function BillingPage() {
                 <button
                   onClick={openPortal}
                   disabled={portalLoading}
-                  className="text-xs text-[#0071e3] hover:underline disabled:opacity-60 flex items-center gap-1"
+                  className="text-xs text-[#7C3AED] hover:underline disabled:opacity-60 flex items-center gap-1"
                 >
                   {portalLoading && <Loader2 size={11} className="animate-spin" />}
                   Manage subscription
@@ -151,8 +151,8 @@ export default function BillingPage() {
             </div>
 
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-xl bg-[#0071e3]/10 flex items-center justify-center">
-                <Zap size={18} className="text-[#0071e3]" />
+              <div className="w-10 h-10 rounded-xl bg-[#7C3AED]/10 flex items-center justify-center">
+                <Zap size={18} className="text-[#7C3AED]" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{currentTier.label}</p>
@@ -221,7 +221,7 @@ export default function BillingPage() {
               </h2>
               <div className="flex flex-col gap-3">
                 {planDetails.filter(p => p.tier !== tier).map((plan) => (
-                  <div key={plan.tier} className="flex items-center justify-between p-4 rounded-xl border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors">
+                  <div key={plan.tier} className="flex items-center justify-between p-4 rounded-xl border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 transition-colors">
                     <div>
                       <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{TIERS[plan.tier].label}</p>
                       <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
@@ -233,7 +233,7 @@ export default function BillingPage() {
                     <button
                       onClick={() => upgrade(plan.tier)}
                       disabled={checkoutLoading === plan.tier}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
                     >
                       {checkoutLoading === plan.tier
                         ? <><Loader2 size={11} className="animate-spin" /> Redirecting…</>

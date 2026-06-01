@@ -72,7 +72,7 @@ export default function SetupChecklist() {
   if (allDone) return null
 
   return (
-    <div className={`card mb-6 overflow-hidden border ${allDone ? 'border-[#34c759]/30' : 'border-[#0071e3]/20'}`}>
+    <div className={`card mb-6 overflow-hidden border ${allDone ? 'border-[#34c759]/30' : 'border-[#7C3AED]/20'}`}>
       {/* Header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
@@ -80,7 +80,7 @@ export default function SetupChecklist() {
       >
         <div className="flex items-center gap-3">
           <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-            allDone ? 'bg-[#34c759]/15 text-[#34c759]' : 'bg-[#0071e3]/10 text-[#0071e3]'
+            allDone ? 'bg-[#34c759]/15 text-[#34c759]' : 'bg-[#7C3AED]/10 text-[#7C3AED]'
           }`}>
             {allDone ? '✓' : `${doneCount}/${allRequired.length}`}
           </div>

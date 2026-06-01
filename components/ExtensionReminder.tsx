@@ -76,7 +76,7 @@ export default function ExtensionReminder() {
           </a>
 
           <details className="mt-3 group">
-            <summary className="text-[11px] font-medium text-[#0071e3] cursor-pointer select-none">
+            <summary className="text-[11px] font-medium text-[#7C3AED] cursor-pointer select-none">
               How to install (1 min — no Chrome Web Store needed)
             </summary>
             <ol className="list-decimal ml-5 mt-2 space-y-1 text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">

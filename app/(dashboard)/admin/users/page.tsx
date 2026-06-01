@@ -20,7 +20,7 @@ interface TargetUser {
 
 const TIER_BADGE: Record<Tier, string> = {
   trial:   'bg-gray-100 text-[#6e6e73]',
-  creator: 'bg-[#0071e3]/10 text-[#0071e3]',
+  creator: 'bg-[#7C3AED]/10 text-[#7C3AED]',
   pro:     'bg-[#34c759]/10 text-[#34c759]',
   admin:   'bg-[#ff9500]/10 text-[#ff9500]',
 }
@@ -138,7 +138,7 @@ export default function AdminUsersPage() {
             <Field label="Last sign-in">{user.lastSignInAt ? new Date(user.lastSignInAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</Field>
             <Field label="Posts published">{user.postCount}</Field>
             <Field label="Brand">{user.brandName || <span className="italic text-[#86868b]">not set</span>}</Field>
-            <Field label="WordPress">{user.wordpressUrl ? <a href={user.wordpressUrl} target="_blank" rel="noreferrer" className="text-[#0071e3] hover:underline truncate inline-block max-w-[200px]">{user.wordpressUrl.replace(/^https?:\/\//, '')}</a> : <span className="italic text-[#86868b]">not connected</span>}</Field>
+            <Field label="WordPress">{user.wordpressUrl ? <a href={user.wordpressUrl} target="_blank" rel="noreferrer" className="text-[#7C3AED] hover:underline truncate inline-block max-w-[200px]">{user.wordpressUrl.replace(/^https?:\/\//, '')}</a> : <span className="italic text-[#86868b]">not connected</span>}</Field>
           </div>
 
           {/* Tier change */}

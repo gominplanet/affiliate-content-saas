@@ -108,7 +108,7 @@ export default async function DashboardPage() {
   const platformsConnected = platformFlags.filter(Boolean).length
 
   const stats = [
-    { label: 'Videos Tracked',     value: String(videoCount),      icon: PlaySquare, color: 'text-[#0071e3]',  bg: 'bg-[#0071e3]/8' },
+    { label: 'Videos Tracked',     value: String(videoCount),      icon: PlaySquare, color: 'text-[#7C3AED]',  bg: 'bg-[#7C3AED]/8' },
     { label: 'Posts Published',     value: String(publishedCount),  icon: FileText,   color: 'text-[#34c759]',  bg: 'bg-[#34c759]/8' },
     { label: 'Platforms Connected', value: `${platformsConnected}/${platformsTotal}`, icon: Layers,  color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
   ]
@@ -143,38 +143,38 @@ export default async function DashboardPage() {
 
       {/* Welcome card — shown until user generates their first post */}
       {isNewUser && (
-        <div className="card p-6 mb-6 border border-[#0071e3]/20 bg-gradient-to-br from-[#f0f7ff] to-white dark:from-[#0071e3]/5 dark:to-transparent">
+        <div className="card p-6 mb-6 border border-[#7C3AED]/20 bg-gradient-to-br from-[#f0f7ff] to-white dark:from-[#7C3AED]/5 dark:to-transparent">
           <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-xl bg-[#0071e3] flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#7C3AED] flex items-center justify-center flex-shrink-0">
               <Sparkles size={18} className="text-white" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Welcome — let&apos;s ship your first review</p>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-5">Three quick steps and you&apos;re live on YouTube + your site. About 5 minutes end to end.</p>
               <div className="flex flex-col sm:flex-row gap-3">
-                <Link href="/brand" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
-                  <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</div>
+                <Link href="/brand" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 transition-colors group">
+                  <div className="w-6 h-6 rounded-full bg-[#7C3AED] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Build your Brand Profile</p>
                     <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Tone, niche, writing sample — every review writes in your voice</p>
                   </div>
-                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
+                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#7C3AED] transition-colors flex-shrink-0" />
                 </Link>
-                <Link href="/setup" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
-                  <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</div>
+                <Link href="/setup" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 transition-colors group">
+                  <div className="w-6 h-6 rounded-full bg-[#7C3AED] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Connect YouTube + your site</p>
                     <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">One-time OAuth. We auto-install your theme + plugin.</p>
                   </div>
-                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
+                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#7C3AED] transition-colors flex-shrink-0" />
                 </Link>
-                <Link href="/content" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 transition-colors group">
-                  <div className="w-6 h-6 rounded-full bg-[#0071e3] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</div>
+                <Link href="/content" className="flex items-center gap-2.5 flex-1 p-3.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 transition-colors group">
+                  <div className="w-6 h-6 rounded-full bg-[#7C3AED] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">3</div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Generate from a YouTube draft</p>
                     <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Pick an ASIN draft. We ship the rest.</p>
                   </div>
-                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#0071e3] transition-colors flex-shrink-0" />
+                  <ArrowRight size={13} className="text-[#86868b] ml-auto group-hover:text-[#7C3AED] transition-colors flex-shrink-0" />
                 </Link>
               </div>
             </div>
@@ -226,11 +226,11 @@ export default async function DashboardPage() {
       <div className="card p-5 mb-8">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <Gauge size={16} className="text-[#0071e3]" />
+            <Gauge size={16} className="text-[#7C3AED]" />
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Plan &amp; usage</h2>
-            <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3]">{plan.label}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED]">{plan.label}</span>
           </div>
-          <Link href="/billing" className="text-xs text-[#0071e3] hover:underline font-medium">
+          <Link href="/billing" className="text-xs text-[#7C3AED] hover:underline font-medium">
             {tier === 'pro' || tier === 'admin' ? 'Manage plan' : 'Upgrade'}
           </Link>
         </div>
@@ -249,7 +249,7 @@ export default async function DashboardPage() {
                 </div>
                 <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${unlimited ? 'bg-[#34c759]' : near ? 'bg-[#ff9500]' : 'bg-[#0071e3]'}`}
+                    className={`h-full rounded-full ${unlimited ? 'bg-[#34c759]' : near ? 'bg-[#ff9500]' : 'bg-[#7C3AED]'}`}
                     style={{ width: unlimited ? '100%' : `${pct}%` }}
                   />
                 </div>
@@ -275,7 +275,7 @@ export default async function DashboardPage() {
         <div className="lg:col-span-2 card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Recent Videos</h2>
-            <Link href="/content" className="text-xs text-[#0071e3] hover:underline font-medium">
+            <Link href="/content" className="text-xs text-[#7C3AED] hover:underline font-medium">
               See all
             </Link>
           </div>
@@ -284,7 +284,7 @@ export default async function DashboardPage() {
             <div className="text-center py-8">
               <p className="text-sm text-[#86868b] dark:text-[#8e8e93]">No videos synced yet.</p>
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Connect YouTube and we&apos;ll pull every draft with an Amazon ASIN in the title.</p>
-              <Link href="/content" className="text-xs text-[#0071e3] hover:underline mt-3 inline-block">
+              <Link href="/content" className="text-xs text-[#7C3AED] hover:underline mt-3 inline-block">
                 Sync your YouTube channel →
               </Link>
             </div>
@@ -324,7 +324,7 @@ export default async function DashboardPage() {
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               {recentVideos.slice(0, 4).map((video: any) => (
                 <div key={video.id} className="flex items-start gap-2.5">
-                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 bg-[#0071e3]" />
+                  <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 bg-[#7C3AED]" />
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug truncate">{video.title}</p>
                     <div className="flex items-center gap-1 mt-0.5">

@@ -302,15 +302,15 @@ export default function PhotoboothPage() {
 
       {!isPaid && (
         <div className="card p-5 mb-6 flex items-start gap-3" style={{ background: 'linear-gradient(180deg, rgba(0,113,227,0.05) 0%, transparent 100%)', borderColor: 'rgba(0,113,227,0.25)' }}>
-          <div className="w-9 h-9 rounded-full bg-[#0071e3]/15 flex items-center justify-center flex-shrink-0">
-            <Sparkles size={18} className="text-[#0071e3]" />
+          <div className="w-9 h-9 rounded-full bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
+            <Sparkles size={18} className="text-[#7C3AED]" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Putting your face in thumbnails, posts &amp; headshots is a paid feature</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-3">
               Add a few photos of yourself once, and every generated thumbnail, social image, and headshot can include the real you — not a generic stock-photo person. No training wait; ready the moment you save.
             </p>
-            <Link href="/pricing" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]">
+            <Link href="/pricing" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
               <Sparkles size={11} /> Upgrade to Pro
             </Link>
           </div>
@@ -339,14 +339,14 @@ export default function PhotoboothPage() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <UserCircle2 size={18} className="text-[#0071e3]" />
+              <UserCircle2 size={18} className="text-[#7C3AED]" />
               <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your faces{!isAdmin && <span className="font-normal text-[#86868b]"> ({faces.length}/{MAX_FACES})</span>}</p>
             </div>
             <button
               onClick={() => { if (atFaceCap) return; setNewFaceOpen(true); setFaceError(null); setFiles([]); setName('') }}
               disabled={atFaceCap}
               title={atFaceCap ? `Maximum ${MAX_FACES} faces — delete one to add another` : 'Add a face'}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Camera size={11} /> Add a face
             </button>
@@ -366,8 +366,8 @@ export default function PhotoboothPage() {
             <div className="flex flex-col gap-2.5">
               {faces.map(m => (
                 <div key={m.id} className="card p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#0071e3]/10 flex items-center justify-center flex-shrink-0">
-                    <UserCircle2 size={20} className="text-[#0071e3]" />
+                  <div className="w-10 h-10 rounded-full bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
+                    <UserCircle2 size={20} className="text-[#7C3AED]" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -403,7 +403,7 @@ export default function PhotoboothPage() {
         {/* ── Photobooth generator ──────────────────────────────────────────── */}
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Camera size={18} className="text-[#0071e3]" />
+            <Camera size={18} className="text-[#7C3AED]" />
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Photobooth — generate headshots</p>
           </div>
 
@@ -432,7 +432,7 @@ export default function PhotoboothPage() {
                       <button
                         key={s.key}
                         onClick={() => setStyle(s.key)}
-                        className={`text-left p-2.5 rounded-lg border transition-colors ${style === s.key ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
+                        className={`text-left p-2.5 rounded-lg border transition-colors ${style === s.key ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-gray-300'}`}
                       >
                         <span className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{s.label}</span>
                         <span className="block text-[11px] text-[#86868b] dark:text-[#8e8e93]">{s.desc}</span>
@@ -448,7 +448,7 @@ export default function PhotoboothPage() {
                       <button
                         key={e.key}
                         onClick={() => setExpression(e.key)}
-                        className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${expression === e.key ? 'border-[#0071e3] text-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
+                        className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${expression === e.key ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-gray-300'}`}
                       >
                         {e.label}
                       </button>
@@ -480,7 +480,7 @@ export default function PhotoboothPage() {
                 <button
                   onClick={generate}
                   disabled={generating || !faceId || noneLeft}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 transition-colors w-full justify-center"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 transition-colors w-full justify-center"
                 >
                   {generating ? <><Loader2 size={14} className="animate-spin" /> Generating… (up to ~3 min)</> : <><Camera size={14} /> Generate headshot</>}
                 </button>
@@ -525,14 +525,14 @@ export default function PhotoboothPage() {
                           value={s.expression || 'neutral'}
                           onChange={(e) => updateShotExpression(s, e.target.value)}
                           title="Expression tag — only Excited / Surprised / Laughing are cast onto your thumbnails; everything else (incl. Happy & Neutral) stays a headshot."
-                          className="mt-2 w-full text-[11px] px-2 py-1 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+                          className="mt-2 w-full text-[11px] px-2 py-1 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
                         >
                           {EXPRESSION_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
                         </select>
                         <button
                           onClick={() => updateShotStarred(s, !s.starred)}
                           title="When on, Co-Pilot may cast this shot as your face on thumbnails. Star a few of your best — it uses only the starred ones."
-                          className={`mt-1.5 inline-flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${s.starred ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'bg-transparent border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#0071e3]'}`}
+                          className={`mt-1.5 inline-flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${s.starred ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'bg-transparent border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:border-[#7C3AED]'}`}
                         >
                           {s.starred ? '★ Used on thumbnails' : '☆ Use on thumbnails'}
                         </button>
@@ -562,7 +562,7 @@ export default function PhotoboothPage() {
             </p>
 
             <div className="card p-3 mb-4" style={{ background: 'rgba(0,113,227,0.05)', borderColor: 'rgba(0,113,227,0.2)' }}>
-              <p className="text-[11px] font-semibold text-[#0071e3] mb-1.5">📸 Tips for better results</p>
+              <p className="text-[11px] font-semibold text-[#7C3AED] mb-1.5">📸 Tips for better results</p>
               <ul className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] space-y-1">
                 <li>• Use clear, front-facing photos with good lighting</li>
                 <li>• The face should take up most of the image</li>
@@ -581,7 +581,7 @@ export default function PhotoboothPage() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder='e.g. "Me", "My partner"'
                 disabled={uploading}
-                className="w-full text-sm px-3 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none"
+                className="w-full text-sm px-3 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none"
               />
             </div>
 
@@ -589,7 +589,7 @@ export default function PhotoboothPage() {
               <label className="block text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
                 Images <span className={`font-normal ${files.length < MIN_IMAGES ? 'text-[#ff9500]' : 'text-[#34c759]'}`}>({files.length}/{MAX_IMAGES} — minimum {MIN_IMAGES})</span>
               </label>
-              <label className="flex flex-col items-center justify-center gap-1.5 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 text-xs text-[#86868b] hover:border-[#0071e3] hover:text-[#0071e3] cursor-pointer transition-colors">
+              <label className="flex flex-col items-center justify-center gap-1.5 p-4 rounded-lg border-2 border-dashed border-gray-300 dark:border-white/15 text-xs text-[#86868b] hover:border-[#7C3AED] hover:text-[#7C3AED] cursor-pointer transition-colors">
                 <Upload size={18} />
                 <span>Click to add images (or drop here)</span>
                 <input
@@ -622,7 +622,7 @@ export default function PhotoboothPage() {
 
             {faceError && <p className="text-xs text-[#ff3b30] mb-3">{faceError}</p>}
             {uploading && uploadProgress && (
-              <p className="text-xs text-[#0071e3] mb-3">Uploading {uploadProgress.done}/{uploadProgress.total}…</p>
+              <p className="text-xs text-[#7C3AED] mb-3">Uploading {uploadProgress.done}/{uploadProgress.total}…</p>
             )}
 
             <div className="flex items-center justify-end gap-2">
@@ -630,7 +630,7 @@ export default function PhotoboothPage() {
               <button
                 onClick={submitFace}
                 disabled={uploading || files.length < MIN_IMAGES || !name.trim()}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50"
               >
                 {uploading ? <><Loader2 size={11} className="animate-spin" /> Uploading…</> : <><Sparkles size={11} /> Save face</>}
               </button>

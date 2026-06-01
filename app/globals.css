@@ -5,11 +5,14 @@
 :root {
   --sidebar-width: 240px;
 
-  /* Brand accent — the logo's blue → violet. Shared across both themes;
-     drives active nav, primary buttons, focus, and .text-gradient. */
-  --accent:          #0071e3;
-  --accent-2:        #7b61ff;
-  --accent-gradient: linear-gradient(135deg, #0071e3 0%, #7b61ff 100%);
+  /* Brand accent — violet-600 → fuchsia-500. Replaced the old Apple-blue
+     base with a more distinctive saturated violet that reads as "premium
+     creator tool" instead of "indie SaaS Apple clone." Drives active nav,
+     primary buttons, focus rings, .text-gradient. Single change point —
+     swap these three values to re-skin the entire app. */
+  --accent:          #7C3AED;
+  --accent-2:        #C026D3;
+  --accent-gradient: linear-gradient(135deg, #7C3AED 0%, #C026D3 100%);
 
   /* Light mode tokens. Canvas is a clean off-white (Stripe/Linear style)
      — no body-level tint or aurora. Cards + sidebar do the elevation work. */
@@ -87,8 +90,8 @@
     color: var(--text);
     border: 1px solid var(--border-2);
     @apply w-full px-3 py-2 rounded-lg text-sm
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/40
-           focus-visible:border-[#0071e3]
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40
+           focus-visible:border-[#7C3AED]
            transition-[border-color,box-shadow] duration-150;
   }
   .input-field::placeholder {
@@ -104,7 +107,7 @@
     @apply inline-flex items-center justify-center gap-2 h-9 px-4 rounded-lg
            text-white text-sm font-medium shadow-sm
            hover:shadow-md hover:brightness-110 active:brightness-95
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/40
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40
            focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]
            transition-all duration-150
            disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none
@@ -118,7 +121,7 @@
     @apply inline-flex items-center justify-center gap-2 h-9 px-4 rounded-lg
            text-sm font-medium
            hover:bg-[var(--surface-2)]
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0071e3]/40
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]/40
            focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]
            transition-all duration-150
            disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none

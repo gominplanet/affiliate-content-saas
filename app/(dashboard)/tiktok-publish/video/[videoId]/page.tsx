@@ -193,7 +193,7 @@ export default function TikTokDirectVideoPublishPage() {
         <div className="card p-5 border-[#ff3b30]/20 bg-[#ff3b30]/5">
           <p className="text-sm text-[#ff3b30] flex items-center gap-2"><AlertCircle size={14} /> {loadError}</p>
           {reconnectRequired && (
-            <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#0071e3] hover:underline">
+            <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
               Go to Integrations → Reconnect TikTok →
             </a>
           )}
@@ -281,7 +281,7 @@ export default function TikTokDirectVideoPublishPage() {
           <div className="mb-4 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] p-3 flex items-start gap-2 text-[12px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-relaxed">
             <Music size={14} className="text-[#86868b] flex-shrink-0 mt-0.5" />
             <p>
-              By posting, you confirm your video complies with TikTok&apos;s <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Music Usage Confirmation</a>.
+              By posting, you confirm your video complies with TikTok&apos;s <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Music Usage Confirmation</a>.
             </p>
           </div>
 
@@ -297,8 +297,8 @@ export default function TikTokDirectVideoPublishPage() {
           )}
 
           {publishStatus === 'processing' && (
-            <div className="mb-3 card p-3 border-[#0071e3]/20 bg-[#0071e3]/5">
-              <p className="text-xs text-[#0071e3] flex items-center gap-1.5">
+            <div className="mb-3 card p-3 border-[#7C3AED]/20 bg-[#7C3AED]/5">
+              <p className="text-xs text-[#7C3AED] flex items-center gap-1.5">
                 <Loader2 size={12} className="animate-spin" />
                 Sent to TikTok. Processing — usually 1-3 minutes. You can close this page; the result shows on the Vertical Videos row.
               </p>
@@ -308,7 +308,7 @@ export default function TikTokDirectVideoPublishPage() {
             <div className="mb-3 card p-3 border-[#34c759]/20 bg-[#34c759]/5">
               <p className="text-xs text-[#34c759] flex items-center gap-1.5"><CheckCircle size={12} /> Live on TikTok.</p>
               {shareUrl && (
-                <a href={shareUrl} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-[#0071e3] hover:underline">
+                <a href={shareUrl} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-[#7C3AED] hover:underline">
                   Open on TikTok <ExternalLink size={10} />
                 </a>
               )}

@@ -116,7 +116,7 @@ export function ShortVideoUpload({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={uploading}
-          className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1 disabled:opacity-50"
+          className="text-[10px] text-[#86868b] hover:text-[#7C3AED] inline-flex items-center gap-1 disabled:opacity-50"
           title="Upload the MP4 from your computer"
         >
           {uploading
@@ -136,7 +136,7 @@ export function ShortVideoUpload({
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
       onClick={() => !uploading && inputRef.current?.click()}
-      className={`rounded-lg border-2 border-dashed p-5 flex flex-col items-center gap-2 cursor-pointer transition-colors ${dragOver ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-300 dark:border-white/15 hover:border-[#0071e3]/60'} ${uploading ? 'opacity-60 cursor-wait' : ''}`}
+      className={`rounded-lg border-2 border-dashed p-5 flex flex-col items-center gap-2 cursor-pointer transition-colors ${dragOver ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-300 dark:border-white/15 hover:border-[#7C3AED]/60'} ${uploading ? 'opacity-60 cursor-wait' : ''}`}
     >
       <input
         ref={inputRef}
@@ -147,13 +147,13 @@ export function ShortVideoUpload({
       />
       {uploading ? (
         <>
-          <Loader2 size={20} className="text-[#0071e3] animate-spin" />
+          <Loader2 size={20} className="text-[#7C3AED] animate-spin" />
           <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">Uploading…</p>
           <p className="text-[11px] text-[#86868b]">Don&apos;t close this window.</p>
         </>
       ) : (
         <>
-          <Upload size={20} className="text-[#0071e3]" />
+          <Upload size={20} className="text-[#7C3AED]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Drop the MP4 here</p>
           <p className="text-[11px] text-[#86868b] text-center">
             or click to pick from your computer. 9:16 vertical, under 300 MB.<br />

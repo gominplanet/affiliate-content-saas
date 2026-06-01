@@ -236,7 +236,7 @@ export default function NewsletterComposePage() {
             {sentResult.failed > 0 && <span className="text-[#ff9500]"> ({sentResult.failed} errored — check the dashboard for details)</span>}.
           </p>
           <div className="flex items-center gap-2 justify-center">
-            <Link href="/newsletter" className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4]">Back to newsletter</Link>
+            <Link href="/newsletter" className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9]">Back to newsletter</Link>
             <button onClick={() => { setDraft(null); setSentResult(null); setPickedIds([]); setPersonalMessage(''); setCurated([]) }} className="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-200 dark:border-white/10">Compose another</button>
           </div>
         </div>
@@ -252,7 +252,7 @@ export default function NewsletterComposePage() {
       />
 
       <div className="mb-4">
-        <Link href="/newsletter" className="inline-flex items-center gap-1 text-xs text-[#86868b] hover:text-[#0071e3]">
+        <Link href="/newsletter" className="inline-flex items-center gap-1 text-xs text-[#86868b] hover:text-[#7C3AED]">
           <ChevronLeft size={12} /> Back to newsletter
         </Link>
       </div>
@@ -285,8 +285,8 @@ export default function NewsletterComposePage() {
                 sees the issue they're building, even if their next search
                 doesn't include those posts in its hits. */}
             {pickedIds.length > 0 && (
-              <div className="mb-3 p-3 rounded-lg bg-[#0071e3]/5 border border-[#0071e3]/20">
-                <p className="text-[11px] font-semibold text-[#0071e3] uppercase tracking-wide mb-2">{pickedIds.length} picked for this issue</p>
+              <div className="mb-3 p-3 rounded-lg bg-[#7C3AED]/5 border border-[#7C3AED]/20">
+                <p className="text-[11px] font-semibold text-[#7C3AED] uppercase tracking-wide mb-2">{pickedIds.length} picked for this issue</p>
                 <div className="flex flex-col gap-1.5">
                   {pickedIds.map(id => {
                     const p = pickedDetail[id]
@@ -321,13 +321,13 @@ export default function NewsletterComposePage() {
                   return (
                     <label
                       key={p.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}
+                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${checked ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => togglePick(p)}
-                        className="accent-[#0071e3] w-4 h-4 mt-1 flex-shrink-0"
+                        className="accent-[#7C3AED] w-4 h-4 mt-1 flex-shrink-0"
                       />
                       {p.thumbnail ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -345,7 +345,7 @@ export default function NewsletterComposePage() {
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-0.5 text-[11px] text-[#0071e3] hover:underline"
+                              className="inline-flex items-center gap-0.5 text-[11px] text-[#7C3AED] hover:underline"
                             >
                               View post <ExternalLink size={9} />
                             </a>
@@ -430,7 +430,7 @@ export default function NewsletterComposePage() {
                 <button
                   type="button"
                   onClick={() => setCurated(prev => [...prev, { url: '', label: '', blurb: '' }])}
-                  className="inline-flex items-center gap-1 self-start text-xs font-medium text-[#0071e3] hover:underline"
+                  className="inline-flex items-center gap-1 self-start text-xs font-medium text-[#7C3AED] hover:underline"
                 >
                   <Plus size={12} /> Add a curated link
                 </button>
@@ -449,7 +449,7 @@ export default function NewsletterComposePage() {
             <button
               onClick={() => void handleDraft()}
               disabled={drafting || (pickedIds.length === 0 && curated.length === 0 && !personalMessage.trim())}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50"
             >
               {drafting ? <><Loader2 size={13} className="animate-spin" /> Drafting…</> : <><Sparkles size={13} /> Draft email</>}
             </button>
@@ -499,7 +499,7 @@ function DraftEditor({
 
   return (
     <>
-      <button onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-xs text-[#86868b] hover:text-[#0071e3]">
+      <button onClick={onBack} className="mb-3 inline-flex items-center gap-1 text-xs text-[#86868b] hover:text-[#7C3AED]">
         <ChevronLeft size={12} /> Re-pick posts
       </button>
 
@@ -603,12 +603,12 @@ function buildPreviewHtml(d: Draft): string {
 <h2 style="margin:14px 0 8px;font-size:20px;color:#1d1d1f;font-weight:700;">${esc(p.title)}</h2>
 ${p.blurb ? `<p style="margin:0 0 10px;font-size:14px;color:#3a3a3c;">${esc(p.blurb)}</p>` : ''}
 <p style="margin:0 0 12px;font-size:14px;color:#6e6e73;">${esc(p.excerpt)}</p>
-<p style="margin:0;"><a href="${esc(p.url)}" style="display:inline-block;padding:9px 16px;background:#0071e3;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">Read the review</a></p></div>`).join('\n')
+<p style="margin:0;"><a href="${esc(p.url)}" style="display:inline-block;padding:9px 16px;background:#7C3AED;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">Read the review</a></p></div>`).join('\n')
   const linksHtml = d.curatedLinks.length === 0 ? '' :
     `<div style="background:#f5f5f7;border-radius:12px;padding:20px 24px;margin:0 0 28px;">
-       <p style="margin:0 0 10px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#0071e3;">Worth your time this week</p>
+       <p style="margin:0 0 10px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#7C3AED;">Worth your time this week</p>
        <ul style="margin:0;padding:0 0 0 18px;">
-         ${d.curatedLinks.map(l => `<li style="margin:0 0 14px;font-size:14px;color:#3a3a3c;"><a href="${esc(l.url)}" style="color:#0071e3;text-decoration:none;font-weight:600;">${esc(l.label || l.url)}</a><span style="color:#6e6e73;"> — ${esc(l.blurb)}</span></li>`).join('')}
+         ${d.curatedLinks.map(l => `<li style="margin:0 0 14px;font-size:14px;color:#3a3a3c;"><a href="${esc(l.url)}" style="color:#7C3AED;text-decoration:none;font-weight:600;">${esc(l.label || l.url)}</a><span style="color:#6e6e73;"> — ${esc(l.blurb)}</span></li>`).join('')}
        </ul>
      </div>`
   const personal = d.personalMessage?.trim()

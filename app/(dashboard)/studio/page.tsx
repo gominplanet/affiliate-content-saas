@@ -52,7 +52,7 @@ interface ProductInfo {
 
 const STATUS_ICON = {
   private: <Lock size={11} className="text-[#ff9500]" />,
-  unlisted: <Eye size={11} className="text-[#0071e3]" />,
+  unlisted: <Eye size={11} className="text-[#7C3AED]" />,
   public: <Globe size={11} className="text-[#34c759]" />,
 }
 
@@ -1176,7 +1176,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           <div className="flex items-center gap-2 flex-wrap">
             {generating ? (
               <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2 text-xs text-[#0071e3] font-medium">
+                <div className="flex items-center gap-2 text-xs text-[#7C3AED] font-medium">
                   <Loader2 size={12} className="animate-spin" />
                   Running MVP agent swarm…
                 </div>
@@ -1185,7 +1185,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     ? ['🔬 Product Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Content Writer', '💬 Engagement Agent']
                     : ['🔬 Video Analyst', '🎯 Title Strategist', '🔍 SEO Researcher', '✍️ Description Writer', '💬 Engagement Agent']
                   ).map(a => (
-                    <span key={a} className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] animate-pulse">{a}</span>
+                    <span key={a} className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] animate-pulse">{a}</span>
                   ))}
                 </div>
               </div>
@@ -1195,7 +1195,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: video.detectedAsin
                   ? 'linear-gradient(135deg, #ff9500 0%, #ff3b30 100%)'
-                  : 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+                  : 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
               >
                 <Wand2 size={12} />
                 {generated
@@ -1211,7 +1211,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               </span>
             )}
             <a href={ytUrl} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
+              className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
               <ExternalLink size={11} /> Open in YouTube
             </a>
           </div>
@@ -1256,7 +1256,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   {product.price && <span>{product.price}</span>}
                   {product.rating && <span>★ {product.rating}/5</span>}
                   {affiliateUrl && (
-                    <span className="flex items-center gap-1 text-[#0071e3]">
+                    <span className="flex items-center gap-1 text-[#7C3AED]">
                       <Link2 size={9} />
                       {geniuslinkUsed ? 'Geniuslink ✓' : affiliateUrl?.includes('?tag=') ? 'Associates link ✓' : 'Plain Amazon link'}
                     </span>
@@ -1268,8 +1268,8 @@ function VideoStudioCard({ video, userTier, playlists }: {
 
           {/* Agent Insights */}
           {agentInsights && (agentInsights.topBenefits.length > 0 || agentInsights.painPoints.length > 0) && (
-            <div className="mx-5 mb-3 p-3 rounded-xl bg-[#0071e3]/5 border border-[#0071e3]/10">
-              <p className="text-[10px] font-semibold text-[#0071e3] mb-2 flex items-center gap-1">
+            <div className="mx-5 mb-3 p-3 rounded-xl bg-[#7C3AED]/5 border border-[#7C3AED]/10">
+              <p className="text-[10px] font-semibold text-[#7C3AED] mb-2 flex items-center gap-1">
                 <Sparkles size={10} /> Agent insights
               </p>
               {agentInsights.targetBuyer && (
@@ -1308,7 +1308,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           {/* Toggle expand */}
           <button
             onClick={() => setExpanded(e => !e)}
-            className="flex items-center gap-2 w-full px-5 py-3 text-xs font-medium text-[#0071e3] hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+            className="flex items-center gap-2 w-full px-5 py-3 text-xs font-medium text-[#7C3AED] hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
           >
             {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             {expanded ? 'Hide' : 'Show'} generated metadata
@@ -1323,7 +1323,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Title</label>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] ${editTitle.length > 90 ? 'text-[#ff3b30]' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>{editTitle.length}/100</span>
-                    <button onClick={() => copy(editTitle, 'title')} className="text-[10px] text-[#0071e3] hover:underline flex items-center gap-0.5">
+                    <button onClick={() => copy(editTitle, 'title')} className="text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5">
                       <Copy size={10} /> {copied === 'title' ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
@@ -1340,7 +1340,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     <div className="flex flex-col gap-1">
                       {generated.title_alternatives.map((alt, i) => (
                         <button key={i} onClick={() => setEditTitle(alt)}
-                          className="text-left text-xs text-[#0071e3] hover:underline truncate">
+                          className="text-left text-xs text-[#7C3AED] hover:underline truncate">
                           → {alt}
                         </button>
                       ))}
@@ -1353,7 +1353,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Description</label>
-                  <button onClick={() => copy(editDesc, 'desc')} className="text-[10px] text-[#0071e3] hover:underline flex items-center gap-0.5">
+                  <button onClick={() => copy(editDesc, 'desc')} className="text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5">
                     <Copy size={10} /> {copied === 'desc' ? 'Copied!' : 'Copy'}
                   </button>
                 </div>
@@ -1369,7 +1369,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Tags ({generated.tags.length})</label>
-                  <button onClick={() => copy(generated.tags.join(', '), 'tags')} className="text-[10px] text-[#0071e3] hover:underline flex items-center gap-0.5">
+                  <button onClick={() => copy(generated.tags.join(', '), 'tags')} className="text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5">
                     <Copy size={10} /> {copied === 'tags' ? 'Copied!' : 'Copy all'}
                   </button>
                 </div>
@@ -1398,7 +1398,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinned comment</label>
-                    <button onClick={() => copy(generated.pinnedComment, 'pin')} className="text-[10px] text-[#0071e3] hover:underline flex items-center gap-0.5">
+                    <button onClick={() => copy(generated.pinnedComment, 'pin')} className="text-[10px] text-[#7C3AED] hover:underline flex items-center gap-0.5">
                       <Copy size={10} /> {copied === 'pin' ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
@@ -1414,9 +1414,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
               <div className="border-t border-gray-100 dark:border-white/10 pt-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Image size={13} className="text-[#0071e3]" />
+                    <Image size={13} className="text-[#7C3AED]" />
                     <span className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">AI Thumbnail Generator</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">1280×720</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">1280×720</span>
                   </div>
                 </div>
 
@@ -1438,7 +1438,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         {savedStyles.map(s => (
                           <div
                             key={s.id}
-                            className={`group relative flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-md border cursor-pointer transition-colors ${loadedPresetId === s.id ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]'}`}
+                            className={`group relative flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-md border cursor-pointer transition-colors ${loadedPresetId === s.id ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]'}`}
                             onClick={() => applyPreset(s.id, s.reference_url)}
                             title={`Use the "${s.name}" style`}
                           >
@@ -1471,7 +1471,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                             type="button"
                             onClick={saveCurrentAsPreset}
                             disabled={generatingThumbnail || savingPreset}
-                            className="text-[11px] text-[#0071e3] hover:underline disabled:opacity-60 ml-1"
+                            className="text-[11px] text-[#7C3AED] hover:underline disabled:opacity-60 ml-1"
                             title="Save this look as a reusable preset"
                           >
                             {savingPreset ? 'Saving…' : 'Save as preset'}
@@ -1488,7 +1488,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         </button>
                       </div>
                     ) : (
-                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${styleRefUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#0071e3]'}`}
+                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${styleRefUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED]'}`}
                         style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
                         <input
                           type="file"
@@ -1533,7 +1533,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       </button>
                     </div>
                   ) : (
-                    <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${photoUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#0071e3]'}`}
+                    <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${photoUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED]'}`}
                       style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
                       <input
                         type="file"
@@ -1592,7 +1592,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       </div>
                     ))}
                     {productImageUrls.length < 5 && (
-                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${productImagesUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#0071e3]'}`}
+                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border cursor-pointer transition-colors ${productImagesUploading ? 'opacity-60 cursor-wait' : 'hover:border-[#7C3AED]'}`}
                         style={{ borderColor: '#d2d2d7', color: '#1d1d1f', background: 'white' }}>
                         <input
                           type="file"
@@ -1641,7 +1641,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     }}
                     disabled={generatingThumbnail}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
-                    style={{ background: 'linear-gradient(135deg, #0071e3 0%, #5856d6 100%)' }}
+                    style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
                   >
                     {generatingThumbnail
                       ? <><Loader2 size={12} className="animate-spin" /> Generating…</>
@@ -1678,7 +1678,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     <button
                       onClick={() => setSelectedFaceModelId('auto')}
                       disabled={generatingThumbnail}
-                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === 'auto' ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === 'auto' ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
                       title="Auto — we match the video to the right person from your faces"
                     >
                       Auto
@@ -1686,7 +1686,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     <button
                       onClick={() => setSelectedFaceModelId(null)}
                       disabled={generatingThumbnail}
-                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === null ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === null ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
                       title="Don't lock a face — use the video frame's host as-is"
                     >
                       Off
@@ -1696,7 +1696,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         key={fm.id}
                         onClick={() => setSelectedFaceModelId(fm.id)}
                         disabled={generatingThumbnail}
-                        className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === fm.id ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                        className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === fm.id ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
                         title={`Lock the host's likeness to "${fm.name}" using your uploaded photos`}
                       >
                         {fm.name}
@@ -1707,7 +1707,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 ) : (
                   <p className="text-[10px] text-[#86868b] mb-3">
                     Want the host to look more like you? Add your photos in{' '}
-                    <a href="/face-training" className="text-[#0071e3] hover:underline">Face Training</a> — they&apos;ll lock your likeness into every thumbnail.
+                    <a href="/face-training" className="text-[#7C3AED] hover:underline">Face Training</a> — they&apos;ll lock your likeness into every thumbnail.
                   </p>
                 )}
 
@@ -1736,7 +1736,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                               key={i}
                               onClick={() => selectTitle(i)}
                               disabled={retitling}
-                              className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold transition disabled:opacity-60 ${i === selectedTitleIdx ? 'bg-[#0071e3] border-[#0071e3] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]'}`}
+                              className={`text-[11px] px-2.5 py-1 rounded-md border font-semibold transition disabled:opacity-60 ${i === selectedTitleIdx ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
                               title="Use this title on the thumbnail"
                             >
                               {t}
@@ -1760,7 +1760,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                               <button
                                 key={v.url}
                                 onClick={() => { setThumbnailUrl(v.url); setThumbnailFeedbackSent(null) }}
-                                className={`relative rounded-lg overflow-hidden border-2 transition ${selected ? 'border-[#0071e3]' : 'border-transparent hover:border-gray-300 dark:hover:border-white/20'}`}
+                                className={`relative rounded-lg overflow-hidden border-2 transition ${selected ? 'border-[#7C3AED]' : 'border-transparent hover:border-gray-300 dark:hover:border-white/20'}`}
                                 title={v.score !== null ? `Predicted CTR score: ${v.score}/100` : 'Variant'}
                               >
                                 <img src={v.url} alt={`Variant ${i + 1}`} className="w-full object-cover" style={{ aspectRatio: '16/9' }} />
@@ -1805,7 +1805,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           via crisp canvas overlay (perfect spelling); the baked
                           variant integrates it into the image (may misspell). */}
                       {thumbnailFaceUsed && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium" title="Face locked to this person's photos (auto-matched)">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium" title="Face locked to this person's photos (auto-matched)">
                           👤 {thumbnailFaceUsed}
                         </span>
                       )}
@@ -1832,7 +1832,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                           <button
                             onClick={() => generateThumbnail({ textMode: 'clean' })}
                             disabled={generatingThumbnail}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#0071e3] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-white/10 hover:border-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7] transition disabled:opacity-60"
                             title="Re-render with the headline drawn as a crisp, perfect overlay instead of baked into the image"
                           >
                             <RefreshCw size={12} /> Switch to crisp text
@@ -1840,7 +1840,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                         </>
                       )}
                       {thumbnailModel === 'kontext-upload' && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3]/10 text-[#0071e3] font-medium">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] font-medium">
                           📤 Your upload
                         </span>
                       )}
@@ -1896,9 +1896,9 @@ function VideoStudioCard({ video, userTier, playlists }: {
 
               {/* Pro batch-apply settings panel — Pro/admin only */}
               {isPro && (
-                <div className="border border-[#0071e3]/20 bg-[#0071e3]/5 rounded-xl p-4 flex flex-col gap-3">
+                <div className="border border-[#7C3AED]/20 bg-[#7C3AED]/5 rounded-xl p-4 flex flex-col gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#0071e3] text-white font-semibold uppercase tracking-wide">Pro</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#7C3AED] text-white font-semibold uppercase tracking-wide">Pro</span>
                     <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">One-click Studio settings</p>
                   </div>
 
@@ -1990,7 +1990,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       : <><Youtube size={14} /> {proSettings.privacyStatus === 'draft' ? 'Save draft to YouTube' : 'Apply to YouTube'}</>}
                   </button>
                   <button onClick={generate} disabled={generating}
-                    className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
+                    className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
                     <RefreshCw size={11} /> Regenerate
                   </button>
                 </div>
@@ -2095,7 +2095,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                   key={idx}
                   className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                     headlinePromptChoice === idx
-                      ? 'border-[#0071e3] bg-[#0071e3]/5'
+                      ? 'border-[#7C3AED] bg-[#7C3AED]/5'
                       : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
                   }`}
                 >
@@ -2116,7 +2116,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               <label
                 className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
                   headlinePromptChoice === 'custom'
-                    ? 'border-[#0071e3] bg-[#0071e3]/5'
+                    ? 'border-[#7C3AED] bg-[#7C3AED]/5'
                     : 'border-gray-200 dark:border-white/10 hover:border-gray-300'
                 }`}
               >
@@ -2140,7 +2140,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       placeholder="e.g. WORTH IT?"
                       maxLength={40}
                       autoFocus
-                      className="w-full text-xs px-2.5 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#0071e3] focus:outline-none uppercase tracking-wide"
+                      className="w-full text-xs px-2.5 py-1.5 rounded-md bg-white dark:bg-[#0a0a0a] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none uppercase tracking-wide"
                     />
                   )}
                 </div>
@@ -2151,7 +2151,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
               <button
                 onClick={() => loadTitleOptions()}
                 disabled={titleOptionsLoading}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-[#86868b] hover:text-[#0071e3] disabled:opacity-60 transition-colors"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-[#86868b] hover:text-[#7C3AED] disabled:opacity-60 transition-colors"
                 title="Generate a fresh batch of 5 title options"
               >
                 <RefreshCw size={11} className={titleOptionsLoading ? 'animate-spin' : ''} /> Regenerate
@@ -2186,7 +2186,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
                     (headlinePromptChoice === 'custom' && customHeadline.trim().length === 0) ||
                     (typeof headlinePromptChoice === 'number' && !pickerTitles[headlinePromptChoice])
                   }
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <Sparkles size={11} /> Start generation
                 </button>
@@ -2356,16 +2356,16 @@ export default function StudioPage() {
         <div className="card p-4 mb-6 flex items-center gap-3 border border-[#ff9500]/30 bg-[#ff9500]/5">
           <AlertCircle size={16} className="text-[#ff9500] flex-shrink-0" />
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex-1">
-            <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink not connected.</strong> We&apos;ll fall back to plain US Amazon links, which means you only earn on .com traffic. Add your Geniuslink API key in <a href="/setup?tab=integrations" className="text-[#0071e3] hover:underline">Site &amp; Integrations</a> to geo-route every click to the right Amazon storefront.
+            <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink not connected.</strong> We&apos;ll fall back to plain US Amazon links, which means you only earn on .com traffic. Add your Geniuslink API key in <a href="/setup?tab=integrations" className="text-[#7C3AED] hover:underline">Site &amp; Integrations</a> to geo-route every click to the right Amazon storefront.
           </p>
         </div>
       )}
 
       {/* How-it-works disclaimer — always visible once connected */}
       {!needsAuth && (
-        <div className="card p-4 mb-5 flex items-start gap-3 border border-[#0071e3]/20 bg-[#0071e3]/5">
-          <div className="w-7 h-7 rounded-lg bg-[#0071e3]/15 flex items-center justify-center flex-shrink-0">
-            <AlertCircle size={14} className="text-[#0071e3]" />
+        <div className="card p-4 mb-5 flex items-start gap-3 border border-[#7C3AED]/20 bg-[#7C3AED]/5">
+          <div className="w-7 h-7 rounded-lg bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
+            <AlertCircle size={14} className="text-[#7C3AED]" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Reviewing an Amazon product? Put the ASIN in your title for the best result</p>
@@ -2401,7 +2401,7 @@ export default function StudioPage() {
                 ? `Search · ${drafts.length} result${drafts.length !== 1 ? 's' : ''} for "${activeQuery}"`
                 : `Page ${currentPage} · ${drafts.length} video${drafts.length !== 1 ? 's' : ''}`}
             </p>
-            <button onClick={refresh} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
+            <button onClick={refresh} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
               <RefreshCw size={11} /> Refresh
             </button>
           </div>

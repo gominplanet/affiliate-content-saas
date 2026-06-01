@@ -210,7 +210,7 @@ export function SocialPreviewModal({
 
           {loading ? (
             <div className="flex flex-col items-center gap-2 py-10 text-xs text-[#6e6e73]">
-              <Loader2 size={18} className="animate-spin text-[#0071e3]" />
+              <Loader2 size={18} className="animate-spin text-[#7C3AED]" />
               <span>Generating preview…</span>
             </div>
           ) : loadError ? (
@@ -218,7 +218,7 @@ export function SocialPreviewModal({
               <p className="text-xs text-[#ff3b30] flex items-center gap-1.5 justify-center">
                 <AlertCircle size={12} /> {loadError}
               </p>
-              <button onClick={handleRegenerate} className="text-xs text-[#0071e3] hover:underline">Retry</button>
+              <button onClick={handleRegenerate} className="text-xs text-[#7C3AED] hover:underline">Retry</button>
             </div>
           ) : (
             <>
@@ -228,7 +228,7 @@ export function SocialPreviewModal({
                   <button
                     onClick={handleRegenerate}
                     disabled={regenerating}
-                    className="text-[10px] text-[#0071e3] hover:underline inline-flex items-center gap-1 disabled:opacity-60"
+                    className="text-[10px] text-[#7C3AED] hover:underline inline-flex items-center gap-1 disabled:opacity-60"
                   >
                     {regenerating ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />} Regenerate
                   </button>
@@ -237,7 +237,7 @@ export function SocialPreviewModal({
                   value={text}
                   onChange={e => setText(e.target.value)}
                   rows={9}
-                  className="w-full text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#0071e3] focus:outline-none leading-relaxed font-mono resize-none"
+                  className="w-full text-xs text-[#1d1d1f] dark:text-[#f5f5f7] p-3 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none leading-relaxed font-mono resize-none"
                   placeholder="Post body — edit freely"
                 />
               </div>
@@ -261,7 +261,7 @@ export function SocialPreviewModal({
                       onClick={() => {
                         navigator.clipboard.writeText(groupCopy).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
                       }}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline"
                     >
                       {copied ? <><CheckCircle size={11} /> Copied!</> : <><Copy size={11} /> Copy</>}
                     </button>
@@ -286,7 +286,7 @@ export function SocialPreviewModal({
                     </div>
                   ) : (
                     <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-2">
-                      No groups saved yet — add them in <a href="/brand" className="text-[#0071e3] hover:underline">Brand Profile</a> to list them here.
+                      No groups saved yet — add them in <a href="/brand" className="text-[#7C3AED] hover:underline">Brand Profile</a> to list them here.
                     </p>
                   )}
                 </div>
@@ -316,7 +316,7 @@ export function SocialPreviewModal({
                         value={scheduledAt}
                         onChange={e => setScheduledAt(e.target.value)}
                         min={defaultScheduleString()}
-                        className="w-full text-xs px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#0071e3] focus:outline-none"
+                        className="w-full text-xs px-3 py-2 rounded-lg bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 focus:border-[#7C3AED] focus:outline-none"
                       />
                       <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] mt-1.5 leading-relaxed">
                         Your timezone. The post fires automatically — you don&apos;t need to keep the app open.

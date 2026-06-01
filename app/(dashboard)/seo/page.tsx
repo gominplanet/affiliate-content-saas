@@ -478,11 +478,11 @@ export default function SeoPage() {
                     data.summary.unknown ? `${data.summary.unknown} still checking` : null,
                   ].filter(Boolean).join(' · ') || undefined}
                 />
-                <SummaryCard label="Clicks (28d)" value={data.summary.totalClicks.toLocaleString()} accent="#0071e3" />
+                <SummaryCard label="Clicks (28d)" value={data.summary.totalClicks.toLocaleString()} accent="#7C3AED" />
                 <SummaryCard label="Impressions (28d)" value={data.summary.totalImpressions.toLocaleString()} accent="#5856d6" />
               </>
             ) : (
-              <SummaryCard label="Posts" value={String(data.summary.total)} accent="#0071e3" />
+              <SummaryCard label="Posts" value={String(data.summary.total)} accent="#7C3AED" />
             )}
           </div>
 
@@ -494,7 +494,7 @@ export default function SeoPage() {
                 key={k}
                 onClick={() => setSort(k)}
                 disabled={(k !== 'score') && !data.connected}
-                className={`px-2.5 py-1 rounded-full border transition-colors ${sort === k ? 'border-[#0071e3] text-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] disabled:opacity-40'}`}
+                className={`px-2.5 py-1 rounded-full border transition-colors ${sort === k ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] disabled:opacity-40'}`}
               >
                 {lbl}
               </button>
@@ -556,7 +556,7 @@ export default function SeoPage() {
                       <button
                         onClick={(e) => { e.stopPropagation(); recheckIndexing(p.postId as string) }}
                         disabled={rechecking.has(p.postId as string)}
-                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#86868b] hover:text-[#0071e3] disabled:opacity-60 flex-shrink-0"
+                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#86868b] hover:text-[#7C3AED] disabled:opacity-60 flex-shrink-0"
                         title="Re-check the indexing status with Google Search Console (the daily sweep does this for you overnight)"
                       >
                         {rechecking.has(p.postId as string)
@@ -568,7 +568,7 @@ export default function SeoPage() {
                     {data.connected && p.url && p.indexed !== true && (
                       <button
                         onClick={(e) => { e.stopPropagation(); requestIndexing(p.url!) }}
-                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#0071e3] hover:underline flex-shrink-0"
+                        className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline flex-shrink-0"
                         title="Copy this post's URL and open Search Console to Request Indexing"
                       >
                         Index <ExternalLink size={11} />
@@ -584,7 +584,7 @@ export default function SeoPage() {
                       </button>
                     )}
                     {p.url && (
-                      <a href={p.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[#86868b] hover:text-[#0071e3] flex-shrink-0" title="Open post">
+                      <a href={p.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[#86868b] hover:text-[#7C3AED] flex-shrink-0" title="Open post">
                         <ExternalLink size={14} />
                       </a>
                     )}
@@ -599,7 +599,7 @@ export default function SeoPage() {
                           <button
                             onClick={() => runFix(p.postId, 'all')}
                             disabled={!!fixing}
-                            className="mb-3 mr-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                            className="mb-3 mr-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
                           >
                             {busy ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />} Fix all {fixableCount} automatically
                           </button>
@@ -635,7 +635,7 @@ export default function SeoPage() {
                                 <button
                                   onClick={() => runFix(p.postId, c.id as 'internal_links' | 'faq' | 'title_length' | 'image_alt')}
                                   disabled={fixing === key}
-                                  className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+                                  className="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
                                 >
                                   {fixing === key ? <Loader2 size={10} className="animate-spin" /> : <Wand2 size={10} />} Fix
                                 </button>
@@ -749,7 +749,7 @@ export default function SeoPage() {
                 {bulkPreview.preview.map((row) => (
                   <li key={row.postId} className="flex items-start justify-between gap-3 p-3 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e]">
                     <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex-1 line-clamp-2">{row.title}</p>
-                    <span className="text-xs font-semibold text-[#0071e3] whitespace-nowrap mt-0.5">{row.fixes} fix{row.fixes !== 1 ? 'es' : ''}</span>
+                    <span className="text-xs font-semibold text-[#7C3AED] whitespace-nowrap mt-0.5">{row.fixes} fix{row.fixes !== 1 ? 'es' : ''}</span>
                   </li>
                 ))}
               </ul>
@@ -831,11 +831,11 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
             <ol className="list-decimal pl-5 flex flex-col gap-2">
               <li>
                 <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Submit your sitemap (one-time).</span> Open{' '}
-                <a href={sitemapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline inline-flex items-center gap-0.5">Search Console → Sitemaps <ExternalLink size={11} /></a>, type <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px]">wp-sitemap.xml</code> under “Add a new sitemap”, and click Submit. The status should read “Success” within a day. You only do this once.
+                <a href={sitemapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console → Sitemaps <ExternalLink size={11} /></a>, type <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px]">wp-sitemap.xml</code> under “Add a new sitemap”, and click Submit. The status should read “Success” within a day. You only do this once.
               </li>
               <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Request indexing for important posts.</span> Click <span className="font-semibold text-[#0071e3] whitespace-nowrap">Index ↗</span> on any post below — it copies that post’s URL and opens{' '}
-                <a href={inspectUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline inline-flex items-center gap-0.5">Search Console <ExternalLink size={11} /></a>. Paste the URL into the Inspect bar at the top, then click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Request Indexing</strong>. Use the <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> filter below to work through them in order. Google allows about 10 a day — it’s a nudge, not a guarantee, but it’s the strongest signal you can send.
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Request indexing for important posts.</span> Click <span className="font-semibold text-[#7C3AED] whitespace-nowrap">Index ↗</span> on any post below — it copies that post’s URL and opens{' '}
+                <a href={inspectUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console <ExternalLink size={11} /></a>. Paste the URL into the Inspect bar at the top, then click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Request Indexing</strong>. Use the <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> filter below to work through them in order. Google allows about 10 a day — it’s a nudge, not a guarantee, but it’s the strongest signal you can send.
               </li>
               <li>
                 <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on social (MVP can auto-post to Pinterest, Facebook &amp; Instagram — every share is a crawlable link back). Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.

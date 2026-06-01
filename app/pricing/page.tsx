@@ -146,7 +146,7 @@ export default function PricingPage() {
             key={plan.tier}
             className={`rounded-2xl p-6 lg:p-7 flex flex-col ${
               plan.highlight
-                ? 'bg-[#0071e3] text-white shadow-2xl lg:scale-105 ring-1 ring-[#0071e3]/40'
+                ? 'bg-[#7C3AED] text-white shadow-2xl lg:scale-105 ring-1 ring-[#7C3AED]/40'
                 : 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm border border-gray-200 dark:border-white/10'
             }`}
           >
@@ -158,8 +158,8 @@ export default function PricingPage() {
             )}
             {!plan.highlight && plan.badge && (
               <div className="flex items-center gap-1.5 mb-4">
-                <Zap size={14} className="text-[#0071e3]" />
-                <span className="text-xs font-semibold text-[#0071e3] uppercase tracking-wide">{plan.badge}</span>
+                <Zap size={14} className="text-[#7C3AED]" />
+                <span className="text-xs font-semibold text-[#7C3AED] uppercase tracking-wide">{plan.badge}</span>
               </div>
             )}
             <p className={`text-sm font-semibold mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>{plan.label}</p>
@@ -177,7 +177,7 @@ export default function PricingPage() {
                 </span>
               </p>
             )}
-            <p className={`text-sm mb-2 font-medium ${plan.highlight ? 'text-blue-100' : 'text-[#0071e3]'}`}>{plan.limit}</p>
+            <p className={`text-sm mb-2 font-medium ${plan.highlight ? 'text-blue-100' : 'text-[#7C3AED]'}`}>{plan.limit}</p>
             <p className={`text-sm mb-6 ${plan.highlight ? 'text-blue-100' : 'text-[#6e6e73] dark:text-[#ebebf0]'}`}>{plan.description}</p>
 
             <ul className="flex flex-col gap-3 mb-8 flex-1">
@@ -206,8 +206,8 @@ export default function PricingPage() {
         * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
         It activates automatically on Creator &amp; Pro accounts once approved at no extra cost.
       </p>
-      <div className="mt-6 max-w-2xl rounded-2xl bg-[#0071e3]/5 border border-[#0071e3]/20 p-5">
-        <p className="text-center text-sm font-semibold text-[#0071e3] mb-1.5">🔒 Price-lock guarantee</p>
+      <div className="mt-6 max-w-2xl rounded-2xl bg-[#7C3AED]/5 border border-[#7C3AED]/20 p-5">
+        <p className="text-center text-sm font-semibold text-[#7C3AED] mb-1.5">🔒 Price-lock guarantee</p>
         <p className="text-center text-sm text-[#3a3a3c] dark:text-[#ebebf0] leading-relaxed">
           When you subscribe at these Early Access rates, your price stays locked in for as long as you
           keep your plan — even if we raise prices later. Your rate only changes if you choose to upgrade

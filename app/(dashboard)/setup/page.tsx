@@ -26,7 +26,7 @@ const steps = [
 
 const PRESET_COLORS = [
   { hex: '#f5a623', label: 'Amber' },
-  { hex: '#0071e3', label: 'Blue' },
+  { hex: '#7C3AED', label: 'Blue' },
   { hex: '#34c759', label: 'Green' },
   { hex: '#ff3b30', label: 'Red' },
   { hex: '#af52de', label: 'Purple' },
@@ -75,7 +75,7 @@ function StepIndicator({ current }: { current: Step }) {
             <div className="flex flex-col items-center gap-1.5">
               <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
                 done ? 'bg-[#34c759] text-white' :
-                active ? 'bg-[#0071e3] text-white' :
+                active ? 'bg-[#7C3AED] text-white' :
                 'bg-gray-100 text-[#86868b] dark:text-[#8e8e93]'
               }`}>
                 {done ? <CheckCircle size={18} /> : <Icon size={16} />}
@@ -136,7 +136,7 @@ function ImageUpload({
           <button
             type="button"
             onClick={() => ref.current?.click()}
-            className={`w-20 h-20 border-2 border-dashed border-gray-300 hover:border-[#0071e3] bg-[#f5f5f7] dark:bg-[#000] flex flex-col items-center justify-center gap-1 transition-colors ${shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`}
+            className={`w-20 h-20 border-2 border-dashed border-gray-300 hover:border-[#7C3AED] bg-[#f5f5f7] dark:bg-[#000] flex flex-col items-center justify-center gap-1 transition-colors ${shape === 'circle' ? 'rounded-full' : 'rounded-xl'}`}
           >
             <Upload size={16} className="text-[#86868b] dark:text-[#8e8e93]" />
             <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93]">Upload</span>
@@ -204,10 +204,10 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
         {/* Path A — existing site */}
         <button
           onClick={() => onSelect('existing')}
-          className="group flex flex-col items-start gap-4 p-6 rounded-2xl border-2 border-gray-200 dark:border-white/10 hover:border-[#0071e3] bg-white dark:bg-[#1c1c1e] text-left transition-all hover:shadow-md"
+          className="group flex flex-col items-start gap-4 p-6 rounded-2xl border-2 border-gray-200 dark:border-white/10 hover:border-[#7C3AED] bg-white dark:bg-[#1c1c1e] text-left transition-all hover:shadow-md"
         >
-          <div className="w-12 h-12 rounded-xl bg-[#0071e3]/10 flex items-center justify-center group-hover:bg-[#0071e3]/20 transition-colors">
-            <Building2 size={22} className="text-[#0071e3]" />
+          <div className="w-12 h-12 rounded-xl bg-[#7C3AED]/10 flex items-center justify-center group-hover:bg-[#7C3AED]/20 transition-colors">
+            <Building2 size={22} className="text-[#7C3AED]" />
           </div>
           <div className="flex-1">
             <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">I already have a WordPress blog</p>
@@ -228,7 +228,7 @@ function ModePicker({ onSelect }: { onSelect: (m: 'existing' | 'new') => void })
               ))}
             </div>
           </div>
-          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#0071e3] group-hover:gap-2.5 transition-all">
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#7C3AED] group-hover:gap-2.5 transition-all">
             Connect my existing site <ChevronRight size={15} />
           </span>
         </button>
@@ -334,7 +334,7 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#0071e3] hover:opacity-75 mb-4">
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:opacity-75 mb-4">
           <ArrowLeft size={14} /> Back
         </button>
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Connect your WordPress site</h2>
@@ -434,7 +434,7 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
 function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   return (
     <div className="flex flex-col gap-6">
-      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#0071e3] hover:opacity-75 self-start">
+      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:opacity-75 self-start">
         <ArrowLeft size={14} /> Back
       </button>
       <div>
@@ -443,10 +443,10 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
           Hostinger is where your affiliate blog will live. You&apos;ll get a domain and fast hosting for under $3/month.
         </p>
       </div>
-      <div className="card p-5 border border-[#0071e3]/20 bg-[#0071e3]/3">
+      <div className="card p-5 border border-[#7C3AED]/20 bg-[#7C3AED]/3">
         <div className="flex items-start gap-4">
-          <div className="w-10 h-10 rounded-xl bg-[#0071e3]/10 flex items-center justify-center flex-shrink-0">
-            <Globe size={20} className="text-[#0071e3]" />
+          <div className="w-10 h-10 rounded-xl bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
+            <Globe size={20} className="text-[#7C3AED]" />
           </div>
           <div className="flex-1">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Hostinger Web Hosting</p>
@@ -470,7 +470,7 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
             'Come back here — the next step will walk you through installing WordPress.',
           ].map((text, i) => (
             <li key={i} className="flex items-start gap-3">
-              <span className="w-5 h-5 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+              <span className="w-5 h-5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
             </li>
           ))}
@@ -538,7 +538,7 @@ function Step2({ onNext }: { onNext: () => void }) {
               'Copy the token — you\'ll paste it in the Launch step.',
             ].map((text, i) => (
               <li key={i} className="flex items-start gap-2.5">
-                <span className="w-4 h-4 rounded-full bg-[#0071e3]/10 text-[#0071e3] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
               </li>
             ))}
@@ -706,7 +706,7 @@ function Step4({
       <div className="flex flex-col gap-4">
         <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4">
           <div className="flex items-center gap-2 mb-2">
-            <Lock size={14} className="text-[#0071e3] flex-shrink-0" />
+            <Lock size={14} className="text-[#7C3AED] flex-shrink-0" />
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Paste your Connection Token</p>
           </div>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
@@ -769,7 +769,7 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
         <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Your review site is live</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           Homepage, About, Privacy and navigation are all wired up at{' '}
-          <a href={wordpressUrl} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline font-medium">{wordpressUrl}</a>. Now head to YouTube Co-Pilot and generate your first review.
+          <a href={wordpressUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline font-medium">{wordpressUrl}</a>. Now head to YouTube Co-Pilot and generate your first review.
         </p>
       </div>
       <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-4 text-left w-full max-w-md">
@@ -1287,7 +1287,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Your Channel ID lets the tool pull your public video list so you can turn any video into a blog post. Find it at <a href="https://www.youtube.com/account_advanced" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">youtube.com/account_advanced</a> — it starts with <code className="bg-[var(--surface-2)] px-1 rounded">UC</code>.
+          Your Channel ID lets the tool pull your public video list so you can turn any video into a blog post. Find it at <a href="https://www.youtube.com/account_advanced" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">youtube.com/account_advanced</a> — it starts with <code className="bg-[var(--surface-2)] px-1 rounded">UC</code>.
         </p>
         <div>
           <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Channel ID</label>
@@ -1334,7 +1334,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
-              <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || !wpAppPassword} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors">
+              <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || !wpAppPassword} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40 disabled:opacity-40 transition-colors">
                 {wpTesting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />} Test connection
               </button>
               <button type="button" onClick={fixCssCorruption} disabled={fixingCss || !wpUrl} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#ff3b30]/40 disabled:opacity-40 transition-colors">
@@ -1388,7 +1388,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
                 <button
                   type="submit"
                   disabled={oneClickUrl.trim().length < 4}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#0071e3] text-white rounded-lg hover:bg-[#0066cc] disabled:opacity-40 transition-colors whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#7C3AED] text-white rounded-lg hover:bg-[#0066cc] disabled:opacity-40 transition-colors whitespace-nowrap"
                 >
                   <Wifi size={12} /> Connect WordPress
                 </button>
@@ -1416,7 +1416,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
                     {wpUrl && (
                       <>
                         {' '}
-                        <a href={`${wpUrl.replace(/\/$/, '')}/wp-admin/admin.php?page=mvp-affiliate`} target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Open MVP Affiliate page →</a>
+                        <a href={`${wpUrl.replace(/\/$/, '')}/wp-admin/admin.php?page=mvp-affiliate`} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Open MVP Affiliate page →</a>
                       </>
                     )}
                   </p>
@@ -1432,7 +1432,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
                       type="button"
                       onClick={reconnectWithToken}
                       disabled={reconnecting || reconnectToken.trim().length < 20}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40 disabled:opacity-40 transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40 disabled:opacity-40 transition-colors"
                     >
                       {reconnecting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
                       Connect with token
@@ -1685,7 +1685,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           Bluesky doesn&apos;t use OAuth yet — instead, you generate an <strong>App Password</strong> in Bluesky settings and paste it here.
         </p>
         <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
-          <li>Open <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">bsky.app/settings/app-passwords</a></li>
+          <li>Open <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">bsky.app/settings/app-passwords</a></li>
           <li>Click <strong>Add App Password</strong> → name it &quot;MVP Affiliate&quot;</li>
           <li>Copy the password (only shown once)</li>
           <li>Paste it below along with your handle</li>
@@ -1747,7 +1747,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Telegram <span className="ml-1 text-[10px] font-medium text-[#0071e3] uppercase tracking-wider">Pro</span></p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Telegram <span className="ml-1 text-[10px] font-medium text-[#7C3AED] uppercase tracking-wider">Pro</span></p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Fan out every review to your Telegram channel</p>
           </div>
           {telegram.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
@@ -1759,7 +1759,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4 list-decimal ml-5 flex flex-col gap-1">
           <li>Create a Telegram channel (or use an existing one). New channels: open Telegram → menu → <strong>New Channel</strong>.</li>
           <li>Open the channel → tap the channel name → <strong>Administrators</strong> → <strong>Add Administrator</strong> → search for <strong>@MVPAffiliateBot</strong> (or whatever your bot is named) and add it with <strong>Post Messages</strong> permission.</li>
-          <li>Set your channel to <strong>Public</strong> and give it a username (e.g. <code>@myreviews</code>) — easiest. Or grab the numeric ID from a tool like <a href="https://t.me/getidsbot" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">@getidsbot</a> if you want it private.</li>
+          <li>Set your channel to <strong>Public</strong> and give it a username (e.g. <code>@myreviews</code>) — easiest. Or grab the numeric ID from a tool like <a href="https://t.me/getidsbot" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">@getidsbot</a> if you want it private.</li>
           <li>Paste your channel ID below (<code>@myreviews</code> or the numeric form like <code>-1001234567890</code>).</li>
         </ol>
 
@@ -1815,7 +1815,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Instagram <span className="ml-1 text-[10px] font-medium text-[#0071e3] uppercase tracking-wider">Pro</span></p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Instagram <span className="ml-1 text-[10px] font-medium text-[#7C3AED] uppercase tracking-wider">Pro</span></p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Publish reviews as Reels, image Feed posts, or Stories — automatically</p>
           </div>
           {instagram.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
@@ -1868,7 +1868,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">TikTok <span className="ml-1 text-[10px] font-medium text-[#0071e3] uppercase tracking-wider">Pro</span></p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">TikTok <span className="ml-1 text-[10px] font-medium text-[#7C3AED] uppercase tracking-wider">Pro</span></p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Direct Post your vertical short reviews to your TikTok feed</p>
           </div>
           {tiktok.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
@@ -1899,7 +1899,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               {ttDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
             </button>
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-              On any post in <a href="/content" className="text-[#0071e3] hover:underline">Content</a>, click <strong>Post to TikTok</strong> to open the publish screen — pick privacy, comment / duet / stitch, commercial-content disclosure, then post.
+              On any post in <a href="/content" className="text-[#7C3AED] hover:underline">Content</a>, click <strong>Post to TikTok</strong> to open the publish screen — pick privacy, comment / duet / stitch, commercial-content disclosure, then post.
             </p>
           </div>
         ) : (
@@ -1944,7 +1944,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         {youtubeOAuthConnected ? (
           <div className="flex flex-col gap-2">
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-              Your Google account is connected. Visit <a href="/studio" className="text-[#0071e3] hover:underline">YouTube Co-Pilot</a> to generate metadata for your draft videos.
+              Your Google account is connected. Visit <a href="/studio" className="text-[#7C3AED] hover:underline">YouTube Co-Pilot</a> to generate metadata for your draft videos.
             </p>
             <button onClick={disconnectYoutube} disabled={ytDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {ytDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect YouTube
@@ -2010,8 +2010,8 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       {/* Geniuslink */}
       <div className="card p-5 flex flex-col gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#0071e3]/10">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0071e3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           </div>
           <div>
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</p>
@@ -2020,7 +2020,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           {geniuslinkKey && geniuslinkSecret && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          Geniuslink turns a plain Amazon product link into a geo-targeted short link (e.g. <code className="bg-[var(--surface-2)] px-1 rounded">geni.us/abc123</code>) that routes shoppers to their local Amazon store. To connect, log in to your Geniuslink account, go to <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">app.geni.us/settings → Integrate with our API</a>, and copy your <strong>API Key</strong> and <strong>API Secret</strong>.
+          Geniuslink turns a plain Amazon product link into a geo-targeted short link (e.g. <code className="bg-[var(--surface-2)] px-1 rounded">geni.us/abc123</code>) that routes shoppers to their local Amazon store. To connect, log in to your Geniuslink account, go to <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">app.geni.us/settings → Integrate with our API</a>, and copy your <strong>API Key</strong> and <strong>API Secret</strong>.
         </p>
         <div className="flex flex-col gap-3">
           <div>
@@ -2047,7 +2047,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           {amazonAssociatesTag && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
         </div>
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          If you're not using Geniuslink, your Amazon Associates tracking tag is used as the fallback — it's appended to product URLs so you still earn commissions. Find your tag in <a href="https://affiliate-program.amazon.com/home/account/tag/manage" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Amazon Associates → Account → Manage Tracking IDs</a>. It looks like <code className="bg-[var(--surface-2)] px-1 rounded">yourbrand-20</code>.
+          If you're not using Geniuslink, your Amazon Associates tracking tag is used as the fallback — it's appended to product URLs so you still earn commissions. Find your tag in <a href="https://affiliate-program.amazon.com/home/account/tag/manage" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Amazon Associates → Account → Manage Tracking IDs</a>. It looks like <code className="bg-[var(--surface-2)] px-1 rounded">yourbrand-20</code>.
         </p>
         <div>
           <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Associates Tag</label>
@@ -2333,7 +2333,7 @@ function SetupPageInner() {
         <StepIndicator current={step} />
       </div>
       <div className="mb-4">
-        <button onClick={() => { setMode(null); setStep(1) }} className="inline-flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#0071e3] transition-colors">
+        <button onClick={() => { setMode(null); setStep(1) }} className="inline-flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
           <ArrowLeft size={12} /> Change setup type
         </button>
       </div>

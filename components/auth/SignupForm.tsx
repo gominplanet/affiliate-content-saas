@@ -20,7 +20,7 @@ export default function SignupForm() {
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-4">{SALES_PAUSED_MESSAGE}</p>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           Already have an account?{' '}
-          <Link href="/login" className="text-[#0071e3] hover:underline font-medium">Sign in</Link>
+          <Link href="/login" className="text-[#7C3AED] hover:underline font-medium">Sign in</Link>
         </p>
       </div>
     )
@@ -127,7 +127,7 @@ export default function SignupForm() {
 
       <p className="text-sm text-center text-[#6e6e73] dark:text-[#ebebf0] mt-5">
         Already have an account?{' '}
-        <Link href="/login" className="text-[#0071e3] hover:underline font-medium">
+        <Link href="/login" className="text-[#7C3AED] hover:underline font-medium">
           Sign in
         </Link>
       </p>

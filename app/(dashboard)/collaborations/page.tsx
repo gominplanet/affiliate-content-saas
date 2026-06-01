@@ -25,7 +25,7 @@ function YesNo({ value, onChange }: { value: boolean; onChange: (v: boolean) => 
           onClick={() => onChange(v)}
           className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
             value === v
-              ? 'bg-[#0071e3] text-white'
+              ? 'bg-[#7C3AED] text-white'
               : 'bg-white dark:bg-[#1c1c1e] text-[#6e6e73] dark:text-[#ebebf0]'
           }`}
         >
@@ -256,7 +256,7 @@ export default function CollaborationsPage() {
                   type="button"
                   onClick={() => togglePlatform(p)}
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
-                    on ? 'bg-[#0071e3] text-white' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'
+                    on ? 'bg-[#7C3AED] text-white' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'
                   }`}
                 >
                   {on && <CheckCircle size={11} />} {p}
@@ -344,7 +344,7 @@ export default function CollaborationsPage() {
           <button
             onClick={generate}
             disabled={generating}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4] disabled:opacity-60 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 transition-colors"
           >
             {generating
               ? <><Loader2 size={14} className="animate-spin" /> Researching + writing… (up to ~1 min)</>
@@ -389,7 +389,7 @@ export default function CollaborationsPage() {
           <input
             value={subject}
             onChange={e => setSubject(e.target.value)}
-            className="w-full text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 mb-4 focus:outline-none focus:border-[#0071e3]/50"
+            className="w-full text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 mb-4 focus:outline-none focus:border-[#7C3AED]/50"
           />
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] font-semibold text-[#86868b] dark:text-[#8e8e93] uppercase tracking-wide">Body</p>
@@ -404,7 +404,7 @@ export default function CollaborationsPage() {
             value={emailBody}
             onChange={e => setEmailBody(e.target.value)}
             rows={16}
-            className="w-full text-sm text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 leading-relaxed resize-y focus:outline-none focus:border-[#0071e3]/50"
+            className="w-full text-sm text-[#1d1d1f] dark:text-[#f5f5f7] border border-gray-200 dark:border-white/10 rounded-lg px-3 py-2 leading-relaxed resize-y focus:outline-none focus:border-[#7C3AED]/50"
           />
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-2">Edit anything before you send — copy the subject and body separately into your email.</p>
         </div>
@@ -417,7 +417,7 @@ export default function CollaborationsPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={toggleSelectAll}
-                className="text-xs font-medium text-[#0071e3] hover:underline"
+                className="text-xs font-medium text-[#7C3AED] hover:underline"
               >
                 {allSelected ? 'Clear selection' : `Select all (${history.length})`}
               </button>
@@ -438,7 +438,7 @@ export default function CollaborationsPage() {
             {history.map(h => (
               <div
                 key={h.id}
-                className={`card p-4 ${selected.has(h.id) ? 'ring-1 ring-[#0071e3]' : ''}`}
+                className={`card p-4 ${selected.has(h.id) ? 'ring-1 ring-[#7C3AED]' : ''}`}
               >
                 <div className="flex items-center justify-between gap-3 mb-1">
                   <label className="flex items-center gap-2 min-w-0 cursor-pointer">
@@ -446,13 +446,13 @@ export default function CollaborationsPage() {
                       type="checkbox"
                       checked={selected.has(h.id)}
                       onChange={() => toggleSel(h.id)}
-                      className="shrink-0 accent-[#0071e3]"
+                      className="shrink-0 accent-[#7C3AED]"
                     />
                     <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">{h.brand_name}</span>
                   </label>
                   <button
                     onClick={() => copyText(h.generated_email, 'body')}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-[#0071e3] hover:underline shrink-0"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[#7C3AED] hover:underline shrink-0"
                   >
                     <Copy size={11} /> Copy
                   </button>

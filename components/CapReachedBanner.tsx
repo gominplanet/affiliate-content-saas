@@ -96,7 +96,7 @@ export function CapReachedBanner({ message, info, onDismiss, className = '' }: P
           {next && (
             <Link
               href="/pricing"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4] transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] transition-colors"
             >
               <Sparkles size={11} /> Upgrade to {next.label}
               {next.limit !== null && <span className="opacity-80">— {next.limit} / month</span>}
@@ -105,7 +105,7 @@ export function CapReachedBanner({ message, info, onDismiss, className = '' }: P
           )}
           <Link
             href="/pricing"
-            className="text-xs text-[#0071e3] hover:underline font-medium"
+            className="text-xs text-[#7C3AED] hover:underline font-medium"
           >
             See all plans →
           </Link>

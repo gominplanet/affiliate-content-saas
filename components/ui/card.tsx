@@ -40,7 +40,7 @@ const cardVariants = cva(
         // Subtle highlight — for "you should look at this" widgets without
         // a destructive feel. Brand accent at 5% intensity.
         accent:
-          'bg-[#0071e3]/[0.04] border border-[#0071e3]/15 shadow-[var(--shadow-sm)] ' +
+          'bg-[#7C3AED]/[0.04] border border-[#7C3AED]/15 shadow-[var(--shadow-sm)] ' +
           'dark:bg-[#5fa5ff]/[0.06] dark:border-[#5fa5ff]/20',
       },
       interactive: {

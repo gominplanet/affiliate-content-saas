@@ -260,7 +260,7 @@ export function TikTokDirectModal({
               <div className="rounded-lg border-[#ff9500]/20 bg-[#ff9500]/5 p-3">
                 <p className="text-sm text-[#9a5d00] flex items-start gap-2"><AlertCircle size={14} className="mt-0.5" /> {loadError}</p>
                 {reconnectRequired && (
-                  <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#0071e3] hover:underline">
+                  <a href="/setup?tab=integrations" className="mt-3 inline-block text-xs text-[#7C3AED] hover:underline">
                     Go to Integrations → Reconnect TikTok →
                   </a>
                 )}
@@ -271,7 +271,7 @@ export function TikTokDirectModal({
               {!reconnectRequired && (
                 <>
                   {youtubeId && (
-                    <div className="rounded-lg border border-[#0071e3]/20 bg-[#0071e3]/5 p-4 flex flex-col items-center gap-2.5">
+                    <div className="rounded-lg border border-[#7C3AED]/20 bg-[#7C3AED]/5 p-4 flex flex-col items-center gap-2.5">
                       <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] text-center">
                         Open this Short in YouTube Studio, hit <strong>⋮ → Download</strong>, then drop the MP4 in the zone below.
                       </p>
@@ -279,7 +279,7 @@ export function TikTokDirectModal({
                         href={`https://studio.youtube.com/video/${youtubeId}/edit`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#0071e3] hover:bg-[#0062c4]"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9]"
                       >
                         Open in YouTube Studio <ExternalLink size={14} />
                       </a>
@@ -319,7 +319,7 @@ export function TikTokDirectModal({
                       href={`https://studio.youtube.com/video/${youtubeId || meta.youtubeVideoId}/edit`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[10px] text-[#86868b] hover:text-[#0071e3] inline-flex items-center gap-1"
+                      className="text-[10px] text-[#86868b] hover:text-[#7C3AED] inline-flex items-center gap-1"
                       title="Open this Short in YouTube Studio to download the original MP4"
                     >
                       <ExternalLink size={10} /> Wrong video? Open in YouTube Studio to grab the right one
@@ -425,7 +425,7 @@ export function TikTokDirectModal({
               <div className="rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] p-3 flex items-start gap-2 text-[11px] text-[#3a3a3c] dark:text-[#d2d2d7] leading-relaxed">
                 <Music size={13} className="text-[#86868b] flex-shrink-0 mt-0.5" />
                 <p>
-                  By posting, you confirm your video complies with TikTok&apos;s <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">Music Usage Confirmation</a>.
+                  By posting, you confirm your video complies with TikTok&apos;s <a href="https://www.tiktok.com/legal/page/global/music-usage-confirmation/en" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Music Usage Confirmation</a>.
                 </p>
               </div>
 
@@ -440,8 +440,8 @@ export function TikTokDirectModal({
                 </div>
               )}
               {publishStatus === 'processing' && (
-                <div className="rounded-lg border-[#0071e3]/20 bg-[#0071e3]/5 p-3 flex flex-col gap-1">
-                  <p className="text-xs text-[#0071e3] flex items-center gap-1.5">
+                <div className="rounded-lg border-[#7C3AED]/20 bg-[#7C3AED]/5 p-3 flex flex-col gap-1">
+                  <p className="text-xs text-[#7C3AED] flex items-center gap-1.5">
                     <Loader2 size={12} className="animate-spin" />
                     Sent to TikTok. Processing — 1-3 min.
                   </p>
@@ -455,7 +455,7 @@ export function TikTokDirectModal({
                     href={`/api/proxy-short/${videoId}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[10px] text-[#0071e3] hover:underline inline-flex items-center gap-1 self-start"
+                    className="text-[10px] text-[#7C3AED] hover:underline inline-flex items-center gap-1 self-start"
                   >
                     Test the proxy URL in a new tab <ExternalLink size={9} />
                   </a>
@@ -475,7 +475,7 @@ export function TikTokDirectModal({
                 <div className="rounded-lg border-[#34c759]/20 bg-[#34c759]/5 p-3">
                   <p className="text-xs text-[#34c759] flex items-center gap-1.5"><CheckCircle size={12} /> Live on TikTok.</p>
                   {shareUrl && (
-                    <a href={shareUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] text-[#0071e3] hover:underline">
+                    <a href={shareUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-[11px] text-[#7C3AED] hover:underline">
                       Open on TikTok <ExternalLink size={10} />
                     </a>
                   )}

@@ -158,15 +158,15 @@ export default function AssistantPage() {
       <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[480px]">
         {/* Conversation list */}
         <div className="w-56 flex-shrink-0 flex flex-col gap-2">
-          <button onClick={newChat} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4]">
+          <button onClick={newChat} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]">
             <Plus size={13} /> New chat
           </button>
-          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#0071e3]/40" title="What MVP remembers about you — view, import from another AI tool, or clear">
+          <button onClick={openMemory} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40" title="What MVP remembers about you — view, import from another AI tool, or clear">
             <Brain size={13} /> Memory
           </button>
           <div className="flex-1 overflow-y-auto flex flex-col gap-1">
             {conversations.map(c => (
-              <div key={c.id} className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer text-xs ${activeId === c.id ? 'bg-[#0071e3]/10 text-[#0071e3]' : 'hover:bg-gray-100 dark:hover:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
+              <div key={c.id} className={`group flex items-center gap-1 rounded-lg px-2 py-1.5 cursor-pointer text-xs ${activeId === c.id ? 'bg-[#7C3AED]/10 text-[#7C3AED]' : 'hover:bg-gray-100 dark:hover:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
                 <MessageSquare size={12} className="flex-shrink-0 opacity-60" />
                 <button onClick={() => openConversation(c.id)} className="flex-1 text-left truncate">{c.title}</button>
                 <button onClick={() => deleteConversation(c.id)} className="opacity-0 group-hover:opacity-100 text-[#86868b] hover:text-[#ff3b30]" title="Delete">
@@ -185,14 +185,14 @@ export default function AssistantPage() {
           <div ref={threadRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
             {messages.length === 0 && !streaming && (
               <div className="m-auto max-w-md text-center">
-                <div className="w-12 h-12 rounded-2xl bg-[#0071e3]/10 flex items-center justify-center mx-auto mb-3">
-                  <Sparkles size={22} className="text-[#0071e3]" />
+                <div className="w-12 h-12 rounded-2xl bg-[#7C3AED]/10 flex items-center justify-center mx-auto mb-3">
+                  <Sparkles size={22} className="text-[#7C3AED]" />
                 </div>
                 <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">How can I help?</p>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">Ask about using MVP Affiliate, or affiliate strategy for your niche.</p>
                 <div className="flex flex-col gap-2">
                   {STARTERS.map(s => (
-                    <button key={s} onClick={() => send(s)} className="text-left text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40 text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    <button key={s} onClick={() => send(s)} className="text-left text-xs px-3 py-2 rounded-lg border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 text-[#1d1d1f] dark:text-[#f5f5f7]">
                       {s}
                     </button>
                   ))}
@@ -201,7 +201,7 @@ export default function AssistantPage() {
             )}
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${m.role === 'user' ? 'bg-[#0071e3] text-white' : 'bg-gray-100 dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
+                <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${m.role === 'user' ? 'bg-[#7C3AED] text-white' : 'bg-gray-100 dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
                   {m.content}
                 </div>
               </div>
@@ -235,7 +235,7 @@ export default function AssistantPage() {
             <button
               onClick={() => send(input)}
               disabled={sending || !input.trim()}
-              className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-50 flex-shrink-0"
+              className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50 flex-shrink-0"
             >
               {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
             </button>
@@ -249,7 +249,7 @@ export default function AssistantPage() {
           <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#1c1c1e] p-6 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Brain size={18} className="text-[#0071e3]" />
+                <Brain size={18} className="text-[#7C3AED]" />
                 <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Assistant memory</h3>
               </div>
               <button onClick={() => setMemoryOpen(false)} className="text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"><X size={16} /></button>
@@ -272,10 +272,10 @@ export default function AssistantPage() {
             />
             <input ref={fileRef} type="file" accept=".txt,.md,.json,.csv,text/plain" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const t = await f.text(); setImportText(prev => (prev ? prev + '\n\n' : '') + t.slice(0, 200000)) } e.target.value = '' }} />
             <div className="flex items-center gap-2 mb-3">
-              <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40">
+              <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40">
                 <Upload size={12} /> Upload file
               </button>
-              <button onClick={importToMemory} disabled={memoryBusy || !importText.trim()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0071e3] text-white hover:bg-[#0062c4] disabled:opacity-50">
+              <button onClick={importToMemory} disabled={memoryBusy || !importText.trim()} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50">
                 {memoryBusy ? <Loader2 size={12} className="animate-spin" /> : <Brain size={12} />} Import to memory
               </button>
             </div>

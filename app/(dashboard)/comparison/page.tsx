@@ -67,7 +67,7 @@ export default function ComparisonPage() {
       {tier !== null && !isPaid && (
         <div className="mb-4 rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3">
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Available on Creator & Pro</p>
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Multi-product comparisons and buying guides are a paid feature. <a href="/pricing" className="text-[#0071e3] hover:underline">Upgrade</a> to unlock.</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Multi-product comparisons and buying guides are a paid feature. <a href="/pricing" className="text-[#7C3AED] hover:underline">Upgrade</a> to unlock.</p>
         </div>
       )}
 
@@ -78,14 +78,14 @@ export default function ComparisonPage() {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => setMode('comparison')}
-              className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition ${mode === 'comparison' ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}
+              className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition ${mode === 'comparison' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}
             >
               <span className="flex items-center gap-1.5 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><Trophy size={14} className="text-[#ff9500]" /> Comparison</span>
               <span className="text-xs text-[#86868b]">Head-to-head, ranked, names a winner.</span>
             </button>
             <button
               onClick={() => setMode('guide')}
-              className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition ${mode === 'guide' ? 'border-[#0071e3] bg-[#0071e3]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#0071e3]/40'}`}
+              className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition ${mode === 'guide' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}
             >
               <span className="flex items-center gap-1.5 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><ListChecks size={14} className="text-[#34c759]" /> Buying Guide</span>
               <span className="text-xs text-[#86868b]">&ldquo;Best for ___&rdquo; — helps readers self-select.</span>
@@ -162,7 +162,7 @@ export default function ComparisonPage() {
             ))}
           </div>
           {urls.length < MAX_URLS && (
-            <button onClick={addUrl} disabled={busy} className="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#0071e3] hover:underline disabled:opacity-50">
+            <button onClick={addUrl} disabled={busy} className="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline disabled:opacity-50">
               <Plus size={13} /> Add another product
             </button>
           )}
@@ -174,7 +174,7 @@ export default function ComparisonPage() {
           <div className="rounded-xl border border-[#34c759]/30 bg-[#34c759]/5 px-4 py-3">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Published! &ldquo;{result.title}&rdquo;</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">{result.productCount} products · {result.mode === 'comparison' ? 'comparison' : 'buying guide'}</p>
-            <a href={result.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#0071e3] hover:underline">
+            <a href={result.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline">
               View post <ExternalLink size={12} />
             </a>
           </div>
