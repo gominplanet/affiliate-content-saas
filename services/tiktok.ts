@@ -16,24 +16,18 @@ const TT_TOKEN_URL = `${TT_BASE}/v2/oauth/token/`
 /**
  * Direct Post vs Inbox/Draft mode.
  *
- * TikTok gates the `video.publish` scope (direct posting straight to a
- * creator's feed) behind a separate audit that's only available AFTER
- * an app passes standard production review. Without `video.publish`,
- * the `/v2/post/publish/video/init/` endpoint returns scope_not_authorized.
+ * Direct mode (default): /v2/post/publish/video/init/ — publishes
+ * straight to the creator's TikTok feed using the post_info we send.
+ * Requires the `video.publish` scope, which TikTok grants only after
+ * an explicit audit. We have that audit approved and the scope enabled
+ * on the dev-portal app, so direct mode is on.
  *
- * Until our `video.publish` audit clears, we route every publish through
- * `/v2/post/publish/inbox/video/init/` — the video lands in the creator's
- * TikTok app DRAFTS, and they finalize caption / privacy / audience there.
- * This needs only `video.upload` (which we DO have today).
- *
- * To flip back to direct posting once approved:
- *   1. Flip USE_INBOX_MODE to false.
- *   2. Add `video.publish` back to the OAuth scope string in
- *      app/api/auth/tiktok/route.ts.
- *   3. Existing connected users have to disconnect + reconnect to get
- *      the new scope into their token.
+ * Inbox fallback: /v2/post/publish/inbox/video/init/ — drops the video
+ * into the creator's TikTok app drafts, they finalize caption/privacy
+ * themselves. Only needs `video.upload`. Flip USE_INBOX_MODE = true if
+ * TikTok ever revokes the audit or we need a quick safe-mode.
  */
-const USE_INBOX_MODE = true
+const USE_INBOX_MODE = false
 
 /** What we mirror back to the dashboard / publish UI from creator_info. */
 export interface CreatorInfo {

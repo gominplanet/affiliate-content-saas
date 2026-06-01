@@ -55,14 +55,12 @@ export async function GET() {
   // SCOPE SET (must mirror what's enabled on the TikTok developer-portal app).
   //   user.info.basic    — Login Kit identity (open_id, display_name, avatar)
   //   user.info.profile  — bio + verified flag, shown in Settings → Integrations
-  //   video.upload       — drops a video into the user's TikTok inbox as a DRAFT;
-  //                        the user finalizes (caption / privacy / audience) in
-  //                        the TikTok app. Direct posting via `video.publish`
-  //                        is gated behind a separate TikTok audit — apply for
-  //                        it AFTER production review is approved, then add it
-  //                        to this string AND swap services/tiktok.ts back to
-  //                        the /v2/post/publish/video/init/ endpoint.
-  url.searchParams.set('scope', 'user.info.basic,user.info.profile,video.upload')
+  //   video.upload       — transfers the composed video file into the user's
+  //                        TikTok account (required by Content Posting API).
+  //   video.publish      — direct-posts the uploaded video to the user's feed
+  //                        using the caption + privacy picked inside MVP, via
+  //                        /v2/post/publish/video/init/.
+  url.searchParams.set('scope', 'user.info.basic,user.info.profile,video.upload,video.publish')
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('state', state)
 
