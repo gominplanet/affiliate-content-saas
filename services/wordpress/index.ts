@@ -261,20 +261,29 @@ export class WordPressService {
           body: bodyParsed,
         }),
       })
-      // 404 = plugin too old (no /proxy route yet). 401 = bad token (user
-      // disconnected the site or the secret rotated). Both mean we fall
-      // back to the legacy auth chain instead of erroring out.
-      if (res.status === 404 || res.status === 401) return null
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(`WordPress proxy ${res.status}: ${text.slice(0, 300)}`)
-      }
+      // Treat any non-2xx as "proxy unavailable, fall through to legacy auth":
+      //   - 404 → plugin too old (no /proxy route)
+      //   - 401 → bad token (secret stale)
+      //   - 403 → host WAF (Wordfence, Sucuri, Hostinger, Cloudflare, etc.)
+      //     blocking the request before it reaches WordPress
+      //   - 429 → proxy's own brute-force cooldown
+      //   - 5xx → transient server error
+      // Surfacing these directly to the user as "WordPress proxy 4XX: <html…"
+      // is unhelpful — the legacy chain's breaker + /setup/wp-doctor give a
+      // far better error UX. If a body-content check reveals HTML (a WAF
+      // page), we KNOW the underlying issue is a firewall block and the
+      // legacy fallback will fail with the same root cause, so we still
+      // surrender to the breaker path which carries the doctor link.
+      if (!res.ok) return null
+      // Some hosts return 200 with an HTML challenge page (Cloudflare's
+      // "I'm Under Attack" mode) — treat that as a proxy miss too.
+      const contentType = res.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) return null
       return await res.json() as T
-    } catch (err) {
-      // Network errors should also fall through to the legacy path — they
-      // could be transient. Only throw when the proxy explicitly returned
-      // an error status (handled above).
-      if (err instanceof Error && err.message.startsWith('WordPress proxy')) throw err
+    } catch {
+      // Network errors / timeouts / DNS issues → fall through to the
+      // legacy auth chain. The legacy path's own error handling + the
+      // LOGIN_BREAKER message will carry the user to /setup/wp-doctor.
       return null
     }
   }
@@ -356,6 +365,18 @@ export class WordPressService {
 
     if (!res.ok) {
       const body = await res.text()
+      // WAF / CDN block detection: a 403 with an HTML body (instead of WP's
+      // usual JSON error) means a firewall in front of WordPress is blocking
+      // us — Wordfence, Sucuri, Cloudflare, Hostinger WAF, etc. Pasting the
+      // raw HTML into the user's error toast is unhelpful; point them at the
+      // doctor which names the exact plugin/firewall and gives fix steps.
+      const isHtml = body.trim().startsWith('<') || body.toLowerCase().includes('<html')
+      if (res.status === 403 && isHtml) {
+        throw new Error(
+          'Your WordPress firewall (Wordfence, SG Security, Cloudflare, or similar) is blocking MVP from publishing. ' +
+          'Run the Connection Doctor at /setup/wp-doctor — it identifies the exact plugin and gives click-by-click fix steps.',
+        )
+      }
       throw new Error(`WordPress ${res.status}: ${body.slice(0, 300)}`)
     }
     return res.json() as Promise<T>
