@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.24
+ * Version: 1.0.25
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.24');
+define('MVP_AFFILIATE_VERSION', '1.0.25');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -33,12 +33,32 @@ add_filter('allowed_redirect_hosts', function ($hosts) {
     return $hosts;
 });
 
-// ─── 1. Authorization header fix ───────────────────────────────────────────────
+// ─── 1. Authorization header fix (zero-touch — no .htaccess needed) ──────────
 // Runs at every PHP request, before WordPress REST auth checks.
-// Hostinger, SiteGround, and some shared Apache configs strip the Authorization
-// header before PHP sees it, but leave it as REDIRECT_HTTP_AUTHORIZATION.
-if (!isset($_SERVER['HTTP_AUTHORIZATION']) && isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
-    $_SERVER['HTTP_AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+// Different hosts hide the Authorization header in different places:
+//   - Hostinger / shared Apache: REDIRECT_HTTP_AUTHORIZATION
+//   - LiteSpeed (some configs): REDIRECT_REDIRECT_HTTP_AUTHORIZATION (double-redirect)
+//   - PHP-CGI hosts: apache_request_headers() carries it but $_SERVER does not
+// We probe all four locations so users on ANY of these hosts never need
+// to manually patch their .htaccess. The activation hook (below) still
+// also writes the .htaccess rule as belt-and-suspenders for hosts where
+// even this PHP-level shim can't see the header.
+if (!isset($_SERVER['HTTP_AUTHORIZATION'])) {
+    if (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $_SERVER['HTTP_AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    } elseif (isset($_SERVER['REDIRECT_REDIRECT_HTTP_AUTHORIZATION'])) {
+        $_SERVER['HTTP_AUTHORIZATION'] = $_SERVER['REDIRECT_REDIRECT_HTTP_AUTHORIZATION'];
+    } elseif (function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        if (is_array($headers)) {
+            // Header names are case-insensitive in HTTP but the array keys may
+            // vary across Apache builds. Normalize to lower-case for lookup.
+            $lower = array_change_key_case($headers, CASE_LOWER);
+            if (isset($lower['authorization'])) {
+                $_SERVER['HTTP_AUTHORIZATION'] = $lower['authorization'];
+            }
+        }
+    }
 }
 
 // ─── 2. Activation: patch .htaccess for hosts where PHP-level fix isn't enough ─
@@ -105,6 +125,15 @@ if (!function_exists('mvp_affiliate_activate')) {
         }
         if (!get_option('affiliateos_indexnow_key')) {
             update_option('affiliateos_indexnow_key', bin2hex(random_bytes(16)));
+        }
+        // Mint the body-auth proxy secret. The dashboard reads this via
+        // /affiliateos/v1/status after a successful Application Password
+        // connect, then sends it as a JSON-body field on every write
+        // (instead of relying on the Authorization header that some hosts
+        // strip on POST). 32 bytes = 64 hex chars — generous entropy and
+        // immune to brute-force at the timing of a normal request.
+        if (!get_option('affiliateos_proxy_secret')) {
+            update_option('affiliateos_proxy_secret', bin2hex(random_bytes(32)));
         }
     }
 }
@@ -1049,12 +1078,121 @@ add_action('rest_api_init', function () {
 if (!function_exists('mvp_affiliate_rest_status')) {
     function mvp_affiliate_rest_status() {
         $theme = wp_get_theme('mvp-affiliate-theme');
+        // Lazy-mint the proxy secret for installs that pre-date v1.0.25 (the
+        // activation hook only runs on fresh activations, not on auto-upgrade).
+        // Same lazy pattern as the IndexNow key above so the dashboard can
+        // always rely on a value being present after an /status read.
+        $proxySecret = get_option('affiliateos_proxy_secret');
+        if (!$proxySecret) {
+            $proxySecret = bin2hex(random_bytes(32));
+            update_option('affiliateos_proxy_secret', $proxySecret);
+        }
         return new WP_REST_Response([
             'plugin_version' => MVP_AFFILIATE_VERSION,
             'theme_version'  => $theme->exists() ? (string) $theme->get('Version') : null,
             'theme_active'   => (get_stylesheet() === 'mvp-affiliate-theme'),
             'indexnow_key'   => mvp_affiliate_indexnow_key(),
+            // The body-auth proxy secret. Stored by the dashboard against
+            // this site's wordpress_sites row and sent on every write so we
+            // don't need to rely on the Authorization header passing through
+            // hosts that strip it on POST.
+            'proxy_secret'   => $proxySecret,
         ], 200);
+    }
+}
+
+// ─── Body-auth proxy endpoint ─────────────────────────────────────────────────
+// POST /wp-json/affiliateos/v1/proxy
+// Body: { token: <proxy_secret>, method: "POST", path: "/wp/v2/posts", body: {...}, query: {...} }
+//
+// Why this endpoint exists:
+//   The standard /wp-json/wp/v2/* routes require Basic Auth (Authorization
+//   header) for writes. Some hosts (Hostinger LiteSpeed, certain shared
+//   Apache configs) strip the Authorization header on POST requests BEFORE
+//   PHP sees it — Basic Auth then fails with no way for the user to know.
+//
+//   This endpoint takes auth from the JSON BODY instead of the header, so
+//   it's immune to header-stripping. It validates the token against the
+//   stored secret, then dispatches the requested WP REST call internally
+//   (via rest_do_request) as the site's primary administrator.
+//
+// Security:
+//   - 32-byte hex secret (64 chars) — brute-force at HTTP timing is infeasible
+//   - hash_equals() for constant-time compare (no timing attack)
+//   - Failed attempts are rate-limited via a 60-second cooldown counter
+//     stored in the affiliateos_proxy_brute transient
+//   - Returns 401 generically on bad token (doesn't leak whether the
+//     token exists)
+add_action('rest_api_init', function () {
+    register_rest_route('affiliateos/v1', '/proxy', [
+        'methods'             => 'POST',
+        'callback'            => 'mvp_affiliate_rest_proxy',
+        // Public route — gated by the body-token check inside the callback.
+        // Standard permission_callback can't read the body, so it'd block
+        // legitimate requests too.
+        'permission_callback' => '__return_true',
+    ]);
+});
+
+if (!function_exists('mvp_affiliate_rest_proxy')) {
+    function mvp_affiliate_rest_proxy(WP_REST_Request $request) {
+        $body = $request->get_json_params();
+        if (!is_array($body)) {
+            return new WP_REST_Response(['code' => 'bad_request', 'message' => 'Request body must be JSON.'], 400);
+        }
+        $token = isset($body['token']) ? (string) $body['token'] : '';
+        $stored = (string) get_option('affiliateos_proxy_secret', '');
+
+        // Brute-force guard. After 5 bad attempts in 60s we 429 for the
+        // next 60s regardless of how good the next attempt is. Per-site,
+        // not per-IP, because the secret is the same for everyone hitting it.
+        $bruteKey = 'affiliateos_proxy_brute';
+        $brute = (int) get_transient($bruteKey);
+        if ($brute >= 5) {
+            return new WP_REST_Response(['code' => 'rate_limited', 'message' => 'Too many bad attempts; try again in a minute.'], 429);
+        }
+
+        if (!$stored || strlen($token) !== strlen($stored) || !hash_equals($stored, $token)) {
+            set_transient($bruteKey, $brute + 1, 60);
+            return new WP_REST_Response(['code' => 'bad_token', 'message' => 'Invalid proxy token.'], 401);
+        }
+
+        // Authenticate as the site's primary administrator so capability
+        // checks in the dispatched REST call (current_user_can('edit_posts'),
+        // etc.) succeed exactly as if the admin had made the request directly.
+        $admins = get_users(['role' => 'administrator', 'number' => 1, 'orderby' => 'ID']);
+        if (empty($admins)) {
+            return new WP_REST_Response(['code' => 'no_admin', 'message' => 'No administrator user on this site.'], 500);
+        }
+        wp_set_current_user($admins[0]->ID);
+
+        // Internal dispatch: build a fresh WP_REST_Request and hand it to
+        // rest_do_request(). This is identical to a normal REST hit — same
+        // permission_callbacks, same hooks, same sanitization — just sourced
+        // from inside PHP instead of an HTTP request.
+        $method = isset($body['method']) ? strtoupper((string) $body['method']) : 'GET';
+        $path = isset($body['path']) ? (string) $body['path'] : '/';
+        if (!preg_match('#^/[A-Za-z0-9_/\-]+$#', $path)) {
+            return new WP_REST_Response(['code' => 'bad_path', 'message' => 'Path must look like /wp/v2/posts'], 400);
+        }
+        $inner = new WP_REST_Request($method, $path);
+        if (!empty($body['body']) && is_array($body['body'])) {
+            $inner->set_body_params($body['body']);
+            // Also set as JSON params so REST routes that use get_json_params()
+            // see the same values — covers both content-type code paths.
+            $inner->set_header('Content-Type', 'application/json');
+            $inner->set_body(wp_json_encode($body['body']));
+        }
+        if (!empty($body['query']) && is_array($body['query'])) {
+            $inner->set_query_params($body['query']);
+        }
+        $response = rest_do_request($inner);
+
+        // Forward the inner response status + body so the dashboard sees
+        // exactly what /wp/v2/posts would have returned directly.
+        $status = method_exists($response, 'get_status') ? $response->get_status() : 200;
+        $data = method_exists($response, 'get_data') ? $response->get_data() : null;
+        return new WP_REST_Response($data, $status);
     }
 }
 

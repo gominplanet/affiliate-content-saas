@@ -94,13 +94,18 @@ export class WordPressService {
     const cooldownUntil = LOGIN_BREAKER.get(key)
     if (cooldownUntil && Date.now() < cooldownUntil) {
       throw new Error(
-        'WordPress writes are failing — your host is stripping the Authorization header on POST requests. ' +
-        'Most common fix: confirm the MVP Affiliate plugin v1.0.20+ is active in your wp-admin → Plugins (it patches this). ' +
-        'Visit /api/wordpress/debug-write to see exactly which layer is failing. ' +
+        'WordPress writes are failing — your site is rejecting our requests. ' +
+        'Run the connection doctor at /setup/wp-doctor — it identifies the exact plugin or firewall blocking us ' +
+        '(Wordfence, SG Security, Cloudflare WAF, etc.) and gives you the click-by-click fix. ' +
         'Login attempts paused for 15 minutes to protect your account.',
       )
     }
-    const loginPassword = this.apiToken || this.password
+    // wp-login.php expects the user's actual WP password (or Application
+    // Password — both work via the form login). Previous versions of this
+    // code fell back to this.apiToken when set; that field has been
+    // re-purposed for the v1.0.25+ body-auth proxy secret and is no longer
+    // a valid login password, so we always use this.password here.
+    const loginPassword = this.password
     const loginBody = new URLSearchParams({
       log: this.username,
       pwd: loginPassword,
@@ -201,9 +206,96 @@ export class WordPressService {
     return entry
   }
 
+  /** Body-auth proxy: POST to /affiliateos/v1/proxy with a JSON envelope
+   *  carrying the auth token in the BODY (not the Authorization header).
+   *  Plugin v1.0.25+ dispatches the inner request via rest_do_request()
+   *  as the site's primary administrator.
+   *
+   *  Why this exists: some hosts (LiteSpeed on Hostinger, certain shared
+   *  Apache configs) strip the Authorization header on POST requests
+   *  before PHP sees it, breaking Basic Auth writes. Body-auth sidesteps
+   *  that entirely.
+   *
+   *  Returns null when the proxy is unavailable (plugin <1.0.25 or token
+   *  wrong) — caller falls back to the legacy Basic-Auth + nonce path. */
+  private async tryProxyRequest<T>(path: string, options: RequestInit): Promise<T | null> {
+    if (!this.apiToken) return null
+    const method = (options.method || 'GET').toUpperCase()
+    let bodyParsed: Record<string, unknown> | undefined
+    if (options.body) {
+      if (typeof options.body === 'string') {
+        try { bodyParsed = JSON.parse(options.body) as Record<string, unknown> } catch { bodyParsed = undefined }
+      } else if (
+        typeof options.body === 'object' &&
+        !(options.body instanceof FormData) &&
+        !(options.body instanceof URLSearchParams) &&
+        !(options.body instanceof Blob) &&
+        !(options.body instanceof ArrayBuffer) &&
+        !ArrayBuffer.isView(options.body)
+      ) {
+        // Narrow via unknown — fetch's BodyInit is a union of binary types
+        // we've already excluded above, but TS doesn't track the narrowing
+        // across runtime guards.
+        bodyParsed = options.body as unknown as Record<string, unknown>
+      } else {
+        // Binary body (image upload, etc.) — proxy doesn't support these
+        // yet. Skip the proxy and fall through to legacy auth.
+        return null
+      }
+    }
+    // The proxy expects /wp/v2/* paths (the inner REST path). request()'s
+    // `path` is already the relative form starting with /; combine with
+    // the /wp/v2 prefix the WordPressService manages.
+    const innerPath = `/wp/v2${path}`
+    try {
+      const res = await fetch(`${this.siteUrl}/wp-json/affiliateos/v1/proxy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)',
+        },
+        body: JSON.stringify({
+          token: this.apiToken,
+          method,
+          path: innerPath,
+          body: bodyParsed,
+        }),
+      })
+      // 404 = plugin too old (no /proxy route yet). 401 = bad token (user
+      // disconnected the site or the secret rotated). Both mean we fall
+      // back to the legacy auth chain instead of erroring out.
+      if (res.status === 404 || res.status === 401) return null
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`WordPress proxy ${res.status}: ${text.slice(0, 300)}`)
+      }
+      return await res.json() as T
+    } catch (err) {
+      // Network errors should also fall through to the legacy path — they
+      // could be transient. Only throw when the proxy explicitly returned
+      // an error status (handled above).
+      if (err instanceof Error && err.message.startsWith('WordPress proxy')) throw err
+      return null
+    }
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const method = (options.method || 'GET').toUpperCase()
     const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+
+    // Multi-host header-strip workaround (Hostinger LiteSpeed, etc.): when
+    // we have a body-auth proxy secret AND this is a write request, route
+    // through /affiliateos/v1/proxy first. The proxy uses a JSON body field
+    // for auth instead of the Authorization header, so it's immune to hosts
+    // that strip the header on POST.
+    //
+    // Falls through to the legacy Basic-Auth + nonce chain when the proxy
+    // isn't available (plugin <1.0.25, network error, etc.) so existing
+    // installations keep working unchanged until they update the plugin.
+    if (isWrite && this.apiToken) {
+      const proxied = await this.tryProxyRequest<T>(path, options)
+      if (proxied !== null) return proxied
+    }
 
     const buildHeaders = (nonce?: { cookies: string; nonce: string }): Record<string, string> => {
       if (nonce) {

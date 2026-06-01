@@ -8,6 +8,8 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { tryWpProxy } from '@/lib/wp-proxy'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -34,6 +36,10 @@ export async function POST(request: Request) {
     threadsUrl?: string
     contactEmail?: string
     niches?: string[]
+    /** Multi-site (Pro): which site to sync the brand to. Omit → default
+     *  site. Brand profile is per-user; multi-site users sync the same
+     *  brand to each site individually. */
+    siteId?: string | null
   }
   const {
     authorName, brandName, tagline, authorBio,
@@ -44,14 +50,9 @@ export async function POST(request: Request) {
     niches,
   } = body
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await supabase
-    .from('integrations')
-    .select('wordpress_url, wordpress_username, wordpress_app_password')
-    .eq('user_id', user.id)
-    .single()
-
-  if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
+  // Multi-site: target the specific site if siteId provided; default site otherwise.
+  const site = await getWordPressCredentials(supabase, user.id, body.siteId)
+  if (!site) {
     return NextResponse.json({ ok: true, wordpress: 'not_connected' })
   }
 
@@ -68,9 +69,9 @@ export async function POST(request: Request) {
   const storedBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
   const storedLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null
 
-  const wpBase = intRow.wordpress_url.replace(/\/$/, '')
-  const cleanPw = intRow.wordpress_app_password.replace(/\s+/g, '')
-  const authHeader = `Basic ${Buffer.from(`${intRow.wordpress_username}:${cleanPw}`).toString('base64')}`
+  const wpBase = site.wordpress_url.replace(/\/$/, '')
+  const cleanPw = site.wordpress_app_password.replace(/\s+/g, '')
+  const authHeader = `Basic ${Buffer.from(`${site.wordpress_username}:${cleanPw}`).toString('base64')}`
 
   const debug: Record<string, unknown> = {}
 
@@ -168,21 +169,43 @@ export async function POST(request: Request) {
       },
     }
 
-    const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+    // Prefer the body-auth proxy (plugin v1.0.25+) so Hostinger LiteSpeed
+    // and similar hosts that strip Authorization on POST still get the
+    // brand sync. Falls back to Basic Auth on plugin-too-old / no-secret.
+    const proxied = await tryWpProxy({
+      siteUrl: wpBase,
+      proxySecret: site.wordpress_api_token,
+      innerPath: '/affiliateos/v1/customizations',
       method: 'POST',
-      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
-      body: JSON.stringify(merged),
+      body: merged,
     })
 
-    if (!postRes.ok) {
-      const text = await postRes.text()
+    let postOk = false
+    let postStatus = 0
+    let postText = ''
+    if (proxied) {
+      postOk = proxied.ok
+      postStatus = proxied.status
+      if (!postOk) postText = typeof proxied.data === 'string' ? proxied.data : JSON.stringify(proxied.data)
+    } else {
+      const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+        method: 'POST',
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      })
+      postOk = postRes.ok
+      postStatus = postRes.status
+      if (!postOk) postText = await postRes.text()
+    }
+
+    if (!postOk) {
       let msg: string
-      if (postRes.status === 401 || postRes.status === 403) {
+      if (postStatus === 401 || postStatus === 403) {
         msg = 'WordPress rejected the Application Password. Reconnect WordPress in Site & Integrations.'
-      } else if (postRes.status === 404) {
+      } else if (postStatus === 404) {
         msg = 'MVP Affiliate plugin not responding. Make sure it\'s activated in wp-admin → Plugins.'
       } else {
-        msg = `WordPress returned ${postRes.status}: ${text.slice(0, 200)}`
+        msg = `WordPress returned ${postStatus}: ${postText.slice(0, 200)}`
       }
       return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: msg })
     }

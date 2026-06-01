@@ -15,6 +15,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { WP_VERSIONS } from '@/lib/wp-versions'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 function gt(a: string | null, b: string): boolean {
   if (!a) return false
@@ -27,25 +28,24 @@ function gt(a: string | null, b: string): boolean {
   return false
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await supabase
-    .from('integrations')
-    .select('wordpress_url, wordpress_username, wordpress_app_password')
-    .eq('user_id', user.id)
-    .single()
-
-  if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
+  // Multi-site: accepts ?siteId=<uuid> to check a specific site; omitted
+  // → user's default site (the dashboard's primary "Update available" banner).
+  // A per-site loop UI can call this N times with different siteIds.
+  const url = new URL(req.url)
+  const siteId = url.searchParams.get('siteId')
+  const site = await getWordPressCredentials(supabase, user.id, siteId)
+  if (!site) {
     return NextResponse.json({ connected: false })
   }
 
-  const wpBase = intRow.wordpress_url.replace(/\/$/, '')
-  const cleanPw = intRow.wordpress_app_password.replace(/\s+/g, '')
-  const auth = `Basic ${Buffer.from(`${intRow.wordpress_username}:${cleanPw}`).toString('base64')}`
+  const wpBase = site.wordpress_url.replace(/\/$/, '')
+  const cleanPw = site.wordpress_app_password.replace(/\s+/g, '')
+  const auth = `Basic ${Buffer.from(`${site.wordpress_username}:${cleanPw}`).toString('base64')}`
 
   try {
     const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/status`, {
@@ -66,7 +66,46 @@ export async function GET() {
     if (!res.ok) {
       return NextResponse.json({ connected: true, error: `WP status ${res.status}` })
     }
-    const s = await res.json() as { plugin_version: string | null; theme_version: string | null }
+    const s = await res.json() as {
+      plugin_version: string | null
+      theme_version: string | null
+      proxy_secret?: string | null
+    }
+
+    // Auto-upgrade dance: plugin v1.0.25+ ships a body-auth proxy secret on
+    // /status. The dashboard stores it in wordpress_sites.api_token so every
+    // write afterwards goes through the header-free proxy. We do this on
+    // every status check — it's idempotent and ensures we never miss a
+    // post-update sync. The secret is the same on every fetch unless the
+    // user uninstalls + reinstalls the plugin (rare); the UPDATE only fires
+    // when stored ≠ fresh, so steady state is a no-op.
+    if (s.proxy_secret) {
+      try {
+        // Find which wordpress_sites row (if any) this site corresponds to,
+        // identified by URL. We don't trust caller-supplied siteId here —
+        // RLS would let one user write another's row otherwise.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sb = supabase as any
+        const { data: existing } = await sb
+          .from('wordpress_sites')
+          .select('id, api_token')
+          .eq('user_id', user.id)
+          .eq('url', site.wordpress_url)
+          .maybeSingle()
+        if (existing && existing.api_token !== s.proxy_secret) {
+          await sb
+            .from('wordpress_sites')
+            .update({ api_token: s.proxy_secret })
+            .eq('id', existing.id)
+        }
+        // Also mirror to the legacy integrations column so single-site users
+        // who haven't been migrated to wordpress_sites still get the proxy.
+        await sb
+          .from('integrations')
+          .update({ wordpress_api_token: s.proxy_secret })
+          .eq('user_id', user.id)
+      } catch { /* non-fatal — proxy will be retried next status check */ }
+    }
 
     const themeLatest = WP_VERSIONS.theme.version
     const pluginLatest = WP_VERSIONS.plugin.version
@@ -82,6 +121,10 @@ export async function GET() {
         latest: pluginLatest,
         updateAvailable: gt(s.plugin_version, pluginLatest),
       },
+      // Surface whether the body-auth proxy is wired up for this site —
+      // useful for debug-write to report and for the Settings UI to show
+      // a "header-free writes enabled ✓" pill in a future polish pass.
+      proxyEnabled: !!s.proxy_secret,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'WP unreachable'

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { tryWpProxy } from '@/lib/wp-proxy'
 
 export async function GET() {
   const supabase = await createServerClient()
@@ -21,29 +23,31 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const customizations = await req.json()
+  const body = await req.json() as Record<string, unknown> & { siteId?: string | null }
+  // Strip siteId from the saved customizations — it's a routing param, not
+  // customization data. The rest of the body is the actual customizations.
+  const siteId = body.siteId ?? null
+  const customizations = { ...body }
+  delete (customizations as { siteId?: unknown }).siteId
 
-  // Save to Supabase
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Save to Supabase (per-user, applies to whichever site they push to).
+  // `as never` here is the same boundary cast used elsewhere for JSONB cols
+  // — Json typing rejects arbitrary { [x: string]: unknown } at write time.
   const { error: dbError } = await supabase
     .from('integrations')
-    .update({ blog_customizations: customizations })
+    .update({ blog_customizations: customizations as never })
     .eq('user_id', user.id)
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 })
 
-  // Push to WordPress if connected
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await supabase
-    .from('integrations')
-    .select('wordpress_url, wordpress_username, wordpress_app_password, wordpress_api_token')
-    .eq('user_id', user.id)
-    .single()
+  // Push to WordPress — multi-site: target the specific site if siteId
+  // provided; default site otherwise.
+  const site = await getWordPressCredentials(supabase, user.id, siteId)
 
-  if (intRow?.wordpress_url && intRow?.wordpress_username && intRow?.wordpress_app_password) {
-    const wpBase = intRow.wordpress_url.replace(/\/$/, '')
-    const cleanPw = intRow.wordpress_app_password.replace(/\s+/g, '')
-    const authHeader = `Basic ${Buffer.from(`${intRow.wordpress_username}:${cleanPw}`).toString('base64')}`
+  if (site) {
+    const wpBase = site.wordpress_url.replace(/\/$/, '')
+    const cleanPw = site.wordpress_app_password.replace(/\s+/g, '')
+    const authHeader = `Basic ${Buffer.from(`${site.wordpress_username}:${cleanPw}`).toString('base64')}`
 
     try {
       // Fetch existing data so we only override footer-related fields
@@ -192,25 +196,48 @@ export async function POST(req: Request) {
         },
       }
 
-      // Push to WordPress — direct Basic Auth, no wp-login.php fallback (Hostinger blocks it)
-      const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      // Push to WordPress. Prefer the body-auth proxy (plugin v1.0.25+) so
+      // hosts that strip the Authorization header on POST still work; fall
+      // back to Basic Auth on plugin-too-old / no-secret-yet.
+      const proxied = await tryWpProxy({
+        siteUrl: wpBase,
+        proxySecret: site.wordpress_api_token,
+        innerPath: '/affiliateos/v1/customizations',
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: authHeader,
-        },
-        body: JSON.stringify(payload),
+        body: payload,
       })
 
-      if (!postRes.ok) {
-        const text = await postRes.text()
+      let postOk = false
+      let postStatus = 0
+      let postText = ''
+      if (proxied) {
+        postOk = proxied.ok
+        postStatus = proxied.status
+        if (!proxied.ok) {
+          postText = typeof proxied.data === 'string' ? proxied.data : JSON.stringify(proxied.data)
+        }
+      } else {
+        const postRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: authHeader,
+          },
+          body: JSON.stringify(payload),
+        })
+        postOk = postRes.ok
+        postStatus = postRes.status
+        if (!postRes.ok) postText = await postRes.text()
+      }
+
+      if (!postOk) {
         let userMsg: string
-        if (postRes.status === 401 || postRes.status === 403) {
+        if (postStatus === 401 || postStatus === 403) {
           userMsg = 'WordPress rejected the Application Password. Disconnect WordPress in Site & Integrations and reconnect with a fresh Application Password from wp-admin → Users → Profile → Application Passwords.'
-        } else if (postRes.status === 404) {
+        } else if (postStatus === 404) {
           userMsg = 'AffiliateOS plugin endpoint not found on your site. Re-run the WordPress setup from Site & Integrations to install the plugin.'
         } else {
-          userMsg = `WordPress returned ${postRes.status}: ${text.slice(0, 200)}`
+          userMsg = `WordPress returned ${postStatus}: ${postText.slice(0, 200)}`
         }
         return NextResponse.json({ ok: true, wordpress: 'failed', wordpressError: userMsg })
       }

@@ -1,28 +1,37 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { tryWpProxy } from '@/lib/wp-proxy'
 
-export async function POST() {
+/**
+ * Purge cache on a WordPress site. Multi-site: accepts `siteId` to target a
+ * specific site; omitted → user's default site.
+ *
+ * Posts the existing customizations back to the site (which triggers
+ * litespeed_purge_all in the MVP plugin) without overwriting stored data.
+ */
+export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const body = await req.json().catch(() => ({})) as { siteId?: string | null }
+
+  // Per-user blog customizations (per-user data; per-site routing).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await supabase
     .from('integrations')
-    .select('wordpress_url, wordpress_username, wordpress_app_password, blog_customizations')
+    .select('blog_customizations')
     .eq('user_id', user.id)
     .single()
 
-  if (!intRow?.wordpress_url) {
+  const site = await getWordPressCredentials(supabase, user.id, body.siteId)
+  if (!site) {
     return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
   }
 
-  const wpBase = intRow.wordpress_url.replace(/\/$/, '')
-
-  // Build auth header if credentials are available
-  const authHeader = (intRow.wordpress_username && intRow.wordpress_app_password)
-    ? `Basic ${Buffer.from(`${intRow.wordpress_username}:${intRow.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
-    : undefined
+  const wpBase = site.wordpress_url.replace(/\/$/, '')
+  const authHeader = `Basic ${Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
 
   // Always GET current WP customizations first, then re-POST the same data.
   // This triggers litespeed_purge_all without ever overwriting stored data with empty.
@@ -34,7 +43,7 @@ export async function POST() {
   let existing: unknown = {}
   try {
     const getRes = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
-      headers: { 'User-Agent': UA, ...(authHeader ? { Authorization: authHeader } : {}) },
+      headers: { 'User-Agent': UA, Authorization: authHeader },
     })
     if (getRes.ok) existing = await getRes.json()
   } catch { /* start fresh */ }
@@ -44,27 +53,49 @@ export async function POST() {
   // If both empty, post empty (purge only — no data to lose).
   const payload = (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing).length > 0)
     ? existing
-    : (intRow.blog_customizations ?? {})
+    : (intRow?.blog_customizations ?? {})
 
-  const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+  // Prefer the body-auth proxy when available (plugin v1.0.25+) — the
+  // write triggers litespeed_purge_all server-side without needing the
+  // Authorization header to survive POST.
+  const proxied = await tryWpProxy({
+    siteUrl: wpBase,
+    proxySecret: site.wordpress_api_token,
+    innerPath: '/affiliateos/v1/customizations',
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': UA,
-      ...(authHeader ? { Authorization: authHeader } : {}),
-    },
-    body: JSON.stringify(payload),
+    body: payload as Record<string, unknown>,
   })
 
-  if (!res.ok) {
-    const text = await res.text()
+  let ok = false
+  let status = 0
+  let errText = ''
+  if (proxied) {
+    ok = proxied.ok
+    status = proxied.status
+    if (!ok) errText = typeof proxied.data === 'string' ? proxied.data : JSON.stringify(proxied.data)
+  } else {
+    const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/customizations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': UA,
+        Authorization: authHeader,
+      },
+      body: JSON.stringify(payload),
+    })
+    ok = res.ok
+    status = res.status
+    if (!ok) errText = await res.text()
+  }
+
+  if (!ok) {
     // A 403 here means WP authenticated the user but a capability check or a
     // security layer (Wordfence / host WAF / "disable REST API" plugin) blocked
     // the write. Surface more of the body so the real reason is visible.
-    const hint = res.status === 403
+    const hint = status === 403
       ? ' — your site blocked the write. Make sure the connected WordPress user is an Administrator, and that a security plugin or host firewall isn\'t blocking REST API writes.'
       : ''
-    return NextResponse.json({ error: `WordPress returned ${res.status}: ${text.slice(0, 300)}${hint}` }, { status: 500 })
+    return NextResponse.json({ error: `WordPress returned ${status}: ${errText.slice(0, 300)}${hint}` }, { status: 500 })
   }
 
   // Legacy Code Snippets refresh removed — the MVP Affiliate Plugin + Theme
