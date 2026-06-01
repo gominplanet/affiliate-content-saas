@@ -123,14 +123,23 @@ const plans: PlanExt[] = [
 
 export default function PricingPage() {
   return (
-    <div className="min-h-screen bg-[#f5f5f7] dark:bg-[#000] flex flex-col items-center px-4 py-16">
-      <div className="text-center mb-12 max-w-2xl">
-        <h1 className="text-4xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Pricing built for how often you ship</h1>
-        <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0]">
-          Every plan — even Free — includes the full agent pipeline, the YouTube Co-Pilot,
-          and a branded review site. Pick a tier by how many reviews you actually publish.
+    <div className="min-h-screen bg-[#FAFAFA] dark:bg-[#0A0A0B] flex flex-col items-center px-4 py-16">
+      <div className="text-center mb-12 max-w-3xl">
+        <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-widest mb-3">
+          Stop paying for 6 tools
         </p>
-        <p className="mt-2 text-sm font-semibold text-[#34c759]">Early access pricing — locked in for life on the tier you subscribe to.</p>
+        <h1 className="text-4xl sm:text-5xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] mb-4 tracking-tight leading-[1.05]">
+          One co-pilot for the entire<br className="hidden sm:block" />
+          <span className="bg-gradient-to-br from-[#7C3AED] to-[#C026D3] bg-clip-text text-transparent">YouTube affiliate workflow</span>
+        </h1>
+        <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+          Paste a YouTube link. Get a blog post on your site, a TikTok, a thumbnail,
+          a newsletter, and a script for your next video — all in your voice, all from
+          one tool. Start free, no card.
+        </p>
+        <p className="mt-3 text-sm font-semibold text-[#34c759]">
+          🔒 Early access pricing — locked in for life on the tier you subscribe to.
+        </p>
       </div>
 
       {SALES_PAUSED && (
@@ -206,7 +215,145 @@ export default function PricingPage() {
         * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
         It activates automatically on Creator &amp; Pro accounts once approved at no extra cost.
       </p>
-      <div className="mt-6 max-w-2xl rounded-2xl bg-[#7C3AED]/5 border border-[#7C3AED]/20 p-5">
+
+      {/* ───────────────────────────────────────────────────────────────────
+          Bundle math — the killer pitch. Show prospects exactly what MVP
+          replaces and what they save. Direct competitive numbers (real
+          published prices from research, not "premium tool"-style fluff).
+          Two rows: Studio + Pro. Trial / Creator users don't get bundle
+          math because their tier doesn't replace enough tools to be
+          meaningful — it's an honest framing, not a manipulative one.
+          ─────────────────────────────────────────────────────────────── */}
+      <section className="mt-16 w-full max-w-5xl">
+        <div className="text-center mb-8">
+          <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-widest mb-2">
+            The bundle math
+          </p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">
+            One MVP plan replaces an entire stack
+          </h2>
+          <p className="mt-3 text-sm text-[#6e6e73] dark:text-[#ebebf0] max-w-xl mx-auto">
+            Other tools each do one thing. MVP does the whole pipeline from one YouTube video to
+            a blog, thumbnails, scripts, social posts, and a newsletter — all in your voice.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Studio bundle */}
+          <div className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 shadow-sm p-7">
+            <div className="flex items-baseline justify-between mb-5">
+              <div>
+                <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-wide">MVP Studio · $99 / mo</p>
+                <p className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-0.5">replaces this stack:</p>
+              </div>
+            </div>
+            <ul className="flex flex-col gap-2.5 mb-5 text-sm">
+              {[
+                ['Cuppa Solo (AI blog writer)',           99],
+                ['thumbnailcreator.com (Creator)',         41],
+                ['OpusClip Pro (vertical clips)',          29],
+                ['Beehiiv Grow (newsletter)',              43],
+                ['Lasso Free (affiliate links)',            0],
+              ].map(([tool, price]) => (
+                <li key={tool as string} className="flex items-baseline justify-between border-b border-dashed border-gray-200 dark:border-white/10 pb-1.5">
+                  <span className="text-[#3a3a3c] dark:text-[#ebebf0]">{tool}</span>
+                  <span className="font-mono text-[#86868b] dark:text-[#8e8e93]">${price}/mo</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-baseline justify-between text-sm font-semibold pt-1">
+              <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Total replaced</span>
+              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">$212/mo</span>
+            </div>
+            <div className="mt-4 rounded-xl bg-[#34c759]/10 border border-[#34c759]/25 px-4 py-3 flex items-baseline justify-between">
+              <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">You save</span>
+              <span className="font-mono text-lg font-bold text-[#34c759]">$113/mo</span>
+            </div>
+          </div>
+
+          {/* Pro bundle — the bigger number */}
+          <div className="rounded-2xl bg-gradient-to-br from-[#7C3AED]/[0.06] to-[#C026D3]/[0.04] dark:from-[#7C3AED]/15 dark:to-[#C026D3]/10 border border-[#7C3AED]/30 shadow-md p-7 relative overflow-hidden">
+            <div className="absolute top-3 right-3">
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold uppercase tracking-wider">
+                Best deal
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between mb-5">
+              <div>
+                <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-wide">MVP Pro · $199 / mo</p>
+                <p className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mt-0.5">replaces this stack:</p>
+              </div>
+            </div>
+            <ul className="flex flex-col gap-2.5 mb-5 text-sm">
+              {[
+                ['Cuppa Studio (multi-niche AI writer)',  199],
+                ['Frase (SEO research + content briefs)',  97],
+                ['thumbnailcreator.com (Creator)',         41],
+                ['OpusClip Pro (vertical clips)',          29],
+                ['Beehiiv Scale (newsletter)',             43],
+                ['Lasso Pro (affiliate analytics)',        29],
+              ].map(([tool, price]) => (
+                <li key={tool as string} className="flex items-baseline justify-between border-b border-dashed border-[#7C3AED]/15 pb-1.5">
+                  <span className="text-[#3a3a3c] dark:text-[#ebebf0]">{tool}</span>
+                  <span className="font-mono text-[#86868b] dark:text-[#8e8e93]">${price}/mo</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-baseline justify-between text-sm font-semibold pt-1">
+              <span className="text-[#1d1d1f] dark:text-[#f5f5f7]">Total replaced</span>
+              <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">$438/mo</span>
+            </div>
+            <div className="mt-4 rounded-xl bg-[#34c759]/15 border border-[#34c759]/30 px-4 py-3 flex items-baseline justify-between">
+              <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">You save</span>
+              <span className="font-mono text-lg font-bold text-[#34c759]">$239/mo</span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-center text-xs text-[#86868b] dark:text-[#8e8e93] mt-5 max-w-3xl mx-auto">
+          Pricing shown from each tool&apos;s public pricing page at the equivalent feature tier as of 2026. MVP also handles parts none of these do — direct posting to TikTok &amp; Instagram, brand-pitch emails, multi-account social, and the YouTube Co-Pilot metadata sync.
+        </p>
+      </section>
+
+      {/* ───────────────────────────────────────────────────────────────────
+          Why MVP — three differentiators competitors can't claim. Anchored
+          in real product capabilities (fact-grounded outputs, end-to-end
+          pipeline, your-voice training) per the LEARN profile rule.
+          ─────────────────────────────────────────────────────────────── */}
+      <section className="mt-16 w-full max-w-5xl">
+        <div className="text-center mb-8">
+          <p className="text-xs font-semibold text-[#7C3AED] uppercase tracking-widest mb-2">
+            Why MVP wins
+          </p>
+          <h2 className="text-2xl sm:text-3xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">
+            Three things no other tool in this stack does
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {[
+            {
+              title: 'Fact-grounded, never invented',
+              body: 'Every spec, every quote, every &quot;I tested it for X days&quot; pulls from your real YouTube transcript + the actual product page. No hallucinated stories, no fake reviewer names, no fabricated experiences.',
+            },
+            {
+              title: 'One video → six outputs',
+              body: 'Paste a YouTube link. Get back a blog post on your site, a TikTok or Instagram reel, a thumbnail, a newsletter draft, a script for the next video, and a metadata refresh for the source video. End-to-end, in one run.',
+            },
+            {
+              title: 'Trained on YOUR voice, not a generic AI voice',
+              body: 'The LEARN profile reads how you write + revises every output toward you. The longer you use MVP, the more your blog reads like you wrote it. Other writers default to a generic SEO voice that all sound the same.',
+            },
+          ].map((card) => (
+            <div key={card.title} className="rounded-2xl bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 shadow-sm p-6">
+              <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">{card.title}</p>
+              <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed" dangerouslySetInnerHTML={{ __html: card.body }} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="mt-16 max-w-2xl rounded-2xl bg-gradient-to-br from-[#7C3AED]/[0.06] to-[#C026D3]/[0.04] border border-[#7C3AED]/25 p-5">
         <p className="text-center text-sm font-semibold text-[#7C3AED] mb-1.5">🔒 Price-lock guarantee</p>
         <p className="text-center text-sm text-[#3a3a3c] dark:text-[#ebebf0] leading-relaxed">
           When you subscribe at these Early Access rates, your price stays locked in for as long as you
