@@ -107,7 +107,38 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">6. How We Use Your Data</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">6. TikTok Data</h2>
+          <p>
+            When you connect your TikTok account to MVP Affiliate, we use TikTok&apos;s OAuth flow and
+            request the minimum scopes needed for the features you use. Specifically:
+          </p>
+          <ul className="list-disc ml-5 mt-2 space-y-1">
+            <li><strong>user.info.basic</strong> — to identify which TikTok account you have connected and display &quot;Connected as @yourhandle&quot; in the App&apos;s Settings page. Provides open_id, display name and avatar only.</li>
+            <li><strong>user.info.profile</strong> — to display your TikTok profile link, bio, and verified status in the App&apos;s Settings page.</li>
+            <li><strong>video.upload</strong> — to upload a video to your authorized TikTok account as a draft for you to finalize from the TikTok app, only when you explicitly click a publish action in MVP Affiliate.</li>
+            <li><strong>video.publish</strong> — to publish a video directly to your authorized TikTok feed, only when you explicitly click a publish action in MVP Affiliate. The caption, privacy setting, and audience are chosen by you inside MVP Affiliate before the request is sent.</li>
+          </ul>
+          <p className="mt-3">We do <strong>not</strong>:</p>
+          <ul className="list-disc ml-5 mt-2 space-y-1">
+            <li>Sell, rent, share, or transfer your TikTok data to any third party.</li>
+            <li>Use your TikTok data for advertising or to train AI/ML models.</li>
+            <li>Read, follow, like, comment on, or interact with TikTok content from accounts other than your own.</li>
+            <li>Post, schedule, or bulk-create content on your TikTok account outside of explicit user actions.</li>
+            <li>Store your TikTok password — we use OAuth tokens only, encrypted at rest.</li>
+          </ul>
+          <p className="mt-3">
+            TikTok access tokens are stored encrypted in our database. You can disconnect TikTok at
+            any time from the Settings page in the App, which immediately deletes the stored token.
+            You can also revoke MVP Affiliate&apos;s access directly from your TikTok account settings
+            under &quot;Manage app permissions&quot;. Your use of TikTok features is also subject to the{' '}
+            <a href="https://www.tiktok.com/legal/terms-of-service" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">TikTok Terms of Service</a>{' '}
+            and the{' '}
+            <a href="https://www.tiktok.com/legal/privacy-policy" className="text-[#0071e3] hover:underline" target="_blank" rel="noopener noreferrer">TikTok Privacy Policy</a>.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">7. How We Use Your Data</h2>
           <ul className="list-disc ml-5 space-y-1">
             <li>To generate blog posts from your inputs (product URLs, YouTube videos, etc.)</li>
             <li>To publish posts to your WordPress site</li>
@@ -122,7 +153,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">7. Data Storage and Security</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">8. Data Storage and Security</h2>
           <p>
             Account data, content, and integration credentials are stored in Supabase (PostgreSQL) on
             servers in the United States. OAuth access tokens and other secrets are stored encrypted at
@@ -132,7 +163,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">8. Data Retention and Deletion</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">9. Data Retention and Deletion</h2>
           <p>
             We retain your data for as long as your account is active. To delete your account and all
             associated data, email{' '}
@@ -144,11 +175,12 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">9. Third-Party Services</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">10. Third-Party Services</h2>
           <p>MVP Affiliate integrates with the following services on your behalf:</p>
           <ul className="list-disc ml-5 mt-2 space-y-1">
             <li>Pinterest (Pin creation and analytics — only the connected business account)</li>
             <li>Facebook / Meta (Page posting — only Pages you authorize)</li>
+            <li>TikTok (video posting — only the connected account, only on explicit user action)</li>
             <li>YouTube Data API (channel and video data)</li>
             <li>WordPress REST API (publishing to your own self-hosted WordPress site)</li>
             <li>Large-language-model providers used to power our AI agent pipeline (content generation)</li>
@@ -160,7 +192,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">10. Children</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Children</h2>
           <p>
             MVP Affiliate is not directed to anyone under the age of 16. We do not knowingly collect
             personal data from children. If you believe a child has provided us with personal data,
@@ -169,7 +201,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Browser Extension (CC Scout)</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">12. Browser Extension (CC Scout)</h2>
           <p>
             The optional &quot;MVP Affiliate — CC Scout&quot; Chrome extension has a single purpose: to
             help you find Amazon Creator Connections campaigns and queue the ones you choose into
@@ -194,7 +226,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">12. Changes to This Policy</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">13. Changes to This Policy</h2>
           <p>
             We may update this Privacy Policy. The &quot;Last updated&quot; date at the top reflects the
             most recent revision. Material changes will be announced via an in-app notice or email.
@@ -202,7 +234,7 @@ export default function PrivacyPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">13. Contact</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">14. Contact</h2>
           <p>
             For privacy questions, deletion requests, or any other concerns, contact us at{' '}
             <a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>.

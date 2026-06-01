@@ -22,9 +22,9 @@ export default function TermsPage() {
           <p>
             MVP Affiliate is a content generation and publishing tool for individual creators. It helps
             you draft product review blog posts, publish them to your own self-hosted WordPress site, and
-            optionally distribute them as Pins on your own Pinterest business account or posts on your own
-            Facebook Pages. All publishing actions are initiated by you; the App does not autonomously
-            post on your behalf.
+            optionally distribute them as Pins on your own Pinterest business account, posts on your own
+            Facebook Pages, or videos on your own TikTok account. All publishing actions are initiated by
+            you; the App does not autonomously post on your behalf.
           </p>
         </div>
 
@@ -41,7 +41,7 @@ export default function TermsPage() {
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">4. Acceptable Use</h2>
           <ul className="list-disc ml-5 space-y-1">
             <li>You own or have the right to publish all content you put through the App.</li>
-            <li>You comply with the Terms of Service and Community Guidelines of every platform you connect (Pinterest, Facebook, WordPress, etc.).</li>
+            <li>You comply with the Terms of Service and Community Guidelines of every platform you connect (Pinterest, Facebook, TikTok, WordPress, etc.).</li>
             <li>You do not use the App to publish spam, misleading, fraudulent, deceptive, infringing, hateful, or illegal content.</li>
             <li>You include any affiliate disclosures required by law and by the platforms you publish to.</li>
             <li>You do not attempt to bypass rate limits, automate engagement, or otherwise manipulate the platforms the App connects to.</li>
@@ -80,7 +80,27 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">7. AI-Generated Content</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">7. TikTok Integration</h2>
+          <p>
+            When you connect a TikTok account, you authorize MVP Affiliate to (a) read your basic profile
+            information (open_id, display name, avatar, and — if granted — profile link and bio) and (b)
+            upload or publish a video to that authorized TikTok account only when you explicitly click a
+            publish action inside the App. The App never posts in the background, never schedules content
+            outside of explicit user actions, and never interacts with TikTok accounts other than the one
+            you connect. You can disconnect TikTok from the App Settings page at any time, and you can
+            revoke MVP Affiliate&apos;s access directly from your TikTok account settings under &quot;Manage
+            app permissions&quot;.
+          </p>
+          <p className="mt-3">
+            You agree that your use of TikTok features through MVP Affiliate is subject to the{' '}
+            <a href="https://www.tiktok.com/legal/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">TikTok Terms of Service</a>,{' '}
+            <a href="https://www.tiktok.com/community-guidelines" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">TikTok Community Guidelines</a>, and{' '}
+            <a href="https://developers.tiktok.com/doc/tiktok-api-terms-of-service" target="_blank" rel="noopener noreferrer" className="text-[#0071e3] hover:underline">TikTok Developer Terms of Service</a>.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">8. AI-Generated Content</h2>
           <p>
             The App generates draft content using a pipeline of specialized AI agents. AI-generated content
             may contain inaccuracies, factual errors, or unintended language. You are responsible for
@@ -91,7 +111,7 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">8. Subscription and Billing</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">9. Subscription and Billing</h2>
           <p>
             Some features require a paid subscription, billed through Stripe. Subscriptions renew
             automatically until cancelled. You can cancel anytime from the Billing page; cancellation
@@ -101,7 +121,7 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">9. Termination</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">10. Termination</h2>
           <p>
             You may stop using the App and delete your account at any time. We may suspend or terminate
             your account if you breach these Terms or use the App in a way that puts our integrations
@@ -111,7 +131,7 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">10. Disclaimer of Warranties</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Disclaimer of Warranties</h2>
           <p>
             The App is provided &quot;as is&quot; and &quot;as available&quot; without warranties of any
             kind, express or implied. We do not warrant that the App will be uninterrupted, error-free,
@@ -120,7 +140,7 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">11. Limitation of Liability</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">12. Limitation of Liability</h2>
           <p>
             To the maximum extent permitted by law, MVP Affiliate and Gominplanet Holdings Ltd are not
             liable for any indirect, incidental, special, consequential, or punitive damages arising from
@@ -131,7 +151,7 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">12. Changes to These Terms</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">13. Changes to These Terms</h2>
           <p>
             We may update these Terms. The &quot;Last updated&quot; date reflects the most recent
             revision. Material changes will be announced via in-app notice or email. Continued use of
@@ -140,7 +160,7 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">13. Governing Law</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">14. Governing Law</h2>
           <p>
             These Terms are governed by the laws of British Columbia, Canada, without regard to its
             conflict of laws principles. Any disputes will be resolved in the courts of British Columbia.
@@ -148,7 +168,7 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">14. Intellectual Property &amp; Restrictions</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">15. Intellectual Property &amp; Restrictions</h2>
           <p>
             The App, including its software, source code, design, prompts, AI generation
             logic, content pipelines, and all related know-how, is the proprietary and
@@ -172,7 +192,7 @@ export default function TermsPage() {
         </div>
 
         <div>
-          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">15. Contact</h2>
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">16. Contact</h2>
           <p>
             Questions about these Terms? Contact us at{' '}
             <a href="mailto:us@gominplanet.com" className="text-[#0071e3] hover:underline">us@gominplanet.com</a>.
