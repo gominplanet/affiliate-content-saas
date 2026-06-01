@@ -27,10 +27,20 @@ export interface OverlayStyle {
   maxPx: number
   position: 'top-center' | 'bottom-center' | 'top-left' | 'bottom-left'
   gradient: boolean
+  /** Banner block — draws a SOLID colored rectangle behind one specific line
+   *  (the line at `highlightLineIdx`). The line's text uses `colors[i]` as
+   *  the fill on top of the block. Canonical vidIQ "yellow callout" look. */
   blockBg?: string | null
   highlightLineIdx?: number | null
   highlightColor?: string | null
   hardShadow?: { dx: number; dy: number; color: string } | null
+  /** Per-line horizontal offset in PIXELS. Positive = shift right.
+   *  Gives the "hand-stuck sticker" rhythm where line 2 sits a bit
+   *  inset from line 1 instead of perfect left-align. Skip with null. */
+  lineOffsets?: number[] | null
+  /** Fraction of the image HEIGHT the text can fill (e.g. 0.20 = up to 20%
+   *  of the image height per line). Caps style.maxPx. Default 0.15. */
+  heightCap?: number | null
   /** Selection weight before per-user feedback. Default 1. */
   baseWeight?: number
   /** vidIQ-style accent: colour the FIRST word of the headline differently
@@ -171,11 +181,15 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     baseWeight: 0.05,
   },
   // ──────────────────────────────────────────────────────────────────────
-  // vidIQ DUAL-TONE — line 1 WHITE, line 2 YELLOW, both SOLID colors.
-  // No vertical gradient (that muddied both lines into one yellow blob
-  // and read as "designer-y" rather than YouTube-punchy). The dual-tone
-  // contrast + heavy black outline + drop shadow + white inner halo is
-  // what creates the vidIQ "sticker" pop.
+  // vidIQ tier. Four solid-color styles. The shared formula:
+  //   • Height cap raised to 20% of image height (was 15% — text was too
+  //     small to "pop" against a busy bg).
+  //   • Per-line offsets so line 2 sits ~24px right of line 1 (the
+  //     hand-stuck-sticker rhythm that makes the headline feel placed,
+  //     not auto-laid-out).
+  //   • Subtle ±1° tilts on the banner + accent variants for variety —
+  //     dual-tone styles stay 0° to keep the cleanest split.
+  //   • All SOLID colors. No vertical gradient (muddied both lines).
   {
     id: 'vidiq-dual-white-yellow',
     fontName: 'Anton',
@@ -183,23 +197,20 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     weight: '400',
     colors: ['#FFFFFF', '#FFD700'], // L1 white, L2 yellow — classic vidIQ
     outlineColor: '#000',
-    outlineW: 28,
+    outlineW: 30,
     shadowAlpha: 0.95,
-    maxPx: 200,
+    maxPx: 260,
+    heightCap: 0.20,
     position: 'top-left',
     gradient: false,
-    hardShadow: { dx: 9, dy: 10, color: '#000' },
-    // Dominant pick (~60%). The other ~40% goes to firstword-yellow
-    // (yellow ON THE FIRST WORD, rest white — flips the accent so
-    // single-line headlines like "GAME OVER" still get colour) and
-    // dual-yellow-white (yellow first / white second — reverses the
-    // colour order so variety reads as intentional).
-    baseWeight: 15,
+    hardShadow: { dx: 11, dy: 13, color: '#000' },
+    baseWeight: 10,
     innerStroke: { color: '#FFFFFF', width: 4 },
+    lineOffsets: [0, 28], // L2 nudged right for hand-placed feel
     tilt: 0,
   },
-  // Reverse dual-tone — line 1 YELLOW, line 2 WHITE. Variety without
-  // breaking the "high-contrast solid colours" rule.
+  // Reverse dual-tone — L1 YELLOW, L2 WHITE. Variety without breaking
+  // the "high-contrast solid colours" rule.
   {
     id: 'vidiq-dual-yellow-white',
     fontName: 'Anton',
@@ -207,18 +218,19 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     weight: '400',
     colors: ['#FFD700', '#FFFFFF'],
     outlineColor: '#000',
-    outlineW: 28,
+    outlineW: 30,
     shadowAlpha: 0.95,
-    maxPx: 200,
+    maxPx: 260,
+    heightCap: 0.20,
     position: 'top-left',
     gradient: false,
-    hardShadow: { dx: 9, dy: 10, color: '#000' },
+    hardShadow: { dx: 11, dy: 13, color: '#000' },
     baseWeight: 6,
     innerStroke: { color: '#FFFFFF', width: 4 },
+    lineOffsets: [0, -28], // L2 nudged LEFT for variety
     tilt: 0,
   },
-  // First-word yellow accent — works on single-line headlines too,
-  // covers the 1-2 word case where dual-tone needs 2 lines to shine.
+  // First-word yellow accent — works on single-line headlines too.
   {
     id: 'vidiq-firstword-yellow',
     fontName: 'Anton',
@@ -226,17 +238,45 @@ export const OVERLAY_STYLES: OverlayStyle[] = [
     weight: '400',
     colors: ['#FFFFFF', '#FFFFFF'],
     outlineColor: '#000',
-    outlineW: 28,
+    outlineW: 30,
     shadowAlpha: 0.95,
-    maxPx: 200,
+    maxPx: 260,
+    heightCap: 0.20,
     position: 'top-left',
     gradient: false,
-    hardShadow: { dx: 9, dy: 10, color: '#000' },
-    baseWeight: 4,
+    hardShadow: { dx: 11, dy: 13, color: '#000' },
+    baseWeight: 5,
     accentWord: 'first',
     accentColor: '#FFD700',
     innerStroke: { color: '#FFFFFF', width: 4 },
-    tilt: 0,
+    lineOffsets: [0, 22],
+    tilt: 1,
+  },
+  // YELLOW BANNER — the explicit "banner" callout from the brand
+  // calibration note. Line 1 in white text, line 2 sits inside a solid
+  // YELLOW rectangle with BLACK text on top (the vidIQ "block" look).
+  // The block is sized to the line's measured width + padding, drawn
+  // BEFORE the text so the text overlays it cleanly.
+  {
+    id: 'vidiq-yellow-banner',
+    fontName: 'Anton',
+    fontStack: '"Anton", Impact, "Arial Black", sans-serif',
+    weight: '400',
+    colors: ['#FFFFFF', '#0A0A0A'], // L2 text BLACK on the yellow block
+    outlineColor: '#000',
+    outlineW: 28,
+    shadowAlpha: 0.95,
+    maxPx: 250,
+    heightCap: 0.20,
+    position: 'top-left',
+    gradient: false,
+    hardShadow: { dx: 11, dy: 13, color: '#000' },
+    baseWeight: 9,
+    innerStroke: { color: '#FFFFFF', width: 4 },
+    blockBg: '#FFD700', // yellow block behind line 2
+    highlightLineIdx: 1, // line 2 is the banner
+    lineOffsets: [0, 18],
+    tilt: -1,
   },
 ]
 
@@ -417,7 +457,10 @@ export function drawHeadline(
   const alignRight = position.endsWith('right')
   const ZONE_W = zoneW
   const { outlineW: OUTLINE, colors: LINE_COLORS, outlineColor, shadowAlpha } = style
-  const maxPxScaled = Math.min(style.maxPx, Math.round(height * 0.15))
+  // Per-style height cap. Default 15% kept legacy MrBeast styles at their old
+  // size; the vidIQ tier overrides this to 20% so headlines actually pop.
+  const heightCapFrac = style.heightCap ?? 0.15
+  const maxPxScaled = Math.min(style.maxPx, Math.round(height * heightCapFrac))
 
   const makeFont = (s: number) => `${style.weight} ${s}px ${style.fontStack}`
   let fs = maxPxScaled
@@ -445,6 +488,9 @@ export function drawHeadline(
   const accentColor = style.accentColor || LINE_COLORS[0]
   const innerStroke = style.innerStroke
   const gradientStops = style.gradientStops
+  const lineOffsets = style.lineOffsets ?? null
+  const blockBg = style.blockBg ?? null
+  const blockLineIdx = style.highlightLineIdx ?? null
 
   // Optional tilt for that hand-placed-sticker / MrBeast energy. Save +
   // restore the canvas state around the rotation so the rest of the
@@ -471,13 +517,39 @@ export function drawHeadline(
     const spaceW = ctx.measureText(' ').width
     const wordWidths = words.map(w => ctx.measureText(w).width)
     const lineW = wordWidths.reduce((a, b) => a + b, 0) + spaceW * Math.max(0, words.length - 1)
+    // Per-line horizontal offset gives the "hand-stuck-sticker" rhythm —
+    // line 2 sits a bit right (or left) of line 1 instead of perfect
+    // left-align. Falls back to 0 when the style doesn't set it.
+    const offsetX = lineOffsets?.[i] ?? 0
     // Left edge of the line for the requested alignment.
-    const lineStartX = centered ? Math.round(width / 2 - lineW / 2)
+    const lineStartX = (centered ? Math.round(width / 2 - lineW / 2)
       : alignRight ? Math.round(width - MARGIN_X - lineW)
-      : MARGIN_X
+      : MARGIN_X) + offsetX
 
-    // Hard offset "sticker" shadow (whole line).
-    if (hardShadow) {
+    const isBannerLine = !!blockBg && blockLineIdx === i
+
+    // BANNER BLOCK — solid colored rectangle behind this line. Draws
+    // its OWN shadow + black border so the line reads as a sticker
+    // callout. Text on top renders without text-outline (it would
+    // double up on the block border).
+    if (isBannerLine) {
+      const pad = Math.round(fs * 0.18)
+      const bX = lineStartX - pad
+      const bY = y - Math.round(fs * 0.05)
+      const bW = lineW + pad * 2
+      const bH = Math.round(fs * 1.05)
+      ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
+      if (hardShadow) {
+        ctx.fillStyle = hardShadow.color
+        ctx.fillRect(bX + hardShadow.dx, bY + hardShadow.dy, bW, bH)
+      }
+      ctx.fillStyle = blockBg!
+      ctx.fillRect(bX, bY, bW, bH)
+      ctx.lineWidth = OUTLINE
+      ctx.strokeStyle = '#000'
+      ctx.strokeRect(bX, bY, bW, bH)
+    } else if (hardShadow) {
+      // Regular line: hard offset "sticker" shadow under the text itself.
       ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
       ctx.lineWidth = OUTLINE
       ctx.strokeStyle = hardShadow.color
@@ -486,19 +558,22 @@ export function drawHeadline(
       ctx.fillText(line, lineStartX + hardShadow.dx, y + hardShadow.dy)
     }
 
-    // Outer black outline + soft blurred drop shadow (whole line).
-    ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
-    ctx.shadowBlur = 12
-    ctx.shadowOffsetX = 3
-    ctx.shadowOffsetY = 4
-    ctx.lineWidth = OUTLINE
-    ctx.strokeStyle = outlineColor
-    ctx.strokeText(line, lineStartX, y)
+    // Outer black outline + soft blurred drop shadow. Skip for banner
+    // lines — their text outline would extend BEYOND the block border
+    // and look broken.
+    if (!isBannerLine) {
+      ctx.shadowColor = `rgba(0,0,0,${shadowAlpha})`
+      ctx.shadowBlur = 12
+      ctx.shadowOffsetX = 3
+      ctx.shadowOffsetY = 4
+      ctx.lineWidth = OUTLINE
+      ctx.strokeStyle = outlineColor
+      ctx.strokeText(line, lineStartX, y)
+    }
 
-    // Inner halo stroke (e.g. white) — gives the "stickered" double-edge
-    // look from the Smart-Toaster reference. Drawn between the outer
-    // outline and the fill so the halo sits inside the black ring.
-    if (innerStroke) {
+    // Inner halo stroke — also skip for banner lines (text sits flush
+    // against the block, halo would smudge the block edge).
+    if (innerStroke && !isBannerLine) {
       ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
       ctx.lineWidth = innerStroke.width
       ctx.strokeStyle = innerStroke.color
@@ -506,12 +581,11 @@ export function drawHeadline(
     }
 
     // Fill — gradient if configured, otherwise per-word colours so the
-    // first word can take the accent colour.
+    // first word can take the accent colour. For banner lines this is
+    // the black text sitting inside the yellow rectangle.
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0
     const lineGradient = gradientStops?.[i] ?? gradientStops?.[gradientStops.length - 1]
     if (lineGradient) {
-      // Vertical gradient: top colour at character top, bottom colour at
-      // character bottom. Re-created per-line so it follows the wrap.
       const g = ctx.createLinearGradient(0, y, 0, y + fs)
       g.addColorStop(0, lineGradient[0])
       g.addColorStop(1, lineGradient[1])
