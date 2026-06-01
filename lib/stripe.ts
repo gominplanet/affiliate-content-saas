@@ -8,12 +8,17 @@ export function getStripe(): Stripe {
   return _stripe
 }
 
-// Two paid plans: Creator $49 / Pro $199. The Creator price is the same
-// $49 Stripe price that used to back "Starter" — we keep reading the
-// existing STRIPE_PRICE_STARTER env so no Vercel change is required, but
-// honour STRIPE_PRICE_CREATOR if you later rename it. The old $99
-// "Growth" price is archived and no longer referenced.
+// Three paid plans: Creator $49 / Studio $99 / Pro $199.
+//   - Creator: same $49 Stripe price that used to back "Starter" — we keep
+//     reading STRIPE_PRICE_STARTER as a fallback so no Vercel change is
+//     required if you haven't renamed yet, but we honour STRIPE_PRICE_CREATOR
+//     first if it's set.
+//   - Studio: new $99 price. Set STRIPE_PRICE_STUDIO in Vercel after creating
+//     the Stripe price; without it the Studio CTA returns "Invalid tier" so
+//     users never reach a broken checkout.
+//   - Pro: $199 — unchanged.
 export const PRICE_IDS = {
   creator: (process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER)!,
+  studio:  process.env.STRIPE_PRICE_STUDIO!,
   pro:     process.env.STRIPE_PRICE_PRO!,
 } as const

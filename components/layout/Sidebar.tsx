@@ -50,6 +50,7 @@ import { SALES_PAUSED } from '@/lib/sales-paused'
 import { metaEnabled } from '@/lib/feature-flags'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
+import type { Tier } from '@/lib/tier'
 import { resetTutorials } from '@/components/TutorialVideo'
 import { COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
 
@@ -188,7 +189,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   // post-approval, else admins + the App-Review test account.
   const [metaUnlocked, setMetaUnlocked] = useState(metaEnabled())
   // Admin-only "view as tier" preview. 'admin' = your real view (no override).
-  const [viewAs, setViewAs] = useState<'admin' | 'pro' | 'creator' | 'trial'>('admin')
+  const [viewAs, setViewAs] = useState<Tier>('admin')
   useEffect(() => { setViewAs(getViewAsTier() ?? 'admin') }, [])
   const [geniusConnected, setGeniusConnected] = useState(false)
   const [purging, setPurging] = useState(false)

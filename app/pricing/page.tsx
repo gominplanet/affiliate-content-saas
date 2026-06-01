@@ -19,7 +19,7 @@ import { CheckoutButton } from './CheckoutButton'
 export const metadata: Metadata = { title: 'Pricing — MVP Affiliate' }
 
 type Plan = {
-  tier: 'trial' | 'creator' | 'pro'
+  tier: 'trial' | 'creator' | 'studio' | 'pro'
   label: string
   price: number
   regularPrice: number
@@ -73,26 +73,50 @@ const plans: PlanExt[] = [
     ctaLabel: 'Get Creator',
   },
   {
+    tier: 'studio',
+    label: 'Studio',
+    price: 99,
+    regularPrice: 199,
+    limit: '80 posts / month',
+    description: 'For the serious solo affiliate creator. Everything in Creator + TikTok, Instagram, scripts, comparison posts, and the browser extension — the full toolkit on one site.',
+    features: [
+      '80 full reviews per month',
+      'Adds TikTok + Instagram direct-post on top of Creator’s 5 platforms',
+      'Comparison & Guide posts — let MVP rank 5 products into one review',
+      'Video Script & Shot List generator (15 / month) — pre-production AI in your voice',
+      'Browser extension — capture real video keyframes for thumbnails (vidIQ-grade)',
+      'Brand voice training (LEARN) — every review reads more like you over time',
+      '15 brand-collab pitch emails / month',
+      '5,000 newsletter subscribers + 10 broadcasts / month',
+      '1,000 AI assistant messages / month',
+      '80 thumbnails + 80 YouTube Co-Pilot metadata refreshes / month',
+    ],
+    highlight: true,
+    ctaLabel: 'Get Studio',
+  },
+  {
     tier: 'pro',
     label: 'Pro',
     price: 199,
     regularPrice: 499,
     limit: '200 posts / month',
     bonus: '140 + 60 bonus posts',
-    description: 'Become the creator brands want. One video becomes a YouTube package, a blog review, and a post on every major social — so when a brand asks "where will this go?", your answer is a list, not a sentence.',
+    description: 'Become the creator brands want. Multi-account social, Creator Campaigns, one-click Publish All, and every cap raised — so when a brand asks "where will this go?", your answer is a list, not a sentence.',
     features: [
       '200 full reviews per month (140 + 60 bonus)',
-      '100 brand-collab pitch emails / month — your direct lever for deal flow',
+      'Multi-account social — connect multiple Facebook Pages, Instagram accounts, TikTok accounts',
       'For Amazon influencers & associates: scout Creator Connections campaigns by commission & EPC, then one-click research, write & publish',
-      'Native AI Instagram image — your face + the actual product, 4:5 (50 / month)',
-      'Double the Photobooth headshots — 20 / month',
-      'Near-unlimited AI assistant that knows your business — your reviews, niches & campaigns in context',
-      'Adds Instagram, X & Telegram on top of Creator’s platforms',
-      'One-click Apply to YouTube — playlist, schedule, paid-promotion, made-for-kids, all batched',
       'One-click Publish All — site + every social in one shot',
+      'Native AI Instagram image — your face + the actual product, 4:5 (50 / month)',
+      'Adds X & Telegram on top of Studio’s platforms',
+      'Double the Photobooth headshots — 20 / month',
+      'Near-unlimited AI assistant — your reviews, niches & campaigns in context',
+      '100 brand-collab pitch emails / month — your direct lever for deal flow',
+      'Video scripts 30 / month · newsletter unlimited broadcasts · 10k subscribers',
+      'One-click Apply to YouTube — playlist, schedule, paid-promotion, made-for-kids, all batched',
       'Priority queue + priority human support',
     ],
-    highlight: true,
+    highlight: false,
     ctaLabel: 'Get Pro',
   },
 ]
@@ -116,13 +140,13 @@ export default function PricingPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-6xl">
         {plans.map((plan) => (
           <div
             key={plan.tier}
-            className={`rounded-2xl p-8 flex flex-col ${
+            className={`rounded-2xl p-6 lg:p-7 flex flex-col ${
               plan.highlight
-                ? 'bg-[#0071e3] text-white shadow-2xl scale-105'
+                ? 'bg-[#0071e3] text-white shadow-2xl lg:scale-105 ring-1 ring-[#0071e3]/40'
                 : 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-sm border border-gray-200 dark:border-white/10'
             }`}
           >
@@ -139,10 +163,10 @@ export default function PricingPage() {
               </div>
             )}
             <p className={`text-sm font-semibold mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>{plan.label}</p>
-            <div className="flex items-end gap-2 mb-1">
-              <span className="text-5xl font-bold">${plan.price}</span>
+            <div className="flex items-end gap-1.5 mb-1">
+              <span className="text-4xl font-bold tracking-tight">${plan.price}</span>
               {plan.price > 0 && (
-                <span className={`text-sm mb-2 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>/month</span>
+                <span className={`text-sm mb-1.5 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b] dark:text-[#8e8e93]'}`}>/month</span>
               )}
             </div>
             {plan.regularPrice > plan.price && (

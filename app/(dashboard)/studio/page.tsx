@@ -10,6 +10,7 @@ import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
 import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
+import type { Tier } from '@/lib/tier'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
@@ -79,7 +80,7 @@ const defaultProSettings: ProPublishSettings = {
 
 function VideoStudioCard({ video, userTier, playlists }: {
   video: DraftVideo
-  userTier: 'trial' | 'creator' | 'pro' | 'admin'
+  userTier: Tier
   playlists: Array<{ id: string; title: string }>
 }) {
   const isPro = userTier === 'pro' || userTier === 'admin'
@@ -2205,7 +2206,7 @@ export default function StudioPage() {
   const [needsAuth, setNeedsAuth] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasGeniuslink, setHasGeniuslink] = useState(false)
-  const [userTier, setUserTier] = useState<'trial' | 'creator' | 'pro' | 'admin'>('trial')
+  const [userTier, setUserTier] = useState<Tier>('trial')
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([])
   // Pagination
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)

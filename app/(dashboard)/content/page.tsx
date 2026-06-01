@@ -10,7 +10,7 @@ import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
 import { SOCIAL_CAP } from '@/lib/social-cap'
-import { tierAllowsSocial } from '@/lib/tier'
+import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
@@ -532,7 +532,7 @@ function GenerateButton({
   youtubeVideoId?: string
   existingPost?: { url: string; title: string; postId?: string; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
-  userTier: 'trial' | 'creator' | 'pro' | 'admin'
+  userTier: Tier
   onDone: (url: string, title: string, postId: string) => void
 }) {
   const [status, setStatus] = useState<GenStatus>(existingPost ? 'done' : 'idle')
@@ -1731,7 +1731,7 @@ function VideoCard({
   tiktokConnected: boolean
   fbAccounts: Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>
   igAccounts: Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>
-  userTier: 'trial' | 'creator' | 'pro' | 'admin'
+  userTier: Tier
   brandNiches: string[]
   customCategories: string[]
   brandDisclaimer: string
@@ -2536,7 +2536,7 @@ export default function ContentPage() {
    *  when there's a real choice to make. */
   const [fbAccounts, setFbAccounts] = useState<Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>>([])
   const [igAccounts, setIgAccounts] = useState<Array<{ id: string; externalId: string; displayName: string | null; isDefault: boolean }>>([])
-  const [userTier, setUserTier] = useState<'trial' | 'creator' | 'pro' | 'admin'>('trial')
+  const [userTier, setUserTier] = useState<Tier>('trial')
   const [brandNiches, setBrandNiches] = useState<string[]>([])
   const [customCategories, setCustomCategories] = useState<string[]>([])
   const [brandDisclaimer, setBrandDisclaimer] = useState('')

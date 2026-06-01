@@ -6,11 +6,19 @@ import type { Tier } from '@/lib/tier'
 export const config = { api: { bodyParser: false } }
 
 // $49 Creator price = the existing STRIPE_PRICE_STARTER (renamable via
-// STRIPE_PRICE_CREATOR). $99 Growth is archived. $199 = Pro.
-const PRICE_TO_TIER: Record<string, Tier> = {
-  [(process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER)!]: 'creator',
-  [process.env.STRIPE_PRICE_PRO!]: 'pro',
-}
+// STRIPE_PRICE_CREATOR). $99 Studio = STRIPE_PRICE_STUDIO. $199 = Pro.
+// When an env var is unset, the resulting `undefined` key would silently mis-
+// map a paying customer's webhook to whatever tier shared the empty slot —
+// so we filter undefined keys out instead of `process.env.X!`-ing them.
+const PRICE_TO_TIER: Record<string, Tier> = Object.fromEntries(
+  (
+    [
+      [process.env.STRIPE_PRICE_CREATOR ?? process.env.STRIPE_PRICE_STARTER, 'creator'],
+      [process.env.STRIPE_PRICE_STUDIO, 'studio'],
+      [process.env.STRIPE_PRICE_PRO, 'pro'],
+    ] as Array<[string | undefined, Tier]>
+  ).filter(([id]) => !!id) as Array<[string, Tier]>,
+)
 
 export async function POST(request: NextRequest) {
   const body = await request.text()

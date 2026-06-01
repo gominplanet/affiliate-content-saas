@@ -1,7 +1,9 @@
-// Plan set: trial (free, 5 posts lifetime, no card) / creator $49 / pro $199
-// / admin (internal, unlimited). Field names preserved from the previous
-// 5-tier model so every cap + social consumer keeps working unchanged.
-export type Tier = 'trial' | 'creator' | 'pro' | 'admin'
+// Plan set: trial (free, 5 posts lifetime, no card) / creator $49 / studio $99
+// / pro $199 / admin (internal, unlimited). Studio bridges the $49→$199 gap
+// — single-account creator who wants the full toolkit (TikTok/IG direct,
+// scripts, browser extension, comparison posts). Pro adds Pro-only levers:
+// multi-account social, Campaigns, Publish All, all upper caps.
+export type Tier = 'trial' | 'creator' | 'studio' | 'pro' | 'admin'
 
 /** Default tier for a brand-new account (no Stripe subscription yet). */
 export const DEFAULT_TIER: Tier = 'trial'
@@ -15,7 +17,13 @@ export const DEFAULT_TIER: Tier = 'trial'
  * Map legacy values to their new equivalents; anything unknown → DEFAULT_TIER.
  */
 export function normalizeTier(raw: unknown): Tier {
-  if (raw === 'trial' || raw === 'creator' || raw === 'pro' || raw === 'admin') return raw
+  if (
+    raw === 'trial' ||
+    raw === 'creator' ||
+    raw === 'studio' ||
+    raw === 'pro' ||
+    raw === 'admin'
+  ) return raw
   if (raw === 'starter') return 'creator'
   if (raw === 'growth') return 'pro'
   return DEFAULT_TIER // 'free', null, undefined, or any unknown value → trial
@@ -100,6 +108,44 @@ export const TIERS = {
     socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'bluesky'] as readonly Social[],
     priorityQueue: false,
     prioritySupport: false,
+    publishAll: false,
+  },
+  studio:  {
+    label: 'Studio',
+    price: 99,
+    regularPrice: 199,
+    postsPerMonth: 80,
+    lifetimeMax: null as number | null,
+    /** Still a taster — not full Pro outreach volume. */
+    collabsPerMonth: 15 as number | null,
+    thumbnailsPerMonth: 80 as number | null,
+    metadataGensPerMonth: 80 as number | null,
+    /** Pro-only feature: IG AI thumbnails with face + product, 4:5. */
+    instagramAiThumbnailsPerMonth: 0 as number | null,
+    photoboothPerMonth: 15 as number | null,
+    maxFaces: 2 as number | null,
+    blogImagesPerPost: 3,
+    assistantMessagesPerMonth: 1000 as number | null,
+    /** LoRA face training is COGS-heavy; keep Pro-only. */
+    faceTrainJobs: 0 as number | null,
+    /** 5x Creator's subscriber cap; 10 broadcasts/mo covers a weekly send. */
+    newsletterSubscribers: 5000 as number | null,
+    newsletterBroadcastsPerMonth: 10 as number | null,
+    /** Studio unlocks the Script & Shot List tool (was Pro-only) at half
+     *  the Pro monthly cap — main upgrade pull from Creator. */
+    scriptsPerMonth: 15 as number | null,
+    basePosts: 80,
+    bonusPosts: 0,
+    sites: 1,
+    /** Adds TikTok + Instagram on top of Creator's 5 platforms — the second
+     *  main upgrade pull from Creator. Pro adds Twitter + Telegram on top. */
+    socials: [
+      'facebook', 'threads', 'linkedin', 'pinterest', 'bluesky',
+      'tiktok', 'instagram',
+    ] as readonly Social[],
+    priorityQueue: false,
+    prioritySupport: false,
+    /** Publish All (one-click site + every social) remains Pro-only. */
     publishAll: false,
   },
   pro:     {
@@ -210,7 +256,7 @@ export function nextTierFor(
   cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth' | 'scriptsPerMonth',
 ): { tier: Tier; label: string; limit: number | null } | null {
   tier = normalizeTier(tier)
-  const order: Tier[] = ['trial', 'creator', 'pro']
+  const order: Tier[] = ['trial', 'creator', 'studio', 'pro']
   const idx = order.indexOf(tier)
   if (idx < 0 || idx === order.length - 1) return null
   // Find the next tier that actually offers MORE of this cap (or unlimited).
