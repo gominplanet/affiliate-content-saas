@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.25
+ * Version: 1.0.26
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.25');
+define('MVP_AFFILIATE_VERSION', '1.0.26');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -884,7 +884,7 @@ function mvp_affiliate_admin_page() {
 
       <!-- Connect step -->
       <div style="background:#fff;border:1px solid #dcdcde;border-radius:8px;padding:20px;margin-top:16px;">
-        <h2 style="font-size:16px;margin:0 0 4px;">Step 2 — Get your Connection Token</h2>
+        <h2 style="font-size:16px;margin:0 0 4px;">Step 2 — Get your Posting Key</h2>
         <p style="margin:0 0 12px;color:#6e6e73;">Generates a one-time token tied to a dedicated &quot;MVP Affiliate&quot; application password. Paste it into the MVP Affiliate setup wizard to finish the connection.</p>
 
         <?php if ($token_error): ?>
@@ -892,14 +892,14 @@ function mvp_affiliate_admin_page() {
         <?php endif; ?>
 
         <?php if ($token): ?>
-        <p style="margin:0 0 8px;font-weight:600;">Your Connection Token:</p>
+        <p style="margin:0 0 8px;font-weight:600;">Your Posting Key:</p>
         <textarea readonly onclick="this.select();" style="width:100%;height:90px;font-family:monospace;font-size:12px;padding:10px;border:1px solid #dcdcde;border-radius:6px;background:#f6f7f7;"><?php echo esc_textarea($token); ?></textarea>
         <p style="margin:8px 0 0;color:#6e6e73;font-size:12px;">Copy this token and paste it in the MVP Affiliate setup wizard. Token is valid as long as the "MVP Affiliate" application password exists (manage in Users → Profile → Application Passwords).</p>
         <?php else: ?>
         <form method="post" style="margin:0;">
           <?php wp_nonce_field('mvp_affiliate_generate_token'); ?>
           <input type="hidden" name="mvp_affiliate_action" value="generate_token" />
-          <button type="submit" class="button button-primary">Generate Connection Token</button>
+          <button type="submit" class="button button-primary">Generate Posting Key</button>
         </form>
         <?php endif; ?>
       </div>
@@ -1018,6 +1018,99 @@ add_action('admin_notices', function () {
         </a>
         <a href="<?php echo esc_url(self_admin_url('plugins.php')); ?>" style="margin-left:10px;color:#d63638;">View in Plugins</a>
       </p>
+    </div>
+    <?php
+});
+
+// ─── Posting Key notice ────────────────────────────────────────────────
+// Shows the body-auth proxy secret (we call it "Posting Key" in user copy —
+// "Connection Token" is already used for the legacy setup-wizard flow) in
+// wp-admin so the user can copy-paste it into the MVP dashboard. Needed
+// for hosts (SiteGround, Hostinger LiteSpeed, some Apache shared) that
+// STRIP the Authorization header on POST requests — MVP's normal "Connect
+// via Application Password" flow can't fetch the secret from /status on
+// those hosts, so the user pastes it manually instead.
+//
+// Defense in depth: the secret is normally minted by the activation hook, but
+// upgrade-in-place sometimes skips activation. mvp_affiliate_ensure_proxy_secret()
+// runs on every admin pageload and mints if missing, so the notice ALWAYS has
+// a value to show.
+//
+// Display rules:
+//   - Only to users who can update plugins (admin-level)
+//   - Only on Dashboard + Plugins page (not noisy on every screen)
+//   - Dismissible per-user (stores affiliateos_token_notice_dismissed user meta)
+function mvp_affiliate_ensure_proxy_secret() {
+    if (!get_option('affiliateos_proxy_secret')) {
+        update_option('affiliateos_proxy_secret', bin2hex(random_bytes(32)));
+    }
+}
+add_action('admin_init', 'mvp_affiliate_ensure_proxy_secret');
+
+// AJAX: dismiss the connection-token notice for this user.
+add_action('wp_ajax_mvp_affiliate_dismiss_token_notice', function () {
+    check_ajax_referer('mvp_affiliate_token_notice', 'nonce');
+    update_user_meta(get_current_user_id(), 'affiliateos_token_notice_dismissed', 1);
+    wp_send_json_success();
+});
+
+add_action('admin_notices', function () {
+    if (!current_user_can('update_plugins')) return;
+    // Dismissed by this user? skip.
+    if (get_user_meta(get_current_user_id(), 'affiliateos_token_notice_dismissed', true)) return;
+    // Only on Dashboard + Plugins page.
+    $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+    $allowed_screens = ['dashboard', 'plugins'];
+    if (!$screen || !in_array($screen->base, $allowed_screens, true)) return;
+    $secret = (string) get_option('affiliateos_proxy_secret', '');
+    if ($secret === '') return; // ensure_proxy_secret should have set it; bail if not
+    $nonce = wp_create_nonce('mvp_affiliate_token_notice');
+    ?>
+    <div class="notice notice-info is-dismissible mvp-affiliate-token-notice" style="border-left-color:#7C3AED;padding:14px 16px;" data-nonce="<?php echo esc_attr($nonce); ?>">
+      <p style="font-size:14px;margin:0 0 8px;color:#1d2327;">
+        <strong style="color:#7C3AED;">MVP Affiliate · Posting Key</strong>
+      </p>
+      <p style="font-size:13px;margin:0 0 10px;color:#3c434a;line-height:1.5;">
+        Paste this token into your MVP dashboard at <strong>Settings → WordPress Sites → Posting Key</strong>.
+        Required only if posting from MVP fails with an authentication error (some hosts block the Authorization header on POST).
+      </p>
+      <p style="margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <code id="mvp-affiliate-token" style="background:#f0f0f1;padding:8px 12px;border-radius:4px;font-size:12px;user-select:all;font-family:Menlo,Consolas,monospace;word-break:break-all;flex:1;min-width:280px;"><?php echo esc_html($secret); ?></code>
+        <button type="button" class="button button-primary" id="mvp-affiliate-token-copy" style="background:#7C3AED;border-color:#7C3AED;box-shadow:none;text-shadow:none;">Copy</button>
+      </p>
+      <script>
+      (function(){
+        var notice = document.currentScript.closest('.mvp-affiliate-token-notice');
+        if (!notice) return;
+        var btn   = notice.querySelector('#mvp-affiliate-token-copy');
+        var code  = notice.querySelector('#mvp-affiliate-token');
+        if (btn && code) {
+          btn.addEventListener('click', function () {
+            navigator.clipboard.writeText(code.textContent.trim()).then(function () {
+              var old = btn.textContent;
+              btn.textContent = 'Copied!';
+              btn.style.background = '#10B981';
+              btn.style.borderColor = '#10B981';
+              setTimeout(function () {
+                btn.textContent = old;
+                btn.style.background = '#7C3AED';
+                btn.style.borderColor = '#7C3AED';
+              }, 1600);
+            });
+          });
+        }
+        // Dismiss → remember server-side.
+        notice.addEventListener('click', function (e) {
+          if (e.target.classList && e.target.classList.contains('notice-dismiss')) {
+            var nonce = notice.getAttribute('data-nonce');
+            var fd = new FormData();
+            fd.append('action', 'mvp_affiliate_dismiss_token_notice');
+            fd.append('nonce', nonce);
+            fetch(ajaxurl, { method: 'POST', body: fd, credentials: 'same-origin' });
+          }
+        });
+      })();
+      </script>
     </div>
     <?php
 });

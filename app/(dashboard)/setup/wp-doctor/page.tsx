@@ -18,8 +18,9 @@
  */
 import { useEffect, useState } from 'react'
 import Header from '@/components/layout/Header'
-import { Loader2, CheckCircle2, AlertTriangle, AlertCircle, Info, RotateCw, ExternalLink } from 'lucide-react'
+import { Loader2, CheckCircle2, AlertTriangle, AlertCircle, Info, RotateCw, ExternalLink, Key } from 'lucide-react'
 import { SitePicker } from '@/components/SitePicker'
+import { toast } from 'sonner'
 
 interface PluginFix {
   id: string
@@ -95,6 +96,8 @@ export default function WpDoctorPage() {
       <div className="mb-4">
         <SitePicker value={siteId} onChange={setSiteId} label="Diagnose site" />
       </div>
+
+      <PostingKeyPanel siteId={siteId} onSaved={runDoctor} />
 
       {/* ── Loading / error states ───────────────────────────────────── */}
       {loading && (
@@ -255,6 +258,121 @@ function FixCard({ fix }: { fix: PluginFix }) {
           </ol>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Posting Key paste panel — for hosts where MVP can't auto-fetch the
+ * proxy secret from /affiliateos/v1/status because the host strips the
+ * Authorization header on requests. The user copies the key from their
+ * wp-admin "MVP Affiliate Posting Key" admin notice and pastes it here.
+ *
+ * Always visible on this page so the user can self-serve without us
+ * having to detect the auth-stripping condition first (the user already
+ * landed here because something's broken — offering the manual key path
+ * is strictly additive).
+ *
+ * After save: triggers a re-run of the doctor so the user sees the
+ * connection turn green immediately.
+ */
+function PostingKeyPanel({ siteId, onSaved }: { siteId: string | null; onSaved: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    const cleaned = value.trim().toLowerCase()
+    if (!cleaned) {
+      toast.error('Paste the Posting Key first.')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/wordpress/posting-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteId: siteId || undefined, postingKey: cleaned }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error || `HTTP ${res.status}`)
+        return
+      }
+      toast.success('Posting Key saved. Re-running diagnostic…')
+      setValue('')
+      setOpen(false)
+      onSaved()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card p-4 mb-6 border border-[#7C3AED]/20 bg-[#7C3AED]/[0.03]">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-3 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Key size={14} className="text-[#7C3AED]" />
+          <div>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              Posting Key (for hosts that strip the Authorization header)
+            </p>
+            <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+              Some hosts (SiteGround, Hostinger LiteSpeed, certain Apache shared configs) drop the
+              Authorization header on POST. If posting from MVP keeps failing with an auth error, paste
+              your Posting Key from wp-admin here and we&apos;ll use a direct path that bypasses the header.
+            </p>
+          </div>
+        </div>
+        <span className="text-[11px] text-[#7C3AED] font-medium flex-shrink-0">
+          {open ? '− Hide' : '+ Paste key'}
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-4 flex flex-col gap-3">
+          <div className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+            <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Where to find your key</p>
+            <ol className="list-decimal ml-4 flex flex-col gap-1">
+              <li>Make sure your plugin is on <strong>v1.0.26 or newer</strong> (update from wp-admin → Plugins if not).</li>
+              <li>Go to your <strong>WordPress Dashboard</strong> or <strong>Plugins</strong> page.</li>
+              <li>Look for the violet notice labeled <strong>&ldquo;MVP Affiliate · Posting Key&rdquo;</strong>.</li>
+              <li>Click <strong>Copy</strong> and paste below.</li>
+            </ol>
+          </div>
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="64-character hex key (a-f, 0-9)"
+            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 text-sm font-mono text-[#1d1d1f] dark:text-[#f5f5f7] placeholder:text-[#86868b]/50 focus:outline-none focus:border-[#7C3AED]"
+            spellCheck={false}
+            autoCapitalize="none"
+            autoCorrect="off"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="px-4 py-2 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-sm font-medium text-white inline-flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+            >
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Key size={13} />}
+              {saving ? 'Saving…' : 'Save Posting Key'}
+            </button>
+            <button
+              onClick={() => { setOpen(false); setValue('') }}
+              className="px-3 py-2 rounded-lg text-sm text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
