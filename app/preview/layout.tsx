@@ -91,6 +91,10 @@ const DARK_VARS: React.CSSProperties = {
   ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)',
   ['--hero-opacity' as string]: '0.35',
   ['--kbd-bg' as string]: 'rgba(255,255,255,0.06)',
+  // Active sidebar nav: violet-tinted background + lighter violet text so
+  // it's distinctly "selected" without straining the eye against dark bg.
+  ['--nav-active-bg' as string]: 'rgba(124,58,237,0.16)',
+  ['--nav-active-text' as string]: '#C4B5FD',
 }
 
 const LIGHT_VARS: React.CSSProperties = {
@@ -111,6 +115,10 @@ const LIGHT_VARS: React.CSSProperties = {
   ['--card-shadow' as string]: '0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02)',
   ['--hero-opacity' as string]: '0.18',
   ['--kbd-bg' as string]: 'rgba(0,0,0,0.05)',
+  // Active sidebar nav: lighter violet wash + saturated violet text. The
+  // text picks up the brand color so the row reads "selected" instantly.
+  ['--nav-active-bg' as string]: 'rgba(124,58,237,0.10)',
+  ['--nav-active-text' as string]: '#7C3AED',
 }
 
 export default function PreviewLayout({ children }: { children: React.ReactNode }) {
@@ -314,10 +322,10 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
     <a
       href={item.path}
       title={collapsed ? item.label : undefined}
-      className={`relative flex items-center gap-2.5 ${collapsed ? 'justify-center' : 'px-2.5'} py-1.5 rounded-lg text-[13px] transition-colors`}
+      className={`relative flex items-center gap-2.5 ${collapsed ? 'justify-center' : 'px-2.5'} py-1.5 rounded-lg text-[13px] font-medium transition-colors`}
       style={{
-        backgroundColor: active ? 'var(--surface-bright)' : 'transparent',
-        color: active ? 'var(--text)' : 'var(--text-subtle)',
+        backgroundColor: active ? 'var(--nav-active-bg)' : 'transparent',
+        color: active ? 'var(--nav-active-text)' : 'var(--text-subtle)',
       }}
       onMouseEnter={(e) => {
         if (!active) {
@@ -332,13 +340,18 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
         }
       }}
     >
-      {active && <span className="absolute left-0 top-2 bottom-2 w-[2px] rounded-r bg-[#7C3AED]" />}
+      {/* Left indicator bar — 3px violet, slightly proud of the row.
+          Strong enough to be obvious even when scanning the sidebar. */}
+      {active && <span className="absolute -left-2 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-[#7C3AED]" />}
       <span className="flex-shrink-0">{item.icon}</span>
       {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
       {!collapsed && item.badge !== undefined && (
         <span
           className="text-[10px] tabular-nums px-1.5 py-0.5 rounded"
-          style={{ backgroundColor: 'var(--surface-bright)', color: 'var(--text-faint)' }}
+          style={{
+            backgroundColor: active ? 'rgba(124,58,237,0.18)' : 'var(--surface-bright)',
+            color: active ? 'var(--nav-active-text)' : 'var(--text-faint)',
+          }}
         >
           {item.badge}
         </span>
