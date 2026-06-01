@@ -426,7 +426,7 @@ export default function CustomizePage() {
     // of truth (set in Brand Profile). We only use blog_customizations.about
     // for blog-specific layout choices (the banner background color).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: brandRow } = await (supabase as any)
+    const { data: brandRow } = await supabase
       .from('brand_profiles')
       .select('logo_url, author_name, headshot_url, youtube_channel_url')
       .eq('user_id', user.id)
@@ -438,13 +438,27 @@ export default function CustomizePage() {
     const brandHeadshot: string = brandRow?.headshot_url ?? ''
     const brandYouTube: string = brandRow?.youtube_channel_url ?? ''
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: row } = await (supabase as any)
+    const { data: row } = await supabase
       .from('integrations')
       .select('blog_customizations')
       .eq('user_id', user.id)
       .single()
     if (row?.blog_customizations) {
-      const bc = row.blog_customizations
+      // blog_customizations is a JSONB column (Postgrest types it Json). We
+      // narrow at the read boundary because our /api/wordpress/customizations
+      // writer is the single source of truth for the shape — Partial<>
+      // because older rows can be missing newer fields, and `profile` is a
+      // legacy sub-object the WP plugin used to emit alongside the canonical
+      // ones (we still read it as a fallback for socials).
+      const bc = row.blog_customizations as Partial<BlogCustomizations> & {
+        profile?: {
+          youtubeUrl?: string; instagramUrl?: string; facebookUrl?: string;
+          pinterestUrl?: string; tiktokUrl?: string; twitterUrl?: string;
+          threadsUrl?: string; contactEmail?: string;
+        }
+        about?: AboutData & { imageUrl?: string }
+        footer?: FooterData & { bio?: string }
+      }
       const profile = bc.profile ?? {}
       const socials: SocialLinks = {
         youtube:   bc.footer?.socials?.youtube   || profile.youtubeUrl   || '',

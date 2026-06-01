@@ -92,7 +92,7 @@ export async function POST(request: Request) {
 
     if (fromToken) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: intRow } = await (supabase as any)
+      const { data: intRow } = await supabase
         .from('integrations')
         .select('wordpress_url, wordpress_username, wordpress_app_password')
         .eq('user_id', user.id)
@@ -425,12 +425,28 @@ export async function POST(request: Request) {
 
     // Sync social links into blog_customizations so the Customize page pre-populates correctly
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existingCustom } = await (supabase as any)
+    const { data: existingCustom } = await supabase
       .from('integrations')
       .select('blog_customizations')
       .eq('user_id', user.id)
       .single()
-    const existing = existingCustom?.blog_customizations ?? {}
+    // Narrow Json to the shape this route actually reads/writes. The
+    // wider Json union doesn't allow `.profile`/`.footer` access; we
+    // own these writes (Customize Blog UI + this route are the only
+    // writers) so the narrow is safe at this read boundary.
+    type CustomShape = {
+      profile?: {
+        authorName?: string; authorBio?: string; headshotUrl?: string; accentColor?: string;
+        youtubeUrl?: string; instagramUrl?: string; facebookUrl?: string; pinterestUrl?: string;
+        tiktokUrl?: string; twitterUrl?: string; contactEmail?: string;
+      }
+      footer?: {
+        bio?: string;
+        socials?: { youtube?: string; instagram?: string; facebook?: string; pinterest?: string; tiktok?: string; twitter?: string; threads?: string; contact?: string }
+      }
+      [k: string]: unknown
+    }
+    const existing = (existingCustom?.blog_customizations ?? {}) as CustomShape
     const mergedCustomizations = {
       ...existing,
       profile: {
@@ -463,7 +479,7 @@ export async function POST(request: Request) {
       },
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any)
+    await supabase
       .from('integrations')
       .update({ blog_customizations: mergedCustomizations })
       .eq('user_id', user.id)

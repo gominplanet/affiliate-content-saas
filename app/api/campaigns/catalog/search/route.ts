@@ -54,8 +54,8 @@ export async function GET(request: Request) {
   const overfetch = Math.max(limit * 2, 200)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).rpc('search_creator_campaigns', {
-    p_keyword: keyword || null,
+  const { data, error } = await supabase.rpc('search_creator_campaigns', {
+    p_keyword: keyword || '',
     p_min_commission: minCommission,
     p_min_days: minDays,
     p_need_budget: needBudget,
