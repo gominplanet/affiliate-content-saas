@@ -236,21 +236,38 @@ export async function GET(req: Request) {
   })
 
   // ── Step 3: synthesize the overall verdict + summary.
-  // "Healthy" means we have at least one viable write path:
-  //   - basic_auth_post succeeded, OR
-  //   - basic_auth_post failed BUT the proxy works (proxy_write ok)
-  // We require basic_auth_get to be ok regardless — without read
-  // access nothing else matters.
-  const hasWritePath = writeOk || (proxyOk === true)
-  const healthy = readOk && pluginActive && hasWritePath
+  //
+  // "Healthy" means MVP has at least one viable path to BOTH read and
+  // write. There are two valid topologies:
+  //   1. Legacy Basic-Auth path: read via Basic Auth AND write via
+  //      Basic Auth. The classic flow that works on most hosts.
+  //   2. Proxy path: read AND write via /affiliateos/v1/proxy. On
+  //      hosts that strip the Authorization header (SiteGround
+  //      LiteSpeed, Hostinger LiteSpeed), Basic Auth is permanently
+  //      dead — readOk + writeOk are both false. But the proxy uses
+  //      body-auth, so it sidesteps the header strip and handles BOTH
+  //      reads and writes via rest_do_request. proxyOk=true alone is
+  //      a complete write path.
+  //
+  // Previous logic required `readOk` regardless of `proxyOk`, which
+  // misjudged auth-strip hosts as unhealthy even when posting worked.
+  // We fix that by treating proxyOk as a complete path.
+  const legacyPathWorks = readOk && writeOk
+  const proxyPathWorks = proxyOk === true
+  const hasWritePath = writeOk || proxyPathWorks
+  const healthy = pluginActive && (legacyPathWorks || proxyPathWorks)
 
   let summary: string
   if (healthy) {
-    summary = 'Your WordPress site is healthy. MVP can publish.'
-  } else if (!readOk) {
-    summary = 'WordPress is rejecting our Application Password. Check the credentials in /setup.'
+    summary = proxyPathWorks && !legacyPathWorks
+      ? 'Your WordPress site is healthy — MVP publishes via the body-auth proxy (your host strips Authorization headers, so this is the right path).'
+      : 'Your WordPress site is healthy. MVP can publish.'
   } else if (!pluginActive) {
     summary = 'The MVP Affiliate plugin isn\'t installed or activated. Reinstall from /setup.'
+  } else if (!readOk && !proxyPathWorks) {
+    summary = site.wordpress_api_token
+      ? 'Your stored Posting Key isn\'t working — re-copy it from wp-admin and paste again.'
+      : 'WordPress is rejecting our Application Password, and no Posting Key is on file. Either fix the password in /setup, or paste your Posting Key in the panel above.'
   } else if (!hasWritePath) {
     summary = detection.detected.length > 0
       ? `A security plugin (${detection.detected.filter(d => d.severity === 'block').map(d => d.label).join(', ') || detection.detected[0].label}) is blocking writes. Steps below.`
@@ -259,11 +276,32 @@ export async function GET(req: Request) {
     summary = 'Some checks failed — review the steps below.'
   }
 
+  // Fix cards: only show fixes that map to ACTUAL failures.
+  //
+  // The OLD behavior was to show every detected plugin's fix card
+  // unconditionally — so a user running Wordfence + SG + LiteSpeed
+  // saw 3 red "fix this!" cards even when posting worked perfectly
+  // via the proxy. That's misleading: they look like blocking
+  // problems when they're informational at most.
+  //
+  // New behavior:
+  //   - If the site is healthy → no fix cards (nothing's broken).
+  //     Detected plugins still appear in the "detected plugins"
+  //     collapsible section at the bottom of the doctor page.
+  //   - If the site is unhealthy AND a write path is missing → show
+  //     fixes for detected plugins (these are now actionable
+  //     suggestions).
+  //   - If the only issue is plugin not installed / wrong creds, we
+  //     don't need plugin-fix cards either — the summary tells them
+  //     what to do.
+  const shouldShowFixes = !healthy && !hasWritePath
+  const fixes = shouldShowFixes ? sortFixes(detection.detected) : []
+
   const response: DoctorResponse = {
     healthy,
     site: detection.site,
     namespaces: detection.namespaces,
-    fixes: sortFixes(detection.detected),
+    fixes,
     edgeBlock: null,
     tests,
     summary,
