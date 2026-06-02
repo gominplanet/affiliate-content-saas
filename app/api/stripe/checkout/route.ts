@@ -15,7 +15,11 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { tier, referral } = await request.json() as { tier: Tier; referral?: string | null }
+  const { tier, referral, couponId } = await request.json() as {
+    tier: Tier
+    referral?: string | null
+    couponId?: string | null
+  }
   const priceId = PRICE_IDS[tier as keyof typeof PRICE_IDS]
   if (!priceId) return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
 
@@ -36,10 +40,16 @@ export async function POST(request: NextRequest) {
     // user_id directly, so the upgrade applies even if checkout.session.completed
     // is delayed or not subscribed in the dashboard.
     subscription_data: { metadata: { user_id: user.id, tier } },
-    // Show the "Add promotion code" field on the Stripe Checkout page so users
-    // can redeem a coupon. Requires a Promotion Code (not just a Coupon) to
-    // exist in the Stripe Dashboard.
-    allow_promotion_codes: true,
+    // Rewardful double-sided incentives vs manual promo codes —
+    // Stripe makes these mutually exclusive on a Checkout session
+    // (passing both 422s the request). So if Rewardful sent us a
+    // coupon from the affiliate cookie (the visitor arrived via an
+    // affiliate link and the campaign has the incentive enabled),
+    // auto-apply that coupon. Otherwise show the "Add promotion code"
+    // field for manual entry — same UX everyone else gets.
+    ...(couponId
+      ? { discounts: [{ coupon: couponId }] }
+      : { allow_promotion_codes: true }),
     // Rewardful affiliate attribution — the referral UUID lives in
     // client_reference_id, which Rewardful's Stripe webhook reads to
     // attribute the conversion to the correct affiliate.

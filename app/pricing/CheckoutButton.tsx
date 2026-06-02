@@ -23,9 +23,17 @@ import { createBrowserClient } from '@/lib/supabase/client'
 
 // Mirror the Window globals Rewardful exposes once its script loads. Kept here
 // (rather than in a global .d.ts) so this component file is self-contained.
+//
+// Rewardful.coupon shape (per their JS API): when the visitor arrived via an
+// affiliate link AND the campaign has double-sided incentives enabled, this
+// is an object like { id: 'coupon_xxx', name: 'Affiliate20', percent_off: 20 }.
+// When either condition fails, it's null/undefined. We only need the id.
 declare global {
   interface Window {
-    Rewardful?: { referral?: string | null }
+    Rewardful?: {
+      referral?: string | null
+      coupon?: { id?: string; name?: string; percent_off?: number } | null
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     rewardful?: (event: string, cb: () => void) => void
   }
@@ -53,14 +61,17 @@ export function CheckoutButton({
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [referral, setReferral] = useState<string | null>(null)
+  const [couponId, setCouponId] = useState<string | null>(null)
 
-  // Capture Rewardful referral ID once the tracking script signals ready, so
-  // we can attribute the Stripe checkout to the referrer. Same logic as the
-  // original page; lives here now because this is the only consumer.
+  // Capture Rewardful referral ID + double-sided-incentive coupon once the
+  // tracking script signals ready. The coupon ID is what makes the discount
+  // auto-apply at Stripe Checkout — without it the referred customer would
+  // still need to manually type a promo code.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.rewardful) return
     window.rewardful('ready', () => {
       setReferral(window.Rewardful?.referral ?? null)
+      setCouponId(window.Rewardful?.coupon?.id ?? null)
     })
   }, [])
 
@@ -86,7 +97,7 @@ export function CheckoutButton({
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier, referral }),
+        body: JSON.stringify({ tier, referral, couponId }),
       })
       const { url, error } = await res.json()
       if (error) { alert(error); return }
