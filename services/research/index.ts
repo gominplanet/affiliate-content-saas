@@ -244,6 +244,10 @@ Rules: ground every fact in search results — do NOT invent. Under 250 words.`,
  * text-only guess. Used for non-Amazon products (Amazon has its own catalog
  * photo via ASIN). Prefers og:image / twitter:image (the page's chosen hero
  * image), falls back to the first large <img>. Best-effort, timeout-bounded.
+ *
+ * For multi-candidate vision-picking (in-article image generation), prefer
+ * `fetchProductGalleryFromPage` which returns several candidates and lets
+ * the caller `pickProductReferenceImage` the cleanest isolated shot.
  */
 export async function fetchProductImageFromPage(url: string): Promise<string | null> {
   try {
@@ -269,5 +273,106 @@ export async function fetchProductImageFromPage(url: string): Promise<string | n
     return img.startsWith('http') ? img : null
   } catch {
     return null
+  }
+}
+
+/**
+ * Multi-candidate sibling of `fetchProductImageFromPage`. Pulls SEVERAL real
+ * product photos off a store/brand product page so the caller can run them
+ * through `pickProductReferenceImage` to vision-pick the cleanest isolated
+ * shot — same pattern we use for Amazon ASIN pages (gallery → vision-pick).
+ *
+ * Without this, non-Amazon products only get the page's og:image, which on
+ * many DTC brand pages is a lifestyle/hero collage. That ends up driving
+ * Kontext to re-render a prop or scene instead of the actual product.
+ *
+ * Sources, in order:
+ *   1. og:image + og:image:secure_url meta tags
+ *   2. twitter:image meta tag
+ *   3. JSON-LD `Product.image` entries (many Shopify/Woo themes emit these)
+ *   4. <link rel="image_src"> hint
+ *   5. Up to 6 of the largest-looking <img> tags on the page
+ *
+ * Returns absolute, http(s) URLs only. Deduped, capped at 8 (matches the
+ * Amazon cap so the vision picker has a comparable signal). Empty array on
+ * total failure — caller falls back to the single-image variant or text-only.
+ */
+export async function fetchProductGalleryFromPage(url: string): Promise<string[]> {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) return []
+    const html = await res.text()
+    const candidates: string[] = []
+
+    // 1. og:image / og:image:secure_url (any order in the meta tag)
+    for (const re of [
+      /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/gi,
+      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url)?["']/gi,
+    ]) {
+      for (const m of html.matchAll(re)) candidates.push(m[1])
+    }
+
+    // 2. twitter:image (and twitter:image:src variant)
+    for (const m of html.matchAll(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/gi)) {
+      candidates.push(m[1])
+    }
+
+    // 3. JSON-LD Product.image — common on Shopify, WooCommerce, BigCommerce.
+    //    image can be a string, an array of strings, or {url: "..."} objects.
+    for (const m of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const json: any = JSON.parse(m[1].trim())
+        const nodes = Array.isArray(json) ? json : [json]
+        for (const node of nodes) {
+          const img = node?.image
+          if (!img) continue
+          const arr = Array.isArray(img) ? img : [img]
+          for (const i of arr) {
+            if (typeof i === 'string') candidates.push(i)
+            else if (i && typeof i.url === 'string') candidates.push(i.url)
+          }
+        }
+      } catch { /* malformed JSON-LD, skip */ }
+    }
+
+    // 4. <link rel="image_src"> — older but still emitted by some CMS themes
+    const linkImage = html.match(/<link[^>]+rel=["']image_src["'][^>]+href=["']([^"']+)["']/i)?.[1]
+    if (linkImage) candidates.push(linkImage)
+
+    // 5. Fallback: pick up the first few large-looking <img> tags. We crudely
+    //    prefer ones with "product" or "main" in their class/id and ones that
+    //    have explicit width/height suggesting they're hero shots, not icons.
+    const imgRe = /<img[^>]+src=["'](https?:\/\/[^"']+\.(?:jpe?g|png|webp)[^"']*)["'][^>]*>/gi
+    let bonus = 0
+    for (const m of html.matchAll(imgRe)) {
+      candidates.push(m[1])
+      bonus++
+      if (bonus >= 12) break // hard cap on <img> sweep
+    }
+
+    // Normalize: absolute URLs only, https upgrade, dedupe in source order.
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (let img of candidates) {
+      if (!img) continue
+      if (img.startsWith('//')) img = 'https:' + img
+      else if (img.startsWith('/')) { try { img = new URL(img, url).href } catch { continue } }
+      if (!img.startsWith('http')) continue
+      // Strip tracking query suffixes that often differ between duplicates
+      // (?v=, ?_=, &width=, &t=, etc.) so we don't carry near-identical URLs.
+      const key = img.split('?')[0]
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(img)
+      if (out.length >= 8) break // mirror Amazon's 8-image cap
+    }
+    return out
+  } catch {
+    return []
   }
 }

@@ -12,7 +12,7 @@ import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
-import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage } from '@/services/research'
+import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage, fetchProductGalleryFromPage } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
@@ -1207,13 +1207,30 @@ async function handleGenerate(request: Request) {
           // page the creator linked, so Kontext renders the ACTUAL product
           // instead of a text-only guess (the #1 cause of "wrong product"). The
           // Amazon path above already covers ASIN products; this fills the gap.
+          //
+          // Mirrors the Amazon flow: pull a GALLERY of candidate images off the
+          // page (og:image + twitter:image + JSON-LD product images + large
+          // <img> tags), then vision-pick the cleanest isolated product shot.
+          // Without the gallery + vision-pick, many DTC brand pages were
+          // handing us a hero/lifestyle collage as og:image and Kontext was
+          // re-rendering a scene element instead of the product.
           if (!falProductImageUrl) {
             let pageUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
             if (pageUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
               pageUrl = await resolveFinalUrl(pageUrl) // unwrap short/geni.us links to the real page
             }
             if (pageUrl) {
-              const productImg = await fetchProductImageFromPage(pageUrl)
+              const gallery = await fetchProductGalleryFromPage(pageUrl)
+              // pickProductReferenceImage returns null only on an empty array;
+              // it's a no-op (returns the single image) when only one candidate
+              // exists, so this is safe regardless of gallery size.
+              let productImg = gallery.length > 0
+                ? await pickProductReferenceImage(gallery, productTitleForPrompts, { userId: user.id, tier: (wp?.tier as string) ?? null })
+                : null
+              // Belt-and-suspenders: if the gallery scraper found nothing
+              // (rare — page with no images at all), fall back to the old
+              // single-image scraper so we don't regress on weird pages.
+              if (!productImg) productImg = await fetchProductImageFromPage(pageUrl)
               if (productImg) {
                 try {
                   const imgRes = await fetch(productImg, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
@@ -1252,16 +1269,36 @@ async function handleGenerate(request: Request) {
               // This keeps the ACTUAL product accurate — what readers came to
               // see — instead of guessing from random video frames.
               if (falProductImageUrl) {
-                const kontextInstruction = `Re-render the EXACT product shown in this reference image. Keep its precise shape, colour, materials, proportions and any on-product branding identical — never redesign it, swap it, or invent a different product. Remove the original background and any retail packaging. Present this same product as a polished, magazine-quality editorial photo shown as a ${perspective}, placed naturally in a real-world setting that fits how it is actually used: ${prompt}. If a realistic in-use setting doesn't suit it, instead stage the product on a clean surface against a VIBRANT, eye-catching colour-pop / gradient background with soft studio lighting, reflections and depth that make it shine and pop off the page. Realistic shadows and lighting. This must look like a COMPLETELY different photo from the article's other images — a different background and environment, a different surface, different lighting and time of day, and a different camera distance and angle. Do NOT reuse the reference photo's plain studio background or its pose; relocate the product into the new scene. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
+                // Identity-preserving re-render via Nano Banana (Gemini Imagen).
+                //
+                // We previously used Flux Kontext here. Kontext is great at
+                // RESTYLING but drifts on IDENTITY — ~half the in-article images
+                // ended up showing "an office chair", not THIS office chair.
+                // Nano Banana (the same model that powers identity-preserving
+                // thumbnail composition) holds the exact product shape/colour/
+                // branding from the reference image with high fidelity, then
+                // only changes the background/scene to match the slot prompt.
+                //
+                // Prompt language is tighter than Kontext's: lead with the
+                // identity contract ("keep IDENTICAL"), then the scene change.
+                // Nano Banana follows directional instructions better when the
+                // identity clause comes first.
+                const nanoBananaInstruction = `Identity-preserving re-render of the product in the reference image. Keep its EXACT shape, colour, materials, proportions, surface texture, and every on-product branding/logo/label/text element IDENTICAL to the reference — do not redesign, restyle, simplify, swap, or invent any product. Treat the reference as ground truth for what the product looks like.
+
+CHANGE ONLY the background and the scene around it. Strip the reference's plain studio background and any retail packaging. Place the same product, unchanged, as a polished magazine-quality editorial photo shown as a ${perspective}: ${prompt}. Set it naturally in the new context where this product would actually be used. If a realistic setting doesn't fit, instead stage the unchanged product on a clean surface against a VIBRANT colour-pop / gradient background with soft studio lighting, reflections, and depth that make it shine.
+
+Realistic shadows and lighting. This must read as a COMPLETELY different photo from the article's other images — different background and environment, different surface, different lighting and time of day, different camera distance and angle. Do NOT reuse the reference photo's pose or background.
+
+${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/watermarks.`
                 try {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
-                    input: { image_url: falProductImageUrl, prompt: kontextInstruction, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed },
-                    pollInterval: 3000,
+                  const out = await composeWithNanoBanana({
+                    prompt: nanoBananaInstruction,
+                    referenceImageUrls: [falProductImageUrl],
+                    aspectRatio: '4:3',
+                    numImages: 1,
                   })
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  falUrl = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
-                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'fal-flux-pro-kontext', images: 1 })
+                  falUrl = out[0]
+                  if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'nano-banana', images: 1 })
                 } catch { /* fall through to frame / text-to-image */ }
               }
               // ── Fallback: no product photo resolved → retouch a real video

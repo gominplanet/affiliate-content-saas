@@ -16,7 +16,7 @@ import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
-import { fetchProductImageFromPage } from '@/services/research'
+import { fetchProductImageFromPage, fetchProductGalleryFromPage } from '@/services/research'
 import { normalizeTier, allowedBlogImages } from '@/lib/tier'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
@@ -103,7 +103,20 @@ export async function POST(request: Request) {
       try { const p = await fetchAmazonProduct(asin); if (p.title) productTitle = p.title; productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null } catch { /* ignore */ }
     }
     if (!productImageUrl && pageUrl) {
-      try { productImageUrl = await fetchProductImageFromPage(pageUrl) } catch { /* ignore */ }
+      // Mirror the Amazon flow on non-Amazon pages: scrape multiple candidate
+      // images off the product page, then vision-pick the cleanest isolated
+      // shot. Without this, DTC brand pages whose og:image is a lifestyle
+      // collage were tricking Kontext into re-rendering a prop instead of
+      // the product. Falls back to the single-image scraper on empty galleries.
+      try {
+        const gallery = await fetchProductGalleryFromPage(pageUrl)
+        if (gallery.length > 0) {
+          productImageUrl = (await pickProductReferenceImage(gallery, productTitle, { userId: user.id, tier })) || null
+        }
+        if (!productImageUrl) {
+          productImageUrl = await fetchProductImageFromPage(pageUrl)
+        }
+      } catch { /* ignore */ }
     }
   }
   // EPC / Creator-Connections posts have no source video — resolve the product
@@ -178,14 +191,25 @@ export async function POST(request: Request) {
       // Primary: re-render the REAL product photo (from the affiliate/Amazon
       // link) into a fitting setting — accurate product, not a guessed frame.
       if (falProductRef) {
-        const prompt = `Re-render the EXACT product shown in this reference image — keep its precise shape, colour, materials, proportions and any on-product branding identical; never swap, redesign, or invent a different product. Remove the original background and any retail packaging. Present this same product as a polished, magazine-quality editorial photo shown as a ${perspective}${scene ? `, placed naturally in this setting: ${scene}` : ', placed naturally in a real-world setting that fits how it is actually used'}. If no realistic setting suits it, stage it on a clean surface against a VIBRANT, eye-catching colour-pop / gradient background with soft studio lighting, reflections and depth that make it shine and pop off the page. Realistic shadows and lighting. This must look like a COMPLETELY different photo from the article's other images — a different background and environment, a different surface, different lighting and time of day, and a different camera distance and angle. Do NOT reuse the reference photo's plain studio background or its pose; relocate the product into the new scene. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const k = await fal.subscribe('fal-ai/flux-pro/kontext' as any, {
-          input: { image_url: falProductRef, prompt, aspect_ratio: '4:3', num_images: 1, output_format: 'jpeg', guidance_scale: 5, seed: Math.floor(Math.random() * 1e9) + i },
-          pollInterval: 3000,
+        // Identity-preserving re-render via Nano Banana (Gemini Imagen).
+        // Mirrors the same swap done in blog/generate: Kontext drifted on
+        // ~half of in-article images (showing "an office chair" rather than
+        // THIS office chair). Nano Banana holds the exact reference identity
+        // — same model that powers the thumbnail composer that works well.
+        const prompt = `Identity-preserving re-render of the product in the reference image. Keep its EXACT shape, colour, materials, proportions, surface texture, and every on-product branding/logo/label/text element IDENTICAL to the reference — do not redesign, restyle, simplify, swap, or invent any product. Treat the reference as ground truth for what the product looks like.
+
+CHANGE ONLY the background and the scene around it. Strip the reference's plain studio background and any retail packaging. Place the same product, unchanged, as a polished magazine-quality editorial photo shown as a ${perspective}${scene ? `: ${scene}` : ', set naturally in a real-world setting that fits how it is actually used'}. If a realistic setting doesn't fit, instead stage the unchanged product on a clean surface against a VIBRANT colour-pop / gradient background with soft studio lighting, reflections, and depth that make it shine.
+
+Realistic shadows and lighting. This must read as a COMPLETELY different photo from the article's other images — different background and environment, different surface, different lighting and time of day, different camera distance and angle. Do NOT reuse the reference photo's pose or background.
+
+${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/watermarks.`
+        const out = await composeWithNanoBanana({
+          prompt,
+          referenceImageUrls: [falProductRef],
+          aspectRatio: '4:3',
+          numImages: 1,
         })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        url = ((k.data as any)?.images as Array<{ url: string }> | undefined)?.[0]?.url
+        url = out[0]
       }
       // Fallback: retouch a real video frame only if no product photo resolved.
       if (!url && frameRefs.length > 0) {
