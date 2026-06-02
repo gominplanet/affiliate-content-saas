@@ -23,13 +23,23 @@ function render(input: TemplateInput): TemplateNode {
   // wrap it cleanly, otherwise single line. Simple split: take first half of
   // words on top, second half on bottom. Punch is rarely > 4 words.
   const punchWords = content.punch.trim().split(/\s+/)
-  const splitAt = Math.ceil(punchWords.length / 2)
+
+  // ── Punch text layout. Three cases:
+  //   1. Short punch (1-2 words): single line, FULL ACCENT colour so it pops
+  //      against the white banner below. (Was previously rendering in white
+  //      because the accent only applied to "line2" of a two-line split.)
+  //   2. Medium punch (3-4 words): split into 2 lines, line1 = white,
+  //      line2 = accent. Mirrors the DOVOH "FINALLY, / PERFECT!!" pattern.
+  //   3. Long punch (5+ words): single line, accent colour, smaller (the
+  //      auto-fit handles this via punchSize cap).
+  const useTwoLineSplit = punchWords.length >= 3 && punchWords.length <= 4
+  const splitAt = useTwoLineSplit ? Math.ceil(punchWords.length / 2) : punchWords.length
   const line1 = punchWords.slice(0, splitAt).join(' ').toUpperCase()
-  const line2 = punchWords.slice(splitAt).join(' ').toUpperCase()
+  const line2 = useTwoLineSplit ? punchWords.slice(splitAt).join(' ').toUpperCase() : ''
 
   const bannerText = (content.topLine || content.leading || '').toUpperCase()
 
-  // ── Punch text — two-line stack with the second line tinted by accent.
+  // ── Punch text — single accent line, OR two-line stack (white + accent).
   const headline: TemplateNode = {
     type: 'div',
     props: {
@@ -46,7 +56,9 @@ function render(input: TemplateInput): TemplateNode {
             style: {
               fontFamily: 'Bangers',
               fontSize: punchSize,
-              color: palette.primary,
+              // Short/long punch: full accent on the one line. Two-line split:
+              // white on top so line2 reads as the emphasis.
+              color: useTwoLineSplit ? palette.primary : palette.accent,
               letterSpacing: 2,
               textShadow: outline(outlineW, palette.outline),
             },

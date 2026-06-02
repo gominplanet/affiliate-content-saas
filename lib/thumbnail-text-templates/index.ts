@@ -77,31 +77,28 @@ export async function renderDesignerOverlay(input: RenderDesignerOverlayInput): 
   const textSide: Side = input.subjectSide === 'left' ? 'right' : 'left'
 
   // ── 1. Pick template + decompose headline + palette ──────────────────────
+  // When the caller forces a template, pass it to the picker as a
+  // preferredTemplateId so the decomposition is template-aware (each
+  // template's punch/leading/banner/badge fields mean different things).
+  // We were previously calling the picker WITHOUT a hint and then forcing
+  // a different template downstream, which cross-wired the fields and
+  // produced upside-down layouts on banner-pill / badge-score.
+  const pickerResult = await pickTemplate({
+    headline: input.headline,
+    productContext: input.productContext,
+    baseImageUrl: input.baseImageUrl,
+    userId: input.userId,
+    tier: input.tier,
+    preferredTemplateId: input.forceTemplateId ?? null,
+  })
   const picked = input.forceTemplateId
     ? {
         templateId: input.forceTemplateId,
-        content: input.forceContent ?? (await pickTemplate({
-          headline: input.headline,
-          productContext: input.productContext,
-          baseImageUrl: input.baseImageUrl,
-          userId: input.userId,
-          tier: input.tier,
-        })).content,
-        palette: (await pickTemplate({
-          headline: input.headline,
-          productContext: input.productContext,
-          baseImageUrl: input.baseImageUrl,
-          userId: input.userId,
-          tier: input.tier,
-        })).palette,
+        // Caller-supplied content override beats picker decomposition.
+        content: input.forceContent ?? pickerResult.content,
+        palette: pickerResult.palette,
       }
-    : await pickTemplate({
-        headline: input.headline,
-        productContext: input.productContext,
-        baseImageUrl: input.baseImageUrl,
-        userId: input.userId,
-        tier: input.tier,
-      })
+    : pickerResult
 
   const template = templateById(picked.templateId)
   if (!template) {

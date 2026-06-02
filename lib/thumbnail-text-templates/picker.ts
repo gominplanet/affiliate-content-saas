@@ -26,6 +26,45 @@ interface PickerInput {
   /** Caller for usage tracking. */
   userId: string
   tier: string | null
+  /** Optional: caller has already decided which template to use (e.g. the
+   *  admin playground's "force template" dropdown). The picker uses this
+   *  to DECOMPOSE THE HEADLINE FOR THAT TEMPLATE — each template's
+   *  punch/leading/banner/badge fields have different semantics, so the
+   *  same headline must be split differently depending on the target. */
+  preferredTemplateId?: string | null
+}
+
+/** Generic decomposition rules used when the picker is choosing the template
+ *  itself (no caller-supplied preference). Optimised for block-display since
+ *  that's the most likely choice. */
+const GENERIC_DECOMPOSE_RULES = `- Identify the ONE punch word/phrase that should pop visually (the noun, the verdict, the result — never an article or preposition).
+- Put everything else into "leading" (the setup before the punch) or "topLine" (a tiny line above for extra context).
+- Long supporting copy goes into "subtitle" (a single line below).
+- Include a "badge" object only if the template is "badge-score" OR the headline contains a clear rating/verdict ("9/10", "BUY", "SKIP", "WORTH IT").`
+
+/** Template-specific decomposition rules. Each template renders the SAME
+ *  field names (punch, leading, topLine, badge, subtitle) differently — for
+ *  banner-pill the "leading" goes INSIDE the red banner, for block-display
+ *  the "leading" is the white setup ABOVE the yellow punch, etc. Tuning the
+ *  decomposition per-template is what makes a force-render actually look
+ *  right instead of cross-wiring fields. */
+const DECOMPOSE_RULES_BY_TEMPLATE: Record<string, string> = {
+  'block-display': `- "punch" = the SINGLE most important word/phrase in the headline (the noun, the brand, the verb that drives the message). It will render in BIG YELLOW LETTERS — keep it short (1-3 words).
+- "leading" = the rest of the headline that comes BEFORE the punch. It renders in slightly smaller WHITE LETTERS ABOVE the punch.
+- Order matters: leading is read first, then punch as the emphasis. Don't reverse them.
+- Skip "topLine" and "subtitle" unless the headline genuinely has extra context.
+- Skip "badge" — block-display doesn't render badges.`,
+
+  'banner-pill': `- "punch" = the MAIN HEADLINE STATEMENT, rendered BIG at the top in 1-2 lines (e.g. "FINALLY PERFECT", "WORTH EVERY PENNY"). This is the dominant visual element. Keep it 2-4 words.
+- "leading" = a SUPPORTING TAGLINE that goes INSIDE the red banner pill below the punch (e.g. "NAIL IT EVERY TIME", "AFTER 30 DAYS", "REAL TALK", "VERDICT IN"). Must be DIFFERENT copy from the punch.
+- If the headline is one continuous statement with NO natural supporting tagline (like "Check This Bag Out"), put the FULL headline as the "punch" and SYNTHESIZE a contextually-appropriate banner tagline yourself ("WORTH BUYING?", "OUR TAKE", "FINAL VERDICT", "AFTER USE", "REAL TALK") — pick what fits the product/topic context.
+- Skip "topLine" and "subtitle" — banner-pill doesn't render those.
+- Skip "badge".`,
+
+  'badge-score': `- "punch" = the MAIN HEADLINE STATEMENT, rendered big in 1-2 lines (e.g. "WORTH IT?", "AFTER 30 DAYS", "I TRIED IT"). Keep 1-3 words per line.
+- "badge" = REQUIRED for this template. Object with { text: the score/verdict in 4-6 chars max ("9/10", "BUY", "SKIP", "5★", "A+"), subtext: optional 1-2 word category ("VERDICT", "RATING", "FINAL"), iconHint: "check"|"x"|"star"|null }.
+- If the headline has no explicit score, SYNTHESIZE one from the product context: positive review → "9/10" or "BUY" + iconHint "check"; negative review → "SKIP" + iconHint "x"; comparison → "TOP PICK" + iconHint "star".
+- Skip "leading", "topLine", "subtitle".`,
 }
 
 /** Default palette — used if Haiku errors or returns garbage. White text +
@@ -63,22 +102,32 @@ export async function pickTemplate(input: PickerInput): Promise<PickedTemplate> 
 
   const templateMenu = TEMPLATES.map(t => `- ${t.id}: ${t.whenToUse}`).join('\n')
 
+  // When the caller forces a template, the decomposition rules CHANGE. Each
+  // template's punch/leading/banner/badge fields mean different things, so
+  // the same headline must be split differently to render well in each.
+  const decomposeRules = input.preferredTemplateId
+    ? DECOMPOSE_RULES_BY_TEMPLATE[input.preferredTemplateId] || GENERIC_DECOMPOSE_RULES
+    : GENERIC_DECOMPOSE_RULES
+
   // The Haiku prompt: pick template id + decompose headline + propose palette.
   // Constrained JSON output so we can parse reliably.
-  const prompt = `You are designing a YouTube thumbnail. Pick the BEST text template for this headline, decompose the headline into structured parts the template can render, and propose a palette that contrasts the base image (if shown).
+  const prompt = `You are designing a YouTube thumbnail. ${input.preferredTemplateId ? `The template "${input.preferredTemplateId}" has been chosen — decompose the headline FOR THAT TEMPLATE.` : 'Pick the BEST text template for this headline.'} Decompose the headline into structured parts the template can render, and propose a palette that contrasts the base image (if shown).
 
 HEADLINE: ${JSON.stringify(headline)}
 PRODUCT / TOPIC CONTEXT: ${input.productContext ? JSON.stringify(input.productContext) : '(none)'}
 ${input.baseImageUrl ? 'BASE IMAGE: (attached — use it to pick contrasting colours and the safer side for the text)' : 'BASE IMAGE: (none)'}
 
-AVAILABLE TEMPLATES (id: when to use):
-${templateMenu}
+${input.preferredTemplateId
+  ? `TEMPLATE: ${input.preferredTemplateId} (pre-selected — return this templateId verbatim in your output)`
+  : `AVAILABLE TEMPLATES (id: when to use):\n${templateMenu}\n\nPick the template whose "when to use" best matches this headline. If unsure, pick "block-display" — it's the safest default.`
+}
 
-RULES:
-1. Pick the template whose "when to use" best matches this headline. If unsure, pick "block-display" — it's the safest default.
-2. Decompose the headline. Identify the ONE PUNCH word/phrase that should pop (the noun, the verdict, the result — never an article/preposition). Put everything else into "leading" (a short setup) or "topLine" (a tiny line above for context). Long supporting copy goes in "subtitle" (a line below).
-3. If the template is "badge-score" OR the headline contains a clear rating/verdict, output a "badge" object: { text: "9/10" or "BUY" or "WORTH IT", subtext: "VERDICT" or "OUT OF 10", iconHint: "check"|"x"|"star"|null }. Otherwise omit "badge" entirely.
-4. Palette: text colours that read against the base image. White (#FFFFFF) primary + bright yellow (#FFD400) accent + black (#000) outline is the safe default — vary only if the base image is unusually bright/light (then go darker on outline) or unusually dark on the side the text sits.
+DECOMPOSITION RULES FOR ${input.preferredTemplateId ?? 'the chosen template'}:
+${decomposeRules}
+
+PALETTE RULES:
+- White (#FFFFFF) primary + bright yellow (#FFD400) accent + black (#000) outline is the safe default.
+- Only vary if the base image is unusually bright on the text side (then darken outline) or unusually dark (then lighten accent).
 
 Reply with EXACTLY this JSON shape, no prose:
 {
