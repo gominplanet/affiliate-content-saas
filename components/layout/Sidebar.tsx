@@ -351,7 +351,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         <Link href="/dashboard" className="block group" aria-label="MVP Affiliate — Dashboard">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/mvp-affiliate-logo.png"
+            src="/mvp-affiliate-logo.jpg"
             alt="MVP Affiliate"
             className="w-full h-auto rounded-2xl object-contain mix-blend-multiply dark:mix-blend-screen group-hover:opacity-90 transition-opacity"
           />
