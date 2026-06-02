@@ -30,6 +30,7 @@
  *     refuse the signup — protects creators who turned it off.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { createHmac, timingSafeEqual } from 'crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeTier, allowedNewsletterSubscribers } from '@/lib/tier'
 import { sendEmail, isEmailConfigured } from '@/services/email'
@@ -41,6 +42,79 @@ import {
   deriveFromAddress,
   confirmationEmailHtml,
 } from '@/lib/newsletter'
+
+/** HMAC verification window in seconds. 24 hours is generous enough to
+ *  cover pages cached by Cloudflare/SG-CDN/SuperCacher for a day, but
+ *  tight enough that a leaked sig from yesterday can't be replayed
+ *  forever. */
+const HMAC_MAX_AGE_SECONDS = 24 * 60 * 60
+
+/** Verify the form's HMAC signature against the WP site's proxy_secret.
+ *
+ *  Returns:
+ *    { valid: true }            — sig present and verified ✓
+ *    { valid: false, reason }   — sig present but invalid (reject)
+ *    { valid: null, reason }    — sig absent or unverifiable (accept-but-warn
+ *                                 during the v1.0.26 → v1.0.27 transition;
+ *                                 once all installs are on v1.0.27+, flip
+ *                                 these to hard-reject)
+ *
+ *  Plugin v1.0.27+ signs `creatorUserId|origin|ts` with hash_hmac('sha256',
+ *  affiliateos_proxy_secret). We look up the matching WP site by
+ *  (user_id = creatorUserId AND wordpress_url's host = origin), pull its
+ *  api_token (which mirrors affiliateos_proxy_secret), and recompute.
+ */
+async function verifyFormHmac(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  creatorUserId: string,
+  payload: { origin?: string; ts?: string; sig?: string },
+): Promise<{ valid: true } | { valid: false; reason: string } | { valid: null; reason: string }> {
+  const { origin, ts, sig } = payload
+  if (!sig || !ts || !origin) {
+    return { valid: null, reason: 'sig/ts/origin missing (old plugin version)' }
+  }
+  // Time-bound check (drops sigs older than 24h to prevent replay).
+  const tsNum = parseInt(ts, 10)
+  if (!Number.isFinite(tsNum)) return { valid: false, reason: 'invalid ts' }
+  const now = Math.floor(Date.now() / 1000)
+  if (Math.abs(now - tsNum) > HMAC_MAX_AGE_SECONDS) {
+    return { valid: false, reason: 'ts outside window' }
+  }
+  // Find the proxy_secret for the site that rendered the form. The plugin
+  // signs with the site's wp_options:affiliateos_proxy_secret; the dashboard
+  // mirrors it into wordpress_sites.api_token (auto-persisted on /status
+  // poll or pasted via /setup/wp-doctor's Posting Key panel).
+  const originLower = origin.toLowerCase()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: sites } = await admin
+    .from('wordpress_sites')
+    .select('wordpress_url, api_token')
+    .eq('user_id', creatorUserId)
+  if (!sites || sites.length === 0) {
+    return { valid: null, reason: 'no wordpress_sites row for creator (legacy single-site install)' }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const match = sites.find((s: any) => {
+    if (!s.wordpress_url || !s.api_token) return false
+    try {
+      const h = new URL(s.wordpress_url).hostname.toLowerCase()
+      return h === originLower
+    } catch { return false }
+  })
+  if (!match) return { valid: false, reason: 'origin does not match any registered WP site' }
+  const secret = String(match.api_token)
+  if (!secret) return { valid: null, reason: 'site has no api_token persisted' }
+
+  const expected = createHmac('sha256', secret)
+    .update(`${creatorUserId}|${originLower}|${ts}`)
+    .digest('hex')
+  // hex strings → Buffers → constant-time compare. Lengths must match
+  // first; timingSafeEqual throws on length mismatch.
+  if (expected.length !== sig.length) return { valid: false, reason: 'sig length mismatch' }
+  const ok = timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(sig, 'hex'))
+  return ok ? { valid: true } : { valid: false, reason: 'hmac mismatch' }
+}
 
 // Open CORS for the WP blog — the form is on the creator's domain, the API
 // is on mvpaffiliate.io, so the browser sends a preflight. We don't accept
@@ -61,7 +135,7 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: NextRequest) {
-  let payload: { creatorUserId?: string; email?: string; hp?: string; sourceUrl?: string }
+  let payload: { creatorUserId?: string; email?: string; hp?: string; sourceUrl?: string; origin?: string; ts?: string; sig?: string }
   try { payload = await req.json() } catch { return json({ ok: false, error: 'Bad request.' }, { status: 400 }) }
 
   // ── 1. Honeypot ────────────────────────────────────────────────────────────
@@ -84,10 +158,28 @@ export async function POST(req: NextRequest) {
 
   // ── 3. Load the creator's settings + tier ─────────────────────────────────
   // Service-role bypasses RLS because the WP form caller is unauthenticated
-  // — but we scope every query to the creatorUserId from the form, which the
-  // shortcode signed at render-time (TODO milestone 1.5: HMAC the form
-  // payload so a scraper can't repoint creatorUserId at another account).
+  // — but we scope every query to the creatorUserId from the form, AND
+  // verify the form's HMAC signature (plugin v1.0.27+) before doing any
+  // work. The HMAC binds creatorUserId + origin + timestamp to a key only
+  // the calling WP site can compute (its proxy_secret). Without this, an
+  // attacker could POST arbitrary creatorUserIds and flood-spam a creator's
+  // Resend sender, killing deliverability for everyone on the platform.
   const admin = createAdminClient()
+  const hmac = await verifyFormHmac(admin, creatorUserId, payload)
+  if (hmac.valid === false) {
+    // Verifiable fail (sig present but wrong, ts expired, origin doesn't
+    // match a registered site). REJECT — this is almost certainly an
+    // attacker, not a misconfigured site.
+    console.warn('[newsletter-subscribe] HMAC verification failed', { creatorUserId, reason: hmac.reason, origin: payload.origin })
+    return json({ ok: false, error: 'This signup form is misconfigured or the signature has expired. Try refreshing the page.' }, { status: 400 })
+  }
+  if (hmac.valid === null) {
+    // No sig / no proxy_secret / no wordpress_sites row. Old plugin
+    // version, or pre-multi-site install. ACCEPT but log so we can track
+    // which sites still need to update. Once 100% of installs are on
+    // v1.0.27+ this branch should become a hard reject.
+    console.warn('[newsletter-subscribe] accept-but-warn (HMAC unavailable)', { creatorUserId, reason: hmac.reason })
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: settings } = await admin
     .from('newsletter_settings')

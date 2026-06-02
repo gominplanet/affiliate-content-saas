@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.26
+ * Version: 1.0.27
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.26');
+define('MVP_AFFILIATE_VERSION', '1.0.27');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -1489,6 +1489,29 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
         $api_base = apply_filters('mvp_affiliate_api_base', 'https://www.mvpaffiliate.io');
         $form_id  = 'mvp-newsletter-' . wp_generate_uuid4();
 
+        // ── HMAC signing (v1.0.27+) ──────────────────────────────────────────
+        // Sign (creatorUserId | origin | timestamp) with the site's
+        // proxy_secret so the dashboard can verify the form actually came
+        // from a WordPress shortcode render — not from a botnet POSTing
+        // arbitrary user_ids to spam a creator's Resend sender.
+        //
+        // The same secret is already minted by /affiliateos/v1/status
+        // and known to the dashboard (wordpress_sites.api_token). If
+        // the secret happens to be missing (unusual — admin_init mints
+        // it), we emit empty ts/sig and the dashboard accept-but-warns.
+        $hmac_secret = (string) get_option('affiliateos_proxy_secret', '');
+        $hmac_ts     = (string) time(); // UNIX seconds
+        $origin      = '';
+        if (function_exists('home_url')) {
+            $home   = home_url();
+            $parsed = parse_url($home);
+            if (!empty($parsed['host'])) {
+                $origin = strtolower($parsed['host']);
+            }
+        }
+        $hmac_payload = $user_id . '|' . $origin . '|' . $hmac_ts;
+        $hmac_sig     = $hmac_secret ? hash_hmac('sha256', $hmac_payload, $hmac_secret) : '';
+
         // All inline so the form works whether or not the MVP theme
         // is active. Esc’d aggressively — every attribute is creator-supplied.
         ob_start();
@@ -1529,7 +1552,12 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
         creatorUserId: <?php echo wp_json_encode($user_id); ?>,
         email: email,
         hp: hp,
-        sourceUrl: window.location.href
+        sourceUrl: window.location.href,
+        // HMAC fields (plugin v1.0.27+). Empty strings on installs that
+        // somehow lack the proxy_secret — dashboard accept-but-warns.
+        origin: <?php echo wp_json_encode($origin); ?>,
+        ts: <?php echo wp_json_encode($hmac_ts); ?>,
+        sig: <?php echo wp_json_encode($hmac_sig); ?>
       })
     }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); })
       .then(function(res){
