@@ -239,6 +239,30 @@ Rules: ground every fact in search results — do NOT invent. Under 250 words.`,
 }
 
 /**
+ * Reject URLs that look like site chrome / UI graphics rather than a
+ * real product photo. Critical for Amazon — when their bot-block kicks
+ * in, our regexes pick up nav-sprite GIFs / footer logos / privacy
+ * icons that downstream gets used as the "product reference image" and
+ * the image model invents a generic product. Conservative list — only
+ * reject things that are OBVIOUSLY not product photos.
+ */
+function isJunkImageUrl(url: string): boolean {
+  const u = url.toLowerCase()
+  return (
+    /\/sprites?\//.test(u) ||                           // *.com/sprites/*
+    /\/(gno|nav-flyout|nav-sprite|nav-cart|nav-logo)/.test(u) || // Amazon nav UI
+    /\/icons?\//.test(u) ||                             // generic /icons/
+    /\/logo[s_-]/.test(u) ||                            // /logos/ or logo_x
+    /\/favicon/.test(u) ||                              // favicons
+    /\/(spinner|loader|loading)\b/.test(u) ||           // spinners
+    /\.(?:gif|svg)(?:\?|$)/.test(u) ||                  // GIF/SVG rarely product
+    /[?&](?:w|width)=\d{1,2}\b/.test(u) ||              // tiny thumbnails ?w=24
+    /\b(\d{1,2})x\1\b/.test(u) ||                       // tiny squares like 16x16
+    /transparent-pixel|spacer\.png|1x1\.gif/.test(u)    // tracking pixels
+  )
+}
+
+/**
  * Pull a real PRODUCT IMAGE off a store/brand product page so the image
  * generator can use the ACTUAL product as a Kontext reference instead of a
  * text-only guess. Used for non-Amazon products (Amazon has its own catalog
@@ -264,13 +288,23 @@ export async function fetchProductImageFromPage(url: string): Promise<string | n
       html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)?.[1] ||
       null
     if (!img) {
-      const m = html.match(/<img[^>]+src=["'](https?:\/\/[^"']+\.(?:jpe?g|png|webp)[^"']*)["']/i)
-      img = m?.[1] ?? null
+      // First large <img> — but reject site chrome (sprites, nav graphics)
+      // so we never hand the image model an Amazon nav-bar GIF as the
+      // "product reference". Scan multiple <img> tags until we find a
+      // non-junk one rather than just taking the first.
+      for (const m of html.matchAll(/<img[^>]+src=["'](https?:\/\/[^"']+\.(?:jpe?g|png|webp)[^"']*)["']/gi)) {
+        if (!isJunkImageUrl(m[1])) { img = m[1]; break }
+      }
     }
     if (!img) return null
     if (img.startsWith('//')) img = 'https:' + img
     else if (img.startsWith('/')) { try { img = new URL(img, url).href } catch { /* keep as-is */ } }
-    return img.startsWith('http') ? img : null
+    if (!img.startsWith('http')) return null
+    // Final guard: even if og:image/twitter:image fired, those can be junk
+    // on an Amazon bot-block page (twitter:image set to their default share
+    // graphic). Better no reference than the wrong reference downstream.
+    if (isJunkImageUrl(img)) return null
+    return img
   } catch {
     return null
   }
@@ -356,6 +390,9 @@ export async function fetchProductGalleryFromPage(url: string): Promise<string[]
     }
 
     // Normalize: absolute URLs only, https upgrade, dedupe in source order.
+    // Reject site-chrome URLs (sprites / nav GIFs / favicons / spacers) —
+    // those poison the downstream pipeline when an Amazon bot-block page
+    // exposes them as the only scrapable images.
     const seen = new Set<string>()
     const out: string[] = []
     for (let img of candidates) {
@@ -363,6 +400,7 @@ export async function fetchProductGalleryFromPage(url: string): Promise<string[]
       if (img.startsWith('//')) img = 'https:' + img
       else if (img.startsWith('/')) { try { img = new URL(img, url).href } catch { continue } }
       if (!img.startsWith('http')) continue
+      if (isJunkImageUrl(img)) continue
       // Strip tracking query suffixes that often differ between duplicates
       // (?v=, ?_=, &width=, &t=, etc.) so we don't carry near-identical URLs.
       const key = img.split('?')[0]

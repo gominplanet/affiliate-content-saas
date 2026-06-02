@@ -73,23 +73,58 @@ export async function searchAmazonForAsin(query: string): Promise<string | null>
   }
 }
 
-// Scrape basic product data from Amazon product page
+// Scrape basic product data from Amazon product page.
+//
+// Anti-bot resilience: Amazon's edge sometimes returns a stripped-down
+// page (no productTitle, no gallery JSON) when it suspects a bot. The
+// scraper used to silently return "all empty" data, which then poisoned
+// the downstream pipeline (a fallback grabbed Amazon's nav-bar UI
+// sprite as the "product image", and the image model rendered generic
+// products). Two defences:
+//   1. Send a more complete browser-realistic header set (Sec-Fetch-*,
+//      Upgrade-Insecure-Requests) so we look like a real Chrome tab.
+//   2. After parsing, if title/main-image/gallery are ALL empty, treat
+//      it as a bot block and THROW. Callers' catch{} fires and the
+//      pipeline falls through cleanly instead of using junk data.
+//   3. Auto-retry once with a slightly different UA + referer if first
+//      attempt looks blocked. Cheap insurance — most blocks are
+//      transient and a second hit lands fine.
 export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
   const url = `https://www.amazon.com/dp/${asin}`
 
-  const res = await fetch(url, {
-    headers: {
-      // Mimic a real browser to avoid bot detection
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Cache-Control': 'no-cache',
-    },
-  })
+  const fetchOnce = async (ua: string, referer: string | null): Promise<string> => {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': ua,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'no-cache',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': referer ? 'cross-site' : 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'DNT': '1',
+        ...(referer ? { Referer: referer } : {}),
+      },
+    })
+    if (!res.ok) throw new Error(`Amazon fetch failed: HTTP ${res.status}`)
+    return res.text()
+  }
 
-  if (!res.ok) throw new Error(`Amazon fetch failed: HTTP ${res.status}`)
-  const html = await res.text()
+  const UA_PRIMARY = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  const UA_RETRY = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+
+  let html = await fetchOnce(UA_PRIMARY, null)
+  // Quick sanity check on the first body — if it's the bot-challenge
+  // page Amazon doesn't include "productTitle" or the gallery JSON at
+  // all, so do a tiny regex probe before paying the full parse cost.
+  if (!/id="productTitle"|"hiRes"|landingImage/i.test(html)) {
+    try {
+      html = await fetchOnce(UA_RETRY, 'https://www.google.com/')
+    } catch { /* keep first body */ }
+  }
 
   // Title
   const titleMatch = html.match(/<span[^>]*id="productTitle"[^>]*>\s*([\s\S]*?)\s*<\/span>/)
@@ -140,6 +175,18 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
   // shot — the main image is often a multi-panel lifestyle collage.
   const galleryImages = Array.from(html.matchAll(/"hiRes"\s*:\s*"(https:\/\/[^"]+\.jpg[^"]*)"/g)).map(m => m[1])
   const images = Array.from(new Set([imageUrl, ...galleryImages].filter((u): u is string => !!u))).slice(0, 8)
+
+  // Bot-block detector: if NONE of the product fields were parseable
+  // (no title, no main image, no gallery), Amazon almost certainly
+  // returned a challenge / stripped page. Throw so the caller's catch
+  // fires and the pipeline falls through to non-Amazon scraping
+  // (or no-reference) instead of returning empty data that poisons
+  // downstream image generation. Without this throw, the empty result
+  // was passed through to fetchProductImageFromPage which then grabbed
+  // Amazon's nav-bar UI sprite as the "product image".
+  if (!title && !imageUrl && images.length === 0) {
+    throw new Error(`Amazon returned non-product page for ASIN ${asin} (probable anti-bot block)`)
+  }
 
   return { asin, title, bullets: bullets.slice(0, 6), description, price, rating, imageUrl, images }
 }
