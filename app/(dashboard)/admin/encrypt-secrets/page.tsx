@@ -15,7 +15,7 @@
  */
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import Header from '@/components/layout/Header'
 import {
   Lock, ShieldCheck, AlertCircle, Loader2, Sparkles, ChevronRight,
@@ -27,6 +27,10 @@ interface MigrationSummaryRow {
   encrypted: number
   skipped: number
   errors: number
+  /** Postgres error message when the read itself fails (whole table
+   *  failed, not per-row). Helps diagnose "which column is missing /
+   *  which policy is blocking." */
+  errorMessage?: string
 }
 
 interface MigrationResponse {
@@ -273,13 +277,22 @@ function ResultPanel({ result }: { result: MigrationResponse }) {
           </thead>
           <tbody>
             {result.summary?.map(row => (
-              <tr key={row.table} className="border-b border-gray-100 dark:border-white/5 last:border-0">
-                <td className="py-1.5 font-mono">{row.table}</td>
-                <td className="text-right py-1.5 tabular-nums">{row.rows}</td>
-                <td className="text-right py-1.5 tabular-nums font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{row.encrypted}</td>
-                <td className="text-right py-1.5 tabular-nums text-[#86868b]">{row.skipped}</td>
-                <td className={`text-right py-1.5 tabular-nums ${row.errors > 0 ? 'text-[#ff3b30] font-semibold' : 'text-[#86868b]'}`}>{row.errors}</td>
-              </tr>
+              <Fragment key={row.table}>
+                <tr className="border-b border-gray-100 dark:border-white/5 last:border-0">
+                  <td className="py-1.5 font-mono">{row.table}</td>
+                  <td className="text-right py-1.5 tabular-nums">{row.rows}</td>
+                  <td className="text-right py-1.5 tabular-nums font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{row.encrypted}</td>
+                  <td className="text-right py-1.5 tabular-nums text-[#86868b]">{row.skipped}</td>
+                  <td className={`text-right py-1.5 tabular-nums ${row.errors > 0 ? 'text-[#ff3b30] font-semibold' : 'text-[#86868b]'}`}>{row.errors}</td>
+                </tr>
+                {row.errorMessage && (
+                  <tr className="border-b border-gray-100 dark:border-white/5">
+                    <td colSpan={5} className="px-3 py-2 bg-[#ff3b30]/5 text-[11px] font-mono text-[#ff3b30] break-all">
+                      ⚠ {row.errorMessage}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>

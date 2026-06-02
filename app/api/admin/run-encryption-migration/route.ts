@@ -56,8 +56,12 @@ const PLAN: Record<string, { idColumn: string; secretColumns: string[] }> = {
       'bluesky_app_password',
       'tiktok_access_token',
       'tiktok_refresh_token',
-      'instagram_user_access_token',
-      'instagram_long_lived_token',
+      // NOTE: instagram_user_access_token + instagram_long_lived_token
+      // were originally in this list but those columns don't exist in
+      // the live schema (Instagram tokens live on social_accounts
+      // instead). Including them caused the entire SELECT to fail
+      // wholesale. Removed 2026-06-02 after the first dry-run errored
+      // on integrations.
       'telegram_bot_token',
       'youtube_oauth_access_token',
       'youtube_oauth_refresh_token',
@@ -131,12 +135,18 @@ async function migrateTable(
   table: string,
   plan: { idColumn: string; secretColumns: string[] },
   dryRun: boolean,
-): Promise<{ table: string; rows: number; encrypted: number; skipped: number; errors: number }> {
+): Promise<{ table: string; rows: number; encrypted: number; skipped: number; errors: number; errorMessage?: string }> {
   const selectCols = [plan.idColumn, ...plan.secretColumns].join(',')
   const { data, error } = await admin.from(table).select(selectCols)
   if (error || !data) {
-    console.error(`[migrate-encryption] ${table}: read failed — ${error?.message ?? 'no data'}`)
-    return { table, rows: 0, encrypted: 0, skipped: 0, errors: 1 }
+    // Surface the actual Postgres error so the operator can see WHICH
+    // column / policy / index is at fault. Common modes: a column in
+    // the PLAN that doesn't exist in this database (whole SELECT
+    // rejected), or an RLS policy that filters out the service-role
+    // read (should not happen, but defensive logging if it does).
+    const msg = error?.message ?? 'no data returned'
+    console.error(`[migrate-encryption] ${table}: read failed — ${msg}`)
+    return { table, rows: 0, encrypted: 0, skipped: 0, errors: 1, errorMessage: msg }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
