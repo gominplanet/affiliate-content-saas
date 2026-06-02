@@ -482,9 +482,16 @@ function VideoStudioCard({ video, userTier, playlists }: {
         const data = await safeJson(res)
         if (!res.ok) throw new Error((data.error as string) || `HTTP ${res.status} — apply failed`)
         setApplied(true)
+        let hasWarning = false
         if (Array.isArray(data.warnings) && data.warnings.length > 0) {
           setApplyError(`Applied with warnings: ${(data.warnings as string[]).join(' · ')}`)
+          hasWarning = true
         }
+        // Clean success → auto-collapse the panel after a beat so the user
+        // sees the green "Applied to YouTube" / "Saved to draft" state, then
+        // the card returns to the list view for the next video. Skip the
+        // collapse when there's a warning — the user needs to see the detail.
+        if (!hasWarning) setTimeout(() => setExpanded(false), 1500)
         return
       }
 
@@ -505,6 +512,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
       setApplied(true)
       if (data.thumbnailWarning) {
         setApplyError(`Metadata applied ✓ — thumbnail not uploaded: ${data.thumbnailWarning}`)
+      } else {
+        // Clean success → auto-collapse so the user can move on to the next
+        // video in the list. Same UX pattern as the Pro path above.
+        setTimeout(() => setExpanded(false), 1500)
       }
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'Failed to apply to YouTube')
