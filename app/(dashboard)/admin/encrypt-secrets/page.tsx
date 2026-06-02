@@ -31,6 +31,9 @@ interface MigrationSummaryRow {
    *  failed, not per-row). Helps diagnose "which column is missing /
    *  which policy is blocking." */
   errorMessage?: string
+  /** Columns in PLAN that don't exist on this table — auto-filtered
+   *  out so the read doesn't fail wholesale. Shown for transparency. */
+  skippedColumns?: string[]
 }
 
 interface MigrationResponse {
@@ -289,6 +292,13 @@ function ResultPanel({ result }: { result: MigrationResponse }) {
                   <tr className="border-b border-gray-100 dark:border-white/5">
                     <td colSpan={5} className="px-3 py-2 bg-[#ff3b30]/5 text-[11px] font-mono text-[#ff3b30] break-all">
                       ⚠ {row.errorMessage}
+                    </td>
+                  </tr>
+                )}
+                {row.skippedColumns && row.skippedColumns.length > 0 && (
+                  <tr className="border-b border-gray-100 dark:border-white/5">
+                    <td colSpan={5} className="px-3 py-2 text-[11px] text-[#86868b] font-mono">
+                      ℹ Columns skipped (not in this schema): {row.skippedColumns.join(', ')}
                     </td>
                   </tr>
                 )}

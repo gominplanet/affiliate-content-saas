@@ -135,18 +135,32 @@ async function migrateTable(
   table: string,
   plan: { idColumn: string; secretColumns: string[] },
   dryRun: boolean,
-): Promise<{ table: string; rows: number; encrypted: number; skipped: number; errors: number; errorMessage?: string }> {
-  const selectCols = [plan.idColumn, ...plan.secretColumns].join(',')
+): Promise<{ table: string; rows: number; encrypted: number; skipped: number; errors: number; errorMessage?: string; skippedColumns?: string[] }> {
+  // Auto-discover which planned columns actually exist on this table.
+  // The PLAN list is the SUPERSET of "every secret column we've ever
+  // had"; live schemas vary. Without this filter, ANY missing column
+  // in PLAN causes the whole SELECT to fail (Postgres rejects the
+  // entire query if it references one nonexistent column).
+  //
+  // Strategy: probe each secret column with a tiny limit(1) select.
+  // If it 42703s ("column does not exist"), drop it from the list.
+  // ~N round-trips on first run but they're parallelizable and small.
+  const probes = await Promise.all(plan.secretColumns.map(async col => {
+    const { error: probeErr } = await admin.from(table).select(col).limit(1)
+    return { col, exists: !probeErr }
+  }))
+  const existingCols = probes.filter(p => p.exists).map(p => p.col)
+  const skippedCols = probes.filter(p => !p.exists).map(p => p.col)
+  if (existingCols.length === 0) {
+    return { table, rows: 0, encrypted: 0, skipped: 0, errors: 1, errorMessage: 'No planned secret columns exist on this table', skippedColumns: skippedCols }
+  }
+
+  const selectCols = [plan.idColumn, ...existingCols].join(',')
   const { data, error } = await admin.from(table).select(selectCols)
   if (error || !data) {
-    // Surface the actual Postgres error so the operator can see WHICH
-    // column / policy / index is at fault. Common modes: a column in
-    // the PLAN that doesn't exist in this database (whole SELECT
-    // rejected), or an RLS policy that filters out the service-role
-    // read (should not happen, but defensive logging if it does).
     const msg = error?.message ?? 'no data returned'
     console.error(`[migrate-encryption] ${table}: read failed — ${msg}`)
-    return { table, rows: 0, encrypted: 0, skipped: 0, errors: 1, errorMessage: msg }
+    return { table, rows: 0, encrypted: 0, skipped: 0, errors: 1, errorMessage: msg, skippedColumns: skippedCols }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -160,7 +174,8 @@ async function migrateTable(
     const updates: Record<string, any> = {}
     let touched = 0
 
-    for (const col of plan.secretColumns) {
+    // Walk only the columns that ACTUALLY exist on this table.
+    for (const col of existingCols) {
       const val = row[col]
       if (val == null || val === '' || typeof val !== 'string') continue
       if (isEncrypted(val)) continue // already encrypted — skip
