@@ -37,6 +37,33 @@ export async function POST(request: NextRequest) {
   // would be blocked by row-level security on `integrations`.
   const admin = createAdminClient()
 
+  // ── Idempotency gate (2026-06-02 audit fix) ──────────────────────────────
+  // Stripe retries every webhook on 5xx (up to 3 days) and you can
+  // manually replay any event from the dashboard. Without dedup, a
+  // replayed `customer.subscription.deleted` after the user re-
+  // subscribes would re-downgrade their NEW subscription. Same risk
+  // for any other event type — replay during a partial outage can
+  // produce out-of-order tier flips.
+  //
+  // The first INSERT for a given event_id wins; the second hits the
+  // PK conflict and returns no rows. We dispatch on that signal: no
+  // rows = duplicate = return 200 without doing any work.
+  // Cast at the boundary — Supabase types haven't been regenerated
+  // since migration 086 was added (TODO: regenerate via
+  // `npx supabase gen types` after applying the migration).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: claimed } = await (admin as any)
+    .from('stripe_webhook_events')
+    .insert({ event_id: event.id, event_type: event.type })
+    .select('event_id')
+    .maybeSingle()
+  if (!claimed) {
+    // Already processed (or a concurrent retry won the race).
+    // Returning 200 tells Stripe "thanks, got it" and stops the retry
+    // loop — exactly what we want.
+    return NextResponse.json({ ok: true, duplicate: true, event_id: event.id })
+  }
+
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as unknown as {
       metadata: { user_id: string; tier: Tier }
