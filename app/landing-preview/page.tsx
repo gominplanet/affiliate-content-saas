@@ -1849,7 +1849,7 @@ function BeforeAfterSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Stop paying for five different subscriptions and stitching them together by hand.
+            Stop paying for eight different subscriptions and stitching them together by hand.
           </p>
         </div>
 
@@ -1882,10 +1882,10 @@ function BeforeAfterSection() {
               ))}
             </div>
             <p className="mt-5 text-[12px] leading-relaxed" style={{ color: 'var(--text-subtle)' }}>
-              Five subscriptions. Five tabs open. Copy-paste between them. Reformat for every platform. Forget what was where.
+              Eight subscriptions. Eight tabs open. Copy-paste between them. Reformat for every platform. Forget what was where.
             </p>
             <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--text-subtle)' }}>
-              ~$200+/mo · several hours per video
+              $500+/mo · hours per video
             </p>
           </div>
 
@@ -1974,7 +1974,7 @@ const OLD_STACK = [
 ]
 
 const NEW_BENEFITS = [
-  'One subscription instead of five.',
+  'One subscription instead of eight.',
   'Every output ready in minutes, not hours.',
   'No copy-paste between platforms.',
   'Same voice across blog, email, and social.',
