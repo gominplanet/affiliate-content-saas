@@ -10,7 +10,7 @@
 //   - Satori needs explicit Buffer input — fetching at request time + parsing
 //     would add 200-500ms to every thumbnail render. Bundling: ~5ms (warm).
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 
 /** The display fonts we ship. Each one matches a specific design aesthetic
@@ -31,7 +31,10 @@ interface FontEntry {
   style: 'normal' | 'italic'
 }
 
-const FONT_FILES: Record<FontFamily, string> = {
+/** Path of each font INSIDE node_modules. We resolve absolute paths at
+ *  runtime against process.cwd() so the lookup works whether we're in dev,
+ *  a Vercel serverless function, or a custom hosting setup. */
+const FONT_REL_PATHS: Record<FontFamily, string> = {
   Anton: '@fontsource/anton/files/anton-latin-400-normal.woff',
   BebasNeue: '@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff',
   Bangers: '@fontsource/bangers/files/bangers-latin-400-normal.woff',
@@ -46,13 +49,27 @@ const fontCache = new Map<FontFamily, Buffer>()
 function loadFont(family: FontFamily): Buffer {
   const cached = fontCache.get(family)
   if (cached) return cached
-  // Resolve via require.resolve so it works whether we're in node_modules
-  // at the repo root or hoisted to a workspace root.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const resolved = require.resolve(FONT_FILES[family])
-  const buf = readFileSync(resolved)
-  fontCache.set(family, buf)
-  return buf
+  // Try the file system at known locations. require.resolve() worked in dev
+  // but Vercel's serverless bundler can't statically detect it (paths to
+  // files deep inside a package aren't traceable from the entry point), so
+  // the .woff files weren't being shipped with the function. Direct fs
+  // lookup against process.cwd() + outputFileTracingIncludes (next.config)
+  // gives us a reliable path that survives the function bundling.
+  const rel = FONT_REL_PATHS[family]
+  const candidates = [
+    path.join(process.cwd(), 'node_modules', rel),
+    // Some hosting environments locate node_modules at the project root one
+    // level up (workspaces / monorepo hoisting). Try that as a fallback.
+    path.join(process.cwd(), '..', 'node_modules', rel),
+  ]
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      const buf = readFileSync(candidate)
+      fontCache.set(family, buf)
+      return buf
+    }
+  }
+  throw new Error(`Font file not found for ${family}. Tried: ${candidates.join(' AND ')}`)
 }
 
 /**
