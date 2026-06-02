@@ -26,6 +26,8 @@ import { createFacebookService } from '@/services/facebook'
 import { createLinkedInService } from '@/services/linkedin'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
+import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
+import { maybeDecrypt } from '@/lib/secrets'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -175,7 +177,11 @@ async function publishOne(
   ])
 
   const post: BlogPostRow | null = postRes.data
-  const integration: IntegrationRow | null = intRes.data
+  // Transparently decrypt every encrypted secret column on the
+  // integrations row (2026-06-02 rollout). Downstream code reads
+  // tokens via `integration.<field>` as before — they're plaintext
+  // now thanks to the wrap.
+  const integration: IntegrationRow | null = decryptIntegrationRow(intRes.data)
   if (!post) throw new Error('Blog post no longer exists')
   if (!integration) throw new Error('User has no integrations row')
   if (!post.wordpress_url) {
@@ -208,13 +214,16 @@ async function publishOne(
         try {
           const refreshed = await refreshTwitterToken(integration.twitter_refresh_token)
           accessToken = refreshed.access_token
+          // Encrypt refreshed tokens on write (2026-06-02). The decrypt
+          // happens automatically on the next cron via
+          // decryptIntegrationRow() above.
           await admin
             .from('integrations')
-            .update({
+            .update(encryptIntegrationWrite({
               twitter_access_token: refreshed.access_token,
               twitter_refresh_token: refreshed.refresh_token ?? integration.twitter_refresh_token,
               twitter_token_expiry: Date.now() + refreshed.expires_in * 1000,
-            })
+            }))
             .eq('user_id', row.user_id)
         } catch (e) {
           throw new Error(`X token refresh failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -275,7 +284,9 @@ async function publishOne(
           .maybeSingle()
         if (acct?.external_id && acct?.access_token) {
           fbPageId = acct.external_id
-          fbPageToken = acct.access_token
+          // social_accounts.access_token is encrypted at rest too
+          // (2026-06-02 rollout). Decrypt before use.
+          fbPageToken = maybeDecrypt(acct.access_token)
         }
       }
       if (!fbPageId || !fbPageToken) {

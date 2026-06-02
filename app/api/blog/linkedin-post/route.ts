@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createLinkedInService } from '@/services/linkedin'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const integration = intRow as any
+    const integration = decryptIntegrationRow(intRow as any)
     if (!dryRun && (!integration?.linkedin_access_token || !integration?.linkedin_person_id)) {
       return NextResponse.json({ error: 'LinkedIn not connected' }, { status: 400 })
     }

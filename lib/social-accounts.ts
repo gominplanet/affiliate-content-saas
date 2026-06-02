@@ -20,6 +20,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
+
 export type SocialPlatform = 'facebook' | 'instagram'
 
 /** A connectable destination, resolved for server-side posting. */
@@ -95,6 +97,9 @@ export async function resolveSocialAccount(
   const { socialAccountId, allowSelection, legacy } = opts
 
   // 1. Explicit selection — Pro only. Verify ownership + platform.
+  // (Tokens are encrypted at rest per the 2026-06-02 rollout — every
+  // accessToken in the returned ResolvedAccount is plaintext thanks to
+  // maybeDecrypt() right before return.)
   if (socialAccountId && allowSelection) {
     const { data } = await supabase
       .from('social_accounts')
@@ -104,7 +109,7 @@ export async function resolveSocialAccount(
       .eq('platform', platform)
       .maybeSingle()
     if (data?.external_id && data?.access_token) {
-      return { id: data.id, externalId: data.external_id, accessToken: data.access_token, displayName: data.display_name }
+      return { id: data.id, externalId: data.external_id, accessToken: maybeDecrypt(data.access_token) || '', displayName: data.display_name }
     }
     // Fall through if the id was bogus / not theirs rather than failing the post.
   }
@@ -118,10 +123,12 @@ export async function resolveSocialAccount(
     .eq('is_default', true)
     .maybeSingle()
   if (def?.external_id && def?.access_token) {
-    return { id: def.id, externalId: def.external_id, accessToken: def.access_token, displayName: def.display_name }
+    return { id: def.id, externalId: def.external_id, accessToken: maybeDecrypt(def.access_token) || '', displayName: def.display_name }
   }
 
   // 3. Legacy integrations columns (zero-migration safety net).
+  // These come from the caller already decrypted via decryptIntegrationRow,
+  // so no double-decrypt here.
   if (legacy?.externalId && legacy?.accessToken) {
     return { id: null, externalId: legacy.externalId, accessToken: legacy.accessToken, displayName: legacy.displayName ?? null }
   }
@@ -142,13 +149,15 @@ export async function syncFacebookAccounts(
 ): Promise<void> {
   if (!pages.length) return
   const now = new Date().toISOString()
+  // Encrypt access tokens at rest (2026-06-02). resolveSocialAccount()
+  // decrypts on the way out.
   const rows = pages.map((p) => ({
     user_id: userId,
     platform: 'facebook' as const,
     external_id: p.id,
     display_name: p.name,
     kind: 'page',
-    access_token: p.access_token,
+    access_token: maybeEncrypt(p.access_token),
     is_default: p.id === activePageId,
     updated_at: now,
   }))
@@ -182,7 +191,7 @@ export async function syncInstagramAccount(
       external_id: account.externalId,
       display_name: account.username,
       kind: 'account',
-      access_token: account.accessToken,
+      access_token: maybeEncrypt(account.accessToken),
       extra: account.tokenExpiry ? { token_expiry: account.tokenExpiry } : {},
       is_default: true,
       updated_at: new Date().toISOString(),

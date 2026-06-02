@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -54,14 +55,15 @@ export async function GET(request: NextRequest) {
 
     step = 'save_token'
     const supabase = await createServerClient()
+    // Encrypt OAuth tokens at rest (2026-06-02).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: saveErr } = await supabase.from('integrations').upsert(
-      {
+      encryptIntegrationWrite({
         user_id: userId,
         youtube_oauth_access_token: tokens.access_token,
         ...(tokens.refresh_token && { youtube_oauth_refresh_token: tokens.refresh_token }),
         youtube_oauth_token_expiry: Date.now() + tokens.expires_in * 1000,
-      },
+      }),
       { onConflict: 'user_id' },
     )
     // Don't report false success — a failed save would leave the

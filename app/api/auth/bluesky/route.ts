@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createSession } from '@/services/bluesky'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 /**
  * Bluesky connect endpoint.
@@ -29,14 +30,15 @@ export async function POST(request: NextRequest) {
   try {
     const session = await createSession(cleanHandle, appPassword.trim())
 
+    // Encrypt the app password at rest (2026-06-02).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('integrations').upsert(
-      {
+      encryptIntegrationWrite({
         user_id: user.id,
         bluesky_handle: session.handle,
         bluesky_app_password: appPassword.trim(),
         bluesky_did: session.did,
-      },
+      }),
       { onConflict: 'user_id' },
     )
 

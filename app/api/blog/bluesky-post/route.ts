@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { createSession, createPost } from '@/services/bluesky'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const integration = intRow as any
+    const integration = decryptIntegrationRow(intRow as any)
     if (!dryRun && (!integration?.bluesky_handle || !integration?.bluesky_app_password)) {
       return NextResponse.json({ error: 'Bluesky not connected' }, { status: 400 })
     }

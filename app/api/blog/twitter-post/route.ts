@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { learnProfileToPrompt } from '@/lib/learn'
 import {
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id)
       .single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const integration = intRow as any
+    const integration = decryptIntegrationRow(intRow as any)
     if (!integration?.twitter_access_token) {
       return NextResponse.json({ error: 'X (Twitter) not connected' }, { status: 400 })
     }
@@ -101,12 +102,14 @@ export async function POST(request: NextRequest) {
         const refreshed = await refreshAccessToken(integration.twitter_refresh_token)
         accessToken = refreshed.access_token
         const newExpiry = new Date(Date.now() + refreshed.expires_in * 1000).toISOString()
+        // Encrypt refreshed tokens at rest (2026-06-02). Decrypt happens
+        // on the next read via decryptIntegrationRow.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await supabase.from('integrations').update({
+        await supabase.from('integrations').update(encryptIntegrationWrite({
           twitter_access_token: refreshed.access_token,
           twitter_refresh_token: refreshed.refresh_token ?? integration.twitter_refresh_token,
           twitter_expires_at: newExpiry,
-        }).eq('user_id', user.id)
+        })).eq('user_id', user.id)
       } catch (e) {
         return NextResponse.json(
           { error: 'X token refresh failed. Please reconnect X in Settings.', detail: e instanceof Error ? e.message : String(e) },

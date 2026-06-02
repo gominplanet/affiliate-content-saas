@@ -6,6 +6,8 @@
 // scope (webmasters.readonly). Reuses the same Google OAuth app as YouTube
 // (GOOGLE_CLIENT_ID/SECRET); tokens live on integrations.gsc_oauth_*.
 
+import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
+
 const WEBMASTERS = 'https://www.googleapis.com/webmasters/v3'
 const URL_INSPECTION = 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect'
 
@@ -25,9 +27,15 @@ export async function getValidGscToken(
     .single()
   if (!data?.gsc_oauth_access_token) return null
 
+  // Decrypt the tokens (2026-06-02 rollout). maybeDecrypt is a no-op
+  // on legacy plaintext rows, so this works for both old and new data.
+  const accessToken = maybeDecrypt(data.gsc_oauth_access_token) || null
+  const refreshToken = maybeDecrypt(data.gsc_oauth_refresh_token) || null
+  if (!accessToken) return null
+
   const expiry = Number(data.gsc_oauth_token_expiry || 0)
-  if (Date.now() < expiry - 60_000) return data.gsc_oauth_access_token // 60s buffer
-  if (!data.gsc_oauth_refresh_token) return data.gsc_oauth_access_token // can't refresh; try as-is
+  if (Date.now() < expiry - 60_000) return accessToken // 60s buffer
+  if (!refreshToken) return accessToken // can't refresh; try as-is
 
   try {
     const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -36,16 +44,17 @@ export async function getValidGscToken(
       body: new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID!,
         client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        refresh_token: data.gsc_oauth_refresh_token,
+        refresh_token: refreshToken,
         grant_type: 'refresh_token',
       }).toString(),
     })
     if (!res.ok) return null
     const t = await res.json() as { access_token: string; expires_in?: number }
+    // Encrypt refreshed token at rest (2026-06-02).
     await supabase
       .from('integrations')
       .update({
-        gsc_oauth_access_token: t.access_token,
+        gsc_oauth_access_token: maybeEncrypt(t.access_token),
         gsc_oauth_token_expiry: Date.now() + (t.expires_in ?? 3600) * 1000,
       })
       .eq('user_id', userId)

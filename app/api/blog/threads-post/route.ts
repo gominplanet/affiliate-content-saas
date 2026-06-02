@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { ThreadsService } from '@/services/threads'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -46,7 +47,8 @@ export async function POST(request: NextRequest) {
     ])
 
     const p = post as any
-    const ig = integration as any
+    // Decrypt secret columns transparently (2026-06-02 rollout).
+    const ig = decryptIntegrationRow(integration as any)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase

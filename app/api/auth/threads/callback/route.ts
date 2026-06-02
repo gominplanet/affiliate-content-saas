@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { exchangeCodeForToken, fetchThreadsProfile } from '@/services/threads'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
     // Save the core credentials first — this must always succeed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: saveErr } = await supabase.from('integrations').upsert(
-      { user_id: user.id, threads_access_token: access_token, threads_user_id: user_id },
+      encryptIntegrationWrite({ user_id: user.id, threads_access_token: access_token, threads_user_id: user_id }),
       { onConflict: 'user_id' },
     )
     if (saveErr) throw new Error(saveErr.message || 'token save failed')

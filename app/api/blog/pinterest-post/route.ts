@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { publishPinForPost, PinPublishError } from '@/lib/pin-publish'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
@@ -58,8 +59,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Decrypt the integrations row before handing it to publishPinForPost
+    // (2026-06-02 rollout — the pin lib reads pinterest_access_token raw).
     const { pinId } = await publishPinForPost({
-      p: post, ig: integration, site: wpSite, title, description, imageBase64, mediaType, fallbackImageUrl,
+      p: post, ig: decryptIntegrationRow(integration), site: wpSite, title, description, imageBase64, mediaType, fallbackImageUrl,
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('blog_posts').update({ pinterest_pin_id: pinId }).eq('id', postId)

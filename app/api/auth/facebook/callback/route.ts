@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { exchangeCodeForToken, getLongLivedToken, getPages } from '@/services/facebook'
 import { syncFacebookAccounts } from '@/lib/social-accounts'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -45,15 +46,17 @@ export async function GET(request: NextRequest) {
 
     // Save the first page by default (user can switch in settings)
     const page = pages[0]
+    // Encrypt access token at rest (2026-06-02). Page id/name remain
+    // plaintext — they're not secrets.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('integrations').upsert(
-      {
+      encryptIntegrationWrite({
         user_id: user.id,
         facebook_page_id: page.id,
         facebook_page_name: page.name,
         facebook_page_access_token: page.access_token,
         facebook_pages_json: JSON.stringify(pages),
-      },
+      }),
       { onConflict: 'user_id' },
     )
 

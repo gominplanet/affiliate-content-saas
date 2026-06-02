@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { listGscSites, resolveGscProperty } from '@/lib/gsc'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -70,15 +71,16 @@ export async function GET(request: NextRequest) {
     } catch { /* property stays null; connection still saved */ }
 
     step = 'save_token'
+    // Encrypt OAuth tokens at rest (2026-06-02).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: saveErr } = await supabase.from('integrations').upsert(
-      {
+      encryptIntegrationWrite({
         user_id: userId,
         gsc_oauth_access_token: tokens.access_token,
         ...(tokens.refresh_token && { gsc_oauth_refresh_token: tokens.refresh_token }),
         gsc_oauth_token_expiry: Date.now() + tokens.expires_in * 1000,
         ...(property && { gsc_property: property }),
-      },
+      }),
       { onConflict: 'user_id' },
     )
     if (saveErr) throw new Error(saveErr.message || 'token save failed')

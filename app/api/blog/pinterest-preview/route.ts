@@ -6,6 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { buildPinAssets } from '@/lib/pin-assets'
 
 export const maxDuration = 60
@@ -25,8 +26,9 @@ export async function POST(request: NextRequest) {
   ])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const p = post as any
+  // Decrypt secret columns transparently (2026-06-02 rollout).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ig = integration as any
+  const ig = decryptIntegrationRow(integration as any)
 
   if (!p) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
   if (!ig?.pinterest_access_token) return NextResponse.json({ error: 'Pinterest not connected' }, { status: 400 })

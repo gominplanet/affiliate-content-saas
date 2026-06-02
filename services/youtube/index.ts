@@ -648,11 +648,17 @@ export async function refreshYouTubeToken(refreshToken: string): Promise<{
   return res.json()
 }
 
-// Get a valid access token, refreshing if needed
+// Get a valid access token, refreshing if needed.
+//
+// Defensively decrypts the token columns (2026-06-02 rollout). Most
+// callers now go through decryptIntegrationRow() upstream, but a few
+// older paths still pass raw rows — this guard means they keep
+// working even if they haven't been swept yet.
 export async function getValidYouTubeToken(integration: Record<string, unknown>): Promise<string> {
+  const { maybeDecrypt } = await import('@/lib/secrets')
   const expiry = integration.youtube_oauth_token_expiry as number | null
-  const accessToken = integration.youtube_oauth_access_token as string | null
-  const refreshToken = integration.youtube_oauth_refresh_token as string | null
+  const accessToken = maybeDecrypt(integration.youtube_oauth_access_token as string | null | undefined)
+  const refreshToken = maybeDecrypt(integration.youtube_oauth_refresh_token as string | null | undefined)
 
   if (!accessToken) throw new Error('YouTube OAuth not connected')
 

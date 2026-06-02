@@ -8,6 +8,8 @@ import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } 
 import { normalizeTier } from '@/lib/tier'
 import { resolveSocialAccount } from '@/lib/social-accounts'
 import { metaEnabledForUser } from '@/lib/feature-flags'
+import { decryptIntegrationRow } from '@/lib/integration-secrets'
+import { maybeDecrypt } from '@/lib/secrets'
 
 export const maxDuration = 60
 
@@ -78,8 +80,9 @@ export async function POST(request: NextRequest) {
       .select('facebook_page_id,facebook_page_access_token,tier')
       .eq('user_id', user.id)
       .single()
+    // Decrypt secret columns transparently (2026-06-02 rollout).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const integration = intRow as any
+    const integration = decryptIntegrationRow(intRow as any)
 
     // Resolve WHICH Facebook Page to post to. Picking a specific page (vs the
     // default) is a Pro feature — non-Pro users always post to their default.

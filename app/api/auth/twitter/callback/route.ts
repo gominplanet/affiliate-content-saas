@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@/lib/supabase/server'
 import { exchangeCodeForToken, getProfile } from '@/services/twitter'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
@@ -54,16 +55,20 @@ export async function GET(request: NextRequest) {
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
+    // Encrypt secret columns at rest (2026-06-02 rollout). The helper
+    // walks the row and encrypts any value in INTEGRATION_SECRET_COLUMNS;
+    // non-secret fields like twitter_handle pass through unchanged.
+    // Reads transparently decrypt via decryptIntegrationRow().
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('integrations').upsert(
-      {
+      encryptIntegrationWrite({
         user_id: userId,
         twitter_access_token: tokens.access_token,
         twitter_refresh_token: tokens.refresh_token ?? null,
         twitter_user_id: profile.id,
         twitter_handle: profile.username,
         twitter_expires_at: expiresAt,
-      },
+      }),
       { onConflict: 'user_id' },
     )
 

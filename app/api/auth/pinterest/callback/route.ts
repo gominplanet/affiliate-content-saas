@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { exchangeCodeForToken, PinterestService } from '@/services/pinterest'
+import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 
 export async function GET(request: NextRequest) {
   // Must match the start route's redirect_uri byte-for-byte (Pinterest
@@ -31,16 +32,17 @@ export async function GET(request: NextRequest) {
     const defaultBoard = boards[0] ?? null
 
     step = 'save_token'
+    // Encrypt secret tokens at rest (2026-06-02).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: saveErr } = await supabase.from('integrations').upsert(
-      {
+      encryptIntegrationWrite({
         user_id: user.id,
         pinterest_access_token: tokens.access_token,
         pinterest_refresh_token: tokens.refresh_token,
         pinterest_board_id: defaultBoard?.id ?? null,
         pinterest_board_name: defaultBoard?.name ?? null,
         pinterest_boards_json: JSON.stringify(boards),
-      },
+      }),
       { onConflict: 'user_id' },
     )
     // Don't report a false success — if the token didn't persist, the

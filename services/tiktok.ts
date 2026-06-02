@@ -1,3 +1,5 @@
+import { maybeDecrypt, maybeEncrypt } from '@/lib/secrets'
+
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
 // TikTok client. Wraps:
@@ -94,9 +96,15 @@ export async function getValidTikTokToken(
     .single()
   if (!data?.tiktok_access_token) return null
 
+  // Decrypt tokens at rest (2026-06-02 rollout). maybeDecrypt is a
+  // no-op on legacy plaintext rows.
+  const accessToken = maybeDecrypt(data.tiktok_access_token) || null
+  const refreshToken = maybeDecrypt(data.tiktok_refresh_token) || null
+  if (!accessToken) return null
+
   const expiry = Number(data.tiktok_token_expiry || 0)
-  if (Date.now() < expiry - 60_000) return data.tiktok_access_token // 60s buffer
-  if (!data.tiktok_refresh_token) return data.tiktok_access_token   // try as-is
+  if (Date.now() < expiry - 60_000) return accessToken // 60s buffer
+  if (!refreshToken) return accessToken                  // try as-is
 
   const clientKey = process.env.TIKTOK_CLIENT_KEY
   const clientSecret = process.env.TIKTOK_CLIENT_SECRET
@@ -112,7 +120,7 @@ export async function getValidTikTokToken(
       body: new URLSearchParams({
         client_key: clientKey,
         client_secret: clientSecret,
-        refresh_token: data.tiktok_refresh_token,
+        refresh_token: refreshToken,
         grant_type: 'refresh_token',
       }).toString(),
     })
@@ -125,12 +133,13 @@ export async function getValidTikTokToken(
     }
     if (!t.access_token) return null
     const now = Date.now()
+    // Encrypt refreshed tokens at rest (2026-06-02).
     await supabase
       .from('integrations')
       .update({
-        tiktok_access_token: t.access_token,
+        tiktok_access_token: maybeEncrypt(t.access_token),
         // TikTok rotates refresh tokens — replace if a new one came back.
-        tiktok_refresh_token: t.refresh_token ?? data.tiktok_refresh_token,
+        tiktok_refresh_token: maybeEncrypt(t.refresh_token ?? refreshToken),
         tiktok_token_expiry: now + (t.expires_in ?? 86400) * 1000,
         tiktok_refresh_expiry: t.refresh_expires_in
           ? now + t.refresh_expires_in * 1000
