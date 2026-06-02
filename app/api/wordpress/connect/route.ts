@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { maybeEncrypt } from '@/lib/secrets'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
@@ -34,7 +35,9 @@ export async function POST(request: Request) {
       user_id: user.id,
       wordpress_url: siteUrl,
       wordpress_username: username,
-      wordpress_app_password: password.replace(/\s+/g, ''),
+      // Encrypt at rest (2026-06-02). Reads transparently decrypt
+      // via maybeDecrypt() in lib/wordpress-sites.ts.
+      wordpress_app_password: maybeEncrypt(password.replace(/\s+/g, '')),
       setup_status: 'wordpress_ready',
     },
     { onConflict: 'user_id' },

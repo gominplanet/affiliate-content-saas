@@ -16,6 +16,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { WP_VERSIONS } from '@/lib/wp-versions'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { maybeEncrypt } from '@/lib/secrets'
 
 function gt(a: string | null, b: string): boolean {
   if (!a) return false
@@ -95,14 +96,14 @@ export async function GET(req: Request) {
         if (existing && existing.api_token !== s.proxy_secret) {
           await sb
             .from('wordpress_sites')
-            .update({ api_token: s.proxy_secret })
+            .update({ api_token: maybeEncrypt(s.proxy_secret) })
             .eq('id', existing.id)
         }
         // Also mirror to the legacy integrations column so single-site users
         // who haven't been migrated to wordpress_sites still get the proxy.
         await sb
           .from('integrations')
-          .update({ wordpress_api_token: s.proxy_secret })
+          .update({ wordpress_api_token: maybeEncrypt(s.proxy_secret) })
           .eq('user_id', user.id)
       } catch { /* non-fatal — proxy will be retried next status check */ }
     }

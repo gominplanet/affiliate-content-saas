@@ -28,6 +28,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { maybeEncrypt } from '@/lib/secrets'
 
 const HEX64 = /^[a-f0-9]{64}$/
 
@@ -81,9 +82,12 @@ export async function POST(req: Request) {
     }, { status: 404 })
   }
 
+  // Encrypt at rest (2026-06-02 secrets rollout). Reads go through
+  // maybeDecrypt() in rowToSite/getDefaultSite, so this is transparent
+  // to downstream code.
   const { error: updateErr } = await supabase
     .from('wordpress_sites')
-    .update({ api_token: raw })
+    .update({ api_token: maybeEncrypt(raw) })
     .eq('id', siteRow.id)
     .eq('user_id', user.id) // belt + suspenders — RLS would also enforce this
 

@@ -16,6 +16,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { verifyState } from '@/lib/wp-oauth'
+import { maybeEncrypt } from '@/lib/secrets'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -132,9 +133,10 @@ export async function GET(request: Request) {
       user_id: state.userId,
       wordpress_url: wpSiteUrl,
       wordpress_username: userLogin,
-      wordpress_app_password: cleanPw,
-      // Mirror to wordpress_api_token for legacy code paths that still read it.
-      wordpress_api_token: cleanPw,
+      // Encrypt at rest (2026-06-02 rollout). Decryption is transparent
+      // at read time via maybeDecrypt() in lib/wordpress-sites.ts.
+      wordpress_app_password: maybeEncrypt(cleanPw),
+      wordpress_api_token: maybeEncrypt(cleanPw),
       setup_status: 'site_ready',
     },
     { onConflict: 'user_id' },

@@ -10,6 +10,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { maybeEncrypt } from '@/lib/secrets'
 
 export const maxDuration = 60
 
@@ -98,10 +99,10 @@ export async function POST(request: Request) {
         user_id: user.id,
         wordpress_url: siteUrl,
         wordpress_username: username,
-        wordpress_app_password: appPassword,
-        // Keep wordpress_api_token populated for backward compat with any
-        // code path that still reads it; same value works fine for Basic Auth.
-        wordpress_api_token: appPassword,
+        // Encrypt at rest (2026-06-02 rollout). Reads go through
+        // maybeDecrypt in lib/wordpress-sites.ts.
+        wordpress_app_password: maybeEncrypt(appPassword),
+        wordpress_api_token: maybeEncrypt(appPassword),
         setup_status: 'site_ready',
       },
       { onConflict: 'user_id' },

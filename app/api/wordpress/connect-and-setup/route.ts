@@ -4,6 +4,7 @@ import { generateHomePage } from '@/lib/wordpress-home-template'
 import { generateAboutPage } from '@/lib/wordpress-about-template'
 import { generatePrivacyPolicy } from '@/lib/wordpress-privacy-template'
 import { wpLogin, getNonce } from '@/lib/wordpress-login'
+import { maybeEncrypt } from '@/lib/secrets'
 
 export const maxDuration = 60
 
@@ -400,11 +401,10 @@ export async function POST(request: Request) {
         user_id: user.id,
         wordpress_url: siteUrl,
         wordpress_username: resolvedUsername,
-        wordpress_app_password: appPassword,
-        // wordpress_api_token historically held the wp-admin password for cookie-auth fallbacks.
-        // We no longer use cookie auth — Application Password covers everything — so store the
-        // same value here for backward compatibility with any code that still reads it.
-        wordpress_api_token: appPassword,
+        // Encrypt at rest (2026-06-02). Reads transparently decrypt
+        // via maybeDecrypt in lib/wordpress-sites.ts.
+        wordpress_app_password: maybeEncrypt(appPassword),
+        wordpress_api_token: maybeEncrypt(appPassword),
         setup_status: 'site_ready',
       },
       { onConflict: 'user_id' },

@@ -28,6 +28,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { maybeDecrypt } from '@/lib/secrets'
 import type { Database } from '@/lib/types/database'
 import { normalizeTier, type Tier } from '@/lib/tier'
 
@@ -138,13 +139,15 @@ export async function getDefaultSite(
     legacy?.wordpress_username &&
     legacy?.wordpress_app_password
   ) {
+    // Same transparent decryption as rowToSite — handles legacy
+    // plaintext + new encrypted rows uniformly.
     return {
-      id: 'legacy',  // sentinel; consumers don't write to a 'legacy' id
+      id: 'legacy',
       label: 'Main',
       url: legacy.wordpress_url,
       username: legacy.wordpress_username,
-      appPassword: legacy.wordpress_app_password,
-      apiToken: legacy.wordpress_api_token ?? null,
+      appPassword: maybeDecrypt(legacy.wordpress_app_password) ?? '',
+      apiToken: maybeDecrypt(legacy.wordpress_api_token) ?? null,
       isDefault: true,
     }
   }
@@ -355,13 +358,18 @@ interface WordPressSiteRow {
 }
 
 function rowToSite(r: WordPressSiteRow): WordPressSite {
+  // Transparent decryption (2026-06-02 secrets-encryption rollout):
+  // app_password and api_token may be plaintext (legacy rows) or
+  // encrypted with enc:v1: prefix. maybeDecrypt detects the format and
+  // returns plaintext either way. Throws on tampered ciphertext —
+  // surfaces as a "WordPress not connected" rather than silent garbage.
   return {
     id: r.id,
     label: r.label || 'Main',
     url: r.url,
     username: r.username,
-    appPassword: r.app_password,
-    apiToken: r.api_token,
+    appPassword: maybeDecrypt(r.app_password) ?? '',
+    apiToken: maybeDecrypt(r.api_token) ?? null,
     isDefault: r.is_default,
   }
 }
