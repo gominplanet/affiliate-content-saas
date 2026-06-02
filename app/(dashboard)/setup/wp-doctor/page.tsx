@@ -277,7 +277,14 @@ function FixCard({ fix }: { fix: PluginFix }) {
  * connection turn green immediately.
  */
 function PostingKeyPanel({ siteId, onSaved }: { siteId: string | null; onSaved: () => void }) {
-  const [open, setOpen] = useState(false)
+  // Open by default. Some hosts (SiteGround, Hostinger LiteSpeed) strip
+  // the Authorization header on EVERY request — not just POST — which
+  // means Basic Auth is permanently broken on those hosts and the
+  // Posting Key is the ONLY way to publish. Users on those hosts won't
+  // find the panel if it's collapsed; the doctor's other tests just
+  // all fail and the page looks hopeless. Default-open eliminates the
+  // "where's the fix?" guessing.
+  const [open, setOpen] = useState(true)
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
 

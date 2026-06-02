@@ -42,6 +42,27 @@ export interface PluginFix {
  *  major plugin versions. When a plugin renames (e.g. iThemes → Solid),
  *  add BOTH the legacy and new namespace as separate keys — they map to
  *  the same fix object. */
+/** Shared LiteSpeed fix used for both v1 and v3 namespace detections.
+ *
+ *  Tone: this card now LEADS with the actionable step (paste your Posting
+ *  Key) rather than burying it as "the plugin handles it automatically."
+ *  Reason: on hosts that strip Authorization headers, the plugin can't
+ *  "handle it automatically" — MVP needs the key to use the body-auth
+ *  proxy. We saw this confuse Alejandro at reviewcentralhub.com — the
+ *  doctor told him everything was fine while posts kept failing. */
+const LITESPEED_FIX: PluginFix = {
+  id: 'litespeed',
+  label: 'LiteSpeed (host/server)',
+  summary: 'Your host runs LiteSpeed, which strips the Authorization header on every request — including GETs. Basic Auth will never work on this host. Use the Posting Key path instead (it bypasses the header entirely).',
+  severity: 'block',
+  steps: [
+    'Confirm the MVP Affiliate plugin is v1.0.26 or later — wp-admin → Plugins (older versions don\'t mint the Posting Key).',
+    'In wp-admin, look for the violet "MVP Affiliate · Posting Key" notice on the Dashboard or Plugins page. Click Copy.',
+    'Scroll to the top of this page and paste the Posting Key into the violet panel labeled "Posting Key (for hosts that strip the Authorization header)" → Save.',
+    'After saving, click "Re-test" — the Body-auth proxy test should turn green.',
+  ],
+}
+
 export const KNOWN_PLUGINS: Record<string, PluginFix> = {
   // ─── Security plugins ───────────────────────────────────────────────
   'wordfence/v1': {
@@ -138,29 +159,8 @@ export const KNOWN_PLUGINS: Record<string, PluginFix> = {
       'Return here and click "Re-test connection"',
     ],
   },
-  'litespeed/v1': {
-    id: 'litespeed',
-    label: 'LiteSpeed (host/server)',
-    summary: 'Your host runs LiteSpeed, which can strip Authorization headers on POST. The MVP plugin v1.0.25+ handles this automatically with its body-auth proxy.',
-    severity: 'info',
-    steps: [
-      'Confirm the MVP Affiliate plugin is v1.0.25 or later (wp-admin → Plugins)',
-      'If older: from this dashboard, click "Update now" in the WordPress update banner, OR upload the latest plugin zip manually',
-      'No .htaccess editing required — the plugin handles header forwarding',
-    ],
-  },
-  'litespeed/v3': {
-    // Same fix as litespeed/v1 — newer version of the same plugin.
-    id: 'litespeed',
-    label: 'LiteSpeed (host/server)',
-    summary: 'Your host runs LiteSpeed, which can strip Authorization headers on POST. The MVP plugin v1.0.25+ handles this automatically with its body-auth proxy.',
-    severity: 'info',
-    steps: [
-      'Confirm the MVP Affiliate plugin is v1.0.25 or later (wp-admin → Plugins)',
-      'If older: from this dashboard, click "Update now" in the WordPress update banner, OR upload the latest plugin zip manually',
-      'No .htaccess editing required — the plugin handles header forwarding',
-    ],
-  },
+  'litespeed/v1': LITESPEED_FIX,
+  'litespeed/v3': LITESPEED_FIX, // same product, newer version
 }
 
 /** Edge-layer (CDN/WAF/security plugin) block — the request never reaches
