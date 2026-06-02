@@ -1166,35 +1166,6 @@ function ProofSection() {
           ))}
         </div>
 
-        {/* "Built for these niches" — broad enough to be honest without
-            naming individual customers. */}
-        <div
-          className="mt-10 rounded-2xl border p-6 sm:p-8"
-          style={{
-            backgroundColor: 'var(--surface)',
-            borderColor: 'var(--border)',
-            boxShadow: 'var(--card-shadow)',
-          }}
-        >
-          <p className="text-[11px] uppercase tracking-[0.15em] mb-4" style={{ color: 'var(--text-faint)' }}>
-            Built for affiliate creators in
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {NICHES.map(n => (
-              <span
-                key={n}
-                className="px-3 py-1.5 rounded-lg text-[13px]"
-                style={{
-                  backgroundColor: 'rgba(124,58,237,0.10)',
-                  color: 'var(--text)',
-                  border: '1px solid rgba(124,58,237,0.20)',
-                }}
-              >
-                {n}
-              </span>
-            ))}
-          </div>
-        </div>
       </div>
     </section>
   )
@@ -1243,12 +1214,6 @@ function StatCard({ stat }: { stat: Stat }) {
     </div>
   )
 }
-
-const NICHES = [
-  'Outdoor gear', 'Wine & spirits', 'Home & kitchen', 'Tech reviews', 'Fitness equipment',
-  'Camping & overland', 'Pet products', 'Tools & DIY', 'Baby & parenting', 'Beauty', 'Audio gear',
-  'Camera & video', 'Smart home', 'Travel essentials',
-]
 
 /** Section 8 — FAQ.
  *
