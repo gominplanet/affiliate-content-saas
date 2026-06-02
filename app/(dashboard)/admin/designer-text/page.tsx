@@ -29,6 +29,7 @@ interface RenderResponse {
   }
   width: number
   height: number
+  renderError: { step: string; message: string } | null
 }
 
 export default function DesignerTextTestPage() {
@@ -173,6 +174,13 @@ export default function DesignerTextTestPage() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={result.pngDataUri} alt="rendered thumbnail" className="w-full h-auto block" />
               </div>
+              {result.renderError && (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded space-y-1">
+                  <div className="font-semibold">⚠️ Overlay render failed at step: <span className="font-mono">{result.renderError.step}</span></div>
+                  <div className="font-mono text-xs whitespace-pre-wrap">{result.renderError.message}</div>
+                  <div className="text-xs text-red-600">Image above is the bare base — text overlay was skipped.</div>
+                </div>
+              )}
               <div className="bg-gray-50 border rounded-lg p-3 text-xs font-mono space-y-2">
                 <div><b>Template:</b> {result.picked.templateId}</div>
                 <div><b>Dims:</b> {result.width} × {result.height}</div>

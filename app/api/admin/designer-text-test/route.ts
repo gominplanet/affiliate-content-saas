@@ -64,6 +64,7 @@ export async function POST(req: NextRequest) {
       picked: result.picked,
       width: result.width,
       height: result.height,
+      renderError: result.renderError ?? null,
     })
   } catch (e) {
     return NextResponse.json({

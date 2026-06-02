@@ -14,6 +14,17 @@ const nextConfig: NextConfig = {
   //   @resvg/resvg-js → Rust SVG→PNG renderer (used by designer text overlays)
   //   sharp           → libvips image processor
   serverExternalPackages: ['@resvg/resvg-js', 'sharp'],
+  // Force-include @fontsource font files in the serverless function bundle.
+  // We load them at runtime via require.resolve(), which Vercel's bundler
+  // can't statically detect — so without this, the .woff files don't ship
+  // with the function and Satori errors at render time. Globbing every
+  // @fontsource subpackage's `files/*.woff` so adding new fonts later
+  // doesn't require updating this list.
+  outputFileTracingIncludes: {
+    '/api/admin/designer-text-test': ['./node_modules/@fontsource/**/files/*.woff'],
+    // Add other API routes here once we wire the designer overlay into them
+    // (youtube/generate-thumbnail, etc.).
+  },
   // Tree-shake big barrel packages (lucide-react is imported in ~38 files);
   // only the icons actually used get bundled. Near-zero risk, big bundle win.
   experimental: {

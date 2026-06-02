@@ -57,6 +57,10 @@ export interface RenderDesignerOverlayOutput {
   /** Pixel dimensions of the output. */
   width: number
   height: number
+  /** If non-null, the overlay step failed and `png` is the bare base image.
+   *  Surface this in admin diagnostics so we never silently ship un-textified
+   *  thumbnails without knowing why. */
+  renderError?: { step: 'satori' | 'resvg' | 'composite' | 'unknown-template'; message: string } | null
 }
 
 /**
@@ -101,8 +105,13 @@ export async function renderDesignerOverlay(input: RenderDesignerOverlayInput): 
 
   const template = templateById(picked.templateId)
   if (!template) {
-    console.warn('[designer-overlay] unknown templateId from picker, falling back to base image', picked.templateId)
-    return { png: await fetchBaseAsPng(input.baseImageUrl, width, height), picked, width, height }
+    const message = `unknown templateId from picker: ${picked.templateId}`
+    console.warn('[designer-overlay]', message)
+    return {
+      png: await fetchBaseAsPng(input.baseImageUrl, width, height),
+      picked, width, height,
+      renderError: { step: 'unknown-template', message },
+    }
   }
 
   // ── 2. Render template → Satori element tree ─────────────────────────────
@@ -117,8 +126,13 @@ export async function renderDesignerOverlay(input: RenderDesignerOverlayInput): 
       fonts: fontsFor(template.fonts),
     })
   } catch (e) {
-    console.warn('[designer-overlay] satori failed, returning base image', e instanceof Error ? e.message : String(e))
-    return { png: await fetchBaseAsPng(input.baseImageUrl, width, height), picked, width, height }
+    const message = e instanceof Error ? e.message : String(e)
+    console.warn('[designer-overlay] satori failed', message)
+    return {
+      png: await fetchBaseAsPng(input.baseImageUrl, width, height),
+      picked, width, height,
+      renderError: { step: 'satori', message },
+    }
   }
 
   // ── 4. Resvg → PNG buffer of the overlay layer ───────────────────────────
@@ -130,8 +144,13 @@ export async function renderDesignerOverlay(input: RenderDesignerOverlayInput): 
     })
     overlayPng = resvg.render().asPng()
   } catch (e) {
-    console.warn('[designer-overlay] resvg rasterise failed, returning base image', e instanceof Error ? e.message : String(e))
-    return { png: await fetchBaseAsPng(input.baseImageUrl, width, height), picked, width, height }
+    const message = e instanceof Error ? e.message : String(e)
+    console.warn('[designer-overlay] resvg rasterise failed', message)
+    return {
+      png: await fetchBaseAsPng(input.baseImageUrl, width, height),
+      picked, width, height,
+      renderError: { step: 'resvg', message },
+    }
   }
 
   // ── 5. Composite overlay onto base via sharp ─────────────────────────────
@@ -141,10 +160,15 @@ export async function renderDesignerOverlay(input: RenderDesignerOverlayInput): 
       .composite([{ input: overlayPng, top: 0, left: 0 }])
       .png()
       .toBuffer()
-    return { png: composited, picked, width, height }
+    return { png: composited, picked, width, height, renderError: null }
   } catch (e) {
-    console.warn('[designer-overlay] sharp composite failed, returning base image', e instanceof Error ? e.message : String(e))
-    return { png: await fetchBaseAsPng(input.baseImageUrl, width, height), picked, width, height }
+    const message = e instanceof Error ? e.message : String(e)
+    console.warn('[designer-overlay] sharp composite failed', message)
+    return {
+      png: await fetchBaseAsPng(input.baseImageUrl, width, height),
+      picked, width, height,
+      renderError: { step: 'composite', message },
+    }
   }
 }
 
