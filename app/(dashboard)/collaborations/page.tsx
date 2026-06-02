@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import Header from '@/components/layout/Header'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
+import { useConfirm } from '@/components/ui/useConfirm'
 import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle, Trash2, Save } from 'lucide-react'
 
 interface CollabRow {
@@ -37,6 +38,7 @@ function YesNo({ value, onChange }: { value: boolean; onChange: (v: boolean) => 
 }
 
 export default function CollaborationsPage() {
+  const { confirm, ConfirmHost } = useConfirm()
   const [brandName, setBrandName] = useState('')
   const [productOrAsin, setProductOrAsin] = useState('')
   const [amazonStorefront, setAmazonStorefront] = useState('')
@@ -129,7 +131,13 @@ export default function CollaborationsPage() {
   async function deleteSelected() {
     if (selected.size === 0) return
     const ids = [...selected]
-    if (!window.confirm(`Delete ${ids.length} pitch${ids.length === 1 ? '' : 'es'}? This can't be undone.`)) return
+    const ok = await confirm({
+      title: `Delete ${ids.length} pitch${ids.length === 1 ? '' : 'es'}?`,
+      description: 'This can\'t be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
     setDeleting(true)
     try {
       const res = await fetch('/api/collaborations/delete', {
@@ -466,6 +474,7 @@ export default function CollaborationsPage() {
           </div>
         </div>
       )}
+      <ConfirmHost />
     </>
   )
 }

@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
+import { useConfirm } from '@/components/ui/useConfirm'
 import { effectiveTier } from '@/lib/view-as'
 import {
   Camera, Loader2, Sparkles, Download, AlertCircle, UserCircle2, Trash2,
@@ -64,6 +65,7 @@ interface UsageInfo { used: number; limit: number | null; remaining: number | nu
 
 export default function PhotoboothPage() {
   const supabase = createBrowserClient()
+  const { confirm, ConfirmHost } = useConfirm()
   const [tier, setTier] = useState('trial')
   const [faces, setFaces] = useState<FaceModel[]>([])
   const [loading, setLoading] = useState(true)
@@ -192,7 +194,13 @@ export default function PhotoboothPage() {
   }
 
   async function deleteModel(id: string) {
-    if (!confirm('Delete this face? You\'ll need to re-upload the photos to use it again — and any thumbnails/posts that rely on it will lose your likeness.')) return
+    const ok = await confirm({
+      title: 'Delete this face?',
+      description: 'You\'ll need to re-upload the photos to use it again — and any thumbnails/posts that rely on it will lose your likeness.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
     await fetch(`/api/face-models/${id}`, { method: 'DELETE' })
     setFaces(prev => prev.filter(m => m.id !== id))
   }
@@ -638,6 +646,7 @@ export default function PhotoboothPage() {
           </div>
         </div>
       )}
+      <ConfirmHost />
     </>
   )
 }
