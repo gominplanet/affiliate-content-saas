@@ -2,9 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { fetchAmazonProduct } from '@/services/amazon'
-import { pickProductReferenceImage } from '@/lib/product-image'
-import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
-import { fetchProductImageFromPage } from '@/services/research'
+import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { createOpenAIService, normalizeToPng } from '@/services/openai'
 import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
@@ -742,30 +740,32 @@ export async function POST(request: Request) {
       ? productCompositionNote.trim().slice(0, 400)
       : ''
 
-    if (asin) {
+    // Use the SINGLE SOURCE OF TRUTH for product-reference resolution so
+    // thumbnails benefit from the same Amazon bot-block retry, vision-pick,
+    // junk-URL filter, and gallery scrape as blog generation. Need product
+    // title/description/bullets in addition to the image, so we still hit
+    // Amazon directly when we have an ASIN — but the IMAGE itself comes
+    // from the canonical resolver.
+    const refForThumbnail = await resolveProductReference({
+      title: videoTitle ?? null,
+      description: videoDescription ?? null,
+      asin: asin ?? null,
+      traceTag: `[thumbnail:${(youtubeVideoId || 'novid').slice(0, 8)}]`,
+      userId: user.id,
+      tier: null,
+    })
+    productImageUrl = refForThumbnail.productImageUrl ?? productImageUrl
+
+    // Fill in title / description / bullets from Amazon directly when we have
+    // the ASIN — the resolver returns the image gallery but not the structured
+    // text fields that the thumbnail prompt needs.
+    if (asin && (!productTitle || !productDescription || !productBullets.length)) {
       try {
         const p = await fetchAmazonProduct(asin)
-        // Vision-pick the clean isolated product shot (Amazon's main image is
-        // often a lifestyle collage) so the thumbnail grounds on the real product.
-        productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id })) || p.imageUrl
         if (!productTitle) productTitle = p.title
         if (!productDescription) productDescription = p.description
         if (!productBullets.length) productBullets = p.bullets
-      } catch { /* fall through */ }
-    }
-
-    // NON-AMAZON products: grab the real product photo off the store/brand page
-    // the creator linked in the description, so the Kontext path can render the
-    // ACTUAL product (mirrors the blog pipeline). Without this, non-Amazon
-    // thumbnails fell back to a text-only guess of the product.
-    if (!productImageUrl && videoDescription) {
-      let pageUrl = firstProductUrl(videoDescription)
-      if (pageUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
-        pageUrl = await resolveFinalUrl(pageUrl)
-      }
-      if (pageUrl) {
-        productImageUrl = await fetchProductImageFromPage(pageUrl)
-      }
+      } catch { /* fall through — resolver already logged any block */ }
     }
     // 3C — When the user uploaded their own product photos, treat the FIRST one
     // as the "single product image" for the Kontext fallback path (which only

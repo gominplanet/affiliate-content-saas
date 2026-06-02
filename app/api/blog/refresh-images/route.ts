@@ -13,10 +13,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
-import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
-import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
-import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
-import { fetchProductImageFromPage, fetchProductGalleryFromPage } from '@/services/research'
+import { verifyProductMatch } from '@/lib/product-image'
+import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { normalizeTier, allowedBlogImages } from '@/lib/tier'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
@@ -92,111 +90,30 @@ export async function POST(request: Request) {
   }
   const description = (vid?.description as string) || ''
 
-  // ── Resolve a product reference image. Each step logs WHY it
-  // succeeded/failed so Vercel logs make it obvious which leg of the
-  // chain breaks for a specific post (instead of one terse "NO product
-  // reference" at the end). Tonight's wax-warmer article exposed how
-  // opaque this was — we knew it failed but not where.
+  // EPC / Creator-Connections posts have no source video — the helper accepts
+  // a `campaignAsin` fallback for them. Look it up so the helper can use it
+  // if every other path fails.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: camp } = await supabase
+    .from('campaigns').select('asin').eq('user_id', user.id).eq('blog_post_id', post.id).maybeSingle()
+
+  // SINGLE SOURCE OF TRUTH for product-reference resolution. Every step
+  // (Amazon scrape, page gallery, vision picker, junk-URL filter, retry)
+  // lives in lib/resolve-product-reference — improving it improves blog
+  // generation, refresh-images, thumbnails, and scripts in lockstep.
   const traceTag = `[refresh-images:${post.id.slice(0, 8)}]`
-  console.log(`${traceTag} resolving product image`, {
-    postId: post.id,
-    hasVideoRow: !!vid,
-    videoId: vid?.youtube_video_id ?? null,
-    hasUploadedImage: !!vid?.product_image_url,
-    hasTitle: !!vid?.title,
-    titleLen: (vid?.title as string | undefined)?.length ?? 0,
-    descLen: description.length,
+  const ref = await resolveProductReference({
+    uploadedUrl: (vid?.product_image_url as string | null) ?? null,
+    title: (vid?.title as string | null) ?? null,
+    description,
+    campaignAsin: (camp?.asin as string | null) ?? null,
+    wordpressUrl: site.wordpress_url ?? null,
+    traceTag,
+    userId: user.id,
+    tier,
   })
-
-  if (vid?.product_image_url) {
-    productImageUrl = vid.product_image_url as string
-    console.log(`${traceTag} uploaded photo on the video row — using directly`, { productImageUrl })
-  }
-  if (!productImageUrl) {
-    const titleUpper = (vid?.title as string || '').toUpperCase()
-    let asin = extractAsin(titleUpper)
-    console.log(`${traceTag} step:asin-from-title`, { asin, titleUpper: titleUpper.slice(0, 100) })
-
-    let pageUrl = firstProductUrl(description, site.wordpress_url ?? null)
-    console.log(`${traceTag} step:pageUrl-from-description`, { pageUrl: pageUrl?.slice(0, 200) ?? null })
-
-    if (pageUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
-      const before = pageUrl
-      try {
-        pageUrl = await resolveFinalUrl(pageUrl)
-        console.log(`${traceTag} step:resolveFinalUrl`, { before, after: pageUrl?.slice(0, 200) ?? null })
-      } catch (e) {
-        console.warn(`${traceTag} step:resolveFinalUrl FAILED`, { before, error: e instanceof Error ? e.message : String(e) })
-      }
-    }
-
-    if (!asin && pageUrl) {
-      asin = extractAsin(pageUrl)
-      console.log(`${traceTag} step:asin-from-pageUrl`, { asin, pageUrl: pageUrl.slice(0, 200) })
-    }
-
-    if (asin) {
-      try {
-        const p = await fetchAmazonProduct(asin)
-        console.log(`${traceTag} step:fetchAmazonProduct ok`, {
-          asin,
-          gotTitle: !!p.title,
-          galleryCount: p.images?.length ?? 0,
-          hasMainImage: !!p.imageUrl,
-        })
-        if (p.title) productTitle = p.title
-        productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null
-        console.log(`${traceTag} step:pickProductReferenceImage (amazon)`, { picked: productImageUrl })
-      } catch (e) {
-        // Amazon scrape failures are common (anti-bot blocks, 503s, network).
-        // Log them loudly so we can spot a trend.
-        console.warn(`${traceTag} step:fetchAmazonProduct FAILED`, { asin, error: e instanceof Error ? e.message : String(e) })
-      }
-    }
-
-    if (!productImageUrl && pageUrl) {
-      // Mirror the Amazon flow on non-Amazon pages: scrape multiple candidate
-      // images off the product page, then vision-pick the cleanest isolated
-      // shot. Without this, DTC brand pages whose og:image is a lifestyle
-      // collage were tricking Kontext into re-rendering a prop instead of
-      // the product. Falls back to the single-image scraper on empty galleries.
-      try {
-        const gallery = await fetchProductGalleryFromPage(pageUrl)
-        console.log(`${traceTag} step:fetchProductGalleryFromPage`, { count: gallery.length, sample: gallery[0]?.slice(0, 100) ?? null })
-        if (gallery.length > 0) {
-          productImageUrl = (await pickProductReferenceImage(gallery, productTitle, { userId: user.id, tier })) || null
-          console.log(`${traceTag} step:pickProductReferenceImage (page-gallery)`, { picked: productImageUrl })
-        }
-        if (!productImageUrl) {
-          productImageUrl = await fetchProductImageFromPage(pageUrl)
-          console.log(`${traceTag} step:fetchProductImageFromPage (single-image fallback)`, { picked: productImageUrl })
-        }
-      } catch (e) {
-        console.warn(`${traceTag} step:page-gallery-resolution FAILED`, { pageUrl: pageUrl.slice(0, 200), error: e instanceof Error ? e.message : String(e) })
-      }
-    }
-  }
-  // EPC / Creator-Connections posts have no source video — resolve the product
-  // image from the campaign's ASIN instead (that's where the product lives), so
-  // "Refresh images" works on them too.
-  if (!productImageUrl) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: camp } = await supabase
-      .from('campaigns').select('asin').eq('user_id', user.id).eq('blog_post_id', post.id).maybeSingle()
-    console.log(`${traceTag} step:campaigns-asin-fallback`, { hasCampaign: !!camp, asin: camp?.asin ?? null })
-    if (camp?.asin) {
-      try {
-        const p = await fetchAmazonProduct(camp.asin)
-        console.log(`${traceTag} step:fetchAmazonProduct(camp) ok`, { asin: camp.asin, galleryCount: p.images?.length ?? 0 })
-        if (p.title) productTitle = p.title
-        productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null
-      } catch (e) {
-        console.warn(`${traceTag} step:fetchAmazonProduct(camp) FAILED`, { asin: camp.asin, error: e instanceof Error ? e.message : String(e) })
-      }
-    }
-  }
-
-  console.log(`${traceTag} resolution complete`, { productImageUrl, productTitle })
+  productImageUrl = ref.productImageUrl
+  if (ref.productTitle) productTitle = ref.productTitle
 
   fal.config({ credentials: process.env.FAL_KEY ?? '' })
 

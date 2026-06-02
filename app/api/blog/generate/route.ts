@@ -10,9 +10,10 @@ import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
-import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
-import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage, fetchProductGalleryFromPage } from '@/services/research'
+import { extractAsin } from '@/services/amazon'
+import { verifyProductMatch } from '@/lib/product-image'
+import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
+import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
@@ -1175,68 +1176,38 @@ async function handleGenerate(request: Request) {
             if (u) frameRefs.push(u)
           }
 
-          // Resolve the REAL product image (uploaded photo → Amazon catalog
-          // photo by ASIN) so Kontext renders the actual product.
+          // Resolve the REAL product image through the SINGLE SOURCE OF
+          // TRUTH (`lib/resolve-product-reference`). Every improvement to
+          // any step (Amazon retry, vision picker, junk-URL filter, etc.)
+          // automatically applies here, in refresh-images, in the
+          // thumbnail route, and anywhere else that needs the canonical
+          // product photo — no more drift between routes.
           let falProductImageUrl: string | null = null
           let productTitleForPrompts = generated.title
 
-          const uploadedProductImage = (v.product_image_url as string | null)?.trim() || null
-          if (uploadedProductImage) {
+          const traceTag = `[blog-generate:${v.id?.toString().slice(0, 8) ?? 'video'}]`
+          const ref = await resolveProductReference({
+            uploadedUrl: (v.product_image_url as string | null)?.trim() || null,
+            title: v.title as string | null ?? null,
+            description: rawDescription,
+            asin: effectiveAsin ?? null,
+            wordpressUrl: site.wordpress_url ?? null,
+            traceTag,
+            userId: user.id,
+            tier: (wp?.tier as string) ?? null,
+          })
+          if (ref.productTitle) {
+            productTitleForPrompts = ref.productTitle
+            schemaProductName = ref.productTitle
+          }
+          if (ref.productImageUrl) {
+            schemaProductImage = schemaProductImage || ref.productImageUrl
             try {
-              const imgRes = await fetch(uploadedProductImage, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+              const imgRes = await fetch(ref.productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
               if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
-            } catch { /* fall through to Amazon */ }
-          }
-          if (effectiveAsin) {
-            try {
-              const p = await fetchAmazonProduct(effectiveAsin)
-              if (p.title) { productTitleForPrompts = p.title; schemaProductName = p.title }
-              // The Amazon main image is often a multi-panel lifestyle collage;
-              // vision-pick the cleanest isolated product shot so Kontext
-              // re-renders the ACTUAL product, not a prop from the collage.
-              const cleanImg = (await pickProductReferenceImage(p.images, p.title || productTitleForPrompts, { userId: user.id, tier: (wp?.tier as string) ?? null })) || p.imageUrl
-              if (cleanImg) schemaProductImage = schemaProductImage || cleanImg
-              if (!falProductImageUrl && cleanImg) {
-                const imgRes = await fetch(cleanImg, { headers: { 'User-Agent': 'Mozilla/5.0' } })
-                if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
-              }
-            } catch { /* fall back to text-only prompts */ }
-          }
-
-          // NON-AMAZON products: pull the real product photo off the store/brand
-          // page the creator linked, so Kontext renders the ACTUAL product
-          // instead of a text-only guess (the #1 cause of "wrong product"). The
-          // Amazon path above already covers ASIN products; this fills the gap.
-          //
-          // Mirrors the Amazon flow: pull a GALLERY of candidate images off the
-          // page (og:image + twitter:image + JSON-LD product images + large
-          // <img> tags), then vision-pick the cleanest isolated product shot.
-          // Without the gallery + vision-pick, many DTC brand pages were
-          // handing us a hero/lifestyle collage as og:image and Kontext was
-          // re-rendering a scene element instead of the product.
-          if (!falProductImageUrl) {
-            let pageUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
-            if (pageUrl && /(?:geni\.us|\bgnz\.|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
-              pageUrl = await resolveFinalUrl(pageUrl) // unwrap short/geni.us links to the real page
-            }
-            if (pageUrl) {
-              const gallery = await fetchProductGalleryFromPage(pageUrl)
-              // pickProductReferenceImage returns null only on an empty array;
-              // it's a no-op (returns the single image) when only one candidate
-              // exists, so this is safe regardless of gallery size.
-              let productImg = gallery.length > 0
-                ? await pickProductReferenceImage(gallery, productTitleForPrompts, { userId: user.id, tier: (wp?.tier as string) ?? null })
-                : null
-              // Belt-and-suspenders: if the gallery scraper found nothing
-              // (rare — page with no images at all), fall back to the old
-              // single-image scraper so we don't regress on weird pages.
-              if (!productImg) productImg = await fetchProductImageFromPage(pageUrl)
-              if (productImg) {
-                try {
-                  const imgRes = await fetch(productImg, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
-                  if (imgRes.ok) falProductImageUrl = await fal.storage.upload(await imgRes.blob())
-                } catch { /* fall through to text-only prompts */ }
-              }
+              console.log(`${traceTag} step:fal-upload`, { ok: !!falProductImageUrl })
+            } catch (e) {
+              console.warn(`${traceTag} step:fal-upload FAILED`, { error: e instanceof Error ? e.message : String(e) })
             }
           }
 

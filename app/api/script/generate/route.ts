@@ -37,8 +37,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
+import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { resolveFinalUrl } from '@/lib/product-link'
-import { fetchProductImageFromPage } from '@/services/research'
 import { checkScriptUsage } from '@/lib/tier'
 
 type Style = 'first_look' | 'hands_on' | 'long_term'
@@ -194,20 +194,31 @@ export async function POST(req: Request) {
   let productImage: string | null = null
   let productDescription = ''
   let productBullets: string[] = []
+
+  // Pull the product image through the SINGLE SOURCE OF TRUTH so the script
+  // generator picks up the same Amazon retry / vision-pick / junk-URL filter
+  // as the blog and thumbnail paths. Title/description/bullets still come
+  // from a direct Amazon scrape because the resolver only returns the image.
+  const refForScript = await resolveProductReference({
+    title: input,
+    description: productUrl ? `${input} ${productUrl}` : input,
+    asin: asin ?? null,
+    traceTag: `[script:${(asin || input || 'unknown').slice(0, 12)}]`,
+    userId: user.id,
+    tier: null,
+  })
+  productImage = refForScript.productImageUrl
+  if (refForScript.productTitle && refForScript.productTitle !== input) {
+    productTitle = refForScript.productTitle
+  }
+
   if (asin) {
     try {
       const p = await fetchAmazonProduct(asin)
-      productTitle = p.title || ''
-      productImage = p.imageUrl || (p.images && p.images[0]) || null
+      if (!productTitle) productTitle = p.title || ''
       productDescription = p.description || ''
       productBullets = Array.isArray(p.bullets) ? p.bullets.slice(0, 8) : []
-    } catch { /* fall through to URL scrape */ }
-  }
-  if (!productTitle && productUrl) {
-    try {
-      productImage = productImage || (await fetchProductImageFromPage(productUrl))
-      productTitle = productUrl
-    } catch { /* keep what we have */ }
+    } catch { /* resolver already logged */ }
   }
   if (!productTitle) productTitle = input
 
