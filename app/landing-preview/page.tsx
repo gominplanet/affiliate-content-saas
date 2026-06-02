@@ -17,7 +17,7 @@ import {
   Play, Sun, Moon, Sparkles, ArrowRight, Bookmark,
   Twitter, AtSign, Cloud, Send, Facebook,
   Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
-  Youtube, ShieldCheck, Zap, Upload,
+  Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -156,8 +156,9 @@ export default function LandingPreview() {
       <DemoVideoSection />
       <RolesSection />
       <WorkflowSection />
+      <GroundedSection />
 
-      {/* Placeholder for sections 5–9. */}
+      {/* Placeholder for sections 6–9. */}
       <section className="px-8 py-24 max-w-5xl mx-auto text-center">
         <div
           className="rounded-2xl border px-8 py-12"
@@ -169,10 +170,10 @@ export default function LandingPreview() {
         >
           <Sparkles size={20} className="mx-auto mb-3 text-[#7C3AED]" />
           <p className="text-[13px] uppercase tracking-[0.18em] mb-3" style={{ color: 'var(--text-faint)' }}>
-            Sections 5 – 9 coming next
+            Sections 6 – 9 coming next
           </p>
           <p className="text-[15px] max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            Sections 1, 2, 3, 4 locked. Next: multi-site → comparison vs old way → pricing → social proof → FAQ → final CTA.
+            Sections 1–5 locked. Next: pricing → social proof → FAQ → final CTA.
           </p>
         </div>
       </section>
@@ -627,6 +628,219 @@ function StepCard({ index, step }: { index: number; step: Step }) {
         </h3>
         <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
           {step.body}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Section 5 — "Grounded in real video. Trained on real voice."
+ *
+ *  The fact-grounded differentiator section. Sells the product against
+ *  generic AI content tools without naming any competitor. Lands as a
+ *  comparison table (the old way vs MVP) followed by a founder-quote
+ *  card that ties back to the hero's trust strip.
+ *
+ *  Honesty notes:
+ *  - Every row is something MVP actually does (verified against the
+ *    product's current behavior — scraping product pages, using
+ *    transcripts, LEARN voice profile, video frames in thumbnails,
+ *    publish-ready output).
+ *  - The "Thumbnails" row specifically — NOT a generic "images" row —
+ *    because in-article images mix real product photos with AI; only
+ *    thumbnails are reliably grounded in actual video frames.
+ *
+ *  Layout: 2-col comparison table on desktop. On mobile, each row
+ *  stacks the two columns vertically with the label as a pill above.
+ */
+function GroundedSection() {
+  return (
+    <section id="grounded" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <ShieldCheck size={10} />
+            Grounded. Never guessed.
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            Grounded in{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              real video.
+            </span>
+            <br />
+            Trained on{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              real voice.
+            </span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            If MVP can&apos;t prove it from your transcript or the product page — MVP doesn&apos;t say it.
+          </p>
+        </div>
+
+        {/* Comparison table. Desktop: 2 columns side by side with a faint
+            vertical divider. Mobile: each row stacks both columns with the
+            label-pill on top. */}
+        <div
+          className="rounded-2xl border overflow-hidden"
+          style={{
+            backgroundColor: 'var(--surface)',
+            borderColor: 'var(--border)',
+            boxShadow: 'var(--card-shadow)',
+          }}
+        >
+          {/* Header row */}
+          <div className="hidden sm:grid grid-cols-[160px_1fr_1fr] items-center gap-4 px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+            <span className="text-[10px] uppercase tracking-[0.15em]" style={{ color: 'var(--text-faint)' }}>Dimension</span>
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full"
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'var(--text-faint)' }}
+              >
+                <XIcon size={11} />
+              </span>
+              <span className="text-[11px] uppercase tracking-[0.15em]" style={{ color: 'var(--text-subtle)' }}>The old way</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full"
+                style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)', color: '#FFFFFF' }}
+              >
+                <Check size={11} />
+              </span>
+              <span className="text-[11px] uppercase tracking-[0.15em] font-semibold" style={{ color: '#9D6BFF' }}>MVP</span>
+            </div>
+          </div>
+
+          {/* Rows */}
+          {COMPARISON_ROWS.map((row, i) => (
+            <ComparisonRow key={row.label} row={row} isLast={i === COMPARISON_ROWS.length - 1} />
+          ))}
+        </div>
+
+        {/* Founder quote close — the "B touch" — ties Section 5 back to the
+            hero trust strip. */}
+        <div
+          className="mt-10 rounded-2xl border p-6 sm:p-8 max-w-3xl mx-auto"
+          style={{
+            backgroundColor: 'var(--surface)',
+            borderColor: 'rgba(124,58,237,0.25)',
+            boxShadow: 'var(--card-shadow)',
+          }}
+        >
+          <Quote size={20} className="text-[#7C3AED] mb-3" />
+          <p className="text-[16px] sm:text-[17px] leading-relaxed mb-4 italic" style={{ color: 'var(--text-muted)' }}>
+            &ldquo;I built MVP because at 2 a.m. I was still rewriting AI-generated posts that invented features my products didn&apos;t have. Every other tool either sounded like a robot or made me triple-check every claim. So I built the one I needed.&rdquo;
+          </p>
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+            — Built by a creator who&apos;s done{' '}
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>$3M+/yr</span> in affiliate sales.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface ComparisonRowData {
+  label: string
+  oldWay: string
+  mvpWay: string
+}
+
+const COMPARISON_ROWS: ComparisonRowData[] = [
+  {
+    label: 'Facts',
+    oldWay: 'Invents features the product doesn’t have.',
+    mvpWay: 'Pulls real specs from the product page you reviewed.',
+  },
+  {
+    label: 'Stories',
+    oldWay: 'Fabricates “experiences” you never had.',
+    mvpWay: 'Uses what you actually said in the transcript.',
+  },
+  {
+    label: 'Voice',
+    oldWay: 'Sounds like every other AI post on the internet.',
+    mvpWay: 'Trained on your channel — your phrasing, your hooks.',
+  },
+  {
+    label: 'Thumbnails',
+    oldWay: 'Generic AI illustrations.',
+    mvpWay: 'Built from your actual video frames, with your face baked in.',
+  },
+  {
+    label: 'Time',
+    oldWay: 'You spend an hour rewriting before publishing.',
+    mvpWay: 'Publish-ready out of the box.',
+  },
+]
+
+function ComparisonRow({ row, isLast }: { row: ComparisonRowData; isLast: boolean }) {
+  return (
+    <div
+      className={`px-5 py-5 sm:py-4 ${isLast ? '' : 'border-b'}`}
+      style={{ borderColor: 'var(--border)' }}
+    >
+      {/* Mobile: stacked */}
+      <div className="sm:hidden flex flex-col gap-2.5">
+        <span
+          className="self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-[0.12em] font-medium"
+          style={{ backgroundColor: 'rgba(124,58,237,0.10)', color: '#9D6BFF' }}
+        >
+          {row.label}
+        </span>
+        <div className="flex items-start gap-2">
+          <XIcon size={14} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--text-faint)' }} />
+          <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-subtle)' }}>
+            {row.oldWay}
+          </p>
+        </div>
+        <div className="flex items-start gap-2">
+          <Check size={14} className="flex-shrink-0 mt-0.5" style={{ color: '#9D6BFF' }} />
+          <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text)' }}>
+            {row.mvpWay}
+          </p>
+        </div>
+      </div>
+
+      {/* Desktop: 3-column grid */}
+      <div className="hidden sm:grid grid-cols-[160px_1fr_1fr] items-start gap-4">
+        <span className="text-[13px] font-semibold tracking-tight pt-0.5" style={{ color: 'var(--text)' }}>
+          {row.label}
+        </span>
+        <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-subtle)' }}>
+          {row.oldWay}
+        </p>
+        <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {row.mvpWay}
         </p>
       </div>
     </div>
