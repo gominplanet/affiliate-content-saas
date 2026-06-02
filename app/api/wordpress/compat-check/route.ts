@@ -104,7 +104,7 @@ export async function GET(req: Request) {
   const wpBase = site.wordpress_url.replace(/\/$/, '')
   const cleanPw = site.wordpress_app_password.replace(/\s+/g, '')
   const basic = `Basic ${Buffer.from(`${site.wordpress_username}:${cleanPw}`).toString('base64')}`
-  const ua = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 
   // 2a. REST root passed detection. Mark it as ok with status 200 (the
   //     namespaces list came back — that's sufficient proof).

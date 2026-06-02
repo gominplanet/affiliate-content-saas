@@ -104,7 +104,7 @@ export async function GET(request: Request) {
     const res = await fetch(`${wpSiteUrl}/wp-json/wp/v2/users/me`, {
       headers: {
         Authorization: basic,
-        'User-Agent': 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
       },
       signal: AbortSignal.timeout(10_000),
     })

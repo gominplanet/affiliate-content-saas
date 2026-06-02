@@ -33,7 +33,7 @@ export const NANO_BANANA_COST_MODEL = 'fal-nano-banana'
 export const NANO_BANANA_PRO_COST_MODEL = 'fal-nano-banana-pro'
 export const IDEOGRAM_COST_MODEL = 'fal-ideogram-v3'
 
-const BROWSER_UA = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 
 /** True if a URL is already hosted on fal (no need to re-host). */
 function isFalUrl(u: string): boolean {

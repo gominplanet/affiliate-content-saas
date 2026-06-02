@@ -135,7 +135,7 @@ export async function pushNewsletterToWp(
   // Hostinger's WAF blocks REST writes from "bare" Vercel User-Agents; the
   // browser-style UA we use everywhere else (see services/wordpress) gets
   // through. Same trick here.
-  const ua = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 
   const results = await Promise.all(siteRows.map(async (s) => {
     const wpBase = s.url.replace(/\/$/, '')

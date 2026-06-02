@@ -134,7 +134,7 @@ async function fetchLegacyWpPost(
   // REST GETs for some sites (same workaround the publish path uses).
   const headers = {
     Authorization: authHeader,
-    'User-Agent': 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
   }
   const res = await fetch(
     `${base}/wp-json/wp/v2/posts/${postId}?_fields=id,title,slug,content,excerpt,link,date,featured_media&context=edit`,

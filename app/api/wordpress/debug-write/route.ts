@@ -53,7 +53,7 @@ export async function GET(req: Request) {
   const username = site.wordpress_username
   const password = site.wordpress_app_password.replace(/\s+/g, '')
   const basic = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
-  const ua = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 
   // ── Test 1: REST API reachable at all? ───────────────────────────────────
   const restRoot = await probe(`${siteUrl}/wp-json/`, { headers: { 'User-Agent': ua } })

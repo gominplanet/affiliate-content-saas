@@ -183,7 +183,7 @@ export class WordPressService {
         headers: {
           Cookie: cookies,
           // Mimic a real browser so caching proxies don't serve a stripped page
-          'User-Agent': 'Mozilla/5.0 (compatible; AffiliateOS/1.0)',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
           Referer: `${this.siteUrl}/wp-login.php`,
         },
       })
@@ -252,7 +252,7 @@ export class WordPressService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         },
         body: JSON.stringify({
           token: this.apiToken,
@@ -335,7 +335,7 @@ export class WordPressService {
           // Wordfence, mod_security) don't intermittently 403 our REST writes —
           // they challenge no-UA / "node"-style agents. This is why a post can
           // publish (one write got through) yet a later meta write silently fails.
-          'User-Agent': 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
           ...authHeaders,
           ...(options.headers as Record<string, string> || {}),
         },
@@ -492,7 +492,7 @@ export class WordPressService {
       // mod_security WAFs and the media upload silently 403s while regular
       // post writes (which DO set this UA via request()) sail through. This
       // is why in-article images were getting dropped on Hostinger sites.
-      'User-Agent': 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     })
 
     const buildUrl = (nonce?: { nonce: string }) => {
@@ -572,7 +572,7 @@ export class WordPressService {
   async purgeCache(fallbackCustomizations: unknown = {}): Promise<void> {
     try {
       const base = `${this.siteUrl}/wp-json/affiliateos/v1/customizations`
-      const UA = 'Mozilla/5.0 (compatible; MVP Affiliate/1.0; +https://www.mvpaffiliate.io)'
+      const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
       const headers = { 'Content-Type': 'application/json', 'Authorization': this.authHeader, 'User-Agent': UA }
 
       const hasData = (o: unknown): o is Record<string, unknown> =>
