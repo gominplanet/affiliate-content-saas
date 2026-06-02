@@ -91,17 +91,69 @@ export async function POST(request: Request) {
     vid = data
   }
   const description = (vid?.description as string) || ''
-  if (vid?.product_image_url) productImageUrl = vid.product_image_url as string
+
+  // ── Resolve a product reference image. Each step logs WHY it
+  // succeeded/failed so Vercel logs make it obvious which leg of the
+  // chain breaks for a specific post (instead of one terse "NO product
+  // reference" at the end). Tonight's wax-warmer article exposed how
+  // opaque this was — we knew it failed but not where.
+  const traceTag = `[refresh-images:${post.id.slice(0, 8)}]`
+  console.log(`${traceTag} resolving product image`, {
+    postId: post.id,
+    hasVideoRow: !!vid,
+    videoId: vid?.youtube_video_id ?? null,
+    hasUploadedImage: !!vid?.product_image_url,
+    hasTitle: !!vid?.title,
+    titleLen: (vid?.title as string | undefined)?.length ?? 0,
+    descLen: description.length,
+  })
+
+  if (vid?.product_image_url) {
+    productImageUrl = vid.product_image_url as string
+    console.log(`${traceTag} uploaded photo on the video row — using directly`, { productImageUrl })
+  }
   if (!productImageUrl) {
-    let asin = extractAsin((vid?.title as string || '').toUpperCase())
+    const titleUpper = (vid?.title as string || '').toUpperCase()
+    let asin = extractAsin(titleUpper)
+    console.log(`${traceTag} step:asin-from-title`, { asin, titleUpper: titleUpper.slice(0, 100) })
+
     let pageUrl = firstProductUrl(description, site.wordpress_url ?? null)
+    console.log(`${traceTag} step:pageUrl-from-description`, { pageUrl: pageUrl?.slice(0, 200) ?? null })
+
     if (pageUrl && /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(pageUrl)) {
-      try { pageUrl = await resolveFinalUrl(pageUrl) } catch { /* keep */ }
+      const before = pageUrl
+      try {
+        pageUrl = await resolveFinalUrl(pageUrl)
+        console.log(`${traceTag} step:resolveFinalUrl`, { before, after: pageUrl?.slice(0, 200) ?? null })
+      } catch (e) {
+        console.warn(`${traceTag} step:resolveFinalUrl FAILED`, { before, error: e instanceof Error ? e.message : String(e) })
+      }
     }
-    if (!asin && pageUrl) asin = extractAsin(pageUrl)
+
+    if (!asin && pageUrl) {
+      asin = extractAsin(pageUrl)
+      console.log(`${traceTag} step:asin-from-pageUrl`, { asin, pageUrl: pageUrl.slice(0, 200) })
+    }
+
     if (asin) {
-      try { const p = await fetchAmazonProduct(asin); if (p.title) productTitle = p.title; productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null } catch { /* ignore */ }
+      try {
+        const p = await fetchAmazonProduct(asin)
+        console.log(`${traceTag} step:fetchAmazonProduct ok`, {
+          asin,
+          gotTitle: !!p.title,
+          galleryCount: p.images?.length ?? 0,
+          hasMainImage: !!p.imageUrl,
+        })
+        if (p.title) productTitle = p.title
+        productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null
+        console.log(`${traceTag} step:pickProductReferenceImage (amazon)`, { picked: productImageUrl })
+      } catch (e) {
+        // Amazon scrape failures are common (anti-bot blocks, 503s, network).
+        // Log them loudly so we can spot a trend.
+        console.warn(`${traceTag} step:fetchAmazonProduct FAILED`, { asin, error: e instanceof Error ? e.message : String(e) })
+      }
     }
+
     if (!productImageUrl && pageUrl) {
       // Mirror the Amazon flow on non-Amazon pages: scrape multiple candidate
       // images off the product page, then vision-pick the cleanest isolated
@@ -110,13 +162,18 @@ export async function POST(request: Request) {
       // the product. Falls back to the single-image scraper on empty galleries.
       try {
         const gallery = await fetchProductGalleryFromPage(pageUrl)
+        console.log(`${traceTag} step:fetchProductGalleryFromPage`, { count: gallery.length, sample: gallery[0]?.slice(0, 100) ?? null })
         if (gallery.length > 0) {
           productImageUrl = (await pickProductReferenceImage(gallery, productTitle, { userId: user.id, tier })) || null
+          console.log(`${traceTag} step:pickProductReferenceImage (page-gallery)`, { picked: productImageUrl })
         }
         if (!productImageUrl) {
           productImageUrl = await fetchProductImageFromPage(pageUrl)
+          console.log(`${traceTag} step:fetchProductImageFromPage (single-image fallback)`, { picked: productImageUrl })
         }
-      } catch { /* ignore */ }
+      } catch (e) {
+        console.warn(`${traceTag} step:page-gallery-resolution FAILED`, { pageUrl: pageUrl.slice(0, 200), error: e instanceof Error ? e.message : String(e) })
+      }
     }
   }
   // EPC / Creator-Connections posts have no source video — resolve the product
@@ -126,10 +183,20 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: camp } = await supabase
       .from('campaigns').select('asin').eq('user_id', user.id).eq('blog_post_id', post.id).maybeSingle()
+    console.log(`${traceTag} step:campaigns-asin-fallback`, { hasCampaign: !!camp, asin: camp?.asin ?? null })
     if (camp?.asin) {
-      try { const p = await fetchAmazonProduct(camp.asin); if (p.title) productTitle = p.title; productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null } catch { /* ignore */ }
+      try {
+        const p = await fetchAmazonProduct(camp.asin)
+        console.log(`${traceTag} step:fetchAmazonProduct(camp) ok`, { asin: camp.asin, galleryCount: p.images?.length ?? 0 })
+        if (p.title) productTitle = p.title
+        productImageUrl = (await pickProductReferenceImage(p.images, p.title || productTitle, { userId: user.id, tier })) || p.imageUrl || null
+      } catch (e) {
+        console.warn(`${traceTag} step:fetchAmazonProduct(camp) FAILED`, { asin: camp.asin, error: e instanceof Error ? e.message : String(e) })
+      }
     }
   }
+
+  console.log(`${traceTag} resolution complete`, { productImageUrl, productTitle })
 
   fal.config({ credentials: process.env.FAL_KEY ?? '' })
 
@@ -154,8 +221,15 @@ export async function POST(request: Request) {
   if (productImageUrl) {
     try {
       const r = await fetch(productImageUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(12000) })
-      if (r.ok) falProductRef = await fal.storage.upload(await r.blob())
-    } catch { /* none */ }
+      if (!r.ok) {
+        console.warn(`${traceTag} step:fetch-product-image NON-OK`, { productImageUrl, httpStatus: r.status })
+      } else {
+        falProductRef = await fal.storage.upload(await r.blob())
+        console.log(`${traceTag} step:fal-upload ok`, { falProductRef: falProductRef?.slice(0, 100) })
+      }
+    } catch (e) {
+      console.warn(`${traceTag} step:fetch-or-fal-upload FAILED`, { productImageUrl, error: e instanceof Error ? e.message : String(e) })
+    }
   }
   if (!process.env.FAL_KEY) {
     return NextResponse.json({ error: 'Image generation is not configured.' }, { status: 500 })
