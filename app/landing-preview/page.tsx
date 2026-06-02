@@ -18,6 +18,7 @@ import {
   Twitter, AtSign, Cloud, Send, Facebook,
   Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
   Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
+  Crown, Rocket, Plus, Minus,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -157,26 +158,10 @@ export default function LandingPreview() {
       <RolesSection />
       <WorkflowSection />
       <GroundedSection />
-
-      {/* Placeholder for sections 6–9. */}
-      <section className="px-8 py-24 max-w-5xl mx-auto text-center">
-        <div
-          className="rounded-2xl border px-8 py-12"
-          style={{
-            backgroundColor: 'var(--surface)',
-            borderColor: 'var(--border)',
-            boxShadow: 'var(--card-shadow)',
-          }}
-        >
-          <Sparkles size={20} className="mx-auto mb-3 text-[#7C3AED]" />
-          <p className="text-[13px] uppercase tracking-[0.18em] mb-3" style={{ color: 'var(--text-faint)' }}>
-            Sections 6 – 9 coming next
-          </p>
-          <p className="text-[15px] max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-            Sections 1–5 locked. Next: pricing → social proof → FAQ → final CTA.
-          </p>
-        </div>
-      </section>
+      <PricingSection />
+      <ProofSection />
+      <FAQSection />
+      <FinalCTASection />
     </div>
   )
 }
@@ -844,6 +829,651 @@ function ComparisonRow({ row, isLast }: { row: ComparisonRowData; isLast: boolea
         </p>
       </div>
     </div>
+  )
+}
+
+/** Section 6 — Pricing.
+ *
+ *  Three monetized tiers shown side-by-side (Creator / Studio / Pro).
+ *  Trial is positioned as the WAY IN (no-card banner above the cards),
+ *  not as a fourth column — nobody chooses "trial" as a tier.
+ *
+ *  Studio is flagged as Most Popular per the audit (sits in the middle
+ *  price point + unlocks the most-asked features: TikTok + Instagram +
+ *  Scripts). Pro is the power tier (multi-site + IG AI thumbnails +
+ *  face training + everything uncapped).
+ *
+ *  Prices + features mirror lib/tier.ts exactly so the page never drifts
+ *  from the live system. The regularPrice strikethrough sells the
+ *  founder-pricing window without making it feel like a permanent
+ *  discount.
+ */
+function PricingSection() {
+  return (
+    <section id="pricing" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-10">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <Sparkles size={10} />
+            Pricing
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            Start free.{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              Scale when you&apos;re ready.
+            </span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Every plan includes the full Central Hub. Cancel anytime. Your WordPress site stays yours forever.
+          </p>
+        </div>
+
+        {/* Trial banner — the no-card "way in" sits ABOVE the cards so it
+            reads as "start here, then pick a tier when you're ready." */}
+        <div
+          className="rounded-2xl border p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6"
+          style={{
+            backgroundColor: 'rgba(16,185,129,0.06)',
+            borderColor: 'rgba(16,185,129,0.25)',
+          }}
+        >
+          <div
+            className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #10B981, #059669)', color: '#FFFFFF' }}
+          >
+            <Sparkles size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
+              Try MVP free — no card required.
+            </p>
+            <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              Get 5 full posts on the house. Generate, publish, share — see if it fits your workflow before you pay a cent. No time limit on the trial.
+            </p>
+          </div>
+          <a
+            href="#"
+            className="px-5 py-2.5 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
+            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+          >
+            Start free →
+          </a>
+        </div>
+
+        {/* 3-tier grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+          {PRICING_TIERS.map(tier => (
+            <PricingCard key={tier.name} tier={tier} />
+          ))}
+        </div>
+
+        {/* Trust strip below the cards. */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Cancel anytime
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Switch plans up or down
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Your WordPress site stays yours forever
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Founder pricing locked for life
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface PricingTier {
+  name: string
+  tagline: string
+  price: number
+  regularPrice: number
+  highlight: boolean
+  icon: React.ReactNode
+  features: string[]
+  cta: string
+}
+
+const PRICING_TIERS: PricingTier[] = [
+  {
+    name: 'Creator',
+    tagline: 'For one channel, one niche.',
+    price: 49,
+    regularPrice: 99,
+    highlight: false,
+    icon: <Sparkles size={16} />,
+    features: [
+      '40 generated posts / month',
+      'Blog post + comparison + thumbnail per video',
+      '5 social platforms (Facebook, Threads, LinkedIn, Pinterest, Bluesky)',
+      'Newsletter — up to 1,000 subscribers',
+      '40 frame-grounded thumbnails / month',
+      '200 assistant messages / month',
+      '1 WordPress site',
+    ],
+    cta: 'Start as Creator',
+  },
+  {
+    name: 'Studio',
+    tagline: 'For creators who post everywhere.',
+    price: 99,
+    regularPrice: 199,
+    highlight: true,
+    icon: <Crown size={16} />,
+    features: [
+      '80 generated posts / month',
+      'Everything in Creator, plus:',
+      '+ TikTok + Instagram (7 social platforms total)',
+      '15 video scripts + shot-lists / month',
+      'Newsletter — up to 5,000 subscribers',
+      '1,000 assistant messages / month',
+      '1 WordPress site',
+    ],
+    cta: 'Go Studio',
+  },
+  {
+    name: 'Pro',
+    tagline: 'For operators running a portfolio.',
+    price: 199,
+    regularPrice: 499,
+    highlight: false,
+    icon: <Rocket size={16} />,
+    features: [
+      '200 generated posts / month',
+      'Everything in Studio, plus:',
+      'All 9 social platforms (+ X, Telegram)',
+      'Up to 5 WordPress sites (multi-niche)',
+      '50 IG AI thumbnails + 3 LoRA face-trainings / month',
+      'Newsletter — 10k subs, unlimited broadcasts',
+      'Priority queue + priority support',
+      'Publish-All: site + every social in one click',
+    ],
+    cta: 'Go Pro',
+  },
+]
+
+function PricingCard({ tier }: { tier: PricingTier }) {
+  const highlight = tier.highlight
+  return (
+    <div className="relative">
+      {highlight && (
+        <div
+          className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.15em] text-white z-10"
+          style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+        >
+          Most popular
+        </div>
+      )}
+      <div
+        className={`rounded-2xl border p-6 h-full flex flex-col gap-5 transition-all duration-200 ${highlight ? 'lg:-translate-y-2' : 'hover:-translate-y-0.5'}`}
+        style={{
+          backgroundColor: 'var(--surface)',
+          borderColor: highlight ? 'rgba(124,58,237,0.5)' : 'var(--border)',
+          boxShadow: highlight
+            ? '0 8px 32px rgba(124,58,237,0.15), inset 0 1px 0 rgba(255,255,255,0.06)'
+            : 'var(--card-shadow)',
+        }}
+      >
+        {/* Header — icon + tier name + tagline. */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
+                color: '#C4B5FD',
+                border: '1px solid rgba(124,58,237,0.25)',
+              }}
+            >
+              {tier.icon}
+            </span>
+            <h3 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+              {tier.name}
+            </h3>
+          </div>
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+            {tier.tagline}
+          </p>
+        </div>
+
+        {/* Price block. Regular price strikethrough on top, current price big. */}
+        <div>
+          <p className="text-[12px] line-through" style={{ color: 'var(--text-faint)' }}>
+            ${tier.regularPrice}/month regular
+          </p>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[40px] font-semibold tracking-tight tabular-nums" style={{ color: 'var(--text)' }}>
+              ${tier.price}
+            </span>
+            <span className="text-[14px]" style={{ color: 'var(--text-soft)' }}>
+              /month
+            </span>
+          </div>
+          <p className="text-[11px] mt-1" style={{ color: 'var(--text-faint)' }}>
+            Founder pricing — locked for the life of your subscription.
+          </p>
+        </div>
+
+        {/* Feature list. */}
+        <ul className="flex flex-col gap-2.5 flex-1">
+          {tier.features.map((f, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <Check
+                size={13}
+                className="flex-shrink-0 mt-1"
+                style={{ color: highlight ? '#9D6BFF' : 'var(--text-soft)' }}
+              />
+              <span className="text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                {f}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        {/* CTA. */}
+        <a
+          href="#"
+          className="w-full px-4 py-3 rounded-xl text-center text-[14px] font-semibold transition-all"
+          style={{
+            background: highlight
+              ? 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)'
+              : 'var(--surface-bright)',
+            color: highlight ? '#FFFFFF' : 'var(--text)',
+            boxShadow: highlight ? '0 4px 20px rgba(124,58,237,0.35)' : 'none',
+            border: highlight ? 'none' : '1px solid var(--border)',
+          }}
+        >
+          {tier.cta} →
+        </a>
+      </div>
+    </div>
+  )
+}
+
+/** Section 7 — Proof.
+ *
+ *  We don't have user testimonials yet, so this section grounds the
+ *  promise in NUMBERS we can defend: the founder's $3M+/yr operation,
+ *  the 4-min workflow, the 9 outputs per video, the fact-grounding
+ *  guarantee. No fabricated quotes.
+ *
+ *  Below the stat row: a "Built for these niches" panel that names real
+ *  categories MVP supports without naming individual customers.
+ */
+function ProofSection() {
+  return (
+    <section id="proof" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-12">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <TrendingUp size={10} />
+            Numbers that matter
+          </span>
+          <h2
+            className="text-[36px] sm:text-[44px] font-semibold tracking-tight leading-[1.1] mb-4"
+            style={{ color: 'var(--text)' }}
+          >
+            Built by an operator. Run daily.
+          </h2>
+          <p
+            className="text-[16px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Every number on this page is something the founder uses MVP to do every week.
+          </p>
+        </div>
+
+        {/* 4-up stat row. Each big number with a label. */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {STATS.map(s => (
+            <StatCard key={s.label} stat={s} />
+          ))}
+        </div>
+
+        {/* "Built for these niches" — broad enough to be honest without
+            naming individual customers. */}
+        <div
+          className="mt-10 rounded-2xl border p-6 sm:p-8"
+          style={{
+            backgroundColor: 'var(--surface)',
+            borderColor: 'var(--border)',
+            boxShadow: 'var(--card-shadow)',
+          }}
+        >
+          <p className="text-[11px] uppercase tracking-[0.15em] mb-4" style={{ color: 'var(--text-faint)' }}>
+            Built for affiliate creators in
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {NICHES.map(n => (
+              <span
+                key={n}
+                className="px-3 py-1.5 rounded-lg text-[13px]"
+                style={{
+                  backgroundColor: 'rgba(124,58,237,0.10)',
+                  color: 'var(--text)',
+                  border: '1px solid rgba(124,58,237,0.20)',
+                }}
+              >
+                {n}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface Stat {
+  value: string
+  label: string
+  detail: string
+}
+
+const STATS: Stat[] = [
+  { value: '$3M+', label: '/yr proven', detail: 'in affiliate sales by the founder' },
+  { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
+  { value: '9', label: 'outputs per video', detail: 'blog + thumb + 7 socials' },
+  { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
+]
+
+function StatCard({ stat }: { stat: Stat }) {
+  return (
+    <div
+      className="rounded-2xl border p-5 text-center"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+    >
+      <p
+        className="text-[36px] sm:text-[42px] font-semibold tracking-tight tabular-nums leading-none"
+        style={{
+          background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}
+      >
+        {stat.value}
+      </p>
+      <p className="text-[12px] uppercase tracking-[0.12em] mt-2 mb-1" style={{ color: 'var(--text)' }}>
+        {stat.label}
+      </p>
+      <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+        {stat.detail}
+      </p>
+    </div>
+  )
+}
+
+const NICHES = [
+  'Outdoor gear', 'Wine & spirits', 'Home & kitchen', 'Tech reviews', 'Fitness equipment',
+  'Camping & overland', 'Pet products', 'Tools & DIY', 'Baby & parenting', 'Beauty', 'Audio gear',
+  'Camera & video', 'Smart home', 'Travel essentials',
+]
+
+/** Section 8 — FAQ.
+ *
+ *  Six accordion items covering the top objections. Each opens with
+ *  smooth height animation. Honest, specific answers — no
+ *  legalese, no marketing fluff.
+ *
+ *  Topics chosen to address the strongest "but…" objections from the
+ *  page so far:
+ *    1. Trial mechanics (5 lifetime posts, no card)
+ *    2. WordPress ownership (yours forever)
+ *    3. Will it sound like me? (LEARN voice profile)
+ *    4. Cancel + refund mechanics
+ *    5. Fact-grounding guarantee
+ *    6. Switching plans
+ */
+function FAQSection() {
+  const [openIdx, setOpenIdx] = useState<number | null>(0)
+  return (
+    <section id="faq" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-3xl mx-auto">
+        <div className="text-center mb-12">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            Questions you might be having
+          </span>
+          <h2
+            className="text-[36px] sm:text-[44px] font-semibold tracking-tight leading-[1.1]"
+            style={{ color: 'var(--text)' }}
+          >
+            Common questions.
+          </h2>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {FAQS.map((f, i) => (
+            <FAQItem
+              key={i}
+              q={f.q}
+              a={f.a}
+              isOpen={openIdx === i}
+              onToggle={() => setOpenIdx(openIdx === i ? null : i)}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const FAQS = [
+  {
+    q: 'How does the free trial work?',
+    a: 'You get 5 full posts on the house — no card required, no time limit. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Creator, Studio, or Pro) and you keep going. If not, no charge, no follow-up emails — your trial just sits there.',
+  },
+  {
+    q: 'Do I need to host my own WordPress site?',
+    a: 'Yes — and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine — any of them work.',
+  },
+  {
+    q: 'Will MVP-generated content actually sound like me?',
+    a: 'Yes. MVP trains a voice profile on your channel — your phrasing, your hooks, your closers, your structure. Every blog post and social caption gets generated through that profile, not a generic AI persona. The longer you use it, the better the match. You can also tune the voice manually if you want it sharper, longer, or more conversational.',
+  },
+  {
+    q: 'Can I cancel anytime? What happens to my content?',
+    a: 'Yes — cancel from your billing page anytime. Your subscription runs through the end of the current period, then stops. Your content stays on your WordPress site forever (it\'s on YOUR domain, not ours). Nothing gets deleted. Your account stays open in read-only mode so you can come back later.',
+  },
+  {
+    q: 'How do you guarantee MVP doesn\'t fabricate facts about my products?',
+    a: 'Two layers. First: the generator pulls product specs directly from the product page you reviewed (Amazon, the brand site, wherever the buy link points). It uses those specs verbatim — no model "imagination." Second: every story / experience claim comes from your actual video transcript. If you didn\'t say it on camera, MVP doesn\'t put it in the post.',
+  },
+  {
+    q: 'Can I switch plans up or down later?',
+    a: 'Anytime. Upgrade and the difference is pro-rated and applied immediately. Downgrade and the new plan kicks in at the next billing cycle (you keep the higher plan\'s features until then). No "annual commitment" trap.',
+  },
+]
+
+function FAQItem({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boolean; onToggle: () => void }) {
+  return (
+    <div
+      className="rounded-xl border overflow-hidden transition-colors"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: isOpen ? 'rgba(124,58,237,0.35)' : 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+    >
+      <button
+        onClick={onToggle}
+        className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left"
+      >
+        <span className="text-[15px] font-medium leading-snug" style={{ color: 'var(--text)' }}>
+          {q}
+        </span>
+        <span
+          className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-transform"
+          style={{
+            backgroundColor: isOpen ? 'rgba(124,58,237,0.15)' : 'rgba(255,255,255,0.05)',
+            color: isOpen ? '#9D6BFF' : 'var(--text-soft)',
+          }}
+        >
+          {isOpen ? <Minus size={13} /> : <Plus size={13} />}
+        </span>
+      </button>
+      {isOpen && (
+        <div className="px-5 pb-4 -mt-1">
+          <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            {a}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Section 9 — Final CTA.
+ *
+ *  Full-bleed dark/light closing panel that re-states the offer one
+ *  more time before the scroll ends. Big headline, twin CTAs, and the
+ *  same trust elements as the pricing section for consistency.
+ *
+ *  Background uses a soft radial gradient so the section reads as a
+ *  visual "landing" rather than just another card.
+ */
+function FinalCTASection() {
+  return (
+    <section
+      id="get-started"
+      className="px-6 lg:px-8 pt-16 pb-24 relative overflow-hidden"
+    >
+      {/* Background: soft violet radial that fades out, matching the hub
+          diagram's visual rhythm. Theme-aware via --bg + the overlay. */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(ellipse 70% 60% at 50% 30%, rgba(124,58,237,0.18), transparent 70%)',
+        }}
+        aria-hidden
+      />
+
+      <div className="max-w-4xl mx-auto text-center relative">
+        <span
+          className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-6"
+          style={{
+            backgroundColor: 'rgba(124,58,237,0.15)',
+            color: '#C4B5FD',
+            border: '1px solid rgba(124,58,237,0.30)',
+          }}
+        >
+          Ready when you are
+        </span>
+        <h2
+          className="text-[44px] sm:text-[60px] font-semibold tracking-tight leading-[1.02] mb-5"
+          style={{ color: 'var(--text)' }}
+        >
+          Start your{' '}
+          <span
+            style={{
+              background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            Central Hub.
+          </span>
+        </h2>
+        <p
+          className="text-[17px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-8"
+          style={{ color: 'var(--text-soft)' }}
+        >
+          Five free posts. No card. No time limit. See if MVP fits your workflow before you pay a cent.
+        </p>
+
+        {/* Twin CTAs — primary action + lower-friction demo link. */}
+        <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-8">
+          <a
+            href="#"
+            className="px-7 py-3.5 rounded-xl text-[15px] font-semibold text-white inline-flex items-center gap-2 transition-all hover:scale-[1.02]"
+            style={{
+              background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+              boxShadow: '0 8px 28px rgba(124,58,237,0.40)',
+            }}
+          >
+            Start your free trial
+            <ArrowRight size={16} />
+          </a>
+          <a
+            href="#demo"
+            className="px-5 py-3.5 rounded-xl text-[15px] inline-flex items-center gap-2 transition-colors"
+            style={{
+              backgroundColor: 'var(--surface-bright)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <Play size={14} />
+            Watch the 90-second demo
+          </a>
+        </div>
+
+        {/* Trust strip — matches pricing section's strip for consistency. */}
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> No card required
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> 5 full posts free
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Cancel anytime
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Your WordPress site stays yours
+          </span>
+        </div>
+
+        {/* Founder signature line — final reassurance. */}
+        <p className="text-[12px] mt-10" style={{ color: 'var(--text-faint)' }}>
+          Built by a creator who&apos;s done <span className="font-semibold" style={{ color: 'var(--text-soft)' }}>$3M+/yr</span> in affiliate sales. Made for creators who want the same.
+        </p>
+      </div>
+    </section>
   )
 }
 
