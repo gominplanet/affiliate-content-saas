@@ -11,6 +11,11 @@
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 
+/** Marker we set on `falUrl` when the model wandered too far from the
+ *  reference and we fell back to the bare reference image. Lets the caller
+ *  log/diagnose without changing the URL contract. */
+export const BARE_REFERENCE_FALLBACK = Symbol.for('mvp.image.bareReferenceFallback')
+
 /**
  * Return the gallery image that is the cleanest isolated shot of the actual
  * product (plain background, no scene/collage/props). Falls back to the first
@@ -45,5 +50,65 @@ export async function pickProductReferenceImage(
     return imgs[0]
   } catch {
     return imgs[0] ?? null
+  }
+}
+
+/**
+ * Vision-verify that a generated image actually shows the SAME PRODUCT as the
+ * reference image. Catches the failure mode where the image model drifted to a
+ * "similar but different" product despite an explicit identity-preservation
+ * prompt — the exact bug that ships visible to readers on the live blog.
+ *
+ * Returns:
+ *   - match: true   → image shows the same product (in a different scene)
+ *   - match: false  → image shows a different product or no recognisable product
+ *   - The textual `reason` is what the model said; useful for diagnostics.
+ *
+ * Network/anthropic errors default to `{ match: true, reason: 'verification-skipped' }`
+ * so a transient outage in the verifier never blocks an article from publishing.
+ * Treated as "innocent until proven guilty" — only reject when the verifier is
+ * confident the products differ.
+ */
+export async function verifyProductMatch(
+  referenceUrl: string,
+  generatedUrl: string,
+  productTitle: string,
+  ctx?: { userId?: string; tier?: string | null },
+): Promise<{ match: boolean; reason: string }> {
+  if (!referenceUrl || !generatedUrl) return { match: true, reason: 'no-reference-to-compare' }
+  try {
+    const client = createAnthropicClient()
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 120,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'url', url: referenceUrl } },
+          { type: 'image', source: { type: 'url', url: generatedUrl } },
+          {
+            type: 'text',
+            text: `Image 1 is the reference photo for the product "${productTitle}". Image 2 is a generated marketing photo that is supposed to show the EXACT same product, just in a different scene/background.
+
+Does Image 2 show the SAME PRODUCT as Image 1 — same shape, same colour/finish, same materials, same on-product branding/text/logos, same overall design? Background, lighting, camera angle, and the surrounding scene are EXPECTED to differ; ignore those when judging.
+
+What we care about: is the product itself the same identifiable item, or did the generator render a similar-but-different product (e.g. a different model in the same category, a generic stand-in, the wrong colour or shape, the wrong cut-out pattern, the wrong number of components)?
+
+Reply with EXACTLY one line in this format:
+MATCH: yes/no — <one short reason under 12 words>`,
+          },
+        ],
+      }],
+    })
+    if (ctx?.userId) recordAnthropicUsage(resp, { userId: ctx.userId, tier: ctx.tier, feature: 'product_image_verify', model: 'claude-haiku-4-5-20251001' })
+    const txt = ((resp.content[0] as { type: string; text: string })?.text || '').trim()
+    const yes = /MATCH:\s*yes/i.test(txt)
+    const reason = txt.replace(/^MATCH:\s*(yes|no)\s*[—:-]\s*/i, '').slice(0, 200).trim() || 'no reason given'
+    return { match: yes, reason }
+  } catch {
+    // Verifier failure shouldn't block the article. Default to "match" so a
+    // brief Anthropic outage doesn't reject good images. The vision picker
+    // already filtered the input gallery; this is the second-line safety check.
+    return { match: true, reason: 'verification-skipped' }
   }
 }

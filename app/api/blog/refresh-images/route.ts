@@ -14,7 +14,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
-import { pickProductReferenceImage } from '@/lib/product-image'
+import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { fetchProductImageFromPage, fetchProductGalleryFromPage } from '@/services/research'
 import { normalizeTier, allowedBlogImages } from '@/lib/tier'
@@ -210,6 +210,44 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
           numImages: 1,
         })
         url = out[0]
+
+        // Vision-verify the result against the reference. If the model
+        // drifted (returned a different product), retry once with a
+        // stricter prompt. If the retry still misses, fall back to the
+        // bare reference photo — better the actual product than a wrong
+        // one in a magazine setting. Same safety net as blog/generate.
+        if (url) {
+          const v = await verifyProductMatch(falProductRef, url, productTitle, { userId: user.id, tier })
+          console.log('[refresh-images] verify', { i, match: v.match, reason: v.reason })
+          if (!v.match) {
+            const stricter = `IDENTITY-LOCKED render. The reference image is the GROUND TRUTH for what "${productTitle}" looks like. The previous attempt rendered a DIFFERENT product, which is wrong. Copy the product from the reference EXACTLY — same shape, same colour, same cut-out / texture / pattern, same number of components, same on-product branding/text. Do NOT substitute a similar-looking product. Change only the background${scene ? ` to: ${scene}` : ''}. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
+            try {
+              const retry = await composeWithNanoBanana({
+                prompt: stricter,
+                referenceImageUrls: [falProductRef],
+                aspectRatio: '4:3',
+                numImages: 1,
+              })
+              const retryUrl = retry[0]
+              if (retryUrl) {
+                const v2 = await verifyProductMatch(falProductRef, retryUrl, productTitle, { userId: user.id, tier })
+                console.log('[refresh-images] verify-retry', { i, match: v2.match, reason: v2.reason })
+                if (v2.match) {
+                  url = retryUrl
+                } else {
+                  console.warn('[refresh-images] both attempts failed verification — using bare reference', { i, reasons: [v.reason, v2.reason] })
+                  url = falProductRef
+                }
+              }
+            } catch { /* keep the unverified original */ }
+          }
+        }
+      } else {
+        // Same diagnostic as blog/generate: when this branch runs without a
+        // product reference, every downstream image is text-only and prone
+        // to "wrong product" output. Log so we can correlate Vercel logs
+        // to the specific posts where this happens.
+        console.warn('[refresh-images] NO product reference resolved — falling through to frame / text-only', { postId: post.id, productTitle })
       }
       // Fallback: retouch a real video frame only if no product photo resolved.
       if (!url && frameRefs.length > 0) {

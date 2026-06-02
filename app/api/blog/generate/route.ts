@@ -11,7 +11,7 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
-import { pickProductReferenceImage } from '@/lib/product-image'
+import { pickProductReferenceImage, verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch, fetchProductImageFromPage, fetchProductGalleryFromPage } from '@/services/research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
@@ -1299,7 +1299,56 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                   })
                   falUrl = out[0]
                   if (falUrl) recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image', model: 'nano-banana', images: 1 })
+
+                  // ── Vision verification — second line of defense against the
+                  // "wrong product" bug. The image model occasionally drifts
+                  // even with strict identity prompts; ask Haiku vision whether
+                  // the rendered image is actually the same product as the
+                  // reference. If not, retry ONCE with a stricter prompt. If
+                  // the retry still fails, fall back to the bare reference
+                  // photo (it's not stylized but at least it's the actual
+                  // product — much better than a wrong product in a fancy scene).
+                  if (falUrl) {
+                    const v = await verifyProductMatch(falProductImageUrl, falUrl, productTitleForPrompts, { userId: user.id, tier: tier2 })
+                    console.log('[blog-images] verify', { i, match: v.match, reason: v.reason })
+                    if (!v.match) {
+                      const stricter = `IDENTITY-LOCKED render. The reference image is the GROUND TRUTH for what this product looks like. The product in the reference is "${productTitleForPrompts}". The previous attempt rendered a DIFFERENT product, which is wrong. Copy the product from the reference EXACTLY — same shape, same colour, same cut-out / texture / pattern, same number of components, same on-product branding/text. Do NOT substitute a similar-looking product. Change only the background to: ${prompt}. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
+                      try {
+                        const retry = await composeWithNanoBanana({
+                          prompt: stricter,
+                          referenceImageUrls: [falProductImageUrl],
+                          aspectRatio: '4:3',
+                          numImages: 1,
+                        })
+                        const retryUrl = retry[0]
+                        if (retryUrl) {
+                          recordUsage({ userId: user.id, tier: tier2, feature: 'blog_body_image_retry', model: 'nano-banana', images: 1 })
+                          const v2 = await verifyProductMatch(falProductImageUrl, retryUrl, productTitleForPrompts, { userId: user.id, tier: tier2 })
+                          console.log('[blog-images] verify-retry', { i, match: v2.match, reason: v2.reason })
+                          if (v2.match) {
+                            falUrl = retryUrl
+                          } else {
+                            // Both attempts produced a wrong product. Use the
+                            // bare reference image as the in-article image —
+                            // unstylized but correct identity. Better signal
+                            // to the reader than a wrong product.
+                            console.warn('[blog-images] both attempts failed verification — using bare reference', { i, reasons: [v.reason, v2.reason] })
+                            falUrl = falProductImageUrl
+                          }
+                        }
+                      } catch { /* keep the unverified original, last-resort */ }
+                    }
+                  }
                 } catch { /* fall through to frame / text-to-image */ }
+              } else {
+                // Diagnostic: when we end up here, the product reference image
+                // chain (uploaded photo → Amazon ASIN → page scrape) ALL fell
+                // through. The image will be generated text-only against the
+                // slot prompt, which on review-style articles often produces a
+                // similar-but-wrong product (the exact failure surfaced by
+                // gominreviews.com/plug-in-wax-melt-warmer-review). Log so we
+                // can correlate Vercel logs to bad articles.
+                console.warn('[blog-images] NO product reference resolved — falling through to text-only', { i, productTitleForPrompts, hasAsin: !!effectiveAsin })
               }
               // ── Fallback: no product photo resolved → retouch a real video
               // frame (keeps genuine footage). Secondary because frames don't
