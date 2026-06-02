@@ -154,14 +154,18 @@ export default function LandingPreview() {
 
       <Nav theme={theme} onToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
       <Hero />
+      <PlatformBar />
       <DemoVideoSection />
       <RolesSection />
       <WorkflowSection />
+      <BeforeAfterSection />
       <GroundedSection />
       <PricingSection />
       <ProofSection />
       <FAQSection />
       <FinalCTASection />
+      <Footer />
+      <StickyBottomBar />
     </div>
   )
 }
@@ -912,7 +916,7 @@ function PricingSection() {
             </p>
           </div>
           <a
-            href="#"
+            href="/signup"
             className="px-5 py-2.5 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
             style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
           >
@@ -1094,9 +1098,10 @@ function PricingCard({ tier }: { tier: PricingTier }) {
           ))}
         </ul>
 
-        {/* CTA. */}
+        {/* CTA. Carries the plan slug so the signup flow lands the user
+            on the right checkout post-signup. */}
         <a
-          href="#"
+          href={`/signup?plan=${tier.name.toLowerCase()}`}
           className="w-full px-4 py-3 rounded-xl text-center text-[14px] font-semibold transition-all"
           style={{
             background: highlight
@@ -1428,7 +1433,7 @@ function FinalCTASection() {
         {/* Twin CTAs — primary action + lower-friction demo link. */}
         <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-8">
           <a
-            href="#"
+            href="/signup"
             className="px-7 py-3.5 rounded-xl text-[15px] font-semibold text-white inline-flex items-center gap-2 transition-all hover:scale-[1.02]"
             style={{
               background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
@@ -1483,7 +1488,7 @@ function FinalCTASection() {
 function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => void }) {
   return (
     <nav
-      className="sticky top-0 z-20 backdrop-blur-md px-8 py-4 flex items-center justify-between"
+      className="sticky top-0 z-20 backdrop-blur-md px-8 py-4 flex items-center justify-between relative"
       style={{
         backgroundColor: theme === 'dark' ? 'rgba(14,14,17,0.7)' : 'rgba(250,250,248,0.7)',
         borderBottom: '1px solid var(--border)',
@@ -1495,6 +1500,25 @@ function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => voi
           MVP Affiliate
         </span>
       </a>
+      {/* Anchor links — visible on lg+ so the long page stays skimmable.
+          Each item points at a section id elsewhere on the page; smooth
+          scroll is enabled globally via the `html { scroll-behavior:
+          smooth }` rule near the top of LandingPreview. */}
+      <div className="hidden lg:flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
+        {NAV_ANCHORS.map(a => (
+          <a
+            key={a.href}
+            href={a.href}
+            className="px-3 py-1.5 rounded-lg text-[13px] transition-colors hover:opacity-100"
+            style={{ color: 'var(--text-soft)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-soft)')}
+          >
+            {a.label}
+          </a>
+        ))}
+      </div>
+
       <div className="flex items-center gap-2">
         <button
           onClick={onToggle}
@@ -1521,6 +1545,13 @@ function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => voi
     </nav>
   )
 }
+
+const NAV_ANCHORS = [
+  { label: 'Roles', href: '#roles' },
+  { label: 'Workflow', href: '#how-it-works' },
+  { label: 'Pricing', href: '#pricing' },
+  { label: 'FAQ', href: '#faq' },
+]
 
 /** The hero — locked copy + animated hub diagram + CTAs. */
 function Hero() {
@@ -1751,6 +1782,449 @@ function SpokeNode({ icon, label }: { icon: React.ReactNode; label: string }) {
     >
       <span className="text-[#7C3AED]">{icon}</span>
       {label}
+    </div>
+  )
+}
+
+/** Platform bar — slim strip directly under the hero that names every
+ *  platform MVP publishes to. Reinforces the breadth promise of the hub
+ *  diagram with concrete platform names, and bonus: helps SEO
+ *  discoverability for "WordPress + TikTok + Instagram + ..." searches.
+ *
+ *  Visual: monochrome icons + names laid out horizontally, separated by
+ *  thin dividers. Theme-aware via var(--text-faint). Wraps on mobile.
+ */
+function PlatformBar() {
+  return (
+    <section className="px-6 lg:px-8 pt-2 pb-12 relative">
+      <div className="max-w-5xl mx-auto">
+        <p
+          className="text-[10px] uppercase tracking-[0.18em] text-center mb-4"
+          style={{ color: 'var(--text-faint)' }}
+        >
+          Publishes natively to
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+          {PLATFORMS.map((p, i) => (
+            <span key={p.name} className="inline-flex items-center gap-3">
+              <span
+                className="inline-flex items-center gap-2 text-[13px]"
+                style={{ color: 'var(--text-soft)' }}
+              >
+                <span style={{ color: 'var(--text-muted)' }}>{p.icon}</span>
+                {p.name}
+              </span>
+              {i < PLATFORMS.length - 1 && (
+                <span className="hidden sm:inline" style={{ color: 'var(--text-faint)' }}>·</span>
+              )}
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const PLATFORMS = [
+  { name: 'WordPress', icon: <Globe size={14} /> },
+  { name: 'TikTok', icon: <Music2 size={14} /> },
+  { name: 'Instagram', icon: <Instagram size={14} /> },
+  { name: 'Pinterest', icon: <Bookmark size={14} /> },
+  { name: 'X', icon: <Twitter size={14} /> },
+  { name: 'Threads', icon: <AtSign size={14} /> },
+  { name: 'Bluesky', icon: <Cloud size={14} /> },
+  { name: 'Telegram', icon: <Send size={14} /> },
+  { name: 'Facebook', icon: <Facebook size={14} /> },
+]
+
+/** Before/After visual — sits between Workflow (Section 4) and Grounded
+ *  (Section 5). Sells the "one subscription replaces a tool stack" pitch
+ *  viscerally: a chaotic grid of generic tool boxes on the left, the
+ *  single MVP hub on the right, an arrow between.
+ *
+ *  Why no competitor names: the user has flagged repeatedly never to
+ *  name competitors (vidIQ, Tubebuddy, etc.) in user-facing copy. So
+ *  the "before" side uses generic role labels (Writing tool, Scheduler,
+ *  Designer, Publisher, etc.) instead — readers fill in their own
+ *  current stack.
+ */
+function BeforeAfterSection() {
+  return (
+    <section id="stack" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <Sparkles size={10} />
+            One subscription replaces your stack
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            Five tools and a tab tangle.{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              Or one hub.
+            </span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Stop paying for five different subscriptions and stitching them together by hand.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-stretch gap-6 lg:gap-4">
+          {/* BEFORE column — chaotic grid of greyed-out tool boxes. */}
+          <div
+            className="rounded-2xl border p-6 sm:p-7 relative"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--border)',
+              boxShadow: 'var(--card-shadow)',
+            }}
+          >
+            <p className="text-[11px] uppercase tracking-[0.15em] mb-5" style={{ color: 'var(--text-faint)' }}>
+              The old way
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              {OLD_STACK.map(t => (
+                <div
+                  key={t}
+                  className="rounded-lg border px-3 py-2.5 text-[12px] text-center relative overflow-hidden"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.02)',
+                    borderColor: 'var(--border)',
+                    color: 'var(--text-subtle)',
+                  }}
+                >
+                  <span className="line-through opacity-80">{t}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-5 text-[12px] leading-relaxed" style={{ color: 'var(--text-subtle)' }}>
+              Five subscriptions. Five tabs open. Copy-paste between them. Reformat for every platform. Forget what was where.
+            </p>
+            <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--text-subtle)' }}>
+              ~$200+/mo · several hours per video
+            </p>
+          </div>
+
+          {/* Arrow — horizontal on desktop, vertical on mobile/tablet. */}
+          <div className="hidden lg:flex items-center justify-center">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center"
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED, #C026D3)',
+                boxShadow: '0 6px 20px rgba(124,58,237,0.35)',
+              }}
+            >
+              <ArrowRight size={20} className="text-white" />
+            </div>
+          </div>
+          <div className="lg:hidden flex items-center justify-center -my-2">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center rotate-90"
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+            >
+              <ArrowRight size={18} className="text-white" />
+            </div>
+          </div>
+
+          {/* AFTER column — single MVP hub with a violet glow. */}
+          <div
+            className="rounded-2xl border p-6 sm:p-7 relative overflow-hidden"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'rgba(124,58,237,0.40)',
+              boxShadow: '0 8px 32px rgba(124,58,237,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
+            }}
+          >
+            <p className="text-[11px] uppercase tracking-[0.15em] mb-5" style={{ color: '#9D6BFF' }}>
+              The MVP way
+            </p>
+            <div
+              className="rounded-xl p-5 flex items-center gap-4 mb-4"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
+                border: '1px solid rgba(124,58,237,0.30)',
+              }}
+            >
+              <div
+                className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+              >
+                <Sparkles size={22} className="text-white" />
+              </div>
+              <div>
+                <p className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+                  MVP Central Hub
+                </p>
+                <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                  Every role. One workflow.
+                </p>
+              </div>
+            </div>
+            <ul className="flex flex-col gap-2">
+              {NEW_BENEFITS.map(b => (
+                <li key={b} className="flex items-start gap-2 text-[12.5px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  <Check size={12} className="flex-shrink-0 mt-1 text-[#9D6BFF]" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-5 text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+              From <span style={{ color: '#9D6BFF' }}>$49/mo</span> · 4 minutes per video
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const OLD_STACK = [
+  'Writing tool',
+  'Image / thumbnail tool',
+  'Newsletter platform',
+  'Social scheduler',
+  'WordPress plugin',
+  'SEO add-on',
+  'Comparison generator',
+  'Brand kit tool',
+]
+
+const NEW_BENEFITS = [
+  'One subscription instead of five.',
+  'Every output ready in minutes, not hours.',
+  'No copy-paste between platforms.',
+  'Same voice across blog, email, and social.',
+]
+
+/** Footer — closes the page with a clean lockup of navigation, legal,
+ *  and social links. Required before this preview can replace the live
+ *  root landing.
+ *
+ *  Layout: 4-column desktop (Product / Resources / Company / Legal),
+ *  collapsing to 2 columns on tablet and 1 column on mobile. Brand
+ *  lockup + tagline sit on top spanning the full width.
+ *
+ *  All links are placeholders pointing at expected routes — the user
+ *  can adjust each href once the actual destinations exist.
+ */
+function Footer() {
+  return (
+    <footer
+      className="px-6 lg:px-8 pt-16 pb-10 mt-12 border-t"
+      style={{ borderColor: 'var(--border)' }}
+    >
+      <div className="max-w-6xl mx-auto">
+        {/* Brand row */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pb-10 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
+                style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+              >
+                <Sparkles size={14} className="text-white" />
+              </span>
+              <span className="text-[16px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+                MVP Affiliate
+              </span>
+            </div>
+            <p className="text-[13px] max-w-md leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              Your central content hub. One review video, every output, your voice — grounded in what you actually said.
+            </p>
+          </div>
+          <a
+            href="/signup"
+            className="px-4 py-2 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
+            style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+          >
+            Start free →
+          </a>
+        </div>
+
+        {/* Link columns */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 py-10">
+          <FooterCol
+            title="Product"
+            links={[
+              { label: 'Roles', href: '#roles' },
+              { label: 'Workflow', href: '#how-it-works' },
+              { label: 'Pricing', href: '#pricing' },
+              { label: 'FAQ', href: '#faq' },
+              { label: 'Watch demo', href: '#demo' },
+            ]}
+          />
+          <FooterCol
+            title="Resources"
+            links={[
+              { label: 'WordPress setup', href: '/setup' },
+              { label: 'Connection Doctor', href: '/setup/wp-doctor' },
+              { label: 'Help center', href: '/help' },
+              { label: 'Blog', href: '/blog' },
+            ]}
+          />
+          <FooterCol
+            title="Company"
+            links={[
+              { label: 'About', href: '/about' },
+              { label: 'Contact', href: '/contact' },
+              { label: 'Affiliates', href: '/affiliates' },
+            ]}
+          />
+          <FooterCol
+            title="Legal"
+            links={[
+              { label: 'Privacy', href: '/privacy' },
+              { label: 'Terms', href: '/terms' },
+              { label: 'Cookie policy', href: '/cookies' },
+            ]}
+          />
+        </div>
+
+        {/* Bottom strip — copyright + small print */}
+        <div className="pt-8 border-t flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
+          <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+            © {new Date().getFullYear()} MVP Affiliate. All rights reserved. Built by a creator, for creators.
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+            Your WordPress site stays yours, forever.
+          </p>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+function FooterCol({ title, links }: { title: string; links: { label: string; href: string }[] }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-[0.15em] mb-4 font-semibold" style={{ color: 'var(--text)' }}>
+        {title}
+      </p>
+      <ul className="flex flex-col gap-2.5">
+        {links.map(l => (
+          <li key={l.href}>
+            <a
+              href={l.href}
+              className="text-[13px] transition-colors"
+              style={{ color: 'var(--text-soft)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-soft)')}
+            >
+              {l.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Sticky bottom CTA bar — slim chrome that fades in after the user
+ *  scrolls past the hero. Always-visible "Start free trial" while they
+ *  read the rest of the page. Dismissible per-session via localStorage
+ *  so we don't nag users who've already declined once.
+ *
+ *  Why session-scoped (not permanent): a user who dismisses on Monday
+ *  and comes back Friday is a different context. Re-show.
+ *
+ *  Why fade-in instead of always-on: doesn't compete with the hero CTAs
+ *  while the user is still in the "what is this?" mode. Once they've
+ *  scrolled past the hero, the bar reinforces the offer without being
+ *  in the way.
+ */
+function StickyBottomBar() {
+  const [visible, setVisible] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    // Hide on first paint if user dismissed in this session.
+    if (sessionStorage.getItem('mvp-landing-cta-dismissed') === '1') {
+      setDismissed(true)
+      return
+    }
+    const onScroll = () => {
+      // Show once scrolled past ~80% of the viewport height (past hero
+      // on most screens). Hide when back near top.
+      const trigger = window.innerHeight * 0.8
+      setVisible(window.scrollY > trigger)
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  if (dismissed) return null
+
+  return (
+    <div
+      className="fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300 pointer-events-none"
+      style={{
+        transform: visible ? 'translateY(0)' : 'translateY(100%)',
+      }}
+    >
+      <div
+        className="mx-auto max-w-4xl m-4 rounded-2xl backdrop-blur-md border px-4 py-3 flex items-center gap-3 pointer-events-auto"
+        style={{
+          // Slightly translucent so the page peeks through and the bar
+          // doesn't feel like a hard popup.
+          backgroundColor: 'rgba(14,14,17,0.85)',
+          borderColor: 'rgba(124,58,237,0.30)',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(124,58,237,0.10)',
+        }}
+      >
+        <span
+          className="inline-flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+        >
+          <Sparkles size={14} className="text-white" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-medium leading-tight" style={{ color: '#F5F5F7' }}>
+            Try MVP free — 5 posts, no card.
+          </p>
+          <p className="text-[11px] hidden sm:block" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            See if it fits your workflow before you pay a cent.
+          </p>
+        </div>
+        <a
+          href="/signup"
+          className="px-3.5 py-2 rounded-lg text-[12px] font-semibold text-white whitespace-nowrap inline-flex items-center gap-1.5"
+          style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+        >
+          Start free
+          <ArrowRight size={12} />
+        </a>
+        <button
+          onClick={() => {
+            sessionStorage.setItem('mvp-landing-cta-dismissed', '1')
+            setDismissed(true)
+          }}
+          className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/10"
+          style={{ color: 'rgba(255,255,255,0.55)' }}
+          aria-label="Dismiss CTA"
+        >
+          <XIcon size={13} />
+        </button>
+      </div>
     </div>
   )
 }
