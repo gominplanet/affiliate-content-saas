@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     // Admin gate (same pattern as the other admin routes).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: caller } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).single()
+      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     if (caller?.tier !== 'admin') {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 })
     }

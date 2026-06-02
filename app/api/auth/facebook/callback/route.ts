@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const error = searchParams.get('error')
+  const state = searchParams.get('state')
 
   if (error || !code) {
     return NextResponse.redirect(`${setupUrl}&fb_error=access_denied`)
@@ -20,6 +21,17 @@ export async function GET(request: NextRequest) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.redirect(`${appUrl}/login`)
+
+    // CSRF check (2026-06-02 audit fix): require the OAuth state to
+    // match the current session user. Without this, an attacker can
+    // lure a victim to a crafted Facebook authorize URL that binds
+    // the attacker's Page (with attacker access token) into the
+    // victim's MVP account on callback. We pass user.id as `state`
+    // at start; if it's missing or doesn't match, abort.
+    if (!state || state !== user.id) {
+      console.warn('[facebook/callback] state mismatch — possible CSRF', { hasState: !!state, sessionUid: user.id })
+      return NextResponse.redirect(`${setupUrl}&fb_error=state_mismatch`)
+    }
 
     // Exchange code → short-lived token → long-lived token
     const shortToken = await exchangeCodeForToken(code, redirectUri)

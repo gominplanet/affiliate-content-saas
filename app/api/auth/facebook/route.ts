@@ -19,11 +19,20 @@ export async function GET() {
   const redirectUri = `${appUrl}/api/auth/facebook/callback`
   const scope = 'pages_show_list,pages_manage_posts'
 
+  // CSRF protection: pass the user's id as `state`, then verify at the
+  // callback that the returning user matches. Without this, an attacker
+  // could lure a logged-in victim into clicking a crafted Facebook
+  // authorize URL with the attacker's app/page params and bind the
+  // attacker's Page into the victim's account. Found in 2026-06-02
+  // audit. Matches the pattern already used by /api/auth/twitter.
+  if (!user) return NextResponse.redirect(`${appUrl}/login?from=facebook`)
+
   const url = new URL('https://www.facebook.com/v19.0/dialog/oauth')
   url.searchParams.set('client_id', appId)
   url.searchParams.set('redirect_uri', redirectUri)
   url.searchParams.set('scope', scope)
   url.searchParams.set('response_type', 'code')
+  url.searchParams.set('state', user.id)
 
   return NextResponse.redirect(url.toString())
 }

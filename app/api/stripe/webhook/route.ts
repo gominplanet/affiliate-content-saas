@@ -42,8 +42,21 @@ export async function POST(request: NextRequest) {
       metadata: { user_id: string; tier: Tier }
       customer: string
       subscription: string
+      // Stripe sets these when line items resolve; we use the price
+      // id from here as the SOURCE OF TRUTH for the tier (rather than
+      // trusting metadata.tier, which is attacker-influenceable if
+      // anyone ever creates a session via the API with a mismatched
+      // price + metadata.tier pair). Discovered in the 2026-06-02
+      // audit — was a P1 trust-the-client bug.
+      line_items?: { data?: { price?: { id?: string } }[] }
     }
-    const { user_id, tier } = session.metadata
+    const { user_id } = session.metadata
+    // Derive tier from the actual priceId — never trust metadata.tier
+    // for paid status. Fall back to metadata.tier only if Stripe
+    // somehow doesn't expand line_items (shouldn't happen in webhook
+    // payloads, but defensive).
+    const priceId = session.line_items?.data?.[0]?.price?.id
+    const tier: Tier = (priceId && PRICE_TO_TIER[priceId]) || session.metadata.tier
     await admin.from('integrations').upsert(
       {
         user_id,
@@ -106,8 +119,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (event.type === 'customer.subscription.deleted') {
-    const sub = event.data.object as { customer: string }
-    // Downgrade to the free Trial when subscription cancelled
+    const sub = event.data.object as { id: string; customer: string }
+    // Downgrade to the free Trial when subscription cancelled.
+    //
+    // BUG FIX (2026-06-02 audit): previously matched on customer id
+    // alone — `eq('stripe_customer_id', sub.customer)`. That's racy:
+    // if a user churns + comes back with a NEW subscription (and the
+    // OLD subscription's .deleted event arrives late or is replayed),
+    // we'd flip their NEW subscription to trial because the customer
+    // id is the same. Now we ALSO require the subscription id to
+    // match the row's current `stripe_subscription_id` — so a stale
+    // delete for an old subscription is harmless.
     await admin.from('integrations')
       .update({
         tier: 'trial',
@@ -117,6 +139,7 @@ export async function POST(request: NextRequest) {
         subscription_period_end: null,
       })
       .eq('stripe_customer_id', sub.customer)
+      .eq('stripe_subscription_id', sub.id)
   }
 
   if (event.type === 'invoice.payment_failed') {

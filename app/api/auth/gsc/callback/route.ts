@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: integ } = await supabase
-      .from('integrations').select('wordpress_url').eq('user_id', userId).single()
+      .from('integrations').select('wordpress_url').eq('user_id', userId).maybeSingle()
     let property: string | null = null
     try {
       const sites = await listGscSites(tokens.access_token)

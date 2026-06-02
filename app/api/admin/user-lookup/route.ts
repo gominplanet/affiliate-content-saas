@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     // Admin gate — must be admin tier in their integrations row
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: caller } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).single()
+      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     if (caller?.tier !== 'admin') {
       return NextResponse.json({ error: 'Admin only' }, { status: 403 })
     }
@@ -32,13 +32,25 @@ export async function POST(request: Request) {
     const normalized = email.trim().toLowerCase()
 
     const admin = createAdminClient()
-    // listUsers paginates — for our scale a single page covers it.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: userList, error: listErr } = await (admin.auth.admin as any).listUsers({ page: 1, perPage: 1000 })
-    if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 })
 
+    // listUsers paginates — earlier code did `perPage: 1000` once and
+    // silently 404'd for anyone whose user was on page 2+. We now
+    // walk pages until found or the list runs out (bounded by a hard
+    // safety cap to avoid runaway loops on huge tenants). Audit fix
+    // 2026-06-02 (#145).
+    const PAGE_SIZE = 1000
+    const MAX_PAGES = 50 // 50k users — way past current scale
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const target = userList.users.find((u: any) => (u.email ?? '').toLowerCase() === normalized)
+    let target: any = null
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: userList, error: listErr } = await (admin.auth.admin as any).listUsers({ page, perPage: PAGE_SIZE })
+      if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      target = userList.users.find((u: any) => (u.email ?? '').toLowerCase() === normalized)
+      if (target) break
+      if (!userList.users || userList.users.length < PAGE_SIZE) break // last page
+    }
     if (!target) {
       return NextResponse.json({ error: 'No user with that email' }, { status: 404 })
     }

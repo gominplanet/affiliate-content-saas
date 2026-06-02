@@ -49,12 +49,15 @@ export async function POST(request: Request) {
   // those are per-user, not per-site. WP credentials come from the
   // wordpress_sites row associated with this post (multi-site routing:
   // refreshing a post on the Wine blog must hit Wine, not the default).
+  // .maybeSingle() — trial users may not have an integrations row;
+  // tier defaults to 'trial' via normalizeTier(undefined). Audit fix
+  // 2026-06-02 (was throwing 500 on trial-tier image refresh attempts).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: wp } = await supabase
     .from('integrations')
     .select('tier,amazon_associates_tag')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
   const tier = normalizeTier(wp?.tier)
   const site = await getWordPressCredentials(
     supabase,

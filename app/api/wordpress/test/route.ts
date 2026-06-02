@@ -1,14 +1,37 @@
 import { NextResponse } from 'next/server'
 import { createWordPressService } from '@/services/wordpress'
+import { createServerClient } from '@/lib/supabase/server'
+import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
 
 export const maxDuration = 20
 
 export async function POST(request: Request) {
   try {
+    // Auth gate — discovered during 2026-06-02 audit that this route
+    // was completely unauthenticated, making it a classic SSRF probe
+    // (attacker posts any URL, server fetches it, response status +
+    // body prefix leak back). Now requires a signed-in user.
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { url, username, password } = await request.json()
 
     if (!url || !username || !password) {
       return NextResponse.json({ error: 'url, username, and password are required' }, { status: 400 })
+    }
+
+    // SSRF guard — reject private/loopback/metadata addresses BEFORE
+    // any fetch fires. Without this, a logged-in attacker could probe
+    // internal AWS/GCP metadata, localhost, or VPC services and leak
+    // response status + first 150 bytes via the returned error string.
+    try {
+      assertPublicHttpUrl(url)
+    } catch (e) {
+      if (e instanceof SsrfBlocked) {
+        return NextResponse.json({ ok: false, step: 'reach', error: e.message }, { status: 400 })
+      }
+      throw e
     }
 
     const siteUrl = url.replace(/\/$/, '')

@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     // Multi-site: siteId picks which connected WP install to initialize.
     // Omitted → default site (covers single-site users transparently).
     const { data: brand } = await supabase
-      .from('brand_profiles').select('name,niches').eq('user_id', user.id).single()
+      .from('brand_profiles').select('name,niches').eq('user_id', user.id).maybeSingle()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const b = brand as any
     const wpSite = await getWordPressCredentials(supabase, user.id, siteId)

@@ -16,19 +16,27 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  // Decode user_id from state (set during OAuth initiation)
-  let userId: string | null = null
+  // Decode user_id from state (set during OAuth initiation).
+  //
+  // CSRF defense-in-depth (2026-06-02 audit): require the decoded
+  // state to match the CURRENT session user. RLS + the SSR client
+  // already prevent writing to another user's row, but if anyone
+  // later swaps for createAdminClient (e.g. to "fix RLS" or for
+  // a refactor), this becomes account-takeover. Belt + suspenders.
+  let stateUserId: string | null = null
   if (state) {
     try {
-      userId = Buffer.from(state, 'base64url').toString('utf-8')
+      stateUserId = Buffer.from(state, 'base64url').toString('utf-8')
     } catch { /* ignore */ }
   }
-  if (!userId) {
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id ?? null
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.redirect(`${appUrl}/login`)
+  if (!stateUserId || stateUserId !== user.id) {
+    console.warn('[twitter/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
+    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&twitter_error=state_mismatch`)
   }
-  if (!userId) return NextResponse.redirect(`${appUrl}/login`)
+  const userId = user.id
 
   // Pull the PKCE verifier back out of the cookie we set during /api/auth/twitter
   const cookieStore = await cookies()
@@ -46,7 +54,6 @@ export async function GET(request: NextRequest) {
 
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
-    const supabase = await createServerClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('integrations').upsert(
       {

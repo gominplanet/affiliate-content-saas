@@ -22,12 +22,15 @@ async function loadPhotoboothUsage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any, userId: string,
 ): Promise<{ tier: Tier; limit: number | null; used: number; remaining: number | null; resetLabel: string }> {
+  // .maybeSingle() — new trial users have no integrations row yet,
+  // and normalizeTier() handles undefined cleanly. .single() would
+  // throw and 500 the route. Audit fix 2026-06-02.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row } = await supabase
     .from('integrations')
     .select('tier,subscription_period_start,subscription_period_end')
     .eq('user_id', userId)
-    .single()
+    .maybeSingle()
   const tier = normalizeTier(row?.tier)
   const limit = TIERS[tier].photoboothPerMonth
   const check = await checkUsageCap(

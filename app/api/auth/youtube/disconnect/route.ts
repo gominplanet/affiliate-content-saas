@@ -13,12 +13,15 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // .maybeSingle() so disconnect doesn't 500 when there's no
+  // integrations row yet (fresh trial user clicked Disconnect on a
+  // never-connected account). Audit fix 2026-06-02.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row } = await supabase
     .from('integrations')
     .select('youtube_oauth_access_token,youtube_oauth_refresh_token')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   const token = row?.youtube_oauth_refresh_token || row?.youtube_oauth_access_token
   if (token) {

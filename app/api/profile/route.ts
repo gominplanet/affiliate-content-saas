@@ -8,11 +8,15 @@ export async function GET() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    // .maybeSingle() — these rows may not exist yet for fresh trial
+    // users (no profile row, no brand_profile, no integrations row).
+    // .single() throws on 0 rows which crashed the profile page with
+    // a 500. (2026-06-02 audit fix.)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: profile }, { data: brand }, { data: integration }] = await Promise.all([
-      supabase.from('profiles').select('full_name').eq('id', user.id).single(),
-      supabase.from('brand_profiles').select('author_name,author_bio,logo_url,headshot_url').eq('user_id', user.id).single(),
-      supabase.from('integrations').select('notification_preferences').eq('user_id', user.id).single(),
+      supabase.from('profiles').select('full_name').eq('id', user.id).maybeSingle(),
+      supabase.from('brand_profiles').select('author_name,author_bio,logo_url,headshot_url').eq('user_id', user.id).maybeSingle(),
+      supabase.from('integrations').select('notification_preferences').eq('user_id', user.id).maybeSingle(),
     ])
 
     const fullName: string = profile?.full_name ?? ''
