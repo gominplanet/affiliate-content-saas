@@ -24,6 +24,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import Header from '@/components/layout/Header'
+import { useConfirm } from '@/components/ui/useConfirm'
 import {
   Loader2, AlertCircle, Sparkles, ChevronRight, ChevronDown,
   Camera, FileText, Copy, CheckCircle, Trash2, Eye,
@@ -111,6 +112,7 @@ function fmtDuration(sec: number): string {
 }
 
 export default function ScriptPage() {
+  const { confirm, ConfirmHost } = useConfirm()
   const [input, setInput] = useState('')
   const [style, setStyle] = useState<Style>('hands_on')
   const [generating, setGenerating] = useState(false)
@@ -202,7 +204,7 @@ export default function ScriptPage() {
   }
 
   async function deleteRecent(id: string) {
-    if (!confirm('Delete this script?')) return
+    if (!(await confirm({ title: 'Delete this script?', confirmLabel: 'Delete', destructive: true }))) return
     await fetch(`/api/script/${id}`, { method: 'DELETE' })
     setRecent(prev => prev.filter(s => s.id !== id))
     if (output?.scriptId === id) setOutput(null)
@@ -359,6 +361,7 @@ export default function ScriptPage() {
           </div>
         </div>
       )}
+      <ConfirmHost />
     </>
   )
 }

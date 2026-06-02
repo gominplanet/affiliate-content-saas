@@ -24,6 +24,7 @@ import {
   Check, X, AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/useConfirm'
 import type { Tier } from '@/lib/tier'
 
 interface Site {
@@ -47,6 +48,7 @@ export default function WordPressSitesManager() {
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
+  const { confirm, ConfirmHost } = useConfirm()
 
   async function load() {
     try {
@@ -144,7 +146,13 @@ export default function WordPressSitesManager() {
               }
             }}
             onDelete={async () => {
-              if (!confirm(`Disconnect ${site.label}? Posts published to this site stay live on WordPress, but you won't be able to publish or refresh them from MVP anymore.`)) return
+              const ok = await confirm({
+                title: `Disconnect ${site.label}?`,
+                description: 'Posts published to this site stay live on WordPress, but you won\'t be able to publish or refresh them from MVP anymore.',
+                confirmLabel: 'Disconnect',
+                destructive: true,
+              })
+              if (!ok) return
               const res = await fetch(`/api/wordpress/sites/${site.id}`, { method: 'DELETE' })
               if (res.ok) {
                 toast.success(`${site.label} disconnected.`)
@@ -164,6 +172,7 @@ export default function WordPressSitesManager() {
           onAdded={async () => { setAddOpen(false); await load() }}
         />
       )}
+      <ConfirmHost />
     </div>
   )
 }
