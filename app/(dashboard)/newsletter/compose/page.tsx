@@ -98,6 +98,12 @@ export default function NewsletterComposePage() {
   const [sending, setSending] = useState(false)
   const [sentResult, setSentResult] = useState<{ recipients: number; sent: number; failed: number } | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
+  // Send confirmation modal — replaces window.confirm() (which Safari
+  // content-blockers + email-extension blockers can silently swallow,
+  // causing an accidental blast to every subscriber). The user must
+  // explicitly type SEND to enable the confirm button. 2026-06-02 audit fix.
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmTyped, setConfirmTyped] = useState('')
 
   // ── Initial load: latest 10 posts + active sub count ──────────────────────
   useEffect(() => {
@@ -189,9 +195,17 @@ export default function NewsletterComposePage() {
   }
 
   // ── Send ───────────────────────────────────────────────────────────────────
-  async function handleSend() {
+  // Opens the type-SEND-to-confirm modal. The actual send fires from
+  // confirmSend() once the user types SEND and clicks Send.
+  function handleSend() {
     if (!draft) return
-    if (!window.confirm(`Send "${draft.subject}" to ${activeSubs ?? '?'} active subscribers?\n\nThis cannot be undone — every active subscriber will receive the email within a minute or two.`)) return
+    setConfirmTyped('')
+    setConfirmOpen(true)
+  }
+
+  async function confirmSend() {
+    if (!draft) return
+    setConfirmOpen(false)
     setSending(true)
     setSendError(null)
     try {
@@ -467,8 +481,81 @@ export default function NewsletterComposePage() {
           sending={sending}
           sendError={sendError}
           onBack={() => setDraft(null)}
-          onSend={() => void handleSend()}
+          onSend={() => handleSend()}
         />
+      )}
+
+      {/* Type-SEND-to-confirm modal.
+       *
+       *  Replaces window.confirm() which had two real problems:
+       *  (a) Safari content-blockers + privacy extensions can silently
+       *      suppress confirm() dialogs — accidental return = "OK" on
+       *      some setups, blasting every subscriber.
+       *  (b) Native confirm is single-line; subscriber count + cost
+       *      context didn't fit cleanly.
+       *
+       *  The type-to-confirm pattern protects against muscle-memory
+       *  Enter-mashing — user must actually look at the modal and type
+       *  the word SEND before the button enables.
+       *
+       *  Escape closes. Click outside closes. */}
+      {confirmOpen && draft && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setConfirmOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="send-confirm-title"
+        >
+          <div
+            className="bg-white dark:bg-[#1a1a1c] rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-white/10"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => { if (e.key === 'Escape') setConfirmOpen(false) }}
+          >
+            <h2 id="send-confirm-title" className="text-[20px] font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
+              Send to {activeSubs ?? '?'} subscribers?
+            </h2>
+            <p className="text-[14px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-4">
+              <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">&ldquo;{draft.subject}&rdquo;</span> will go out to every active subscriber within a minute or two. This cannot be undone.
+            </p>
+            <label className="block text-[12px] text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
+              Type <strong className="text-[#7C3AED]">SEND</strong> to confirm
+            </label>
+            <input
+              type="text"
+              value={confirmTyped}
+              onChange={(e) => setConfirmTyped(e.target.value)}
+              autoFocus
+              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 text-[14px] font-mono uppercase tracking-wider text-[#1d1d1f] dark:text-[#f5f5f7] focus:outline-none focus:border-[#7C3AED]"
+              spellCheck={false}
+              autoCorrect="off"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && confirmTyped.trim().toUpperCase() === 'SEND') {
+                  void confirmSend()
+                }
+              }}
+            />
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                className="px-4 py-2 rounded-lg text-[13px] text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmSend()}
+                disabled={confirmTyped.trim().toUpperCase() !== 'SEND'}
+                className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white inline-flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                  boxShadow: '0 4px 16px rgba(124,58,237,0.30)',
+                }}
+              >
+                Send to {activeSubs ?? '?'} subscribers
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
