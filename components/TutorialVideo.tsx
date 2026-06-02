@@ -54,8 +54,15 @@ export function TutorialVideo({ sectionKey, videoId, title, description }: Props
   const resolvedVideoId = videoId || reg?.videoId
   const resolvedTitle = title || reg?.title
   const resolvedDescription = description || reg?.description
-  if (!resolvedVideoId) return null
-  // null while hydrating so we don't flash the embed for users who dismissed it
+
+  // null while hydrating so we don't flash the embed for users who dismissed it.
+  //
+  // Hooks MUST be called unconditionally on every render — the previous code
+  // had `if (!resolvedVideoId) return null` BEFORE the useState/useEffect calls,
+  // which crashes React with "Rendered fewer hooks than expected" if
+  // resolvedVideoId ever transitioned between renders (e.g. async registry
+  // hydration). Hooks first, conditional render at the bottom.
+  // 2026-06-02 audit fix.
   const [dismissed, setDismissed] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -65,6 +72,8 @@ export function TutorialVideo({ sectionKey, videoId, title, description }: Props
     return () => window.removeEventListener(RESET_EVENT, onReset)
   }, [sectionKey])
 
+  // Conditional renders AFTER all hooks have been called.
+  if (!resolvedVideoId) return null
   if (dismissed !== false) return null
 
   function dismiss() {

@@ -50,6 +50,7 @@ import { SALES_PAUSED } from '@/lib/sales-paused'
 import { metaEnabled } from '@/lib/feature-flags'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
+import { toast } from 'sonner'
 import type { Tier } from '@/lib/tier'
 import { resetTutorials } from '@/components/TutorialVideo'
 import { COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
@@ -225,15 +226,19 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
       // eslint-disable-next-line no-console
       console.log('[Purge Site Cache] response:', json)
       if (!res.ok) {
-        alert(json.error || 'Cache purge failed.')
+        // 2026-06-02 audit: replaced raw alert() with sonner toast
+        // (the rest of the app uses toast consistently — these two
+        // alerts were the only holdouts).
+        toast.error(json.error || 'Cache purge failed.')
         return
       }
       // Legacy Code Snippets error surface removed — the new theme-based
       // architecture doesn't depend on Code Snippets.
       setPurged(true)
+      toast.success('Site cache purged.')
       setTimeout(() => setPurged(false), 2500)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Cache purge failed.')
+      toast.error(e instanceof Error ? e.message : 'Cache purge failed.')
     } finally {
       setPurging(false)
     }
