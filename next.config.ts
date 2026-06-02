@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Native Node addons that ship .node binaries — webpack can't bundle these,
+  // they must be loaded at runtime from node_modules. Adding here tells
+  // Next.js to leave them alone in the server bundle.
+  //   @resvg/resvg-js → Rust SVG→PNG renderer (used by designer text overlays)
+  //   sharp           → libvips image processor
+  serverExternalPackages: ['@resvg/resvg-js', 'sharp'],
   // Tree-shake big barrel packages (lucide-react is imported in ~38 files);
   // only the icons actually used get bundled. Near-zero risk, big bundle win.
   experimental: {
