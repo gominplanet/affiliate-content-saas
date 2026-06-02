@@ -28,3 +28,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local secrets for one-off scripts (encryption migration etc.) — never commit
+.migrate-env
