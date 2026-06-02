@@ -107,10 +107,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, processed: 0 })
   }
 
-  const results: Array<{ id: string; ok: boolean; error?: string; externalId?: string }> = []
-
-  // 2. For each claimed row, publish + update status.
-  for (const row of rows) {
+  // 2. Publish all claimed rows in PARALLEL.
+  //
+  // Perf (audit 2026-06-02): previously serial. Each publish is
+  // 1-4s, so 25 claimed rows could take 100s — past this route's
+  // `maxDuration = 60`, dropping the tail silently. They're
+  // independent (different blog posts, often different users,
+  // different platforms) so parallelism is safe. allSettled means
+  // one failure doesn't poison the batch.
+  const results = await Promise.allSettled(rows.map(async (row): Promise<{ id: string; ok: boolean; error?: string; externalId?: string }> => {
     try {
       const result = await publishOne(admin, row)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,7 +127,7 @@ export async function GET(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', row.id)
-      results.push({ id: row.id, ok: true, externalId: result.externalId })
+      return { id: row.id, ok: true, externalId: result.externalId }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[cron/process-scheduled] publish failed', { id: row.id, platform: row.platform, error: msg })
@@ -135,11 +140,14 @@ export async function GET(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', row.id)
-      results.push({ id: row.id, ok: false, error: msg })
+      return { id: row.id, ok: false, error: msg }
     }
-  }
+  }))
 
-  return NextResponse.json({ ok: true, processed: rows.length, results })
+  // Promise.allSettled never rejects, so we just unwrap the values.
+  const flatResults = results.map(r => r.status === 'fulfilled' ? r.value : { id: 'unknown', ok: false, error: 'fulfilment failed' })
+
+  return NextResponse.json({ ok: true, processed: rows.length, results: flatResults })
 }
 
 /**

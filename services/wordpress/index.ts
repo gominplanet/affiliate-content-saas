@@ -1,5 +1,7 @@
 // WordPress REST API service
 
+import { WP_USER_AGENT } from '@/lib/wp-user-agent'
+
 export interface WPPost {
   id?: number
   title: string
@@ -433,21 +435,58 @@ export class WordPressService {
    */
   async getPublishedPostIds(): Promise<Set<number> | null> {
     const ids = new Set<number>()
-    for (let page = 1; page <= 10; page++) {   // up to 1000 published posts
-      let batch: Array<{ id?: number }>
-      try {
-        batch = await this.request<Array<{ id?: number }>>(
-          `/posts?per_page=100&page=${page}&status=publish&_fields=id`,
-        )
-      } catch {
-        // First page failing → can't read the site; a later page → past the end.
-        return page === 1 ? null : (ids.size ? ids : null)
+    // Perf (audit 2026-06-02): was a serial loop of up to 10 pages
+    // (~500ms each). A user with 600+ published posts paid 3s. The
+    // pages are independent — fetch page 1 first to discover total
+    // pages from the X-WP-TotalPages header, then fan out the rest
+    // in parallel.
+    //
+    // Falls back to the old serial behaviour if we can't read the
+    // total-pages header (some hosts strip it).
+    let firstPageData: Array<{ id?: number }>
+    let totalPages = 1
+    try {
+      // Read page 1 with header access so we can discover totalPages.
+      const { data, totalPages: tp } = await this.requestWithHeaders<Array<{ id?: number }>>(
+        `/posts?per_page=100&page=1&status=publish&_fields=id`,
+      )
+      firstPageData = data
+      totalPages = Math.min(tp || 1, 10) // cap at 10 (1000 posts ceiling)
+    } catch {
+      return null
+    }
+    for (const p of firstPageData) { if (typeof p.id === 'number') ids.add(p.id) }
+    if (totalPages <= 1 || firstPageData.length < 100) return ids.size ? ids : null
+
+    // Pages 2..N in parallel.
+    const pageRange = Array.from({ length: totalPages - 1 }, (_, i) => i + 2)
+    const results = await Promise.allSettled(
+      pageRange.map(page => this.request<Array<{ id?: number }>>(
+        `/posts?per_page=100&page=${page}&status=publish&_fields=id`,
+      )),
+    )
+    for (const r of results) {
+      if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+        for (const p of r.value) { if (typeof p.id === 'number') ids.add(p.id) }
       }
-      if (!Array.isArray(batch) || batch.length === 0) break
-      for (const p of batch) { if (typeof p.id === 'number') ids.add(p.id) }
-      if (batch.length < 100) break
     }
     return ids.size ? ids : null
+  }
+
+  /** Variant of request() that also returns selected response headers
+   *  — currently just X-WP-TotalPages, used by getPublishedPostIds().
+   *  Keeps the typical request() signature unchanged. */
+  private async requestWithHeaders<T>(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<{ data: T; totalPages: number }> {
+    const url = `${this.baseUrl}${path}`
+    const headers = { Authorization: this.authHeader, 'User-Agent': WP_USER_AGENT }
+    const res = await fetch(url, { ...options, headers: { ...headers, ...(options.headers || {}) } })
+    if (!res.ok) throw new Error(`WordPress request failed: ${res.status}`)
+    const totalPages = parseInt(res.headers.get('X-WP-TotalPages') || '1', 10)
+    const data = await res.json() as T
+    return { data, totalPages }
   }
 
   // ── Tags ──────────────────────────────────────────────────────────────────

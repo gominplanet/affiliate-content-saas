@@ -73,30 +73,37 @@ export async function GET() {
   const referencedSiteIds = new Set<string>()
   for (const p of posts) referencedSiteIds.add(p.wordpress_site_id ?? defaultSiteId ?? LEGACY_BUCKET)
 
+  // Perf (audit 2026-06-02): site context was built in a serial loop.
+  // For 3-site Pro users that's ~2.4s of waterfall (each iteration:
+  // credential lookup + getPublishedPostIds + sitemap fetch, each
+  // ~800ms). The sites are independent — parallelize them.
   const siteCache = new Map<string, SiteContext | null>()
-  for (const key of referencedSiteIds) {
-    const lookupId = key === LEGACY_BUCKET ? null : key
-    const creds = await getWordPressCredentials(supabase, user.id, lookupId)
-    if (!creds) {
-      siteCache.set(key, null)
-      continue
-    }
-    const wpBase = creds.wordpress_url.replace(/\/$/, '')
-    // Live IDs (reconcile catalog vs what's actually live in WP).
-    let liveIds: Set<number> | null = null
-    try {
-      const wpSvc = createWordPressService(
-        creds.wordpress_url,
-        creds.wordpress_username,
-        creds.wordpress_app_password,
-        creds.wordpress_api_token || undefined,
-      )
-      liveIds = await wpSvc.getPublishedPostIds()
-    } catch { liveIds = null }
-    // Sitemap slugs (the discovery path for Google).
-    const sm = wpBase ? await fetchSitemapSlugs(wpBase) : { slugs: new Set<string>(), found: false }
-    siteCache.set(key, { wpBase, liveIds, sitemapSlugs: sm.slugs, sitemapFound: sm.found })
-  }
+  const siteResults = await Promise.all(
+    Array.from(referencedSiteIds).map(async (key): Promise<[string, SiteContext | null]> => {
+      const lookupId = key === LEGACY_BUCKET ? null : key
+      const creds = await getWordPressCredentials(supabase, user.id, lookupId)
+      if (!creds) return [key, null]
+      const wpBase = creds.wordpress_url.replace(/\/$/, '')
+      // Live IDs + sitemap can also run in parallel (independent
+      // network calls).
+      const [liveIds, sm] = await Promise.all([
+        (async () => {
+          try {
+            const wpSvc = createWordPressService(
+              creds.wordpress_url,
+              creds.wordpress_username,
+              creds.wordpress_app_password,
+              creds.wordpress_api_token || undefined,
+            )
+            return await wpSvc.getPublishedPostIds()
+          } catch { return null }
+        })(),
+        wpBase ? fetchSitemapSlugs(wpBase) : Promise.resolve({ slugs: new Set<string>(), found: false }),
+      ])
+      return [key, { wpBase, liveIds, sitemapSlugs: sm.slugs, sitemapFound: sm.found }]
+    })
+  )
+  for (const [k, v] of siteResults) siteCache.set(k, v)
 
   // Per-post site context resolver — same pattern as fix-all/indexnow.
   function siteFor(p: Post): SiteContext | null {
@@ -117,9 +124,17 @@ export async function GET() {
   })
 
   // Existing cache (for serving stale indexing without re-inspecting).
+  // Perf (audit 2026-06-02): narrowed from select('*'). The old query
+  // pulled `score_detail` (JSONB blob, ~10KB per row) for the whole
+  // catalog. For a 200-post user that's 2MB of JSON deserialized
+  // every page load just to read 10 scalars. Cut to the actual fields
+  // referenced below. score_detail isn't read by overview — only by
+  // the per-post fix route.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: cacheRows } = await supabase
-    .from('post_seo').select('*').eq('user_id', user.id)
+    .from('post_seo')
+    .select('post_id,indexed_state,coverage_state,last_crawl,clicks,impressions,position,ctr,dropped_at,checked_at,score')
+    .eq('user_id', user.id)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cache = new Map<string, any>((cacheRows ?? []).map((r: any) => [r.post_id, r]))
 

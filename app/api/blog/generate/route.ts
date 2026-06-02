@@ -244,24 +244,24 @@ async function handleGenerate(request: Request) {
   // Hide-warning for unused references — used below for the prompt.
   void TIERS
 
-  // ── 1. Fetch video ────────────────────────────────────────────────────────
-  const { data: video, error: videoErr } = await supabase
-    .from('youtube_videos')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('id', videoId)
-    .single()
+  // ── 1-3. Fetch video + brand + integration in parallel ──────────────────
+  // Perf (audit 2026-06-02): these three reads were sequential and
+  // each ~150-250ms — 600ms wasted before the AI call could even
+  // start. They're fully independent (different tables, different
+  // PKs), so Promise.all is safe.
+  const [
+    { data: video, error: videoErr },
+    { data: brand },
+    { data: integration },
+  ] = await Promise.all([
+    supabase.from('youtube_videos').select('*').eq('user_id', user.id).eq('id', videoId).maybeSingle(),
+    supabase.from('brand_profiles').select('*').eq('user_id', user.id).maybeSingle(),
+    supabase.from('integrations').select('*').eq('user_id', user.id).maybeSingle(),
+  ])
 
   if (videoErr || !video) {
     return NextResponse.json({ error: 'Video not found' }, { status: 404 })
   }
-
-  // ── 2. Fetch brand profile ────────────────────────────────────────────────
-  const { data: brand } = await supabase
-    .from('brand_profiles')
-    .select('*')
-    .eq('user_id', user.id)
-    .single()
 
   if (!brand) {
     return NextResponse.json(
@@ -269,13 +269,6 @@ async function handleGenerate(request: Request) {
       { status: 400 },
     )
   }
-
-  // ── 3. Fetch WordPress credentials ───────────────────────────────────────
-  const { data: integration } = await supabase
-    .from('integrations')
-    .select('*')
-    .eq('user_id', user.id)
-    .single()
 
   const wp = integration as Record<string, string> | null
   // Function-scope tier (the rewrite gate above has its own narrow copy).
@@ -315,13 +308,12 @@ async function handleGenerate(request: Request) {
   const youtubeVideoIdForTranscript = (videoRow.youtube_video_id as string | undefined) ?? ''
 
   // Layer 1: official YouTube Data API.
+  // Perf (audit 2026-06-02): reuses the `integration` row already
+  // loaded in the Promise.all above — was previously re-fetching
+  // the same row a second time (~80ms saved).
   if (!transcript && youtubeVideoIdForTranscript) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: integ } = await supabase
-        .from('integrations')
-        .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
-        .eq('user_id', user.id).single()
+      const integ = integration as Record<string, unknown> | null
       if (integ?.youtube_oauth_access_token) {
         const token = await getValidYouTubeToken(integ as Record<string, unknown>)
         const yt = createYouTubeOAuthService(token)
