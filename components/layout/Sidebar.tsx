@@ -47,6 +47,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SALES_PAUSED } from '@/lib/sales-paused'
+import { whitelabelFromRow, type WhitelabelConfig } from '@/lib/whitelabel'
 import { metaEnabled } from '@/lib/feature-flags'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { getViewAsTier, setViewAsTier } from '@/lib/view-as'
@@ -171,6 +172,8 @@ const secondaryNav = [
   // API access — only relevant for Pro users, but always visible so
   // Creator/Studio users can discover it + see the upgrade pitch.
   { href: '/developers', label: 'API Access', icon: KeyRound },
+  // White-label branding — Pro-only; same paywall pattern as Developers.
+  { href: '/branding', label: 'Branding', icon: Paintbrush },
   // Rewardful-hosted affiliate dashboard — opens in a new tab. Hidden
   // while sales are paused (no point recruiting new affiliates when
   // their referrals can't actually buy).
@@ -189,6 +192,10 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const supabase = createBrowserClient()
   const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
   const [isAdmin, setIsAdmin] = useState(false)
+  // White-label config — populated client-side from the integrations row in
+  // the effect below. Non-Pro users get a config that points at MVP defaults
+  // (helpers/whitelabel.ts guarantees this), so the render path is the same.
+  const [whitelabel, setWhitelabel] = useState<WhitelabelConfig | null>(null)
   // Whether Meta surfaces (Instagram Burner link) are visible: on for everyone
   // post-approval, else admins + the App-Review test account.
   const [metaUnlocked, setMetaUnlocked] = useState(metaEnabled())
@@ -263,17 +270,24 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
       if (!user) return
       // Type inferred from .maybeSingle() — drop the manual Record<string,string>
       // annotation that no longer matches the regenerated row shape.
-      supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(supabase as any)
         .from('integrations')
-        .select('wordpress_url,tier,geniuslink_api_key,geniuslink_api_secret')
+        .select('wordpress_url,tier,geniuslink_api_key,geniuslink_api_secret,whitelabel_logo_url,whitelabel_brand_name,whitelabel_accent_color')
         .eq('user_id', user.id)
         .maybeSingle()
-        .then(({ data }) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .then(({ data }: { data: any }) => {
           const url = data?.wordpress_url || null
           if (url) setWpSiteUrl(url)
           setIsAdmin(data?.tier === 'admin')
           setMetaUnlocked(metaEnabled({ tier: data?.tier, email: user.email }))
           setGeniusConnected(!!data?.geniuslink_api_key && !!data?.geniuslink_api_secret)
+          // White-label config — resolved client-side from the integrations
+          // row so the sidebar can render the Pro user's brand without a
+          // separate fetch. Falls through to MVP defaults when fields are
+          // null or tier isn't Pro.
+          setWhitelabel(whitelabelFromRow(data))
         })
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -349,15 +363,33 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
           mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
         )}
       >
-      {/* Logo */}
+      {/* Logo — renders the white-label config when set (Pro users), else
+          falls back to the default MVP Affiliate wordmark. */}
       <div className="px-3 pt-3 pb-3" style={{ borderBottom: '1px solid var(--border-2)' }}>
-        <Link href="/dashboard" className="block group" aria-label="MVP Affiliate — Dashboard">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/mvp-affiliate-logo.jpg"
-            alt="MVP Affiliate"
-            className="w-full h-auto rounded-2xl object-contain mix-blend-multiply dark:mix-blend-screen group-hover:opacity-90 transition-opacity"
-          />
+        <Link
+          href="/dashboard"
+          className="block group"
+          aria-label={`${whitelabel?.brandName ?? 'MVP Affiliate'} — Dashboard`}
+        >
+          {whitelabel?.logoUrl ? (
+            // Pro user with a custom logo — render it without the multiply
+            // blend (which is the right effect for the MVP word-mark on a
+            // grey background but generally wrong for arbitrary logos).
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={whitelabel.logoUrl}
+              alt={whitelabel.brandName}
+              className="w-full h-auto max-h-12 object-contain group-hover:opacity-90 transition-opacity"
+            />
+          ) : (
+            // Default MVP word-mark.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/mvp-affiliate-logo.jpg"
+              alt="MVP Affiliate"
+              className="w-full h-auto rounded-2xl object-contain mix-blend-multiply dark:mix-blend-screen group-hover:opacity-90 transition-opacity"
+            />
+          )}
         </Link>
       </div>
 
