@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.28
+ * Version: 1.0.30
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.28');
+define('MVP_AFFILIATE_VERSION', '1.0.30');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -630,6 +630,359 @@ add_action('kadence_before_header', function () {
     </div>
     <?php
 }, 10);
+
+// ─── 11b. Sticky "On this page" table of contents ─────────────────────────────
+// Every major review site (Tom's Guide, TechRadar, PCMag, Digital Trends) puts
+// a Jump-To menu on every long-form review. Pure reader UX + dwell-time signal
+// Google likes. We scan the post body for H2/H3 headings, generate slugged
+// anchors if they don't already have IDs, and render a floating sidebar
+// that highlights the current section as the reader scrolls.
+//
+//   Desktop (≥1100px): fixed right-rail panel, ~240px wide.
+//   Mobile  (<1100px): collapsible card pinned just under the post title.
+//
+// Skips when the post has fewer than 3 H2s — TOCs on short posts feel like
+// scaffolding rather than navigation.
+add_action('wp_footer', function () {
+    if (!is_singular('post')) return;
+    ?>
+<style id="gr-toc-styles">
+  .gr-toc{font-family:inherit;font-size:13px;line-height:1.4}
+  .gr-toc__title{font-size:11px;font-weight:800;color:#86868b;text-transform:uppercase;letter-spacing:.8px;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid #e5e5e7}
+  .gr-toc__list{list-style:none;padding:0;margin:0}
+  .gr-toc__item{margin:0;padding:0}
+  .gr-toc__link{display:block;padding:6px 8px;border-radius:6px;color:#3a3a3c;text-decoration:none;border-left:2px solid transparent;transition:all .15s ease}
+  .gr-toc__link:hover{background:#f5f5f7;color:#1d1d1f}
+  .gr-toc__link.is-active{background:#fff5d1;color:#1d1d1f;font-weight:600;border-left-color:#FFC200}
+  .gr-toc__item--h3 .gr-toc__link{padding-left:20px;font-size:12px;color:#6e6e73}
+  /* Desktop — fixed right-rail panel. */
+  @media(min-width:1100px){
+    #gr-toc{position:fixed;top:120px;right:24px;width:240px;max-height:calc(100vh - 160px);overflow-y:auto;background:#fff;border:1px solid #e5e5e7;border-radius:8px;padding:14px 12px;box-shadow:0 1px 3px rgba(0,0,0,.04);z-index:50}
+  }
+  /* Mobile — sticky card pinned under the post title. */
+  @media(max-width:1099px){
+    #gr-toc{position:relative;margin:0 0 24px;background:#fafafa;border:1px solid #e5e5e7;border-radius:8px;padding:12px 14px}
+    .gr-toc__list{max-height:0;overflow:hidden;transition:max-height .25s ease}
+    #gr-toc.is-open .gr-toc__list{max-height:600px}
+    .gr-toc__title{margin:0;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:space-between}
+    .gr-toc__title::after{content:'▾';transition:transform .2s ease;font-size:12px}
+    #gr-toc.is-open .gr-toc__title::after{transform:rotate(180deg)}
+    #gr-toc.is-open .gr-toc__title{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e5e5e7}
+  }
+  @media print{#gr-toc{display:none}}
+</style>
+<script>
+(function(){
+  if (document.getElementById('gr-toc')) return;
+  // Match the theme's content container — Gomin Reviews theme uses
+  // .entry-content, Kadence uses .entry-content too, classic themes
+  // sometimes use .post-content. Try the common ones in order.
+  var article = document.querySelector('.entry-content') || document.querySelector('.post-content') || document.querySelector('article .single-content');
+  if (!article) return;
+  var headings = article.querySelectorAll('h2, h3');
+  // Filter out the FAQ heading + related-posts heading + any heading inside
+  // helper widgets (cta cards, verdict boxes) — they're not body sections.
+  var bodyHeadings = [];
+  for (var i = 0; i < headings.length; i++) {
+    var h = headings[i];
+    if (h.closest('.gr-cta-card, .gr-verdict-box, .gr-scorecard, .gr-rating-box, .gr-author-bio-card, .gr-post-meta, .gr-related-reviews')) continue;
+    bodyHeadings.push(h);
+  }
+  // Skip TOC entirely on short posts — under 3 H2s feels like padding.
+  var h2Count = bodyHeadings.filter(function(h){ return h.tagName === 'H2' }).length;
+  if (h2Count < 3) return;
+
+  // Slugify utility — turns heading text into an anchor id. Strips
+  // accents, lowercases, replaces non-alphanumerics with dashes.
+  function slugify(s){
+    return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+      .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);
+  }
+  var seen = {};
+  var items = bodyHeadings.map(function(h){
+    if (!h.id) {
+      var base = slugify(h.textContent);
+      var id = base;
+      var n = 1;
+      while (seen[id] || document.getElementById(id)) { id = base + '-' + (++n); }
+      h.id = id;
+    }
+    seen[h.id] = true;
+    return { id: h.id, text: h.textContent.trim(), level: h.tagName.toLowerCase() };
+  });
+  if (items.length === 0) return;
+
+  // Build the TOC element.
+  var toc = document.createElement('aside');
+  toc.id = 'gr-toc';
+  toc.className = 'gr-toc';
+  toc.setAttribute('aria-label', 'On this page');
+  var html = '<p class="gr-toc__title">On this page</p><ul class="gr-toc__list">';
+  for (var j = 0; j < items.length; j++) {
+    var it = items[j];
+    html += '<li class="gr-toc__item gr-toc__item--' + it.level + '">' +
+            '<a class="gr-toc__link" href="#' + it.id + '" data-target="' + it.id + '">' +
+            it.text.replace(/</g,'&lt;') + '</a></li>';
+  }
+  html += '</ul>';
+  toc.innerHTML = html;
+
+  // Desktop placement: append to <body> so position:fixed works cleanly.
+  // Mobile placement: insert before the article so it sits between the
+  // title and the body. We always insert before .entry-content; the CSS
+  // makes the mobile vs desktop layout the difference.
+  var insertBefore = article;
+  if (insertBefore && insertBefore.parentNode) {
+    insertBefore.parentNode.insertBefore(toc, insertBefore);
+  } else {
+    document.body.appendChild(toc);
+  }
+
+  // Mobile collapse toggle — the whole title is clickable.
+  var title = toc.querySelector('.gr-toc__title');
+  if (title) {
+    title.addEventListener('click', function(e){
+      if (window.innerWidth >= 1100) return; // desktop is always open
+      toc.classList.toggle('is-open');
+    });
+  }
+
+  // Smooth-scroll on click + close the mobile collapse.
+  toc.addEventListener('click', function(e){
+    var link = e.target.closest('.gr-toc__link');
+    if (!link) return;
+    e.preventDefault();
+    var id = link.getAttribute('data-target');
+    var target = document.getElementById(id);
+    if (target) {
+      var top = target.getBoundingClientRect().top + window.pageYOffset - 80;
+      window.scrollTo({ top: top, behavior: 'smooth' });
+      history.replaceState(null, '', '#' + id);
+      if (window.innerWidth < 1100) toc.classList.remove('is-open');
+    }
+  });
+
+  // Scroll-spy: highlight the link whose heading is currently near the top.
+  // Throttled to ~60fps via requestAnimationFrame so it scales smoothly
+  // even on posts with 15+ headings.
+  var links = toc.querySelectorAll('.gr-toc__link');
+  var rafScheduled = false;
+  function updateActive(){
+    rafScheduled = false;
+    var activeIdx = 0;
+    for (var k = 0; k < items.length; k++) {
+      var el = document.getElementById(items[k].id);
+      if (!el) continue;
+      if (el.getBoundingClientRect().top - 120 < 0) activeIdx = k;
+      else break;
+    }
+    for (var m = 0; m < links.length; m++) {
+      links[m].classList.toggle('is-active', m === activeIdx);
+    }
+  }
+  function onScroll(){
+    if (!rafScheduled) {
+      rafScheduled = true;
+      requestAnimationFrame(updateActive);
+    }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  updateActive();
+})();
+</script>
+    <?php
+});
+
+// ─── 11c. AI Product Finder — floating ask-anything widget ────────────────────
+//
+// What it does: visitors click the floating pill bottom-right ("Ask {Brand}"),
+// type a real-world question ("sleep mask for side sleepers under $30"), and
+// get 3 ranked reviews from THIS blog's catalogue with a one-line "why it
+// fits" reason on each card. Powered by Haiku on the MVP backend; the blog's
+// reviews are the entire knowledge base.
+//
+// Brand naming: the widget asks the backend for the brand name; if missing
+// it falls back to the WordPress site name (get_bloginfo('name')). User-facing
+// strings: "Ask {Brand}" on the pill, "Tell me what you're shopping for"
+// on the input placeholder.
+//
+// Display gate: hidden on /wp-admin and on customizer previews. Otherwise
+// shown on every public front-end page.
+add_action('wp_footer', function () {
+    if (is_admin()) return;
+    // Brand name renders inside two HTML <span>s, so esc_html. Site URL
+    // renders inside a JS string literal so esc_js. Mixing these risks XSS
+    // or broken JS, hence the two-escape split.
+    $brand_fallback_html = esc_html(get_bloginfo('name'));
+    $site_url            = esc_js(home_url('/'));
+    $backend             = 'https://www.mvpaffiliate.io';
+    ?>
+<style id="mvp-pf-css">
+  .mvp-pf-fab {
+    position: fixed; bottom: 24px; right: 24px; z-index: 2147483640;
+    background: #7C3AED; color: #fff; border: 0; border-radius: 999px;
+    padding: 12px 18px 12px 14px; font: 600 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    box-shadow: 0 12px 30px rgba(124,58,237,.35); cursor: pointer; display: inline-flex;
+    align-items: center; gap: 8px;
+  }
+  .mvp-pf-fab .mvp-pf-spark {
+    width: 22px; height: 22px; border-radius: 999px; background: rgba(255,255,255,.18);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  .mvp-pf-fab:hover { transform: translateY(-1px); }
+  .mvp-pf-panel {
+    position: fixed; bottom: 80px; right: 24px; z-index: 2147483641;
+    width: 360px; max-width: calc(100vw - 32px); max-height: 70vh; overflow: auto;
+    background: #fff; color: #1d1d1f; border: 1px solid #e5e5e7; border-radius: 14px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.18); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .mvp-pf-panel header {
+    padding: 14px 16px 10px; border-bottom: 1px solid #f0f0f0;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .mvp-pf-panel header .ttl { font-weight: 700; font-size: 15px; color: #1d1d1f; }
+  .mvp-pf-panel header .sub { font-size: 11px; color: #6e6e73; margin-top: 2px; }
+  .mvp-pf-panel header button {
+    background: none; border: 0; font-size: 22px; line-height: 1; color: #6e6e73; cursor: pointer; padding: 0 6px;
+  }
+  .mvp-pf-panel .form { padding: 12px 16px; display: flex; gap: 8px; }
+  .mvp-pf-panel .form input {
+    flex: 1; border: 1px solid #d2d2d7; border-radius: 8px; padding: 10px 12px; font: inherit; color: #1d1d1f;
+    outline: none;
+  }
+  .mvp-pf-panel .form input:focus { border-color: #7C3AED; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+  .mvp-pf-panel .form button {
+    background: #7C3AED; color: #fff; border: 0; border-radius: 8px; padding: 0 14px; font: 600 13px/1 inherit; cursor: pointer;
+  }
+  .mvp-pf-panel .results { padding: 4px 16px 16px; }
+  .mvp-pf-panel .empty { padding: 14px 16px 20px; font-size: 13px; color: #6e6e73; }
+  .mvp-pf-panel .card {
+    display: flex; gap: 10px; padding: 10px; border: 1px solid #f0f0f0; border-radius: 10px; margin-top: 10px;
+    background: #fafafa; text-decoration: none; color: #1d1d1f;
+  }
+  .mvp-pf-panel .card:hover { background: #f0e9ff; border-color: #d4c4ff; }
+  .mvp-pf-panel .card img {
+    width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex-shrink: 0; background: #eee;
+  }
+  .mvp-pf-panel .card .body { min-width: 0; }
+  .mvp-pf-panel .card .name { font-weight: 700; font-size: 14px; line-height: 1.2; margin-bottom: 4px; color: #1d1d1f; }
+  .mvp-pf-panel .card .why { font-size: 12px; color: #3a3a3c; line-height: 1.4; }
+  .mvp-pf-panel .card .score {
+    display: inline-block; font-size: 11px; font-weight: 700; color: #7C3AED; background: rgba(124,58,237,.1);
+    padding: 2px 6px; border-radius: 4px; margin-top: 4px;
+  }
+  .mvp-pf-spin {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid #d2d2d7; border-top-color: #7C3AED;
+    border-radius: 999px; animation: mvp-pf-rot .8s linear infinite; vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes mvp-pf-rot { to { transform: rotate(360deg); } }
+  .mvp-pf-hidden { display: none !important; }
+  @media (prefers-color-scheme: dark) {
+    .mvp-pf-panel { background: #1c1c1e; color: #f5f5f7; border-color: #2c2c2e; }
+    .mvp-pf-panel header { border-bottom-color: #2c2c2e; }
+    .mvp-pf-panel header .ttl { color: #f5f5f7; }
+    .mvp-pf-panel header .sub { color: #98989d; }
+    .mvp-pf-panel .form input { background: #2c2c2e; border-color: #3a3a3c; color: #f5f5f7; }
+    .mvp-pf-panel .card { background: #2c2c2e; border-color: #3a3a3c; color: #f5f5f7; }
+    .mvp-pf-panel .card:hover { background: #3a2c5e; border-color: #7C3AED; }
+    .mvp-pf-panel .card .name { color: #f5f5f7; }
+    .mvp-pf-panel .card .why { color: #d2d2d7; }
+  }
+</style>
+<button class="mvp-pf-fab" id="mvp-pf-fab" aria-label="Ask for product picks">
+  <span class="mvp-pf-spark" aria-hidden="true">✦</span><span id="mvp-pf-fab-label">Ask <?php echo $brand_fallback_html; ?></span>
+</button>
+<div class="mvp-pf-panel mvp-pf-hidden" id="mvp-pf-panel" role="dialog" aria-labelledby="mvp-pf-title">
+  <header>
+    <div>
+      <div class="ttl" id="mvp-pf-title">Ask <?php echo $brand_fallback_html; ?></div>
+      <div class="sub">AI-powered picks from our reviews</div>
+    </div>
+    <button id="mvp-pf-close" aria-label="Close">×</button>
+  </header>
+  <form class="form" id="mvp-pf-form">
+    <input id="mvp-pf-q" type="text" placeholder="Tell me what you're shopping for…" maxlength="300" autocomplete="off" />
+    <button type="submit">Ask</button>
+  </form>
+  <div class="results" id="mvp-pf-results"></div>
+</div>
+<script>
+(function () {
+  var fab   = document.getElementById('mvp-pf-fab');
+  var panel = document.getElementById('mvp-pf-panel');
+  var title = document.getElementById('mvp-pf-title');
+  var label = document.getElementById('mvp-pf-fab-label');
+  var form  = document.getElementById('mvp-pf-form');
+  var input = document.getElementById('mvp-pf-q');
+  var out   = document.getElementById('mvp-pf-results');
+  var close = document.getElementById('mvp-pf-close');
+  if (!fab || !panel) return;
+
+  var SITE = '<?php echo $site_url; ?>';
+  var API  = '<?php echo $backend; ?>/api/blog/product-finder';
+  var brandKnown = false;
+
+  fab.addEventListener('click', function () {
+    panel.classList.toggle('mvp-pf-hidden');
+    if (!panel.classList.contains('mvp-pf-hidden')) setTimeout(function () { input.focus(); }, 50);
+  });
+  close.addEventListener('click', function () { panel.classList.add('mvp-pf-hidden'); });
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var q = (input.value || '').trim();
+    if (!q) return;
+    out.innerHTML = '<div class="empty"><span class="mvp-pf-spin"></span>Finding the best picks…</div>';
+
+    fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site: SITE, q: q }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (!x.ok) {
+          out.innerHTML = '<div class="empty">' + escapeHtml(x.j && x.j.error || 'Couldn\'t reach the finder.') + '</div>';
+          return;
+        }
+        // Re-brand once the backend tells us the canonical brand name
+        if (!brandKnown && x.j.brand) {
+          var bn = 'Ask ' + escapeHtml(x.j.brand);
+          title.textContent = 'Ask ' + x.j.brand;
+          label.textContent = 'Ask ' + x.j.brand;
+          brandKnown = true;
+        }
+        var picks = (x.j && x.j.picks) || [];
+        if (picks.length === 0) {
+          out.innerHTML = '<div class="empty">Nothing in our reviews matches that yet. Try a different phrase.</div>';
+          return;
+        }
+        var html = '';
+        picks.forEach(function (p) {
+          var img = p.image ? '<img src="' + escapeHtml(p.image) + '" alt="" loading="lazy" />' : '<img alt="" />';
+          var score = p.score ? '<div class="score">' + escapeHtml(p.score) + '/5</div>' : '';
+          html += '<a class="card" href="' + escapeHtml(p.url) + '">'
+            + img
+            + '<div class="body"><div class="name">' + escapeHtml(p.title) + '</div>'
+            + '<div class="why">' + escapeHtml(p.reason) + '</div>'
+            + score + '</div></a>';
+        });
+        out.innerHTML = html;
+      })
+      .catch(function () {
+        out.innerHTML = '<div class="empty">Couldn\'t reach the finder. Try again in a moment.</div>';
+      });
+  });
+})();
+</script>
+    <?php
+});
 
 // ─── 12. Footer (bio + socials + custom links) ────────────────────────────────
 add_action('wp_footer', function () {

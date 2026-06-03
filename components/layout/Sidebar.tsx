@@ -44,6 +44,7 @@ import {
   Mail,
   Sparkles,
   FileVideo,
+  BookOpen,
   Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -122,7 +123,8 @@ const navGroups: NavGroup[] = [
       { href: '/script', label: 'Video Script & Shot List', icon: FileVideo, matchKind: 'prefix' },
       { href: '/studio', label: 'YouTube Co-Pilot', icon: Clapperboard, matchKind: 'prefix' },
       { href: '/content', label: 'Library', icon: PlaySquare, matchKind: 'prefix' },
-      { href: '/comparison', label: 'Compare & Guides', icon: Scale, matchKind: 'prefix' },
+      { href: '/comparison', label: 'Compare Products', icon: Scale, matchKind: 'prefix' },
+      { href: '/buying-guides', label: 'Buying Guides', icon: BookOpen, matchKind: 'prefix' },
       { href: '/instagram-burner', label: 'Instagram Burner', icon: Flame, matchKind: 'prefix' },
     ],
   },

@@ -15,6 +15,10 @@ const publicPaths = [
   '/api/newsletter/confirm',
   '/api/newsletter/unsubscribe',
   '/api/newsletter/resend-webhook',
+  // AI Product Finder — public endpoint hit from the JS widget that runs in
+  // customer-blog visitors' browsers. CORS preflight (OPTIONS) must reach the
+  // route handler too, which is why it's allowlisted here.
+  '/api/blog/product-finder',
   // Agency accept page — invitee may not yet have an account, but they need
   // to land on the page to sign in / sign up. Page-level auth check does the
   // rest.
