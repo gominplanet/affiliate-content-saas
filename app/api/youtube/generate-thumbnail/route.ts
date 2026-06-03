@@ -14,6 +14,7 @@ import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbn
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -1023,10 +1024,70 @@ Ultra-sharp, professional, photorealistic.`
             const posForIndex = (i: number): TextPosition => (i % 2 === 0 ? 'top-right' : 'top-left')
             const textPositions = rank.urls.map(u => posForIndex(Math.max(0, nbUrls.indexOf(u))))
             const textPosition: TextPosition | null = wantClean ? (textPositions[0] ?? null) : null
+
+            // ── DESIGNER TEXT OVERLAY ────────────────────────────────────
+            // For the clean (overlay) path, server-side bake the designer
+            // typography onto each ranked variant using a random template
+            // from the 10-template library. Each variant gets a DIFFERENT
+            // template so the user sees real visual variety. Falls back to
+            // the bare clean image on any per-variant render error — the
+            // client knows to handle `baked: true` either way.
+            //
+            // Only run on the `wantClean` path. When the caller chose
+            // baked-text mode (textMode='baked'), the headline is already
+            // in the image and adding another typography layer would
+            // double-print the text.
+            let designerTemplateIds: Array<string | null> = []
+            let finalUrls: string[] = rank.urls
+            let designerApplied = false
+            if (wantClean) {
+              designerApplied = true
+              const designerResults = await Promise.all(rank.urls.map(async (cleanUrl, i) => {
+                try {
+                  // Find which original index this ranked URL came from so
+                  // we use the matching per-variant headline + subject side.
+                  const origIdx = Math.max(0, nbUrls.indexOf(cleanUrl))
+                  const variantHook = hooks[origIdx] ?? overlayHookNB
+                  // Subject is on the OPPOSITE side from where the text would
+                  // go on the canvas. Even index = host-on-left → text-on-right
+                  // → designer subjectSide='left'. Odd = mirrored.
+                  const subjectSide: 'left' | 'right' = origIdx % 2 === 0 ? 'left' : 'right'
+                  const result = await renderDesignerOverlay({
+                    baseImageUrl: cleanUrl,
+                    headline: variantHook,
+                    productContext: productTitle || null,
+                    subjectSide,
+                    randomize: true,
+                    userId: TELEMETRY.userId,
+                    tier: TELEMETRY.tier,
+                  })
+                  // Re-host the composited PNG to fal so the client gets a
+                  // URL (not a 5MB data URI). rehostToFal accepts data URIs.
+                  const dataUri = `data:image/png;base64,${result.png.toString('base64')}`
+                  const hosted = await rehostToFal(dataUri)
+                  if (!hosted) throw new Error('rehostToFal returned null')
+                  recordUsage({
+                    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+                    feature: 'yt_thumb_designer_overlay',
+                    model: `designer-text:${result.picked.templateId}`,
+                    images: 1,
+                  })
+                  return { url: hosted, templateId: result.picked.templateId }
+                } catch (e) {
+                  console.warn('[designer-overlay] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
+                  return { url: cleanUrl, templateId: null }
+                }
+              }))
+              finalUrls = designerResults.map(r => r.url)
+              designerTemplateIds = designerResults.map(r => r.templateId)
+            }
             return NextResponse.json({
               ok: true,
-              thumbnailUrl: rank.urls[0],
-              thumbnailUrls: rank.urls,
+              // Designer overlay (if applied) replaces the rank URLs with
+              // server-baked composited versions. Otherwise serve the raw
+              // ranked images for the legacy client-side canvas overlay.
+              thumbnailUrl: finalUrls[0],
+              thumbnailUrls: finalUrls,
               thumbnailScores: rank.scores,
               thumbnailScore: rank.topScore,
               belowThreshold: rank.belowThreshold,
@@ -1034,21 +1095,26 @@ Ultra-sharp, professional, photorealistic.`
               // The 5 title options for the client-side picker. On the clean
               // (overlay) path the user clicks one and it's re-drawn on the
               // text-free image instantly. Omitted/ignored on the baked path.
-              titleOptions: wantClean ? titleOptions : undefined,
+              // (Also omitted when designer overlay baked the text server-side.)
+              titleOptions: wantClean && !designerApplied ? titleOptions : undefined,
               // Per-variant titles + placements, aligned to rank.urls order so
               // the client overlays the matching headline + corner on each
               // variant (the host side — and so the clear corner — rotates).
               overlayHooks: rank.urls.map(u => hooks[Math.max(0, nbUrls.indexOf(u))] ?? overlayHookNB),
-              textPositions: wantClean ? textPositions : undefined,
+              textPositions: wantClean && !designerApplied ? textPositions : undefined,
+              // Diagnostic: which designer template each variant used. Null
+              // entries = render fell back to the clean image for that slot.
+              designerTemplateIds: designerApplied ? designerTemplateIds : undefined,
               headlineLocked: !!lockedHeadline,
               prompt: nbPrompt,
               styleBriefApplied: false,
               channelStyle: null,
               modelUsed: nbModelUsed,
               // baked:true → headline is already IN the image; the client must
-              // NOT draw a text overlay. baked:false → client overlays.
-              baked: !wantClean,
-              textPosition,
+              // NOT draw a text overlay. The designer-overlay path is also
+              // server-baked typography, so it gets baked:true too.
+              baked: !wantClean || designerApplied,
+              textPosition: designerApplied ? null : textPosition,
               faceBox: null,
               composited: true,
               headshotUsed: false,

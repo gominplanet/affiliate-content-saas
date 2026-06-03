@@ -22,8 +22,9 @@ const nextConfig: NextConfig = {
   // doesn't require updating this list.
   outputFileTracingIncludes: {
     '/api/admin/designer-text-test': ['./node_modules/@fontsource/**/files/*.woff'],
-    // Add other API routes here once we wire the designer overlay into them
-    // (youtube/generate-thumbnail, etc.).
+    // Live YouTube thumbnail flow uses the designer overlay too — needs the
+    // same font files bundled or Satori errors on missing glyphs.
+    '/api/youtube/generate-thumbnail': ['./node_modules/@fontsource/**/files/*.woff'],
   },
   // Tree-shake big barrel packages (lucide-react is imported in ~38 files);
   // only the icons actually used get bundled. Near-zero risk, big bundle win.
