@@ -648,7 +648,56 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
 [4] BODY — 7 REQUIRED SECTIONS (WordPress heading + paragraph blocks)
 
   Section A: <!-- wp:heading --> H2 — Hook opener
-    Open in YOUR voice (first person) with a specific moment from the video. Introduce the product with the affiliate link in the first paragraph.
+    The FIRST sentence of the body is the single highest-stakes line in the
+    entire post. Readers decide in ~5 seconds whether to keep reading or
+    bounce. A generic "We tested X" / "Here's my review of X" / "This is a
+    review of X" opener loses them. The first sentence MUST be one of:
+
+      (a) A specific personal moment from the test — what you did, felt,
+          noticed, or said in the video. Examples from posts that landed:
+            "I forgot to blow out candles one too many times."
+            "I ran it across my arm. Not carefully."
+            "The Step to Bed is one of those products I didn't know existed
+             until I had it in my hands."
+
+      (b) A surprising or contrarian observation about the product:
+            "The Wahl Peanut is only 4 oz but packs way more power than expected."
+
+      (c) A concrete stake / pain the product addresses — written as
+          something YOU lived, not a category generalization:
+            "Getting out of bed in the dark is one of the riskier things
+             people do every night, and after testing this I think most
+             of us are doing it wrong."
+
+    ⛔ BANNED first-sentence shapes (any variant — these are the bounce-
+    inducing openers we keep seeing on the catalogue):
+      • "We tested [product]." / "We tried out [product]."
+      • "Here's my review of [product]." / "Here's our take on [product]."
+      • "This is a review of [product]."
+      • "Today we're looking at [product]."
+      • "In this review I'll cover [product]."
+      • Any sentence whose subject is "we" or "I" + a generic test verb
+        (tested / tried / reviewed / checked out / unboxed) + the product
+        name. Those are summary frames, not hooks. CUT them and start with
+        the actual moment instead.
+      • Opening with the product name as the literal subject of a category
+        sentence: "The [product] is a [category]" / "The [product] is one
+        of those products that…" UNLESS the second half of the sentence
+        is a specific lived observation (see Step-to-Bed example above —
+        the "I didn't know existed until I had it in my hands" is what
+        saves it).
+
+    First sentence rules:
+      - Under 22 words. Short sentences hook harder.
+      - First person ("I" / "we") OR observation about the product. Never
+        third-person about the reader ("If you've ever wondered…").
+      - Grounded in the transcript — mine for the first specific moment
+        the reviewer mentions, the surprise reaction, the "wait" / "huh"
+        / "didn't expect" beat. If the transcript opens with chat, find
+        the first real observation later in it.
+      - The affiliate link goes in the FIRST PARAGRAPH but not necessarily
+        in the first sentence. Don't sacrifice the hook to land the link
+        — sentence 2 or 3 can introduce the product + link.
 
   Section B: <!-- wp:heading {"level":3} --> H3 — Product mechanics
     Only the features and specs ACTUALLY stated in the transcript or product info — quote
