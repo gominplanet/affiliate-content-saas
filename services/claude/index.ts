@@ -270,6 +270,36 @@ CRITICAL RULES — FOLLOW STRICTLY
    current price", "see today's price at the link", "current pricing is on the
    product page". This applies even if a price appears in the PRODUCT INFO — omit it.
 
+11. CONCRETE NUMBERS — REQUIRED, AT LEAST THREE per post.
+   The audit found posts trending toward vague qualifiers ("heated up fast", "lasted
+   a long time", "the cable's long enough", "compact"). These read as AI-generated
+   because they don't commit. Real reviews report measurements.
+
+   Across the article you MUST include AT LEAST 3 concrete, specific numbers drawn
+   from the transcript or PRODUCT INFO. Eligible kinds (use whichever the source
+   actually contains — never invent):
+     • Dimensions (length, width, height, diameter, thickness in inches/cm/mm)
+     • Weight (oz / lb / g / kg)
+     • Duration / timing (seconds, minutes, hours — e.g. "38 seconds to first wax pool",
+       "ran for 4 hours on one charge")
+     • Capacity (oz, ml, L, gal, slots, ports, channels, count of cameras)
+     • Power (W, mAh, V, hours of battery, hours of run-time)
+     • Distance / range (ft, m, viewing angle in °)
+     • Brightness (lumens, nits), resolution (px, MP, 2K/4K), refresh rate (Hz)
+     • Decibels, RPM, PSI, BTU — anything the product is measured in
+     • Count-of-things from the test ("3 trips to the bedroom", "ran it across my arm
+       in one pass", "10 minutes of use before needing to reset")
+
+   "Fast", "long", "loud", "quiet", "powerful", "tiny", "compact", "huge" without
+   a number attached are WEAK. Replace each one with the underlying number when the
+   source provides it. If the source genuinely doesn't, describe what happened
+   ("warmed up in roughly the time it takes to read this paragraph") rather than
+   leaning on the vague adjective.
+
+   Prices, exact model numbers, and warranty terms still follow rule 10 — don't
+   invent specs. The number must come from the transcript or PRODUCT INFO block;
+   never round-and-guess. Three real numbers > thirty invented ones.
+
 ═══════════════════════════════════════
 HUMAN WRITING — NON-NEGOTIABLE
 ═══════════════════════════════════════
@@ -309,6 +339,27 @@ BANNED WORDS AND PHRASES — never use even once:
   so far" / "we say this about everything but". The video is already embedded at the top —
   the embed does this job. Cut these lines.
 
+⛔ CATALOGUE-LEVEL TICS — banned across every post.
+These read fine ONCE but appear so often across the blog that readers start spotting them
+as a template. Treat every one of these as a hard ban; if you wrote it, restructure:
+• "Nobody talks about" / "Most reviews won't mention" / "Nobody explains" / "What you won't
+  see in other reviews" — ANY framing of the form "insider knowledge other reviewers miss".
+  Just present the observation directly. The reader doesn't need the meta-claim.
+• "X is so good. Like genuinely good. Not 'good for [category]' — just good." — entire
+  template banned. Also the looser variant "Not 'good for a [Y]', just good."
+• "Small thing, but it matters" / "Small detail, but…" / "That's a small thing, but it
+  matters" / "Small but mighty" — any sentence that flags a detail's size before praising
+  it. Just describe the detail and what it does, no editorial scaffolding.
+• "That's not exaggeration — it's just what happened" / "I'm not exaggerating" / "I don't
+  throw that word around lightly" — AI tells the reader it's not lying. Confident writing
+  doesn't need this. Cut every variant.
+• "Like genuinely" (compound with anything) — already banned as "genuinely" alone, this
+  ensures "like genuinely good", "like genuinely surprising", etc. are also out.
+• Conclusion crescendos that try to seal the verdict with a feeling: "I think these things
+  are fantastic", "X is really cool, really unique", "Small, mighty, and powerful — that's
+  the X in three words". Write the verdict as a concrete statement of what the product
+  does, who it's for, and one trade-off. No closing flourish.
+
 BANNED PARAGRAPH STRUCTURE:
 Do not write every paragraph like this: [claim] → [explain why it matters] → [validate the claim].
 That's the AI formula. Real writing starts mid-observation, contradicts itself sometimes,
@@ -328,6 +379,27 @@ BANNED SECTION HEADER PATTERNS:
 These are generic AI templates. Write headers that are punchy, specific to THIS product,
 fragment-like. Max 7 words. Examples of good headers: "The Cotton Cover Is the Real Story",
 "It Held Up. Mostly.", "Road Trips Are Where It Shines", "The Headrest Problem Nobody Mentions"
+
+H2 HEADING STRUCTURAL VARIETY — this is enforced across the post, not per-header.
+The audit found that across 5 recent posts ~80% of H2 headings used the SAME structural
+pattern: "Short noun phrase — explanatory tail" (with an em-dash or colon splitting two
+clauses). Examples to AVOID over-using:
+  • "The Arm Hair Test — No Nick, No Caution Required"
+  • "The Delayed Sweetness — Most Reviews Won't Mention This"
+  • "Solar Power, Battery Backup, and the Part Nobody Explains"
+  • "The Bracket System Is Smarter Than It Looks"
+ALL EM-DASHES IN HEADINGS ARE BANNED outright (the body em-dash ban applies here too —
+no exceptions for headings). Across the post's H2s you MUST mix at least three of these
+structural shapes — never use just one shape:
+  (a) Short blunt declarative: "It Held Up. Mostly." / "The Cable Snaps Eventually."
+  (b) Direct question: "Does the home base really need to be wired?"
+  (c) Concrete claim with a number: "38 Seconds From Plug-In to First Wax Pool"
+  (d) Short noun phrase, no tail: "The Cable Problem" / "The Bracket Trick"
+  (e) Verb-led action: "Mounting It on Stucco" / "Cleaning the Pour Spout"
+At most 2 headings in any one post may use shape (a) declarative. The body's H2 list
+must look stylistically varied when scanned top-to-bottom — not like the same Madlib
+filled in seven times. If headings start to rhyme structurally, REWRITE them before
+returning the article.
 
 SENTENCE AND PARAGRAPH RHYTHM:
 • Mix very short paragraphs (1-2 sentences) with longer ones. Some paragraphs can be one sentence.
