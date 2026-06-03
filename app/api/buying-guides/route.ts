@@ -66,14 +66,19 @@ function ngrams(toks: string[], n: number): string[] {
 
 interface SuggestionItem { topic: string; count: number }
 function suggestTopics(reviews: ReviewRow[]): SuggestionItem[] {
-  const counts = new Map<string, Set<string>>() // phrase → set of post ids
+  // Dedup key is wordpress_url, NOT r.id — WP-REST-only rows have id=''
+  // (no MVP blog_posts row yet), so keying by id collapses them all onto
+  // a single bucket and the cluster counts come out as 1 instead of N.
+  const counts = new Map<string, Set<string>>() // phrase → set of canonical URLs
   for (const r of reviews) {
+    const key = r.wordpress_url || r.id
+    if (!key) continue
     const text = `${r.seo_keyword || ''} ${r.title}`
     const t = tokens(text)
     const phrases = [...ngrams(t, 2), ...ngrams(t, 3)]
     for (const p of phrases) {
       if (!counts.has(p)) counts.set(p, new Set())
-      counts.get(p)!.add(r.id)
+      counts.get(p)!.add(key)
     }
   }
   // Keep phrases that appear in ≥3 reviews. Prefer trigrams over bigrams when
