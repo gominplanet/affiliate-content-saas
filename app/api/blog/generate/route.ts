@@ -1,5 +1,6 @@
 import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
@@ -726,6 +727,27 @@ async function handleGenerate(request: Request) {
       console.warn(`[blog/generate] self-check: only ${selfCheck.numbersDetected} product-specific number(s) in post (RULE 11 target = 3). Either transcript lacked specs or model didn't surface them.`)
     } else {
       console.log(`[blog/generate] self-check: ${selfCheck.numbersDetected} product-specific numbers detected`)
+    }
+    // Persist the check results for /admin/blog-quality so trends are
+    // visible across the catalogue. Best-effort write — a failed insert
+    // never blocks the post. Uses admin client because the table's
+    // user-context insert policy isn't set up (avoid leaking RLS surface
+    // for a write-only telemetry row).
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (createAdminClient() as any).from('blog_quality_checks').insert({
+        user_id: user.id,
+        video_id: videoId,
+        violations_found: selfCheck.violations.length,
+        fixes_applied: selfCheck.fixesApplied,
+        numbers_detected: selfCheck.numbersDetected,
+        // Pattern labels Haiku returned — already short strings like
+        // "ai-emphasis-defense" or "em-dash heading". Cap at 20 to
+        // avoid runaway arrays from a misbehaving Haiku response.
+        violation_patterns: selfCheck.violations.slice(0, 20).map(v => v.pattern || 'unknown'),
+      })
+    } catch (insErr) {
+      console.warn('[blog/generate] failed to persist blog_quality_check:', insErr instanceof Error ? insErr.message : insErr)
     }
   } catch (err) {
     console.warn('[blog/generate] self-check threw — shipping unchanged:', err instanceof Error ? err.message : err)
