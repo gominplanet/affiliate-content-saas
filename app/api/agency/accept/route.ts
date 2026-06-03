@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: invite } = await (admin as any)
     .from('agency_invites')
-    .select('id, owner_user_id, email, role, created_at, accepted_at, declined_at')
+    .select('id, owner_user_id, email, role, permissions, created_at, accepted_at, declined_at')
     .eq('token_hash', hash)
     .maybeSingle()
 
@@ -105,6 +105,10 @@ export async function POST(req: NextRequest) {
       owner_user_id: invite.owner_user_id,
       member_user_id: user.id,
       role: invite.role,
+      // Carry over the permission snapshot from the invite — owners
+      // toggled these at invite-time and the VA inherits them on accept.
+      // Owners can adjust later via PATCH /api/agency/members/[id].
+      permissions: invite.permissions ?? null,
     })
 
   if (insertErr) {

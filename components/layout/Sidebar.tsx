@@ -176,9 +176,10 @@ const secondaryNav = [
   { href: '/developers', label: 'API Access', icon: KeyRound },
   // White-label branding — Pro-only; same paywall pattern as Developers.
   { href: '/branding', label: 'Branding', icon: Paintbrush },
-  // Agency seats — multi-user under one Pro subscription. Same paywall
-  // pattern as the other Pro features (non-Pro users hit it as upsell).
-  { href: '/agency', label: 'Team Seats', icon: Users },
+  // Virtual Assistants — multi-user under one Pro subscription with
+  // scoped permissions. Same paywall pattern as the other Pro features
+  // (non-Pro users hit it as upsell).
+  { href: '/agency', label: 'Virtual Assistants', icon: Users },
   // Rewardful-hosted affiliate dashboard — opens in a new tab. Hidden
   // while sales are paused (no point recruiting new affiliates when
   // their referrals can't actually buy).

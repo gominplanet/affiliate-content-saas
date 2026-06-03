@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { generateAgencyToken, maxSeatsForTier, INVITE_TTL_DAYS } from '@/lib/agency'
+import { generateAgencyToken, maxSeatsForTier, INVITE_TTL_DAYS, DEFAULT_VA_PERMISSIONS, normalizePermissions } from '@/lib/agency'
 import { sendEmail } from '@/services/email'
 
 export async function GET() {
@@ -30,7 +30,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: members } = await (supabase as any)
     .from('agency_members')
-    .select('id, member_user_id, role, created_at')
+    .select('id, member_user_id, role, permissions, created_at')
     .eq('owner_user_id', user.id)
     .is('revoked_at', null)
     .order('created_at', { ascending: true })
@@ -40,7 +40,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: invites } = await (supabase as any)
     .from('agency_invites')
-    .select('id, email, role, note, created_at')
+    .select('id, email, role, note, permissions, created_at')
     .eq('owner_user_id', user.id)
     .is('accepted_at', null)
     .is('declined_at', null)
@@ -48,12 +48,20 @@ export async function GET() {
     .order('created_at', { ascending: false })
 
   const used = (members?.length ?? 0) + (invites?.length ?? 0)
+  // Infinity → null in JSON (so the client's typeof check is clean) +
+  // a separate `seatCeilingUnbounded` boolean for the UI to render
+  // "Unlimited" instead of a number. Earlier code returned
+  // Number.MAX_SAFE_INTEGER which leaked "0 of 9007199254740991 seats
+  // used" to admin users.
+  const seatCeilingUnbounded = !Number.isFinite(seatCeiling)
+  const seatsRemaining = seatCeilingUnbounded ? Number.POSITIVE_INFINITY : Math.max(0, seatCeiling - used)
 
   return NextResponse.json({
     tier,
-    seatCeiling,
+    seatCeiling: seatCeilingUnbounded ? null : seatCeiling,
+    seatCeilingUnbounded,
     seatsUsed: used,
-    seatsRemaining: Math.max(0, seatCeiling - used),
+    seatsRemaining: Number.isFinite(seatsRemaining) ? seatsRemaining : null,
     members: members ?? [],
     invites: invites ?? [],
   })
@@ -80,6 +88,12 @@ export async function POST(req: NextRequest) {
   const email = String(body.email || '').trim().toLowerCase()
   const role = body.role === 'admin' ? 'admin' : 'member'
   const note = body.note ? String(body.note).trim().slice(0, 280) : null
+  // Permissions on the invite (the VA inherits whatever was set here when
+  // they accept). Body may omit it; default to DEFAULT_VA_PERMISSIONS so
+  // owners who don't customise still get a sensible "content VA" preset.
+  const permissions = body.permissions !== undefined
+    ? normalizePermissions(body.permissions)
+    : DEFAULT_VA_PERMISSIONS
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
@@ -107,7 +121,10 @@ export async function POST(req: NextRequest) {
     .gte('created_at', ttlCutoff)
 
   const used = (memberCount ?? 0) + (pendingCount ?? 0)
-  if (used >= seatCeiling) {
+  // Skip seat check entirely when ceiling is unbounded (admin tier) —
+  // earlier code compared against MAX_SAFE_INTEGER which always passed
+  // but tripped Infinity arithmetic if anyone refactored. Now explicit.
+  if (Number.isFinite(seatCeiling) && used >= seatCeiling) {
     return NextResponse.json({
       error: `You've reached your seat ceiling (${seatCeiling}). Revoke a seat or contact support to expand.`,
       code: 'seat_limit',
@@ -120,8 +137,8 @@ export async function POST(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('agency_invites')
-    .insert({ owner_user_id: user.id, email, token_hash: hash, role, note })
-    .select('id, email, role, note, created_at')
+    .insert({ owner_user_id: user.id, email, token_hash: hash, role, note, permissions })
+    .select('id, email, role, note, permissions, created_at')
     .single()
 
   if (error || !data) {

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
+import { BLOCKED_FOR_VAS, isPathBlockedForVa } from '@/lib/agency'
 
 const publicPaths = [
   '/login', '/signup', '/reset-password',
@@ -14,6 +15,10 @@ const publicPaths = [
   '/api/newsletter/confirm',
   '/api/newsletter/unsubscribe',
   '/api/newsletter/resend-webhook',
+  // Agency accept page — invitee may not yet have an account, but they need
+  // to land on the page to sign in / sign up. Page-level auth check does the
+  // rest.
+  '/agency/accept',
   '/pricing', '/privacy', '/terms',
 ]
 
@@ -42,6 +47,35 @@ export async function middleware(request: NextRequest) {
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
+
+  // ── Virtual Assistant guard ─────────────────────────────────────────────
+  // VAs (agency_members) can never access owner-only surfaces (branding,
+  // integrations / setup, WP customization, billing, the VA management
+  // page itself, API keys). Bounce them to /dashboard with a flash code
+  // so the dashboard can show "this page is owner-only" if it wants.
+  //
+  // We check BLOCKED_FOR_VAS first (cheap string match) before hitting the
+  // DB — the vast majority of requests aren't to blocked paths so we don't
+  // want a per-request VA-status lookup. Only when the path matches do we
+  // resolve agency context.
+  if (session && isPathBlockedForVa(pathname)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any)
+      .from('agency_members')
+      .select('owner_user_id')
+      .eq('member_user_id', session.user.id)
+      .is('revoked_at', null)
+      .maybeSingle()
+    if (data?.owner_user_id) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      url.searchParams.set('blocked', pathname.split('/')[1] || 'page')
+      return NextResponse.redirect(url)
+    }
+  }
+  // Re-export so the unused-imports linter doesn't flag BLOCKED_FOR_VAS —
+  // it's referenced by isPathBlockedForVa already; this is belt-and-braces.
+  void BLOCKED_FOR_VAS
 
   return response
 }
