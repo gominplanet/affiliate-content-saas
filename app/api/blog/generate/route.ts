@@ -1254,13 +1254,17 @@ async function handleGenerate(request: Request) {
                 // identity contract ("keep IDENTICAL"), then the scene change.
                 // Nano Banana follows directional instructions better when the
                 // identity clause comes first.
-                const nanoBananaInstruction = `Identity-preserving re-render of the product in the reference image. Keep its EXACT shape, colour, materials, proportions, surface texture, and every on-product branding/logo/label/text element IDENTICAL to the reference — do not redesign, restyle, simplify, swap, or invent any product. Treat the reference as ground truth for what the product looks like.
+                const nanoBananaInstruction = `Identity-preserving re-render of the product in the reference image. Keep its EXACT shape, colour, materials, proportions, surface texture, and every on-product branding/logo/label/text element IDENTICAL to the reference — do not redesign, restyle, simplify, swap, or invent any product. Treat the reference as ground truth for what the product LOOKS LIKE, nothing more.
 
-CHANGE ONLY the background and the scene around it. Strip the reference's plain studio background and any retail packaging. Place the same product, unchanged, as a polished magazine-quality editorial photo shown as a ${perspective}: ${prompt}. Set it naturally in the new context where this product would actually be used. If a realistic setting doesn't fit, instead stage the unchanged product on a clean surface against a VIBRANT colour-pop / gradient background with soft studio lighting, reflections, and depth that make it shine.
+CRITICAL — IGNORE all overlay graphics on the reference: the reference may be an Amazon listing or A+ Content infographic with headlines like "Ultimate ___" or "Premium ___", checkmark badges, circle callouts saying things like "Non-Slip" or "Stable Frame", feature-highlight pills, arrows pointing at product parts, side-by-side panels, or any kind of marketing text/graphic overlay. DO NOT reproduce ANY of those elements. DO NOT copy the reference's composition, layout, framing, or staging. The output image must contain ZERO overlay text, ZERO badges, ZERO callouts, ZERO marketing graphics. Strip ALL of that away and use ONLY the physical product itself.
 
-Realistic shadows and lighting. This must read as a COMPLETELY different photo from the article's other images — different background and environment, different surface, different lighting and time of day, different camera distance and angle. Do NOT reuse the reference photo's pose or background.
+CHANGE the entire scene: a brand-new background, a brand-new context where this product would actually be used, brand-new lighting, brand-new camera angle and distance. The product is the ONLY thing that carries over from the reference. Pose, position, orientation, and surroundings must all be different. Place the product naturally in a real-world setting (the actual location it would be used in everyday life). Vary the product's position/orientation/angle across renders so multiple images of the same product never look like the same shot.
 
-${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/watermarks.`
+Render as a polished magazine-quality editorial photo shown as a ${perspective}: ${prompt}. If a realistic setting truly doesn't fit, stage the unchanged product on a clean surface against a VIBRANT colour-pop / gradient background with soft studio lighting, reflections, and depth.
+
+Realistic shadows and lighting. This must read as a COMPLETELY different photo from the article's other images — different background and environment, different surface, different lighting and time of day, different camera distance and angle. Do NOT reuse the reference photo's pose, framing, or background.
+
+${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/watermarks/badges/callouts/labels.`
                 try {
                   const out = await composeWithNanoBanana({
                     prompt: nanoBananaInstruction,
@@ -1283,7 +1287,13 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
                     const v = await verifyProductMatch(falProductImageUrl, falUrl, productTitleForPrompts, { userId: user.id, tier: tier2 })
                     console.log('[blog-images] verify', { i, match: v.match, reason: v.reason })
                     if (!v.match) {
-                      const stricter = `IDENTITY-LOCKED render. The reference image is the GROUND TRUTH for what this product looks like. The product in the reference is "${productTitleForPrompts}". The previous attempt rendered a DIFFERENT product, which is wrong. Copy the product from the reference EXACTLY — same shape, same colour, same cut-out / texture / pattern, same number of components, same on-product branding/text. Do NOT substitute a similar-looking product. Change only the background to: ${prompt}. ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text.`
+                      const stricter = `IDENTITY-LOCKED render. The reference image is the GROUND TRUTH for what this product PHYSICALLY looks like — nothing else. The product in the reference is "${productTitleForPrompts}". The previous attempt rendered a DIFFERENT product, which is wrong. Copy the product from the reference EXACTLY — same shape, same colour, same cut-out / texture / pattern, same number of components, same on-product branding/text. Do NOT substitute a similar-looking product.
+
+STRIP any overlay text, headlines, checkmark badges, callout circles, feature pills, comparison panels, or marketing graphics that may be on the reference — those are NOT part of the product, do not reproduce them. Use the reference ONLY to understand the product itself.
+
+Place the product in a COMPLETELY NEW real-world scene — do NOT copy the reference's composition/pose/framing/background. Vary the angle and position. Background: ${prompt}.
+
+${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photography, no added text/captions/badges/callouts.`
                       try {
                         const retry = await composeWithNanoBanana({
                           prompt: stricter,

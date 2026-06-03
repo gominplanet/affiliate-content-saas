@@ -36,7 +36,21 @@ export async function pickProductReferenceImage(
     const content: any[] = imgs.map((url) => ({ type: 'image', source: { type: 'url', url } }))
     content.push({
       type: 'text',
-      text: `These are gallery images for the product "${title}", numbered 1-${imgs.length} in order. Pick the ONE image that is the cleanest, single, ISOLATED studio shot of the actual product itself — plain or white background, just the product, the way it would look on its own product page. Reject any image that is a lifestyle scene or a multi-panel marketing collage, that shows the product staged in a room/kitchen/closet, that includes props (cutting boards, plants, utensils, furniture), hands or people, a packaging box, or separate accessories (like a charging cable) as the main subject. Choose the bare product that recurs across the images. Reply with ONLY the image number.`,
+      text: `These are gallery images for the product "${title}", numbered 1-${imgs.length} in order. Pick the ONE image that is the cleanest, single, ISOLATED studio shot of the actual product itself — plain or white background, just the product, the way it would look on its own product page.
+
+REJECT any image that has ANY of these traits (these are Amazon A+ Content / marketing composites that pollute downstream image generation):
+  - Overlay text on top of the image (titles, headlines, "Ultimate ___", "Premium ___", "Best ___", taglines, feature descriptions)
+  - Checkmark badges, circle callouts, or "feature highlight" pills (e.g. round labels saying "Non-Slip Footing", "Stable Frame")
+  - Numbered annotations or feature-call-out arrows pointing at parts of the product
+  - Side-by-side comparison panels or multi-panel marketing collages
+  - Lifestyle scenes where the product is staged with props (cutting boards, plants, hands, furniture, food)
+  - Packaging boxes shown as the main subject
+  - Separate accessories (e.g. charging cables, mounts) as the main subject
+  - Brand/retailer logos overlaid (Amazon, Prime, etc.)
+
+Choose the bare product that recurs across the images on a plain background with NO text or graphic overlays. If literally none of the images is clean, pick the one with the LEAST overlay/marketing pollution.
+
+Reply with ONLY the image number.`,
     })
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
