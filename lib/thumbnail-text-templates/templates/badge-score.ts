@@ -13,9 +13,10 @@ function render(input: TemplateInput): TemplateNode {
   const colWidth = Math.round(width * 0.52)
   const padX = Math.round(width * 0.04)
 
-  // The punch is the dominant element — even bigger than block-display
-  // since the score badge picks up the supporting context. Two-line wrap
-  // for headlines like "WORTH IT?" (often 2-3 words split across 2 lines).
+  // The punch fills the text column on the text-side. The badge floats as an
+  // ABSOLUTE element in the bottom corner OPPOSITE the text — mirrors the
+  // canonical "WORTH IT? + corner 9/10 ✓" layout instead of stacking the
+  // badge under the text (which previously crowded the composition).
   const punchSize = Math.min(colWidth * 0.42, height * 0.45)
   const outlineW = Math.max(10, Math.round(punchSize * 0.075))
 
@@ -43,33 +44,44 @@ function render(input: TemplateInput): TemplateNode {
     },
   }))
 
-  // ── Badge — small sticker in the bottom-OPPOSITE-of-side corner. Holds
-  // the score / verdict so the viewer can read it without parsing the
-  // headline. White background, dark text, green checkmark, drop shadow.
+  // ── Badge ─ bigger + bolder than v1 since it's now a dedicated corner
+  // element rather than a stack child. Same shape: optional icon on the
+  // left + score on the right + subtext below the score. White card with
+  // hard double-border (black outline + drop shadow) so it pops off any
+  // background colour the photo throws at it.
   const badgeText = content.badge?.text || ''
   const badgeSub = content.badge?.subtext || ''
   const badgeIcon = content.badge?.iconHint || null
 
-  const badgeSize = Math.round(punchSize * 0.34)
+  const badgeSize = Math.round(punchSize * 0.50) // was 0.34 — bigger so it reads as a focal point
   const badgeIconChar = badgeIcon === 'check' ? '✓' : badgeIcon === 'x' ? '✗' : badgeIcon === 'star' ? '★' : ''
   const badgeIconColor = badgeIcon === 'x' ? '#E50914' : badgeIcon === 'star' ? '#FFC700' : '#34C759'
+  const badgeOutlineW = Math.max(4, Math.round(badgeSize * 0.08))
 
   const badge: TemplateNode | null = badgeText ? {
     type: 'div',
     props: {
       style: {
+        // ABSOLUTE positioning in the BOTTOM CORNER OPPOSITE the text. If
+        // text is on the left, badge sits bottom-right (over the subject
+        // half); if text is on the right, badge sits bottom-left.
+        position: 'absolute',
+        bottom: Math.round(height * 0.08),
+        [side === 'left' ? 'right' : 'left']: Math.round(width * 0.05),
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
-        gap: Math.round(badgeSize * 0.25),
-        marginTop: Math.round(punchSize * 0.18),
+        gap: Math.round(badgeSize * 0.28),
         backgroundColor: '#FFFFFF',
-        paddingLeft: Math.round(badgeSize * 0.5),
+        paddingLeft: Math.round(badgeSize * 0.55),
         paddingRight: Math.round(badgeSize * 0.7),
-        paddingTop: Math.round(badgeSize * 0.2),
-        paddingBottom: Math.round(badgeSize * 0.25),
-        borderRadius: Math.round(badgeSize * 0.25),
-        boxShadow: `${Math.round(outlineW * 0.4)}px ${Math.round(outlineW * 0.6)}px 0 rgba(0,0,0,0.55), 0 0 0 ${Math.round(outlineW * 0.4)}px #000`,
+        paddingTop: Math.round(badgeSize * 0.25),
+        paddingBottom: Math.round(badgeSize * 0.3),
+        borderRadius: Math.round(badgeSize * 0.22),
+        // Double-edge sticker effect: hard black ring + drop shadow.
+        boxShadow: `0 0 0 ${badgeOutlineW}px #000, ${Math.round(badgeOutlineW * 1.2)}px ${Math.round(badgeOutlineW * 1.6)}px 0 rgba(0,0,0,0.5)`,
+        // Slight tilt — matches the "designer hand-stuck sticker" feel.
+        transform: 'rotate(-3deg)',
       },
       children: [
         badgeIconChar ? {
@@ -77,7 +89,7 @@ function render(input: TemplateInput): TemplateNode {
           props: {
             style: {
               fontFamily: 'RussoOne',
-              fontSize: Math.round(badgeSize * 1.1),
+              fontSize: Math.round(badgeSize * 1.2),
               color: badgeIconColor,
               lineHeight: 1,
             },
@@ -110,9 +122,9 @@ function render(input: TemplateInput): TemplateNode {
                 props: {
                   style: {
                     fontFamily: 'Anton',
-                    fontSize: Math.round(badgeSize * 0.45),
+                    fontSize: Math.round(badgeSize * 0.42),
                     color: '#444',
-                    letterSpacing: 1,
+                    letterSpacing: 2,
                     textTransform: 'uppercase',
                     marginTop: Math.round(badgeSize * 0.15),
                   },
@@ -126,7 +138,7 @@ function render(input: TemplateInput): TemplateNode {
     },
   } : null
 
-  const stack: TemplateNode = {
+  const textStack: TemplateNode = {
     type: 'div',
     props: {
       style: {
@@ -139,22 +151,26 @@ function render(input: TemplateInput): TemplateNode {
         justifyContent: 'center',
         alignItems: side === 'left' ? 'flex-start' : 'flex-end',
       },
-      children: [...headlineLines, badge].filter(Boolean),
+      children: headlineLines,
     },
   }
 
+  // Outer canvas is now a relative flex container so the badge can position
+  // absolutely against it. The text column takes its half; the badge floats
+  // in the opposite bottom corner.
   return {
     type: 'div',
     props: {
       style: {
         width,
         height,
+        position: 'relative',
         display: 'flex',
         justifyContent: side === 'left' ? 'flex-start' : 'flex-end',
         alignItems: 'center',
         backgroundColor: 'rgba(0,0,0,0)',
       },
-      children: stack,
+      children: [textStack, badge].filter(Boolean),
     },
   }
 }
