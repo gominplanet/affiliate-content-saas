@@ -15,6 +15,7 @@ import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
+import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -1045,20 +1046,35 @@ Ultra-sharp, professional, photorealistic.`
               const designerResults = await Promise.all(rank.urls.map(async (cleanUrl, i) => {
                 try {
                   // Find which original index this ranked URL came from so
-                  // we use the matching per-variant headline + subject side.
+                  // we use the matching per-variant headline.
                   const origIdx = Math.max(0, nbUrls.indexOf(cleanUrl))
                   const variantHook = hooks[origIdx] ?? overlayHookNB
-                  // Subject is on the OPPOSITE side from where the text would
-                  // go on the canvas. Even index = host-on-left → text-on-right
-                  // → designer subjectSide='left'. Odd = mirrored.
-                  const subjectSide: 'left' | 'right' = origIdx % 2 === 0 ? 'left' : 'right'
+
+                  // VISION-DETECT the safe text zone instead of assuming the
+                  // host is always on the variant-index-parity side. Nano
+                  // Banana can put face + product on the same side, in
+                  // which case the hardcoded subjectSide buries the text
+                  // ON TOP OF the product. analyzeTextZone returns where
+                  // the main subject actually lives in THIS specific image
+                  // — so the designer overlay text always lands in the
+                  // free corner.
+                  const zone = await analyzeTextZone(cleanUrl, { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
+                  // Map the vision result onto the designer's left/right side.
+                  // "center" means subject fills both halves — pick the side
+                  // with less weight (analyzeTextZone's position hints at it).
+                  const subjectSide: 'left' | 'right' = zone?.subjectSide === 'left'
+                    ? 'left'
+                    : zone?.subjectSide === 'right'
+                      ? 'right'
+                      : (zone?.position.includes('left') ? 'right' : 'left')
+
                   const result = await renderDesignerOverlay({
                     baseImageUrl: cleanUrl,
                     headline: variantHook,
                     productContext: productTitle || null,
                     subjectSide,
                     randomize: true,
-                    userId: TELEMETRY.userId,
+                    userId: String(TELEMETRY.userId ?? ''),
                     tier: TELEMETRY.tier,
                   })
                   // Re-host the composited PNG to fal so the client gets a

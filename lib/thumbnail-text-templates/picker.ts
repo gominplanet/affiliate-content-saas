@@ -95,9 +95,10 @@ const DECOMPOSE_RULES_BY_TEMPLATE: Record<string, string> = {
 - Only use when the headline genuinely warrants comic-book energy — skip for measured/technical content.
 - Skip "topLine", "subtitle", "badge".`,
 
-  'price-tag': `- "punch" = the main headline statement, 2-4 words ("WORTH THE COST?", "ONLY $20", "DEAL OF THE WEEK", "PRICE BREAKDOWN").
+  'price-tag': `- "punch" = the main headline statement, 2-4 words ("WORTH THE COST?", "DEAL OF THE WEEK", "PRICE BREAKDOWN").
 - "leading" = optional setup line above, 2-3 words.
-- "badge" = REQUIRED. The price tag sticker. { text: the price string ("$13.96", "$199", "75% OFF", "FREE"), subtext: optional small label above the price ("TODAY", "AMAZON", "RETAIL", "SALE"), iconHint: null }. Pull the actual price from the product context if available; otherwise estimate from the product type.
+- "badge" = REQUIRED. The price tag sticker. { text: the price string ("$13.96", "$199", "75% OFF", "FREE"), subtext: optional small label above the price ("TODAY", "AMAZON", "RETAIL", "SALE"), iconHint: null }.
+- CRITICAL: The price MUST come from the PRODUCT CONTEXT field — look for a price string ("$X.XX", "X dollars", "ONLY $X", or similar) in the context. If the product context contains NO PRICE, you MUST omit the "badge" object entirely OR set badge.text to "" — do NOT fabricate, estimate, or guess a price. A fabricated price is misinformation that ships on the user's live thumbnail. When no price exists, the orchestrator will fall back to a different template.
 - Skip "topLine", "subtitle".`,
 }
 

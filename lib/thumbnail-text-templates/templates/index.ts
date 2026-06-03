@@ -28,6 +28,16 @@ export const TEMPLATES: Template[] = [
   priceTag,
 ]
 
+/** Templates that require explicit, verifiable data (a real price, a real
+ *  score) and would HALLUCINATE that data if invoked without it. Excluded
+ *  from the random pool — they're only picked when the caller passes the
+ *  required data directly. price-tag was producing fake "$29.99 AMAZON"
+ *  stickers on headlines like "Bug Bite Scratch Relief?" — that's exactly
+ *  what this exclusion list prevents. */
+const RANDOM_POOL_EXCLUSIONS: Set<string> = new Set([
+  'price-tag', // would fabricate a price if no real one was provided
+])
+
 export function templateById(id: string): Template | null {
   return TEMPLATES.find(t => t.id === id) ?? null
 }
@@ -36,14 +46,13 @@ export function templateById(id: string): Template | null {
  * Pick a random template — used for the live thumbnail generation flow
  * where we want variety across renders without making the user choose.
  *
- * Templates with HARD content requirements (badge-score needs a verdict,
- * price-tag needs a price, mega-word/burst-pop need a short punch) get
- * filtered out when the headline doesn't fit, so a "random" pick is
- * really "uniformly random across the templates that CAN handle this
- * headline". The picker upstream is what decides the per-headline split;
- * this just chooses which template to render with.
+ * Excludes templates that would have to fabricate data (price-tag without
+ * a real price). All other templates can synthesize their accessory
+ * content (badges, taglines, etc.) from the headline + product context
+ * without inventing a falsifiable claim.
  */
 export function randomTemplate(rng: () => number = Math.random): Template {
+  const pool = TEMPLATES.filter(t => !RANDOM_POOL_EXCLUSIONS.has(t.id))
   // eslint-disable-next-line security/detect-object-injection
-  return TEMPLATES[Math.floor(rng() * TEMPLATES.length)]
+  return pool[Math.floor(rng() * pool.length)]
 }
