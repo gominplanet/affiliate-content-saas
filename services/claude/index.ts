@@ -460,6 +460,44 @@ self-contained way (so a search engine or AI assistant can lift it as the
 answer) — lead with the verdict/number/yes-or-no, THEN add the nuance. Don't
 open a FAQ answer with a question, a story, or "Well,". Still no banned filler.
 
+FAQ UNIQUENESS — DON'T PARAPHRASE THE BODY.
+The audit found that across 5 recent posts the FAQ section consistently echoes
+content already covered in the H2 sections — e.g. an allulose review mentioned
+"delayed sweetness" in 3 H2s and again in FAQ; a wax-melt review covered fire
+safety in intro + pets section + FAQ. That's wasted real estate AND a tell
+that the post is AI-padded.
+
+FAQs must cover UNCOVERED GROUND ONLY — questions a real buyer would ask that
+the body sections haven't already answered. Source them from these buckets:
+
+  • Pre-purchase compatibility — "Does it work with [common related thing the
+    transcript didn't mention]?" / "Will it fit a [specific use case]?"
+  • Edge-case operation — "What happens if the power goes out?" / "Can I use it
+    in the rain?" / "Does it need to be plugged in to charge?"
+  • Maintenance + longevity — "How do I clean it?" / "How often do I replace
+    the [consumable]?" / "Will it still work in 5 years?"
+  • Subscription + cost-after-purchase — "Is there a monthly fee?" / "Do I
+    need to pay for cloud storage?"
+  • Warranty + support — "What's the return window?" / "Is there a warranty?"
+  • Comparison residue — answers to "but what about [specific competitor or
+    common alternative the reader is also considering]?" — ONLY if the
+    comparison wasn't already covered in Section F.
+
+⛔ NOT acceptable FAQ topics:
+  • Anything that restates Quick Verdict, "Buy if you", or "Skip if you"
+  • Anything answered in any H2 section's body (re-summarising = padding)
+  • The product's main features (the H2s already covered these)
+  • The lived friction (covered in Section D — don't re-litigate)
+  • Generic affiliate-blog filler: "Is this worth the money?" / "Should I buy
+    it?" — those are the WHOLE POINT of the post, not an FAQ
+  • Questions that paraphrase the title ("What is the [product]?")
+
+Before finalising each FAQ, mentally check: "Would a reader who read the body
+already know this answer?" If yes — drop the question, pick a different one
+from the buckets above. The FAQ exists for the buyer who scanned the headings
+and now wants to resolve the buying decision; it does NOT exist to repeat what
+the body just said.
+
 ═══════════════════════════════════════
 EXACT POST STRUCTURE — IN THIS ORDER
 ═══════════════════════════════════════
@@ -658,8 +696,29 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
   Section E: <!-- wp:heading {"level":3} --> H3 — Who this is actually for
     Specific scenarios. Real household/lifestyle contexts.
 
-  Section F: <!-- wp:heading {"level":3} --> H3 — Direct comparison
-    This product vs the next best option. Honest trade-offs.
+  Section F: <!-- wp:heading {"level":3} --> H3 — Direct comparison (CONDITIONAL)
+    INCLUDE this section ONLY when at least ONE of these is true:
+      (i)  The transcript explicitly compares the product to a real named or
+           clearly described alternative (e.g. "vs. a basic bed rail",
+           "compared to a tealight wax warmer", "vs. a corded trimmer").
+      (ii) The product belongs to a category where readers ARE actively
+           choosing between two well-defined formats (e.g. "wired security
+           cameras vs. solar-wireless", "stevia vs. allulose for keto") —
+           and the comparison genuinely changes the buying decision.
+
+    Audit found this section was being written even when no real comparison
+    existed in the source — the model invented one to fill the slot, which
+    padded wordcount with low-value generic comparisons readers skim past.
+
+    If NEITHER (i) nor (ii) is true, SKIP Section F entirely. Do not insert
+    a placeholder heading. Do not invent a comparison. Renumber the
+    remaining sections (E → F → G becomes E → G when F is dropped).
+
+    When Section F IS included: name the specific alternative the reviewer
+    or the category implies (not a vague "other options"). Cover at least
+    one HONEST trade-off where the alternative wins, not a one-sided pitch
+    for the reviewed product. If the reviewer themselves said the
+    alternative is better for some use case, surface that too.
 
   Section G: <!-- wp:heading {"level":3} --> H3 — Advice for buyers
     Honest retrospective. Setup tips. Mistakes to avoid.
