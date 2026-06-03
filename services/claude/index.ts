@@ -300,6 +300,48 @@ CRITICAL RULES — FOLLOW STRICTLY
    invent specs. The number must come from the transcript or PRODUCT INFO block;
    never round-and-guess. Three real numbers > thirty invented ones.
 
+12. LIVED-EXPERIENCE NEGATIVES — REQUIRED.
+   The audit found that across 5 recent posts the "cons" section is consistently
+   too kind: it lists edge-case buying conditions ("skip if you have a low platform
+   bed", "skip if you can't place the home base near your router") instead of real
+   frustrations from the test. Readers can tell. The manufacturer's website also
+   tells them those edge cases. They came to a REVIEW for the things the box
+   doesn't admit.
+
+   At MINIMUM the post must include ONE concrete lived-experience negative that
+   the reviewer hit during the test — a UX papercut, a setup gotcha, an
+   unexpected limitation, an "almost-perfect-but" moment. Place it in Section D
+   (The Honest Friction) AND surface at least one such item in the verdict box's
+   "Skip if you:" list (the first bullet).
+
+   How to mine the transcript for these — search for moments of:
+     • Hesitation: "Hmm", "Wait", "Hold on", "Okay so..."
+     • Course-correction: "Actually let me", "Oh wait", a redo of a setup step
+     • Soft criticism: "I would have liked", "The only thing", "It's missing",
+       "I wish it had", "Almost", "Could be better"
+     • Friction language: "tricky", "fiddly", "took me a minute", "had to figure
+       out", "not obvious", "wasn't clear", "kind of small"
+     • Compromise wording: "It's not a deal-breaker but…", "Worth knowing…",
+       "One catch", "Heads up though"
+     • Comparison-favoring-something-else: "If you want X, this isn't it"
+
+   If the transcript truly contains zero such moments (rare — even glowing
+   reviews have UX papercuts), DO NOT invent one. Instead surface a real
+   setup/usage gotcha grounded in what the reviewer DID show — e.g. an
+   accessory not in the box, a battery you have to charge first, a step in
+   setup that's easy to skip. Specifically grounded, not imagined.
+
+   ⛔ The following are NOT acceptable as the lived negative:
+     • "Skip if you have a [different use case]" (that's an edge case, not a flaw)
+     • "Skip if you want a [completely different product]" (not a real con)
+     • "It doesn't [do something it was never meant to do]" (irrelevant)
+     • "Some users might find" / "Some people might prefer" (hedging, not lived)
+     • Anything starting with "Some" — every con must be GROUNDED in the reviewer's
+       actual experience, not in a generic user persona.
+
+   A real, mildly imperfect review converts BETTER than a glowing one. Readers
+   trust the negative because it proves the rest is real.
+
 ═══════════════════════════════════════
 HUMAN WRITING — NON-NEGOTIABLE
 ═══════════════════════════════════════
@@ -509,9 +551,9 @@ Use exactly this structure with {VIDEO_ID} replaced:
     <div class="gr-verdict-col skip">
       <h4>Skip if you:</h4>
       <ul>
-        <li>{candid limitation}</li>
-        <li>{candid limitation}</li>
-        <li>{candid limitation}</li>
+        <li>{lived friction from test — a real annoyance, not an edge case. e.g. "want a wireless setup with no Ethernet cable to run" beats "don't have an outlet near your router"}</li>
+        <li>{candid limitation grounded in transcript}</li>
+        <li>{candid limitation grounded in transcript}</li>
       </ul>
     </div>
   </div>
@@ -578,8 +620,20 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
   Section C: <!-- wp:heading {"level":3} --> H3 — Real-world performance
     What happened when they used it. Specific conditions from transcript.
 
-  Section D: <!-- wp:heading {"level":3} --> H3 — The thing most reviews miss
-    An insight from transcript others wouldn't cover.
+  Section D: <!-- wp:heading {"level":3} --> H3 — The honest friction
+    Pull ONE concrete frustration, imperfection, or trade-off the reviewer
+    actually hit during the test — something the manufacturer would NOT put on
+    the box. Not an "edge case won't fit this" caveat; a lived-experience
+    annoyance from real use. Mine the transcript for moments of: hesitation,
+    surprise, "I would have liked", "the only thing", "it didn't quite",
+    "got me thinking", "almost", "could be better". If the reviewer genuinely
+    found nothing wrong, write ONE specific minor friction grounded in what
+    they showed (a small UX papercut, a setup gotcha, a missing accessory,
+    a quirk you have to learn). NEVER invent. Heading must NOT use the phrase
+    "nobody talks about", "most reviews miss", "what other reviewers won't
+    mention", or any "insider knowledge" framing — those are banned outright.
+    Heading examples: "The Cable Snaps If You Yank It", "It Needs a Few
+    Minutes to Wake Up", "The Velcro Anchor Is the Step You'll Forget".
 
   After Section D insert mid-article CTA card (HTML block — exact same markup as [7]).
   Fill the product-name span with a clean 2–6 word product name derived from the video
