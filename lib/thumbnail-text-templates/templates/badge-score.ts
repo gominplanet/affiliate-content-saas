@@ -53,10 +53,43 @@ function render(input: TemplateInput): TemplateNode {
   const badgeSub = content.badge?.subtext || ''
   const badgeIcon = content.badge?.iconHint || null
 
-  const badgeSize = Math.round(punchSize * 0.50) // was 0.34 — bigger so it reads as a focal point
-  const badgeIconChar = badgeIcon === 'check' ? '✓' : badgeIcon === 'x' ? '✗' : badgeIcon === 'star' ? '★' : ''
+  // Badge sized at 0.40× punch (was 0.50× — too big, was crashing into the
+  // text column when both elements fought for the same horizontal real
+  // estate). Padding tightened to match.
+  const badgeSize = Math.round(punchSize * 0.40)
   const badgeIconColor = badgeIcon === 'x' ? '#E50914' : badgeIcon === 'star' ? '#FFC700' : '#34C759'
   const badgeOutlineW = Math.max(4, Math.round(badgeSize * 0.08))
+  const iconSize = Math.round(badgeSize * 1.3)
+
+  // Inline SVG icon paths — bulletproof rendering vs Unicode glyphs (the
+  // display fonts we ship don't include the ✓/✗/★ codepoints, so the
+  // previous font-based icon vanished silently).
+  const ICON_PATHS: Record<string, string> = {
+    check: 'M5 13l4 4L19 7',                                        // checkmark
+    x: 'M6 6l12 12M18 6L6 18',                                      // cross
+    star: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z',
+  }
+  const iconPath = badgeIcon && ICON_PATHS[badgeIcon] ? ICON_PATHS[badgeIcon] : null
+  const iconStrokeW = badgeIcon === 'star' ? 0 : 3
+  const iconFill = badgeIcon === 'star' ? badgeIconColor : 'none'
+
+  const iconNode: TemplateNode | null = iconPath ? {
+    type: 'svg',
+    props: {
+      // viewBox on the SVG element + an icon-sized width/height gives us a
+      // resolution-independent glyph that always sits the same size next to
+      // the badge text regardless of badge scale.
+      width: iconSize,
+      height: iconSize,
+      viewBox: '0 0 24 24',
+      fill: iconFill,
+      stroke: badgeIconColor,
+      strokeWidth: iconStrokeW,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      children: { type: 'path', props: { d: iconPath } },
+    },
+  } : null
 
   const badge: TemplateNode | null = badgeText ? {
     type: 'div',
@@ -71,12 +104,12 @@ function render(input: TemplateInput): TemplateNode {
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
-        gap: Math.round(badgeSize * 0.28),
+        gap: Math.round(badgeSize * 0.3),
         backgroundColor: '#FFFFFF',
         paddingLeft: Math.round(badgeSize * 0.55),
-        paddingRight: Math.round(badgeSize * 0.7),
-        paddingTop: Math.round(badgeSize * 0.25),
-        paddingBottom: Math.round(badgeSize * 0.3),
+        paddingRight: Math.round(badgeSize * 0.65),
+        paddingTop: Math.round(badgeSize * 0.28),
+        paddingBottom: Math.round(badgeSize * 0.32),
         borderRadius: Math.round(badgeSize * 0.22),
         // Double-edge sticker effect: hard black ring + drop shadow.
         boxShadow: `0 0 0 ${badgeOutlineW}px #000, ${Math.round(badgeOutlineW * 1.2)}px ${Math.round(badgeOutlineW * 1.6)}px 0 rgba(0,0,0,0.5)`,
@@ -84,18 +117,7 @@ function render(input: TemplateInput): TemplateNode {
         transform: 'rotate(-3deg)',
       },
       children: [
-        badgeIconChar ? {
-          type: 'div',
-          props: {
-            style: {
-              fontFamily: 'RussoOne',
-              fontSize: Math.round(badgeSize * 1.2),
-              color: badgeIconColor,
-              lineHeight: 1,
-            },
-            children: badgeIconChar,
-          },
-        } : null,
+        iconNode,
         {
           type: 'div',
           props: {
