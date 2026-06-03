@@ -14,7 +14,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 // Import for INTERNAL use (resolveAgencyContext) — these are also
 // re-exported below so callers of @/lib/agency see them as if they
 // originated here.
-import { normalizePermissions, type VaPermissions } from '@/lib/agency-permissions'
+import { normalizePermissions, type VaPermissions, type VaPermissionKey } from '@/lib/agency-permissions'
 
 /** All agency invite links carry this prefix so we can grep them out of
  *  logs and tie them to an MVP origin. */

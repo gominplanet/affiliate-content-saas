@@ -174,8 +174,12 @@ const secondaryNav = [
   // API access — only relevant for Pro users, but always visible so
   // Creator/Studio users can discover it + see the upgrade pitch.
   { href: '/developers', label: 'API Access', icon: KeyRound },
-  // White-label branding — Pro-only; same paywall pattern as Developers.
-  { href: '/branding', label: 'Branding', icon: Paintbrush },
+  // White-label branding PARKED 2026-06-03 — feature shipped but our
+  // current paying users are solo creators, not agencies, so the bullet
+  // was dead nav real estate. The page (/branding) and runtime brand
+  // lookup are still wired — admins can hit the route directly and
+  // any pivot toward agency users brings the entry back in one line.
+  // { href: '/branding', label: 'Branding', icon: Paintbrush },
   // Virtual Assistants — multi-user under one Pro subscription with
   // scoped permissions. Same paywall pattern as the other Pro features
   // (non-Pro users hit it as upsell).
