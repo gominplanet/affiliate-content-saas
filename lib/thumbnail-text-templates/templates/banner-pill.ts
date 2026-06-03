@@ -6,18 +6,15 @@
 // More editorial than Block Display; great for review-with-verdict videos.
 
 import type { Template, TemplateInput, TemplateNode } from '../types'
+import { safeZone, fitStackedFontSize } from '../safe-zone'
 
 function render(input: TemplateInput): TemplateNode {
   const { width, height, side, content, palette } = input
 
+  const sz = safeZone(width, height)
   const colWidth = Math.round(width * 0.52)
-  const padX = Math.round(width * 0.04)
-
-  // Main headline = the punch (often two short words on two lines). Banner
-  // sits underneath holding the topLine or leading as the supporting copy.
-  const punchSize = Math.min(colWidth * 0.30, height * 0.32)
-  const bannerTextSize = Math.round(punchSize * 0.26)
-  const outlineW = Math.max(8, Math.round(punchSize * 0.07))
+  // Text-area inner width respects the safe-zone on the canvas-edge side.
+  const textCol = colWidth - sz.hMargin
 
   // Two-line punch — Bangers font (comic-book bold) on two lines if we can
   // wrap it cleanly, otherwise single line. Simple split: take first half of
@@ -38,6 +35,21 @@ function render(input: TemplateInput): TemplateNode {
   const line2 = useTwoLineSplit ? punchWords.slice(splitAt).join(' ').toUpperCase() : ''
 
   const bannerText = (content.topLine || content.leading || '').toUpperCase()
+
+  // Auto-fit punch size: the banner sits BELOW the headline, so we reserve
+  // ~30% of innerHeight for the banner stack and let the punch fill ~70%.
+  // Width fit is computed against the longest punch line; the banner's
+  // own font size is downstream-derived so it stays proportional.
+  const punchLines = useTwoLineSplit ? [line1, line2] : [line1]
+  const punchSize = fitStackedFontSize({
+    lines: punchLines,
+    columnInnerWidth: textCol,
+    columnInnerHeight: Math.round(sz.innerHeight * 0.7),
+    targetCeiling: Math.min(colWidth * 0.30, height * 0.32),
+    lineHeight: 0.88,
+  })
+  const bannerTextSize = Math.round(punchSize * 0.26)
+  const outlineW = Math.max(8, Math.round(punchSize * 0.07))
 
   // ── Punch text — single accent line, OR two-line stack (white + accent).
   const headline: TemplateNode = {
@@ -117,8 +129,13 @@ function render(input: TemplateInput): TemplateNode {
       style: {
         width: colWidth,
         height,
-        paddingLeft: padX,
-        paddingRight: padX,
+        // Safe-zone insets: full margin on the canvas-edge side, half on the
+        // midline side (since the subject already creates visual breathing
+        // room there). Top + bottom margins protect against vertical bleed.
+        paddingLeft: side === 'left' ? sz.hMargin : Math.round(sz.hMargin * 0.5),
+        paddingRight: side === 'right' ? sz.hMargin : Math.round(sz.hMargin * 0.5),
+        paddingTop: sz.vMargin,
+        paddingBottom: sz.vMargin,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',

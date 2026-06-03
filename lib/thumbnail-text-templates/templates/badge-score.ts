@@ -6,12 +6,14 @@
 // videos where there's a clear pass/fail or score the viewer needs to see.
 
 import type { Template, TemplateInput, TemplateNode } from '../types'
+import { safeZone, fitStackedFontSize } from '../safe-zone'
 
 function render(input: TemplateInput): TemplateNode {
   const { width, height, side, content, palette } = input
 
+  const sz = safeZone(width, height)
   const colWidth = Math.round(width * 0.52)
-  const padX = Math.round(width * 0.04)
+  const textCol = colWidth - sz.hMargin
 
   // Split punch into stacked lines (matches the WORTH / IT? composition).
   const punchWords = content.punch.trim().split(/\s+/)
@@ -24,20 +26,17 @@ function render(input: TemplateInput): TemplateNode {
   // The punch fills the text column. The badge floats absolute in the
   // opposite corner. Mirrors the canonical "WORTH IT? + corner 9/10 ✓".
   //
-  // AUTO-FIT punch size to the longest line's character count so a wide
-  // 3-word punch like "TASTY OR NOT?" doesn't wrap to a third line and
-  // overflow the canvas vertically. Anton glyph width ≈ 0.55× its font
-  // size, so max fontSize for a line of N chars = colInnerWidth / (N * 0.55).
-  // We also cap by colWidth and height fractions so the punch never grows
-  // grotesquely large for very short headlines.
-  const colInner = colWidth - padX * 2
-  const longestLineChars = Math.max(1, ...wordLines.map(l => l.length))
-  const fitFontSize = colInner / (longestLineChars * 0.55)
-  // Lower the visual ceiling vs the v1 numbers — 0.30 ratio matches the
-  // type scale in the original WORTH IT? reference (badge-score is meant
-  // to share the canvas with a corner badge, so the headline shouldn't be
-  // a full-canvas block).
-  const punchSize = Math.min(colWidth * 0.30, height * 0.40, fitFontSize)
+  // Auto-fit punch size via the shared `fitStackedFontSize` helper — fits
+  // to BOTH the column inner width AND the safe-zone inner height. The
+  // 0.30 visual ceiling matches the WORTH IT? reference proportions; this
+  // template is meant to share the canvas with a corner badge so the
+  // headline shouldn't be a full-canvas block.
+  const punchSize = fitStackedFontSize({
+    lines: wordLines,
+    columnInnerWidth: textCol,
+    columnInnerHeight: sz.innerHeight,
+    targetCeiling: Math.min(colWidth * 0.30, height * 0.40),
+  })
   const outlineW = Math.max(10, Math.round(punchSize * 0.075))
 
   const headlineLines: TemplateNode[] = wordLines.map(w => ({
@@ -116,10 +115,12 @@ function render(input: TemplateInput): TemplateNode {
       style: {
         // ABSOLUTE positioning in the BOTTOM CORNER OPPOSITE the text. If
         // text is on the left, badge sits bottom-right (over the subject
-        // half); if text is on the right, badge sits bottom-left.
+        // half); if text is on the right, badge sits bottom-left. Anchored
+        // against the shared safe-zone margins so it never bleeds close to
+        // the canvas edge.
         position: 'absolute',
-        bottom: Math.round(height * 0.08),
-        [side === 'left' ? 'right' : 'left']: Math.round(width * 0.05),
+        bottom: sz.vMargin,
+        [side === 'left' ? 'right' : 'left']: sz.hMargin,
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
@@ -185,8 +186,13 @@ function render(input: TemplateInput): TemplateNode {
       style: {
         width: colWidth,
         height,
-        paddingLeft: padX,
-        paddingRight: padX,
+        // Safe-zone insets — full margin on the canvas-edge side, half on
+        // the midline side, top + bottom margins protect against vertical
+        // overflow even when the punch has multiple lines.
+        paddingLeft: side === 'left' ? sz.hMargin : Math.round(sz.hMargin * 0.5),
+        paddingRight: side === 'right' ? sz.hMargin : Math.round(sz.hMargin * 0.5),
+        paddingTop: sz.vMargin,
+        paddingBottom: sz.vMargin,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
