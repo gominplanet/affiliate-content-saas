@@ -97,7 +97,7 @@ async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClien
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from('blog_posts')
-    .select('id, title, slug, excerpt, wordpress_url, seo_keyword, affiliate_keywords, video_id, youtube_videos:video_id(thumbnail_url)')
+    .select('id, title, slug, excerpt, wordpress_url, seo_keyword, affiliate_keywords, video_id, youtube_videos(thumbnail_url)')
     .eq('user_id', userId)
     .eq('post_type', 'review')
     .not('wordpress_url', 'is', null)

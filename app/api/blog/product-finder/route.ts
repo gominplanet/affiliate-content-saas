@@ -90,7 +90,7 @@ export async function POST(req: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: reviewsRaw } = await (admin as any)
     .from('blog_posts')
-    .select('id, title, excerpt, wordpress_url, seo_keyword, affiliate_keywords, video_id, youtube_videos:video_id(thumbnail_url)')
+    .select('id, title, excerpt, wordpress_url, seo_keyword, affiliate_keywords, video_id, youtube_videos(thumbnail_url)')
     .eq('user_id', userId)
     .eq('post_type', 'review')
     .not('wordpress_url', 'is', null)
@@ -154,7 +154,7 @@ Rules:
     // Fall through with empty picks rather than 500-ing the widget.
   }
 
-  return cors({ picks: picksOut, brand }, 200)
+  return cors({ picks: picksOut, brand, _meta: { catalogue: reviews.length } }, 200)
 }
 
 function cors(json: unknown, status: number) {
