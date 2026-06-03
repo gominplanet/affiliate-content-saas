@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.30
+ * Version: 1.0.31
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.30');
+define('MVP_AFFILIATE_VERSION', '1.0.31');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -819,7 +819,9 @@ add_action('wp_footer', function () {
     ?>
 <style id="mvp-pf-css">
   .mvp-pf-fab {
-    position: fixed; bottom: 24px; right: 24px; z-index: 2147483640;
+    /* Top-left so we don't fight the sticky Amazon CTA in the bottom-right
+       corner. 120px from the top clears the logo banner on most posts. */
+    position: fixed; top: 120px; left: 24px; z-index: 2147483640;
     background: #7C3AED; color: #fff; border: 0; border-radius: 999px;
     padding: 12px 18px 12px 14px; font: 600 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     box-shadow: 0 12px 30px rgba(124,58,237,.35); cursor: pointer; display: inline-flex;
@@ -831,7 +833,8 @@ add_action('wp_footer', function () {
   }
   .mvp-pf-fab:hover { transform: translateY(-1px); }
   .mvp-pf-panel {
-    position: fixed; bottom: 80px; right: 24px; z-index: 2147483641;
+    /* Anchored to the FAB (top-left). Drops down from underneath the pill. */
+    position: fixed; top: 170px; left: 24px; z-index: 2147483641;
     width: 360px; max-width: calc(100vw - 32px); max-height: 70vh; overflow: auto;
     background: #fff; color: #1d1d1f; border: 1px solid #e5e5e7; border-radius: 14px;
     box-shadow: 0 24px 60px rgba(0,0,0,.18); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
