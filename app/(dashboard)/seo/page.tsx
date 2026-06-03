@@ -10,7 +10,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '@/components/layout/Header'
-import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
+import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
@@ -55,6 +55,22 @@ export default function SeoPage() {
   // Per-row "Check" button — set of postIds currently being rechecked, so we
   // can show a spinner on the right row(s) while the GSC call is in flight.
   const [rechecking, setRechecking] = useState<Set<string>>(new Set())
+  // Bulk-index selection — postIds the user has ticked. Cap is 50 (matches
+  // Google's daily Indexing API quota per account, so we never start work
+  // that's guaranteed to fail mid-batch).
+  const [selectedPostIds, setSelectedPostIds] = useState<Set<string>>(new Set())
+  /** Live progress while the bulk-index loop is running. null when idle.
+   *  `results` is per-postId outcome ('submitted'/'quota'/'forbidden'/'failed'
+   *  /'pending'). The UI shows a strip with N/M done + each row gets a
+   *  status icon. */
+  const [bulkIndexProgress, setBulkIndexProgress] = useState<{
+    current: number
+    total: number
+    currentTitle: string | null
+    results: Record<string, 'pending' | 'submitted' | 'quota' | 'forbidden' | 'failed'>
+    aborted: boolean
+  } | null>(null)
+  const BULK_INDEX_CAP = 50
   // "Rebuild from video" modal state — the user pastes a YouTube URL for a
   // legacy post that pre-dates MVP, we link it + run the full generation
   // pipeline against the existing WP post id (preserves URL + indexing).
@@ -143,6 +159,125 @@ export default function SeoPage() {
       setFixMsg({ ok: false, text: e instanceof Error ? e.message : 'Submission failed.' })
     }
   }, [])
+
+  /** Toggle a postId in the bulk-index selection. Enforces the BULK_INDEX_CAP
+   *  ceiling so we never let the user queue more than Google can accept in a
+   *  day. */
+  const toggleSelect = useCallback((postId: string) => {
+    setSelectedPostIds(prev => {
+      const next = new Set(prev)
+      if (next.has(postId)) next.delete(postId)
+      else if (next.size < BULK_INDEX_CAP) next.add(postId)
+      else {
+        setFixMsg({ ok: false, text: `Bulk index is capped at ${BULK_INDEX_CAP} posts per run (Google's daily limit). Unselect something first.` })
+      }
+      return next
+    })
+  }, [])
+
+  /** Bulk-index handler — loops through the selected postIds sequentially,
+   *  hits /api/seo/request-index per URL, and updates progress state between
+   *  each call so the UI can render N/M done + a per-row status icon.
+   *
+   *  Why sequential and not batched: the server endpoint already accepts up
+   *  to 50 URLs in one call, but it submits them sequentially anyway (rate
+   *  limits) and returns ONLY when all 50 finish. From the user's seat that
+   *  looks like a frozen spinner. Looping client-side gives live progress.
+   *
+   *  Stop conditions:
+   *    - user clicks Cancel (sets aborted=true mid-loop)
+   *    - 429 / quota response (no point continuing — every subsequent call
+   *      will also 429)
+   *    - 412 / scope-missing (same — Google needs reconnect first) */
+  const runBulkIndex = useCallback(async (postIds: string[]) => {
+    if (postIds.length === 0 || !data) return
+    setFixMsg(null)
+    // Build initial progress state with every row marked 'pending'.
+    const initialResults: Record<string, 'pending' | 'submitted' | 'quota' | 'forbidden' | 'failed'> = {}
+    for (const id of postIds) initialResults[id] = 'pending'
+    const titleByPostId = new Map(data.posts.map(p => [p.postId as string, p.title]))
+
+    setBulkIndexProgress({
+      current: 0,
+      total: postIds.length,
+      currentTitle: titleByPostId.get(postIds[0]) ?? null,
+      results: initialResults,
+      aborted: false,
+    })
+
+    let submitted = 0
+    let failed = 0
+    let stopReason: 'completed' | 'quota' | 'scope' | 'aborted' = 'completed'
+
+    for (let i = 0; i < postIds.length; i++) {
+      // Refetch the latest progress before each iteration to see if the user
+      // hit Cancel. We do this via the setState callback form below; here
+      // we just check a local snapshot we keep updating.
+      let aborted = false
+      setBulkIndexProgress(prev => {
+        if (prev?.aborted) aborted = true
+        return prev
+          ? { ...prev, current: i + 1, currentTitle: titleByPostId.get(postIds[i]) ?? null }
+          : prev
+      })
+      if (aborted) { stopReason = 'aborted'; break }
+
+      const post = data.posts.find(p => p.postId === postIds[i])
+      const url = post?.url
+      if (!url) {
+        setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: 'failed' } } : prev)
+        failed++
+        continue
+      }
+      try {
+        const res = await fetch('/api/seo/request-index', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: [url] }),
+        })
+        const d = await res.json().catch(() => ({} as { results?: Array<{ outcome?: string }>; scopeMissing?: boolean; limitReached?: boolean; error?: string }))
+        if (res.status === 412 || d.scopeMissing) {
+          stopReason = 'scope'
+          setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: 'forbidden' } } : prev)
+          break
+        }
+        if (res.status === 429 || d.limitReached) {
+          stopReason = 'quota'
+          setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: 'quota' } } : prev)
+          break
+        }
+        const outcome = (d.results?.[0]?.outcome as string | undefined) ?? (res.ok ? 'submitted' : 'failed')
+        const normalised: 'submitted' | 'quota' | 'forbidden' | 'failed' =
+          outcome === 'submitted' ? 'submitted'
+          : outcome === 'quota' ? 'quota'
+          : outcome === 'forbidden' ? 'forbidden'
+          : 'failed'
+        if (normalised === 'submitted') submitted++
+        else if (normalised === 'quota') { stopReason = 'quota'; setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: normalised } } : prev); break }
+        else failed++
+        setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: normalised } } : prev)
+      } catch {
+        failed++
+        setBulkIndexProgress(prev => prev ? { ...prev, results: { ...prev.results, [postIds[i]]: 'failed' } } : prev)
+      }
+    }
+
+    // Wrap-up toast — distinct copy per stop reason.
+    const summary = stopReason === 'completed'
+      ? `Bulk indexing complete — ${submitted} submitted${failed > 0 ? `, ${failed} failed` : ''}.`
+      : stopReason === 'quota'
+      ? `Stopped at Google's daily quota — ${submitted} submitted before the cap hit. Try the rest tomorrow.`
+      : stopReason === 'scope'
+      ? 'Stopped — Google needs to be reconnected for the indexing scope. Disconnect Search Console on /seo and reconnect.'
+      : `Cancelled — ${submitted} submitted before you stopped.`
+    setFixMsg({ ok: stopReason === 'completed' && failed === 0, text: summary })
+    // Clear the selection on success; leave it on quota/abort so the user
+    // can see what didn't ship.
+    if (stopReason === 'completed') setSelectedPostIds(new Set())
+    // Leave the progress strip up for ~5s so the user can read the final
+    // status, then auto-clear.
+    setTimeout(() => setBulkIndexProgress(null), 5000)
+  }, [data])
 
   // Per-row "Check now" — fresh Google URL Inspection on a single post, updates
   // the row in place so the user sees the new status without a full overview
@@ -510,19 +645,163 @@ export default function SeoPage() {
             )}
           </div>
 
+          {/* Bulk index toolbar — only shown when GSC is connected (no point
+              indexing if we can't submit), only when something is selected
+              OR a run is in progress. The toolbar floats just above the
+              posts table so users keep their place. */}
+          {data.connected && (selectedPostIds.size > 0 || bulkIndexProgress) && (() => {
+            const selectableUrlsForBulk = posts
+              .filter(p => selectedPostIds.has(p.postId) && p.url)
+              .map(p => p.postId)
+            const running = !!bulkIndexProgress && (bulkIndexProgress.current < bulkIndexProgress.total) && !bulkIndexProgress.aborted
+            return (
+              <div className="card p-3 flex items-center gap-3 flex-wrap bg-[#34c759]/5 border-[#34c759]/30">
+                {bulkIndexProgress ? (
+                  <>
+                    <Loader2 size={14} className={`text-[#34c759] ${running ? 'animate-spin' : ''}`} />
+                    <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      Indexing {bulkIndexProgress.current} of {bulkIndexProgress.total}
+                      {bulkIndexProgress.currentTitle && running && (
+                        <span className="text-[#86868b] font-normal">
+                          {' · '}{bulkIndexProgress.currentTitle.slice(0, 60)}{bulkIndexProgress.currentTitle.length > 60 ? '…' : ''}
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex-1 min-w-[100px] h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-[#34c759] transition-all" style={{ width: `${(bulkIndexProgress.current / Math.max(1, bulkIndexProgress.total)) * 100}%` }} />
+                    </div>
+                    {running ? (
+                      <button
+                        onClick={() => setBulkIndexProgress(prev => prev ? { ...prev, aborted: true } : prev)}
+                        className="px-3 py-1.5 text-xs font-semibold text-[#ff3b30] hover:bg-[#ff3b30]/10 rounded transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setBulkIndexProgress(null)}
+                        className="px-3 py-1.5 text-xs font-semibold text-[#86868b] hover:bg-gray-100 dark:hover:bg-white/5 rounded transition-colors"
+                      >
+                        Dismiss
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                      {selectedPostIds.size} selected
+                    </span>
+                    <span className="text-xs text-[#86868b]">
+                      {selectedPostIds.size >= BULK_INDEX_CAP ? '(cap reached)' : `up to ${BULK_INDEX_CAP - selectedPostIds.size} more`}
+                    </span>
+                    <div className="flex-1" />
+                    <button
+                      onClick={() => setSelectedPostIds(new Set())}
+                      className="px-3 py-1.5 text-xs font-semibold text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={() => void runBulkIndex(selectableUrlsForBulk)}
+                      disabled={selectableUrlsForBulk.length === 0}
+                      className="px-4 py-1.5 text-xs font-semibold text-white bg-[#34c759] hover:bg-[#2ea44f] disabled:opacity-50 rounded-lg inline-flex items-center gap-1.5 transition-colors shadow-sm"
+                    >
+                      <CheckCircle size={12} /> Index {selectableUrlsForBulk.length} post{selectableUrlsForBulk.length === 1 ? '' : 's'}
+                    </button>
+                  </>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Posts table */}
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
+            {/* Select-all-visible header — only shown when GSC is connected. */}
+            {data.connected && posts.length > 0 && (() => {
+              const selectableHere = posts.filter(p => p.url && p.indexed !== true)
+              const allSelected = selectableHere.length > 0 && selectableHere.every(p => selectedPostIds.has(p.postId))
+              const anySelected = selectableHere.some(p => selectedPostIds.has(p.postId))
+              return (
+                <div className="px-3 py-2 text-[11px] text-[#86868b] dark:text-[#8e8e93] flex items-center gap-2 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/[0.02]">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={el => { if (el) el.indeterminate = !allSelected && anySelected }}
+                    onChange={() => {
+                      if (allSelected) {
+                        // Deselect just the visible rows; preserve any
+                        // selections from a different filter view.
+                        setSelectedPostIds(prev => {
+                          const next = new Set(prev)
+                          for (const p of selectableHere) next.delete(p.postId)
+                          return next
+                        })
+                      } else {
+                        // Add up to BULK_INDEX_CAP from the visible rows.
+                        setSelectedPostIds(prev => {
+                          const next = new Set(prev)
+                          for (const p of selectableHere) {
+                            if (next.size >= BULK_INDEX_CAP) break
+                            next.add(p.postId)
+                          }
+                          return next
+                        })
+                      }
+                    }}
+                    className="accent-[#34c759] w-3.5 h-3.5"
+                    title={`Select up to ${BULK_INDEX_CAP} posts for bulk indexing`}
+                  />
+                  <span>Select visible (max {BULK_INDEX_CAP}) for bulk indexing</span>
+                </div>
+              )
+            })()}
             {posts.length === 0 ? (
               <div className="p-6 text-sm text-[#86868b] text-center">{filterNotIndexed ? 'No posts are marked “not indexed” right now. 🎉' : 'No published posts yet.'}</div>
             ) : posts.map((p) => {
               const open = expanded === p.postId
               const failing = p.checks.filter(c => !c.pass && c.weight > 0)
+              const selectable = !!p.url && p.indexed !== true && data.connected
+              const isSelected = selectedPostIds.has(p.postId)
+              const bulkOutcome = bulkIndexProgress?.results[p.postId]
               return (
-                <div key={p.postId}>
+                <div key={p.postId} className={isSelected ? 'bg-[#34c759]/5' : undefined}>
                   <button
                     onClick={() => setExpanded(open ? null : p.postId)}
                     className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                   >
+                    {/* Selection checkbox — only when this post is eligible
+                        for indexing (has a URL + GSC connected + not already
+                        indexed). Wrapped in a span with onClick stopPropagation
+                        so ticking it doesn't ALSO expand the row. */}
+                    {selectable ? (
+                      <span
+                        onClick={(e) => { e.stopPropagation(); toggleSelect(p.postId) }}
+                        className="flex items-center justify-center flex-shrink-0"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          readOnly
+                          tabIndex={-1}
+                          className="accent-[#34c759] w-3.5 h-3.5 pointer-events-none"
+                          title={selectedPostIds.size >= BULK_INDEX_CAP && !isSelected ? `Bulk cap is ${BULK_INDEX_CAP}` : 'Tick to bulk-index this post'}
+                        />
+                      </span>
+                    ) : (
+                      <span className="w-3.5 flex-shrink-0" />
+                    )}
+                    {/* Bulk-run status badge — shown when a bulk run has
+                        either recorded an outcome for this row OR has it
+                        queued as pending. */}
+                    {bulkOutcome && (
+                      <span className="flex-shrink-0" title={`Bulk index: ${bulkOutcome}`}>
+                        {bulkOutcome === 'submitted' && <CheckCircle size={13} className="text-[#34c759]" />}
+                        {bulkOutcome === 'pending' && <Loader2 size={13} className="text-[#86868b] animate-spin" />}
+                        {bulkOutcome === 'quota' && <AlertCircle size={13} className="text-[#ff9500]" />}
+                        {bulkOutcome === 'forbidden' && <AlertCircle size={13} className="text-[#ff3b30]" />}
+                        {bulkOutcome === 'failed' && <X size={13} className="text-[#ff3b30]" />}
+                      </span>
+                    )}
                     {open ? <ChevronDown size={14} className="text-[#86868b] flex-shrink-0" /> : <ChevronRight size={14} className="text-[#86868b] flex-shrink-0" />}
                     {/* score donut */}
                     <span className="flex items-center justify-center w-9 h-9 rounded-full text-[11px] font-bold flex-shrink-0" style={{ color: scoreColor(p.score), background: `${scoreColor(p.score)}1a` }}>
