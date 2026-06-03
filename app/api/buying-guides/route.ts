@@ -1,24 +1,29 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// Buying Guides v1 (minimal) — auto-generate "Best X for [year]" round-ups
-// from the user's existing reviews.
+// Buying Guides v1.1 — keyword/topic-centric (not category-centric).
 //
-// What every major review site (PCMag /picks, TechRadar /best-X, Tom's Guide
-// /best-picks/) ships and currently the highest-SEO-value content type for
-// affiliate sites: "best wireless camera" gets 10× the search volume of any
-// single product review, and the buyer intent is sky-high.
+// Real reviews on the platform almost never have a "category" set — they're
+// authored from per-video transcripts and carry a `seo_keyword` instead (the
+// long-tail buyer search phrase) plus an `affiliate_keywords` array. The
+// useful signal for "what guides could this site write" is therefore
+// clustering by SHARED seo_keyword tokens, not a single category column.
 //
-// v1 contract:
-//   GET  /api/buying-guides           → { categories: [{category, count}],
-//                                         guides: [{id, title, url, category, created_at}] }
-//   POST /api/buying-guides           → body { category, count? }
-//                                      → publishes one buying-guide WP post,
-//                                        returns { ok, postId, url, title }
+// Contract:
+//   GET  /api/buying-guides
+//     → { suggestions: [{topic, count}], guides: [{id,title,url,topic,created_at}] }
+//     suggestions are computed by tokenizing each review's
+//     `seo_keyword + title` into bigrams/trigrams and surfacing any phrase
+//     that appears across ≥3 reviews.
 //
-// Scope kept tight on purpose so the user can see it land + click through
-// to a real published guide. Out of scope for v1: scheduling, multi-site
-// picker (uses default site), image generation per pick (carries thumbnails
-// from the linked reviews), tier-based usage caps (admin/Pro only path).
+//   POST /api/buying-guides body: { topic: string }
+//     1. Pulls every published review's title+excerpt+seo_keyword+url+image
+//     2. Haiku picks 5-7 best-fit reviews + a "Best for X" label for each
+//     3. Sonnet writes the long-form "Best <topic> for <year>" round-up
+//     4. Publish to WordPress (tagged buying-guide) + save as post_type='guide'
+//     5. Returns { ok, postId, url, title }
+//
+// Images come from youtube_videos.thumbnail_url joined via video_id since
+// blog_posts has no featured_image_url column.
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -32,65 +37,110 @@ export const maxDuration = 300
 interface ReviewRow {
   id: string
   title: string
+  slug: string
   excerpt: string | null
   wordpress_url: string | null
-  featured_image_url: string | null
-  category: string | null
-  ai_overall_score: number | null
-  amazon_asin: string | null
-  product_name: string | null
+  seo_keyword: string | null
+  affiliate_keywords: string[] | null
+  video_id: string
+  youtube_videos: { thumbnail_url: string | null } | null
 }
 
-// ─── GET — list categories with ≥3 reviews + recent guides ─────────────────
+// ─── Topic clustering helpers ──────────────────────────────────────────────
+const STOP = new Set([
+  'the','a','an','and','or','for','of','to','in','on','at','vs','with','by','best',
+  'review','reviews','that','this','my','our','your','from','is','are','was','were',
+  'i','it','its','as','if','than','then','can','do','does','use','used','get','got',
+  'has','have','had','one','two','more','most','some','any','no','not','only','just',
+  'how','what','why','when','where','which','who','should','will','would','could',
+  '2024','2025','2026','2027','really','very','too','really','also','worth','vs',
+])
+function tokens(s: string): string[] {
+  return s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(t => t && !STOP.has(t) && t.length > 2)
+}
+function ngrams(toks: string[], n: number): string[] {
+  const out: string[] = []
+  for (let i = 0; i + n <= toks.length; i++) out.push(toks.slice(i, i + n).join(' '))
+  return out
+}
+
+interface SuggestionItem { topic: string; count: number }
+function suggestTopics(reviews: ReviewRow[]): SuggestionItem[] {
+  const counts = new Map<string, Set<string>>() // phrase → set of post ids
+  for (const r of reviews) {
+    const text = `${r.seo_keyword || ''} ${r.title}`
+    const t = tokens(text)
+    const phrases = [...ngrams(t, 2), ...ngrams(t, 3)]
+    for (const p of phrases) {
+      if (!counts.has(p)) counts.set(p, new Set())
+      counts.get(p)!.add(r.id)
+    }
+  }
+  // Keep phrases that appear in ≥3 reviews. Prefer trigrams over bigrams when
+  // the count matches (more specific topic). De-dup near-duplicates by string
+  // containment so "best sleep mask" and "sleep mask" don't both show.
+  const raw = Array.from(counts.entries())
+    .filter(([, ids]) => ids.size >= 3)
+    .map(([topic, ids]) => ({ topic, count: ids.size }))
+    .sort((a, b) => (b.topic.split(' ').length - a.topic.split(' ').length) || (b.count - a.count))
+  const kept: SuggestionItem[] = []
+  for (const cand of raw) {
+    const dupe = kept.some(k => k.topic.includes(cand.topic) || cand.topic.includes(k.topic))
+    if (!dupe) kept.push(cand)
+    if (kept.length >= 12) break
+  }
+  return kept.sort((a, b) => b.count - a.count)
+}
+
+// ─── Helper: pull every published review for a user ────────────────────────
+async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClient>>, userId: string): Promise<ReviewRow[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase as any)
+    .from('blog_posts')
+    .select('id, title, slug, excerpt, wordpress_url, seo_keyword, affiliate_keywords, video_id, youtube_videos:video_id(thumbnail_url)')
+    .eq('user_id', userId)
+    .eq('post_type', 'review')
+    .not('wordpress_url', 'is', null)
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .limit(200)
+  return (data ?? []) as ReviewRow[]
+}
+
+// ─── GET ───────────────────────────────────────────────────────────────────
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Pull every published review. We do the category counting in JS rather
-  // than a Postgres GROUP BY because the categories column may be a single
-  // string OR a comma-list, and we want to be tolerant of both.
+  const reviews = await loadReviews(supabase, user.id)
+  const suggestions = suggestTopics(reviews)
+
+  // Previously generated guides
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: rows } = await (supabase as any)
+  const { data: guideRows } = await (supabase as any)
     .from('blog_posts')
-    .select('id, title, category, post_type, wordpress_url, created_at')
+    .select('id, title, wordpress_url, seo_keyword, created_at')
     .eq('user_id', user.id)
-    .not('wordpress_url', 'is', null)
+    .eq('post_type', 'guide')
     .order('created_at', { ascending: false })
-    .limit(500)
-
-  const reviews = (rows ?? []).filter((r: { post_type?: string }) => (r.post_type ?? 'review') === 'review') as Array<{ category: string | null }>
-  const counts = new Map<string, number>()
-  for (const r of reviews) {
-    const cat = (r.category || '').trim()
-    if (!cat) continue
-    counts.set(cat, (counts.get(cat) ?? 0) + 1)
-  }
-  const categories = Array.from(counts.entries())
-    .filter(([, n]) => n >= 3)
-    .map(([category, count]) => ({ category, count }))
-    .sort((a, b) => b.count - a.count)
-
-  const guides = (rows ?? []).filter((r: { post_type?: string }) => r.post_type === 'guide') as Array<{
-    id: string; title: string; category: string | null; wordpress_url: string | null; created_at: string
-  }>
+    .limit(30)
 
   return NextResponse.json({
-    categories,
-    guides: guides.slice(0, 30).map(g => ({
-      id: g.id, title: g.title, url: g.wordpress_url, category: g.category, created_at: g.created_at,
+    reviewCount: reviews.length,
+    suggestions,
+    guides: ((guideRows ?? []) as Array<{ id: string; title: string; wordpress_url: string | null; seo_keyword: string | null; created_at: string }>).map(g => ({
+      id: g.id, title: g.title, url: g.wordpress_url, topic: g.seo_keyword, created_at: g.created_at,
     })),
   })
 }
 
-// ─── POST — generate + publish one buying guide ────────────────────────────
+// ─── POST — generate + publish ─────────────────────────────────────────────
 export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Tier gate — Pro/admin only for v1. Future: open to Creator with a cap.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Pro/admin gate
   const { data: integ } = await supabase
     .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const tier = (integ?.tier as string | undefined) ?? 'trial'
@@ -98,77 +148,109 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Buying guides require the Pro tier.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  let body: { category?: string; count?: number }
+  let body: { topic?: string }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
-  const category = (body.category || '').trim()
-  const count = Math.max(3, Math.min(10, body.count ?? 6))
-  if (!category) return NextResponse.json({ error: 'category required' }, { status: 400 })
+  const topic = (body.topic || '').trim()
+  if (!topic) return NextResponse.json({ error: 'topic required' }, { status: 400 })
+  if (topic.length > 200) return NextResponse.json({ error: 'topic too long' }, { status: 400 })
 
-  // ── 1. Pull candidate reviews ────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: reviewsRaw } = await (supabase as any)
-    .from('blog_posts')
-    .select('id, title, excerpt, wordpress_url, featured_image_url, category, ai_overall_score, amazon_asin, product_name')
-    .eq('user_id', user.id)
-    .eq('category', category)
-    .eq('post_type', 'review')
-    .not('wordpress_url', 'is', null)
-    .order('ai_overall_score', { ascending: false, nullsFirst: false })
-    .limit(20)
-
-  const candidates = (reviewsRaw ?? []) as ReviewRow[]
-  if (candidates.length < 3) {
-    return NextResponse.json({
-      error: `Need at least 3 published reviews in "${category}" to make a guide. Found ${candidates.length}.`,
-    }, { status: 400 })
+  const reviews = await loadReviews(supabase, user.id)
+  if (reviews.length < 3) {
+    return NextResponse.json({ error: `Need at least 3 published reviews. Found ${reviews.length}.` }, { status: 400 })
   }
-  const picks = candidates.slice(0, count)
 
-  // ── 2. Resolve WordPress credentials ─────────────────────────────────────
+  // Resolve WP
   const site = await getWordPressCredentials(supabase, user.id)
   if (!site) return NextResponse.json({ error: 'No WordPress site connected.' }, { status: 400 })
 
-  // ── 3. Brand context for voice ────────────────────────────────────────────
+  // Brand context
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brand } = await supabase
     .from('brand_profiles')
-    .select('name, author_name, niches')
+    .select('name, author_name')
     .eq('user_id', user.id)
     .maybeSingle()
   const brandName = (brand?.name as string) || 'our reviews'
   const reviewerName = (brand?.author_name as string) || 'we'
 
-  // ── 4. Build the buying-guide prompt ─────────────────────────────────────
-  // Distinct from the review prompt — round-up format, ranked picks with
-  // "Best for X" subtitles, comparison table, FAQ, and a tight intro that
-  // frames who this guide is for.
+  const client = createAnthropicClient()
+
+  // ── 1. Haiku: pick the best 5-7 reviews for the topic + a "Best for X" label
+  const catalogue = reviews.map((r, i) => `[${i}] ${r.title}${r.seo_keyword ? ` (kw: ${r.seo_keyword})` : ''}\n    ${(r.excerpt || '').slice(0, 280)}`).join('\n\n')
+  const pickerPrompt = `You are selecting picks for a "Best ${topic}" buying-guide round-up. From the catalogue below, choose the 5 to 7 reviews that BEST match the topic. If fewer than 3 are a sensible match, return what you have.
+
+Topic: "${topic}"
+
+Catalogue (index → title → 1-line excerpt):
+${catalogue}
+
+Return ONLY this JSON (no prose, no fence):
+{"picks":[{"index": <number>, "label": "<2-3 word slot, e.g. 'Best Overall', 'Best on a Budget', 'Best for Side Sleepers', 'Best Splurge', 'Best for Travel'>"}]}
+
+Rules:
+- The FIRST pick must be labelled "Best Overall".
+- Labels must be DISTINCT (no two picks share the same label).
+- Labels must reference real differentiating use cases when possible.
+- Picks ordered best-fit first.
+- If nothing in the catalogue fits the topic, return {"picks":[]}.
+- NEVER use the word "honest".`
+
+  let picks: Array<{ review: ReviewRow; label: string }> = []
+  try {
+    const pickerMsg = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 800,
+      messages: [{ role: 'user', content: pickerPrompt }],
+    })
+    recordAnthropicUsage(pickerMsg, { userId: user.id, tier, feature: 'buying_guide_picker', model: 'claude-haiku-4-5-20251001' })
+    const text = (pickerMsg.content[0] as { type: string; text: string })?.text || ''
+    const m = text.match(/\{[\s\S]*\}/)
+    if (m) {
+      const parsed = JSON.parse(m[0]) as { picks?: Array<{ index?: number; label?: string }> }
+      picks = (parsed.picks || [])
+        .map(p => {
+          const r = typeof p.index === 'number' ? reviews[p.index] : null
+          if (!r) return null
+          return { review: r, label: (p.label || 'Best Overall').slice(0, 60) }
+        })
+        .filter(Boolean) as Array<{ review: ReviewRow; label: string }>
+    }
+  } catch (err) {
+    return NextResponse.json({ error: `Picker failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
+  }
+
+  if (picks.length < 3) {
+    return NextResponse.json({ error: `Couldn't find 3 reviews matching "${topic}". Try a broader topic or add more reviews first.` }, { status: 400 })
+  }
+  picks = picks.slice(0, 7)
+
+  // ── 2. Sonnet: write the guide HTML ──────────────────────────────────────
   const year = new Date().getUTCFullYear()
   const picksContext = picks.map((p, i) => `
-${i + 1}. ${p.product_name || p.title}
-   - Title: ${p.title}
-   - URL: ${p.wordpress_url}
-   - Excerpt: ${(p.excerpt || '').slice(0, 280)}
-   - Overall score: ${p.ai_overall_score ?? 'n/a'}
-   - ASIN: ${p.amazon_asin || 'n/a'}
+${i + 1}. ${p.review.title}  —  Label: "${p.label}"
+   URL: ${p.review.wordpress_url}
+   Image: ${p.review.youtube_videos?.thumbnail_url || ''}
+   SEO keyword: ${p.review.seo_keyword || 'n/a'}
+   Excerpt: ${(p.review.excerpt || '').slice(0, 320)}
 `).join('\n')
 
-  const prompt = `You are writing a "Best ${category} for ${year}" buying guide for ${brandName}. The guide round-ups ${picks.length} products the reviewer has already reviewed on this blog. Every fact must come from the picks below — do NOT invent products, specs, or use cases. NEVER use the word "honest" or any variant.
+  const writerPrompt = `You are writing a "Best ${topic} for ${year}" buying guide for ${brandName}. The guide is built from the ${picks.length} picks below — every fact must come from those picks; never invent products, specs, or use cases. NEVER use the word "honest" or any variant.
 
 ═══════════════════════════════════════
-PICKS (in order — the model should KEEP this order; you may slightly adjust labels per pick but #1 is "Best Overall")
+PICKS (#1 is "Best Overall" — keep ordering as given)
 ═══════════════════════════════════════
 ${picksContext}
 
 ═══════════════════════════════════════
-STRUCTURE — return ONE BLOCK of valid WordPress block-HTML (Gutenberg comments OK)
+OUTPUT: one block of valid WordPress block-HTML (Gutenberg comments OK). No prose before or after the HTML.
 ═══════════════════════════════════════
 
-1. INTRO (1 H2 "Quick recap" + 2-3 short paragraphs in first person):
-   - Who this guide is for (one sentence — match the category)
-   - What ${reviewerName} tested to put it together
-   - How many ${reviewerName} ended up recommending
+1. INTRO (H2 "Quick recap" + 2-3 short first-person paragraphs)
+   - Who this guide is for, one sentence
+   - What ${reviewerName} actually tested to compile it
+   - How many ended up worth recommending (${picks.length})
 
-2. QUICK PICKS TABLE (HTML block — every pick gets a row with: name, "Best for X" tagline, "Read full review" link):
+2. QUICK PICKS TABLE (HTML — one row per pick: name, label, "Read full review" link):
 <table class="gr-picks" style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden">
   <thead><tr style="background:#fafafa">
     <th style="text-align:left;padding:10px 14px;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7">Pick</th>
@@ -176,80 +258,70 @@ STRUCTURE — return ONE BLOCK of valid WordPress block-HTML (Gutenberg comments
     <th style="text-align:left;padding:10px 14px;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7">Read</th>
   </tr></thead>
   <tbody>
-    <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#1d1d1f;font-weight:600">{name}</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#3a3a3c">{tagline}</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0"><a href="{review url}" style="color:#0071e3;text-decoration:none;font-weight:600">Full review →</a></td></tr>
-    {repeat for each pick}
+    <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#1d1d1f;font-weight:600">{name}</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#3a3a3c">{label}</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0"><a href="{review url}" style="color:#0071e3;text-decoration:none;font-weight:600">Full review →</a></td></tr>
+    {one row per pick}
   </tbody>
 </table>
 
 3. PER-PICK SECTIONS (one H2 per pick, in order):
-   - H2: "{N}. {product name} — Best for {use case}" (e.g. "1. Step to Bed — Best Overall")
-   - One <figure> at top with the linked review's featured image (uses the picks' featured_image_url verbatim) wrapped in an <a> to the full review URL
-   - 3-4 short paragraphs in first person — why this pick won its "Best for X" slot,
-     what specific feature seals it, one trade-off, one quick scenario where
-     someone should pick this over the others
-   - Bottom of each pick section: a clean CTA button linking to {full review URL}
-     using this exact HTML:
-     <p style="margin:18px 0 32px"><a href="{review URL}" style="display:inline-flex;align-items:center;gap:8px;background:#7C3AED;color:#fff;font-size:14px;font-weight:700;padding:12px 22px;border-radius:8px;text-decoration:none">Read the full ${'$'}{product name} review →</a></p>
+   - H2: "{N}. {product name from title} — {label}" (e.g. "1. Step to Bed — Best Overall")
+   - One <figure> at top with the linked review's image (from Image: field) wrapped in an <a> to the review URL; if no image, OMIT the figure
+   - 3-4 short FIRST-PERSON paragraphs — why this pick wins its slot, the specific feature that seals it, one trade-off, one quick "pick this over the others when…" scenario
+   - End the pick's section with this CTA (use the pick's URL):
+     <p style="margin:18px 0 32px"><a href="{review URL}" style="display:inline-flex;align-items:center;gap:8px;background:#7C3AED;color:#fff;font-size:14px;font-weight:700;padding:12px 22px;border-radius:8px;text-decoration:none">Read the full review →</a></p>
 
-4. SHORT FAQ (4-6 questions, H2 "Frequently Asked Questions" + H3 per question):
-   - Use uncovered-ground questions: how to choose, common compatibility concerns, returns/warranty, who shouldn't buy a ${category} at all
-   - Each answer 2-3 sentences, ANSWER-FIRST (lead with the verdict, then nuance)
+4. FAQ (H2 "Frequently Asked Questions" + 4-6 H3 questions):
+   - Each answer 2-3 sentences, ANSWER-FIRST
+   - Cover: how to choose, compatibility/returns/warranty, who shouldn't buy a ${topic} at all
+   - Each question must reference something specific to ${topic} (not generic)
 
-5. WRAP-UP (1 H2 "Which one should you pick?"):
-   - Two short paragraphs that point readers back to the #1 pick + name one
-     scenario where one of the alternatives is the better choice
-   - End with a soft CTA encouraging readers to read the full review of their top match
+5. WRAP-UP (H2 "Which one should you pick?"):
+   - Two short paragraphs pointing to the #1 pick + one scenario where an
+     alternative wins
+   - End with a soft CTA inviting readers to read the full review of their top match
 
-VOICE / STYLE RULES (same as the main review writer):
-- First person throughout ("I", "we" — match how ${reviewerName} writes)
-- Never refer to yourself in the third person
+VOICE / STYLE RULES:
+- First person throughout — match how ${reviewerName} writes
 - Contractions everywhere (it's / you'll / I've / can't)
-- Short blunt sentences mixed with longer ones — no AI-rhythm
-- No banned filler: NEVER use the word "honest" or any variant. NEVER use:
-    moreover, furthermore, additionally, in addition, in conclusion,
-    to summarize, in summary, overall, delve, tapestry, elevate,
-    utilize, game-changer, revolutionary, cutting-edge, genuinely
-    (any position), actually (anywhere — body OR headings), it's
-    important to, it's essential to, make sure to, em-dash in headings.
-- No invented specs, prices, or features — every claim must come from the
-  pick's excerpt or be a category-level truth a buyer already knows.
+- Short blunt sentences mixed with longer ones
+- Never use the word "honest" or any variant. Never use: moreover,
+  furthermore, additionally, in addition, in conclusion, to summarize,
+  in summary, overall, delve, tapestry, elevate, utilize, game-changer,
+  revolutionary, cutting-edge, genuinely (any position), actually
+  (anywhere), it's important to, it's essential to, em-dash in headings.
+- No invented specs, prices, or features.`
 
-OUTPUT: ONLY the WordPress block-HTML for the article body. No prose
-before or after the HTML. No explanation. Start with the intro H2.`
-
-  // ── 5. Call Claude ───────────────────────────────────────────────────────
   let html = ''
   try {
-    const client = createAnthropicClient()
-    const msg = await client.messages.create({
+    const writerMsg = await client.messages.create({
       model: 'claude-sonnet-4-5-20251001',
       max_tokens: 8000,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: writerPrompt }],
     })
-    recordAnthropicUsage(msg, { userId: user.id, tier, feature: 'buying_guide_generate', model: 'claude-sonnet-4-5-20251001' })
-    html = (msg.content[0] as { type: string; text: string })?.text || ''
+    recordAnthropicUsage(writerMsg, { userId: user.id, tier, feature: 'buying_guide_writer', model: 'claude-sonnet-4-5-20251001' })
+    html = (writerMsg.content[0] as { type: string; text: string })?.text || ''
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Generation failed' }, { status: 500 })
+    return NextResponse.json({ error: `Writer failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
   }
   if (!html || html.length < 500) {
     return NextResponse.json({ error: 'Generation returned empty body' }, { status: 500 })
   }
 
-  // ── 6. Publish to WordPress ──────────────────────────────────────────────
-  const title = `Best ${category} for ${year}: ${picks.length} Picks We Actually Tested`
-  const slug = `best-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${year}`
+  // ── 3. Publish ───────────────────────────────────────────────────────────
+  const titleCase = topic.replace(/\b\w/g, c => c.toUpperCase())
+  const wpTitle = `Best ${titleCase} for ${year}: ${picks.length} Picks We Actually Tested`
+  const slug = `best-${topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${year}`
+
   let wpPost: { id: number; link: string }
   try {
     const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
-    // Resolve "buying-guide" tag (creates it on first run) so the WP front-end
-    // can list these separately at /tag/buying-guide if the user wants.
     let tagIds: number[] = []
     try { tagIds = await wpService.resolveTagIds(['buying-guide']) } catch { /* non-fatal */ }
     wpPost = await wpService.createPost({
-      title,
+      title: wpTitle,
       slug,
       content: html,
-      excerpt: `${reviewerName} tested ${picks.length} ${category} products. Here's the round-up — best overall, best on a budget, best for specific use cases.`,
+      excerpt: `${reviewerName} tested ${picks.length} ${topic} picks — here's the round-up: best overall, best on a budget, best for specific use cases.`,
       status: 'publish',
       tags: tagIds,
       comment_status: 'closed',
@@ -259,20 +331,26 @@ before or after the HTML. No explanation. Start with the intro H2.`
     return NextResponse.json({ error: err instanceof Error ? err.message : 'WordPress publish failed' }, { status: 500 })
   }
 
-  // ── 7. Save to blog_posts as post_type='guide' ───────────────────────────
+  // ── 4. Save row ──────────────────────────────────────────────────────────
+  // We reuse video_id from the first pick — blog_posts.video_id is NOT NULL
+  // in the base schema (migration 024 made it nullable but only if applied).
+  // Either way, threading through the top pick's video keeps the FK valid.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: saved } = await (supabase as any)
     .from('blog_posts')
     .insert({
       user_id: user.id,
-      title,
+      video_id: picks[0].review.video_id,
+      title: wpTitle,
+      slug,
       content: html,
       excerpt: null,
       wordpress_post_id: wpPost.id,
       wordpress_url: wpPost.link,
       wordpress_site_id: site.site_id,
-      category,
+      status: 'published',
       post_type: 'guide',
+      seo_keyword: topic,
       published_at: new Date().toISOString(),
     })
     .select('id')
@@ -283,7 +361,7 @@ before or after the HTML. No explanation. Start with the intro H2.`
     postId: saved?.id ?? null,
     wpPostId: wpPost.id,
     url: wpPost.link,
-    title,
-    picksUsed: picks.map(p => ({ id: p.id, title: p.title })),
+    title: wpTitle,
+    picksUsed: picks.map(p => ({ id: p.review.id, title: p.review.title, label: p.label })),
   })
 }

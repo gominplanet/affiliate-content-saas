@@ -84,33 +84,35 @@ export async function POST(req: Request) {
     .maybeSingle()
   const brand = (brandRow?.name as string | null)?.trim() || null
 
-  // 3. Pull recent published reviews. We keep this tight — top 40 by score —
-  //    so the prompt stays compact and Haiku stays fast.
+  // 3. Pull recent published reviews. blog_posts has no category/score/image
+  //    columns — we use seo_keyword as the per-post search signal and join
+  //    youtube_videos.thumbnail_url for the card image.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: reviewsRaw } = await (admin as any)
     .from('blog_posts')
-    .select('id, title, excerpt, wordpress_url, featured_image_url, category, ai_overall_score, product_name')
+    .select('id, title, excerpt, wordpress_url, seo_keyword, affiliate_keywords, video_id, youtube_videos:video_id(thumbnail_url)')
     .eq('user_id', userId)
     .eq('post_type', 'review')
     .not('wordpress_url', 'is', null)
-    .order('ai_overall_score', { ascending: false, nullsFirst: false })
-    .limit(40)
+    .order('published_at', { ascending: false, nullsFirst: false })
+    .limit(50)
   const reviews = (reviewsRaw ?? []) as Array<{
     id: string; title: string; excerpt: string | null; wordpress_url: string;
-    featured_image_url: string | null; category: string | null;
-    ai_overall_score: number | null; product_name: string | null;
+    seo_keyword: string | null; affiliate_keywords: string[] | null; video_id: string;
+    youtube_videos: { thumbnail_url: string | null } | null;
   }>
   if (reviews.length === 0) return cors({ picks: [], brand, reason: 'no_reviews' }, 200)
 
-  // 4. Compact catalogue for the prompt — only enough to identify each pick.
-  const catalogue = reviews.map((r, i) => `[${i}] ${r.product_name || r.title} (${r.category || 'uncategorised'})${r.ai_overall_score ? ` · ${r.ai_overall_score}/5` : ''}\n    ${(r.excerpt || '').slice(0, 220)}`).join('\n\n')
+  // 4. Compact catalogue: title + seo_keyword + excerpt — that's enough for
+  //    Haiku to map a buyer's question onto a real pick.
+  const catalogue = reviews.map((r, i) => `[${i}] ${r.title}${r.seo_keyword ? ` (kw: ${r.seo_keyword})` : ''}\n    ${(r.excerpt || '').slice(0, 220)}`).join('\n\n')
 
   const prompt = `You are an AI product finder for a review blog. The visitor asked:
 "${q}"
 
 Pick the 3 reviews from this catalogue that BEST match the visitor's intent. If fewer than 3 are a sensible match, return fewer.
 
-Catalogue (index → product · category · score · 1-line excerpt):
+Catalogue (index → title · keyword · 1-line excerpt):
 ${catalogue}
 
 Return ONLY this JSON (no prose, no markdown fence):
@@ -118,7 +120,7 @@ Return ONLY this JSON (no prose, no markdown fence):
 
 Rules:
 - Picks must be ranked best-fit first.
-- "reason" must reference something concrete from the excerpt or category, not generic praise.
+- "reason" must reference something concrete from the excerpt or keyword, not generic praise.
 - Never invent specs. Never reference products NOT in the catalogue.
 - If nothing in the catalogue fits, return {"picks":[]}.`
 
@@ -140,10 +142,10 @@ Rules:
         const r = typeof p.index === 'number' && reviews[p.index] ? reviews[p.index] : null
         if (!r) return null
         return {
-          title: r.product_name || r.title,
+          title: r.title,
           url: r.wordpress_url,
-          image: r.featured_image_url,
-          score: r.ai_overall_score,
+          image: r.youtube_videos?.thumbnail_url || null,
+          score: null,
           reason: (p.reason || '').trim().slice(0, 220),
         }
       }).filter(Boolean) as PickOut[]
