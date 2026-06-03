@@ -59,6 +59,70 @@ export interface BlogSelfCheckResult {
    *  (paraphrase, ellipsis, whitespace drift) and the replace becomes
    *  a no-op. */
   fixesApplied: number
+  /** Count of product-specific concrete numbers detected in the body
+   *  (dimensions, weights, durations, counts, percentages). Telemetry
+   *  only — flagged in the log when below RULE 11's threshold of 3, but
+   *  the post still ships. Use this to spot transcripts that genuinely
+   *  lack measurable specs vs. posts where the model just didn't bother
+   *  to surface them. */
+  numbersDetected: number
+}
+
+/** Count product-specific numbers in the rendered HTML body.
+ *
+ *  The challenge: a published post contains many "numbers" that aren't
+ *  product specs — the rating widget (4.4/5), the related-reviews
+ *  sidebar (14-inch mattress, 20-inch lights), category links, byline
+ *  dates. We scope to the actual body paragraphs by:
+ *    1. Stripping all <style>/<script> blocks
+ *    2. Dropping HTML tags entirely (text only)
+ *    3. Dropping anything inside the .gr-rating-box / .gr-scorecard /
+ *       related-reviews block heuristically
+ *    4. Counting numeric occurrences that look spec-like — preceded or
+ *       followed by a unit (inches, lbs, oz, ft, mm, cm, hours, mins,
+ *       lumens, watts, mAh, %, $, ° etc.) OR appearing in obvious
+ *       count constructions ("7 compartments", "4 pockets", "12 hours").
+ *
+ *  Imperfect but better than zero — gives a directional signal so we
+ *  can see which posts genuinely lack specs vs. which posts had specs
+ *  but the model didn't surface them. */
+function countProductSpecificNumbers(html: string): number {
+  // Strip blocks we know shouldn't count toward the spec count.
+  const stripped = html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    // The rating widget renders as .gr-rating-box / .gr-scorecard
+    .replace(/<div[^>]*class="[^"]*gr-rating-box[^"]*"[\s\S]*?<\/div>\s*<\/div>/gi, '')
+    .replace(/<div[^>]*class="[^"]*gr-scorecard[^"]*"[\s\S]*?<\/div>\s*<\/div>/gi, '')
+    // Related-reviews block heuristic
+    .replace(/<h2[^>]*>Related reviews<\/h2>[\s\S]*?(?=<!-- wp:heading -->|$)/i, '')
+    // Drop the affiliate disclaimer block (price/policy boilerplate)
+    .replace(/<div[^>]*class="wp-block-group[^"]*has-background[^"]*"[\s\S]*?<\/div>\s*<\/div>/gi, '')
+    // Drop the CTA card (product name spans containing numbers occasionally)
+    .replace(/<div[^>]*class="[^"]*gr-cta-card[^"]*"[\s\S]*?<\/div>\s*<\/div>/gi, '')
+  const text = stripped.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+
+  // Patterns that indicate a real measurable number tied to the product.
+  // We deduplicate against the same exact substring so "4 pockets" mentioned
+  // twice doesn't double-count.
+  const patterns: RegExp[] = [
+    // Number + unit (most common)
+    /\b\d+(?:\.\d+)?\s*(?:inches?|in\.?|"|″|cm|mm|m|ft|feet|yards?|lb|lbs|pounds?|kg|g|oz|grams?|ml|l|liter|liters|gallon|gallons|gal|hours?|hrs?|h|minutes?|mins?|seconds?|secs?|days?|weeks?|months?|years?|watts?|w|kw|mAh|amps?|volts?|v|lumens?|nits|hz|psi|bar|btu|rpm|°|degrees?|fahrenheit|celsius|f\b|c\b|miles?|mph|km|kmh)\b/gi,
+    // Count + noun (e.g. "7 compartments", "12 ports", "4 pockets", "3 settings")
+    /\b\d+\s+(?:pockets?|compartments?|slots?|ports?|cameras?|channels?|settings?|modes?|speeds?|levels?|colors?|colours?|sizes?|pieces?|items?|accessories|attachments?|brushes?|heads?|tips?|blades?|cups?|cards?|sensors?|lights?|leds?|outlets?)\b/gi,
+    // Percentages
+    /\b\d+\s*%/g,
+    // Resolution / pixel patterns (2K, 4K, 1080p, etc.)
+    /\b(?:2k|4k|8k|1080p|720p|2160p|hd|fhd|uhd)\b/gi,
+    // Capacity formats (e.g. "32 GB", "1 TB")
+    /\b\d+\s*(?:gb|mb|tb|kb)\b/gi,
+  ]
+  const seen = new Set<string>()
+  for (const re of patterns) {
+    const matches = text.match(re) || []
+    for (const m of matches) seen.add(m.toLowerCase().trim())
+  }
+  return seen.size
 }
 
 /** Cap on what we send to Haiku. Very long posts (15k+ chars) drive up
@@ -97,18 +161,26 @@ VIOLATIONS TO HUNT (look for these patterns and close variants — do NOT flag a
 2. SMALL-DETAIL TIC — any sentence that flags a detail's size before praising it:
    "small thing but matters", "small detail but", "small but mighty", "small, but matters", "this is a small thing, but…".
 
-3. AI EMPHASIS DEFENSE — model insists it's not exaggerating:
-   "I don't throw that word around lightly", "that's not exaggeration", "I'm not exaggerating", "I'm not kidding", "no, really".
+3. AI EMPHASIS DEFENSE — model insists it's sincere or not exaggerating. Hunt all variants:
+   "I don't throw that word around lightly", "that's not exaggeration", "I'm not exaggerating", "I'm not kidding", "no, really", "I mean it", "I really mean it", "I mean it here", "I mean that", "I said it on camera and I mean it here", "I said it in the video and I'll say it here", "I meant that genuinely", "I meant it genuinely", "I meant that sincerely", "trust me", "trust me on this", "believe me", "for real" — ANY sentence whose function is to re-assert the writer's sincerity.
 
-4. "LIKE GENUINELY ___" COMPOUNDS — any sentence using "like genuinely" as an intensifier:
-   "like genuinely good", "like genuinely surprising", "like genuinely nice", any "like genuinely + adjective".
+4. THE WORD "GENUINELY" IN ANY POSITION — banned everywhere, not just "like genuinely" compounds:
+   "I genuinely think", "genuinely good", "like genuinely surprising", "I meant that genuinely", "genuinely impressed" — every occurrence. Cut the word and rephrase.
 
 5. EM-DASH IN A HEADING — any <h2> or <h3> tag whose text contains the em-dash character (—). Em-dashes are allowed inside body paragraphs but BANNED in headings.
 
 6. CONCLUSION CRESCENDO — emotional verdict flourish:
    "I think these things are fantastic", "really cool, really unique", "small, mighty, and powerful — that's the X in three words", "honestly fantastic" (and "honest" is also banned outright).
 
-7. "SOME USERS / SOME PEOPLE" HEDGE — any list item or sentence starting with "Some users", "Some people", "Some folks" — these are personas, not lived experience, and banned in the cons section.
+7. CORPORATE-PRAISE PATTERNS — soft form of crescendo, dressed as measured but still pat-on-the-back filler:
+   "delivers what it promises", "delivers on its promise", "does what it promises", "lives up to its promise", "lives up to the hype", "lives up to the name", "earns its place", "earns its keep", "is the real deal", "is exactly what it claims to be", "is exactly what it says on the tin".
+   These read as marketing copy. The verdict should state what the product concretely does + the trade-off.
+
+8. "SOME USERS / SOME PEOPLE" HEDGE — any list item or sentence starting with "Some users", "Some people", "Some folks" — these are personas, not lived experience, and banned in the cons section.
+
+9. GENERIC OPENING-SENTENCE SHAPES — if the article's FIRST body sentence matches any of these, flag it as a violation (the opening hook is the single highest-stakes line):
+   "We tested [product]", "We tried out [product]", "We tried [product]", "Here's my review of [product]", "Here's our take on [product]", "Today we're looking at [product]", "In this review I'll cover [product]", "I'll be reviewing [product]", "This is a review of [product]", or any "[We|I] [tested|tried|reviewed|checked out|unboxed] this [product/category]" frame.
+   The opener must be a specific lived moment, surprising observation, or concrete personal stake from the test. Suggest a rewrite that mines the transcript moment instead.
 
 FOR EACH VIOLATION FOUND, propose a rewrite that:
   - Cuts the banned phrase entirely (do NOT swap it for a synonym of the same tic — "tiny but mighty" is the same violation as "small but mighty")
@@ -146,16 +218,16 @@ ${truncated}`,
       // Couldn't find a JSON array — treat as no violations rather than
       // failing the whole pass. Most likely Haiku returned a "[] (no
       // violations found)" with prose around it that we couldn't parse.
-      return { content, violations: [], fixesApplied: 0 }
+      return { content, violations: [], fixesApplied: 0, numbersDetected: countProductSpecificNumbers(content) }
     }
     let parsed: unknown
     try {
       parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1))
     } catch {
-      return { content, violations: [], fixesApplied: 0 }
+      return { content, violations: [], fixesApplied: 0, numbersDetected: countProductSpecificNumbers(content) }
     }
     if (!Array.isArray(parsed)) {
-      return { content, violations: [], fixesApplied: 0 }
+      return { content, violations: [], fixesApplied: 0, numbersDetected: countProductSpecificNumbers(content) }
     }
 
     // Apply each fix via plain string-replace (NOT regex, so violation
@@ -180,11 +252,19 @@ ${truncated}`,
       violations.push({ pattern, original, suggested, applied })
     }
 
-    return { content: updated, violations, fixesApplied }
+    // Count product-specific numbers in the FINAL content (after fixes).
+    // RULE 11 requires ≥3 per post; we only LOG when below threshold so a
+    // genuinely spec-light transcript doesn't block publish — directional
+    // signal for which posts need more measurement-mining.
+    const numbersDetected = countProductSpecificNumbers(updated)
+    return { content: updated, violations, fixesApplied, numbersDetected }
   } catch (err) {
     // Defensive: a Haiku timeout, rate-limit, or schema drift must NEVER
-    // block the post from publishing. Ship the original content.
+    // block the post from publishing. Ship the original content. We still
+    // attempt the number count on the original so the telemetry survives.
     console.warn('[blog-self-check] failed — shipping original content:', err instanceof Error ? err.message : err)
-    return { content, violations: [], fixesApplied: 0 }
+    let numbersDetected = 0
+    try { numbersDetected = countProductSpecificNumbers(content) } catch { /* swallow — best-effort */ }
+    return { content, violations: [], fixesApplied: 0, numbersDetected }
   }
 }

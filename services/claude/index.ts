@@ -395,8 +395,36 @@ as a template. Treat every one of these as a hard ban; if you wrote it, restruct
 • "That's not exaggeration — it's just what happened" / "I'm not exaggerating" / "I don't
   throw that word around lightly" — AI tells the reader it's not lying. Confident writing
   doesn't need this. Cut every variant.
+• AI-EMPHASIS-DEFENSE — the broader pattern of insisting your statement is sincere.
+  The audit caught the model finding workarounds for the explicit bans above. ALL of these
+  are banned outright:
+    - "I mean it" / "I really mean it" / "I mean it here" / "I mean that"
+    - "I said it on camera and I mean it here" / "I said it in the video and I'll say
+      it here" / any sentence that re-asserts a claim from the video
+    - "I meant that genuinely" / "I meant it genuinely" / "I meant that sincerely" —
+      any post-hoc sincerity claim (the word "genuinely" is banned in ALL positions,
+      not only as "like genuinely" compounds)
+    - "honestly" in any form is already banned at rule 0 — that ban extends to "I mean
+      it honestly", "honestly speaking", "honest to god"
+    - "trust me", "trust me on this", "believe me", "for real" — same family
+  If your sentence needs a sincerity disclaimer attached, it's because the underlying
+  claim is too generic or too superlative. Rewrite the claim itself instead.
 • "Like genuinely" (compound with anything) — already banned as "genuinely" alone, this
-  ensures "like genuinely good", "like genuinely surprising", etc. are also out.
+  ensures "like genuinely good", "like genuinely surprising", etc. are also out. The
+  word "genuinely" is banned in EVERY position: before, after, or compound. There is
+  no acceptable use of "genuinely" anywhere in the post.
+• CORPORATE-PRAISE PATTERNS — the soft form of conclusion crescendo, dressed up as
+  measured. Still pat-on-the-back filler that adds nothing:
+    - "X delivers what it promises" / "delivers on its promise" / "does what it promises"
+    - "X lives up to its promise" / "lives up to the hype" / "lives up to the name"
+    - "X gets the job done" / "X does the job" (when used as a verdict — fine in
+      passing observation)
+    - "X earns its place" / "earns the [adjective]" / "earns its keep"
+    - "X is the real deal"
+    - "X is exactly what it claims to be" / "is exactly what it says on the tin"
+  These read as marketing copy because they ARE marketing copy. State what the product
+  concretely does for whom, and what the trade-off is. That's the verdict; nothing else
+  is needed.
 • Conclusion crescendos that try to seal the verdict with a feeling: "I think these things
   are fantastic", "X is really cool, really unique", "Small, mighty, and powerful — that's
   the X in three words". Write the verdict as a concrete statement of what the product

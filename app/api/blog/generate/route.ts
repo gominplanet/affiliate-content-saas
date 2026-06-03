@@ -718,6 +718,15 @@ async function handleGenerate(request: Request) {
       // copying the exact sentence.
       console.log(`[blog/generate] self-check: ${selfCheck.violations.length} flagged but 0 applied (paraphrase mismatch)`)
     }
+    // RULE 11 directional signal: warn when the post ships with fewer
+    // than 3 product-specific numbers. Doesn't block publish — some
+    // transcripts genuinely lack measurable specs — but lets us spot
+    // posts where the model didn't bother to surface what was there.
+    if (selfCheck.numbersDetected < 3) {
+      console.warn(`[blog/generate] self-check: only ${selfCheck.numbersDetected} product-specific number(s) in post (RULE 11 target = 3). Either transcript lacked specs or model didn't surface them.`)
+    } else {
+      console.log(`[blog/generate] self-check: ${selfCheck.numbersDetected} product-specific numbers detected`)
+    }
   } catch (err) {
     console.warn('[blog/generate] self-check threw — shipping unchanged:', err instanceof Error ? err.message : err)
   }
