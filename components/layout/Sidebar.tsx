@@ -196,7 +196,7 @@ const secondaryNav = [
   // in the render — NOT here — so non-admins never see them.
 ]
 
-export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: string; wpSiteUrl?: string | null }) {
+export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp, showBuyingGuides = false }: { email?: string; wpSiteUrl?: string | null; showBuyingGuides?: boolean }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -452,7 +452,10 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
               </button>
               {isOpen && (
                 <div className="flex flex-col gap-0.5">
-                  {group.items.filter(it => metaUnlocked || it.href !== '/instagram-burner').map(renderNavLink)}
+                  {group.items
+                    .filter(it => metaUnlocked || it.href !== '/instagram-burner')
+                    .filter(it => showBuyingGuides || it.href !== '/buying-guides')
+                    .map(renderNavLink)}
                 </div>
               )}
             </div>

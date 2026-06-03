@@ -16,7 +16,7 @@
 import { useEffect, useState, FormEvent } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight } from 'lucide-react'
+import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface Suggestion { topic: string; count: number }
@@ -29,6 +29,10 @@ export default function BuyingGuidesPage() {
   const [loading, setLoading] = useState(true)
   const [topic, setTopic] = useState('')
   const [generating, setGenerating] = useState(false)
+  // Catalogue gate — the GET returns { locked: true, threshold, currentPostCount }
+  // when the user's live WP catalogue is below 500 posts. We render a
+  // locked card instead of the topic input.
+  const [locked, setLocked] = useState<{ threshold: number; current: number } | null>(null)
 
   useEffect(() => { void refresh() }, [])
 
@@ -38,9 +42,17 @@ export default function BuyingGuidesPage() {
       const r = await fetch('/api/buying-guides')
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Failed to load')
-      setSuggestions(j.suggestions || [])
-      setGuides(j.guides || [])
-      setReviewCount(j.reviewCount || 0)
+      if (j.locked) {
+        setLocked({ threshold: j.threshold ?? 500, current: j.currentPostCount ?? 0 })
+        setSuggestions([])
+        setGuides([])
+        setReviewCount(0)
+      } else {
+        setLocked(null)
+        setSuggestions(j.suggestions || [])
+        setGuides(j.guides || [])
+        setReviewCount(j.reviewCount || 0)
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load')
     } finally {
@@ -79,6 +91,47 @@ export default function BuyingGuidesPage() {
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     void generate(topic)
+  }
+
+  // ── Locked state ────────────────────────────────────────────────
+  // Renders a single explanatory card when the live WP catalogue is
+  // below the unlock threshold. Sidebar already hides the entry; this
+  // is the safety net for direct-URL navigation.
+  if (locked) {
+    const remaining = Math.max(0, locked.threshold - locked.current)
+    return (
+      <div className="space-y-6">
+        <div className="rounded-xl border p-8" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl" style={{ background: 'rgba(124,58,237,.12)' }}>
+              <Lock className="w-6 h-6" style={{ color: '#7C3AED' }} />
+            </div>
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides — locked</h1>
+              <p className="text-sm mt-2" style={{ color: 'var(--fg-muted)' }}>
+                The round-up format needs a wide catalogue to produce diverse, useful guides. Unlocks automatically
+                once your live blog has <strong>{locked.threshold} published posts</strong>.
+              </p>
+              <div className="mt-4 rounded-lg border p-4" style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
+                <div className="flex items-baseline gap-2">
+                  <div className="text-3xl font-bold" style={{ color: 'var(--fg)' }}>{locked.current}</div>
+                  <div className="text-sm" style={{ color: 'var(--fg-muted)' }}>/ {locked.threshold} posts</div>
+                </div>
+                <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                  <div className="h-full rounded-full" style={{
+                    width: `${Math.min(100, (locked.current / locked.threshold) * 100)}%`,
+                    background: '#7C3AED',
+                  }} />
+                </div>
+                <p className="text-xs mt-2" style={{ color: 'var(--fg-muted)' }}>
+                  {remaining > 0 ? `${remaining} more to unlock.` : 'Refresh — you should be unlocked.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

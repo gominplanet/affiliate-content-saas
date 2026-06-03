@@ -182,11 +182,54 @@ async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClien
   return Array.from(byUrl.values())
 }
 
+// ─── Helper: feature gate ──────────────────────────────────────────────────
+//
+// Buying Guides only earns its keep above a 500-post catalogue. We check
+// the live WP X-WP-Total header (with Next's 5-min fetch cache) so the
+// signal is the same one the sidebar uses to decide whether to surface
+// the nav entry. Admin always passes.
+async function isUnlocked(supabase: Awaited<ReturnType<typeof createServerClient>>, userId: string): Promise<{ unlocked: boolean; total: number; tier: string }> {
+  const { data: integ } = await supabase
+    .from('integrations')
+    .select('wordpress_url, tier')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const tier = (integ?.tier as string | null) || 'trial'
+  if (tier === 'admin') return { unlocked: true, total: Infinity, tier }
+  const wpUrl = integ?.wordpress_url as string | null
+  if (!wpUrl) return { unlocked: false, total: 0, tier }
+  try {
+    const res = await fetch(`${wpUrl.replace(/\/+$/, '')}/wp-json/wp/v2/posts?per_page=1&_fields=id`, {
+      signal: AbortSignal.timeout(2500),
+      headers: { Accept: 'application/json' },
+      next: { revalidate: 300 },
+    })
+    if (!res.ok) return { unlocked: false, total: 0, tier }
+    const total = parseInt(res.headers.get('x-wp-total') || '0', 10)
+    return { unlocked: total >= 500, total, tier }
+  } catch {
+    return { unlocked: false, total: 0, tier }
+  }
+}
+const UNLOCK_THRESHOLD = 500
+
 // ─── GET ───────────────────────────────────────────────────────────────────
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const gate = await isUnlocked(supabase, user.id)
+  if (!gate.unlocked) {
+    return NextResponse.json({
+      locked: true,
+      threshold: UNLOCK_THRESHOLD,
+      currentPostCount: gate.total,
+      suggestions: [],
+      guides: [],
+      reviewCount: 0,
+    })
+  }
 
   const reviews = await loadReviews(supabase, user.id)
   const suggestions = suggestTopics(reviews)
@@ -215,6 +258,14 @@ export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const gate = await isUnlocked(supabase, user.id)
+  if (!gate.unlocked) {
+    return NextResponse.json({
+      error: `Buying Guides unlocks at ${UNLOCK_THRESHOLD} published posts. You currently have ${gate.total}.`,
+      code: 'catalogue_too_small',
+    }, { status: 403 })
+  }
 
   // Pro/admin gate
   const { data: integ } = await supabase
