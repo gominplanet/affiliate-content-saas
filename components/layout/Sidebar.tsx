@@ -168,6 +168,9 @@ const SIDEBAR_GROUPS_KEY = 'mvp_sidebar_groups'
 
 const secondaryNav = [
   { href: '/billing', label: 'Plan & Billing', icon: CreditCard },
+  // API access — only relevant for Pro users, but always visible so
+  // Creator/Studio users can discover it + see the upgrade pitch.
+  { href: '/developers', label: 'API Access', icon: KeyRound },
   // Rewardful-hosted affiliate dashboard — opens in a new tab. Hidden
   // while sales are paused (no point recruiting new affiliates when
   // their referrals can't actually buy).
