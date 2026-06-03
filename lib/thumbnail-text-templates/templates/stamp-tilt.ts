@@ -42,7 +42,10 @@ function render(input: TemplateInput): TemplateNode {
           color: palette.primary,
           letterSpacing: 2,
           textShadow: `0 ${Math.max(2, Math.round(topSize * 0.06))}px 0 ${palette.outline}`,
-          marginBottom: Math.round(topSize * 0.4),
+          // Enough vertical gap that the stamp's -10° rotation below
+          // doesn't tilt up into this line. 0.4 was tight; 1.4 leaves
+          // breathing room.
+          marginBottom: Math.round(topSize * 1.4),
         },
         children: top,
       },
