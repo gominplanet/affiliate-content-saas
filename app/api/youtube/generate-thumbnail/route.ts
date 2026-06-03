@@ -16,6 +16,7 @@ import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
+import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
 import { resolveBestThumbnail } from '@/lib/youtube-frames'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -869,17 +870,30 @@ export async function POST(request: Request) {
           // high-CTR energy instead of a calm headshot expression.
           let faceRefs: string[] = []
           if (faceModel?.source_images?.length) {
-            // Prefer the creator's OWN most-recent "Excited" Photobooth headshot
-            // (instant — no generation); else auto-build the cached anchor.
-            // Time-boxed so a cold anchor build can never hang the whole
-            // thumbnail past the function budget — if it's slow, fall back to the
-            // raw face photos for this generation.
-            const primaryFace = await Promise.race([
-              getThumbnailFaceRef(supabase, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier }),
-              new Promise<null>(res => setTimeout(() => res(null), 120_000)),
-            ])
-            const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 2 : 5)
-            faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
+            // ── Identity reference priority ───────────────────────────────────
+            // 1. STARRED Photobooth shots for THIS face (clean, studio-lit,
+            //    same person, ideal Nano Banana input). When present, we use
+            //    these alone — mixing in raw uploads dilutes the signal.
+            // 2. Excited-expression anchor (generated/cached) + a couple of
+            //    raw uploads for backup angles. Anchor build is time-boxed.
+            // 3. Raw uploads alone (legacy path; user hasn't run Photobooth
+            //    yet on this face).
+            //
+            // The Photobooth path is the user's instruction: "the headshots
+            // are clean and this is what the agent should be using to
+            // understand what the model looks like." We treat it as the
+            // ground truth when available.
+            const starredPb = await getStarredPhotoboothRefs(user.id, faceModel.id, { maxRefs: 5 })
+            if (starredPb.length > 0) {
+              faceRefs = starredPb
+            } else {
+              const primaryFace = await Promise.race([
+                getThumbnailFaceRef(supabase, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier }),
+                new Promise<null>(res => setTimeout(() => res(null), 120_000)),
+              ])
+              const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 2 : 5)
+              faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
+            }
           }
           // Product image(s) as references so the product(s) render accurately
           // (the vidIQ look). The prompt scopes the product refs to the
@@ -1146,7 +1160,7 @@ Ultra-sharp, professional, photorealistic.`
               // Which face model the likeness was locked to (Auto-match result),
               // surfaced so the user can confirm it picked the right person.
               faceUsed: faceModel?.name ?? null,
-              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceModelPhotos=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'})`,
+              faceDebug: `nano-banana composed (source=${hasCapturedFrame ? `extension-frame[${validFrames.length || 1}]` : frameRef ? 'maxres' : 'face+product (no frame)'}, face=${faceModel?.name ?? 'none'}, faceRefs=${faceRefs.length}, productRefs=${productRefs.length}${customProductRefs.length > 0 ? ' [user-supplied]' : ''}, title=${wantClean ? 'overlay' : 'baked'})`,
             })
           }
           console.warn('[generate-thumbnail] Nano Banana (frame) returned no image; falling through')
