@@ -93,7 +93,7 @@ function render(input: TemplateInput): TemplateNode {
             paddingBottom: sz.vMargin,
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'center',
+            justifyContent: input.verticalAnchor === 'bottom' ? 'flex-end' : input.verticalAnchor === 'center' ? 'center' : 'flex-start',
             alignItems: side === 'left' ? 'flex-start' : 'flex-end',
             textAlign: side === 'left' ? 'left' : 'right',
           },

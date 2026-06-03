@@ -22,7 +22,7 @@ import sharp from 'sharp'
 import { pickTemplate } from './picker'
 import { templateById, randomTemplate } from './templates'
 import { fontsFor } from './fonts'
-import type { PickedTemplate, Side } from './types'
+import type { PickedTemplate, Side, VerticalAnchor } from './types'
 
 export { TEMPLATES, randomTemplate, templateById } from './templates'
 
@@ -37,6 +37,11 @@ export interface RenderDesignerOverlayInput {
    *  is placed on the OTHER side. If not provided, defaults to 'right' so
    *  the text sits on the left (matches our most common layout). */
   subjectSide?: Side
+  /** Where the text column anchors vertically. Defaults to 'top' for
+   *  live thumbnail renders since face + product usually occupy
+   *  centre/lower — top-anchored text avoids burying important content
+   *  with a half-canvas text column. */
+  verticalAnchor?: VerticalAnchor
   /** Optional override: skip the picker and use this template id directly.
    *  Useful for admin testing or when the caller has already chosen. */
   forceTemplateId?: string
@@ -127,7 +132,13 @@ export async function renderDesignerOverlay(input: RenderDesignerOverlayInput): 
   }
 
   // ── 2. Render template → Satori element tree ─────────────────────────────
-  const tree = template.render({ width, height, side: textSide, content: picked.content, palette: picked.palette })
+  const tree = template.render({
+    width, height,
+    side: textSide,
+    verticalAnchor: input.verticalAnchor ?? 'top',
+    content: picked.content,
+    palette: picked.palette,
+  })
 
   // ── 3. Satori → SVG ──────────────────────────────────────────────────────
   let svg: string

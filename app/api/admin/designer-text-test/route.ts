@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
       forceTemplateId: body.forceTemplateId ? String(body.forceTemplateId) : undefined,
       randomize: body.randomize === true,
       subjectSide: body.subjectSide === 'left' ? 'left' : body.subjectSide === 'right' ? 'right' : undefined,
+      verticalAnchor: body.verticalAnchor === 'bottom' ? 'bottom' : body.verticalAnchor === 'center' ? 'center' : 'top',
       userId: user.id,
       tier: (caller?.tier as string) ?? null,
     })

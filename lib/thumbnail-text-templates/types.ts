@@ -12,6 +12,12 @@ import type { FontFamily } from './fonts'
  *  use it to mirror their layout. */
 export type Side = 'left' | 'right'
 
+/** Vertical anchor for the text column. 'top' is the safest default for
+ *  YouTube thumbnails — face + product usually sit center/bottom of the
+ *  frame, so anchoring text to the top corner avoids burying important
+ *  visual content. Vision text-zone detection can override per render. */
+export type VerticalAnchor = 'top' | 'center' | 'bottom'
+
 /** Distilled content the template renders. The picker decomposes the
  *  raw headline into these parts so the template can style each part
  *  independently (different size, color, decoration). */
@@ -52,6 +58,12 @@ export interface TemplateInput {
   height: number
   /** Which half of the canvas the subject occupies — text goes on the OTHER side. */
   side: Side
+  /** Where the text column should anchor vertically. 'top' is the default
+   *  for the live flow — most YouTube thumbnails have face + product
+   *  centred/lower, so anchoring text to the top corner keeps it out of
+   *  the dominant subject. Templates may ignore this when their design
+   *  inherently needs centred placement (e.g. mega-word). */
+  verticalAnchor?: VerticalAnchor
   content: TemplateContent
   palette: TemplatePalette
 }

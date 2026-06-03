@@ -195,7 +195,10 @@ function render(input: TemplateInput): TemplateNode {
         paddingBottom: sz.vMargin,
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'center',
+        // Badge-score badge anchors to the bottom corner, so its TEXT
+        // should anchor to the top corner by default — keeps the badge
+        // and headline visually separated rather than stacked together.
+        justifyContent: input.verticalAnchor === 'bottom' ? 'flex-end' : input.verticalAnchor === 'center' ? 'center' : 'flex-start',
         alignItems: side === 'left' ? 'flex-start' : 'flex-end',
       },
       children: headlineLines,

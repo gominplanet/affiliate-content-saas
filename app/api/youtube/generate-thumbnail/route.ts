@@ -1067,12 +1067,20 @@ Ultra-sharp, professional, photorealistic.`
                     : zone?.subjectSide === 'right'
                       ? 'right'
                       : (zone?.position.includes('left') ? 'right' : 'left')
+                  // Vertical anchor — derived from the safe text-zone position.
+                  // If vision says top-* is safe → anchor text to top. If
+                  // bottom-* → anchor bottom. Default to 'top' because face +
+                  // product on YouTube thumbnails usually occupy centre/lower
+                  // and top anchoring keeps the half-canvas text column out
+                  // of the dominant subject.
+                  const verticalAnchor: 'top' | 'bottom' = zone?.position?.startsWith('bottom') ? 'bottom' : 'top'
 
                   const result = await renderDesignerOverlay({
                     baseImageUrl: cleanUrl,
                     headline: variantHook,
                     productContext: productTitle || null,
                     subjectSide,
+                    verticalAnchor,
                     randomize: true,
                     userId: String(TELEMETRY.userId ?? ''),
                     tier: TELEMETRY.tier,
