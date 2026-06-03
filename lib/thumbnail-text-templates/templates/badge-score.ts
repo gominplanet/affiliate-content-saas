@@ -13,13 +13,6 @@ function render(input: TemplateInput): TemplateNode {
   const colWidth = Math.round(width * 0.52)
   const padX = Math.round(width * 0.04)
 
-  // The punch fills the text column on the text-side. The badge floats as an
-  // ABSOLUTE element in the bottom corner OPPOSITE the text — mirrors the
-  // canonical "WORTH IT? + corner 9/10 ✓" layout instead of stacking the
-  // badge under the text (which previously crowded the composition).
-  const punchSize = Math.min(colWidth * 0.42, height * 0.45)
-  const outlineW = Math.max(10, Math.round(punchSize * 0.075))
-
   // Split punch into stacked lines (matches the WORTH / IT? composition).
   const punchWords = content.punch.trim().split(/\s+/)
   const wordLines: string[] = punchWords.length === 1
@@ -27,6 +20,25 @@ function render(input: TemplateInput): TemplateNode {
     : punchWords.length === 2
       ? [punchWords[0], punchWords[1]]
       : [punchWords.slice(0, Math.ceil(punchWords.length / 2)).join(' '), punchWords.slice(Math.ceil(punchWords.length / 2)).join(' ')]
+
+  // The punch fills the text column. The badge floats absolute in the
+  // opposite corner. Mirrors the canonical "WORTH IT? + corner 9/10 ✓".
+  //
+  // AUTO-FIT punch size to the longest line's character count so a wide
+  // 3-word punch like "TASTY OR NOT?" doesn't wrap to a third line and
+  // overflow the canvas vertically. Anton glyph width ≈ 0.55× its font
+  // size, so max fontSize for a line of N chars = colInnerWidth / (N * 0.55).
+  // We also cap by colWidth and height fractions so the punch never grows
+  // grotesquely large for very short headlines.
+  const colInner = colWidth - padX * 2
+  const longestLineChars = Math.max(1, ...wordLines.map(l => l.length))
+  const fitFontSize = colInner / (longestLineChars * 0.55)
+  // Lower the visual ceiling vs the v1 numbers — 0.30 ratio matches the
+  // type scale in the original WORTH IT? reference (badge-score is meant
+  // to share the canvas with a corner badge, so the headline shouldn't be
+  // a full-canvas block).
+  const punchSize = Math.min(colWidth * 0.30, height * 0.40, fitFontSize)
+  const outlineW = Math.max(10, Math.round(punchSize * 0.075))
 
   const headlineLines: TemplateNode[] = wordLines.map(w => ({
     type: 'div',
@@ -53,10 +65,17 @@ function render(input: TemplateInput): TemplateNode {
   const badgeSub = content.badge?.subtext || ''
   const badgeIcon = content.badge?.iconHint || null
 
-  // Badge sized at 0.40× punch (was 0.50× — too big, was crashing into the
-  // text column when both elements fought for the same horizontal real
-  // estate). Padding tightened to match.
-  const badgeSize = Math.round(punchSize * 0.40)
+  // Badge sized at 0.55× punch (the punch itself is smaller now thanks to
+  // the auto-fit + lower visual ceiling, so the badge scales relative to it
+  // for visual balance). Also clamped to a fixed canvas-fraction max so a
+  // tiny headline doesn't produce a microscopic badge.
+  const badgeSize = Math.max(
+    Math.round(width * 0.045),  // floor: ~58px on 1280 — readable at YouTube preview size
+    Math.min(
+      Math.round(punchSize * 0.55),
+      Math.round(width * 0.08), // ceiling: ~102px on 1280 — matches the "WORTH IT?" reference
+    ),
+  )
   const badgeIconColor = badgeIcon === 'x' ? '#E50914' : badgeIcon === 'star' ? '#FFC700' : '#34C759'
   const badgeOutlineW = Math.max(4, Math.round(badgeSize * 0.08))
   const iconSize = Math.round(badgeSize * 1.3)
