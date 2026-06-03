@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Loader2, Calendar, CheckCircle, AlertCircle } from 'lucide-react'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 
 /** Lowercase platform key — matches the cron worker's switch. */
 type Platform = 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
@@ -155,11 +156,24 @@ export function BulkScheduleModal({
     onClose()
   }
 
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const onA11yKey = useModalA11y(true, panelRef, onClose)
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+      onKeyDown={onA11yKey}
+      role="presentation"
+    >
       <div
+        ref={panelRef}
         onClick={e => e.stopPropagation()}
-        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto outline-none"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Bulk schedule"
+        tabIndex={-1}
       >
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">

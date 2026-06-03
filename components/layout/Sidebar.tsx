@@ -56,6 +56,7 @@ import { toast } from 'sonner'
 import type { Tier } from '@/lib/tier'
 import { resetTutorials } from '@/components/TutorialVideo'
 import { COMMUNITY_LABEL, COMMUNITY_TOOLTIP } from '@/lib/community'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 // Sidebar nav, grouped by workflow phase. Dashboard is pinned at the very
 // top with Blog Set Up + Integrations directly beneath it — those two are
@@ -194,6 +195,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
   const router = useRouter()
   const { theme, setTheme } = useTheme()
   const supabase = createBrowserClient()
+  const { confirm, ConfirmHost } = useConfirm()
   const [wpSiteUrl, setWpSiteUrl] = useState<string | null>(wpSiteUrlProp ?? null)
   const [isAdmin, setIsAdmin] = useState(false)
   // White-label config — populated client-side from the integrations row in
@@ -389,7 +391,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
             // Default MVP word-mark.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src="/mvp-affiliate-logo.jpg"
+              src="/mvp-affiliate-logo.webp"
               alt="MVP Affiliate"
               className="w-full h-auto rounded-2xl object-contain mix-blend-multiply dark:mix-blend-screen group-hover:opacity-90 transition-opacity"
             />
@@ -478,10 +480,15 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
             is meaningless. */}
         {wpSiteUrl && (
           <button
-            onClick={() => {
-              const ok = window.confirm(
-                'Heads up: editing posts, theme files or plugin settings directly in WordPress can break the MVP Affiliate setup — theme + plugin sync, Brand Profile push, and the cache layer all depend on MVP being the source of truth.\n\nYou\'re doing this at your own risk. Continue?'
-              )
+            onClick={async () => {
+              const ok = await confirm({
+                title: 'Open WordPress admin?',
+                description:
+                  'Editing posts, theme files or plugin settings directly in WordPress can break the MVP Affiliate setup — theme + plugin sync, Brand Profile push, and the cache layer all depend on MVP being the source of truth. Continue at your own risk.',
+                confirmLabel: 'Open WP admin',
+                cancelLabel: 'Stay in MVP',
+                destructive: true,
+              })
               if (ok) window.open(`${wpSiteUrl.replace(/\/$/, '')}/wp-admin`, '_blank', 'noopener,noreferrer')
             }}
             className="nav-item w-full text-left"
@@ -697,6 +704,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp }: { email?: s
         </button>
       </div>
     </aside>
+    <ConfirmHost />
     </>
   )
 }

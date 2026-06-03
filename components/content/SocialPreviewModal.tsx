@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Loader2, X, RefreshCw, CheckCircle, AlertCircle, Calendar, Copy, ExternalLink, Users } from 'lucide-react'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 
 /** Platform key the SocialPreviewModal accepts for scheduling. The cron
  *  worker handles the same set. */
@@ -186,11 +187,24 @@ export function SocialPreviewModal({
     }
   }
 
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const onA11yKey = useModalA11y(true, panelRef, onClose)
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+      onKeyDown={onA11yKey}
+      role="presentation"
+    >
       <div
+        ref={panelRef}
         onClick={e => e.stopPropagation()}
-        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto"
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto outline-none"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Social preview"
+        tabIndex={-1}
       >
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">

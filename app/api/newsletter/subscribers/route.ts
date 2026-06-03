@@ -20,10 +20,12 @@ export async function GET(req: NextRequest) {
   const format = req.nextUrl.searchParams.get('format')
   const status = req.nextUrl.searchParams.get('status') // 'pending' | 'active' | 'unsubscribed' | 'bounced'
 
+  // tags is migration 090 — generated DB types may lag a regen, so we cast
+  // the table reference once. Other columns are typed cleanly.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = supabase
+  let query = (supabase as any)
     .from('newsletter_subscribers')
-    .select('id,email,status,source,source_url,confirmed_at,unsubscribed_at,created_at')
+    .select('id,email,status,source,source_url,confirmed_at,unsubscribed_at,created_at,tags')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
   if (status && ['pending', 'active', 'unsubscribed', 'bounced'].includes(status)) {
@@ -47,6 +49,7 @@ export async function GET(req: NextRequest) {
     confirmed_at: string | null
     unsubscribed_at: string | null
     created_at: string
+    tags: string[] | null
   }>
 
   if (format === 'csv') {
@@ -85,6 +88,15 @@ export async function GET(req: NextRequest) {
     supabase.from('newsletter_subscribers').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'unsubscribed'),
   ])
 
+  // Surface the union of every tag in use — the compose page uses this for
+  // autocomplete in the segment filter UI. We dedupe + sort so the list is
+  // stable across reloads even if the row order shifts.
+  const tagSet = new Set<string>()
+  for (const r of rows) {
+    for (const t of (r.tags || [])) if (t) tagSet.add(t)
+  }
+  const knownTags = Array.from(tagSet).sort()
+
   return NextResponse.json({
     subscribers: rows,
     counts: {
@@ -92,7 +104,41 @@ export async function GET(req: NextRequest) {
       pending: pendingCount.count ?? 0,
       unsubscribed: unsubCount.count ?? 0,
     },
+    knownTags,
   })
+}
+
+/** PATCH /api/newsletter/subscribers?id=… — update a subscriber's tags.
+ *  Body: { tags: string[] }. We trim, lowercase, dedupe so segmentation
+ *  matches stay case-insensitive. */
+export async function PATCH(req: NextRequest) {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  let body: { tags?: unknown }
+  try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
+  if (!Array.isArray(body.tags)) {
+    return NextResponse.json({ error: 'tags must be an array of strings' }, { status: 400 })
+  }
+  const tags = Array.from(new Set(
+    (body.tags as unknown[])
+      .filter((t): t is string => typeof t === 'string')
+      .map(t => t.trim().toLowerCase())
+      .filter(t => t.length > 0 && t.length <= 40)
+  )).slice(0, 12)         // cap per-subscriber tags to keep the UI sane
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from('newsletter_subscribers')
+    .update({ tags })
+    .eq('id', id)
+    .eq('user_id', user.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true, tags })
 }
 
 export async function DELETE(req: NextRequest) {

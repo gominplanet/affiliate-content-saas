@@ -33,15 +33,27 @@
  *     button (prevents Enter-mash through the modal).
  *   - role="dialog" + aria-modal + aria-labelledby for screen readers.
  *
- * Honest scope note: this fixes the confirmation surface, not the
- * full modal-a11y sweep (focus traps, scroll lock). Those need a
- * shared Modal primitive — separate effort. This component IS
- * keyboard-accessible (Escape, autofocus), just not a complete
- * focus trap.
+ * Focus + a11y discipline (2026-06-03 sweep):
+ *   - Focus trap (Tab/Shift-Tab cycle within the dialog)
+ *   - Restore focus to the trigger on close
+ *   - Body scroll lock while open
+ *   - Escape closes, click-outside closes
+ *   - role=dialog + aria-modal + aria-labelledby wired
+ *   - typeToConfirm path autofocuses the input; otherwise autofocus
+ *     lands on Cancel (Enter-mash safe default)
  */
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
 
 interface Props {
   /** Toggles the modal. Controlled by the caller. */
@@ -81,28 +93,62 @@ export function ConfirmDialog({
   const [typed, setTyped] = useState('')
   const inputRef = useRef<HTMLInputElement | null>(null)
   const cancelRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  // Snapshot the element focused when the dialog opens so we can restore it
+  // on close — without this, focus drops to <body> and keyboard nav restarts.
+  const previouslyFocused = useRef<HTMLElement | null>(null)
 
-  // Reset state when opening/closing.
+  // Reset state + initial focus + scroll lock + previous-focus snapshot.
   useEffect(() => {
-    if (open) {
-      setTyped('')
+    if (!open) return
+    setTyped('')
+    previouslyFocused.current = (document.activeElement as HTMLElement) || null
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    // Defer to next tick so the panel + children have mounted.
+    const handle = window.setTimeout(() => {
       // Focus the input if type-to-confirm, else focus Cancel (safer
       // default for Enter-mashers).
-      setTimeout(() => {
-        (typeToConfirm ? inputRef : cancelRef).current?.focus()
-      }, 0)
+      ;(typeToConfirm ? inputRef : cancelRef).current?.focus()
+    }, 0)
+    return () => {
+      window.clearTimeout(handle)
+      document.body.style.overflow = prevOverflow
+      const target = previouslyFocused.current
+      if (target && document.body.contains(target)) {
+        try { target.focus({ preventScroll: true }) } catch { /* no-op */ }
+      }
     }
   }, [open, typeToConfirm])
 
-  // Escape closes.
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+  // Tab + Shift-Tab cycle within the dialog (focus trap). Escape closes.
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation()
+      onCancel()
+      return
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onCancel])
+    if (e.key !== 'Tab') return
+    const panel = panelRef.current
+    if (!panel) return
+    const nodes = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+      .filter(n => n.offsetWidth > 0 || n.offsetHeight > 0 || n === document.activeElement)
+    if (nodes.length === 0) { e.preventDefault(); return }
+    const first = nodes[0]
+    const last = nodes[nodes.length - 1]
+    const active = document.activeElement as HTMLElement | null
+    if (e.shiftKey) {
+      if (active === first || !panel.contains(active)) {
+        e.preventDefault()
+        last.focus()
+      }
+    } else {
+      if (active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+  }, [onCancel])
 
   if (!open) return null
 
@@ -113,13 +159,17 @@ export function ConfirmDialog({
     <div
       className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onCancel}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-dialog-title"
+      onKeyDown={handleKeyDown}
+      role="presentation"
     >
       <div
-        className="bg-white dark:bg-[#1a1a1c] rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-white/10"
+        ref={panelRef}
+        className="bg-white dark:bg-[#1a1a1c] rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-white/10 outline-none"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        tabIndex={-1}
       >
         <h2
           id="confirm-dialog-title"

@@ -15,7 +15,7 @@ import type { Tier } from '@/lib/tier'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
-  Image, Download, Sparkles, ChevronLeft, ChevronRight, Upload, X, Search,
+  Image, Download, Sparkles, Upload, X, Search,
 } from 'lucide-react'
 
 interface DraftVideo {
@@ -85,6 +85,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
   playlists: Array<{ id: string; title: string }>
 }) {
   const isPro = userTier === 'pro' || userTier === 'admin'
+  const { confirm, ConfirmHost } = useConfirm()
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [finishCheckDone, setFinishCheckDone] = useState(false)
@@ -277,14 +278,19 @@ function VideoStudioCard({ video, userTier, playlists }: {
   }, [styleReferenceUrl])
 
   const deletePreset = useCallback(async (id: string) => {
-    if (typeof window !== 'undefined' && !window.confirm('Delete this style preset?')) return
+    if (!(await confirm({
+      title: 'Delete this style preset?',
+      description: 'Your saved thumbnail style will be removed permanently. Existing thumbnails are unaffected.',
+      confirmLabel: 'Delete preset',
+      destructive: true,
+    }))) return
     try {
       const r = await fetch(`/api/thumbnail-styles/${id}`, { method: 'DELETE' })
       if (!r.ok) return
       setSavedStyles(prev => prev.filter(s => s.id !== id))
       if (loadedPresetId === id) setLoadedPresetId(null)
     } catch { /* no-op */ }
-  }, [loadedPresetId])
+  }, [loadedPresetId, confirm])
 
   // Load once on mount.
   useEffect(() => { loadFaceModels() }, [loadFaceModels])
@@ -2207,6 +2213,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           </div>
         </div>
       )}
+      <ConfirmHost />
     </div>
   )
 }
@@ -2215,15 +2222,21 @@ export default function StudioPage() {
   const supabase = createBrowserClient()
   const [drafts, setDrafts] = useState<DraftVideo[]>([])
   const [loading, setLoading] = useState(true)
+  // loadingMore = "Load more" button busy state; distinct from initial load
+  // because we want to keep the existing list rendered while it spins.
+  const [loadingMore, setLoadingMore] = useState(false)
   const [needsAuth, setNeedsAuth] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasGeniuslink, setHasGeniuslink] = useState(false)
   const [userTier, setUserTier] = useState<Tier>('trial')
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([])
-  // Pagination
+  // Pagination — single cursor. When non-null, more drafts can be fetched
+  // via "Load more". When null, we've walked the entire uploads playlist.
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
-  const [pageHistory, setPageHistory] = useState<string[]>([]) // stack of previous page tokens
-  const [currentPage, setCurrentPage] = useState(1)
+  // Include published videos toggle. Default off → only private + unlisted
+  // (i.e. true YouTube Studio drafts). The user can flip this if they
+  // want to re-do metadata on an already-public video.
+  const [includePublished, setIncludePublished] = useState(false)
   // Server-side search across the user's entire channel (not just the
   // currently-loaded uploads-playlist page). Debounced 350ms below so we
   // don't hammer YouTube's search endpoint on every keystroke — that one
@@ -2231,14 +2244,23 @@ export default function StudioPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('') // post-debounce value driving the fetch
 
-  const load = useCallback(async (opts?: { pageToken?: string; query?: string }) => {
-    setLoading(true)
+  /** load() handles three modes:
+   *    - Initial / refresh / new search: replaces the drafts list. (append=false, no pageToken)
+   *    - Load more: appends to the existing list. (append=true, pageToken=current cursor)
+   *  Dedup is by youtubeVideoId — YouTube occasionally returns the same item
+   *  on adjacent pages during edits, and we don't want it to flash twice.
+   */
+  const load = useCallback(async (opts?: { pageToken?: string; query?: string; append?: boolean; includePublished?: boolean }) => {
+    const append = opts?.append === true
+    if (append) setLoadingMore(true)
+    else setLoading(true)
     setError(null)
 
     const pageToken = opts?.pageToken
     const query = (opts?.query ?? '').trim()
+    const wantPublished = opts?.includePublished ?? false
 
-    if (!pageToken) {
+    if (!pageToken && !append) {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2259,6 +2281,7 @@ export default function StudioPage() {
     const params = new URLSearchParams()
     if (pageToken) params.set('pageToken', pageToken)
     if (query) params.set('q', query)
+    if (wantPublished) params.set('includePublished', '1')
     const url = params.toString() ? `/api/youtube/drafts?${params.toString()}` : '/api/youtube/drafts'
     const res = await fetch(url)
     const data = await res.json()
@@ -2267,50 +2290,96 @@ export default function StudioPage() {
     } else if (!res.ok) {
       setError(data.error || 'Failed to load videos')
     } else {
-      setDrafts(data.drafts || [])
+      const incoming = (data.drafts as DraftVideo[] | undefined) || []
+      if (append) {
+        // Dedup by youtubeVideoId so a page-boundary collision (rare but
+        // happens when the user is actively editing) doesn't show ghosts.
+        setDrafts(prev => {
+          const seen = new Set(prev.map(v => v.youtubeVideoId))
+          const fresh = incoming.filter(v => !seen.has(v.youtubeVideoId))
+          return [...prev, ...fresh]
+        })
+      } else {
+        setDrafts(incoming)
+      }
       setNextPageToken(data.nextPageToken)
     }
-    setLoading(false)
+    if (append) setLoadingMore(false)
+    else setLoading(false)
   }, [supabase])
 
   // Debounce search input → fetch when the user pauses typing. Empty query
-  // re-loads the default (uploads playlist + ASIN filter) page.
+  // re-loads the default (drafts-only) page.
   useEffect(() => {
     const handle = setTimeout(() => {
       const q = searchQuery.trim()
       if (q !== activeQuery) {
         setActiveQuery(q)
-        setPageHistory([])
-        setCurrentPage(1)
         setNextPageToken(undefined)
-        void load({ query: q })
+        void load({ query: q, includePublished })
       }
     }, 350)
     return () => clearTimeout(handle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery])
 
-  const goNext = useCallback(() => {
-    if (!nextPageToken) return
-    setPageHistory(h => [...h, nextPageToken])
-    setCurrentPage(p => p + 1)
-    load({ pageToken: nextPageToken, query: activeQuery })
-  }, [nextPageToken, load, activeQuery])
-
-  const goPrev = useCallback(() => {
-    const history = [...pageHistory]
-    history.pop()
-    const prevToken = history[history.length - 1]
-    setPageHistory(history)
-    setCurrentPage(p => p - 1)
-    load({ pageToken: prevToken, query: activeQuery })
-  }, [pageHistory, load, activeQuery])
+  /** Walk every remaining page of the user's uploads playlist until the
+   *  cursor is exhausted. Each round-trip the server walks up to 10 pages
+   *  (500 videos scanned, MIN_HITS=25 cutoff), then returns a cursor we
+   *  feed back in. We loop client-side so the user sees progress flick up
+   *  ("47 loaded… 95… 143…") as each batch comes in.
+   *
+   *  Safety bound: hard cap at 100 round-trips (~50,000 videos scanned).
+   *  Real channels never hit this; it exists so a runaway YouTube cursor
+   *  (theoretically possible) doesn't melt the user's network. */
+  const loadAll = useCallback(async () => {
+    if (!nextPageToken || loadingMore) return
+    setLoadingMore(true)
+    setError(null)
+    let cursor: string | undefined = nextPageToken
+    let rounds = 0
+    const HARD_CAP = 100
+    try {
+      while (cursor && rounds < HARD_CAP) {
+        rounds++
+        const params = new URLSearchParams()
+        params.set('pageToken', cursor)
+        if (activeQuery) params.set('q', activeQuery)
+        if (includePublished) params.set('includePublished', '1')
+        const res = await fetch(`/api/youtube/drafts?${params.toString()}`)
+        const data = await res.json()
+        if (!res.ok) {
+          setError(data.error || 'Failed to load more drafts — try Refresh.')
+          break
+        }
+        const incoming = (data.drafts as DraftVideo[] | undefined) || []
+        // Dedup against what's already in state — page boundaries can repeat
+        // an entry during active edits, and we don't want it to flash twice.
+        setDrafts(prev => {
+          const seen = new Set(prev.map(v => v.youtubeVideoId))
+          const fresh = incoming.filter(v => !seen.has(v.youtubeVideoId))
+          return [...prev, ...fresh]
+        })
+        cursor = data.nextPageToken as string | undefined
+        setNextPageToken(cursor)
+        if (!cursor) break  // exhausted — no more pages on the channel
+      }
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [nextPageToken, loadingMore, activeQuery, includePublished])
 
   const refresh = useCallback(() => {
-    setPageHistory([])
-    setCurrentPage(1)
     setNextPageToken(undefined)
-    load({ query: activeQuery })
+    load({ query: activeQuery, includePublished })
+  }, [load, activeQuery, includePublished])
+
+  // When the user flips the "Include published videos" toggle, treat it
+  // like a refresh — replace the list with the right filter applied.
+  const toggleIncludePublished = useCallback((next: boolean) => {
+    setIncludePublished(next)
+    setNextPageToken(undefined)
+    void load({ query: activeQuery, includePublished: next })
   }, [load, activeQuery])
 
   useEffect(() => { load() }, [load])
@@ -2407,15 +2476,32 @@ export default function StudioPage() {
             />
           </div>
 
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
               {activeQuery
                 ? `Search · ${drafts.length} result${drafts.length !== 1 ? 's' : ''} for "${activeQuery}"`
-                : `Page ${currentPage} · ${drafts.length} video${drafts.length !== 1 ? 's' : ''}`}
+                : `${drafts.length} ${includePublished ? 'video' : 'draft'}${drafts.length !== 1 ? 's' : ''}${nextPageToken ? ' (more available)' : ' (all loaded)'}`}
             </p>
-            <button onClick={refresh} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
-              <RefreshCw size={11} /> Refresh
-            </button>
+            <div className="flex items-center gap-3">
+              {/* "Include published videos" toggle — default OFF so Co-Pilot only
+                  surfaces drafts (private + unlisted). Flip ON to re-do metadata
+                  on a video that's already live. Hidden during search because
+                  search bypasses the privacy filter server-side anyway. */}
+              {!activeQuery && (
+                <label className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={includePublished}
+                    onChange={(e) => toggleIncludePublished(e.target.checked)}
+                    className="accent-[#7C3AED] w-3 h-3"
+                  />
+                  Include published
+                </label>
+              )}
+              <button onClick={refresh} className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
+                <RefreshCw size={11} /> Refresh
+              </button>
+            </div>
           </div>
 
           {drafts.length === 0 ? (
@@ -2428,8 +2514,14 @@ export default function StudioPage() {
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No ASIN drafts yet</p>
-                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">Drop an Amazon ASIN (the 10-character code like <span className="font-mono text-[#1d1d1f] dark:text-[#f5f5f7]">B08N5WRWNW</span>) anywhere in your YouTube video title. Save the draft, hit Refresh, and it&apos;ll show up here ready to generate.</p>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                    {includePublished ? 'No videos found' : 'No drafts on your channel'}
+                  </p>
+                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">
+                    {includePublished
+                      ? 'YouTube returned an empty list. If you just uploaded, try Refresh in a minute — YouTube can take time to index new videos.'
+                      : <>Upload a video to YouTube Studio as <strong>private</strong> or <strong>unlisted</strong>, hit Refresh, and it&apos;ll show up here. Or tick <em>Include published</em> above to see videos that are already live.</>}
+                  </p>
                 </>
               )}
             </div>
@@ -2441,25 +2533,35 @@ export default function StudioPage() {
                 ))}
               </div>
 
-              {/* Pagination */}
-              {(currentPage > 1 || nextPageToken) && (
-                <div className="flex items-center justify-between mt-6">
+              {/* Load all drafts — one click walks the rest of the
+                  uploads playlist until the cursor is exhausted. The API
+                  scans up to 10 pages (500 videos) per round-trip; we
+                  chain round-trips client-side so the user sees the
+                  count climb live ("Loaded 47… 95… 143…") instead of
+                  staring at a frozen spinner. Hidden during search —
+                  search.list has its own cursor + 25-result limit. */}
+              {!activeQuery && nextPageToken && (
+                <div className="flex flex-col items-center justify-center gap-2 mt-6">
                   <button
-                    onClick={goPrev}
-                    disabled={currentPage <= 1 || loading}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[#f5f5f7] dark:hover:bg-[#1c1c1e] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    onClick={() => void loadAll()}
+                    disabled={loadingMore}
+                    className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold rounded-xl bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                   >
-                    <ChevronLeft size={15} /> Previous
+                    {loadingMore
+                      ? <><Loader2 size={14} className="animate-spin" /> Loaded {drafts.length} so far — still scanning YouTube…</>
+                      : <><RefreshCw size={14} /> Load all {includePublished ? 'videos' : 'drafts'} from YouTube</>}
                   </button>
-                  <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">Page {currentPage}</span>
-                  <button
-                    onClick={goNext}
-                    disabled={!nextPageToken || loading}
-                    className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-xl border border-[#d2d2d7] dark:border-[#3a3a3c] text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-[#f5f5f7] dark:hover:bg-[#1c1c1e] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    Next <ChevronRight size={15} />
-                  </button>
+                  {!loadingMore && (
+                    <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                      Walks every page of your YouTube uploads playlist. Big channels may take a few seconds.
+                    </p>
+                  )}
                 </div>
+              )}
+              {!activeQuery && !nextPageToken && drafts.length >= 25 && (
+                <p className="text-center text-xs text-[#86868b] dark:text-[#8e8e93] mt-6">
+                  All caught up — every {includePublished ? 'uploaded video' : 'draft'} on your channel is loaded.
+                </p>
               )}
             </>
           )}

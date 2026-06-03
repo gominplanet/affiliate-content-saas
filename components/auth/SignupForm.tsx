@@ -75,8 +75,11 @@ export default function SignupForm() {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Full name</label>
+          <label htmlFor="signup-fullname" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Full name</label>
           <input
+            id="signup-fullname"
+            name="name"
+            autoComplete="name"
             type="text"
             required
             value={fullName}
@@ -87,8 +90,11 @@ export default function SignupForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
+          <label htmlFor="signup-email" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
           <input
+            id="signup-email"
+            name="email"
+            autoComplete="email"
             type="email"
             required
             value={email}
@@ -99,8 +105,11 @@ export default function SignupForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Password</label>
+          <label htmlFor="signup-password" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Password</label>
           <input
+            id="signup-password"
+            name="password"
+            autoComplete="new-password"
             type="password"
             required
             minLength={8}

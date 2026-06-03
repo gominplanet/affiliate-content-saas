@@ -42,25 +42,68 @@ export async function GET(request: Request) {
     // of the default uploads-playlist listing. Trimmed + length-capped so a
     // pathological query can't blow the YouTube quota in one call.
     const q = (searchParams.get('q') || '').trim().slice(0, 200)
+    // includePublished=1 surfaces published videos too. Default behaviour
+    // (false) filters to drafts only — private + unlisted — because that's
+    // what Co-Pilot actually targets (you don't regenerate metadata on a
+    // live video without taking down ads/audience etc).
+    const includePublished = searchParams.get('includePublished') === '1'
 
     const yt = createYouTubeOAuthService(token)
 
     // When the Studio's search bar is in use we hit the search endpoint
-    // (covers the whole channel) and skip the ASIN-only filter — creators
+    // (covers the whole channel) and skip the privacy filter — creators
     // searching for a specific video shouldn't have the result hidden just
-    // because they didn't put an ASIN in the title yet.
+    // because it's public.
     if (q) {
       const result = await yt.searchMyVideos(q, 25, pageToken)
       return NextResponse.json({ drafts: result.videos, nextPageToken: result.nextPageToken, query: q })
     }
 
-    // Default listing: fetch one page of 50, filter for ASIN videos,
-    // return with cursor for next page
-    const ASIN_RE = /\b([A-Z0-9]{10})\b/
-    const result = await yt.getDraftVideos(50, pageToken)
-    const asinVideos = result.videos.filter(v => v.detectedAsin || ASIN_RE.test(v.title))
+    // Default listing: walk pages of 50 from the uploads playlist, filter
+    // out public videos (so only true drafts surface), keep scanning until
+    // we've collected MIN_HITS hits OR exhausted the catalogue OR scanned
+    // MAX_PAGES (quota guard). Returns the accumulated drafts + a cursor
+    // the client can re-submit for the next round-trip.
+    //
+    // Why aggregate server-side instead of relying on next/prev UI:
+    //   - A creator with 200 uploaded videos but only 7 unpublished drafts
+    //     would otherwise see "page 1: 0 drafts, page 2: 0 drafts, …"
+    //     and assume Refresh is broken (the actual complaint that drove
+    //     this change). One round-trip now returns all 7 in one click.
+    //   - The Co-Pilot UI has a "Load all drafts" button that re-submits
+    //     the cursor in a loop until exhausted — each round-trip is fast
+    //     and the user sees the count climb live ("Loaded 47… 95…").
+    //   - Quota cost: each playlistItems page is 1 unit, each videos
+    //     details lookup is 1 unit. 10 pages = 20 units, well under the
+    //     10k/day default channel quota.
+    const MAX_PAGES = 10
+    // MIN_HITS=10 keeps the first batch fast so the user sees content
+    // immediately. The client's loadAll() chains round-trips until the
+    // cursor is null, so a small MIN_HITS doesn't lose any drafts — it
+    // just keeps each round-trip short.
+    const MIN_HITS = 10
+    const drafts: Array<Awaited<ReturnType<typeof yt.getDraftVideos>>['videos'][number]> = []
+    let cursor: string | undefined = pageToken
+    let pagesScanned = 0
+    while (pagesScanned < MAX_PAGES && drafts.length < MIN_HITS) {
+      const page = await yt.getDraftVideos(50, cursor)
+      pagesScanned++
+      const matching = page.videos.filter(v => includePublished || v.status !== 'public')
+      drafts.push(...matching)
+      if (!page.nextPageToken) {
+        cursor = undefined
+        break
+      }
+      cursor = page.nextPageToken
+    }
 
-    return NextResponse.json({ drafts: asinVideos, nextPageToken: result.nextPageToken })
+    return NextResponse.json({
+      drafts,
+      nextPageToken: cursor,
+      pagesScanned,
+      // Useful for telemetry + debugging the "I'm missing drafts" thread.
+      includePublished,
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // Token refresh failed or token rejected by Google → ask user to reconnect

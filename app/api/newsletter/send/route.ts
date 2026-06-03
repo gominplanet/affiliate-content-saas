@@ -1,34 +1,45 @@
 /**
- * POST /api/newsletter/send — fire a broadcast to all active subscribers
+ * POST /api/newsletter/send — fire (or queue) a broadcast
  *
- * Inputs (server doesn't trust the client's HTML — re-renders from the
- * structured fields so an XSS-injected draft can't leak through):
- *   subject           string
- *   intro             string
+ * Three modes, picked by the input shape:
+ *   regular   no subject_b, no scheduled_at      → sends immediately to all
+ *                                                  segment-matching subscribers
+ *   ab-test   subject_b + ab_sample_pct          → sends sample_pct of
+ *                                                  recipients now (half A,
+ *                                                  half B), sets status =
+ *                                                  'ab_testing' + ab_finalize_at;
+ *                                                  cron picks the winner
+ *                                                  ab_test_hours later
+ *   scheduled scheduled_at in the future         → persists status='scheduled';
+ *                                                  the cron fires it at the
+ *                                                  scheduled time
+ *
+ * Segment filtering layers on top of any mode: when segment_filter is set,
+ * only matching active subscribers receive the broadcast. Cap checks use
+ * the FULL active subscriber count (so segmenting doesn't dodge the cap).
+ *
+ * Inputs:
+ *   subject           string                      required
+ *   intro             string                      required
  *   personalMessage   string?
- *   outro             string
+ *   outro             string                      required
  *   posts             [{ url, title, excerpt, imageUrl?, blurb? }]
  *   curatedLinks      [{ url, label?, blurb }]
+ *   subject_b         string?                     optional A/B variant
+ *   ab_sample_pct     number?    default 20       test-set % when A/B
+ *   ab_test_hours     number?    default 2        wait window before winner
+ *   scheduled_at      ISO string?                 future ts → queued for cron
+ *   segment_filter    SegmentFilter?              narrows recipients
  *
- * Flow:
- *   1. Cap check (tier's broadcasts-per-month + subscriber-count guards).
- *   2. Insert a newsletter_broadcasts row with status='sending'.
- *   3. Load active subscribers + iterate in chunks of 100.
- *   4. For each chunk: render HTML/text per recipient (token-scoped
- *      unsubscribe URL), call resend.emails.send(), tick counters.
- *   5. Mark broadcast 'sent' with final recipients_total.
- *
- * Returns: { ok: true, broadcastId, recipients }
- *
- * Errors during the send loop are logged but don't fail the whole
- * broadcast — the row stays 'sending' until the last batch finishes,
- * then flips to 'sent' even if some recipients errored. Per-recipient
- * delivery state is the Resend webhook's job (different route).
+ * Returns:
+ *   regular:   { ok, broadcastId, recipients, sent, failed }
+ *   ab-test:   { ok, broadcastId, mode:'ab_testing', sample, finalizeAt }
+ *   scheduled: { ok, broadcastId, mode:'scheduled', scheduledAt }
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, allowedNewsletterBroadcasts } from '@/lib/tier'
-import { sendEmail, isEmailConfigured } from '@/services/email'
+import { isEmailConfigured } from '@/services/email'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import {
   renderNewsletterHtml,
@@ -38,11 +49,15 @@ import {
   type NewsletterCuratedLink,
 } from '@/lib/newsletter-html'
 import { deriveFromAddress } from '@/lib/newsletter'
+import {
+  applySegmentFilter,
+  partitionAbSample,
+  sendBroadcastBatch,
+  type NewsletterRecipient,
+  type SegmentFilter,
+} from '@/lib/newsletter-send'
 
 const APP_BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
-const BATCH = 50 // Recipients per Resend round trip. Conservative — Resend's
-                  // batch API maxes out higher, but 50 keeps any single send
-                  // call comfortably under the 30s Vercel timeout.
 
 export const maxDuration = 300
 
@@ -53,6 +68,14 @@ interface SendInput {
   outro?: string
   posts?: NewsletterBlogPost[]
   curatedLinks?: NewsletterCuratedLink[]
+  /** A/B testing — when subject_b is set we treat the send as an A/B. */
+  subject_b?: string
+  ab_sample_pct?: number
+  ab_test_hours?: number
+  /** Schedule the send for the future. ISO timestamp. */
+  scheduled_at?: string
+  /** Narrow which subscribers receive this broadcast. */
+  segment_filter?: SegmentFilter
 }
 
 export async function POST(req: Request) {
@@ -67,22 +90,39 @@ export async function POST(req: Request) {
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
   const subject = (body.subject || '').trim()
+  const subjectB = (body.subject_b || '').trim()
   const intro = (body.intro || '').trim()
   const outro = (body.outro || '').trim()
   const personalMessage = (body.personalMessage || '').trim() || null
   const posts = (Array.isArray(body.posts) ? body.posts : []).slice(0, 10)
   const curatedLinks = (Array.isArray(body.curatedLinks) ? body.curatedLinks : []).slice(0, 10)
   if (!subject || subject.length > 200) return NextResponse.json({ error: 'Subject is required (under 200 chars).' }, { status: 400 })
+  if (subjectB && subjectB.length > 200) return NextResponse.json({ error: 'Test subject B must be under 200 chars.' }, { status: 400 })
   if (!intro || !outro) return NextResponse.json({ error: 'Intro and outro are required.' }, { status: 400 })
   if (posts.length === 0 && curatedLinks.length === 0 && !personalMessage) {
     return NextResponse.json({ error: 'Issue is empty — add at least one post, link, or message.' }, { status: 400 })
   }
 
+  // Schedule validation — must be in the future and at most 60 days out.
+  let scheduledAt: Date | null = null
+  if (body.scheduled_at) {
+    const parsed = new Date(body.scheduled_at)
+    if (!Number.isFinite(parsed.getTime())) {
+      return NextResponse.json({ error: 'scheduled_at is not a valid timestamp.' }, { status: 400 })
+    }
+    const now = Date.now()
+    if (parsed.getTime() < now + 60_000) {
+      // Sub-minute scheduling is functionally "send now" — reject so the
+      // cron's once-per-minute polling isn't relied on for "imminent" sends.
+      return NextResponse.json({ error: 'Schedule the send at least one minute in the future.' }, { status: 400 })
+    }
+    if (parsed.getTime() > now + 60 * 86400_000) {
+      return NextResponse.json({ error: 'Schedule cannot be more than 60 days out.' }, { status: 400 })
+    }
+    scheduledAt = parsed
+  }
+
   // ── Tier cap: broadcasts per billing month ────────────────────────────────
-  // Tier is per-user; siteUrl for the newsletter footer comes from the
-  // user's default WordPress site (multi-site users: footer points at the
-  // default brand site). Single-site users get the same site they always
-  // had.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await supabase
     .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
@@ -98,7 +138,7 @@ export async function POST(req: Request) {
       .from('newsletter_broadcasts')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .in('status', ['sending', 'sent'])
+      .in('status', ['sending', 'sent', 'scheduled', 'ab_testing'])
       .gte('created_at', monthStart.toISOString())
     if ((count ?? 0) >= monthlyCap) {
       return NextResponse.json({
@@ -124,20 +164,24 @@ export async function POST(req: Request) {
   })
   if (!from) return NextResponse.json({ error: 'Sender address could not be built.' }, { status: 500 })
 
-  // ── Load active subscribers ───────────────────────────────────────────────
+  // ── Load active subscribers + apply segment filter ───────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: subs } = await supabase
     .from('newsletter_subscribers')
-    .select('id,email,unsub_token')
+    .select('id,email,unsub_token,source,created_at,tags')
     .eq('user_id', user.id)
     .eq('status', 'active')
-  const recipients = (subs as Array<{ id: string; email: string; unsub_token: string }> | null) || []
+  const allRecipients = (subs as NewsletterRecipient[] | null) || []
+  const segmentFilter: SegmentFilter | null = body.segment_filter ?? null
+  const recipients = applySegmentFilter(allRecipients, segmentFilter)
   if (recipients.length === 0) {
-    return NextResponse.json({ error: 'No active subscribers yet — share the signup form to grow your list before sending.' }, { status: 400 })
+    return NextResponse.json({
+      error: segmentFilter
+        ? 'No subscribers match this segment. Loosen the filter or grow the list.'
+        : 'No active subscribers yet — share the signup form to grow your list before sending.',
+    }, { status: 400 })
   }
 
-  // ── Persist a draft broadcast row so the recipient count is tracked even
-  //    if the send loop dies mid-way ─────────────────────────────────────────
   const baseInput: Omit<NewsletterRenderInput, 'links'> = {
     subject, intro, personalMessage, outro,
     posts, curatedLinks,
@@ -149,9 +193,6 @@ export async function POST(req: Request) {
       byline: (brand?.author_name as string) || null,
     },
   }
-  // Snapshot HTML uses a placeholder unsub URL — we re-render per recipient
-  // below. The snapshot is for the "view in browser" / re-send-to-new-sub
-  // use cases.
   const snapshotHtml = renderNewsletterHtml({
     ...baseInput,
     links: { unsubscribeUrl: `${APP_BASE}/newsletter-unsubscribed?snapshot=1`, viewInBrowserUrl: null },
@@ -161,8 +202,112 @@ export async function POST(req: Request) {
     links: { unsubscribeUrl: `${APP_BASE}/newsletter-unsubscribed?snapshot=1`, viewInBrowserUrl: null },
   })
 
+  // ── Mode 3: SCHEDULED — persist + return, the cron will fire it ──────────
+  if (scheduledAt) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: bRow, error: bErr } = await (supabase as any)
+      .from('newsletter_broadcasts')
+      .insert({
+        user_id: user.id,
+        subject,
+        subject_b: subjectB || null,
+        ab_sample_pct: subjectB ? clampSamplePct(body.ab_sample_pct) : null,
+        ab_test_hours: subjectB ? clampHours(body.ab_test_hours) : null,
+        html: snapshotHtml,
+        plain_text: snapshotText,
+        blog_post_ids: posts.map(p => (p as unknown as { id?: string }).id).filter(Boolean) as string[],
+        personal_message: personalMessage,
+        curated_links: curatedLinks as never,
+        compose_intro: intro,
+        compose_outro: outro,
+        segment_filter: segmentFilter,
+        scheduled_at: scheduledAt.toISOString(),
+        status: 'scheduled',
+        recipients_total: recipients.length,
+      })
+      .select('id')
+      .single()
+    if (bErr || !bRow) return NextResponse.json({ error: bErr?.message || 'Failed to schedule broadcast' }, { status: 500 })
+    return NextResponse.json({
+      ok: true,
+      broadcastId: bRow.id as string,
+      mode: 'scheduled',
+      scheduledAt: scheduledAt.toISOString(),
+      recipients: recipients.length,
+    })
+  }
+
+  // ── Mode 2: A/B TEST — split sample, send both variants, defer winner ────
+  if (subjectB) {
+    const samplePct = clampSamplePct(body.ab_sample_pct)
+    const testHours = clampHours(body.ab_test_hours)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: bRow, error: bErr } = await (supabase as any)
+      .from('newsletter_broadcasts')
+      .insert({
+        user_id: user.id,
+        subject,
+        subject_b: subjectB,
+        ab_sample_pct: samplePct,
+        ab_test_hours: testHours,
+        html: snapshotHtml,
+        plain_text: snapshotText,
+        blog_post_ids: posts.map(p => (p as unknown as { id?: string }).id).filter(Boolean) as string[],
+        personal_message: personalMessage,
+        curated_links: curatedLinks as never,
+        compose_intro: intro,
+        compose_outro: outro,
+        segment_filter: segmentFilter,
+        status: 'ab_testing',
+        recipients_total: 0, // ticks up after we finalize
+      })
+      .select('id')
+      .single()
+    if (bErr || !bRow) return NextResponse.json({ error: bErr?.message || 'Failed to record broadcast' }, { status: 500 })
+    const broadcastId = bRow.id as string
+
+    const { a, b, holdback } = partitionAbSample(recipients, samplePct, broadcastId)
+
+    // Persist the split so the cron knows which IDs got which variant + so
+    // the winner-send excludes them.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('newsletter_broadcasts').update({
+      ab_recipients_a: a.map(r => r.id),
+      ab_recipients_b: b.map(r => r.id),
+      ab_finalize_at: new Date(Date.now() + testHours * 3600_000).toISOString(),
+      recipients_total: a.length + b.length,
+    }).eq('id', broadcastId)
+
+    // Send A + B in parallel.
+    const [resA, resB] = await Promise.all([
+      sendBroadcastBatch({ recipients: a, subject,    from, baseInput, broadcastId, userId: user.id, variant: 'a' }),
+      sendBroadcastBatch({ recipients: b, subject: subjectB, from, baseInput: { ...baseInput, subject: subjectB }, broadcastId, userId: user.id, variant: 'b' }),
+    ])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('newsletter_broadcasts').update({
+      recipients_delivered: resA.sent + resB.sent,
+      error_message: (resA.failed + resB.failed) > 0
+        ? `${resA.failed + resB.failed}/${a.length + b.length} sample recipients errored`
+        : null,
+    }).eq('id', broadcastId)
+
+    return NextResponse.json({
+      ok: true,
+      broadcastId,
+      mode: 'ab_testing',
+      sample: { aSize: a.length, bSize: b.length, holdback: holdback.length },
+      finalizeAt: new Date(Date.now() + testHours * 3600_000).toISOString(),
+      sentA: resA.sent,
+      sentB: resB.sent,
+      failedA: resA.failed,
+      failedB: resB.failed,
+    })
+  }
+
+  // ── Mode 1: REGULAR — single subject, send to all matching recipients ────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: bRow, error: bErr } = await supabase
+  const { data: bRow, error: bErr } = await (supabase as any)
     .from('newsletter_broadcasts')
     .insert({
       user_id: user.id,
@@ -171,7 +316,10 @@ export async function POST(req: Request) {
       plain_text: snapshotText,
       blog_post_ids: posts.map(p => (p as unknown as { id?: string }).id).filter(Boolean) as string[],
       personal_message: personalMessage,
-      curated_links: curatedLinks as never,  // Json column; typed array doesn't satisfy Json recursively
+      curated_links: curatedLinks as never,
+      compose_intro: intro,
+      compose_outro: outro,
+      segment_filter: segmentFilter,
       status: 'sending',
       recipients_total: recipients.length,
     })
@@ -180,53 +328,18 @@ export async function POST(req: Request) {
   if (bErr || !bRow) return NextResponse.json({ error: bErr?.message || 'Failed to record broadcast' }, { status: 500 })
   const broadcastId = bRow.id as string
 
-  // ── Send loop — per-recipient render so each gets their own unsub link ────
-  let sent = 0
-  let failed = 0
-  for (let i = 0; i < recipients.length; i += BATCH) {
-    const chunk = recipients.slice(i, i + BATCH)
-    // Resend's emails.send is per-recipient — no native batch with distinct
-    // payloads. We fire them in parallel within the chunk; the Promise.all
-    // bounds latency without blowing fetch concurrency limits.
-    const results = await Promise.allSettled(chunk.map(async (sub) => {
-      const unsubscribeUrl = `${APP_BASE}/api/newsletter/unsubscribe?token=${encodeURIComponent(sub.unsub_token)}`
-      const input: NewsletterRenderInput = { ...baseInput, links: { unsubscribeUrl, viewInBrowserUrl: null } }
-      const html = renderNewsletterHtml(input)
-      const text = renderNewsletterText(input)
-      await sendEmail({
-        to: sub.email,
-        from,
-        subject,
-        html,
-        text,
-        // RFC 8058 — Gmail, Yahoo, Outlook, Apple Mail render a one-click
-        // "Unsubscribe" button next to the sender name when these two
-        // headers are present. The POST body { token } is handled by
-        // /api/newsletter/unsubscribe. Huge deliverability win for bulk
-        // senders since Feb 2024 (the Gmail/Yahoo bulk-sender rules).
-        headers: {
-          'List-Unsubscribe': `<${unsubscribeUrl}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        },
-        // Tags surface back in Resend's webhook payloads so we can
-        // attribute every delivered/bounced/opened/clicked event to the
-        // right broadcast row (driving the counters on /newsletter).
-        tags: [
-          { name: 'kind', value: 'newsletter_broadcast' },
-          { name: 'broadcast_id', value: broadcastId },
-          { name: 'user_id', value: user.id },
-        ],
-      })
-    }))
-    for (const r of results) {
-      if (r.status === 'fulfilled') sent++
-      else { failed++; console.warn('[newsletter/send] item failed:', r.reason instanceof Error ? r.reason.message : r.reason) }
-    }
-  }
+  const { sent, failed } = await sendBroadcastBatch({
+    recipients,
+    subject,
+    from,
+    baseInput,
+    broadcastId,
+    userId: user.id,
+    variant: null,
+  })
 
-  // ── Finalise ──────────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await supabase
+  await (supabase as any)
     .from('newsletter_broadcasts')
     .update({
       status: failed === recipients.length ? 'failed' : 'sent',
@@ -243,4 +356,20 @@ export async function POST(req: Request) {
     sent,
     failed,
   })
+}
+
+function clampSamplePct(raw: number | undefined): number {
+  // 5% floor (too few recipients = test is statistical noise).
+  // 50% ceiling (above this the "winner-send to holdback" doesn't beat
+  // just sending the better-guessed subject to everyone outright).
+  const n = typeof raw === 'number' ? Math.round(raw) : 20
+  return Math.max(5, Math.min(50, n))
+}
+
+function clampHours(raw: number | undefined): number {
+  // 1h floor (Resend's open-pixel delivery lag + email-client poll cadence
+  // means anything under an hour is noise).
+  // 48h ceiling (the broadcast goes stale after that).
+  const n = typeof raw === 'number' ? Math.round(raw) : 2
+  return Math.max(1, Math.min(48, n))
 }

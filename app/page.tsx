@@ -139,7 +139,7 @@ export default function LandingPage() {
       {/* ── Nav ────────────────────────────────────────────────────────────── */}
       <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-6 py-3 bg-white/90 backdrop-blur-md border-b border-gray-100">
         <Link href="/" className="flex items-center gap-2">
-          <Image src="/mvp-affiliate-logo.jpg" alt="MVP Affiliate" width={36} height={36} className="rounded-xl" />
+          <Image src="/mvp-affiliate-logo.webp" alt="MVP Affiliate" width={36} height={36} className="rounded-xl" />
           <span className="font-semibold text-[#1d1d1f] hidden sm:inline">MVP Affiliate</span>
         </Link>
         <div className="flex items-center gap-1 sm:gap-2">
@@ -195,7 +195,7 @@ export default function LandingPage() {
           {/* Centered infographic */}
           <div className="relative w-full max-w-4xl mb-10">
             <Image
-              src="/automation-hub.png"
+              src="/automation-hub.webp"
               alt="MVP Affiliate automation hub — YouTube, Instagram, Facebook, Threads, LinkedIn, X, Pinterest, Bluesky, Telegram"
               width={1400}
               height={788}
@@ -984,7 +984,7 @@ export default function LandingPage() {
       <footer className="border-t border-gray-100 py-10 px-5 sm:px-6 bg-white">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <Image src="/mvp-affiliate-logo.jpg" alt="MVP Affiliate" width={28} height={28} className="rounded-lg" />
+            <Image src="/mvp-affiliate-logo.webp" alt="MVP Affiliate" width={28} height={28} className="rounded-lg" />
             <span className="text-sm font-semibold text-[#1d1d1f]">MVP Affiliate</span>
             <span className="text-xs text-[#86868b] ml-2">© {new Date().getFullYear()} Gominplanet Holdings Ltd</span>
           </div>

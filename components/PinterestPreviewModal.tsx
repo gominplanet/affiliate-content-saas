@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Pin, X, Edit3, Loader2 } from 'lucide-react'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 
 export interface PinPreviewData {
   postId: string
@@ -51,9 +52,26 @@ export function PinterestPreviewModal({
     }
   }
 
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const onA11yKey = useModalA11y(true, panelRef, onClose)
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-      <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+      onKeyDown={onA11yKey}
+      role="presentation"
+    >
+      <div
+        ref={panelRef}
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden outline-none"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Preview your Pin"
+        tabIndex={-1}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">

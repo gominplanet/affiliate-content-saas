@@ -7,6 +7,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
+import { useConfirm } from '@/components/ui/useConfirm'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
 import { SOCIAL_CAP } from '@/lib/social-cap'
@@ -413,14 +415,23 @@ function RewriteFeedbackModal({
   onCancel: () => void
   onSubmit: () => void
 }) {
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const onA11yKey = useModalA11y(true, panelRef, onCancel)
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       onClick={onCancel}
+      onKeyDown={onA11yKey}
+      role="presentation"
     >
       <div
-        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full p-5"
+        ref={panelRef}
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full p-5 outline-none"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Rewrite this post"
+        tabIndex={-1}
       >
         <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
           Rewrite this post
@@ -558,6 +569,7 @@ function GenerateButton({
   const [imgErr, setImgErr] = useState<string | null>(null)
   const imgInputRef = useRef<HTMLInputElement>(null)
   const supabase = createBrowserClient()
+  const { confirm, ConfirmHost } = useConfirm()
 
   useEffect(() => {
     if (status !== 'generating') return
@@ -633,11 +645,14 @@ function GenerateButton({
       // the quality caveat clear — they keep control without us silently
       // proceeding.
       if (!res.ok && data.reason === 'no_transcript') {
-        const proceed = typeof window !== 'undefined' && window.confirm(
-          'No transcript was available for this video.\n\n' +
-          'If you continue without it, the post will be shorter and less specific (no lived experiences to ground on). Recommended: enable captions in YouTube Studio → Subtitles, then retry — auto-captions usually appear within 24h.\n\n' +
-          'Generate anyway?'
-        )
+        const proceed = await confirm({
+          title: 'No transcript available — generate anyway?',
+          description:
+            'Without a transcript the post will be shorter and less specific (no lived experiences to ground on). ' +
+            'Recommended: enable captions in YouTube Studio → Subtitles, then retry — auto-captions usually appear within 24h.',
+          confirmLabel: 'Generate anyway',
+          cancelLabel: 'Wait for captions',
+        })
         if (proceed) {
           ;({ res, data } = await callGenerate(true))
         }
@@ -772,6 +787,10 @@ function GenerateButton({
       <div className="flex items-center gap-2 text-xs text-[#6e6e73] dark:text-[#ebebf0]">
         <Loader2 size={13} className="animate-spin text-[#7C3AED]" />
         <span>{GEN_STEPS[stepIdx]}</span>
+        {/* ConfirmHost is required so the "no transcript — generate anyway?"
+            dialog (raised from inside generate() right after status flips to
+            'generating') has a host in this branch's tree. */}
+        <ConfirmHost />
       </div>
     )
   }
@@ -1336,11 +1355,7 @@ function InstagramPublishModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div
-        onClick={e => e.stopPropagation()}
-        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
-      >
+    <InstagramPublishModalShell onClose={onClose}>
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -1707,6 +1722,32 @@ function InstagramPublishModal({
           </div>
           {publishError && <p className="text-[11px] text-[#ff3b30] mt-3 break-all">{publishError}</p>}
         </div>
+    </InstagramPublishModalShell>
+  )
+}
+
+/** Modal shell wrapper for InstagramPublishModal — gives proper focus
+ *  trap, scroll lock, Escape close, and restore-focus via useModalA11y. */
+function InstagramPublishModalShell({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const onA11yKey = useModalA11y(true, panelRef, onClose)
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+      onKeyDown={onA11yKey}
+      role="presentation"
+    >
+      <div
+        ref={panelRef}
+        onClick={e => e.stopPropagation()}
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto outline-none"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Publish to Instagram"
+        tabIndex={-1}
+      >
+        {children}
       </div>
     </div>
   )
@@ -1770,6 +1811,7 @@ function VideoCard({
       if (saved && fbAccounts.some(a => a.id === saved)) setSelectedFbAccountId(saved)
     } catch { /* ignore */ }
   }, [fbAccounts])
+  const { confirm, ConfirmHost } = useConfirm()
   const [pinLoading, setPinLoading] = useState(false)
   const [pinPosted, setPinPosted] = useState(!!post?.pinterestPinId)
   const [thPosting, setThPosting] = useState(false)
@@ -1960,7 +2002,12 @@ function VideoCard({
 
   async function handleDelete() {
     if (!post?.postId) return
-    if (!confirm('Delete this post from WordPress and remove it here?')) return
+    if (!(await confirm({
+      title: 'Delete this post from WordPress and remove it here?',
+      description: 'The post is moved to WordPress\' trash (restorable for ~30 days) and unlinked from this video.',
+      confirmLabel: 'Delete post',
+      destructive: true,
+    }))) return
     setDeleting(true)
     try {
       const res = await fetch('/api/blog/delete', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postId: post.postId }) })
@@ -2381,6 +2428,7 @@ function VideoCard({
           )}
         </div>{/* end flex-col wrapper */}
       </div>
+      <ConfirmHost />
     </div>
   )
 }
@@ -2519,6 +2567,7 @@ function saveDismissed(set: Set<string>) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ContentPage() {
   const supabase = createBrowserClient()
+  const { confirm, ConfirmHost } = useConfirm()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
   const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
   const [wpSiteUrl, setWpSiteUrl] = useState('')
@@ -2821,7 +2870,12 @@ export default function ContentPage() {
 
   /** Cancel a pending scheduled post. */
   async function cancelScheduled(id: string) {
-    if (!confirm('Cancel this scheduled post? It won\'t publish.')) return
+    if (!(await confirm({
+      title: 'Cancel this scheduled post?',
+      description: 'It won\'t publish. You can reschedule it from the post list afterwards.',
+      confirmLabel: 'Cancel post',
+      destructive: true,
+    }))) return
     try {
       const res = await fetch('/api/blog/scheduled-cancel', {
         method: 'POST',
@@ -2944,7 +2998,12 @@ export default function ContentPage() {
   }
 
   async function deletePostFromList(wpPostId: number) {
-    if (!confirm('Delete this post from WordPress?')) return
+    if (!(await confirm({
+      title: 'Delete this post from WordPress?',
+      description: 'The post will be removed from your blog and unlinked here. WordPress moves it to its trash where you can restore for ~30 days.',
+      confirmLabel: 'Delete post',
+      destructive: true,
+    }))) return
     setDeletingPostId(wpPostId)
     try {
       await fetch('/api/blog/delete', {
@@ -2960,7 +3019,12 @@ export default function ContentPage() {
 
   async function bulkDeleteSelected() {
     if (selectedPostIds.size === 0) return
-    if (!confirm(`Delete ${selectedPostIds.size} post${selectedPostIds.size !== 1 ? 's' : ''} from WordPress? This cannot be undone.`)) return
+    if (!(await confirm({
+      title: `Delete ${selectedPostIds.size} post${selectedPostIds.size !== 1 ? 's' : ''}?`,
+      description: 'These posts will be moved to WordPress\' trash (restorable for ~30 days) and unlinked here. This cannot be undone from MVP.',
+      confirmLabel: 'Delete posts',
+      destructive: true,
+    }))) return
     setBulkDeleting(true)
     const ids = [...selectedPostIds]
     let deleted = 0
@@ -4105,6 +4169,7 @@ export default function ContentPage() {
           }}
         />
       )}
+      <ConfirmHost />
     </>
   )
 }

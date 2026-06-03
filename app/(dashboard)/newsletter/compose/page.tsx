@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Header from '@/components/layout/Header'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 import {
   Loader2, AlertCircle, CheckCircle, Sparkles, Send, ChevronLeft,
   Plus, X, Image as ImageIcon, MessageCircle, Search, ExternalLink, Tag,
@@ -96,7 +97,14 @@ export default function NewsletterComposePage() {
   const [draftError, setDraftError] = useState<string | null>(null)
 
   const [sending, setSending] = useState(false)
-  const [sentResult, setSentResult] = useState<{ recipients: number; sent: number; failed: number } | null>(null)
+  // sentResult now also carries the response from A/B and scheduled sends
+  // so the success screen can show different copy per mode.
+  const [sentResult, setSentResult] = useState<
+    | { mode: 'sent'; recipients: number; sent: number; failed: number }
+    | { mode: 'ab_testing'; sampleA: number; sampleB: number; holdback: number; finalizeAt: string }
+    | { mode: 'scheduled'; scheduledAt: string; recipients: number }
+    | null
+  >(null)
   const [sendError, setSendError] = useState<string | null>(null)
   // Send confirmation modal — replaces window.confirm() (which Safari
   // content-blockers + email-extension blockers can silently swallow,
@@ -104,6 +112,35 @@ export default function NewsletterComposePage() {
   // explicitly type SEND to enable the confirm button. 2026-06-02 audit fix.
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmTyped, setConfirmTyped] = useState('')
+
+  // ── A/B testing (migration 090) ────────────────────────────────────────────
+  // When abEnabled is true and subjectB is non-empty, the send route runs
+  // an A/B test: sample of recipients gets subject A, sample gets subject
+  // B, the cron fires the winning subject to the holdback once the test
+  // window passes.
+  const [abEnabled, setAbEnabled] = useState(false)
+  const [subjectB, setSubjectB] = useState('')
+  const [samplePct, setSamplePct] = useState(20)
+  const [testHours, setTestHours] = useState(2)
+
+  // ── Scheduling ────────────────────────────────────────────────────────────
+  // When scheduleEnabled and scheduledAt is in the future, the send route
+  // persists the broadcast in 'scheduled' state. The newsletter-process cron
+  // fires it at the scheduled time.
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  const [scheduledAt, setScheduledAt] = useState('')   // 'YYYY-MM-DDTHH:mm' local
+
+  // ── Segmentation ──────────────────────────────────────────────────────────
+  // When segmentEnabled, the send route narrows recipients by source /
+  // signup date / tags. Tags are user-defined free-text labels on
+  // subscribers (e.g. 'paying', 'lead').
+  const [segmentEnabled, setSegmentEnabled] = useState(false)
+  const [segSource, setSegSource] = useState<'all' | 'blog_form' | 'csv_import' | 'manual'>('all')
+  const [segSignedUpAfter, setSegSignedUpAfter] = useState('')
+  const [segTagsRaw, setSegTagsRaw] = useState('')      // comma-separated
+
+  // Available tags for autocomplete — loaded from /api/newsletter/subscribers.
+  const [availableTags, setAvailableTags] = useState<string[]>([])
 
   // ── Initial load: latest 10 posts + active sub count ──────────────────────
   useEffect(() => {
@@ -116,7 +153,10 @@ export default function NewsletterComposePage() {
         const pData = await pRes.json()
         const sData = await sRes.json()
         if (pRes.ok) setPosts(pData.posts || [])
-        if (sRes.ok) setActiveSubs(sData?.counts?.active ?? 0)
+        if (sRes.ok) {
+          setActiveSubs(sData?.counts?.active ?? 0)
+          if (Array.isArray(sData?.knownTags)) setAvailableTags(sData.knownTags)
+        }
       } finally {
         setPostsLoading(false)
       }
@@ -209,21 +249,58 @@ export default function NewsletterComposePage() {
     setSending(true)
     setSendError(null)
     try {
+      // Build the optional A/B + schedule + segment payload. Send route is
+      // mode-aware: subject_b triggers A/B, scheduled_at triggers queue,
+      // segment_filter narrows recipients in either mode.
+      const payload: Record<string, unknown> = {
+        subject: draft.subject,
+        intro: draft.intro,
+        outro: draft.outro,
+        personalMessage: draft.personalMessage,
+        posts: draft.posts,
+        curatedLinks: draft.curatedLinks,
+      }
+      if (abEnabled && subjectB.trim()) {
+        payload.subject_b = subjectB.trim()
+        payload.ab_sample_pct = samplePct
+        payload.ab_test_hours = testHours
+      }
+      if (scheduleEnabled && scheduledAt) {
+        // <input type='datetime-local'> gives the user's local time without
+        // timezone — convert to ISO via Date constructor (which interprets
+        // the string as local time on the user's machine).
+        const iso = new Date(scheduledAt).toISOString()
+        payload.scheduled_at = iso
+      }
+      if (segmentEnabled) {
+        const filter: Record<string, unknown> = {}
+        if (segSource !== 'all') filter.source = segSource
+        if (segSignedUpAfter) filter.signedUpAfter = new Date(segSignedUpAfter).toISOString()
+        const tags = segTagsRaw.split(',').map(s => s.trim()).filter(Boolean)
+        if (tags.length > 0) filter.tags = tags
+        if (Object.keys(filter).length > 0) payload.segment_filter = filter
+      }
+
       const r = await fetch('/api/newsletter/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subject: draft.subject,
-          intro: draft.intro,
-          outro: draft.outro,
-          personalMessage: draft.personalMessage,
-          posts: draft.posts,
-          curatedLinks: draft.curatedLinks,
-        }),
+        body: JSON.stringify(payload),
       })
       const d = await r.json()
       if (!r.ok) throw new Error(d.error || 'Send failed')
-      setSentResult({ recipients: d.recipients, sent: d.sent, failed: d.failed })
+      if (d.mode === 'scheduled') {
+        setSentResult({ mode: 'scheduled', scheduledAt: d.scheduledAt, recipients: d.recipients })
+      } else if (d.mode === 'ab_testing') {
+        setSentResult({
+          mode: 'ab_testing',
+          sampleA: d.sample?.aSize ?? 0,
+          sampleB: d.sample?.bSize ?? 0,
+          holdback: d.sample?.holdback ?? 0,
+          finalizeAt: d.finalizeAt,
+        })
+      } else {
+        setSentResult({ mode: 'sent', recipients: d.recipients, sent: d.sent, failed: d.failed })
+      }
     } catch (err) {
       setSendError(err instanceof Error ? err.message : 'Send failed')
     } finally {
@@ -237,18 +314,46 @@ export default function NewsletterComposePage() {
 
   // ── Successful send: show victory state ────────────────────────────────────
   if (sentResult) {
+    const headline =
+      sentResult.mode === 'scheduled' ? "It's queued."
+      : sentResult.mode === 'ab_testing' ? "Test is live."
+      : "It's on the way."
+    const body =
+      sentResult.mode === 'scheduled'
+        ? (
+          <>
+            Queued for {new Date(sentResult.scheduledAt).toLocaleString()} —{' '}
+            <strong>{sentResult.recipients}</strong> matching subscribers at fire-time. You'll see the
+            broadcast row on /newsletter once it goes out.
+          </>
+        )
+        : sentResult.mode === 'ab_testing'
+        ? (
+          <>
+            Subject A → <strong>{sentResult.sampleA}</strong> subscribers · subject B → <strong>{sentResult.sampleB}</strong>.{' '}
+            The winning subject will go out to the remaining <strong>{sentResult.holdback}</strong> at{' '}
+            {new Date(sentResult.finalizeAt).toLocaleString()}.
+          </>
+        )
+        : (
+          <>
+            Sent to <strong>{sentResult.sent}</strong> of <strong>{sentResult.recipients}</strong> subscribers
+            {sentResult.failed > 0 && <span className="text-[#ff9500]"> ({sentResult.failed} errored — check the dashboard for details)</span>}.
+          </>
+        )
     return (
       <>
-        <Header title="Newsletter sent" />
+        <Header title={
+          sentResult.mode === 'scheduled' ? 'Newsletter scheduled'
+          : sentResult.mode === 'ab_testing' ? 'A/B test sent'
+          : 'Newsletter sent'
+        } />
         <div className="max-w-xl mx-auto card p-8 text-center">
           <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[#34c759]/10 flex items-center justify-center">
             <CheckCircle size={26} className="text-[#34c759]" />
           </div>
-          <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">It&apos;s on the way.</h2>
-          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-5">
-            Sent to <strong>{sentResult.sent}</strong> of <strong>{sentResult.recipients}</strong> subscribers
-            {sentResult.failed > 0 && <span className="text-[#ff9500]"> ({sentResult.failed} errored — check the dashboard for details)</span>}.
-          </p>
+          <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">{headline}</h2>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mb-5">{body}</p>
           <div className="flex items-center gap-2 justify-center">
             <Link href="/newsletter" className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9]">Back to newsletter</Link>
             <button onClick={() => { setDraft(null); setSentResult(null); setPickedIds([]); setPersonalMessage(''); setCurated([]) }} className="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-200 dark:border-white/10">Compose another</button>
@@ -500,24 +605,130 @@ export default function NewsletterComposePage() {
        *
        *  Escape closes. Click outside closes. */}
       {confirmOpen && draft && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setConfirmOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="send-confirm-title"
-        >
-          <div
-            className="bg-white dark:bg-[#1a1a1c] rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-200 dark:border-white/10"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => { if (e.key === 'Escape') setConfirmOpen(false) }}
-          >
+        <SendConfirmModal onClose={() => setConfirmOpen(false)}>
             <h2 id="send-confirm-title" className="text-[20px] font-semibold tracking-tight text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
-              Send to {activeSubs ?? '?'} subscribers?
+              {scheduleEnabled && scheduledAt
+                ? 'Schedule this newsletter?'
+                : abEnabled && subjectB.trim()
+                ? 'Start A/B test?'
+                : `Send to ${activeSubs ?? '?'} subscribers?`}
             </h2>
             <p className="text-[14px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-4">
-              <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">&ldquo;{draft.subject}&rdquo;</span> will go out to every active subscriber within a minute or two. This cannot be undone.
+              <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">&ldquo;{draft.subject}&rdquo;</span>
+              {scheduleEnabled && scheduledAt
+                ? <> will be queued for <strong>{new Date(scheduledAt).toLocaleString()}</strong>. The cron fires it at that time against whoever is active then.</>
+                : abEnabled && subjectB.trim()
+                ? <> goes out as subject A. <strong>&ldquo;{subjectB.trim()}&rdquo;</strong> goes out as subject B. The winning subject reaches the holdback after the test window.</>
+                : <> will go out to every active subscriber within a minute or two. This cannot be undone.</>}
             </p>
+
+            {/* ── A/B subject lines ────────────────────────────────────── */}
+            <div className="mb-3 border border-gray-200 dark:border-white/10 rounded-lg p-3">
+              <label className="flex items-center gap-2 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={abEnabled}
+                  onChange={(e) => setAbEnabled(e.target.checked)}
+                  className="accent-[#7C3AED]"
+                />
+                A/B test the subject line
+              </label>
+              {abEnabled && (
+                <div className="mt-2 space-y-2">
+                  <input
+                    type="text"
+                    value={subjectB}
+                    onChange={(e) => setSubjectB(e.target.value)}
+                    placeholder="Subject B (e.g. a punchier alternative)"
+                    maxLength={200}
+                    className="w-full px-3 py-1.5 rounded-md border border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                  />
+                  <div className="flex items-center gap-3 text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
+                    <label className="flex items-center gap-1.5">
+                      Sample
+                      <input type="number" min={5} max={50} value={samplePct} onChange={(e) => setSamplePct(Number(e.target.value) || 20)} className="w-14 px-2 py-1 rounded border text-[12px] dark:bg-white/5" />%
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      Wait
+                      <input type="number" min={1} max={48} value={testHours} onChange={(e) => setTestHours(Number(e.target.value) || 2)} className="w-14 px-2 py-1 rounded border text-[12px] dark:bg-white/5" />h
+                    </label>
+                    <span className="ml-auto opacity-70">Winner → rest after wait.</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Scheduling ───────────────────────────────────────────── */}
+            <div className="mb-3 border border-gray-200 dark:border-white/10 rounded-lg p-3">
+              <label className="flex items-center gap-2 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={scheduleEnabled}
+                  onChange={(e) => setScheduleEnabled(e.target.checked)}
+                  className="accent-[#7C3AED]"
+                />
+                Schedule for later
+              </label>
+              {scheduleEnabled && (
+                <input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  className="mt-2 w-full px-3 py-1.5 rounded-md border border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 text-[13px] text-[#1d1d1f] dark:text-[#f5f5f7]"
+                />
+              )}
+            </div>
+
+            {/* ── Segmentation ──────────────────────────────────────────── */}
+            <div className="mb-3 border border-gray-200 dark:border-white/10 rounded-lg p-3">
+              <label className="flex items-center gap-2 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={segmentEnabled}
+                  onChange={(e) => setSegmentEnabled(e.target.checked)}
+                  className="accent-[#7C3AED]"
+                />
+                Send to a segment only
+              </label>
+              {segmentEnabled && (
+                <div className="mt-2 space-y-2 text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
+                  <label className="flex items-center gap-2">
+                    Source
+                    <select value={segSource} onChange={(e) => setSegSource(e.target.value as typeof segSource)} className="flex-1 px-2 py-1 rounded border bg-white dark:bg-white/5">
+                      <option value="all">All sources</option>
+                      <option value="blog_form">Blog form</option>
+                      <option value="csv_import">CSV import</option>
+                      <option value="manual">Manual add</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    Signed up after
+                    <input
+                      type="date"
+                      value={segSignedUpAfter}
+                      onChange={(e) => setSegSignedUpAfter(e.target.value)}
+                      className="flex-1 px-2 py-1 rounded border bg-white dark:bg-white/5"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    Tags (any of)
+                    <input
+                      type="text"
+                      value={segTagsRaw}
+                      onChange={(e) => setSegTagsRaw(e.target.value)}
+                      placeholder="paying, lead, archived"
+                      className="flex-1 px-2 py-1 rounded border bg-white dark:bg-white/5"
+                    />
+                  </label>
+                  {availableTags.length > 0 && (
+                    <p className="opacity-70 leading-tight">
+                      Known tags: {availableTags.slice(0, 12).join(', ')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
             <label className="block text-[12px] text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
               Type <strong className="text-[#7C3AED]">SEND</strong> to confirm
             </label>
@@ -544,20 +755,53 @@ export default function NewsletterComposePage() {
               </button>
               <button
                 onClick={() => void confirmSend()}
-                disabled={confirmTyped.trim().toUpperCase() !== 'SEND'}
+                disabled={confirmTyped.trim().toUpperCase() !== 'SEND' || (abEnabled && !subjectB.trim()) || (scheduleEnabled && !scheduledAt)}
                 className="px-4 py-2 rounded-lg text-[13px] font-semibold text-white inline-flex items-center gap-1.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{
                   background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
                   boxShadow: '0 4px 16px rgba(124,58,237,0.30)',
                 }}
               >
-                Send to {activeSubs ?? '?'} subscribers
+                {scheduleEnabled && scheduledAt
+                  ? 'Schedule send'
+                  : abEnabled && subjectB.trim()
+                  ? 'Start A/B test'
+                  : `Send to ${activeSubs ?? '?'} subscribers`}
               </button>
             </div>
-          </div>
-        </div>
+        </SendConfirmModal>
       )}
     </>
+  )
+}
+
+/** Send-confirm modal wrapper — gives the type-SEND modal proper focus
+ *  trap, scroll lock, Escape close, and restore-focus on close. The inner
+ *  JSX (header, options, type-SEND input, action buttons) lives in the
+ *  parent so the existing send/A/B/schedule/segment state can be referenced
+ *  directly without prop-drilling 15 setters. */
+function SendConfirmModal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const onA11yKey = useModalA11y(true, panelRef, onClose)
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+      onClick={onClose}
+      onKeyDown={onA11yKey}
+      role="presentation"
+    >
+      <div
+        ref={panelRef}
+        className="bg-white dark:bg-[#1a1a1c] rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-gray-200 dark:border-white/10 my-4 outline-none"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="send-confirm-title"
+        tabIndex={-1}
+      >
+        {children}
+      </div>
+    </div>
   )
 }
 

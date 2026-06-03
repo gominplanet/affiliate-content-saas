@@ -18,8 +18,10 @@ import Image from 'next/image'
 import { toast } from 'sonner'
 import { Lock, Palette, Upload, Eye, Loader2, RotateCcw, Check } from 'lucide-react'
 import type { WhitelabelConfig } from '@/lib/whitelabel'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 export default function BrandingPage() {
+  const { confirm, ConfirmHost } = useConfirm()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -96,7 +98,12 @@ export default function BrandingPage() {
   }
 
   async function handleReset() {
-    if (!confirm('Reset all branding to MVP Affiliate defaults? Your uploaded logo will stay in storage but be unlinked.')) return
+    if (!(await confirm({
+      title: 'Reset branding to defaults?',
+      description: 'Your uploaded logo will stay in storage but be unlinked. Brand name and accent color will revert to MVP Affiliate defaults.',
+      confirmLabel: 'Reset',
+      destructive: true,
+    }))) return
     setBrandName('')
     setAccentColor('#7C3AED')
     setLogoUrl(null)
@@ -322,6 +329,7 @@ export default function BrandingPage() {
           </p>
         </aside>
       </div>
+      <ConfirmHost />
     </div>
   )
 }

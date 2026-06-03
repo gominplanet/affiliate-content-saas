@@ -579,12 +579,12 @@ function Step3({ data, onChange, onNext }: { data: BrandData; onChange: (d: Bran
       <div className="flex flex-col gap-4 p-5 bg-[#f5f5f7] dark:bg-[#000] rounded-xl">
         <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">About you</p>
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">About you / bio</label>
-          <textarea value={data.aboutText} onChange={e => set('aboutText', e.target.value)} placeholder="Tell your story. What do you review, why should people trust you, what makes your take different?" rows={5} className="input-field resize-none" />
+          <label htmlFor="setup-about-text" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">About you / bio</label>
+          <textarea id="setup-about-text" name="about-text" value={data.aboutText} onChange={e => set('aboutText', e.target.value)} placeholder="Tell your story. What do you review, why should people trust you, what makes your take different?" rows={5} className="input-field resize-none" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Contact email</label>
-          <input type="email" value={data.contactEmail} onChange={e => set('contactEmail', e.target.value)} placeholder="hello@yourdomain.com" className="input-field" />
+          <label htmlFor="setup-contact-email" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Contact email</label>
+          <input id="setup-contact-email" name="contact-email" autoComplete="email" type="email" value={data.contactEmail} onChange={e => set('contactEmail', e.target.value)} placeholder="hello@yourdomain.com" className="input-field" />
           <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">Shown on your About page and Privacy Policy.</p>
         </div>
       </div>
@@ -601,8 +601,8 @@ function Step3({ data, onChange, onNext }: { data: BrandData; onChange: (d: Bran
           { label: 'Facebook URL', key: 'facebookUrl' as const, placeholder: 'https://facebook.com/yourpage' },
         ].map(({ label, key, placeholder }) => (
           <div key={key}>
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">{label}</label>
-            <input type="url" value={data[key] as string} onChange={e => set(key, e.target.value)} placeholder={placeholder} className="input-field" />
+            <label htmlFor={`setup-${key}`} className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">{label}</label>
+            <input id={`setup-${key}`} name={key} autoComplete="url" type="url" value={data[key] as string} onChange={e => set(key, e.target.value)} placeholder={placeholder} className="input-field" />
           </div>
         ))}
       </div>
@@ -1291,8 +1291,8 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           Your Channel ID lets the tool pull your public video list so you can turn any video into a blog post. Find it at <a href="https://www.youtube.com/account_advanced" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">youtube.com/account_advanced</a> — it starts with <code className="bg-[var(--surface-2)] px-1 rounded">UC</code>.
         </p>
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Channel ID</label>
-          <input type="text" value={youtubeChannelId} onChange={e => setYoutubeChannelId(e.target.value)} placeholder="UCxxxxxxxxxxxxxxx" className="input-field font-mono text-xs" />
+          <label htmlFor="setup-youtube-channel-id" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Channel ID</label>
+          <input id="setup-youtube-channel-id" name="youtube-channel-id" type="text" value={youtubeChannelId} onChange={e => setYoutubeChannelId(e.target.value)} placeholder="UCxxxxxxxxxxxxxxx" className="input-field font-mono text-xs" />
         </div>
 
         {/* Video→blog backlink toggle — only relevant once YouTube is connected
@@ -2025,12 +2025,12 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         </p>
         <div className="flex flex-col gap-3">
           <div>
-            <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Key</label>
-            <input type="text" value={geniuslinkKey} onChange={e => setGeniuslinkKey(e.target.value)} placeholder="e.g. e353413c5f52..." className="input-field text-xs font-mono" />
+            <label htmlFor="setup-geniuslink-key" className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Key</label>
+            <input id="setup-geniuslink-key" name="geniuslink-key" type="text" value={geniuslinkKey} onChange={e => setGeniuslinkKey(e.target.value)} placeholder="e.g. e353413c5f52..." className="input-field text-xs font-mono" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
-            <input type="password" value={geniuslinkSecret} onChange={e => setGeniuslinkSecret(e.target.value)} placeholder="Your Geniuslink API secret" className="input-field text-xs font-mono" />
+            <label htmlFor="setup-geniuslink-secret" className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
+            <input id="setup-geniuslink-secret" name="geniuslink-secret" type="password" value={geniuslinkSecret} onChange={e => setGeniuslinkSecret(e.target.value)} placeholder="Your Geniuslink API secret" className="input-field text-xs font-mono" />
           </div>
         </div>
       </div>
@@ -2051,8 +2051,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           If you're not using Geniuslink, your Amazon Associates tracking tag is used as the fallback — it's appended to product URLs so you still earn commissions. Find your tag in <a href="https://affiliate-program.amazon.com/home/account/tag/manage" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Amazon Associates → Account → Manage Tracking IDs</a>. It looks like <code className="bg-[var(--surface-2)] px-1 rounded">yourbrand-20</code>.
         </p>
         <div>
-          <label className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Associates Tag</label>
+          <label htmlFor="setup-amazon-associates-tag" className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Associates Tag</label>
           <input
+            id="setup-amazon-associates-tag"
+            name="amazon-associates-tag"
             type="text"
             value={amazonAssociatesTag}
             onChange={e => setAmazonAssociatesTag(e.target.value)}

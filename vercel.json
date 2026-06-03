@@ -9,6 +9,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/newsletter-process",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/refresh-indexing",
       "schedule": "15 6 * * *"
     }

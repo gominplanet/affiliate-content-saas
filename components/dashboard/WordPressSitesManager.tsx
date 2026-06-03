@@ -17,7 +17,8 @@
 
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 import { toast } from 'sonner'
 import {
   Plus, Loader2, Star, Pencil, Trash2, ExternalLink, Globe,
@@ -334,9 +335,25 @@ function AddSiteModal({
     } finally { setSubmitting(false) }
   }
 
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const onA11yKey = useModalA11y(true, panelRef, onClose)
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="card p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      onClick={onClose}
+      onKeyDown={onA11yKey}
+      role="presentation"
+    >
+      <div
+        ref={panelRef}
+        className="card p-6 max-w-md w-full outline-none"
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add WordPress site"
+        tabIndex={-1}
+      >
         <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Add another WordPress site</p>
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4 leading-relaxed">
           Generate an Application Password in your site&apos;s <code className="px-1 py-0.5 rounded bg-[var(--surface-2)] text-[10px]">wp-admin → Users → Profile → Application Passwords</code>, then paste it here.

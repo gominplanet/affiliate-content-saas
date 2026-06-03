@@ -12,12 +12,13 @@
  * (an open-source scheduler) got their TikTok app rejected for using a
  * generic post composer with most of these controls missing.
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
   MessageSquare, Users, Scissors, Music, Lock, RefreshCw, Package,
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 
 type PrivacyLevel = 'PUBLIC_TO_EVERYONE' | 'MUTUAL_FOLLOW_FRIENDS' | 'SELF_ONLY' | 'FOLLOWER_OF_CREATOR'
 
@@ -221,15 +222,24 @@ export function TikTokDirectModal({
   // away. The status keeps persisting server-side; reopening the modal
   // resumes the poll. Stuck for >5min still needs an off-ramp.
   const closeAllowed = true
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const onA11yKey = useModalA11y(true, panelRef, onClose)
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       onClick={() => closeAllowed && onClose()}
+      onKeyDown={onA11yKey}
+      role="presentation"
     >
       <div
-        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col"
+        ref={panelRef}
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col outline-none"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Post Short to TikTok"
+        tabIndex={-1}
       >
         <div className="flex items-start justify-between p-5 border-b border-gray-100 dark:border-white/10">
           <div className="flex items-center gap-2.5">

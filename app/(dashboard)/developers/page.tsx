@@ -19,6 +19,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Copy, Key, Plus, Trash2, ExternalLink, Lock, Check } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 interface ApiKey {
   id: string
@@ -30,6 +31,7 @@ interface ApiKey {
 }
 
 export default function DevelopersPage() {
+  const { confirm, ConfirmHost } = useConfirm()
   const [tier, setTier] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [keys, setKeys] = useState<ApiKey[]>([])
@@ -93,7 +95,12 @@ export default function DevelopersPage() {
   }
 
   async function handleRevoke(id: string, name: string) {
-    if (!confirm(`Revoke "${name}"? Any integration using this key will stop working immediately.`)) return
+    if (!(await confirm({
+      title: `Revoke "${name}"?`,
+      description: 'Any integration using this key will stop working immediately. You can mint a new key any time.',
+      confirmLabel: 'Revoke key',
+      destructive: true,
+    }))) return
     const res = await fetch(`/api/api-keys/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       toast.error('Failed to revoke key')
@@ -273,6 +280,7 @@ export default function DevelopersPage() {
           </ul>
         </details>
       )}
+      <ConfirmHost />
     </div>
   )
 }

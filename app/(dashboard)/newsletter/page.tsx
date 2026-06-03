@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import Header from '@/components/layout/Header'
+import { useConfirm } from '@/components/ui/useConfirm'
 import {
   Loader2, Mail, CheckCircle, AlertCircle, Upload, Download,
   Copy, Trash2, RefreshCw, ShieldCheck, Globe, Send, ExternalLink,
@@ -87,6 +88,7 @@ interface SubscriberRow {
 interface Counts { active: number; pending: number; unsubscribed: number }
 
 export default function NewsletterPage() {
+  const { confirm, ConfirmHost } = useConfirm()
   const [loading, setLoading] = useState(true)
   const [savingField, setSavingField] = useState<string | null>(null)
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -255,7 +257,12 @@ export default function NewsletterPage() {
   }
 
   async function removeDomain() {
-    if (!confirm('Remove the sender domain? You\'ll need to add and verify a domain again before you can send newsletters from your own address.')) return
+    if (!(await confirm({
+      title: 'Remove the sender domain?',
+      description: 'You\'ll need to add and verify a domain again before you can send newsletters from your own address.',
+      confirmLabel: 'Remove domain',
+      destructive: true,
+    }))) return
     setDomainBusy('remove')
     setDomainMsg(null)
     try {
@@ -350,7 +357,12 @@ export default function NewsletterPage() {
   }
 
   async function deleteSubscriber(id: string) {
-    if (!confirm('Permanently delete this subscriber? They\'ll lose any subscription state. Use the unsubscribe link in the email if you want them in the "unsubscribed" bucket instead.')) return
+    if (!(await confirm({
+      title: 'Permanently delete this subscriber?',
+      description: 'They\'ll lose any subscription state. Use the unsubscribe link in the email if you want them in the "unsubscribed" bucket instead.',
+      confirmLabel: 'Delete subscriber',
+      destructive: true,
+    }))) return
     const r = await fetch(`/api/newsletter/subscribers?id=${id}`, { method: 'DELETE' })
     if (!r.ok) {
       const d = await r.json().catch(() => ({}))
@@ -1061,6 +1073,7 @@ export default function NewsletterPage() {
           </div>
         </div>
       )}
+      <ConfirmHost />
     </>
   )
 }

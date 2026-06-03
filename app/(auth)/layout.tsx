@@ -8,7 +8,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         {/* Left — Logo */}
         <div className="flex-1 flex items-center justify-center">
           <Image
-            src="/mvp-affiliate-logo.jpg"
+            src="/mvp-affiliate-logo.webp"
             alt="MVP Affiliate"
             width={320}
             height={320}

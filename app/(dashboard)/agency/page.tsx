@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Users, Lock, Plus, Mail, Trash2, Clock, Shield, User as UserIcon } from 'lucide-react'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 interface InviteRow {
   id: string
@@ -44,6 +45,7 @@ interface AgencyState {
 }
 
 export default function AgencyPage() {
+  const { confirm, ConfirmHost } = useConfirm()
   const [loading, setLoading] = useState(true)
   const [state, setState] = useState<AgencyState | null>(null)
   const [email, setEmail] = useState('')
@@ -94,7 +96,12 @@ export default function AgencyPage() {
   }
 
   async function handleRevokeInvite(id: string, email: string) {
-    if (!confirm(`Cancel pending invite to "${email}"?`)) return
+    if (!(await confirm({
+      title: 'Cancel this invite?',
+      description: `The invite to "${email}" will be revoked and the link won't work anymore. You can re-invite the same email afterwards.`,
+      confirmLabel: 'Cancel invite',
+      destructive: true,
+    }))) return
     const res = await fetch(`/api/agency/invites/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       toast.error('Failed to cancel invite')
@@ -105,7 +112,12 @@ export default function AgencyPage() {
   }
 
   async function handleRevokeMember(id: string) {
-    if (!confirm('Revoke this agency seat? The member will lose access to your account immediately.')) return
+    if (!(await confirm({
+      title: 'Revoke this agency seat?',
+      description: 'The member will lose access to your account immediately. Their account stays open but is no longer linked to your workspace.',
+      confirmLabel: 'Revoke seat',
+      destructive: true,
+    }))) return
     const res = await fetch(`/api/agency/members/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       toast.error('Failed to revoke seat')
@@ -286,6 +298,7 @@ export default function AgencyPage() {
           </ul>
         )}
       </div>
+      <ConfirmHost />
     </div>
   )
 }

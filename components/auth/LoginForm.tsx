@@ -72,8 +72,11 @@ export default function LoginForm() {
 
             <form onSubmit={handleReset} className="flex flex-col gap-4">
               <div>
-                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
+                <label htmlFor="reset-email" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
                 <input
+                  id="reset-email"
+                  name="email"
+                  autoComplete="email"
                   type="email"
                   required
                   value={email}
@@ -112,8 +115,11 @@ export default function LoginForm() {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
+          <label htmlFor="login-email" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Email</label>
           <input
+            id="login-email"
+            name="email"
+            autoComplete="email"
             type="email"
             required
             value={email}
@@ -125,7 +131,7 @@ export default function LoginForm() {
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Password</label>
+            <label htmlFor="login-password" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Password</label>
             <button
               type="button"
               onClick={() => setResetMode(true)}
@@ -135,6 +141,9 @@ export default function LoginForm() {
             </button>
           </div>
           <input
+            id="login-password"
+            name="password"
+            autoComplete="current-password"
             type="password"
             required
             value={password}

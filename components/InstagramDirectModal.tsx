@@ -9,12 +9,13 @@
  * + affiliate disclaimer baked in). The user can edit anything before
  * hitting Post.
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
   RefreshCw, Package,
 } from 'lucide-react'
 import { ShortVideoUpload } from '@/components/ShortVideoUpload'
+import { useModalA11y } from '@/components/ui/useModalA11y'
 
 interface VideoMeta {
   title: string
@@ -132,15 +133,26 @@ export function InstagramDirectModal({
   }, [meta, posting, posted, videoId, caption, mode, onPosted])
 
   const closeAllowed = !posting
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  // Escape + focus trap + scroll lock are all retrofitted via this hook.
+  // We pass a guarded onClose so the user can't Escape away mid-post.
+  const onA11yKey = useModalA11y(true, panelRef, () => { if (closeAllowed) onClose() })
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       onClick={() => closeAllowed && onClose()}
+      onKeyDown={onA11yKey}
+      role="presentation"
     >
       <div
-        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col"
+        ref={panelRef}
+        className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col outline-none"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Post Short to Instagram"
+        tabIndex={-1}
       >
         <div className="flex items-start justify-between p-5 border-b border-gray-100 dark:border-white/10">
           <div className="flex items-center gap-2.5">

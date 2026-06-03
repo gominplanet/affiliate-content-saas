@@ -140,6 +140,10 @@ export async function POST(req: Request) {
   const broadcastId = tagMap['broadcast_id']
   const userId = tagMap['user_id']
   const kind = tagMap['kind']
+  // A/B variant attribution (migration 090). When present, the email
+  // belonged to a specific A/B test arm and we want to bump that arm's
+  // open counter so the cron's winner-pick has real data.
+  const variant = tagMap['variant']
 
   // Only handle events we tagged as newsletter broadcasts. Other email
   // types (transactional confirms, etc.) just 200-ack so Resend doesn't
@@ -161,6 +165,21 @@ export async function POST(req: Request) {
       p_broadcast_id: broadcastId,
       p_user: userId,
       p_column: col,
+    })
+  }
+
+  // ── 1b. A/B variant open counter ─────────────────────────────────────────
+  // The cron's winner-pick reads ab_opens_a vs ab_opens_b; bump the right
+  // arm whenever a tagged email registers an open. We only track opens
+  // (not delivered/clicked) because that's what every email client
+  // surfaces consistently and what marketers expect for A/B tests.
+  if (type === 'email.opened' && (variant === 'a' || variant === 'b')) {
+    const incrementCol = variant === 'a' ? 'ab_opens_a' : 'ab_opens_b'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (admin as any).rpc('increment_broadcast_counter', {
+      p_broadcast_id: broadcastId,
+      p_user: userId,
+      p_column: incrementCol,
     })
   }
 

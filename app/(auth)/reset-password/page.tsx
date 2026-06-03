@@ -53,8 +53,11 @@ export default function ResetPasswordPage() {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">New password</label>
+          <label htmlFor="reset-new-password" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">New password</label>
           <input
+            id="reset-new-password"
+            name="new-password"
+            autoComplete="new-password"
             type="password"
             required
             minLength={8}
@@ -65,8 +68,11 @@ export default function ResetPasswordPage() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Confirm password</label>
+          <label htmlFor="reset-confirm-password" className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Confirm password</label>
           <input
+            id="reset-confirm-password"
+            name="confirm-password"
+            autoComplete="new-password"
             type="password"
             required
             value={confirm}
