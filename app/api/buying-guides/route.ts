@@ -93,9 +93,31 @@ function suggestTopics(reviews: ReviewRow[]): SuggestionItem[] {
 }
 
 // ─── Helper: pull every published review for a user ────────────────────────
+//
+// Primary source is the live WordPress REST API — that's the ground truth
+// for "what's on this blog right now". Many users' reviews were authored
+// outside MVP (legacy posts, manual WP edits, imported content) so reading
+// only blog_posts misses most of the catalogue. We then enrich each WP
+// row with MVP's seo_keyword + thumbnail when blog_posts has a matching
+// row (matched by wordpress_url).
 async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClient>>, userId: string): Promise<ReviewRow[]> {
+  const stripUrl = (u: string) => u.replace(/\/+$/, '').toLowerCase()
+  const stripHtml = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim()
+  const byUrl = new Map<string, ReviewRow>()
+
+  // 1. Pull from MVP first to learn the WP base URL (integrations.wordpress_url).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (supabase as any)
+  const { data: integ } = await supabase
+    .from('integrations')
+    .select('wordpress_url')
+    .eq('user_id', userId)
+    .maybeSingle()
+  const wpBase = (integ?.wordpress_url as string | null)?.replace(/\/+$/, '') || ''
+
+  // 2. MVP blog_posts — preserves video_id (needed for the FK on insert) +
+  //    seo_keyword + youtube thumbnail. This is the enrichment source.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: mvpRows } = await (supabase as any)
     .from('blog_posts')
     .select('id, title, slug, excerpt, wordpress_url, seo_keyword, affiliate_keywords, video_id, youtube_videos(thumbnail_url)')
     .eq('user_id', userId)
@@ -103,7 +125,56 @@ async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClien
     .not('wordpress_url', 'is', null)
     .order('published_at', { ascending: false, nullsFirst: false })
     .limit(200)
-  return (data ?? []) as ReviewRow[]
+  for (const r of (mvpRows ?? []) as ReviewRow[]) {
+    byUrl.set(stripUrl(r.wordpress_url!), r)
+  }
+
+  // 3. WP REST — the wider catalogue. For each WP post not already mapped
+  //    to an MVP row, fabricate a ReviewRow using { title, excerpt, link }.
+  //    video_id is left empty for these (used only by the POST insert path,
+  //    which falls back to the top MVP-tracked pick to keep the FK valid).
+  if (wpBase) {
+    try {
+      const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=100&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
+        signal: AbortSignal.timeout(8000),
+        headers: { Accept: 'application/json' },
+      })
+      if (res.ok) {
+        const wpPosts = await res.json() as Array<{
+          link: string
+          title: { rendered: string }
+          excerpt: { rendered: string }
+          _embedded?: { 'wp:featuredmedia'?: Array<{ source_url?: string }> }
+        }>
+        for (const p of wpPosts) {
+          if (!p.link) continue
+          const key = stripUrl(p.link)
+          const img = p._embedded?.['wp:featuredmedia']?.[0]?.source_url || null
+          const existing = byUrl.get(key)
+          if (existing) {
+            // Patch image onto the MVP row if it didn't have one
+            if (!existing.youtube_videos?.thumbnail_url && img) {
+              existing.youtube_videos = { thumbnail_url: img }
+            }
+          } else {
+            byUrl.set(key, {
+              id: '',
+              title: stripHtml(p.title?.rendered || ''),
+              slug: '',
+              excerpt: stripHtml(p.excerpt?.rendered || '').slice(0, 280),
+              wordpress_url: p.link,
+              seo_keyword: null,
+              affiliate_keywords: null,
+              video_id: '',
+              youtube_videos: img ? { thumbnail_url: img } : null,
+            })
+          }
+        }
+      }
+    } catch { /* non-fatal — fall through to MVP-only */ }
+  }
+
+  return Array.from(byUrl.values())
 }
 
 // ─── GET ───────────────────────────────────────────────────────────────────
@@ -332,15 +403,31 @@ VOICE / STYLE RULES:
   }
 
   // ── 4. Save row ──────────────────────────────────────────────────────────
-  // We reuse video_id from the first pick — blog_posts.video_id is NOT NULL
-  // in the base schema (migration 024 made it nullable but only if applied).
-  // Either way, threading through the top pick's video keeps the FK valid.
+  // Find the first picked review that has a real MVP video_id (rows pulled
+  // from WP REST have empty video_id). blog_posts.video_id is NOT NULL in
+  // the base schema (migration 024 made it nullable but only if applied)
+  // so we need a non-empty value for safety. If NO picks have a video_id
+  // we fall back to the most recent MVP review for this user.
+  let fallbackVideoId: string | null = picks.find(p => p.review.video_id)?.review.video_id || null
+  if (!fallbackVideoId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: anyReview } = await (supabase as any)
+      .from('blog_posts')
+      .select('video_id')
+      .eq('user_id', user.id)
+      .not('video_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    fallbackVideoId = (anyReview?.video_id as string | null) || null
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: saved } = await (supabase as any)
     .from('blog_posts')
     .insert({
       user_id: user.id,
-      video_id: picks[0].review.video_id,
+      video_id: fallbackVideoId,
       title: wpTitle,
       slug,
       content: html,

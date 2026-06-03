@@ -84,28 +84,92 @@ export async function POST(req: Request) {
     .maybeSingle()
   const brand = (brandRow?.name as string | null)?.trim() || null
 
-  // 3. Pull recent published reviews. blog_posts has no category/score/image
-  //    columns — we use seo_keyword as the per-post search signal and join
-  //    youtube_videos.thumbnail_url for the card image.
+  // 3. Build the catalogue from the LIVE WordPress REST API — that's the
+  //    ground truth for "what's actually on this blog right now". Many of
+  //    the user's reviews predate MVP or were authored directly in WP, so
+  //    relying on blog_posts misses most of the catalogue. We also pull
+  //    MVP's blog_posts for seo_keyword enrichment (richer Haiku context)
+  //    and merge by URL.
+  //
+  //    Public WP REST needs no auth + works cross-origin (we're calling
+  //    server-side anyway). _embed=wp:featuredmedia is the cheapest way to
+  //    get featured images without a second per-post round-trip.
+  type PostRow = { title: string; excerpt: string; url: string; image: string | null; seoKeyword: string | null }
+  const posts = new Map<string, PostRow>() // keyed by stripped URL → row
+
+  function stripUrl(u: string): string {
+    return u.replace(/\/+$/, '').toLowerCase()
+  }
+  function stripHtml(s: string): string {
+    return s.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim()
+  }
+
+  // 3a. WP REST — primary source. Pull up to 100 posts (per_page max). If a
+  //     site has more, the recent 100 covers what visitors typically ask.
+  try {
+    const wpBase = site.replace(/\/+$/, '')
+    const wpRes = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=100&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
+      signal: AbortSignal.timeout(8000),
+      headers: { Accept: 'application/json' },
+    })
+    if (wpRes.ok) {
+      const wpPosts = await wpRes.json() as Array<{
+        link: string
+        title: { rendered: string }
+        excerpt: { rendered: string }
+        _embedded?: { 'wp:featuredmedia'?: Array<{ source_url?: string; media_details?: { sizes?: { medium?: { source_url?: string } } } }> }
+      }>
+      for (const p of wpPosts) {
+        if (!p.link) continue
+        const img = p._embedded?.['wp:featuredmedia']?.[0]
+        posts.set(stripUrl(p.link), {
+          title: stripHtml(p.title?.rendered || ''),
+          excerpt: stripHtml(p.excerpt?.rendered || '').slice(0, 280),
+          url: p.link,
+          image: img?.media_details?.sizes?.medium?.source_url || img?.source_url || null,
+          seoKeyword: null,
+        })
+      }
+    }
+  } catch {
+    /* non-fatal — fall through to MVP-only catalogue */
+  }
+
+  // 3b. MVP blog_posts — enrichment pass. Patches seoKeyword onto matched
+  //     rows so Haiku gets the buyer-search-phrase signal too.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: reviewsRaw } = await (admin as any)
     .from('blog_posts')
-    .select('id, title, excerpt, wordpress_url, seo_keyword, affiliate_keywords, video_id, youtube_videos(thumbnail_url)')
+    .select('title, excerpt, wordpress_url, seo_keyword, video_id, youtube_videos(thumbnail_url)')
     .eq('user_id', userId)
     .eq('post_type', 'review')
     .not('wordpress_url', 'is', null)
-    .order('published_at', { ascending: false, nullsFirst: false })
-    .limit(50)
-  const reviews = (reviewsRaw ?? []) as Array<{
-    id: string; title: string; excerpt: string | null; wordpress_url: string;
-    seo_keyword: string | null; affiliate_keywords: string[] | null; video_id: string;
-    youtube_videos: { thumbnail_url: string | null } | null;
-  }>
+    .limit(200)
+  for (const r of (reviewsRaw ?? []) as Array<{ title: string; excerpt: string | null; wordpress_url: string; seo_keyword: string | null; youtube_videos: { thumbnail_url: string | null } | null }>) {
+    const key = stripUrl(r.wordpress_url)
+    const existing = posts.get(key)
+    if (existing) {
+      // Enrich the WP-sourced row with seo_keyword + better image fallback
+      existing.seoKeyword = r.seo_keyword
+      if (!existing.image && r.youtube_videos?.thumbnail_url) existing.image = r.youtube_videos.thumbnail_url
+    } else {
+      // MVP-only row (e.g. just-published, WP REST may have cached)
+      posts.set(key, {
+        title: r.title,
+        excerpt: (r.excerpt || '').slice(0, 280),
+        url: r.wordpress_url,
+        image: r.youtube_videos?.thumbnail_url || null,
+        seoKeyword: r.seo_keyword,
+      })
+    }
+  }
+
+  const reviews = Array.from(posts.values())
   if (reviews.length === 0) return cors({ picks: [], brand, reason: 'no_reviews' }, 200)
 
-  // 4. Compact catalogue: title + seo_keyword + excerpt — that's enough for
-  //    Haiku to map a buyer's question onto a real pick.
-  const catalogue = reviews.map((r, i) => `[${i}] ${r.title}${r.seo_keyword ? ` (kw: ${r.seo_keyword})` : ''}\n    ${(r.excerpt || '').slice(0, 220)}`).join('\n\n')
+  // 4. Compact catalogue — Haiku doesn't need rich data, just enough to
+  //    match the visitor's question to an existing post by title + excerpt.
+  const catalogue = reviews.map((r, i) => `[${i}] ${r.title}${r.seoKeyword ? ` (kw: ${r.seoKeyword})` : ''}\n    ${r.excerpt}`).join('\n\n')
 
   const prompt = `You are an AI product finder for a review blog. The visitor asked:
 "${q}"
@@ -143,8 +207,8 @@ Rules:
         if (!r) return null
         return {
           title: r.title,
-          url: r.wordpress_url,
-          image: r.youtube_videos?.thumbnail_url || null,
+          url: r.url,
+          image: r.image,
           score: null,
           reason: (p.reason || '').trim().slice(0, 220),
         }
