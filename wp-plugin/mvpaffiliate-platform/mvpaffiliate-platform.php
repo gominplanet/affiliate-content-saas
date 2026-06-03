@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.27
+ * Version: 1.0.28
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.27');
+define('MVP_AFFILIATE_VERSION', '1.0.28');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -419,6 +419,83 @@ add_filter('the_content', function ($content) {
     <?php
     return ob_get_clean() . $content;
 }, 5);  // priority 5 so this runs BEFORE the in-content ads filter at 10
+
+// ─── 7c. Updated/Edited meta line + Author bio card (bottom of every post) ────
+// Two trust signals every major review site (Tom's Guide / TechRadar / PCMag /
+// Digital Trends) renders on every review:
+//   1. "Updated [date]" inline meta — daily/weekly refresh signal that Google
+//      uses for ranking + tells readers the content is maintained.
+//   2. "About the reviewer" card at the foot with photo, name, title,
+//      experience paragraph — PCMag's "OUR EXPERT" model. Strong E-E-A-T
+//      signal + reader trust.
+//
+// Both render via the_content filter so they appear on EVERY post (including
+// legacy ones generated before this feature existed). The author config is
+// the same blog_customizations.authorBlock that drives the top trust block —
+// reusing the data avoids a second /customize panel.
+//
+// Disable: customize → Reviewer Trust Block → toggle off (same toggle —
+// both the top byline and the bottom bio card live or die together).
+add_filter('the_content', function ($content) {
+    if (!is_singular('post')) return $content;
+    $data = mvp_affiliate_get_data();
+    $ab = $data['authorBlock'] ?? null;
+    if (!$ab || empty($ab['enabled'])) return $content;
+    $name    = trim((string) ($ab['name'] ?? ''));
+    $tagline = trim((string) ($ab['tagline'] ?? ''));
+    if (!$name || !$tagline) return $content;
+    $photo     = esc_url((string) ($ab['photoUrl']  ?? ''));
+    $link      = esc_url((string) ($ab['linkUrl']   ?? ''));
+    $linkLabel = trim((string) ($ab['linkLabel'] ?? 'Read more about me'));
+    if (!$linkLabel) $linkLabel = 'Read more about me';
+    // Bio paragraph — fall back to the tagline if no separate long-form bio
+    // is configured. Most users will only fill the tagline so this preserves
+    // the existing behaviour while giving power users a richer bio surface.
+    $bio = trim((string) ($ab['bio'] ?? ''));
+    if (!$bio) $bio = $tagline;
+
+    // Dates — WP exposes post_modified (UTC) which is exactly the freshness
+    // signal Google looks for. Show "Updated" only if it differs from the
+    // publish date by more than 24h; otherwise the publish date alone is
+    // less noisy. Format matches major review sites: "May 28, 2026".
+    $post_id = get_the_ID();
+    $published_ts = get_post_time('U', true, $post_id);
+    $modified_ts  = get_post_modified_time('U', true, $post_id);
+    $published_human = get_the_date('F j, Y', $post_id);
+    $modified_human  = get_post_modified_time('F j, Y', false, $post_id);
+    $show_updated    = ($modified_ts - $published_ts) > 86400;
+
+    ob_start(); ?>
+<div class="gr-post-meta" style="margin:32px 0 16px;padding:12px 0;border-top:1px solid #e5e5e7;border-bottom:1px solid #e5e5e7;display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:12px;color:#86868b">
+  <span style="font-weight:600;color:#3a3a3c">Published <?php echo esc_html($published_human); ?></span>
+  <?php if ($show_updated): ?>
+    <span aria-hidden="true">·</span>
+    <span style="font-weight:600;color:#1d1d1f"><span style="text-transform:uppercase;letter-spacing:.5px;font-size:10px;color:#86868b">Updated</span> <?php echo esc_html($modified_human); ?></span>
+  <?php endif; ?>
+  <span aria-hidden="true">·</span>
+  <span>Reviewed by <strong style="color:#1d1d1f"><?php echo esc_html($name); ?></strong></span>
+</div>
+
+<div class="gr-author-bio-card" style="margin:24px 0 8px;padding:20px;border:1px solid #e5e5e7;border-radius:8px;background:#fafafa;display:flex;gap:18px;align-items:flex-start">
+  <?php if ($photo): ?>
+    <img src="<?php echo $photo; ?>" alt="<?php echo esc_attr($name); ?>" loading="lazy" style="flex-shrink:0;width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.08)" />
+  <?php endif; ?>
+  <div style="flex:1;min-width:0">
+    <p style="margin:0;font-size:11px;font-weight:800;color:#86868b;text-transform:uppercase;letter-spacing:.8px">About the reviewer</p>
+    <p style="margin:4px 0 6px;font-size:18px;font-weight:700;color:#1d1d1f;line-height:1.25"><?php echo esc_html($name); ?></p>
+    <p style="margin:0;font-size:14px;color:#3a3a3c;line-height:1.55"><?php echo esc_html($bio); ?></p>
+    <?php if ($link): ?>
+      <p style="margin:10px 0 0">
+        <a href="<?php echo $link; ?>" target="_blank" rel="noopener" style="font-size:13px;color:#0071e3;text-decoration:none;font-weight:600"><?php echo esc_html($linkLabel); ?> →</a>
+      </p>
+    <?php endif; ?>
+  </div>
+</div>
+    <?php
+    return $content . ob_get_clean();
+}, 20);  // priority 20 so this runs AFTER the in-content ads filter at 10
+         // and AFTER any other content modifiers — we want the bio card to
+         // be literally the last thing before the comments / related posts.
 
 // ─── 8. Query fixes ───────────────────────────────────────────────────────────
 add_action('pre_get_posts', function (WP_Query $query) {

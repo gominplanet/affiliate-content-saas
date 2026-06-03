@@ -577,6 +577,12 @@ Use exactly this structure with {VIDEO_ID} replaced:
 @media(max-width:600px){.gr-cta-card:has(.gr-cta-thumb-wrap){grid-template-columns:1fr}.gr-cta-card .gr-cta-thumb-wrap{order:-1;max-width:320px;margin:0 auto}}
 .wp-post-image,.post-thumbnail img,.entry-thumbnail img{width:100%!important;height:auto!important;aspect-ratio:16/9;object-fit:cover}
 @media(max-width:600px){.gr-verdict-cols{grid-template-columns:1fr}.gr-rating-box{flex-direction:column;align-items:flex-start}}
+.gr-specs{width:100%;border-collapse:collapse;margin:16px 0 28px;font-size:14px;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden}
+.gr-specs th{text-align:left;padding:10px 14px;background:#fafafa;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7}
+.gr-specs td{padding:10px 14px;border-bottom:1px solid #f0f0f0}
+.gr-specs tr:last-child td{border-bottom:none}
+.gr-specs td:first-child{color:#1d1d1f;font-weight:600;width:38%}
+.gr-specs td:last-child{color:#3a3a3c}
 .gr-tags{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
 .gr-tags span{display:inline-block;background:#f0f0f0;color:#555;font-size:12px;font-weight:600;padding:5px 14px;border-radius:20px;letter-spacing:.02em}
 .gr-scorecard{background:#fff;border:2px solid #111;border-radius:4px;padding:20px 24px;margin:0 0 32px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center}
@@ -646,8 +652,22 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
     <div class="gr-sc-num">{X.X}</div>
     <div class="gr-sc-out">/5</div>
     <div class="gr-sc-stars">{star row}</div>
-    <div class="gr-sc-label">Overall</div>
+    <div class="gr-sc-label">{VERBAL LABEL — see map below}</div>
   </div>
+{{!-- VERBAL VERDICT LABEL MAP — every major review site (PCMag, Digital
+     Trends, TechRadar, Tom's Guide) attaches a one-word verbal verdict to
+     the numeric score so a scanner gets the gist in 200ms. The label MUST
+     map cleanly from the overall score:
+       4.6–5.0 → "Exceptional"
+       4.1–4.5 → "Excellent"
+       3.6–4.0 → "Very Good"
+       3.1–3.5 → "Good"
+       2.6–3.0 → "Mixed"
+       2.1–2.5 → "Disappointing"
+       1.0–2.0 → "Avoid"
+     Place this verbal word in the gr-sc-label slot above (replacing the
+     placeholder); keep the SAME word in the verdict paragraph if you
+     reference the rating verbally ("Excellent overall…"). --}}
   <div class="gr-sc-subs">
     <div class="gr-sc-sub">
       <span class="gr-sc-sub-name">Value</span>
@@ -731,6 +751,37 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
     Only the features and specs ACTUALLY stated in the transcript or product info — quote
     the real numbers/measurements when they're given, otherwise describe what the reviewer
     showed or demonstrated. Never invent, estimate, or guess a spec. No vague claims.
+
+    AFTER Section B's prose, IF the source contains ≥3 concrete specs
+    (dimensions, weight, capacity, materials, run-time, etc.), insert a
+    structured Specs table — every major review site (PCMag, TechRadar,
+    Digital Trends, Tom's Guide) renders one. Buyers scan it before
+    reading prose. Format below; OMIT the entire block if the source
+    has fewer than 3 specs (don't fabricate to fill the table).
+
+    <!-- wp:html -->
+    <table class="gr-specs" style="width:100%;border-collapse:collapse;margin:16px 0 28px;font-size:14px;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden">
+      <tbody>
+        <tr style="background:#fafafa">
+          <th style="text-align:left;padding:10px 14px;width:38%;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7">Spec</th>
+          <th style="text-align:left;padding:10px 14px;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7">Detail</th>
+        </tr>
+        <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#1d1d1f;font-weight:600">{spec name 1}</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#3a3a3c">{spec value 1, with units}</td></tr>
+        <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#1d1d1f;font-weight:600">{spec name 2}</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;color:#3a3a3c">{spec value 2, with units}</td></tr>
+        {repeat for 4–8 rows total, only specs actually stated in source}
+      </tbody>
+    </table>
+    <!-- /wp:html -->
+
+    Eligible row keys (use whichever the source provides — keep order
+    consistent: physical specs first, performance/electrical second,
+    inclusions last):
+      Dimensions · Weight · Material · Color / Finish · Capacity ·
+      Power / Wattage · Battery / Run-time · Connectivity · Resolution ·
+      Compatibility · Included accessories · Warranty
+    Do NOT include Price (rule 10 bans prices in the body).
+    Do NOT include vague entries like "Premium quality" — every row
+    must have a measurable detail.
 
   Section C: <!-- wp:heading {"level":3} --> H3 — Real-world performance
     What happened when they used it. Specific conditions from transcript.
