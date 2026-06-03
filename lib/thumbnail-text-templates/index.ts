@@ -20,9 +20,11 @@ import satori from 'satori'
 import { Resvg } from '@resvg/resvg-js'
 import sharp from 'sharp'
 import { pickTemplate } from './picker'
-import { templateById } from './templates'
+import { templateById, randomTemplate } from './templates'
 import { fontsFor } from './fonts'
 import type { PickedTemplate, Side } from './types'
+
+export { TEMPLATES, randomTemplate, templateById } from './templates'
 
 export interface RenderDesignerOverlayInput {
   /** URL or http(s) data URI of the base thumbnail (clean image, no text). */
@@ -41,6 +43,12 @@ export interface RenderDesignerOverlayInput {
   /** Override the headline decomposition. If provided, picker still chooses
    *  the template but uses this content instead of its own split. */
   forceContent?: PickedTemplate['content']
+  /** Pick a TEMPLATE AT RANDOM (Math.random by default) instead of letting
+   *  the picker decide. The picker still runs to decompose the headline
+   *  for the chosen template. Use this in the live thumbnail generation
+   *  flow when we want variety across renders without a user-facing
+   *  template picker. Ignored when `forceTemplateId` is set. */
+  randomize?: boolean
   /** Caller for usage tracking. */
   userId: string
   tier: string | null
@@ -77,23 +85,30 @@ export async function renderDesignerOverlay(input: RenderDesignerOverlayInput): 
   const textSide: Side = input.subjectSide === 'left' ? 'right' : 'left'
 
   // ── 1. Pick template + decompose headline + palette ──────────────────────
-  // When the caller forces a template, pass it to the picker as a
-  // preferredTemplateId so the decomposition is template-aware (each
-  // template's punch/leading/banner/badge fields mean different things).
-  // We were previously calling the picker WITHOUT a hint and then forcing
-  // a different template downstream, which cross-wired the fields and
-  // produced upside-down layouts on banner-pill / badge-score.
+  // Decide WHICH template to use first:
+  //   - forceTemplateId wins (admin test path, deterministic playback)
+  //   - randomize: true picks uniformly across all templates (live flow —
+  //     keeps thumbnails varied without surfacing a template-picker UI)
+  //   - otherwise the Haiku picker chooses based on headline + context
+  // The picker still runs in all paths because it does the heavy lifting
+  // of decomposing the headline (per-template field semantics) and choosing
+  // a palette that contrasts the base image.
+  const preselected = input.forceTemplateId
+    ? input.forceTemplateId
+    : input.randomize
+      ? randomTemplate().id
+      : null
   const pickerResult = await pickTemplate({
     headline: input.headline,
     productContext: input.productContext,
     baseImageUrl: input.baseImageUrl,
     userId: input.userId,
     tier: input.tier,
-    preferredTemplateId: input.forceTemplateId ?? null,
+    preferredTemplateId: preselected,
   })
-  const picked = input.forceTemplateId
+  const picked = preselected
     ? {
-        templateId: input.forceTemplateId,
+        templateId: preselected,
         // Caller-supplied content override beats picker decomposition.
         content: input.forceContent ?? pickerResult.content,
         palette: pickerResult.palette,

@@ -1,0 +1,95 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// DUAL COLOR STACK — clean two-line vertical split with the setup line in
+// white and the payoff line in the accent colour. The most stripped-back
+// designer template: no banners, no badges, no decorative shapes — just
+// the contrast between line 1 (calm white) and line 2 (loud yellow).
+//
+// Aesthetic match: clean modern review channels, MKBHD-style restraint.
+
+import type { Template, TemplateInput, TemplateNode } from '../types'
+import { safeZone, fitStackedFontSize } from '../safe-zone'
+
+function render(input: TemplateInput): TemplateNode {
+  const { width, height, side, content, palette } = input
+  const sz = safeZone(width, height)
+  const colWidth = Math.round(width * 0.52)
+  const textCol = colWidth - sz.hMargin
+
+  // The two lines: setup (white) → payoff (accent). If only a punch was
+  // provided, split it. Otherwise use leading/punch as the two halves.
+  const top = (content.leading || '').trim()
+  const bottom = (content.punch || '').trim()
+  const lines = top ? [top, bottom] : [bottom]
+
+  const fontSize = fitStackedFontSize({
+    lines,
+    columnInnerWidth: textCol,
+    columnInnerHeight: sz.innerHeight,
+    targetCeiling: Math.min(textCol * 0.36, height * 0.38),
+    lineHeight: 0.92,
+  })
+  const outlineW = Math.max(8, Math.round(fontSize * 0.07))
+
+  const lineNodes: TemplateNode[] = lines.map((text, i) => ({
+    type: 'div',
+    props: {
+      style: {
+        fontFamily: 'Anton',
+        fontSize,
+        // Top line = setup (white). Bottom line = payoff (accent).
+        color: i === lines.length - 1 ? palette.accent : palette.primary,
+        letterSpacing: 1,
+        textTransform: 'uppercase',
+        textShadow: outline(outlineW, palette.outline),
+        lineHeight: 0.92,
+      },
+      children: text.toUpperCase(),
+    },
+  }))
+
+  return {
+    type: 'div',
+    props: {
+      style: { width, height, display: 'flex', justifyContent: side === 'left' ? 'flex-start' : 'flex-end', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0)' },
+      children: {
+        type: 'div',
+        props: {
+          style: {
+            width: colWidth,
+            height,
+            paddingLeft: side === 'left' ? sz.hMargin : Math.round(sz.hMargin * 0.5),
+            paddingRight: side === 'right' ? sz.hMargin : Math.round(sz.hMargin * 0.5),
+            paddingTop: sz.vMargin,
+            paddingBottom: sz.vMargin,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: side === 'left' ? 'flex-start' : 'flex-end',
+            textAlign: side === 'left' ? 'left' : 'right',
+          },
+          children: lineNodes,
+        },
+      },
+    },
+  }
+}
+
+function outline(width: number, color: string): string {
+  const w = Math.max(1, Math.round(width))
+  const offsets: Array<[number, number]> = []
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4
+    offsets.push([Math.round(Math.cos(a) * w), Math.round(Math.sin(a) * w)])
+  }
+  return [...offsets.map(([x, y]) => `${x}px ${y}px 0 ${color}`), `${Math.round(w * 0.4)}px ${Math.round(w * 0.6)}px 0 rgba(0,0,0,0.55)`].join(', ')
+}
+
+export const dualColorStack: Template = {
+  id: 'dual-color-stack',
+  label: 'Dual Color Stack',
+  whenToUse:
+    'Two-line setup/payoff headlines. Line 1 sets context ("THIS IS WHY"), line 2 delivers the emphasis ("I LOVE IT"). Cleaner than block-display, no decorative banner or badge — just the contrast between white and yellow lines. Works for almost any headline that can split naturally into setup + payoff.',
+  fonts: ['Anton'],
+  render,
+}

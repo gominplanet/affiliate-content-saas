@@ -65,6 +65,40 @@ const DECOMPOSE_RULES_BY_TEMPLATE: Record<string, string> = {
 - "badge" = REQUIRED for this template. Object with { text: the score/verdict in 4-6 chars max ("9/10", "BUY", "SKIP", "5★", "A+"), subtext: optional 1-2 word category ("VERDICT", "RATING", "FINAL"), iconHint: "check"|"x"|"star"|null }.
 - If the headline has no explicit score, SYNTHESIZE one from the product context: positive review → "9/10" or "BUY" + iconHint "check"; negative review → "SKIP" + iconHint "x"; comparison → "TOP PICK" + iconHint "star".
 - Skip "leading", "topLine", "subtitle".`,
+
+  'dual-color-stack': `- "leading" = the SETUP line (top, will render in WHITE). Short — 2-4 words.
+- "punch" = the PAYOFF line (bottom, will render in YELLOW). Short — 2-4 words.
+- Together they should form a natural 2-line read like "THIS IS WHY / I LOVE IT" or "AFTER 30 DAYS / IT'S WORTH IT". The split should feel like spoken cadence, not a forced cut.
+- Skip "topLine", "subtitle", "badge".`,
+
+  'mega-word': `- "punch" = ONE single explosive word, rendered massive and dominant ("INCREDIBLE", "TERRIBLE", "AMAZING", "FAILED", "WINNER", "FIRE", "BROKE"). Must be ONE word — if the headline can't collapse to one word, this template is the wrong choice (return your closest single-word distillation anyway).
+- "leading" = a small caption that sits ABOVE the mega word, 2-5 words ("IS IT WORTH IT?", "AFTER USING IT 30 DAYS", "MY HONEST OPINION:"). Optional but improves the composition when the punch word alone is ambiguous.
+- Skip "topLine", "subtitle", "badge".`,
+
+  'brush-highlight': `- "leading" = the setup line, 2-4 words, renders in WHITE handwritten brush above.
+- "punch" = the payoff word(s), 1-3 words, renders in WHITE with a coloured highlight pill behind it. The highlight is the visual anchor — pick the most emphatic / surprising part of the headline.
+- Together they should read editorial / lifestyle / hand-applied (e.g. "TINY TOOL / BIG CURLS", "ONE BLEND / I'M HOOKED").
+- Skip "topLine", "subtitle", "badge".`,
+
+  'stamp-tilt': `- "punch" = a VERDICT WORD that reads naturally as a rubber stamp: "APPROVED", "CERTIFIED", "AVOID", "VERIFIED", "TESTED", "FIRE", "TRASH", "LEGIT". One short word, max two.
+- "leading" = optional small line ABOVE the stamp, 2-4 words ("AFTER 30 DAYS:", "OUR TAKE:", "FINAL RULING:"). Helps frame what the stamp is judging.
+- If the headline lacks a single verdict word, synthesize one from the product context (positive → "APPROVED"; negative → "AVOID"; neutral → "TESTED").
+- Skip "topLine", "subtitle", "badge".`,
+
+  'arrow-pointer': `- "leading" = the setup line above ("LOOK AT THIS", "CHECK OUT", "TINY BUT MIGHTY"), 2-4 words.
+- "punch" = the noun/subject the arrow points at, 1-3 words ("BAG", "THIS GADGET", "THE TOOL"). The arrow renders BELOW the text pointing toward the subject in the photo.
+- The pairing should feel like a finger physically pointing — leading describes the action, punch names the thing.
+- Skip "topLine", "subtitle", "badge".`,
+
+  'burst-pop': `- "punch" = a single LOUD reaction word inside a comic-book starburst: "WOW!", "INSANE!", "NEW!", "EXCLUSIVE!", "BOOM!", "FIRE!", "WAIT!", "OMG!". Must be ONE word — short and punchy.
+- "leading" = optional small line ABOVE the starburst, 2-4 words framing the reaction ("YOU WON'T BELIEVE", "AFTER ONE USE", "FIRST IMPRESSIONS:").
+- Only use when the headline genuinely warrants comic-book energy — skip for measured/technical content.
+- Skip "topLine", "subtitle", "badge".`,
+
+  'price-tag': `- "punch" = the main headline statement, 2-4 words ("WORTH THE COST?", "ONLY $20", "DEAL OF THE WEEK", "PRICE BREAKDOWN").
+- "leading" = optional setup line above, 2-3 words.
+- "badge" = REQUIRED. The price tag sticker. { text: the price string ("$13.96", "$199", "75% OFF", "FREE"), subtext: optional small label above the price ("TODAY", "AMAZON", "RETAIL", "SALE"), iconHint: null }. Pull the actual price from the product context if available; otherwise estimate from the product type.
+- Skip "topLine", "subtitle".`,
 }
 
 /** Default palette — used if Haiku errors or returns garbage. White text +

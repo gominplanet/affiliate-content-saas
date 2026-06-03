@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
       headline,
       productContext: body.productContext ? String(body.productContext) : null,
       forceTemplateId: body.forceTemplateId ? String(body.forceTemplateId) : undefined,
+      randomize: body.randomize === true,
       subjectSide: body.subjectSide === 'left' ? 'left' : body.subjectSide === 'right' ? 'right' : undefined,
       userId: user.id,
       tier: (caller?.tier as string) ?? null,

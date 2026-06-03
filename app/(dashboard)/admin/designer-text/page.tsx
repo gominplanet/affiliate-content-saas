@@ -15,9 +15,17 @@ import { useState } from 'react'
 
 const TEMPLATE_OPTIONS = [
   { id: '', label: '(let the picker choose)' },
+  { id: '__random__', label: '🎲 Random — what users will see' },
   { id: 'block-display', label: 'Block Display' },
   { id: 'banner-pill', label: 'Banner Pill' },
   { id: 'badge-score', label: 'Badge Score' },
+  { id: 'dual-color-stack', label: 'Dual Color Stack' },
+  { id: 'mega-word', label: 'Mega Word' },
+  { id: 'brush-highlight', label: 'Brush Highlight' },
+  { id: 'stamp-tilt', label: 'Stamp Tilt' },
+  { id: 'arrow-pointer', label: 'Arrow Pointer' },
+  { id: 'burst-pop', label: 'Burst Pop' },
+  { id: 'price-tag', label: 'Price Tag' },
 ]
 
 interface RenderResponse {
@@ -54,7 +62,14 @@ export default function DesignerTextTestPage() {
           baseImageUrl: baseImageUrl.trim(),
           headline: headline.trim(),
           productContext: productContext.trim() || undefined,
-          forceTemplateId: forceTemplateId || undefined,
+          // __random__ is the sentinel from the dropdown — translated into the
+          // `randomize: true` flag so the orchestrator picks uniformly across
+          // all 10 templates (same code path the live thumbnail flow will use).
+          ...(forceTemplateId === '__random__'
+            ? { randomize: true }
+            : forceTemplateId
+              ? { forceTemplateId }
+              : {}),
           subjectSide,
         }),
       })
