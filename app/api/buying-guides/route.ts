@@ -370,11 +370,11 @@ VOICE / STYLE RULES:
   let html = ''
   try {
     const writerMsg = await client.messages.create({
-      model: 'claude-sonnet-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       max_tokens: 8000,
       messages: [{ role: 'user', content: writerPrompt }],
     })
-    recordAnthropicUsage(writerMsg, { userId: user.id, tier, feature: 'buying_guide_writer', model: 'claude-sonnet-4-5-20251001' })
+    recordAnthropicUsage(writerMsg, { userId: user.id, tier, feature: 'buying_guide_writer', model: 'claude-sonnet-4-6' })
     html = (writerMsg.content[0] as { type: string; text: string })?.text || ''
   } catch (err) {
     return NextResponse.json({ error: `Writer failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
