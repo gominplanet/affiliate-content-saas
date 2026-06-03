@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@/lib/supabase/middleware'
-import { BLOCKED_FOR_VAS, isPathBlockedForVa } from '@/lib/agency'
+import { isPathBlockedForVa } from '@/lib/agency-routes'
 
 const publicPaths = [
   '/login', '/signup', '/reset-password',
@@ -73,10 +73,6 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url)
     }
   }
-  // Re-export so the unused-imports linter doesn't flag BLOCKED_FOR_VAS —
-  // it's referenced by isPathBlockedForVa already; this is belt-and-braces.
-  void BLOCKED_FOR_VAS
-
   return response
 }
 

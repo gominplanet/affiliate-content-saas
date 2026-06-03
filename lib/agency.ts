@@ -11,6 +11,10 @@
 
 import { randomBytes, createHash } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
+// Import for INTERNAL use (resolveAgencyContext) — these are also
+// re-exported below so callers of @/lib/agency see them as if they
+// originated here.
+import { normalizePermissions, type VaPermissions } from '@/lib/agency-permissions'
 
 /** All agency invite links carry this prefix so we can grep them out of
  *  logs and tie them to an MVP origin. */
@@ -63,66 +67,20 @@ export async function getOwnerUserId(userId: string): Promise<string> {
   return (data?.owner_user_id as string | undefined) ?? userId
 }
 
-/** All permission keys a Virtual Assistant can be granted. Owners (no
- *  agency parent) implicitly have all permissions. The blocked-for-VAs
- *  surfaces (BLOCKED_FOR_VAS below) are NEVER toggleable — there's no
- *  legitimate scenario where a VA should manage billing or the brand. */
-export const VA_PERMISSION_KEYS = [
-  'generate_posts',
-  'publish_to_socials',
-  'manage_newsletter',
-  'youtube_copilot',
-  'manage_videos',
-  'view_analytics',
-] as const
-
-export type VaPermissionKey = (typeof VA_PERMISSION_KEYS)[number]
-
-export type VaPermissions = Record<VaPermissionKey, boolean>
-
-/** Default permissions for a NEW invite. Sensible "content VA" preset:
- *  the VA can produce + publish + manage videos but can't send to your
- *  newsletter list or see analytics. Owner can toggle in the invite UI. */
-export const DEFAULT_VA_PERMISSIONS: VaPermissions = {
-  generate_posts:     true,
-  publish_to_socials: true,
-  manage_newsletter:  false,
-  youtube_copilot:    true,
-  manage_videos:      true,
-  view_analytics:     false,
-}
-
-/** Human-readable label + description for each permission. Used by the
- *  invite form + the member-edit panel. Keep label under 30 chars. */
-export const VA_PERMISSION_META: Record<VaPermissionKey, { label: string; help: string }> = {
-  generate_posts:     { label: 'Generate blog posts',     help: 'Can use the Content page and the blog generator.' },
-  publish_to_socials: { label: 'Publish to socials',      help: 'Can post to Facebook, Instagram, TikTok, Threads, Pinterest, X, Bluesky, Telegram.' },
-  manage_newsletter:  { label: 'Manage newsletter',       help: 'Can compose and send newsletter broadcasts. Off by default — you control the list.' },
-  youtube_copilot:    { label: 'YouTube Co-Pilot',        help: 'Can generate YouTube titles, descriptions, tags, and thumbnails.' },
-  manage_videos:      { label: 'Manage video library',    help: 'Can add, edit, and remove videos in the content library.' },
-  view_analytics:     { label: 'View analytics & SEO',    help: 'Can see Analytics, SEO dashboard, and content performance reports.' },
-}
-
-/** Routes a Virtual Assistant can NEVER access regardless of permissions.
- *  These are the owner-only surfaces: billing, brand identity, integrations,
- *  multi-site WordPress config, plugin connect tokens, and the team-
- *  management page itself (so VAs can't invite other VAs). Middleware +
- *  page-level checks both reference this list. */
-export const BLOCKED_FOR_VAS: ReadonlyArray<string> = [
-  '/branding',           // White-label config — owner's brand
-  '/setup',              // Integrations (Geniuslink, Amazon, social OAuth) — owner's accounts
-  '/customize',          // Blog customization
-  '/billing',            // Stripe + tier management
-  '/agency',             // VA management itself — VAs can't manage other VAs
-  '/developers',         // API keys — owner-only
-  '/admin',              // Internal MVP admin
-]
-
-/** True when the given pathname matches one of the BLOCKED_FOR_VAS roots.
- *  Used by middleware to short-circuit before the page renders. */
-export function isPathBlockedForVa(pathname: string): boolean {
-  return BLOCKED_FOR_VAS.some(blocked => pathname === blocked || pathname.startsWith(blocked + '/'))
-}
+// Re-export everything edge/client-safe so non-middleware / non-server
+// callers can keep importing from '@/lib/agency' without knowing about
+// the split. Middleware imports directly from '@/lib/agency-routes' and
+// client components from '@/lib/agency-permissions' because THIS file
+// pulls in node:crypto which can't bundle for edge/browser.
+export { BLOCKED_FOR_VAS, isPathBlockedForVa } from '@/lib/agency-routes'
+export {
+  VA_PERMISSION_KEYS,
+  VA_PERMISSION_META,
+  DEFAULT_VA_PERMISSIONS,
+  normalizePermissions,
+  type VaPermissionKey,
+  type VaPermissions,
+} from '@/lib/agency-permissions'
 
 export interface AgencyContext {
   /** The user actually logged in. */
@@ -147,20 +105,6 @@ export function isOwner(ctx: AgencyContext): boolean {
 export function hasPermission(ctx: AgencyContext, key: VaPermissionKey): boolean {
   if (isOwner(ctx)) return true
   return !!ctx.permissions?.[key]
-}
-
-/** Normalize a raw permissions value (from DB or request body) into a
- *  full VaPermissions object. Missing keys default to false. */
-export function normalizePermissions(raw: unknown): VaPermissions {
-  const out: VaPermissions = { ...DEFAULT_VA_PERMISSIONS }
-  for (const k of VA_PERMISSION_KEYS) out[k] = false
-  if (raw && typeof raw === 'object') {
-    const r = raw as Record<string, unknown>
-    for (const k of VA_PERMISSION_KEYS) {
-      if (typeof r[k] === 'boolean') out[k] = r[k] as boolean
-    }
-  }
-  return out
 }
 
 /** Resolve full agency context for a user. Useful when a route needs both

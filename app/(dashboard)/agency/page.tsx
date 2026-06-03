@@ -23,10 +23,12 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Users, Lock, Plus, Mail, Trash2, Clock, Shield, User as UserIcon, Check, X as XIcon } from 'lucide-react'
 import { useConfirm } from '@/components/ui/useConfirm'
+// Import from the client-safe file — '@/lib/agency' pulls in node:crypto
+// (for invite-token generation) which can't bundle for the browser.
 import {
   VA_PERMISSION_KEYS, VA_PERMISSION_META, DEFAULT_VA_PERMISSIONS,
   type VaPermissions, type VaPermissionKey,
-} from '@/lib/agency'
+} from '@/lib/agency-permissions'
 
 interface InviteRow {
   id: string
