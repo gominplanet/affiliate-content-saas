@@ -7,6 +7,7 @@ import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
+import { selfCheckBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
@@ -691,6 +692,34 @@ async function handleGenerate(request: Request) {
     if (scrub.paragraphsRemoved + scrub.phrasesRewritten + scrub.handlesWrapped > 0) {
       console.log(`[blog/generate] voice scrub: dropped ${scrub.paragraphsRemoved} paragraph(s), rewrote ${scrub.phrasesRewritten} phrase(s), wrapped ${scrub.handlesWrapped} @handle(s)`)
     }
+  }
+
+  // Haiku self-check pass — last line of defence against catalogue-level
+  // style tics that slip past the writing-time prompt: "nobody talks about",
+  // "small thing but matters", "I don't throw that word around lightly",
+  // "like genuinely ___" compounds, em-dash in headings, conclusion
+  // crescendos, "Some users…" hedges. Costs ~$0.001/post; ships the
+  // original content unchanged on any failure (defensive — this is polish,
+  // not a hard gate).
+  try {
+    const selfCheck = await selfCheckBlogPost({
+      content,
+      productTitle: generated.title || '',
+      ctx: { userId: user.id, tier: (wp?.tier as string) ?? null },
+    })
+    if (selfCheck.fixesApplied > 0) {
+      console.log(`[blog/generate] self-check: applied ${selfCheck.fixesApplied}/${selfCheck.violations.length} fixes`,
+        selfCheck.violations.map(v => ({ pattern: v.pattern, applied: v.applied })))
+      content = selfCheck.content
+    } else if (selfCheck.violations.length > 0) {
+      // Haiku flagged violations but none of the `original` strings
+      // matched verbatim — log so we can see what's drifting. Most
+      // common cause: Haiku paraphrased the original instead of
+      // copying the exact sentence.
+      console.log(`[blog/generate] self-check: ${selfCheck.violations.length} flagged but 0 applied (paraphrase mismatch)`)
+    }
+  } catch (err) {
+    console.warn('[blog/generate] self-check threw — shipping unchanged:', err instanceof Error ? err.message : err)
   }
 
   // ── 6.1. Topical internal linking (SEO #15) — pick the 2–3 most relevant of
