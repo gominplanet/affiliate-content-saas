@@ -14,6 +14,8 @@
 
 export type DealOccasionSlug =
   | 'none'
+  | 'lightning_deal'
+  | 'lowest_price_ytd'
   | 'prime_day'
   | 'prime_big_deal_days'
   | 'black_friday'
@@ -51,6 +53,31 @@ const OCCASIONS: Record<DealOccasionSlug, DealOccasion> = {
     longLabel: 'limited-time deal',
     hypePhrase: 'a real price drop on a product worth tracking',
     badgeBg: '#7C3AED',
+    badgeFg: '#FFFFFF',
+  },
+  lightning_deal: {
+    slug: 'lightning_deal',
+    badgeLabel: 'LIGHTNING DEAL',
+    longLabel: 'Amazon Lightning Deal',
+    // Lightning deals run on a clock + limited inventory — both create
+    // honest urgency the writer can lean on without inventing scarcity.
+    hypePhrase: 'an Amazon Lightning Deal with a hard clock + limited inventory, so the window is real not invented',
+    // Amazon's own Lightning-Deal palette: vivid orange. Reads as time-
+    // sensitive on the thumbnail without using red (red is the savings
+    // chip colour, kept separate so they don't visually fight).
+    badgeBg: '#FF6900',
+    badgeFg: '#FFFFFF',
+  },
+  lowest_price_ytd: {
+    slug: 'lowest_price_ytd',
+    badgeLabel: "YEAR'S LOWEST",
+    longLabel: 'lowest price of the year',
+    // Price-history claim. The writer prompt should anchor on the
+    // year-to-date framing without inventing specific historical prices.
+    hypePhrase: 'the lowest price this product has hit so far this year, based on the price you\'re seeing right now versus its recent history',
+    // Green = "savings" cue, distinct from the orange Lightning chip and
+    // the violet "regular deal" default.
+    badgeBg: '#0E8C4A',
     badgeFg: '#FFFFFF',
   },
   prime_day: {
@@ -156,9 +183,18 @@ export function getOccasion(slug: DealOccasionSlug): DealOccasion {
 }
 
 export function listOccasions(): DealOccasion[] {
-  // Order tuned for the UI dropdown (most-common first, then chronological).
+  // Order tuned for the UI dropdown:
+  //   1. Regular (no occasion)
+  //   2. Year-round qualifiers (Lightning Deal, Lowest Price YTD) —
+  //      not season-bound, so they sit right after Regular instead of
+  //      mixed into the chronological seasonal group below.
+  //   3. Major Amazon events (Prime Day variants, Black Friday, Cyber
+  //      Monday, Holiday)
+  //   4. Spring + secondary seasonal events
   return [
     OCCASIONS.none,
+    OCCASIONS.lightning_deal,
+    OCCASIONS.lowest_price_ytd,
     OCCASIONS.prime_day,
     OCCASIONS.prime_big_deal_days,
     OCCASIONS.black_friday,
