@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -2387,7 +2388,10 @@ export default function StudioPage() {
   if (loading) {
     return (
       <div>
-        <Header title="YouTube Co-Pilot" subtitle="Generate viral title ideas, a description, tags, hashtags and a thumbnail for any video — then push it all back to YouTube in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links." />
+        <PageHero
+          title="YouTube Co-Pilot"
+          subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click."
+        />
         <div className="flex items-center justify-center py-20 text-[#86868b] dark:text-[#8e8e93] text-sm">
           <Loader2 size={16} className="animate-spin mr-2" /> Loading your videos…
         </div>
@@ -2397,9 +2401,9 @@ export default function StudioPage() {
 
   return (
     <div>
-      <Header
+      <PageHero
         title="YouTube Co-Pilot"
-        subtitle="Generate viral title ideas, a description, tags, hashtags and a thumbnail for any video — then push it all back to YouTube in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links."
+        subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links."
       />
 
       <TutorialVideo sectionKey="studio" />

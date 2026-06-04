@@ -10,6 +10,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
@@ -502,23 +503,35 @@ export default function SeoPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="SEO & Indexing"
+        accent="rgba(16, 185, 129, 0.30)"
         subtitle={
-          loading ? 'Loading…'
-          : data
-            ? `${data.summary.total} posts · avg score ${data.summary.avgScore}/100${data.connected ? ` · tracking ${data.property}` : ''}`
-            : 'Make sure your posts are indexed and optimized'
+          loading
+            ? 'Loading…'
+            : data
+              ? `${data.summary.total} posts · avg score ${data.summary.avgScore}/100${data.connected ? ` · tracking ${data.property}` : ''}`
+              : 'Make sure your posts are indexed and optimized'
         }
         actions={
-          <div className="flex items-center gap-2">
-            <button onClick={previewFixAll} disabled={loading || bulkLoading || bulkApplying} className="btn-primary text-sm" title="Auto-fix every post's fixable SEO issues">
-              {bulkLoading ? <><Loader2 size={14} className="animate-spin" /> Scanning…</> : <><Wand2 size={14} /> Fix all posts</>}
+          <>
+            <button
+              onClick={previewFixAll}
+              disabled={loading || bulkLoading || bulkApplying}
+              className="px-3.5 py-2 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-[13px] font-semibold text-white inline-flex items-center gap-1.5 transition-colors"
+              title="Auto-fix every post's fixable SEO issues"
+            >
+              {bulkLoading ? <><Loader2 size={13} className="animate-spin" /> Scanning…</> : <><Wand2 size={13} /> Fix all posts</>}
             </button>
-            <button onClick={load} disabled={loading} className="btn-secondary text-sm">
-              {loading ? <><Loader2 size={14} className="animate-spin" /> Refreshing…</> : <><RefreshCw size={14} /> Refresh</>}
+            <button
+              onClick={load}
+              disabled={loading}
+              className="px-3.5 py-2 rounded-lg border text-[13px] font-semibold inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border-bright)', color: 'var(--text)' }}
+            >
+              {loading ? <><Loader2 size={13} className="animate-spin" /> Refreshing…</> : <><RefreshCw size={13} /> Refresh</>}
             </button>
-          </div>
+          </>
         }
       />
 

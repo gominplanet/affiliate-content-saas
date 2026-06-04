@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { createBrowserClient } from '@/lib/supabase/client'
 import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { TutorialVideo } from '@/components/TutorialVideo'
@@ -3528,18 +3529,18 @@ export default function ContentPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Library"
         subtitle={
           loading ? 'Loading…' :
           activeTab === 'scheduled'
-            ? `Queued posts that will fire automatically. The cron runs every minute — your computer can be off.`
+            ? `Queued posts that will fire automatically. The cron runs every minute, your computer can be off.`
             : activeTab === 'posts'
-            ? `Published reviews — manage social fan-out from each card. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
+            ? `Published reviews. Manage social fan-out from each card. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
             : activeTab === 'vertical'
-              ? `Your Shorts → Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
+              ? `Shorts to Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
               : horizontalVideos.length > 0
-                ? `Long-form videos → blog posts + auto-composed Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
+                ? `Long-form videos to blog posts + Instagram image posts. Click Generate Post to start. ${horizontalVideos.length} video${horizontalVideos.length !== 1 ? 's' : ''} · ${generatedCount} published.`
                 : 'Hit Sync to pull every YouTube video into your generation queue.'
         }
         actions={
