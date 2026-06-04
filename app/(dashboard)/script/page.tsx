@@ -24,7 +24,11 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useConfirm } from '@/components/ui/useConfirm'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import {
   Loader2, AlertCircle, Sparkles, ChevronRight, ChevronDown,
   Camera, FileText, Copy, CheckCircle, Trash2, Eye,
@@ -128,6 +132,33 @@ export default function ScriptPage() {
   const [recent, setRecent] = useState<ScriptSummary[]>([])
   const [usage, setUsage] = useState<UsageInfo | null>(null)
 
+  // Tier restructure 2026-06-04: Scripts opened to Creator+ (10/30/150
+  // per month for Creator/Studio/Pro). Trial still blocked. effectiveTier()
+  // honors the admin View-as override so admins can preview the gated UX
+  // without changing their DB tier.
+  const [previewTier, setPreviewTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setPreviewTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { realTier = 'trial'; apply(); return }
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
+      } catch {
+        realTier = 'trial'
+        apply()
+      }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
+
   const loadRecent = useCallback(async () => {
     try {
       const r = await fetch('/api/script/list')
@@ -213,10 +244,34 @@ export default function ScriptPage() {
   const blocked = usage && !usage.allowed
   const subtitle = (() => {
     if (!usage) return 'Paste a product, pick a style, get a film-ready script in your voice.'
-    if (!usage.allowed) return 'Pro feature — generate film-ready scripts grounded in real product info.'
-    if (usage.cap === null) return 'Pro · unlimited generations. Pick a style and go.'
-    return `Pro · ${usage.used} of ${usage.cap} scripts used this month${usage.resetLabel ? ` · resets ${usage.resetLabel}` : ''}.`
+    if (!usage.allowed) return 'Paid feature — generate film-ready scripts grounded in real product info.'
+    if (usage.cap === null) return 'Unlimited generations. Pick a style and go.'
+    return `${usage.used} of ${usage.cap} scripts used this month${usage.resetLabel ? ` · resets ${usage.resetLabel}` : ''}.`
   })()
+
+  // Tier gate — Trial users (or admins viewing-as Trial) see the
+  // FeatureLockedCard upsell. Creator (10/mo), Studio (30/mo), and Pro
+  // (150/mo) all have access — they pass through to the normal page +
+  // hit the usage meter, not this gate.
+  if (previewTier === 'trial') {
+    return (
+      <FeatureLockedCard
+        icon={<FileText size={28} strokeWidth={1.8} />}
+        feature="Video Script & Shot List"
+        description="Paste a product, pick a style (First Look / Hands-On / Long-Term), and get a film-ready script in your voice. Built on a UGC review playbook with scripted hook + verdict, talking-point middle, and a subject-only shot list."
+        bullets={[
+          '3 hook variants per generation — pick the one that fits',
+          'Scripted hook + verdict (word-for-word) + talking-point middle',
+          'Subject-only shot list (no over-direction)',
+          'Hands-On + Long-Term include an auto vertical-short cutdown (TikTok / Reels / Shorts)',
+          'Grounded in real scraped product info — no hallucinated specs',
+          'Creator: 10/mo · Studio: 30/mo · Pro: 150/mo',
+        ]}
+        requiredTier="creator"
+        currentTier={previewTier}
+      />
+    )
+  }
 
   return (
     <>

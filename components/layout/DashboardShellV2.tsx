@@ -210,7 +210,13 @@ export default function DashboardShellV2({
         { href: '/setup?tab=integrations', icon: <Plug size={15} />, label: 'Integrations' },
         { href: '/assistant', icon: <Bot size={15} />, label: 'AI Assistant' },
         { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
-        { href: '/developers', icon: <KeyRound size={15} />, label: 'API Access' },
+        // API Access (/developers) and White-label Branding (/branding) are
+        // built and tier-gated, but hidden from the sidebar per the
+        // 2026-06-04 tier session — surface them only when there's real
+        // demand. The pages + routes still work for anyone who knows the
+        // URL. Re-add by un-commenting:
+        //   { href: '/developers', icon: <KeyRound size={15} />, label: 'API Access' },
+        //   { href: '/branding', icon: <Palette size={15} />, label: 'White-label' },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistants' },
         { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
       ],
