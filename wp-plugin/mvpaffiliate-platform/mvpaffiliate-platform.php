@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.31
+ * Version: 1.0.32
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.31');
+define('MVP_AFFILIATE_VERSION', '1.0.32');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -496,6 +496,217 @@ add_filter('the_content', function ($content) {
 }, 20);  // priority 20 so this runs AFTER the in-content ads filter at 10
          // and AFTER any other content modifiers — we want the bio card to
          // be literally the last thing before the comments / related posts.
+
+// ─── 7d. Pros & Cons highlight box (top of every review) ─────────────────────
+//
+// Tom's Guide / TechRadar / PCMag all open every review with a scannable
+// pros + cons block above the fold. It's the single biggest determinant of
+// whether a visitor scrolls or bounces.
+//
+// Approach: scan the post content for a "Pros" + "Cons" heading pair,
+// extract the <ul>s that follow each, and lift the pair into a styled
+// two-column hero box at the very top of the article. Works retroactively
+// on every existing review — no re-generation needed.
+//
+// Filter priority 6 so it runs AFTER the author block (priority 5) but
+// BEFORE the in-content ads (priority 10). End result: byline → pros/cons
+// hero → ads → main content.
+add_filter('the_content', function ($content) {
+    if (!is_singular('post')) return $content;
+
+    // Match "<h2>Pros</h2><ul>...</ul>" — case-insensitive, tolerant of
+    // attributes on the h2/h3 and either heading level. Same for Cons.
+    if (!preg_match('/<(h2|h3)[^>]*>\s*pros\s*<\/\1>\s*(<ul[^>]*>.*?<\/ul>)/is', $content, $pm)) return $content;
+    if (!preg_match('/<(h2|h3)[^>]*>\s*cons\s*<\/\1>\s*(<ul[^>]*>.*?<\/ul>)/is', $content, $cm)) return $content;
+
+    $pros_ul = $pm[2];
+    $cons_ul = $cm[2];
+
+    // Build the hero block. We re-style the <li>s via the wrapper class so
+    // the original markup stays untouched (and any explicit inline styles
+    // on the source list still win).
+    ob_start(); ?>
+<div class="gr-proscons-hero" style="display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0 0 28px;border:1px solid #e5e5e7;border-radius:10px;overflow:hidden;background:#fafafa">
+  <div style="padding:18px 20px;border-right:1px solid #e5e5e7;background:linear-gradient(180deg,#f0fdf4 0%,#fafafa 100%)">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+      <span style="display:inline-flex;width:20px;height:20px;border-radius:999px;background:#16a34a;color:#fff;align-items:center;justify-content:center;font-size:13px;font-weight:700;line-height:1">+</span>
+      <span style="font-size:12px;font-weight:800;color:#15803d;text-transform:uppercase;letter-spacing:.8px">Pros</span>
+    </div>
+    <div class="gr-pc-list gr-pc-pros"><?php echo $pros_ul; ?></div>
+  </div>
+  <div style="padding:18px 20px;background:linear-gradient(180deg,#fef2f2 0%,#fafafa 100%)">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+      <span style="display:inline-flex;width:20px;height:20px;border-radius:999px;background:#dc2626;color:#fff;align-items:center;justify-content:center;font-size:14px;font-weight:700;line-height:1">−</span>
+      <span style="font-size:12px;font-weight:800;color:#b91c1c;text-transform:uppercase;letter-spacing:.8px">Cons</span>
+    </div>
+    <div class="gr-pc-list gr-pc-cons"><?php echo $cons_ul; ?></div>
+  </div>
+</div>
+<style>
+  .gr-proscons-hero .gr-pc-list ul { margin: 0; padding: 0; list-style: none; }
+  .gr-proscons-hero .gr-pc-list li {
+    position: relative; padding: 4px 0 4px 22px; font-size: 14px; line-height: 1.5; color: #1d1d1f;
+  }
+  .gr-proscons-hero .gr-pc-pros li::before {
+    content: "✓"; position: absolute; left: 0; top: 4px; color: #16a34a; font-weight: 700;
+  }
+  .gr-proscons-hero .gr-pc-cons li::before {
+    content: "×"; position: absolute; left: 0; top: 4px; color: #dc2626; font-weight: 700; font-size: 16px;
+  }
+  @media (max-width: 600px) {
+    .gr-proscons-hero { grid-template-columns: 1fr !important; }
+    .gr-proscons-hero > div:first-child { border-right: 0 !important; border-bottom: 1px solid #e5e5e7; }
+  }
+</style>
+    <?php
+    return ob_get_clean() . $content;
+}, 6);
+
+// ─── 7e. "Editors' Pick" badge on high-scoring reviews (≥ 4.5) ────────────────
+//
+// Visual differentiator on top-rated reviews. PCMag's gold "Editors' Choice"
+// is one of their most clicked listing-page elements.
+//
+// Score source: parse the .gr-sc-num text inside the existing scorecard
+// block (rendered by the blog generator). Avoids needing post-meta plumbing.
+// If score ≥ 4.5, render a corner badge pinned to the top-right of the
+// post. CSS-only — no JS runtime cost.
+add_action('wp_footer', function () {
+    if (!is_singular('post')) return;
+    ?>
+<style>
+  .gr-editors-pick-badge {
+    position: fixed; top: 96px; right: 24px; z-index: 99;
+    background: linear-gradient(135deg, #FFC200 0%, #FFAB00 100%);
+    color: #1d1d1f; font: 800 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 8px 14px 8px 10px; border-radius: 999px; text-transform: uppercase;
+    letter-spacing: .8px; box-shadow: 0 6px 18px rgba(255,194,0,.4);
+    display: none; align-items: center; gap: 6px; pointer-events: none;
+  }
+  .gr-editors-pick-badge.is-shown { display: inline-flex; }
+  .gr-editors-pick-badge::before {
+    content: "★"; font-size: 13px; line-height: 1;
+  }
+  @media (max-width: 900px) { .gr-editors-pick-badge { display: none !important; } }
+</style>
+<div class="gr-editors-pick-badge" id="gr-ep-badge">Editors&rsquo; Pick</div>
+<script>
+(function () {
+  // Parse the verdict score off the existing scorecard. The blog generator
+  // renders it as <div class="gr-sc-num">4.7</div> — always exactly one
+  // decimal, always at the top of the verdict block. If no score is found,
+  // the badge stays hidden.
+  var num = document.querySelector('.gr-sc-num');
+  if (!num) return;
+  var score = parseFloat((num.textContent || '').trim());
+  if (!isFinite(score) || score < 4.5) return;
+  var b = document.getElementById('gr-ep-badge');
+  if (b) b.classList.add('is-shown');
+})();
+</script>
+    <?php
+});
+
+// ─── 7f. Related reviews carousel (bottom of every review) ───────────────────
+//
+// The single biggest retention play on every Tom's Guide / PCMag /
+// TechRadar review page: a row of "Related" cards at the foot pulling
+// visitors into the next review. We pull by shared tags first (most
+// semantically related), fall back to category, then to most-recent if
+// neither has a hit.
+//
+// Filter priority 22 — runs AFTER the author bio card at 20 so the row
+// sits below it, just before comments / sidebar widgets.
+add_filter('the_content', function ($content) {
+    if (!is_singular('post')) return $content;
+    $current_id = get_the_ID();
+    if (!$current_id) return $content;
+
+    // ── Find related posts (tag overlap first, category fallback) ─────────
+    $tag_ids = wp_get_post_tags($current_id, ['fields' => 'ids']);
+    $cat_ids = wp_get_post_categories($current_id, ['fields' => 'ids']);
+
+    $related = [];
+    if (!empty($tag_ids)) {
+        $q = new WP_Query([
+            'post_type'           => 'post',
+            'posts_per_page'      => 6,
+            'post__not_in'        => [$current_id],
+            'tag__in'             => $tag_ids,
+            'orderby'             => 'date',
+            'order'               => 'DESC',
+            'ignore_sticky_posts' => true,
+            'no_found_rows'       => true,
+        ]);
+        $related = $q->posts;
+        wp_reset_postdata();
+    }
+    if (count($related) < 4 && !empty($cat_ids)) {
+        $exclude = array_map(function ($p) { return $p->ID; }, $related);
+        $exclude[] = $current_id;
+        $needed = 6 - count($related);
+        $q = new WP_Query([
+            'post_type'           => 'post',
+            'posts_per_page'      => $needed,
+            'post__not_in'        => $exclude,
+            'category__in'        => $cat_ids,
+            'orderby'             => 'date',
+            'order'               => 'DESC',
+            'ignore_sticky_posts' => true,
+            'no_found_rows'       => true,
+        ]);
+        $related = array_merge($related, $q->posts);
+        wp_reset_postdata();
+    }
+    if (count($related) < 4) {
+        $exclude = array_map(function ($p) { return $p->ID; }, $related);
+        $exclude[] = $current_id;
+        $needed = 6 - count($related);
+        $q = new WP_Query([
+            'post_type'           => 'post',
+            'posts_per_page'      => $needed,
+            'post__not_in'        => $exclude,
+            'orderby'             => 'date',
+            'order'               => 'DESC',
+            'ignore_sticky_posts' => true,
+            'no_found_rows'       => true,
+        ]);
+        $related = array_merge($related, $q->posts);
+        wp_reset_postdata();
+    }
+    if (count($related) < 3) return $content;
+
+    // ── Render ────────────────────────────────────────────────────────────
+    ob_start(); ?>
+<section class="gr-related-reviews" style="margin:48px 0 16px;padding:24px 0;border-top:1px solid #e5e5e7">
+  <h2 style="margin:0 0 16px;font-size:13px;font-weight:800;color:#86868b;text-transform:uppercase;letter-spacing:1px">More reviews you'll want to read</h2>
+  <div class="gr-rr-scroll" style="display:grid;grid-auto-flow:column;grid-auto-columns:minmax(220px,1fr);gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 0 12px;scrollbar-width:thin">
+    <?php foreach ($related as $p):
+        $img = get_the_post_thumbnail_url($p->ID, 'medium');
+        $url = get_permalink($p->ID);
+        $title = get_the_title($p->ID); ?>
+      <a class="gr-rr-card" href="<?php echo esc_url($url); ?>" style="scroll-snap-align:start;display:flex;flex-direction:column;border:1px solid #e5e5e7;border-radius:10px;overflow:hidden;text-decoration:none;color:#1d1d1f;background:#fff;transition:transform .15s,box-shadow .15s">
+        <?php if ($img): ?>
+          <div style="aspect-ratio:16/9;background:#f5f5f7 url(<?php echo esc_url($img); ?>) center/cover no-repeat"></div>
+        <?php else: ?>
+          <div style="aspect-ratio:16/9;background:#f5f5f7"></div>
+        <?php endif; ?>
+        <div style="padding:12px 14px 14px;flex:1">
+          <p style="margin:0;font-size:14px;font-weight:700;line-height:1.35;color:#1d1d1f"><?php echo esc_html($title); ?></p>
+          <p style="margin:10px 0 0;font-size:12px;font-weight:600;color:#7C3AED">Read review →</p>
+        </div>
+      </a>
+    <?php endforeach; ?>
+  </div>
+</section>
+<style>
+  .gr-related-reviews .gr-rr-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+  .gr-related-reviews .gr-rr-scroll::-webkit-scrollbar { height: 6px; }
+  .gr-related-reviews .gr-rr-scroll::-webkit-scrollbar-thumb { background: #d2d2d7; border-radius: 999px; }
+</style>
+    <?php
+    return $content . ob_get_clean();
+}, 22);  // after 7c (priority 20 — author bio card) so this sits below it
 
 // ─── 8. Query fixes ───────────────────────────────────────────────────────────
 add_action('pre_get_posts', function (WP_Query $query) {
