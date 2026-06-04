@@ -134,14 +134,55 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Resilient read: if the user hasn't applied migration 093 yet (which
+  // adds the deal_meta JSONB column), the full SELECT errors and silently
+  // returns nothing. We try the full query first; on the specific
+  // column-missing error, we retry without deal_meta so the user at least
+  // sees their deal-post titles + WP links until they run the migration.
+  // Other errors get surfaced via `dbError` so the client can toast them.
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: rows } = await (supabase as any)
+  let rows: any[] | null = null
+  let dbError: string | null = null
+  let missingMeta = false
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const first = await (supabase as any)
     .from('blog_posts')
     .select('id, title, slug, wordpress_url, wordpress_post_id, created_at, seo_keyword, deal_meta')
     .eq('user_id', user.id)
     .eq('post_type', 'deal')
     .order('created_at', { ascending: false })
     .limit(25)
+
+  if (first.error) {
+    const msg = String(first.error?.message || first.error?.code || '')
+    console.error('[deals GET] full select failed:', first.error)
+    if (/deal_meta/i.test(msg) || /column .* does not exist/i.test(msg)) {
+      // Migration 093 not applied. Fall back to the meta-less columns so
+      // the user still sees deal post titles + URLs while we tell them
+      // to run the migration.
+      missingMeta = true
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fallback = await (supabase as any)
+        .from('blog_posts')
+        .select('id, title, slug, wordpress_url, wordpress_post_id, created_at, seo_keyword')
+        .eq('user_id', user.id)
+        .eq('post_type', 'deal')
+        .order('created_at', { ascending: false })
+        .limit(25)
+      if (fallback.error) {
+        console.error('[deals GET] fallback select failed:', fallback.error)
+        dbError = `Couldn't load Recent deals: ${fallback.error.message || 'database error'}`
+      } else {
+        rows = fallback.data || []
+      }
+    } else {
+      dbError = `Couldn't load Recent deals: ${msg || 'database error'}`
+    }
+  } else {
+    rows = first.data || []
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const deals = (rows || []).map((r: any) => {
@@ -164,7 +205,12 @@ export async function GET() {
 
   const occasions = listOccasions().map(o => ({ slug: o.slug, label: o.longLabel, badgeLabel: o.badgeLabel }))
 
-  return NextResponse.json({ deals, occasions })
+  return NextResponse.json({
+    deals,
+    occasions,
+    ...(dbError ? { dbError } : {}),
+    ...(missingMeta ? { migrationNeeded: '093_blog_posts_deal_meta' } : {}),
+  })
 }
 
 // ─── DELETE — mirrors buying-guides DELETE ─────────────────────────────────
@@ -646,30 +692,74 @@ export async function POST(req: Request) {
     savingsLine,
   }
 
+  // Insert the row. Resilient to missing migration 093:
+  //   - First try with deal_meta (full path).
+  //   - If that errors with a "column does not exist" / deal_meta-related
+  //     message, retry WITHOUT deal_meta. The WP post is already live, so
+  //     leaving the user without a DB row would orphan the WP post and
+  //     break Recent Deals. We keep their post and surface the migration
+  //     hint via the response body.
+  //   - Surfaces the actual error in the response if both fail so the
+  //     user doesn't get a false success while their post is orphaned.
+  const baseRow = {
+    user_id: user.id,
+    video_id: fallbackVideoId,
+    title: wpTitle,
+    slug,
+    content: finalHtml,
+    excerpt: null,
+    wordpress_post_id: wpPost.id,
+    wordpress_url: wpPost.link,
+    wordpress_site_id: site.site_id,
+    status: 'published',
+    post_type: 'deal',
+    seo_keyword: product.title || `deal-${asin}`,
+    published_at: new Date().toISOString(),
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: saved } = await (supabase as any)
+  let saved: any = null
+  let migrationNeeded: string | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const firstInsert = await (supabase as any)
     .from('blog_posts')
-    .insert({
-      user_id: user.id,
-      video_id: fallbackVideoId,
-      title: wpTitle,
-      slug,
-      content: finalHtml,
-      excerpt: null,
-      wordpress_post_id: wpPost.id,
-      wordpress_url: wpPost.link,
-      wordpress_site_id: site.site_id,
-      status: 'published',
-      post_type: 'deal',
-      seo_keyword: product.title || `deal-${asin}`,
-      published_at: new Date().toISOString(),
-      // deal_meta is a JSONB column added in migration 091. If the column
-      // doesn't exist on a stale DB this insert errors — surface that
-      // clearly so the user runs the migration.
-      deal_meta: dealMeta,
-    })
+    .insert({ ...baseRow, deal_meta: dealMeta })
     .select('id')
     .single()
+  if (firstInsert.error) {
+    const msg = String(firstInsert.error?.message || firstInsert.error?.code || '')
+    console.error('[deals POST] insert with deal_meta failed:', firstInsert.error)
+    if (/deal_meta/i.test(msg) || /column .* does not exist/i.test(msg)) {
+      migrationNeeded = '093_blog_posts_deal_meta'
+      // Retry without deal_meta. The deal post still lives, the user just
+      // loses the meta-driven pills on the Recent Deals row until they
+      // run migration 093.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fallback = await (supabase as any)
+        .from('blog_posts')
+        .insert(baseRow)
+        .select('id')
+        .single()
+      if (fallback.error) {
+        console.error('[deals POST] fallback insert (no deal_meta) failed:', fallback.error)
+        return NextResponse.json({
+          error: `Couldn't save the deal post to the database (the WP post was published but isn't tracked yet). Run migration 093 in Supabase SQL editor and try again. DB error: ${fallback.error.message}`,
+          code: 'insert_failed',
+          wpPostId: wpPost.id,
+          wpUrl: wpPost.link,
+        }, { status: 500 })
+      }
+      saved = fallback.data
+    } else {
+      return NextResponse.json({
+        error: `Couldn't save the deal post to the database (the WP post was published but isn't tracked yet). DB error: ${msg}`,
+        code: 'insert_failed',
+        wpPostId: wpPost.id,
+        wpUrl: wpPost.link,
+      }, { status: 500 })
+    }
+  } else {
+    saved = firstInsert.data
+  }
 
   // ── Regenerate cleanup ────────────────────────────────────────────────
   // Now that the new post is safely published + the new row is in the DB,
@@ -713,6 +803,7 @@ export async function POST(req: Request) {
     title: wpTitle,
     regenerated: !!regenerateOldRow,
     replacedPostId: regenerateOldRow?.id ?? null,
+    ...(migrationNeeded ? { migrationNeeded } : {}),
   })
 }
 

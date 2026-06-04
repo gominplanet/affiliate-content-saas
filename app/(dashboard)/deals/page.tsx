@@ -96,6 +96,12 @@ export default function DealsHubPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
   const [refreshingId, setRefreshingId] = useState<string | null>(null)
+  // When the server detects migration 093 hasn't been applied, this is set
+  // to the migration name. The page renders a yellow banner at the top
+  // with the SQL the user needs to run in Supabase. Without this, deal
+  // posts publish to WP but never appear in Recent deals — exactly the
+  // bug the user reported.
+  const [migrationNeeded, setMigrationNeeded] = useState<string | null>(null)
 
   // Form state
   const [input, setInput] = useState('')
@@ -134,10 +140,18 @@ export default function DealsHubPage() {
     ;(async () => {
       try {
         const res = await fetch('/api/deals')
-        const j = await res.json() as { deals?: DealRow[]; occasions?: OccasionOption[]; error?: string }
+        const j = await res.json() as {
+          deals?: DealRow[]
+          occasions?: OccasionOption[]
+          error?: string
+          dbError?: string
+          migrationNeeded?: string
+        }
         if (cancelled) return
         if (j.deals) setDeals(j.deals)
         if (j.occasions) setOccasions(j.occasions)
+        if (j.migrationNeeded) setMigrationNeeded(j.migrationNeeded)
+        if (j.dbError) toast.error(j.dbError)
       } catch { /* ignore */ }
       if (!cancelled) setLoading(false)
     })()
@@ -186,6 +200,7 @@ export default function DealsHubPage() {
       toast.success('Deal post published!', {
         action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
       })
+      if (j.migrationNeeded) setMigrationNeeded(j.migrationNeeded)
       // Reset + refresh.
       setInput('')
       setPromoCode('')
@@ -193,6 +208,7 @@ export default function DealsHubPage() {
       setManualDealEnd('')
       const list = await fetch('/api/deals').then(r => r.json()).catch(() => null)
       if (list?.deals) setDeals(list.deals)
+      if (list?.migrationNeeded) setMigrationNeeded(list.migrationNeeded)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Network error')
     } finally {
@@ -374,6 +390,31 @@ export default function DealsHubPage() {
             </p>
           </div>
         </div>
+
+        {/* Migration nag — server returned migrationNeeded=093_blog_posts_deal_meta.
+            Without that column, INSERT errors and the WP post lives but the
+            DB row never lands, so Recent deals stays empty even after a
+            successful publish. We render the exact SQL the user needs to
+            paste into Supabase (per the surface-migration-SQL house rule). */}
+        {migrationNeeded && (
+          <div className="rounded-2xl border p-4 bg-[#ff9500]/10 border-[#ff9500]/40">
+            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--fg)' }}>
+              ⚠️ Database migration needed: <code className="text-xs">{migrationNeeded}</code>
+            </p>
+            <p className="text-xs mb-3" style={{ color: 'var(--fg-muted)' }}>
+              Run this SQL in your Supabase project (SQL editor) so deal posts can save their pricing metadata. Without it, posts publish to WordPress but don&apos;t show up in Recent deals.
+            </p>
+            <pre className="text-[11px] p-3 rounded-lg overflow-x-auto bg-[#1d1d1f] text-[#f5f5f7] font-mono">{`alter table public.blog_posts
+  add column if not exists deal_meta jsonb;
+
+create index if not exists blog_posts_deal_meta_gin
+  on public.blog_posts using gin (deal_meta)
+  where deal_meta is not null;`}</pre>
+            <p className="text-[11px] mt-2" style={{ color: 'var(--fg-muted)' }}>
+              Safe to run multiple times (uses <code>if not exists</code>). The banner disappears once the column lands.
+            </p>
+          </div>
+        )}
 
         {/* ── Mode toggle ────────────────────────────────────────────── */}
         <div className="flex items-center gap-2 self-start">
