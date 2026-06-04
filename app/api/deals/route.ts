@@ -255,8 +255,23 @@ export async function POST(req: Request) {
      *  Lets the user re-render a stale deal with the same ASIN/promo/
      *  occasion without re-typing anything. */
     regenerateId?: string
+    /** Refresh-price path: light cousin of regenerate. Re-scrapes the
+     *  product for current pricing, runs a cheap Sonnet patch pass that
+     *  rewrites ONLY the price-bearing paragraphs (hook lead-in if it
+     *  mentions a number, "The deal at a glance" section, closing CTA),
+     *  and UPDATES the existing WP post in place. Keeps the same URL,
+     *  the same SEO juice, all 3 images, and the rest of the body
+     *  untouched. ~15s + cheap. */
+    refreshPriceId?: string
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
+
+  // ─── Refresh-price short-circuit ──────────────────────────────────────
+  // Runs before the rest of the body parsing because it doesn't need
+  // url/asin/promoCode/etc. — it loads everything from the saved row.
+  if (typeof body.refreshPriceId === 'string' && body.refreshPriceId.trim()) {
+    return refreshDealPrice(supabase, user.id, tier, body.refreshPriceId.trim())
+  }
 
   // Regenerate replay: load the old row's deal_meta and overwrite the body
   // fields with whatever was originally used. Server-side reconstruction
@@ -971,4 +986,231 @@ function buildDealSlug(productTitle: string, asin: string, occasionSlug: DealOcc
   const t = productTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 50)
   const occ = occasionSlug !== 'none' ? `${occasionSlug.replace(/_/g, '-')}-` : 'deal-'
   return `${occ}${t || asin.toLowerCase()}-${year}`
+}
+
+// ─── Refresh-price flow ────────────────────────────────────────────────────
+//
+// Cheap cousin of Regenerate. The full Regenerate runs the writer + 3 image
+// renders + image uploads + WP create (~$0.25 + 45s). Refresh Price keeps
+// the WP post in place (same URL, same SEO, same comments + backlinks),
+// keeps the existing images entirely, and runs a single Sonnet patch pass
+// that updates ONLY the price-bearing sentences. Roughly $0.02 + 15s.
+//
+// What the patch pass updates:
+//   - The [mvp_deal_banner] shortcode atts at the top (badge, end_date,
+//     code, url) — replaced verbatim with the new values.
+//   - The [mvp_deal_cta] shortcode atts at the bottom — same deal.
+//   - In the prose: any price numbers, savings amounts, percent-off
+//     phrases, and "save while it lasts" / "while the price holds"
+//     style framing. Sonnet is told to preserve sentence boundaries +
+//     paragraph structure + image placeholders.
+//
+// What survives untouched:
+//   - The product image (featured + body)
+//   - Every spec, bullet, and "Why this deal" / "What you're actually
+//     getting" / "Before you buy" paragraph
+//   - The slug + title + WP post id
+//   - The reviewer attribution
+
+async function refreshDealPrice(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  tier: string,
+  rowId: string,
+): Promise<NextResponse> {
+  // 1. Load the row + its content + meta
+  const { data: row } = await supabase
+    .from('blog_posts')
+    .select('id, title, slug, content, wordpress_post_id, wordpress_site_id, deal_meta, post_type')
+    .eq('id', rowId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (!row) return NextResponse.json({ error: 'Deal not found.', code: 'not_found' }, { status: 404 })
+  if (row.post_type !== 'deal') return NextResponse.json({ error: 'That row isn\'t a deal post.', code: 'wrong_type' }, { status: 400 })
+  const oldMeta = (row.deal_meta || {}) as Record<string, unknown>
+  const asin = oldMeta.asin as string | undefined
+  if (!asin) {
+    return NextResponse.json({
+      error: 'This deal was created before refresh-price was supported (no saved ASIN). Regenerate it instead.',
+      code: 'no_meta',
+    }, { status: 400 })
+  }
+  const oldContent = (row.content as string | null) || ''
+  if (!oldContent || oldContent.length < 200) {
+    return NextResponse.json({ error: 'Deal content missing or too short to refresh. Regenerate it instead.', code: 'bad_content' }, { status: 400 })
+  }
+
+  // 2. Re-scrape the product. Surface Amazon block errors clearly so the
+  //    user can retry — we never silently update with stale data.
+  let product: AmazonProduct
+  try {
+    product = await fetchAmazonProduct(asin)
+  } catch (err) {
+    return NextResponse.json({
+      error: `Couldn't read the Amazon listing: ${err instanceof Error ? err.message : 'unknown error'}. Try again in a minute.`,
+      code: 'amazon_block',
+    }, { status: 502 })
+  }
+
+  // 3. Compute new deal envelope. Re-use the same occasion + promo from
+  //    the original row — refresh-price is about UPDATING THE NUMBERS, not
+  //    changing the deal framing.
+  const occasionSlug = (oldMeta.occasion as DealOccasionSlug) || 'none'
+  const occasion = getOccasion(occasionSlug)
+  const dealEndsAt = (oldMeta.dealEndsAt as string | null) || product.dealEndsAt || null
+  const promoCode = ((oldMeta.promoCode as string | null) || '').trim()
+  const promoUrl = ((oldMeta.promoUrl as string | null) || '').trim()
+
+  const newBadgeLabel = pickBadgeLabel({
+    occasionSlug,
+    priceWas: product.priceWas,
+    priceSale: product.priceSale ?? product.price,
+    discountPct: product.discountPct,
+  })
+  const newSavingsLine = computeSavingsLine({
+    priceWas: product.priceWas,
+    priceSale: product.priceSale ?? product.price,
+    discountPct: product.discountPct,
+  })
+
+  // 4. Strip the existing top + bottom shortcodes so the Sonnet patch
+  //    pass sees only article body. We re-inject fresh ones afterwards.
+  let articleBody = oldContent
+  articleBody = articleBody.replace(/\[mvp_deal_banner\b[^\]]*\]\s*/i, '').trim()
+  articleBody = articleBody.replace(/\[mvp_deal_cta\b[^\]]*\]\s*/i, '').trim()
+
+  // 5. Sonnet patch pass: rewrite ONLY the price-bearing sentences.
+  const client = createAnthropicClient()
+  const fallbackUrl = `https://www.amazon.com/dp/${product.asin}`
+  const ctaHref = promoUrl || fallbackUrl
+
+  const patchPrompt = `You are updating an existing deal-post article with REFRESHED pricing data. Update ONLY the price-related sentences — leave every other paragraph identical (same words, same order, same image tags, same headings, same anchor structure).
+
+CURRENT (stale) ARTICLE:
+\`\`\`html
+${articleBody}
+\`\`\`
+
+NEW PRICING DATA (use these numbers, ignore whatever is in the article today):
+- Current sale price: ${product.priceSale ?? product.price ?? 'unknown'}
+- Strike-through "was" price: ${product.priceWas ?? 'unknown'}
+- Savings line: ${newSavingsLine ?? 'no explicit discount detected on the listing right now'}
+- Discount percent: ${product.discountPct != null ? product.discountPct + '%' : 'unknown'}
+- Amazon deal badge text on the listing: ${product.dealBadge ?? 'none'}
+- Deal end date: ${dealEndsAt ?? 'not specified'}
+- CTA href to use on every anchor: ${ctaHref}
+- Promo code (use in CTA copy if present): ${promoCode || 'none'}
+
+WHAT TO UPDATE:
+- ANY sentence that mentions a dollar amount, percent off, savings, "was X now Y", or price comparison.
+- The "Deal at a glance" h2 section paragraph — rewrite to reflect the new prices + savings + (if known) end date.
+- The opening hook if it cites a savings number.
+- The closing CTA paragraph if it cites a number.
+- Every <a href="..."> in the article — update to ${ctaHref}.
+
+WHAT TO PRESERVE (do not touch):
+- All <h2>, <ul>, <li>, <figure>, <img> tags + their attributes.
+- The "Why this deal is worth your attention" section in full.
+- The "What you're actually getting" bullet list in full.
+- The "Before you buy" section in full (unless it mentions a dollar amount).
+- Paragraph order + paragraph count.
+- Reviewer voice + tone.
+
+VOICE RULES (still apply):
+- First person. Confident product knowledge.
+- NEVER say "based on the listing", "the listing says/shows/claims/describes/is clearly", "looking at the listing", "per the listing", "according to the spec sheet". Just state the new prices directly.
+- ABSOLUTE BAN on em-dashes (—) and en-dashes (–). Use commas, periods, or parentheses.
+- No "honest" or any variant. No moreover, furthermore, additionally, in conclusion, overall, delve, tapestry, elevate, utilize, game-changer, revolutionary, cutting-edge, genuinely, actually, it's important to.
+
+OUTPUT: VALID HTML only. No markdown fences. Same structure as the input — just with refreshed price-bearing sentences and updated anchor hrefs.`
+
+  let newBody = ''
+  try {
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 5000,
+      messages: [{ role: 'user', content: patchPrompt }],
+    })
+    recordAnthropicUsage(msg, { userId, tier, feature: 'deal_refresh_price', model: 'claude-sonnet-4-6' })
+    const raw = (msg.content[0] as { type: string; text: string })?.text || ''
+    newBody = scrubDealHtml(raw)
+  } catch (err) {
+    return NextResponse.json({ error: `Refresh failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
+  }
+  if (!newBody || newBody.length < 400) {
+    return NextResponse.json({ error: 'Refresh returned empty body.' }, { status: 500 })
+  }
+
+  // 6. Re-inject the deal banner + end-of-article CTA with NEW atts.
+  const bannerAtts: string[] = []
+  if (dealEndsAt) bannerAtts.push(`end_date="${escapeAttr(dealEndsAt)}"`)
+  if (newBadgeLabel) bannerAtts.push(`badge="${escapeAttr(newBadgeLabel)}"`)
+  if (promoCode) bannerAtts.push(`code="${escapeAttr(promoCode)}"`)
+  bannerAtts.push(`url="${escapeAttr(ctaHref)}"`)
+
+  const ctaAtts: string[] = []
+  ctaAtts.push(`url="${escapeAttr(ctaHref)}"`)
+  if (promoCode) ctaAtts.push(`code="${escapeAttr(promoCode)}"`)
+  if (newBadgeLabel) ctaAtts.push(`badge="${escapeAttr(newBadgeLabel)}"`)
+
+  const finalHtml = `[mvp_deal_banner ${bannerAtts.join(' ')}]\n\n${newBody}\n\n[mvp_deal_cta ${ctaAtts.join(' ')}]`
+
+  // 7. UPDATE the WP post in place. Different from regenerate which
+  //    creates a new post — we keep the same URL, same id, same SEO.
+  const site = await getWordPressCredentials(supabase, userId, (row.wordpress_site_id as string | null) || null)
+  if (!site) {
+    return NextResponse.json({ error: 'WordPress credentials not found. Reconnect your site in Setup.', code: 'no_wp' }, { status: 400 })
+  }
+  const wpService = createWordPressService(
+    site.wordpress_url,
+    site.wordpress_username,
+    site.wordpress_app_password,
+    site.wordpress_api_token || undefined,
+  )
+
+  const wpPostId = row.wordpress_post_id as number | null
+  if (!wpPostId) {
+    return NextResponse.json({ error: 'WordPress post id missing on row — try Regenerate instead.', code: 'no_wp_post' }, { status: 400 })
+  }
+  try {
+    await wpService.updatePost(wpPostId, {
+      content: finalHtml,
+      // Title and slug stay the same — refresh-price is about updating
+      // the numbers, not the URL or the page metadata.
+    })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'WordPress update failed' }, { status: 500 })
+  }
+
+  // 8. Update the DB row. content + a fresh deal_meta with new prices.
+  const newMeta = {
+    ...oldMeta,
+    priceWas: product.priceWas,
+    priceSale: product.priceSale ?? product.price,
+    discountPct: product.discountPct,
+    dealBadge: product.dealBadge,
+    dealEndsAt,
+    badgeLabel: newBadgeLabel,
+    savingsLine: newSavingsLine,
+    lastPriceRefreshAt: new Date().toISOString(),
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any)
+    .from('blog_posts')
+    .update({ content: finalHtml, deal_meta: newMeta })
+    .eq('id', row.id)
+    .eq('user_id', userId)
+
+  return NextResponse.json({
+    ok: true,
+    refreshed: true,
+    postId: row.id,
+    wpPostId,
+    url: null, // we don't have a guaranteed WP link from updatePost; client refetches the list to get it
+    title: row.title,
+    newPrice: product.priceSale ?? product.price,
+    newSavings: newSavingsLine,
+  })
 }

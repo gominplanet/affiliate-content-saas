@@ -32,6 +32,7 @@ import {
   Tag,
   Link as LinkIcon,
   RotateCcw,
+  DollarSign,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -94,6 +95,7 @@ export default function DealsHubPage() {
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
+  const [refreshingId, setRefreshingId] = useState<string | null>(null)
 
   // Form state
   const [input, setInput] = useState('')
@@ -235,6 +237,49 @@ export default function DealsHubPage() {
       toast.error(err instanceof Error ? err.message : 'Network error')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  // ── Refresh price on a deal ─────────────────────────────────────────────
+  // Lighter cousin of Regenerate. Re-scrapes the product for current
+  // pricing, runs a single Sonnet patch pass that updates ONLY the
+  // price-bearing sentences (Deal at a glance section, hook savings
+  // numbers, closing CTA, banner + end-of-article CTA atts), and UPDATES
+  // the existing WP post in place — same URL, same SEO, same images,
+  // same Why-this-deal / Before-you-buy paragraphs. ~15s vs ~45s for a
+  // full regenerate.
+  async function handleRefreshPrice(deal: DealRow) {
+    const ok = await confirm({
+      title: 'Refresh price on this deal?',
+      description: `MVP will re-scrape Amazon for the latest pricing and update the deal box + savings line on "${deal.title}". The article body, images, and URL stay the same. Takes about 15 seconds.`,
+      confirmLabel: 'Refresh price',
+    })
+    if (!ok) return
+
+    setRefreshingId(deal.id)
+    try {
+      const res = await fetch('/api/deals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshPriceId: deal.id }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(j.error || 'Refresh failed')
+        return
+      }
+      const priceNote = j.newPrice ? ` New price: ${j.newPrice}.` : ''
+      toast.success(`Price refreshed.${priceNote}`, {
+        action: deal.url ? { label: 'View', onClick: () => window.open(deal.url!, '_blank') } : undefined,
+      })
+      // Refresh the list — same row id, but the priceWas/priceSale/end-date
+      // pills under the row update to reflect the new data.
+      const list = await fetch('/api/deals').then(r => r.json()).catch(() => null)
+      if (list?.deals) setDeals(list.deals)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setRefreshingId(null)
     }
   }
 
@@ -587,14 +632,16 @@ export default function DealsHubPage() {
               {deals.map(d => {
                 const isDeleting = deletingId === d.id
                 const isRegenerating = regeneratingId === d.id
+                const isRefreshing = refreshingId === d.id
                 // Any row-level operation in flight disables the others on
                 // THIS row so the user can't double-fire. Doesn't block
                 // operations on other rows.
-                const rowBusy = isDeleting || isRegenerating
-                // Regenerate is only meaningful when we know the ASIN —
-                // pre-meta legacy rows (rare; only matter for deals
-                // created before the feature shipped) can't be replayed.
+                const rowBusy = isDeleting || isRegenerating || isRefreshing
+                // Regenerate AND Refresh Price both need the saved ASIN.
+                // Pre-meta legacy rows (rare; only matter for deals created
+                // before the feature shipped) can't be replayed.
                 const canRegenerate = !!d.asin
+                const canRefresh = !!d.asin
                 return (
                   <li key={d.id} className="py-3 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
@@ -621,6 +668,11 @@ export default function DealsHubPage() {
                             <Loader2 size={10} className="animate-spin" /> Regenerating...
                           </span>
                         )}
+                        {isRefreshing && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#34c759]/15 text-[#34c759] text-[10px] font-semibold">
+                            <Loader2 size={10} className="animate-spin" /> Refreshing price...
+                          </span>
+                        )}
                       </div>
                     </div>
                     {d.url && (
@@ -633,6 +685,16 @@ export default function DealsHubPage() {
                         View <ExternalLink size={11} />
                       </Link>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => handleRefreshPrice(d)}
+                      disabled={rowBusy || !canRefresh}
+                      className="p-1.5 rounded-md text-[#34c759] hover:bg-[#34c759]/10 disabled:opacity-40"
+                      title={canRefresh ? 'Refresh the price on this deal (keeps article + images, updates only the numbers)' : 'This deal predates the refresh feature'}
+                      aria-label={`Refresh price on ${d.title}`}
+                    >
+                      {isRefreshing ? <Loader2 size={13} className="animate-spin" /> : <DollarSign size={13} />}
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleRegenerate(d)}
