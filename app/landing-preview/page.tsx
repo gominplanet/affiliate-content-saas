@@ -347,7 +347,7 @@ function RolesSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Plans, writes, schedules, optimizes, publishes — so you focus on what only you can do.
+            Plans, writes, schedules, optimizes, publishes, so you focus on what only you can do.
           </p>
         </div>
 
@@ -382,7 +382,7 @@ const ROLES: Role[] = [
   {
     icon: <HeartHandshake size={18} />,
     label: 'Collaborator',
-    line: 'Your AI partner — trained on your voice. Always ready to think with you.',
+    line: 'Your AI partner, trained on your voice. Always ready to think with you.',
   },
   {
     icon: <PenLine size={18} />,
@@ -392,12 +392,12 @@ const ROLES: Role[] = [
   {
     icon: <Share2 size={18} />,
     label: 'Social generator',
-    line: 'Nine social platforms. Each post written native to that one — no copy-paste.',
+    line: 'Nine social platforms. Each post written native to that one. No copy-paste.',
   },
   {
     icon: <Globe size={18} />,
     label: 'WordPress publisher',
-    line: 'Publish straight to your WordPress. Pro: up to 5 sites from one account.',
+    line: 'Publish straight to your WordPress. Pro: up to 10 sites from one account.',
   },
   {
     icon: <TrendingUp size={18} />,
@@ -496,7 +496,7 @@ function WorkflowSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            From video to nine outputs — fact-grounded and in your voice.
+            From video to nine outputs, fact-grounded and in your voice.
           </p>
         </div>
 
@@ -556,22 +556,22 @@ const STEPS: Step[] = [
   {
     icon: <Youtube size={18} />,
     title: 'Pick a video.',
-    body: 'MVP already has your YouTube channel synced — transcript, product, gallery, and timestamps are pre-loaded. No URLs to paste. No copy-paste.',
+    body: 'MVP already has your YouTube channel synced (transcript, product, gallery, and timestamps are pre-loaded). No URLs to paste. No copy-paste.',
   },
   {
     icon: <ShieldCheck size={18} />,
     title: 'It grounds everything in real facts.',
-    body: 'No invented features. No fabricated stories. Just what you actually said in the video — pulled straight from the transcript and the scraped product data.',
+    body: 'No invented features. No fabricated stories. Just what you actually said in the video, pulled straight from the transcript and the scraped product data.',
   },
   {
     icon: <Sparkles size={18} />,
     title: 'Generate 9 outputs in one click.',
-    body: 'Blog post, comparison, thumbnail, newsletter, plus 6 native social posts — all in your voice, all in about four minutes.',
+    body: 'Blog post, comparison, thumbnail, newsletter, plus 6 native social posts. All in your voice. All in about four minutes.',
   },
   {
     icon: <Upload size={18} />,
     title: 'Publish or schedule.',
-    body: 'Hit your WordPress site, the social queue, or the calendar — your call. Everything you make stays yours, on your domain, forever.',
+    body: 'Hit your WordPress site, the social queue, or the calendar. Your call. Everything you make stays yours, on your domain, forever.',
   },
 ]
 
@@ -690,7 +690,7 @@ function GroundedSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            If MVP can&apos;t prove it from your transcript or the product page — MVP doesn&apos;t say it.
+            If MVP can&apos;t prove it from your transcript or the product page, MVP doesn&apos;t say it.
           </p>
         </div>
 
@@ -749,7 +749,7 @@ function GroundedSection() {
             &ldquo;I built MVP because at 2 a.m. I was still rewriting AI-generated posts that invented features my products didn&apos;t have. Every other tool either sounded like a robot or made me triple-check every claim. So I built the one I needed.&rdquo;
           </p>
           <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
-            — Built by a creator who&apos;s done{' '}
+            Built by a creator who&apos;s done{' '}
             <span className="font-semibold" style={{ color: 'var(--text)' }}>$3M+/yr</span> in affiliate sales.
           </p>
         </div>
@@ -778,7 +778,7 @@ const COMPARISON_ROWS: ComparisonRowData[] = [
   {
     label: 'Voice',
     oldWay: 'Sounds like every other AI post on the internet.',
-    mvpWay: 'Trained on your channel — your phrasing, your hooks.',
+    mvpWay: 'Trained on your channel: your phrasing, your hooks.',
   },
   {
     label: 'Thumbnails',
@@ -909,10 +909,10 @@ function PricingSection() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
-              Try MVP free — no card required.
+              Try MVP free. No card required.
             </p>
             <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-              Get 5 full posts on the house. Generate, publish, share — see if it fits your workflow before you pay a cent. No time limit on the trial.
+              Get 5 full posts on the house. Generate, publish, share, see if it fits your workflow before you pay a cent. No time limit on the trial.
             </p>
           </div>
           <a
@@ -962,6 +962,9 @@ interface PricingTier {
   cta: string
 }
 
+// Refreshed 2026-06-04 to match the new tier matrix (lib/tier.ts). This
+// preview page is the headline sales deck; numbers MUST match /pricing.
+// If you edit one, edit both (and update tier.ts if the change is real).
 const PRICING_TIERS: PricingTier[] = [
   {
     name: 'Creator',
@@ -971,11 +974,12 @@ const PRICING_TIERS: PricingTier[] = [
     highlight: false,
     icon: <Sparkles size={16} />,
     features: [
-      '40 generated posts / month',
-      'Blog post + comparison + thumbnail per video',
-      '5 social platforms (Facebook, Threads, LinkedIn, Pinterest, Bluesky)',
-      'Newsletter — up to 1,000 subscribers',
-      '40 frame-grounded thumbnails / month',
+      '20 posts / month (blog + thumbnail + metadata bundle)',
+      '5 socials: LinkedIn, Bluesky, Pinterest, Facebook *, Threads *',
+      '1 face + 1 LoRA retrain / month, 10 Photobooth headshots',
+      '10 video scripts + shot-lists / month',
+      'Newsletter taster: 500 subs, 1 broadcast / month',
+      '5 brand-collab pitch emails / month',
       '200 assistant messages / month',
       '1 WordPress site',
     ],
@@ -989,13 +993,16 @@ const PRICING_TIERS: PricingTier[] = [
     highlight: true,
     icon: <Crown size={16} />,
     features: [
-      '80 generated posts / month',
-      'Everything in Creator, plus:',
-      '+ TikTok + Instagram (7 social platforms total)',
-      '15 video scripts + shot-lists / month',
-      'Newsletter — up to 5,000 subscribers',
+      '60 posts / month (blog + thumbnail + metadata bundle)',
+      'Adds Instagram * + Telegram on top of Creator',
+      'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
+      'IG AI Thumbnails 4:5 (30 / month)',
+      'Topic hubs + Refresh Images on published posts',
+      '2 faces + 3 LoRA retrains / month, 15 Photobooth headshots',
+      '30 video scripts, 15 brand pitches',
+      'Newsletter: 5,000 subs, weekly + scheduling',
       '1,000 assistant messages / month',
-      '1 WordPress site',
+      'Priority Discord support',
     ],
     cta: 'Go Studio',
   },
@@ -1007,14 +1014,17 @@ const PRICING_TIERS: PricingTier[] = [
     highlight: false,
     icon: <Rocket size={16} />,
     features: [
-      '200 generated posts / month',
-      'Everything in Studio, plus:',
-      'All 9 social platforms (+ X, Telegram)',
-      'Up to 5 WordPress sites (multi-niche)',
-      '50 IG AI thumbnails + 3 LoRA face-trainings / month',
-      'Newsletter — 10k subs, unlimited broadcasts',
-      'Priority queue + priority support',
-      'Publish-All: site + every social in one click',
+      '200 posts / month + Comparisons + Buying Guides',
+      'Adds Twitter / X + TikTok * (9 socials total)',
+      'Rebuild-from-video on any legacy WP post',
+      'Creator Campaigns (Amazon EPC scout, one-click publish)',
+      'Up to 10 WordPress sites + 3 Virtual Assistant seats',
+      'Multi-account social + one-click Publish All',
+      '30 deal posts / month, 100 IG AI thumbs, 5 LoRA retrains',
+      '150 video scripts, 100 brand pitches',
+      'Newsletter: 10k subs, twice-weekly + A/B + segments',
+      '5,000 assistant messages / month',
+      'Priority generation queue + priority Discord support',
     ],
     cta: 'Go Pro',
   },
@@ -1078,7 +1088,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
             </span>
           </div>
           <p className="text-[11px] mt-1" style={{ color: 'var(--text-faint)' }}>
-            Founder pricing — locked for the life of your subscription.
+            Founder pricing, locked for the life of your subscription.
           </p>
         </div>
 
@@ -1273,23 +1283,23 @@ function FAQSection() {
 const FAQS = [
   {
     q: 'How does the free trial work?',
-    a: 'You get 5 full posts on the house — no card required, no time limit. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Creator, Studio, or Pro) and you keep going. If not, no charge, no follow-up emails — your trial just sits there.',
+    a: 'You get 5 full posts on the house. No card required, no time limit. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Creator, Studio, or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.',
   },
   {
     q: 'Do I need to host my own WordPress site?',
-    a: 'Yes — and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine — any of them work.',
+    a: 'Yes, and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine. Any of them work.',
   },
   {
     q: 'Will MVP-generated content actually sound like me?',
-    a: 'Yes. MVP trains a voice profile on your channel — your phrasing, your hooks, your closers, your structure. Every blog post and social caption gets generated through that profile, not a generic AI persona. The longer you use it, the better the match. You can also tune the voice manually if you want it sharper, longer, or more conversational.',
+    a: 'Yes. MVP trains a voice profile on your channel: your phrasing, your hooks, your closers, your structure. Every blog post and social caption gets generated through that profile, not a generic AI persona. The longer you use it, the better the match. You can also tune the voice manually if you want it sharper, longer, or more conversational.',
   },
   {
     q: 'Can I cancel anytime? What happens to my content?',
-    a: 'Yes — cancel from your billing page anytime. Your subscription runs through the end of the current period, then stops. Your content stays on your WordPress site forever (it\'s on YOUR domain, not ours). Nothing gets deleted. Your account stays open in read-only mode so you can come back later.',
+    a: 'Yes, cancel from your billing page anytime. Your subscription runs through the end of the current period, then stops. Your content stays on your WordPress site forever (it\'s on YOUR domain, not ours). Nothing gets deleted. Your account stays open in read-only mode so you can come back later.',
   },
   {
     q: 'How do you guarantee MVP doesn\'t fabricate facts about my products?',
-    a: 'Two layers. First: the generator pulls product specs directly from the product page you reviewed (Amazon, the brand site, wherever the buy link points). It uses those specs verbatim — no model "imagination." Second: every story / experience claim comes from your actual video transcript. If you didn\'t say it on camera, MVP doesn\'t put it in the post.',
+    a: 'Two layers. First: the generator pulls product specs directly from the product page you reviewed (Amazon, the brand site, wherever the buy link points). It uses those specs verbatim, no model "imagination." Second: every story / experience claim comes from your actual video transcript. If you didn\'t say it on camera, MVP doesn\'t put it in the post.',
   },
   {
     q: 'Can I switch plans up or down later?',
