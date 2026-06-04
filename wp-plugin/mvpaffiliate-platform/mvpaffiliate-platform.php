@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.37
+ * Version: 1.0.38
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.37');
+define('MVP_AFFILIATE_VERSION', '1.0.38');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -248,10 +248,50 @@ if (!function_exists('mvp_affiliate_rest_get_customizations')) {
     }
 }
 
+if (!function_exists('mvp_affiliate_sanitize_customizations')) {
+    /** Deep-sanitize the customizations payload before persisting.
+     *  - HTML strings get wp_kses_post (no <script>, no iframes by default,
+     *    blocks the stored-XSS path that compounds with the block renderer
+     *    echoing $block['html'] raw).
+     *  - URL strings get esc_url_raw.
+     *  - Colors get a hex-allowlist regex (prevents `;}body{...` CSS
+     *    breakout in the inline <style> block).
+     *  - Arbitrary scalars get sanitize_text_field as a baseline.
+     *  Whitelist-friendly — unknown keys still pass through but every
+     *  scalar is filtered, so a poisoned admin POST can't ship raw HTML
+     *  site-wide via this route. */
+    function mvp_affiliate_sanitize_customizations($val, $key_path = '') {
+        if (is_array($val)) {
+            $out = [];
+            foreach ($val as $k => $v) {
+                $out[$k] = mvp_affiliate_sanitize_customizations($v, $key_path . '/' . $k);
+            }
+            return $out;
+        }
+        if (is_bool($val) || is_int($val) || is_float($val) || is_null($val)) return $val;
+        if (!is_string($val)) return '';
+
+        // Key-based dispatch — applies the right escape for the slot.
+        $lower = strtolower($key_path);
+        if (preg_match('#/(html|content|body|blockHtml)$#i', $key_path)) {
+            return wp_kses_post($val);
+        }
+        if (preg_match('#/(url|href|src|link|logo|image|photo|banner)#i', $key_path)) {
+            return esc_url_raw($val);
+        }
+        if (preg_match('#/(color|bg|background)#i', $key_path)) {
+            // Tight: only #abc, #abcdef, #abcdef00 (rgb + optional alpha).
+            return preg_match('/^#[0-9a-f]{3,8}$/i', $val) ? $val : '';
+        }
+        return sanitize_text_field($val);
+    }
+}
 if (!function_exists('mvp_affiliate_rest_save_customizations')) {
     function mvp_affiliate_rest_save_customizations(WP_REST_Request $request) {
         $data = $request->get_json_params();
-        update_option('affiliateos_customizations', $data);
+        if (!is_array($data)) $data = [];
+        $clean = mvp_affiliate_sanitize_customizations($data);
+        update_option('affiliateos_customizations', $clean);
         do_action('litespeed_purge_all');
         if (function_exists('wp_cache_flush')) wp_cache_flush();
         return new WP_REST_Response(['saved' => true], 200);
@@ -278,7 +318,12 @@ if (!function_exists('mvp_affiliate_render_block')) {
             $html = $block['html'] ?? '';
             if (!$html) return;
             echo '<div class="affiliateos-block affiliateos-html-block" style="margin:12px 0;width:350px;max-width:100%;">';
-            echo $html;
+            // wp_kses_post — defense-in-depth in case a poisoned option
+            // value bypassed mvp_affiliate_sanitize_customizations (older
+            // rows, hand-edited DB, etc.). Strips <script>, <iframe>, on*
+            // handlers, javascript: URIs. Same allowlist WP uses for
+            // post_content.
+            echo wp_kses_post($html);
             echo '</div>';
         }
     }
@@ -637,57 +682,72 @@ add_filter('the_content', function ($content) {
     $current_id = get_the_ID();
     if (!$current_id) return $content;
 
-    // ── Find related posts (tag overlap first, category fallback) ─────────
-    $tag_ids = wp_get_post_tags($current_id, ['fields' => 'ids']);
-    $cat_ids = wp_get_post_categories($current_id, ['fields' => 'ids']);
+    // Transient cache for related-post IDs (12h TTL). Cuts 1-3 WP_Query
+    // hits per single-post view → big DB win on busy sites without
+    // an object cache. Cache stores IDs only (cheap); we re-hydrate post
+    // objects for current titles/thumbnails.
+    $cache_key = 'mvp_related_v1_' . $current_id;
+    $cached_ids = get_transient($cache_key);
+    if (is_array($cached_ids) && !empty($cached_ids)) {
+        $related = array_values(array_filter(array_map('get_post', $cached_ids)));
+    } else {
+        $related = [];
+    }
 
-    $related = [];
-    if (!empty($tag_ids)) {
-        $q = new WP_Query([
-            'post_type'           => 'post',
-            'posts_per_page'      => 6,
-            'post__not_in'        => [$current_id],
-            'tag__in'             => $tag_ids,
-            'orderby'             => 'date',
-            'order'               => 'DESC',
-            'ignore_sticky_posts' => true,
-            'no_found_rows'       => true,
-        ]);
-        $related = $q->posts;
-        wp_reset_postdata();
-    }
-    if (count($related) < 4 && !empty($cat_ids)) {
-        $exclude = array_map(function ($p) { return $p->ID; }, $related);
-        $exclude[] = $current_id;
-        $needed = 6 - count($related);
-        $q = new WP_Query([
-            'post_type'           => 'post',
-            'posts_per_page'      => $needed,
-            'post__not_in'        => $exclude,
-            'category__in'        => $cat_ids,
-            'orderby'             => 'date',
-            'order'               => 'DESC',
-            'ignore_sticky_posts' => true,
-            'no_found_rows'       => true,
-        ]);
-        $related = array_merge($related, $q->posts);
-        wp_reset_postdata();
-    }
-    if (count($related) < 4) {
-        $exclude = array_map(function ($p) { return $p->ID; }, $related);
-        $exclude[] = $current_id;
-        $needed = 6 - count($related);
-        $q = new WP_Query([
-            'post_type'           => 'post',
-            'posts_per_page'      => $needed,
-            'post__not_in'        => $exclude,
-            'orderby'             => 'date',
-            'order'               => 'DESC',
-            'ignore_sticky_posts' => true,
-            'no_found_rows'       => true,
-        ]);
-        $related = array_merge($related, $q->posts);
-        wp_reset_postdata();
+    if (empty($related)) {
+        // ── Find related posts (tag overlap first, category fallback) ─────
+        $tag_ids = wp_get_post_tags($current_id, ['fields' => 'ids']);
+        $cat_ids = wp_get_post_categories($current_id, ['fields' => 'ids']);
+
+        if (!empty($tag_ids)) {
+            $q = new WP_Query([
+                'post_type'           => 'post',
+                'posts_per_page'      => 6,
+                'post__not_in'        => [$current_id],
+                'tag__in'             => $tag_ids,
+                'orderby'             => 'date',
+                'order'               => 'DESC',
+                'ignore_sticky_posts' => true,
+                'no_found_rows'       => true,
+            ]);
+            $related = $q->posts;
+            wp_reset_postdata();
+        }
+        if (count($related) < 4 && !empty($cat_ids)) {
+            $exclude = array_map(function ($p) { return $p->ID; }, $related);
+            $exclude[] = $current_id;
+            $needed = 6 - count($related);
+            $q = new WP_Query([
+                'post_type'           => 'post',
+                'posts_per_page'      => $needed,
+                'post__not_in'        => $exclude,
+                'category__in'        => $cat_ids,
+                'orderby'             => 'date',
+                'order'               => 'DESC',
+                'ignore_sticky_posts' => true,
+                'no_found_rows'       => true,
+            ]);
+            $related = array_merge($related, $q->posts);
+            wp_reset_postdata();
+        }
+        if (count($related) < 4) {
+            $exclude = array_map(function ($p) { return $p->ID; }, $related);
+            $exclude[] = $current_id;
+            $needed = 6 - count($related);
+            $q = new WP_Query([
+                'post_type'           => 'post',
+                'posts_per_page'      => $needed,
+                'post__not_in'        => $exclude,
+                'orderby'             => 'date',
+                'order'               => 'DESC',
+                'ignore_sticky_posts' => true,
+                'no_found_rows'       => true,
+            ]);
+            $related = array_merge($related, $q->posts);
+            wp_reset_postdata();
+        }
+        // Cache the IDs only — re-hydrate next time so titles/thumbs stay fresh.
+        set_transient($cache_key, array_values(array_map(function ($p) { return $p->ID; }, $related)), 12 * HOUR_IN_SECONDS);
     }
     if (count($related) < 3) return $content;
 
@@ -1156,14 +1216,47 @@ add_action('pre_get_posts', function (WP_Query $query) {
 });
 
 // ─── 9. "You might also like" ─────────────────────────────────────────────────
+//
+// `orderby=rand` on a posts table is a known killer — MySQL does a full-table
+// sort on every page hit. Replace with a cached pool of 50 recent IDs that we
+// shuffle in PHP per request. Refresh once a day.
 add_action('kadence_after_main_content', function () {
     if (mvp_affiliate_theme_active()) return;
     if (!is_singular('post') && !is_home() && !is_front_page() && !is_archive()) return;
-    $exclude = is_singular('post') ? [get_the_ID()] : [];
+
+    $pool_key = 'mvp_random_pool_v1';
+    $pool = get_transient($pool_key);
+    if (!is_array($pool) || empty($pool)) {
+        $q = new WP_Query([
+            'post_type'           => 'post',
+            'post_status'         => 'publish',
+            'posts_per_page'      => 50,
+            'orderby'             => 'date',
+            'order'               => 'DESC',
+            'fields'              => 'ids',
+            'ignore_sticky_posts' => true,
+            'no_found_rows'       => true,
+        ]);
+        $pool = $q->posts;
+        wp_reset_postdata();
+        if (!empty($pool)) set_transient($pool_key, $pool, DAY_IN_SECONDS);
+    }
+    if (empty($pool)) return;
+
+    $current = is_singular('post') ? get_the_ID() : 0;
+    $candidates = array_values(array_filter($pool, function ($id) use ($current) { return (int) $id !== (int) $current; }));
+    shuffle($candidates);
+    $pick_ids = array_slice($candidates, 0, 8);
+    if (empty($pick_ids)) return;
+
     $random = new WP_Query([
-        'post_type' => 'post', 'post_status' => 'publish',
-        'posts_per_page' => 8, 'orderby' => 'rand',
-        'post__not_in' => $exclude, 'ignore_sticky_posts' => 1,
+        'post_type'           => 'post',
+        'post_status'         => 'publish',
+        'posts_per_page'      => count($pick_ids),
+        'post__in'            => $pick_ids,
+        'orderby'             => 'post__in',
+        'ignore_sticky_posts' => true,
+        'no_found_rows'       => true,
     ]);
     if (!$random->have_posts()) return;
     ?>
@@ -1207,7 +1300,7 @@ $mvp_affiliate_logo_banner = function () {
     $rendered = true;
     $bg = ($about['headerBg'] ?? 'black') === 'white' ? '#ffffff' : '#000000';
     ?>
-    <div class="mvpaffiliate-logo-banner" style="background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;">
+    <div class="mvpaffiliate-logo-banner" style="background:<?php echo esc_attr($bg); ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;">
       <a href="<?php echo esc_url(home_url('/')); ?>" style="display:inline-block;line-height:0;">
         <img src="<?php echo esc_url($logo_url); ?>" alt="<?php echo esc_attr(get_bloginfo('name')); ?>" style="height:80px;width:auto;max-width:100%;object-fit:contain;" />
       </a>
@@ -1237,7 +1330,7 @@ add_action('wp_footer', function () use ($mvp_affiliate_logo_banner) {
       if (document.querySelector('.mvpaffiliate-logo-banner')) return;
       var div = document.createElement('div');
       div.className = 'mvpaffiliate-logo-banner';
-      div.style.cssText = 'background:<?php echo $bg; ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;';
+      div.style.cssText = 'background:<?php echo esc_js($bg); ?>;width:100%;padding:10px 20px;text-align:center;position:relative;z-index:9999;';
       div.innerHTML = '<a href="<?php echo $home; ?>" style="display:inline-block;line-height:0;"><img src="<?php echo $logo_js; ?>" alt="<?php echo $name; ?>" style="height:80px;width:auto;max-width:100%;object-fit:contain;" /></a>';
       document.body.insertBefore(div, document.body.firstChild);
     })();
@@ -2375,19 +2468,27 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         $token = isset($body['token']) ? (string) $body['token'] : '';
         $stored = (string) get_option('affiliateos_proxy_secret', '');
 
-        // Brute-force guard. After 5 bad attempts in 60s we 429 for the
-        // next 60s regardless of how good the next attempt is. Per-site,
-        // not per-IP, because the secret is the same for everyone hitting it.
-        $bruteKey = 'affiliateos_proxy_brute';
-        $brute = (int) get_transient($bruteKey);
-        if ($brute >= 5) {
+        // Brute-force guard. Per-IP AND per-site so an attacker can't lock
+        // out legitimate MVP backend calls just by spamming bad tokens.
+        // Site-wide counter survives as a backstop; per-IP is the
+        // attacker-resistant lane.
+        $ip = isset($_SERVER['REMOTE_ADDR']) ? preg_replace('/[^0-9a-f:.]/i', '', (string) $_SERVER['REMOTE_ADDR']) : 'unknown';
+        $bruteKeyIp   = 'affiliateos_proxy_brute_' . md5($ip);
+        $bruteKeySite = 'affiliateos_proxy_brute';
+        $bruteIp   = (int) get_transient($bruteKeyIp);
+        $bruteSite = (int) get_transient($bruteKeySite);
+        if ($bruteIp >= 5 || $bruteSite >= 50) {
             return new WP_REST_Response(['code' => 'rate_limited', 'message' => 'Too many bad attempts; try again in a minute.'], 429);
         }
 
         if (!$stored || strlen($token) !== strlen($stored) || !hash_equals($stored, $token)) {
-            set_transient($bruteKey, $brute + 1, 60);
+            set_transient($bruteKeyIp,   $bruteIp + 1,   60);
+            set_transient($bruteKeySite, $bruteSite + 1, 60);
             return new WP_REST_Response(['code' => 'bad_token', 'message' => 'Invalid proxy token.'], 401);
         }
+        // On success, clear the IP counter so a legit caller isn't punished
+        // for a single fat-fingered try earlier in the minute.
+        delete_transient($bruteKeyIp);
 
         // Authenticate as the site's primary administrator so capability
         // checks in the dispatched REST call (current_user_can('edit_posts'),
@@ -2404,8 +2505,30 @@ if (!function_exists('mvp_affiliate_rest_proxy')) {
         // from inside PHP instead of an HTTP request.
         $method = isset($body['method']) ? strtoupper((string) $body['method']) : 'GET';
         $path = isset($body['path']) ? (string) $body['path'] : '/';
-        if (!preg_match('#^/[A-Za-z0-9_/\-]+$#', $path)) {
+        // Path-shape check: no `..`, no `/wp-admin`, no protocol-relative,
+        // and matches a recognisable REST path skeleton.
+        if (!preg_match('#^/[A-Za-z0-9_/\-]+$#', $path) || strpos($path, '..') !== false) {
             return new WP_REST_Response(['code' => 'bad_path', 'message' => 'Path must look like /wp/v2/posts'], 400);
+        }
+        // Hard route allowlist — without this, a leaked proxy_secret = full
+        // site takeover (POST /wp/v2/users to create an admin, POST
+        // /wp/v2/plugins to install a malicious plugin, etc). The dashboard
+        // only ever needs these routes; deny everything else.
+        $allowed_path_patterns = [
+            '#^/wp/v2/posts(?:/[0-9]+)?$#',
+            '#^/wp/v2/pages(?:/[0-9]+)?$#',
+            '#^/wp/v2/media(?:/[0-9]+)?$#',
+            '#^/wp/v2/tags(?:/[0-9]+)?$#',
+            '#^/wp/v2/categories(?:/[0-9]+)?$#',
+            '#^/wp/v2/users/me$#',
+            '#^/affiliateos/v1/.+$#',
+        ];
+        $allowed = false;
+        foreach ($allowed_path_patterns as $pat) {
+            if (preg_match($pat, $path)) { $allowed = true; break; }
+        }
+        if (!$allowed) {
+            return new WP_REST_Response(['code' => 'forbidden_path', 'message' => 'Proxy route not in allowlist.'], 403);
         }
         $inner = new WP_REST_Request($method, $path);
         if (!empty($body['body']) && is_array($body['body'])) {
