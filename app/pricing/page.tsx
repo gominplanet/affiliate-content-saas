@@ -16,7 +16,7 @@ import { CheckCircle, Zap } from 'lucide-react'
 import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
 import { CheckoutButton } from './CheckoutButton'
 
-export const metadata: Metadata = { title: 'Pricing — MVP Affiliate' }
+export const metadata: Metadata = { title: 'Pricing · MVP Affiliate' }
 
 type Plan = {
   tier: 'trial' | 'creator' | 'studio' | 'pro'
@@ -38,11 +38,11 @@ const plans: PlanExt[] = [
     label: 'Free Trial',
     price: 0,
     regularPrice: 0,
-    limit: '5 posts — no card',
+    limit: '5 posts, no card',
     description: 'A real trial, not a teaser. Run the full YouTube workflow on 5 real reviews before paying a cent. No card, no time limit.',
     features: [
-      '5 full reviews (lifetime — no time limit)',
-      'YouTube Co-Pilot — description, tags, hashtags & thumbnail pushed back to YouTube',
+      '5 full reviews (lifetime, no time limit)',
+      'YouTube Co-Pilot: description, tags, hashtags & thumbnail pushed back to YouTube',
       'Branded WordPress review site (theme + plugin auto-installed)',
       'One-click publish to your site',
       'Facebook auto-post',
@@ -58,16 +58,16 @@ const plans: PlanExt[] = [
     price: 49,
     regularPrice: 99,
     limit: '40 posts / month',
-    description: 'For creators shipping a few reviews a week across the major socials — and trying the Pro brand-pitch workflow that lands deals.',
+    description: 'For creators shipping a few reviews a week across the major socials, and trying the Pro brand-pitch workflow that lands deals.',
     features: [
       '40 full reviews per month',
       'Everything in the trial, uncapped monthly',
       'Auto-post to Facebook, Threads, Bluesky, LinkedIn, Pinterest *',
       'In-body AI product images (up to 3 per post)',
       'Your Face in AI thumbnails + studio Photobooth headshots (2 faces)',
-      'Built-in AI assistant that knows your brand — product help + affiliate coaching (one less subscription to pay for)',
+      'Built-in AI assistant that knows your brand. Product help + affiliate coaching (one less subscription to pay for)',
       '5 brand-collab pitch emails / month (try the Pro feature)',
-      'Monthly cap resets on your billing date — no rollover, no surprises',
+      'Monthly cap resets on your billing date. No rollover, no surprises',
     ],
     highlight: false,
     ctaLabel: 'Get Creator',
@@ -78,14 +78,13 @@ const plans: PlanExt[] = [
     price: 99,
     regularPrice: 199,
     limit: '80 posts / month',
-    description: 'For the serious solo affiliate creator. Everything in Creator + TikTok, Instagram, scripts, comparison posts, and the browser extension — the full toolkit on one site.',
+    description: 'For the serious solo affiliate creator. Everything in Creator plus TikTok, Instagram, scripts, and comparison posts. The full toolkit on one site.',
     features: [
       '80 full reviews per month',
       'Adds TikTok + Instagram direct-post on top of Creator’s 5 platforms',
-      'Comparison & Guide posts — let MVP rank 5 products into one review',
-      'Video Script & Shot List generator (15 / month) — pre-production AI in your voice',
-      'Browser extension — capture real video keyframes for thumbnails (vidIQ-grade)',
-      'Brand voice training (LEARN) — every review reads more like you over time',
+      'Comparison & Guide posts: let MVP rank 5 products into one review',
+      'Video Script & Shot List generator (15 / month). Pre-production AI in your voice',
+      'Brand voice training (LEARN): every review reads more like you over time',
       '15 brand-collab pitch emails / month',
       '5,000 newsletter subscribers + 10 broadcasts / month',
       '1,000 AI assistant messages / month',
@@ -101,19 +100,19 @@ const plans: PlanExt[] = [
     regularPrice: 499,
     limit: '200 posts / month',
     bonus: '140 + 60 bonus posts',
-    description: 'Become the creator brands want. Multi-account social, Creator Campaigns, one-click Publish All, and every cap raised — so when a brand asks "where will this go?", your answer is a list, not a sentence.',
+    description: 'Become the creator brands want. Multi-account social, Creator Campaigns, one-click Publish All, and every cap raised. When a brand asks "where will this go?", your answer is a list, not a sentence.',
     features: [
       '200 full reviews per month (140 + 60 bonus)',
-      'Multi-account social — connect multiple Facebook Pages, Instagram accounts, TikTok accounts',
+      'Multi-account social: connect multiple Facebook Pages, Instagram accounts, TikTok accounts',
       'For Amazon influencers & associates: scout Creator Connections campaigns by commission & EPC, then one-click research, write & publish',
-      'One-click Publish All — site + every social in one shot',
-      'Native AI Instagram image — your face + the actual product, 4:5 (50 / month)',
+      'One-click Publish All: site + every social in one shot',
+      'Native AI Instagram image: your face + the actual product, 4:5 (50 / month)',
       'Adds X & Telegram on top of Studio’s platforms',
-      'Double the Photobooth headshots — 20 / month',
-      'Near-unlimited AI assistant — your reviews, niches & campaigns in context',
-      '100 brand-collab pitch emails / month — your direct lever for deal flow',
+      'Double the Photobooth headshots: 20 / month',
+      'Near-unlimited AI assistant: your reviews, niches & campaigns in context',
+      '100 brand-collab pitch emails / month, your direct lever for deal flow',
       'Video scripts 30 / month · newsletter unlimited broadcasts · 10k subscribers',
-      'One-click Apply to YouTube — playlist, schedule, paid-promotion, made-for-kids, all batched',
+      'One-click Apply to YouTube: playlist, schedule, paid-promotion, made-for-kids, all batched',
       'Priority queue + priority human support',
     ],
     highlight: false,
@@ -134,11 +133,11 @@ export default function PricingPage() {
         </h1>
         <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
           Paste a YouTube link. Get a blog post on your site, a TikTok, a thumbnail,
-          a newsletter, and a script for your next video — all in your voice, all from
+          a newsletter, and a script for your next video. All in your voice, all from
           one tool. Start free, no card.
         </p>
         <p className="mt-3 text-sm font-semibold text-[#34c759]">
-          🔒 Early access pricing — locked in for life on the tier you subscribe to.
+          🔒 Early access pricing, locked in for life on the tier you subscribe to.
         </p>
       </div>
 
@@ -234,7 +233,7 @@ export default function PricingPage() {
           </h2>
           <p className="mt-3 text-sm text-[#6e6e73] dark:text-[#ebebf0] max-w-xl mx-auto">
             Other tools each do one thing. MVP does the whole pipeline from one YouTube video to
-            a blog, thumbnails, scripts, social posts, and a newsletter — all in your voice.
+            a blog, thumbnails, scripts, social posts, and a newsletter, all in your voice.
           </p>
         </div>
 
@@ -311,7 +310,7 @@ export default function PricingPage() {
         </div>
 
         <p className="text-center text-xs text-[#86868b] dark:text-[#8e8e93] mt-5 max-w-3xl mx-auto">
-          Pricing shown from each tool&apos;s public pricing page at the equivalent feature tier as of 2026. MVP also handles parts none of these do — direct posting to TikTok &amp; Instagram, brand-pitch emails, multi-account social, and the YouTube Co-Pilot metadata sync.
+          Pricing shown from each tool&apos;s public pricing page at the equivalent feature tier as of 2026. MVP also handles parts none of these do: direct posting to TikTok &amp; Instagram, brand-pitch emails, multi-account social, and the YouTube Co-Pilot metadata sync.
         </p>
       </section>
 
@@ -357,7 +356,7 @@ export default function PricingPage() {
         <p className="text-center text-sm font-semibold text-[#7C3AED] mb-1.5">🔒 Price-lock guarantee</p>
         <p className="text-center text-sm text-[#3a3a3c] dark:text-[#ebebf0] leading-relaxed">
           When you subscribe at these Early Access rates, your price stays locked in for as long as you
-          keep your plan — even if we raise prices later. Your rate only changes if you choose to upgrade
+          keep your plan, even if we raise prices later. Your rate only changes if you choose to upgrade
           or downgrade tiers.
         </p>
       </div>

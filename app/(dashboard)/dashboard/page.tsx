@@ -5,7 +5,6 @@ import { TutorialVideo } from '@/components/TutorialVideo'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
-import ExtensionReminder from '@/components/ExtensionReminder'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
@@ -144,8 +143,12 @@ export default async function DashboardPage() {
           message in components/dashboard/NewsBanner.tsx. */}
       <NewsBanner />
 
-      {/* Browser-extension install reminder — auto-hides once detected. */}
-      <ExtensionReminder />
+      {/* The browser-extension install reminder was removed: server-side
+          YouTube storyboards (lib/youtube-storyboards.ts) now delivers the
+          "real keyframes" benefit automatically for every tier. The only
+          remaining extension-exclusive feature is the Amazon Creator
+          Connections EPC scout, and its install card lives inline on the
+          Campaigns → EPC tab where it's contextually relevant. */}
 
       {/* Welcome card — shown until user generates their first post */}
       {isNewUser && (

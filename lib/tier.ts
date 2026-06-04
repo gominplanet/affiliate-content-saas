@@ -1,8 +1,9 @@
 // Plan set: trial (free, 5 posts lifetime, no card) / creator $49 / studio $99
-// / pro $199 / admin (internal, unlimited). Studio bridges the $49→$199 gap
-// — single-account creator who wants the full toolkit (TikTok/IG direct,
-// scripts, browser extension, comparison posts). Pro adds Pro-only levers:
-// multi-account social, Campaigns, Publish All, all upper caps.
+// / pro $199 / admin (internal, unlimited). Studio bridges the $49→$199 gap:
+// single-account creator who wants the full toolkit (TikTok/IG direct, scripts,
+// comparison posts). Pro adds Pro-only levers: multi-account social, Campaigns
+// (including the Amazon Creator Connections EPC scout via the optional browser
+// extension), Publish All, all upper caps.
 export type Tier = 'trial' | 'creator' | 'studio' | 'pro' | 'admin'
 
 /** Default tier for a brand-new account (no Stripe subscription yet). */
