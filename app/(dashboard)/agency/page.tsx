@@ -23,6 +23,10 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Users, Lock, Plus, Mail, Trash2, Clock, Shield, User as UserIcon, Check, X as XIcon } from 'lucide-react'
 import { useConfirm } from '@/components/ui/useConfirm'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 // Import from the client-safe file — '@/lib/agency' pulls in node:crypto
 // (for invite-token generation) which can't bundle for the browser.
 import {
@@ -68,6 +72,35 @@ export default function AgencyPage() {
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null)
   const [memberDraftPerms, setMemberDraftPerms] = useState<VaPermissions | null>(null)
   const [savingMember, setSavingMember] = useState(false)
+
+  // Tier restructure 2026-06-04: VAs are Pro-only (up to 3 with granular
+  // perms). Trial / Creator / Studio all see the FeatureLockedCard. The
+  // page used to read state.tier from /api/agency, but that returns admin's
+  // real DB tier even for admin View-as Trial → gate never triggered.
+  // previewTier lives separately and uses effectiveTier() so the upsell
+  // shows for admins previewing as anything below Pro.
+  const [previewTier, setPreviewTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setPreviewTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { realTier = 'trial'; apply(); return }
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
+      } catch {
+        realTier = 'trial'
+        apply()
+      }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
 
   useEffect(() => { void refresh() }, [])
 
@@ -189,34 +222,52 @@ export default function AgencyPage() {
     }
   }
 
+  // Tier gate — render the FeatureLockedCard BEFORE the loading spinner
+  // so trial/creator/studio users (or admins View-as'ing them) don't see
+  // a flash of "Loading…" before the lock. previewTier comes from
+  // effectiveTier() so the View-as override is honored.
+  if (previewTier !== null && previewTier !== 'pro' && previewTier !== 'admin') {
+    return (
+      <FeatureLockedCard
+        icon={<Users size={28} strokeWidth={1.8} />}
+        feature="Virtual Assistants"
+        description="Invite VAs or contractors to your workspace with scoped permissions. Each VA gets their own login on your single Pro subscription — but only the access you explicitly grant. They never see your billing, brand profile, integrations, API keys, or this settings page."
+        bullets={[
+          'Up to 3 VA seats included with Pro',
+          'Per-VA permission scopes: blog posts, socials, newsletter, YouTube Co-Pilot, library, analytics',
+          'VAs work under your account (single subscription, multiple logins)',
+          'Revoke or edit permissions instantly — no downtime',
+          'Owner-only routes: billing, brand profile, integrations, WordPress, API keys',
+        ]}
+        requiredTier="pro"
+        currentTier={previewTier}
+      />
+    )
+  }
+
   if (loading) {
     return <div className="max-w-3xl mx-auto p-8 text-sm text-gray-500">Loading…</div>
   }
 
+  // Defensive fallback: previewTier says Pro/Admin but the API
+  // returned a non-Pro state.tier (drift between view-as and reality).
+  // Should never happen for a real Pro user, but rather show the lock
+  // than render the form with no seats.
   const isPro = state?.tier === 'pro' || state?.tier === 'admin'
   if (!isPro || !state) {
     return (
-      <div className="max-w-3xl mx-auto p-6 space-y-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users size={22} /> Virtual Assistants
-        </h1>
-        <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center bg-gray-50">
-          <Lock size={32} className="mx-auto text-gray-400 mb-3" />
-          <h2 className="text-lg font-semibold mb-2">Virtual Assistants are a Pro feature</h2>
-          <p className="text-sm text-gray-600 max-w-md mx-auto mb-5">
-            Invite VAs or contractors to your MVP Affiliate workspace with scoped permissions.
-            Each VA gets their own login but only the access you explicitly grant — they can't
-            see your billing, brand profile, or integrations.
-          </p>
-          <Link
-            href="/billing"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-white"
-            style={{ background: '#7C3AED' }}
-          >
-            Upgrade to Pro
-          </Link>
-        </div>
-      </div>
+      <FeatureLockedCard
+        icon={<Users size={28} strokeWidth={1.8} />}
+        feature="Virtual Assistants"
+        description="Invite VAs or contractors to your workspace with scoped permissions. Each VA gets their own login on your single Pro subscription — but only the access you explicitly grant."
+        bullets={[
+          'Up to 3 VA seats included with Pro',
+          'Per-VA permission scopes: blog posts, socials, newsletter, YouTube Co-Pilot, library, analytics',
+          'Revoke or edit permissions instantly',
+        ]}
+        requiredTier="pro"
+        currentTier={previewTier ?? 'trial'}
+      />
     )
   }
 
