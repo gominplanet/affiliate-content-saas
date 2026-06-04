@@ -240,13 +240,13 @@ export default function DealsCsvImporter({ onDealsChanged }: DealsCsvImporterPro
                 <li>Upload the downloaded .csv below.</li>
               </ol>
               <a
-                href="https://affiliate-program.amazon.com/home/promotionhub"
+                href="https://affiliate-program.amazon.com/p/reporting/earnings"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 mt-3 text-[11px] font-semibold hover:underline"
                 style={{ color: '#C4B5FD' }}
               >
-                Open Amazon Deals Hub <ExternalLink size={10} />
+                Open Amazon Associates <ExternalLink size={10} />
               </a>
             </div>
           </div>
