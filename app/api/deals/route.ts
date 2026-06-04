@@ -175,7 +175,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const first = await (supabase as any)
     .from('blog_posts')
-    .select('id, title, slug, wordpress_url, wordpress_post_id, created_at, seo_keyword, deal_meta')
+    .select('id, title, slug, wordpress_url, wordpress_post_id, created_at, seo_keyword, status, deal_meta')
     .eq('user_id', user.id)
     .eq('post_type', 'deal')
     .order('created_at', { ascending: false })
@@ -226,6 +226,10 @@ export async function GET() {
       priceWas: (meta.priceWas as string) || null,
       priceSale: (meta.priceSale as string) || null,
       dealEndsAt: (meta.dealEndsAt as string) || null,
+      // Status surfaced for the UI's Live/Scheduled pill. Falls through
+      // to 'published' for pre-feature rows (status NULL on legacy data).
+      status: (r.status as string) || 'published',
+      scheduledAt: (meta.scheduledAt as string) || null,
     }
   })
 
@@ -335,6 +339,16 @@ export async function POST(req: Request) {
      *  the same SEO juice, all 3 images, and the rest of the body
      *  untouched. ~15s + cheap. */
     refreshPriceId?: string
+    /** Schedule path: ISO 8601 timestamp at which WordPress should
+     *  flip the post from 'future' → 'publish'. Generation still runs
+     *  immediately so the article + images are ready well before the
+     *  deal goes live; WP's native cron handles the timed publish at
+     *  exactly this moment. Must be at least 60s in the future.
+     *
+     *  Used by the CSV-driven deals queue: the deal's start_datetime
+     *  becomes the post's scheduled_at, so the post lands the moment
+     *  the deal opens. */
+    scheduledAt?: string
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
@@ -402,6 +416,30 @@ export async function POST(req: Request) {
     : (body.occasion as DealOccasionSlug)
   const occasion = getOccasion(requestedOccasion)
   const manualDealEnd = (body.manualDealEnd || '').trim() || null
+
+  // Schedule path: parse + validate the requested timestamp once so the
+  // WP create call + the DB write share the same ISO. Falls through to
+  // null when not scheduling (immediate publish, the default).
+  let scheduledAtIso: string | null = null
+  if (typeof body.scheduledAt === 'string' && body.scheduledAt.trim()) {
+    const when = new Date(body.scheduledAt)
+    if (isNaN(when.getTime())) {
+      return NextResponse.json({
+        error: 'scheduledAt is not a valid ISO timestamp.',
+        code: 'bad_scheduled_at',
+      }, { status: 400 })
+    }
+    if (when.getTime() <= Date.now() + 60_000) {
+      // Minimum 60s in the future so WP's cron actually picks it up
+      // BEFORE we mark the row as scheduled (immediate publishes should
+      // use the no-scheduledAt path).
+      return NextResponse.json({
+        error: 'scheduledAt must be at least 60 seconds in the future. Use the immediate Generate flow for now-or-soon posts.',
+        code: 'scheduled_too_soon',
+      }, { status: 400 })
+    }
+    scheduledAtIso = when.toISOString()
+  }
 
   // Resolve WP site early — we need a category-list call later anyway.
   const site = await getWordPressCredentials(supabase, user.id)
@@ -491,6 +529,12 @@ export async function POST(req: Request) {
     promoCode,
     promoUrl,
     year,
+    // When the post is scheduled to publish at the deal's actual start
+    // time, we don't need to tell the writer "this deal opens Tuesday"
+    // — by the time anyone reads the article, the deal IS open. So we
+    // pass null here, even when scheduledAtIso is set. The hook reads
+    // as a fresh "this deal is live" piece either way.
+    scheduledStartIso: null,
   })
 
   // ── Image pipeline ───────────────────────────────────────────────────
@@ -679,12 +723,19 @@ export async function POST(req: Request) {
 
   let wpPost: { id: number; link: string }
   try {
+    // When scheduledAtIso is set we use WP's native future-publish:
+    // status='future' + date=<ISO>. WordPress's own cron flips the post
+    // from future → publish at that timestamp. No new cron on our side,
+    // no risk of an AI service being down at deal-start because the
+    // article + images are already baked into the post.
     wpPost = await wpService.createPost({
       title: wpTitle,
       slug,
       content: finalHtml,
       excerpt: buildExcerpt({ product, badgeLabel, savingsLine, occasionLong: occasion.longLabel }),
-      status: 'publish',
+      ...(scheduledAtIso
+        ? { status: 'future' as const, date: scheduledAtIso }
+        : { status: 'publish' as const }),
       tags: tagIds,
       ...(categoryIds.length ? { categories: categoryIds } : {}),
       ...(featuredMediaId ? { featured_media: featuredMediaId } : {}),
@@ -722,6 +773,9 @@ export async function POST(req: Request) {
     promoUrl: promoUrl || null,
     badgeLabel,
     savingsLine,
+    // Scheduled timestamp (ISO) so the UI can show "Publishes in 3 days"
+    // and so the GET endpoint surfaces it on the Recent Deals list.
+    scheduledAt: scheduledAtIso,
   }
 
   // Insert the row. Resilient to missing migration 093:
@@ -733,6 +787,10 @@ export async function POST(req: Request) {
   //     hint via the response body.
   //   - Surfaces the actual error in the response if both fail so the
   //     user doesn't get a false success while their post is orphaned.
+  // Scheduled posts get status='scheduled' so the Library's Scheduled
+  // tab + the dashboard counters separate them from live-published rows.
+  // published_at is set anyway (to scheduledAtIso) so the dashboard's
+  // "this period" counts use a consistent timestamp.
   const baseRow = {
     user_id: user.id,
     video_id: fallbackVideoId,
@@ -743,10 +801,10 @@ export async function POST(req: Request) {
     wordpress_post_id: wpPost.id,
     wordpress_url: wpPost.link,
     wordpress_site_id: site.site_id,
-    status: 'published',
+    status: scheduledAtIso ? 'scheduled' : 'published',
     post_type: 'deal',
     seo_keyword: product.title || `deal-${asin}`,
-    published_at: new Date().toISOString(),
+    published_at: scheduledAtIso ?? new Date().toISOString(),
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let saved: any = null
@@ -854,6 +912,13 @@ interface DealWriterPromptInput {
   promoCode: string
   promoUrl: string
   year: number
+  /** Reserved for future "this deal opens in X" hook framing when WP
+   *  publishes well ahead of the deal start. Currently null because
+   *  every scheduled post lands AT the deal start (WP's `status=future`
+   *  + `date` fires at exactly the scheduled time), so by the time
+   *  readers see the article the deal is live. Field kept for
+   *  forward-compat if we add a "drop early as a teaser" mode. */
+  scheduledStartIso?: string | null
 }
 
 function buildDealWriterPrompt(p: DealWriterPromptInput): string {

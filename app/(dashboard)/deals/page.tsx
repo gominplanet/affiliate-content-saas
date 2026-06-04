@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   Trash2,
   Calendar,
+  Clock,
   Tag,
   Link as LinkIcon,
   RotateCcw,
@@ -36,6 +37,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
+import DealsCsvImporter from './DealsCsvImporter'
 
 interface DealRow {
   id: string
@@ -50,6 +52,10 @@ interface DealRow {
   priceWas: string | null
   priceSale: string | null
   dealEndsAt: string | null
+  /** 'published' (live now) or 'scheduled' (WP will publish at
+   *  scheduledAt). Drives the per-row status pill on Recent Deals. */
+  status?: string
+  scheduledAt?: string | null
 }
 
 interface OccasionOption {
@@ -657,6 +663,21 @@ create index if not exists blog_posts_deal_meta_gin
           </form>
         )}
 
+        {/* ── Bulk CSV import (Amazon Creator Connections) ──────────── */}
+        {/* Mounted between the single-product form and Recent Deals so
+            users see it after they've made one deal post the "manual"
+            way and want to scale up to a whole calendar of upcoming
+            deals. onDealsChanged refreshes the Recent Deals list after
+            each row publishes/schedules. */}
+        <DealsCsvImporter
+          onDealsChanged={() => {
+            fetch('/api/deals')
+              .then((r) => r.json())
+              .then((j) => { if (j?.deals) setDeals(j.deals) })
+              .catch(() => {})
+          }}
+        />
+
         {/* ── Recent deals list ──────────────────────────────────────── */}
         <div className="card p-6">
           <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--fg)' }}>Recent deals</h2>
@@ -689,6 +710,15 @@ create index if not exists blog_posts_deal_meta_gin
                       <p className="text-sm font-medium truncate" style={{ color: 'var(--fg)' }}>{d.title}</p>
                       <div className="text-[11px] flex items-center gap-3 mt-0.5" style={{ color: 'var(--fg-muted)' }}>
                         <span>{new Date(d.created_at).toLocaleDateString()}</span>
+                        {/* Scheduled pill: WP will publish this row at
+                            d.scheduledAt. Wins visual priority over the
+                            "ends" pill because the user's mental model is
+                            "this hasn't gone live yet". */}
+                        {d.status === 'scheduled' && d.scheduledAt && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#F59E0B]/15 text-[#F59E0B] text-[10px] font-semibold">
+                            <Clock size={10} /> Publishes {new Date(d.scheduledAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        )}
                         {d.priceWas && d.priceSale && (
                           <span>
                             <span className="line-through">{d.priceWas}</span> → <span className="font-semibold text-[#34c759]">{d.priceSale}</span>

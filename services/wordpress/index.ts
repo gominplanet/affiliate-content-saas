@@ -8,7 +8,12 @@ export interface WPPost {
   content: string
   excerpt?: string
   slug: string
-  status: 'draft' | 'publish' | 'pending' | 'private'
+  status: 'draft' | 'publish' | 'pending' | 'private' | 'future'
+  /** Scheduled publish time. REQUIRED when status='future'; WordPress
+   *  uses its native cron to flip the post from future → publish at
+   *  this datetime. ISO 8601 with timezone (e.g. 2026-07-15T14:00:00Z).
+   *  Ignored for any other status. */
+  date?: string
   categories?: number[]
   tags?: number[]
   featured_media?: number
