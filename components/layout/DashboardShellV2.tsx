@@ -82,6 +82,7 @@ const DARK_VARS: React.CSSProperties = {
   ['--text-dim' as string]: 'rgba(255,255,255,0.50)',
   ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)',
   ['--kbd-bg' as string]: 'rgba(255,255,255,0.06)',
+  ['--hero-opacity' as string]: '0.35',
   ['--nav-active-bg' as string]: 'rgba(124,58,237,0.20)',
   ['--nav-active-text' as string]: '#D4C4FF',
 }
@@ -106,6 +107,7 @@ const LIGHT_VARS: React.CSSProperties = {
   ['--text-dim' as string]: 'rgba(0,0,0,0.40)',
   ['--card-shadow' as string]: '0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02)',
   ['--kbd-bg' as string]: 'rgba(0,0,0,0.05)',
+  ['--hero-opacity' as string]: '0.18',
   ['--nav-active-bg' as string]: 'rgba(124,58,237,0.10)',
   ['--nav-active-text' as string]: '#7C3AED',
 }
