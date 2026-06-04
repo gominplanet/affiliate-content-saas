@@ -55,6 +55,13 @@ export async function GET() {
     .single()
   const property: string | null = integ?.gsc_property || null
 
+  // Bounded read — the SEO overview UI shows the user's recent posts; we
+  // cap at 300 so a 500-post user doesn't transfer 5-50MB of HTML on
+  // every dashboard render (audit P01, 2026-06-04). The score for older
+  // posts is already in post_seo cache and surfaces on the post-detail
+  // page. Real fix: cache score_detail on post_seo + re-score on save,
+  // tracked as a follow-up.
+  const POSTS_OVERVIEW_CAP = 300
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: postsRaw } = await supabase
     .from('blog_posts')
@@ -62,6 +69,7 @@ export async function GET() {
     .eq('user_id', user.id)
     .not('wordpress_post_id', 'is', null)
     .order('published_at', { ascending: false })
+    .limit(POSTS_OVERVIEW_CAP)
   type Post = { id: string; title: string; slug: string; content: string; post_type: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null }
   const posts = (postsRaw as Post[] | null) ?? []
 
