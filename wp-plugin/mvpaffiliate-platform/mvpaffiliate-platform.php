@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.34
+ * Version: 1.0.35
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.34');
+define('MVP_AFFILIATE_VERSION', '1.0.35');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -857,7 +857,7 @@ add_action('template_redirect', function () {
 <main class="gr-how-we-test" style="max-width:760px;margin:48px auto;padding:0 20px;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1d1d1f">
   <p style="margin:0 0 8px;font-size:12px;font-weight:800;color:#7C3AED;text-transform:uppercase;letter-spacing:.8px">Methodology</p>
   <h1 style="margin:0 0 16px;font-size:36px;line-height:1.1;font-weight:800">How we test products at <?php echo esc_html($brand_name); ?></h1>
-  <p style="font-size:18px;color:#3a3a3c;margin:0 0 32px">Every review on this site comes from a product that's been in our hands. No press releases. No specs read off a website. Real-world testing, written up after we've actually used the thing.</p>
+  <p style="font-size:18px;color:#3a3a3c;margin:0 0 32px">Every review on this site comes from a product we've actually had in our hands. No press releases. No specs read off a website. But not every review is the same kind of test — some are deep dives, some are first impressions, some are first-time tries. The review itself will tell you which kind it is, and the score reflects that.</p>
 
   <?php if ($author_name && $author_photo): ?>
   <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;margin:0 0 32px;border:1px solid #e5e5e7;border-left:4px solid #FFC200;border-radius:6px;background:#fafafa">
@@ -871,18 +871,39 @@ add_action('template_redirect', function () {
   <?php endif; ?>
 
   <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">What we test</h2>
-  <p>Every product in our catalogue is purchased, requested, or accepted as a sample under a clear policy: we keep editorial control of every word. Reviews are not paid placements. Affiliate links are how the site stays free for readers — they never change what we say about a product.</p>
+  <p>Products in our catalogue are purchased, requested, or accepted as samples under a clear policy: we keep editorial control of every word. Reviews are not paid placements. Affiliate links are how the site stays free for readers — they never change what we say about a product.</p>
 
-  <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">How we test</h2>
+  <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">The four kinds of reviews you'll see</h2>
+  <p>Not every product gets the same kind of test. We use four review types depending on the product, the question we're trying to answer, and how much time we've spent with it. The review itself will say which kind you're reading.</p>
+  <div style="display:grid;gap:14px;margin:18px 0 8px">
+    <div style="padding:14px 16px;border:1px solid #e5e5e7;border-left:4px solid #7C3AED;border-radius:6px;background:#fafafa">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:800;color:#7C3AED;text-transform:uppercase;letter-spacing:.8px">Full Review</p>
+      <p style="margin:0;font-size:14px;color:#3a3a3c">We've used the product across multiple sessions in the real context it was built for. The pros and cons in a full review are the ones that surfaced over time — not the ones we noticed in the first ten minutes.</p>
+    </div>
+    <div style="padding:14px 16px;border:1px solid #e5e5e7;border-left:4px solid #FFC200;border-radius:6px;background:#fafafa">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:800;color:#a87600;text-transform:uppercase;letter-spacing:.8px">First Impressions</p>
+      <p style="margin:0;font-size:14px;color:#3a3a3c">A day-one or week-one take. Useful for products you want a fast read on, with the caveat that we may come back and update the post once we've lived with it longer.</p>
+    </div>
+    <div style="padding:14px 16px;border:1px solid #e5e5e7;border-left:4px solid #0071e3;border-radius:6px;background:#fafafa">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:800;color:#0071e3;text-transform:uppercase;letter-spacing:.8px">First-Time Test</p>
+      <p style="margin:0;font-size:14px;color:#3a3a3c">We've never used a product like this before. The review is written from the perspective of someone learning the category from scratch — which often catches friction a power user wouldn't even notice.</p>
+    </div>
+    <div style="padding:14px 16px;border:1px solid #e5e5e7;border-left:4px solid #16a34a;border-radius:6px;background:#fafafa">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:800;color:#15803d;text-transform:uppercase;letter-spacing:.8px">Out-of-the-Box Test</p>
+      <p style="margin:0;font-size:14px;color:#3a3a3c">How the product fares with zero practice and no manual reading. If something needs a video tutorial before it makes sense, this kind of review surfaces that fast.</p>
+    </div>
+  </div>
+
+  <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">What every review has in common</h2>
   <ul style="padding-left:22px">
-    <li><strong>Hands-on use, not unboxing.</strong> Every product gets a minimum of one week of real use in the setting it was built for — kitchen gear in the kitchen, sleep gear on the bed, tech in the office.</li>
-    <li><strong>What we actually use it for.</strong> The same scenarios the reader would. No synthetic benchmarks pulled out of a lab.</li>
-    <li><strong>Specific, repeatable claims.</strong> If we say something is loud, we tell you how loud (dB or a comparison to a known sound). If we say it's heavy, we tell you the weight or what we struggled to carry.</li>
-    <li><strong>Trade-offs surfaced.</strong> No product is perfect. Every review names at least one real downside — and which buyer that downside matters most to.</li>
+    <li><strong>Hands-on, not desk-research.</strong> We don't review products from spec sheets. If you're reading a review here, we've held the product or used it.</li>
+    <li><strong>Specific claims, not vibes.</strong> If we say something is loud, we say how loud. If we say it's heavy, we say how heavy or what we struggled to carry.</li>
+    <li><strong>Trade-offs called out.</strong> No product is perfect. Every review names at least one real downside — and which buyer that downside actually matters to.</li>
+    <li><strong>Score reflects the test.</strong> A First Impressions 4.5 isn't a promise the product stays a 4.5 forever — it's the score it earned in the test we ran. When deeper use changes the number, we update the post.</li>
   </ul>
 
   <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">How we score</h2>
-  <p>Every review carries a 1–5 score. The label next to the score tells you what the number means in plain English:</p>
+  <p>Every review carries a 1–5 score. The label next to the number tells you what the score means in plain English:</p>
   <table style="width:100%;border-collapse:collapse;margin:14px 0 0;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden;font-size:14px">
     <thead><tr style="background:#fafafa"><th style="text-align:left;padding:10px 14px;border-bottom:1px solid #e5e5e7;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86868b">Score</th><th style="text-align:left;padding:10px 14px;border-bottom:1px solid #e5e5e7;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86868b">Means</th></tr></thead>
     <tbody>
@@ -897,7 +918,7 @@ add_action('template_redirect', function () {
   </table>
 
   <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">Updates &amp; corrections</h2>
-  <p>Reviews are living documents. When a product gets a meaningful update — a software change, a price shift that flips the verdict, a long-term issue we couldn't see in week one — we revisit the post and bump the &ldquo;Updated&rdquo; date you see at the top. If we got something wrong, we mark the correction inline and explain what changed.</p>
+  <p>Reviews are living documents. When a product gets a meaningful update — a software change, a price shift that flips the verdict, or a long-term issue we couldn't see on day one — we revisit the post and bump the &ldquo;Updated&rdquo; date you see at the top. If we got something wrong, we mark the correction inline and explain what changed.</p>
 
   <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">Affiliate disclosure</h2>
   <p>Links to retailers (Amazon, Geniuslink, and others) on this site may earn a small commission when you click through and buy. That's how the site stays free. It never changes our score, our verdict, or which products we recommend. We've turned down products that didn't earn a recommendation, and we've kept products in the &ldquo;Avoid&rdquo; tier even when an affiliate would have rather we softened the language.</p>
