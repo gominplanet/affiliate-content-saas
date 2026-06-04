@@ -11,8 +11,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
-import { effectiveTier } from '@/lib/view-as'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import type { Tier } from '@/lib/tier'
 import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock } from 'lucide-react'
 
 const CAPTION_PRESETS = ['LINK IN BIO', 'LINK IN BIO 👆', 'FULL REVIEW ON YOUTUBE', 'WATCH THE FULL VIDEO', 'FOLLOW FOR MORE']
@@ -57,6 +59,11 @@ export default function InstagramBurnerPage() {
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Keep the real DB tier in a ref-ish state so the VIEW_AS_EVENT listener
+  // below can re-resolve effectiveTier() without re-querying Supabase
+  // every time the admin flips the View-as chip.
+  const [realTier, setRealTier] = useState<string>('trial')
+
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     let resolvedTier = 'trial'
@@ -68,10 +75,19 @@ export default function InstagramBurnerPage() {
       setIgUsername((data?.instagram_username as string) || null)
     }
     setMetaUnlocked(metaEnabled({ tier: resolvedTier, email: user?.email }))
+    setRealTier(resolvedTier)
     setTier(effectiveTier(resolvedTier))
     setLoading(false)
   }, [supabase])
   useEffect(() => { load() }, [load])
+
+  // Admin View-as override — re-resolve effective tier whenever the chip
+  // flips so the FeatureLockedCard appears/disappears live.
+  useEffect(() => {
+    const apply = () => setTier(effectiveTier(realTier))
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => window.removeEventListener(VIEW_AS_EVENT, apply)
+  }, [realTier])
 
   const isPro = tier === 'pro' || tier === 'admin'
 
@@ -184,6 +200,30 @@ export default function InstagramBurnerPage() {
     )
   }
 
+  // Tier gate — non-Pro users get the FeatureLockedCard takeover instead
+  // of the half-greyed-out form we used to show (banner on top, opacity-60
+  // form below). Single source of truth + same visual as every other
+  // gated page in the app.
+  if (!isPro) {
+    return (
+      <FeatureLockedCard
+        icon={<Flame size={28} strokeWidth={1.8} />}
+        feature="Instagram Burner"
+        description='Upload a vertical video, pick a caption (like "LINK IN BIO"), and burn it onto the video as an on-screen overlay. Download the result for Reels, Stories, or TikTok — or publish straight to your connected Instagram with one click.'
+        bullets={[
+          'Caption presets ("LINK IN BIO", "WATCH THE FULL VIDEO", "FOLLOW FOR MORE") + custom text',
+          'Lower-third or center placement (lower-third clears Instagram\'s UI buttons)',
+          'Four caption styles: white-on-dark, yellow-on-dark, black-on-white, white-with-shadow',
+          'Direct publish to connected Instagram as a Reel (manual confirm — never auto-posts)',
+          'Batch mode: up to 5 videos at once with a scheduled-publish queue',
+          'Download as MP4 for Reels / Stories / TikTok reposting',
+        ]}
+        requiredTier="pro"
+        currentTier={tier as Tier}
+      />
+    )
+  }
+
   return (
     <>
       <PageHero
@@ -191,20 +231,7 @@ export default function InstagramBurnerPage() {
         subtitle="Upload a vertical video and burn a caption (like “LINK IN BIO”) into it — then download it for Reels, Stories, or TikTok."
       />
 
-      {!isPro && (
-        <div className="card p-5 mb-6 flex items-start gap-3" style={{ background: 'linear-gradient(180deg, rgba(0,113,227,0.05) 0%, transparent 100%)', borderColor: 'rgba(0,113,227,0.25)' }}>
-          <div className="w-9 h-9 rounded-full bg-[#7C3AED]/15 flex items-center justify-center flex-shrink-0">
-            <Sparkles size={18} className="text-[#7C3AED]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Instagram Burner is a Pro feature</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 mb-3">Add an on-screen “Link in bio” caption to your videos and download them ready to post.</p>
-            <Link href="/pricing" className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#7C3AED] text-white hover:bg-[#6D28D9]"><Sparkles size={11} /> Upgrade to Pro</Link>
-          </div>
-        </div>
-      )}
-
-      <div className={`max-w-4xl ${!isPro ? 'opacity-60 pointer-events-none' : ''}`}>
+      <div className="max-w-4xl">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center"><Loader2 size={14} className="animate-spin" /> Loading…</div>
         ) : (
