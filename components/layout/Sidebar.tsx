@@ -45,6 +45,7 @@ import {
   Sparkles,
   FileVideo,
   BookOpen,
+  BadgePercent,
   Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -125,6 +126,10 @@ const navGroups: NavGroup[] = [
       { href: '/content', label: 'Library', icon: PlaySquare, matchKind: 'prefix' },
       { href: '/comparison', label: 'Compare Products', icon: Scale, matchKind: 'prefix' },
       { href: '/buying-guides', label: 'Buying Guides', icon: BookOpen, matchKind: 'prefix' },
+      // Deals Hub — Studio + Pro feature for timely deal/discount posts. The
+      // outer layout gates visibility via showDeals; the item still lives in
+      // the array so admins viewing-as-Studio see it in the dropdown preview.
+      { href: '/deals', label: 'Deals Hub', icon: BadgePercent, matchKind: 'prefix' },
       { href: '/instagram-burner', label: 'Instagram Burner', icon: Flame, matchKind: 'prefix' },
     ],
   },
@@ -196,7 +201,7 @@ const secondaryNav = [
   // in the render — NOT here — so non-admins never see them.
 ]
 
-export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp, showBuyingGuides = false }: { email?: string; wpSiteUrl?: string | null; showBuyingGuides?: boolean }) {
+export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp, showBuyingGuides = false, showDeals = false }: { email?: string; wpSiteUrl?: string | null; showBuyingGuides?: boolean; showDeals?: boolean }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -455,6 +460,7 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp, showBuyingGui
                   {group.items
                     .filter(it => metaUnlocked || it.href !== '/instagram-burner')
                     .filter(it => showBuyingGuides || it.href !== '/buying-guides')
+                    .filter(it => showDeals || it.href !== '/deals')
                     .map(renderNavLink)}
                 </div>
               )}

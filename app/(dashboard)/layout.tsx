@@ -45,9 +45,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
     } catch { /* timeout / network error — leave gated */ }
   }
 
+  // Deals Hub gate: Studio + Pro + Admin only. Unlike Buying Guides, there's
+  // no post-volume threshold — a brand-new Studio user should be able to ship
+  // a deal post on day one. The sidebar entry hides outright for Trial/
+  // Creator so we don't tease a feature they can't reach. Admin always sees
+  // it (so the View-as-Studio/Pro preview also exposes it for screenshots).
+  const showDeals = tier === 'studio' || tier === 'pro' || tier === 'admin'
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      <Sidebar email={user.email} wpSiteUrl={wpSiteUrl} showBuyingGuides={showBuyingGuides} />
+      <Sidebar email={user.email} wpSiteUrl={wpSiteUrl} showBuyingGuides={showBuyingGuides} showDeals={showDeals} />
       <main className="flex-1 overflow-y-auto w-full" style={{ background: 'var(--bg)' }}>
         {/* pt-16 on mobile leaves room for the fixed hamburger button; px-4 keeps
             content from kissing the screen edge on phones. lg: restores the

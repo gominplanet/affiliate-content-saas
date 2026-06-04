@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.39
+ * Version: 1.0.40
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.39');
+define('MVP_AFFILIATE_VERSION', '1.0.40');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -2873,6 +2873,167 @@ if (!function_exists('mvp_affiliate_render_newsletter_form')) {
         msg.textContent = 'Network error. Please try again.';
       });
   });
+})();
+</script>
+        <?php
+        return ob_get_clean();
+    }
+}
+
+// ─── 19b. Deals Hub banner shortcode (1.0.40+) ─────────────────────────────
+// Renders [mvp_deal_banner end_date="..." badge="..." code="..." url="..."]
+// as a self-contained deal banner at the top of a deal post — a violet card
+// with the savings badge, the optional promo code (copy-to-clipboard), a
+// big CTA button, and (when end_date is given) a live JS countdown that
+// flips to "Deal ended" once the date passes.
+//
+// All atts are optional — missing pieces just don't render. Safe fallback:
+// with NO atts the shortcode emits nothing at all (so an older post that
+// re-renders without atts looks normal).
+//
+// Inlined CSS + minimal vanilla JS so the banner works whether the MVP
+// Affiliate theme is active or not.
+add_shortcode('mvp_deal_banner', 'mvp_deal_banner_shortcode');
+if (!function_exists('mvp_deal_banner_shortcode')) {
+    function mvp_deal_banner_shortcode($atts) {
+        $atts = shortcode_atts([
+            'end_date' => '',
+            'badge'    => '',
+            'code'     => '',
+            'url'      => '',
+        ], $atts, 'mvp_deal_banner');
+
+        $end_date = trim((string) $atts['end_date']);
+        $badge    = trim((string) $atts['badge']);
+        $code     = trim((string) $atts['code']);
+        $url      = trim((string) $atts['url']);
+
+        // Validate the URL early; if it's not http(s) drop it so we don't
+        // emit a junk <a href>. Empty URL is also fine.
+        if ($url !== '' && !preg_match('#^https?://#i', $url)) {
+            $url = '';
+        }
+
+        // Nothing to render → emit nothing. Keeps older / mis-pasted
+        // shortcodes from leaving an empty card on the page.
+        if ($badge === '' && $code === '' && $url === '' && $end_date === '') {
+            return '';
+        }
+
+        $banner_id = 'mvp-deal-banner-' . wp_generate_uuid4();
+
+        // Try to parse end_date into an ISO timestamp the JS countdown can
+        // consume. We accept yyyy-mm-dd, full ISO, or anything strtotime
+        // understands. Empty → countdown block hidden.
+        $end_iso = '';
+        if ($end_date !== '') {
+            $ts = strtotime($end_date);
+            if ($ts !== false) {
+                // Use UTC ISO so the JS countdown is timezone-agnostic.
+                $end_iso = gmdate('c', $ts);
+            }
+        }
+
+        ob_start();
+        ?>
+<div class="mvp-deal-banner" id="<?php echo esc_attr($banner_id); ?>" data-end="<?php echo esc_attr($end_iso); ?>" style="margin:20px 0;padding:20px;border-radius:14px;background:linear-gradient(135deg,#7C3AED 0%,#C026D3 100%);color:#fff;box-shadow:0 4px 18px rgba(124,58,237,0.25);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between;">
+    <div style="flex:1 1 240px;min-width:0;">
+      <?php if ($badge !== ''): ?>
+      <div style="display:inline-block;padding:5px 10px;border-radius:999px;background:#ffffff;color:#7C3AED;font-size:11px;font-weight:800;letter-spacing:0.6px;text-transform:uppercase;margin-bottom:8px;"><?php echo esc_html($badge); ?></div>
+      <?php endif; ?>
+      <div style="font-size:18px;font-weight:700;line-height:1.3;margin-bottom:6px;">Active deal · save while it lasts</div>
+      <?php if ($code !== ''): ?>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:12px;opacity:0.9;">Code:</span>
+        <code class="mvp-deal-code" data-code="<?php echo esc_attr($code); ?>" style="padding:4px 10px;border-radius:8px;background:rgba(255,255,255,0.18);font-size:13px;font-weight:700;letter-spacing:0.5px;border:1px dashed rgba(255,255,255,0.4);"><?php echo esc_html($code); ?></code>
+        <button type="button" class="mvp-deal-copy" style="padding:4px 10px;border:none;border-radius:8px;background:#fff;color:#7C3AED;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.4px;">Copy</button>
+      </div>
+      <?php endif; ?>
+      <?php if ($end_iso !== ''): ?>
+      <div class="mvp-deal-countdown" style="margin-top:10px;font-size:13px;opacity:0.95;">
+        <span class="mvp-deal-countdown-label">Deal ends in</span>
+        <strong class="mvp-deal-countdown-value" style="font-size:14px;">…</strong>
+      </div>
+      <?php endif; ?>
+    </div>
+    <?php if ($url !== ''): ?>
+    <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" class="mvp-deal-cta" style="display:inline-block;padding:13px 22px;border-radius:12px;background:#ffffff;color:#7C3AED;font-size:15px;font-weight:800;text-decoration:none;letter-spacing:0.3px;flex-shrink:0;">See the deal →</a>
+    <?php endif; ?>
+  </div>
+</div>
+<script>
+(function(){
+  var root = document.getElementById('<?php echo esc_js($banner_id); ?>');
+  if (!root) return;
+
+  // ── Copy-to-clipboard for the promo code ──
+  var copyBtn = root.querySelector('.mvp-deal-copy');
+  var codeEl  = root.querySelector('.mvp-deal-code');
+  if (copyBtn && codeEl) {
+    copyBtn.addEventListener('click', function(){
+      var code = codeEl.getAttribute('data-code') || codeEl.textContent || '';
+      if (!code) return;
+      var done = function(){
+        var prev = copyBtn.textContent;
+        copyBtn.textContent = 'Copied!';
+        setTimeout(function(){ copyBtn.textContent = prev || 'Copy'; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(done).catch(done);
+      } else {
+        // Fallback for older browsers
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = code;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          done();
+        } catch(e) { done(); }
+      }
+    });
+  }
+
+  // ── Countdown / "Deal ended" ──
+  var endStr = root.getAttribute('data-end') || '';
+  if (!endStr) return;
+  var endMs = Date.parse(endStr);
+  if (isNaN(endMs)) return;
+
+  var labelEl = root.querySelector('.mvp-deal-countdown-label');
+  var valueEl = root.querySelector('.mvp-deal-countdown-value');
+  if (!valueEl) return;
+
+  function tick(){
+    var diff = endMs - Date.now();
+    if (diff <= 0) {
+      if (labelEl) labelEl.textContent = '';
+      valueEl.textContent = 'This deal has ended';
+      // Visually demote the banner so a stale deal post still looks honest
+      root.style.opacity = '0.78';
+      root.style.filter = 'grayscale(0.4)';
+      var cta = root.querySelector('.mvp-deal-cta');
+      if (cta) {
+        cta.style.background = 'rgba(255,255,255,0.45)';
+        cta.style.color = 'rgba(124,58,237,0.6)';
+        cta.style.pointerEvents = 'none';
+        cta.textContent = 'Deal ended';
+      }
+      return;
+    }
+    var days = Math.floor(diff / 86400000);
+    var hrs  = Math.floor((diff % 86400000) / 3600000);
+    var mins = Math.floor((diff % 3600000) / 60000);
+    var parts = [];
+    if (days > 0) parts.push(days + 'd');
+    parts.push(hrs + 'h');
+    parts.push(mins + 'm');
+    valueEl.textContent = parts.join(' ');
+  }
+  tick();
+  setInterval(tick, 60000);
 })();
 </script>
         <?php

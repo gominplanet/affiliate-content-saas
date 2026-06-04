@@ -9,6 +9,34 @@ export interface AmazonProduct {
   /** All gallery hi-res images (main first). Lets a vision picker choose the
    *  cleanest isolated product shot instead of a lifestyle/collage main image. */
   images: string[]
+  /** Optional deal/discount signals — populated when Amazon's listing shows a
+   *  strike-through original price, a coupon, or a limited-time deal badge.
+   *  Powers the Deals Hub flow; the regular review/comparison pipelines just
+   *  ignore them.
+   *
+   *  Notes per field:
+   *  - priceWas: the strike-through "list price" / "was" price as displayed
+   *    (string with currency symbol, e.g. "$199.99"). Falls back to null if
+   *    Amazon isn't showing a comparison price.
+   *  - priceSale: the current sale price if Amazon is exposing it as a
+   *    distinct lower price (often the same as `price` above, but kept
+   *    separate so callers can tell discount-present vs no-discount cases
+   *    without inferring from string compare).
+   *  - dealBadge: the deal label Amazon shows ("Lightning Deal", "Limited
+   *    time deal", "Prime Day", "Black Friday", "Coupon", "Deal of the Day",
+   *    etc.) Cased exactly as scraped; downstream prompts use this as hype
+   *    fuel.
+   *  - dealEndsAt: ISO 8601 string (yyyy-mm-dd or full ISO) extracted when
+   *    Amazon shows an expiration ("Deal ends Jun 15", coupon countdown,
+   *    "Ends in 2 days"). Best-effort, frequently null.
+   *  - discountPct: integer 1-99 if Amazon shows a "% off" badge inline;
+   *    independent of priceWas/priceSale because some listings show only
+   *    the percentage. */
+  priceWas: string | null
+  priceSale: string | null
+  dealBadge: string | null
+  dealEndsAt: string | null
+  discountPct: number | null
 }
 
 /** True if `token` looks like a real Amazon ASIN rather than an ordinary
@@ -188,5 +216,70 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
     throw new Error(`Amazon returned non-product page for ASIN ${asin} (probable anti-bot block)`)
   }
 
-  return { asin, title, bullets: bullets.slice(0, 6), description, price, rating, imageUrl, images }
+  // Discount / deal signals — best-effort. Amazon renders these in a few
+  // different shapes depending on the deal type, so we try each and bail
+  // to null if nothing matches. Keep regexes loose; downstream prompts
+  // gracefully handle "not detected" cases.
+  //
+  // 1. priceWas: the strike-through list price. Common shapes:
+  //    <span class="a-price a-text-price"><span class="a-offscreen">$199.99</span>
+  //    <span class="basisPrice"><span class="a-offscreen">$199.99</span>
+  //    "wasPrice": "$199.99"
+  const priceWasMatch =
+    html.match(/<span[^>]*class="[^"]*a-text-price[^"]*"[^>]*>\s*<span[^>]*class="a-offscreen"[^>]*>\s*(\$[\d.,]+)/i) ||
+    html.match(/"strikethroughPrice"\s*:\s*"(\$[\d.,]+)"/i) ||
+    html.match(/"listPrice"\s*:\s*"(\$[\d.,]+)"/i) ||
+    html.match(/List Price:[\s\S]{0,100}?(\$[\d.,]+)/i)
+  const priceWas = priceWasMatch ? priceWasMatch[1] : null
+
+  // 2. priceSale: the current sale price. We use the same value as `price`
+  // above when a comparison priceWas is also present (because that IS the
+  // sale price by definition). Without a priceWas, treat as null so callers
+  // know the listing isn't on sale.
+  const priceSale = priceWas && price ? price : null
+
+  // 3. dealBadge: the textual deal label. Amazon uses several:
+  //    "Lightning Deal", "Limited time deal", "Deal of the Day", "Coupon",
+  //    "Prime Day Deal", "Black Friday Deal", "Cyber Monday Deal", "Save
+  //    extra with coupon".
+  const dealBadge =
+    html.match(/>(Lightning Deal|Limited[- ]time deal|Deal of the Day|Prime Day Deal|Black Friday Deal|Cyber Monday Deal|Holiday Deal)</i)?.[1] ||
+    (/with coupon/i.test(html) ? 'Coupon' : null)
+
+  // 4. dealEndsAt: countdown / expiration. Several shapes:
+  //    <span class="dealsTimer">Ends in 2d 4h</span> (relative)
+  //    "endDate": "2026-07-16T23:59:59Z" (JSON island, most reliable)
+  //    "Deal ends Jul 16" (plain text)
+  let dealEndsAt: string | null = null
+  const isoEnd = html.match(/"endDate"\s*:\s*"([^"]+)"/i) || html.match(/"endTime"\s*:\s*"([^"]+)"/i)
+  if (isoEnd) {
+    // Trust ISO-ish strings as-is; downstream parses with new Date().
+    dealEndsAt = isoEnd[1]
+  } else {
+    const dateText = html.match(/Deal ends ([A-Za-z]+ \d{1,2}(?:,? \d{4})?)/i)
+    if (dateText) dealEndsAt = dateText[1]
+  }
+
+  // 5. discountPct: "Save 32%" / "32% off" / "-32%"
+  const pctMatch =
+    html.match(/(?:Save|saving|You save)\s*(\d{1,2})\s*%/i) ||
+    html.match(/-(\d{1,2})\s*%/) ||
+    html.match(/(\d{1,2})\s*%\s*off/i)
+  const discountPct = pctMatch ? Math.min(99, parseInt(pctMatch[1], 10)) : null
+
+  return {
+    asin,
+    title,
+    bullets: bullets.slice(0, 6),
+    description,
+    price,
+    rating,
+    imageUrl,
+    images,
+    priceWas,
+    priceSale,
+    dealBadge,
+    dealEndsAt,
+    discountPct,
+  }
 }
