@@ -31,6 +31,7 @@ import {
   Calendar,
   Tag,
   Link as LinkIcon,
+  RotateCcw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -92,6 +93,7 @@ export default function DealsHubPage() {
   const [occasions, setOccasions] = useState<OccasionOption[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
 
   // Form state
   const [input, setInput] = useState('')
@@ -233,6 +235,46 @@ export default function DealsHubPage() {
       toast.error(err instanceof Error ? err.message : 'Network error')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  // ── Regenerate a deal ───────────────────────────────────────────────────
+  // Re-runs the full generation pipeline (writer + images + WP publish)
+  // using the same ASIN, promo code, promo URL, occasion, and end-date the
+  // deal was originally created with. The server deletes the old WP post +
+  // DB row after the new one safely publishes, so the row position in the
+  // list naturally shifts to the top with a fresh created_at.
+  async function handleRegenerate(deal: DealRow) {
+    const ok = await confirm({
+      title: 'Regenerate this deal post?',
+      description: `MVP will re-write "${deal.title}" with the latest voice + layout. The current WordPress post will be replaced (same ASIN, same promo code if any). This takes 30-60 seconds.`,
+      confirmLabel: 'Regenerate',
+    })
+    if (!ok) return
+
+    setRegeneratingId(deal.id)
+    try {
+      const res = await fetch('/api/deals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerateId: deal.id }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(j.error || 'Regenerate failed')
+        return
+      }
+      toast.success('Deal post regenerated', {
+        action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
+      })
+      // Refresh the list — the old row is gone, the new one appears at the
+      // top of the array (newest first by created_at).
+      const list = await fetch('/api/deals').then(r => r.json()).catch(() => null)
+      if (list?.deals) setDeals(list.deals)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setRegeneratingId(null)
     }
   }
 
@@ -544,6 +586,15 @@ export default function DealsHubPage() {
             <ul className="flex flex-col divide-y divide-gray-100 dark:divide-white/10">
               {deals.map(d => {
                 const isDeleting = deletingId === d.id
+                const isRegenerating = regeneratingId === d.id
+                // Any row-level operation in flight disables the others on
+                // THIS row so the user can't double-fire. Doesn't block
+                // operations on other rows.
+                const rowBusy = isDeleting || isRegenerating
+                // Regenerate is only meaningful when we know the ASIN —
+                // pre-meta legacy rows (rare; only matter for deals
+                // created before the feature shipped) can't be replayed.
+                const canRegenerate = !!d.asin
                 return (
                   <li key={d.id} className="py-3 flex items-center gap-3">
                     <div className="flex-1 min-w-0">
@@ -565,6 +616,11 @@ export default function DealsHubPage() {
                             {d.occasion.replace(/_/g, ' ')}
                           </span>
                         )}
+                        {isRegenerating && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#ff9500]/15 text-[#ff9500] text-[10px] font-semibold">
+                            <Loader2 size={10} className="animate-spin" /> Regenerating...
+                          </span>
+                        )}
                       </div>
                     </div>
                     {d.url && (
@@ -579,8 +635,18 @@ export default function DealsHubPage() {
                     )}
                     <button
                       type="button"
+                      onClick={() => handleRegenerate(d)}
+                      disabled={rowBusy || !canRegenerate}
+                      className="p-1.5 rounded-md text-[#7C3AED] hover:bg-[#7C3AED]/10 disabled:opacity-40"
+                      title={canRegenerate ? 'Regenerate this deal post with the latest voice + layout' : 'This deal predates the regenerate feature, delete and re-paste the link instead'}
+                      aria-label={`Regenerate ${d.title}`}
+                    >
+                      {isRegenerating ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleDelete(d)}
-                      disabled={isDeleting}
+                      disabled={rowBusy}
                       className="p-1.5 rounded-md text-[#ff3b30] hover:bg-[#ff3b30]/10 disabled:opacity-40"
                       title="Delete this deal post"
                       aria-label={`Delete ${d.title}`}

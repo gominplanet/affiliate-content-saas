@@ -249,8 +249,50 @@ export async function POST(req: Request) {
     occasion?: DealOccasionSlug | 'auto'
     manualDealEnd?: string
     preview?: boolean
+    /** Regenerate path: when set, ignores the other inputs and replays the
+     *  generation with whatever's saved in the row's deal_meta. After the
+     *  new post publishes successfully, the old row + WP post get deleted.
+     *  Lets the user re-render a stale deal with the same ASIN/promo/
+     *  occasion without re-typing anything. */
+    regenerateId?: string
   }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
+
+  // Regenerate replay: load the old row's deal_meta and overwrite the body
+  // fields with whatever was originally used. Server-side reconstruction
+  // (rather than client-side) keeps promoCode/promoUrl out of the GET
+  // response payload — they only need to leave the DB when we're using
+  // them again.
+  let regenerateOldRow: { id: string; wpPostId: number | null; wpSiteId: string | null } | null = null
+  if (typeof body.regenerateId === 'string' && body.regenerateId.trim()) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: oldRow } = await (supabase as any)
+      .from('blog_posts')
+      .select('id, wordpress_post_id, wordpress_site_id, deal_meta, post_type')
+      .eq('id', body.regenerateId.trim())
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (!oldRow) return NextResponse.json({ error: 'Deal to regenerate not found.', code: 'not_found' }, { status: 404 })
+    if (oldRow.post_type !== 'deal') return NextResponse.json({ error: 'That row isn\'t a deal post.', code: 'wrong_type' }, { status: 400 })
+    const oldMeta = (oldRow.deal_meta || {}) as Record<string, unknown>
+    if (!oldMeta.asin) {
+      return NextResponse.json({
+        error: 'This deal was created before regenerate was supported (no saved ASIN). Delete it and re-paste the product link.',
+        code: 'no_meta',
+      }, { status: 400 })
+    }
+    body.asin = oldMeta.asin as string
+    body.promoCode = (oldMeta.promoCode as string | null) || ''
+    body.promoUrl = (oldMeta.promoUrl as string | null) || ''
+    body.occasion = (oldMeta.occasion as DealOccasionSlug) || 'auto'
+    body.manualDealEnd = (oldMeta.dealEndsAt as string | null) || ''
+    body.preview = false // regenerate ALWAYS publishes — no preview step
+    regenerateOldRow = {
+      id: oldRow.id as string,
+      wpPostId: (oldRow.wordpress_post_id as number | null) || null,
+      wpSiteId: (oldRow.wordpress_site_id as string | null) || null,
+    }
+  }
 
   const rawInput = (body.url || body.asin || '').trim()
   const asin = asinFromInput(rawInput)
@@ -614,12 +656,48 @@ export async function POST(req: Request) {
     .select('id')
     .single()
 
+  // ── Regenerate cleanup ────────────────────────────────────────────────
+  // Now that the new post is safely published + the new row is in the DB,
+  // delete the old WP post + DB row. Best-effort: a stuck WP delete still
+  // lets the new post live — leaving an old row around is worse than the
+  // duplicate WP post.
+  if (regenerateOldRow) {
+    if (regenerateOldRow.wpPostId) {
+      try {
+        const oldSite = await getWordPressCredentials(supabase, user.id, regenerateOldRow.wpSiteId)
+        if (oldSite) {
+          const oldWp = createWordPressService(
+            oldSite.wordpress_url,
+            oldSite.wordpress_username,
+            oldSite.wordpress_app_password,
+            oldSite.wordpress_api_token || undefined,
+          )
+          await oldWp.deletePost(regenerateOldRow.wpPostId)
+        }
+      } catch (err) {
+        console.warn('[deals regenerate] old WP delete failed:', err instanceof Error ? err.message : err)
+      }
+    }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('blog_posts')
+        .delete()
+        .eq('id', regenerateOldRow.id)
+        .eq('user_id', user.id)
+    } catch (err) {
+      console.warn('[deals regenerate] old DB row delete failed:', err instanceof Error ? err.message : err)
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     postId: saved?.id ?? null,
     wpPostId: wpPost.id,
     url: wpPost.link,
     title: wpTitle,
+    regenerated: !!regenerateOldRow,
+    replacedPostId: regenerateOldRow?.id ?? null,
   })
 }
 
