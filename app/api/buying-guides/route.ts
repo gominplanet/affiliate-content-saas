@@ -65,7 +65,76 @@ function ngrams(toks: string[], n: number): string[] {
 }
 
 interface SuggestionItem { topic: string; count: number }
-function suggestTopics(reviews: ReviewRow[]): SuggestionItem[] {
+
+/** AI-powered topic clustering. Sends the catalogue titles to Haiku and
+ *  asks it to identify natural topic clusters that group at least 3
+ *  reviews each. Much better than n-gram matching when product titles
+ *  are distinct (which they usually are on an affiliate review site).
+ *
+ *  Falls back to the n-gram suggester if the AI call fails. */
+async function suggestTopicsAI(reviews: ReviewRow[]): Promise<SuggestionItem[]> {
+  if (reviews.length < 6) return suggestTopicsNgram(reviews)
+
+  // Compact catalogue — title only is enough for clustering
+  const catalogue = reviews.slice(0, 120).map((r, i) =>
+    `[${i}] ${r.title}${r.seo_keyword ? ` (${r.seo_keyword})` : ''}`
+  ).join('\n')
+
+  const prompt = `You are clustering a review-blog catalogue into TOPIC GROUPS that could each become a "Best [topic] for 2026" buying guide.
+
+Each topic group must:
+- Cover at least 3 reviews from the catalogue
+- Use 1-3 word topic names (e.g. "sleep masks", "kitchen knives", "air purifiers", "outdoor lighting")
+- Be the kind of phrase a real buyer would type into Google (high commercial intent)
+- NOT be too broad ("home", "tech") or too narrow ("Brand X specifically")
+
+Catalogue (index → title · optional SEO keyword):
+${catalogue}
+
+Return ONLY this JSON (no prose, no markdown fence):
+{"topics":[{"topic":"<1-3 word topic>","indices":[<numbers>]}]}
+
+Rules:
+- Return at most 12 topics, ranked by indices.length (largest first)
+- Every index must come from the catalogue above
+- A single review may belong to multiple topics
+- Skip clusters with fewer than 3 indices
+- NEVER use the word "honest" in any output`
+
+  try {
+    const client = createAnthropicClient()
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    const text = (msg.content[0] as { type: string; text: string })?.text || ''
+    const m = text.match(/\{[\s\S]*\}/)
+    if (!m) return suggestTopicsNgram(reviews)
+    const parsed = JSON.parse(m[0]) as { topics?: Array<{ topic?: string; indices?: number[] }> }
+    const out: SuggestionItem[] = []
+    const seen = new Set<string>()
+    for (const t of parsed.topics || []) {
+      const topic = (t.topic || '').trim().toLowerCase()
+      const indices = (t.indices || []).filter(i => Number.isInteger(i) && i >= 0 && i < reviews.length)
+      if (!topic || indices.length < 3) continue
+      // De-dup near-identical topics ("sleep mask" + "sleep masks")
+      const stem = topic.replace(/s$/, '')
+      if (seen.has(stem)) continue
+      seen.add(stem)
+      out.push({ topic, count: indices.length })
+      if (out.length >= 12) break
+    }
+    return out.length >= 3 ? out : suggestTopicsNgram(reviews)
+  } catch {
+    return suggestTopicsNgram(reviews)
+  }
+}
+
+/** Legacy n-gram fallback — finds phrases that literally appear in 3+
+ *  titles. Rarely produces good clusters on a real review site (every
+ *  product title is unique) but kept as the fallback when AI is down. */
+function suggestTopicsNgram(reviews: ReviewRow[]): SuggestionItem[] {
   // Dedup key is wordpress_url, NOT r.id — WP-REST-only rows have id=''
   // (no MVP blog_posts row yet), so keying by id collapses them all onto
   // a single bucket and the cluster counts come out as 1 instead of N.
@@ -232,7 +301,7 @@ export async function GET() {
   }
 
   const reviews = await loadReviews(supabase, user.id)
-  const suggestions = suggestTopics(reviews)
+  const suggestions = await suggestTopicsAI(reviews)
 
   // Previously generated guides
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
