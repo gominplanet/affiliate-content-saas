@@ -21,7 +21,8 @@ import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { normalizeTier, type Tier } from '@/lib/tier'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 
 interface Suggestion { topic: string; count: number }
 interface GuideRow { id: string; title: string; url: string | null; topic: string | null; created_at: string }
@@ -69,25 +70,32 @@ export default function BuyingGuidesPage() {
     try { localStorage.setItem('mvp_bg_mode', next) } catch { /* ignore */ }
   }
 
-  // Fetch user tier on mount for the Pro-only gate. Runs in parallel with
-  // refresh() — we don't await it because the gate check happens at render
-  // time. Failures default to 'trial' so a logged-out / network-glitch user
-  // sees the upsell, not the form.
+  // Fetch user tier on mount + re-resolve when the admin View-as override
+  // changes. effectiveTier() honors the localStorage override for admins
+  // so this page renders the FeatureLockedCard when an admin "views as"
+  // Creator/Trial/Studio. Non-admins always see their real tier.
   useEffect(() => {
     let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+
     ;(async () => {
       try {
         const supabase = createBrowserClient()
         const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { if (!cancelled) setTier('trial'); return }
+        if (!user) { realTier = 'trial'; apply(); return }
         const { data } = await supabase
           .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-        if (!cancelled) setTier(normalizeTier((data as { tier?: string } | null)?.tier))
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
       } catch {
-        if (!cancelled) setTier('trial')
+        realTier = 'trial'
+        apply()
       }
     })()
-    return () => { cancelled = true }
+
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
 
   useEffect(() => { void refresh() }, [])

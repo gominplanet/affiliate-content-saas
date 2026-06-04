@@ -40,7 +40,8 @@ import { useConfirm } from '@/components/ui/useConfirm'
 import DealsCsvImporter from './DealsCsvImporter'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { normalizeTier, type Tier } from '@/lib/tier'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 
 interface DealRow {
   id: string
@@ -133,22 +134,32 @@ export default function DealsHubPage() {
   // Tier restructure 2026-06-04: Deals Hub is Studio + Pro only. Trial +
   // Creator see the FeatureLockedCard upsell. tier === null while loading
   // so non-Studio users don't see the form flash before the lock card.
+  //
+  // effectiveTier() honors the admin View-as override so admins can preview
+  // the gated experience without changing their DB tier.
   const [tier, setTier] = useState<Tier | null>(null)
   useEffect(() => {
     let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+
     ;(async () => {
       try {
         const supabase = createBrowserClient()
         const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { if (!cancelled) setTier('trial'); return }
+        if (!user) { realTier = 'trial'; apply(); return }
         const { data } = await supabase
           .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-        if (!cancelled) setTier(normalizeTier((data as { tier?: string } | null)?.tier))
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
       } catch {
-        if (!cancelled) setTier('trial')
+        realTier = 'trial'
+        apply()
       }
     })()
-    return () => { cancelled = true }
+
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
 
   // ── Load mode from localStorage on mount ────────────────────────────────

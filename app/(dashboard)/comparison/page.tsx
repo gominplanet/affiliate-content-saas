@@ -12,6 +12,7 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { Scale, Plus, X, Loader2, ExternalLink, Trophy, ListChecks } from 'lucide-react'
 import { SitePicker } from '@/components/SitePicker'
 import { normalizeTier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 
 const MAX_URLS = 10
 
@@ -32,23 +33,37 @@ export default function ComparisonPage() {
 
   useEffect(() => {
     let cancelled = false
+    // Stash the real DB tier separately from the effective tier so that
+    // when the admin flips the View-as dropdown, we can re-resolve the
+    // effective tier without re-querying Supabase.
+    let realTier: string = 'trial'
+
+    const apply = () => {
+      if (cancelled) return
+      // effectiveTier() returns the View-as override for admins, otherwise
+      // the real tier. Non-admins get untouched real-tier behavior — this
+      // is purely a preview override.
+      setTier(effectiveTier(realTier))
+    }
+
     ;(async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser()
-        // No user → land on the trial gate so the upgrade banner shows and
-        // the Generate button stays correctly disabled. Without this default,
-        // tier stayed null forever and isPaid evaluated false in a way that
-        // still let some downstream UI render half-paid.
-        if (!user) { if (!cancelled) setTier('trial'); return }
+        if (!user) { realTier = 'trial'; apply(); return }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data } = await supabase
           .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-        if (!cancelled) setTier((data?.tier as string | undefined) ?? 'trial')
+        realTier = (data?.tier as string | undefined) ?? 'trial'
+        apply()
       } catch {
-        if (!cancelled) setTier('trial')
+        realTier = 'trial'
+        apply()
       }
     })()
-    return () => { cancelled = true }
+
+    // React to admin View-as switches without a page reload.
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

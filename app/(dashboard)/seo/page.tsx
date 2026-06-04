@@ -12,7 +12,8 @@ import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { normalizeTier, type Tier } from '@/lib/tier'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
@@ -85,22 +86,32 @@ export default function SeoPage() {
   // separately from the rest of SEO so the page still loads / shows scores
   // for everyone — we just hide the Rebuild button for non-Pro users.
   // Server (/api/blog/attach-video) is the source of truth; this is UX.
+  //
+  // effectiveTier() honors the admin View-as override so admins can preview
+  // the hidden-button experience without changing their DB tier.
   const [tier, setTier] = useState<Tier | null>(null)
   useEffect(() => {
     let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+
     ;(async () => {
       try {
         const supabase = createBrowserClient()
         const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { if (!cancelled) setTier('trial'); return }
+        if (!user) { realTier = 'trial'; apply(); return }
         const { data } = await supabase
           .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-        if (!cancelled) setTier(normalizeTier((data as { tier?: string } | null)?.tier))
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
       } catch {
-        if (!cancelled) setTier('trial')
+        realTier = 'trial'
+        apply()
       }
     })()
-    return () => { cancelled = true }
+
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
   const canRebuild = tier === 'pro' || tier === 'admin'
 
