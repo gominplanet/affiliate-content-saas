@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.40
+ * Version: 1.0.41
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.40');
+define('MVP_AFFILIATE_VERSION', '1.0.41');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -1405,6 +1405,14 @@ add_action('kadence_before_header', function () {
 // scaffolding rather than navigation.
 add_action('wp_footer', function () {
     if (!is_singular('post')) return;
+    // Skip TOC on Deals Hub posts. Deal posts have a tight 4-section
+    // structure (At a glance / Why / What you're getting / Before you
+    // buy) that doesn't benefit from a Jump-To menu — the post is short
+    // enough to read top-to-bottom. We detect by sniffing the raw post
+    // content for the [mvp_deal_banner] shortcode (always emitted by the
+    // dashboard at the top of every deal post).
+    $post = get_post();
+    if ($post && is_string($post->post_content) && stripos($post->post_content, '[mvp_deal_banner') !== false) return;
     ?>
 <style id="gr-toc-styles">
   .gr-toc{font-family:inherit;font-size:13px;line-height:1.4}
@@ -2958,7 +2966,7 @@ if (!function_exists('mvp_deal_banner_shortcode')) {
       <?php endif; ?>
     </div>
     <?php if ($url !== ''): ?>
-    <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" class="mvp-deal-cta" style="display:inline-block;padding:13px 22px;border-radius:12px;background:#ffffff;color:#7C3AED;font-size:15px;font-weight:800;text-decoration:none;letter-spacing:0.3px;flex-shrink:0;">See the deal →</a>
+    <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" class="mvp-deal-cta" style="display:inline-block;padding:18px 32px;border-radius:14px;background:#ffffff;color:#7C3AED;font-size:18px;font-weight:800;text-decoration:none;letter-spacing:0.3px;flex-shrink:0;box-shadow:0 6px 16px rgba(0,0,0,0.18);">See the deal →</a>
     <?php endif; ?>
   </div>
 </div>
@@ -3036,6 +3044,62 @@ if (!function_exists('mvp_deal_banner_shortcode')) {
   setInterval(tick, 60000);
 })();
 </script>
+        <?php
+        return ob_get_clean();
+    }
+}
+
+// ─── 19c. Deals Hub end-of-article CTA shortcode (1.0.41+) ─────────────────
+// Renders [mvp_deal_cta url="..." code="..." badge="..."] as a standalone
+// full-width violet button at the END of a deal post. Mirrors the styling
+// of the top-of-post [mvp_deal_banner] CTA but bigger (it's the post's
+// closing call-to-action and competes only with itself for attention).
+// Plays well next to the existing sticky-CTA bar from section 20 — the
+// sticky bar is a floating reminder; this is the post's terminal nudge.
+add_shortcode('mvp_deal_cta', 'mvp_deal_cta_shortcode');
+if (!function_exists('mvp_deal_cta_shortcode')) {
+    function mvp_deal_cta_shortcode($atts) {
+        $atts = shortcode_atts([
+            'url'   => '',
+            'code'  => '',
+            'badge' => '',
+            'label' => '', // optional override for the button text
+        ], $atts, 'mvp_deal_cta');
+
+        $url   = trim((string) $atts['url']);
+        $code  = trim((string) $atts['code']);
+        $badge = trim((string) $atts['badge']);
+        $label = trim((string) $atts['label']);
+
+        // Drop non-http URLs to avoid emitting a broken anchor.
+        if ($url !== '' && !preg_match('#^https?://#i', $url)) {
+            $url = '';
+        }
+        // No URL → emit nothing (a CTA with nowhere to go is worse than
+        // no CTA at all).
+        if ($url === '') {
+            return '';
+        }
+
+        $btn_label = $label !== ''
+            ? $label
+            : ($code !== '' ? 'Apply code ' . $code . ' on Amazon' : 'Get this deal on Amazon');
+
+        ob_start();
+        ?>
+<div class="mvp-deal-cta-block" style="margin:32px 0;padding:28px;border-radius:16px;background:linear-gradient(135deg,#7C3AED 0%,#C026D3 100%);color:#fff;box-shadow:0 6px 22px rgba(124,58,237,0.30);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;">
+  <?php if ($badge !== ''): ?>
+  <div style="display:inline-block;padding:6px 14px;border-radius:999px;background:#ffffff;color:#7C3AED;font-size:11px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:14px;"><?php echo esc_html($badge); ?></div>
+  <?php endif; ?>
+  <div style="font-size:22px;font-weight:800;line-height:1.25;margin-bottom:10px;">Ready to grab the deal?</div>
+  <p style="margin:0 0 18px;font-size:14px;line-height:1.5;opacity:0.92;max-width:520px;margin-left:auto;margin-right:auto;">Tap the button to go straight to the live offer on Amazon. Pricing can change without notice while it&apos;s active.</p>
+  <a href="<?php echo esc_url($url); ?>" rel="nofollow sponsored" target="_blank" style="display:inline-block;padding:18px 38px;border-radius:14px;background:#ffffff;color:#7C3AED;font-size:18px;font-weight:800;text-decoration:none;letter-spacing:0.4px;box-shadow:0 6px 16px rgba(0,0,0,0.20);"><?php echo esc_html($btn_label); ?> →</a>
+  <?php if ($code !== ''): ?>
+  <div style="margin-top:14px;font-size:13px;opacity:0.9;">
+    Promo code: <code style="padding:3px 10px;border-radius:8px;background:rgba(255,255,255,0.20);font-weight:700;letter-spacing:0.5px;border:1px dashed rgba(255,255,255,0.4);"><?php echo esc_html($code); ?></code>
+  </div>
+  <?php endif; ?>
+</div>
         <?php
         return ob_get_clean();
     }

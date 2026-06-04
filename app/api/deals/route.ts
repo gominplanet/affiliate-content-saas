@@ -43,6 +43,7 @@ import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from
 import { composeWithNanoBanana, composeWithNanoBananaPro, rehostToFal } from '@/lib/thumbnail-generators'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
+import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
 
 export const maxDuration = 300
@@ -516,7 +517,9 @@ export async function POST(req: Request) {
   // Inject body images into the HTML. We splice them after the first and
   // third <h2> so they break up the article rhythm; if there aren't enough
   // headings (rare on deal posts) the leftover images get appended before
-  // the FAQ/closer.
+  // the FAQ/closer. Also appends the [mvp_deal_cta] big-button shortcode
+  // at the END so even when the writer's inline CTA gets stripped, the
+  // post still ships with a prominent buy button.
   const finalHtml = injectBodyImages({
     html,
     images: uploadedBody,
@@ -526,6 +529,7 @@ export async function POST(req: Request) {
     promoCode,
     promoUrl,
     dealEndsAt,
+    asin: product.asin,
   })
 
   // ── Title + slug ──────────────────────────────────────────────────────
@@ -652,13 +656,15 @@ function buildDealWriterPrompt(p: DealWriterPromptInput): string {
     ? 'No specific occasion (regular price drop).'
     : `This is a ${p.occasionLong} deal. Context: ${p.occasionHype}. Lean into the occasion in the hook + closing CTA, but never invent specific event-only inventory claims.`
 
+  const fallbackUrl = `https://www.amazon.com/dp/${p.product.asin}`
   const promoLine = (() => {
     const lines: string[] = []
     if (p.promoCode) lines.push(`Promo code: ${p.promoCode}. Use this in the deal-box CTA copy.`)
     if (p.promoUrl) lines.push(`Special promo URL: ${p.promoUrl}. Every "buy" / "see deal" anchor in the article should link to this URL.`)
-    if (!lines.length) lines.push('No promo code or special URL given — leave the link href as PLACEHOLDER_DEAL_URL (the system substitutes the affiliate URL later).')
+    if (!lines.length) lines.push(`No promo code or special URL given. Use the Amazon canonical URL ${fallbackUrl} as the href on every CTA anchor.`)
     return lines.join(' ')
   })()
+  const ctaHref = p.promoUrl || fallbackUrl
 
   return `You are ${p.reviewerName}, writing a deal post for ${p.year}. The post is for the "Deals Hub" section of an affiliate review site.
 
@@ -681,11 +687,11 @@ ${DEAL_VOICE_RULES}
 
 STRUCTURE (target ~800 words):
 1. <p> Punchy opening hook. State the deal up front: what's discounted, by how much (if known), and why it matters TODAY. If the occasion is set, lean into it ("Prime Day delivered a real one this year:"). Two sentences max for the hook.
-2. <h2>The deal at a glance</h2> — One <p> with the price story (was vs. now if known, ${p.savingsLine ? 'savings: ' + p.savingsLine : 'no explicit discount, frame as "this price is the floor I\'ve seen recently"'}), then the expiration note if any, then a one-line CTA. Wrap the CTA anchor as <a href="${p.promoUrl || 'PLACEHOLDER_DEAL_URL'}" rel="nofollow sponsored">${p.promoCode ? `Apply code ${p.promoCode} on Amazon` : 'See the deal on Amazon'}</a>.
-3. <h2>Why this deal is worth your attention</h2> — 2-3 paragraphs. Spec-anchored value commentary ONLY. Reference the bullets above. Show you've read the listing. Talk about who this fits (who it doesn't) based on specs. Never claim hands-on time.
-4. <h2>What you're actually getting</h2> — Bullet list <ul><li> of 4-6 concrete specs / features pulled from the listing. Concise. No marketing fluff.
+2. <h2>The deal at a glance</h2> — One <p> with the price story (was vs. now if known, ${p.savingsLine ? 'savings: ' + p.savingsLine : 'no explicit discount, frame as "this price is the floor I\'ve seen recently"'}), then the expiration note if any, then a one-line CTA. Wrap the CTA anchor as <a href="${ctaHref}" rel="nofollow sponsored">${p.promoCode ? `Apply code ${p.promoCode} on Amazon` : 'See the deal on Amazon'}</a>.
+3. <h2>Why this deal is worth your attention</h2> — 2-3 paragraphs. Confident, direct product commentary. Use the spec bullets above as known facts about the product, not as something you're citing ("The 6500 RPM motor handles X" — NOT "the listing claims a 6500 RPM motor"). Talk about who this fits and who it doesn't. Never claim hands-on time. Never cite the listing as a source.
+4. <h2>What you're actually getting</h2> — Bullet list <ul><li> of 4-6 concrete specs / features. Concise. State them directly. No marketing fluff. No "the listing says" framing.
 5. <h2>Before you buy</h2> — One <p> of grounded caveats: shipping windows for the occasion, return policy considerations, the kinds of buyer this would NOT fit. Keep it real.
-6. <p> Final CTA paragraph: occasion-aware nudge + the deal button again. Same href as step 2.
+6. <p> Final CTA paragraph: occasion-aware nudge + a clean one-line outro that ends with a single anchor to the deal. Anchor href is the same as step 2.
 
 VOICE / STYLE
 - First person throughout. Match how ${p.reviewerName} writes.
@@ -693,8 +699,9 @@ VOICE / STYLE
 - Short blunt sentences mixed with longer ones.
 - ABSOLUTE BAN on em-dashes (—) and en-dashes (–). EVERYWHERE. Use a comma, a period, or parentheses.
 - Never use "honest" or any variant. Never: moreover, furthermore, additionally, in conclusion, to summarize, overall, delve, tapestry, elevate, utilize, game-changer, revolutionary, cutting-edge, genuinely, actually, it's important to.
+- HARD BAN on source-citing language. NEVER say: "based on the listing", "the listing says/claims/describes/shows/notes/is clearly aimed", "looking at the listing", "per the listing", "according to the spec sheet", "based on the spec sheet", "from the listing", "Amazon's listing", "the product page says". Just state product facts directly, the way a magazine editor would. If you catch yourself reaching for one of these phrases, REWRITE the sentence to lead with the product itself.
 - Vary sentence openings. Don't start three paragraphs in a row the same way.
-- NEVER invent specs, prices, dates, or features. If the listing didn't say it, the article doesn't say it.
+- NEVER invent specs, prices, dates, or features. Only state what's actually known.
 - Output: VALID HTML only. No markdown fences. Open with <p>. Close with </p>. Use <h2>, <ul>, <li>, <a>, <p>, <strong>, <em>. Nothing else.`
 }
 
@@ -749,23 +756,34 @@ interface InjectBodyImagesOpts {
   promoCode: string
   promoUrl: string
   dealEndsAt: string | null
+  asin: string
 }
 
 /** Splice the WP-uploaded body images into the HTML at sensible H2
- *  boundaries, and wrap the post in a [mvp_deal_banner] shortcode at the top.
- *  Also substitutes the PLACEHOLDER_DEAL_URL anchor href so links point
- *  somewhere real even when the user didn't supply a promo URL (we use a
- *  plain amazon.com/dp/<asin> link as the safe default — the user's
- *  Geniuslink rewriter on the WP side then wraps it). */
+ *  boundaries, wrap the post in a [mvp_deal_banner] shortcode at the top,
+ *  and append the [mvp_deal_cta] big-button shortcode at the bottom so the
+ *  post always ships with a prominent buy button.
+ *
+ *  URL fallback: when the user didn't supply a promo URL, every link
+ *  defaults to amazon.com/dp/<ASIN> (the canonical product page, NOT the
+ *  generic amazon.com homepage we used before — that was a dead link the
+ *  user spotted). Geniuslink/Amaffsoft on the WP side wraps it on the way
+ *  out, so affiliate tracking still works without code changes. */
 function injectBodyImages(opts: InjectBodyImagesOpts): string {
   let out = opts.html
-  // 1. Substitute placeholder anchors. If the user provided a promo URL the
-  // prompt already substituted it, so this only catches the no-promo path.
+  const fallbackUrl = `https://www.amazon.com/dp/${opts.asin}`
+  const effectiveUrl = opts.promoUrl || fallbackUrl
+
+  // 1. Substitute any leftover placeholder anchors with the resolved URL.
+  // The prompt now passes the URL inline, so this is belt-and-braces.
   if (out.includes('PLACEHOLDER_DEAL_URL')) {
-    // Fall back to the Amazon canonical; Geniuslink/Amaffsoft on the WP
-    // side rewrites this on the way out.
-    out = out.replace(/PLACEHOLDER_DEAL_URL/g, 'https://www.amazon.com')
+    out = out.replace(/PLACEHOLDER_DEAL_URL/g, effectiveUrl)
   }
+  // Also catch the legacy "https://www.amazon.com" bare fallback (no /dp/)
+  // that older prompt versions emitted — we want every anchor to point at
+  // the actual product, not the homepage.
+  out = out.replace(/href="https:\/\/www\.amazon\.com\/?"/g, `href="${effectiveUrl}"`)
+
   // 2. Insert body images after H2 #1 and H2 #3 if we have them.
   if (opts.images.length > 0) {
     const altText = (i: number) => `${opts.productTitle} ${opts.occasionLabel} deal image ${i + 1}`
@@ -775,7 +793,6 @@ function injectBodyImages(opts: InjectBodyImagesOpts): string {
     while ((m = re.exec(out)) !== null) {
       h2Indices.push(m.index + m[0].length)
     }
-    // Insert in reverse so earlier indices stay stable.
     const insertions: Array<{ at: number; html: string }> = []
     if (opts.images[0] && h2Indices[0] !== undefined) {
       insertions.push({
@@ -794,18 +811,31 @@ function injectBodyImages(opts: InjectBodyImagesOpts): string {
       out = out.slice(0, ins.at) + ins.html + out.slice(ins.at)
     }
   }
-  // 3. Prepend the deal banner shortcode — the WP plugin renders the
-  // countdown / "deal ended" overlay client-side from these atts. If the
-  // plugin isn't installed the shortcode just renders empty (safe fallback).
+
+  // 3. Prepend the deal banner shortcode (top of post). Always pass `url`
+  // and (when ASIN is known) the canonical fallback as a backup so the
+  // banner's CTA always has somewhere to point. Plugin renders countdown
+  // / "Deal ended" client-side; if the plugin isn't installed yet the
+  // shortcode prints literally — user updates the plugin once and every
+  // existing deal post lights up.
   const bannerAtts: string[] = []
   if (opts.dealEndsAt) bannerAtts.push(`end_date="${escapeAttr(opts.dealEndsAt)}"`)
   if (opts.badgeLabel) bannerAtts.push(`badge="${escapeAttr(opts.badgeLabel)}"`)
   if (opts.promoCode) bannerAtts.push(`code="${escapeAttr(opts.promoCode)}"`)
-  if (opts.promoUrl) bannerAtts.push(`url="${escapeAttr(opts.promoUrl)}"`)
-  if (bannerAtts.length > 0) {
-    const banner = `\n[mvp_deal_banner ${bannerAtts.join(' ')}]\n\n`
-    out = banner + out
-  }
+  // ALWAYS pass a URL — the banner CTA is the post's primary buy button.
+  bannerAtts.push(`url="${escapeAttr(effectiveUrl)}"`)
+  out = `\n[mvp_deal_banner ${bannerAtts.join(' ')}]\n\n` + out
+
+  // 4. Append the end-of-article CTA shortcode. This is the "proper buy
+  // button at the end" — a standalone, full-width violet button that
+  // matches the banner's styling so readers who scrolled past the top
+  // banner still hit a clear path to the deal.
+  const ctaAtts: string[] = []
+  ctaAtts.push(`url="${escapeAttr(effectiveUrl)}"`)
+  if (opts.promoCode) ctaAtts.push(`code="${escapeAttr(opts.promoCode)}"`)
+  if (opts.badgeLabel) ctaAtts.push(`badge="${escapeAttr(opts.badgeLabel)}"`)
+  out = out + `\n\n[mvp_deal_cta ${ctaAtts.join(' ')}]\n`
+
   return out
 }
 
@@ -819,9 +849,14 @@ function buildExcerpt(opts: {
   savingsLine: string | null
   occasionLong: string
 }): string {
+  // Amazon titles frequently contain en-dashes ("Trimmer – Weed Wacker
+  // Battery..."), which sneak into the excerpt because the title is the
+  // raw scraped string. Run scrubEmDashes so the excerpt + WP title
+  // honour the em-dash ban end-to-end.
+  const cleanTitle = scrubEmDashes(opts.product.title || 'this product')
   const lead = opts.savingsLine
-    ? `${opts.savingsLine} on ${opts.product.title || 'this product'}.`
-    : `Price-watch alert on ${opts.product.title || 'this product'}.`
+    ? `${opts.savingsLine} on ${cleanTitle}.`
+    : `Price-watch alert on ${cleanTitle}.`
   const tail = opts.occasionLong !== 'limited-time deal'
     ? ` ${opts.occasionLong} pick.`
     : ' Limited-time pricing worth catching.'
@@ -835,8 +870,10 @@ function buildDealTitle(opts: {
   badgeLabel: string
   year: number
 }): string {
-  const base = opts.product.title || `Deal on ASIN ${opts.product.asin}`
-  // Trim the product title so the headline stays scannable.
+  // En-dash scrub here too — Amazon listings carry them constantly and the
+  // ban applies in the WP post title (which shows on archive pages, in
+  // search results, in social shares, everywhere).
+  const base = scrubEmDashes(opts.product.title || `Deal on ASIN ${opts.product.asin}`)
   const trimmed = base.length > 60 ? base.slice(0, 57).replace(/\s+\S*$/, '') + '...' : base
   if (opts.occasionSlug !== 'none') {
     return `${opts.occasion} Deal: ${trimmed} (${opts.year})`

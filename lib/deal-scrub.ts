@@ -24,12 +24,14 @@ import { scrubAiHtml } from './html-scrub'
  *  honest about not having hands-on time. Ordered: more-specific first so
  *  shorter matches don't pre-empt longer ones. */
 const REWRITES: Array<[RegExp, string]> = [
-  // "I tested this for X weeks" → "I checked the spec sheet on this for…"
-  // Removes hands-on claims while keeping the I-voice.
+  // "I tested this for X weeks" → "I've been watching this"
+  // Removes hands-on claims while keeping the I-voice. No "the listing"
+  // language — the user calibration rule is that deal posts should just
+  // talk about the product directly, not cite where the data came from.
   [/\bI(?:'ve| have)?\s+tested\s+(this|it|the\s+\w+)\b/gi, "I've been watching $1"],
   [/\bI(?:'ve| have)?\s+been\s+testing\s+(this|it|the\s+\w+)\b/gi, "I've been tracking $1"],
-  [/\bafter\s+(?:a\s+(?:few\s+)?(?:days?|weeks?|months?)|(?:two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:days?|weeks?|months?))\s+(?:with|of|using)\b/gi, 'based on the listing for'],
-  [/\bin\s+my\s+experience\s+with\s+(this|it|the\s+\w+)\b/gi, 'based on the spec sheet for $1'],
+  [/\bafter\s+(?:a\s+(?:few\s+)?(?:days?|weeks?|months?)|(?:two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:days?|weeks?|months?))\s+(?:with|of|using)\b/gi, 'with'],
+  [/\bin\s+my\s+experience\s+with\s+(this|it|the\s+\w+)\b/gi, 'with $1'],
 
   // "I've used X" / "I use X daily" → "I've been tracking X"
   [/\bI(?:'ve| have)?\s+used\s+(this|it|the\s+\w+)\b/gi, "I've been tracking $1"],
@@ -74,18 +76,62 @@ export function scrubReviewLanguage(html: string): string {
   return out
 }
 
+/** "The listing X" phrases get yanked outright. Per the user's
+ *  calibration: deal articles should READ as if the writer knows the
+ *  product directly — never cite "the listing" as a source. The writer
+ *  prompt forbids them, this catches anything Sonnet still slips through. */
+const LISTING_CLEANUPS: Array<[RegExp, string]> = [
+  // Lead-in clauses: drop the whole phrase + comma so the next clause
+  // reads as the article's confident voice.
+  [/^Based on the listing,?\s*/gim, ''],
+  [/\bBased on the listing,?\s+/gi, ''],
+  [/\bLooking at the listing,?\s*/gi, ''],
+  [/\bAccording to the listing,?\s*/gi, ''],
+  [/\bPer the listing,?\s*/gi, ''],
+  [/\bFrom the listing,?\s*/gi, ''],
+
+  // Mid-sentence "the listing X" reframes: rewrite to direct product talk.
+  [/\bthe listing (?:claims|states|says|describes|notes|mentions|shows|surfaces|highlights|describes|points\s+out|is\s+clear(?:ly)?(?:\s+aimed)?(?:\s+at)?)\b/gi, 'this'],
+  [/\bthe listing'?s focus\b/gi, 'the product’s focus'],
+  [/\bthe spec sheet (?:says|shows|notes|claims|describes)\b/gi, 'the specs say'],
+  [/\baccording to the spec sheet,?\s*/gi, ''],
+  [/\bbased on the spec sheet,?\s*/gi, ''],
+
+  // Direct article-reference references to "Amazon's listing" / "the
+  // Amazon page" / "the product page" — same problem, slightly different
+  // wording.
+  [/\b(?:on|in|per|from)\s+(?:Amazon's listing|the Amazon (?:page|listing)|the product page)\s*,?\s*/gi, ''],
+]
+
+/** Drop "based on the listing" / "the listing says" phrases everywhere.
+ *  Independent of scrubReviewLanguage because these are about VOICE
+ *  (confident direct knowledge) not just hands-on-time wording. */
+export function scrubListingReferences(html: string): string {
+  if (!html) return html
+  let out = html
+  for (const [pattern, replacement] of LISTING_CLEANUPS) {
+    out = out.replace(pattern, replacement)
+  }
+  // Tidy up sentence starts that lost their leading clause: re-capitalise
+  // the first letter after the comma we removed. Cheap heuristic — only
+  // affects sentences that started with the deleted phrase.
+  out = out.replace(/(<p>|<li>|^|\.\s+)\s*([a-z])/g, (_m, lead, c) => lead + c.toUpperCase())
+  return out.replace(/\s{2,}/g, ' ')
+}
+
 /** Full deal-post scrub: strip code fence + em-dashes + reviewer-voice
- *  phrases + the global banned-word list. Runs in this order so each pass
- *  has the cleanest input. */
+ *  phrases + "the listing" references + the global banned-word list.
+ *  Runs in this order so each pass has the cleanest input. */
 export function scrubDealHtml(raw: string): string {
-  return scrubBanned(scrubReviewLanguage(scrubAiHtml(raw)))
+  return scrubBanned(scrubListingReferences(scrubReviewLanguage(scrubAiHtml(raw))))
 }
 
 /** Hard-rule block injected into the deal-post Sonnet prompt. Keep tight —
  *  the prompt is already long and Sonnet ignores long bullet lists. */
 export const DEAL_VOICE_RULES = [
-  'VOICE RULE: this is NOT a review. The author has NOT tested, used, or owned this product. The author is a deal-spotter watching prices and surfacing a discount.',
-  'OK: "I\'ve been tracking this", "I flagged this drop", "I looked at the spec sheet", "based on the listing".',
-  'NEVER: "I tested", "I used", "I tried", "I own", "I bought", "after a week with…", "in my experience", "hands-on", "real-world testing", "I picked one up".',
-  'OK to commentate on value, price history, and spec-anchored fit ("at this price, this fits X kind of buyer because the spec sheet says Y"). Never on lived experience.',
+  'VOICE RULE: this is NOT a review. The author has NOT tested, used, or owned this product. The author is a deal-spotter writing with confident product knowledge.',
+  'OK: "I\'ve been tracking this", "I flagged this drop", confident direct product talk ("The 6500 RPM motor handles X", "It ships with two 2.0Ah batteries").',
+  'NEVER claim hands-on time: no "I tested", "I used", "I tried", "I own", "I bought", "after a week with…", "in my experience", "hands-on", "real-world testing", "I picked one up".',
+  'NEVER cite "the listing" as a source: no "based on the listing", "the listing says/claims/describes/shows/is clearly aimed", "looking at the listing", "per the listing", "from the spec sheet", "according to the spec sheet". Just state the spec as known fact, the way a magazine editor would.',
+  'OK to commentate on value, price history, and spec-anchored fit ("at this price, this fits X kind of buyer because the motor only does Y"). Never frame it as citing a source.',
 ].join(' ')
