@@ -458,8 +458,10 @@ clauses). Examples to AVOID over-using:
   • "The Delayed Sweetness — Most Reviews Won't Mention This"
   • "Solar Power, Battery Backup, and the Part Nobody Explains"
   • "The Bracket System Is Smarter Than It Looks"
-ALL EM-DASHES IN HEADINGS ARE BANNED outright (the body em-dash ban applies here too —
-no exceptions for headings). Across the post's H2s you MUST mix at least three of these
+ALL EM-DASHES ARE BANNED OUTRIGHT — headings AND body, anywhere a reader can see them.
+This is non-negotiable, the single biggest AI-tell. Use a comma, a period (two short
+sentences), or parentheses instead. If you catch yourself reaching for an em-dash, STOP
+and rewrite. En-dashes (–) and the double-hyphen idiom (--) are banned too. Across the post's H2s you MUST mix at least three of these
 structural shapes — never use just one shape:
   (a) Short blunt declarative: "It Held Up. Mostly." / "The Cable Snaps Eventually."
   (b) Direct question: "Does the home base really need to be wired?"

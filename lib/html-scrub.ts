@@ -1,0 +1,104 @@
+// © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
+//
+// Two scrubs that run on every piece of AI-generated HTML before it
+// reaches WordPress.
+//
+// 1. stripCodeFence — Sonnet sometimes wraps its output in a markdown
+//    code fence ("```html\n<actual content>\n```") even when the prompt
+//    says "return ONLY the HTML". Without stripping, the fence renders
+//    as literal text in the published post. Conservative: only strips
+//    when the fence is the WHOLE document or starts at byte 0.
+//
+// 2. scrubEmDashes — the user's hard rule: NEVER em-dash. Anywhere.
+//    Body, headings, attributes, alt text. The prompt repeats this
+//    every generation but models still slip them in. The scrub replaces
+//    every em-dash variant with a comma (or parens for parenthetical
+//    asides). Same for en-dashes and the "double-hyphen" idiom some
+//    models emit.
+//
+// Order: stripCodeFence FIRST (so we don't scrub the ``` itself),
+// then scrubEmDashes on the unwrapped HTML.
+
+/**
+ * Remove a leading/trailing markdown code fence if Sonnet wrapped the
+ * output in one. Safe to call on any string — returns unchanged when
+ * no fence is present.
+ */
+export function stripCodeFence(raw: string): string {
+  if (!raw) return raw
+  let s = raw.trim()
+  // Opening fence: ```html / ```HTML / ```  on its own line at the top
+  s = s.replace(/^```(?:html|HTML)?\s*\n?/, '')
+  // Closing fence: ``` at the end, possibly with trailing whitespace
+  s = s.replace(/\n?\s*```\s*$/, '')
+  return s.trim()
+}
+
+/**
+ * Replace every em-dash + en-dash + double-hyphen "em-dash idiom" with
+ * a sensible alternative. Default replacement is a comma; the regex
+ * pattern handles a few subtleties:
+ *
+ *   "X — Y"           → "X, Y"           (most common case)
+ *   "X—Y"             → "X, Y"           (no spaces)
+ *   "X -- Y" / "X--Y" → "X, Y"           (ASCII idiom)
+ *   "X – Y"           → "X, Y"           (en-dash variant)
+ *   "&mdash;"/"&ndash;"/"&#8212;"/"&#8211;" → ", "
+ *
+ * We DON'T touch hyphens inside compound words ("self-care", "best-fit",
+ * "well-being") — those are hyphen-minus (U+002D), not em-dashes. The
+ * regex is anchored to whitespace or word boundaries around the dash
+ * character so compound hyphens survive.
+ *
+ * Caveat: we never replace a dash inside an HTML attribute value or
+ * inside a <code>/<pre> block. The 'inside-tags' guard splits the
+ * input on tag boundaries, scrubs only the TEXT chunks, and
+ * re-stitches.
+ */
+export function scrubEmDashes(html: string): string {
+  if (!html) return html
+
+  // Split on tag boundaries — scrub only the text between tags.
+  const parts = html.split(/(<[^>]+>)/g)
+  let insideCodeOrPre = 0
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i]
+    if (p.startsWith('<')) {
+      // Track <code>/<pre> blocks so we don't scrub code samples.
+      if (/^<(code|pre)\b/i.test(p)) insideCodeOrPre++
+      else if (/^<\/(code|pre)\s*>/i.test(p)) insideCodeOrPre = Math.max(0, insideCodeOrPre - 1)
+      continue // never touch tag text itself
+    }
+    if (insideCodeOrPre > 0) continue
+    parts[i] = scrubText(p)
+  }
+  return parts.join('')
+}
+
+function scrubText(s: string): string {
+  return s
+    // HTML entities first — easiest case.
+    .replace(/&mdash;/gi, ', ')
+    .replace(/&ndash;/gi, ', ')
+    .replace(/&#8212;/g, ', ')
+    .replace(/&#8211;/g, ', ')
+    .replace(/&#x2014;/gi, ', ')
+    .replace(/&#x2013;/gi, ', ')
+    // Em-dash + en-dash characters, with optional surrounding whitespace.
+    // Collapse "X — Y" / "X—Y" / "X – Y" into "X, Y".
+    .replace(/\s*[—–]\s*/g, ', ')
+    // ASCII em-dash idiom — "X -- Y" or "X--Y". Anchor on whitespace or
+    // word boundaries either side so we don't break "non--breaking" style
+    // edge cases (unlikely but safe).
+    .replace(/(\S)\s*--\s*(\S)/g, '$1, $2')
+    // Collapse any double-comma the substitution may have produced.
+    .replace(/,\s*,/g, ',')
+}
+
+/**
+ * Combined helper — runs both scrubs in the correct order. Use this on
+ * any HTML returned by Sonnet/Haiku before persisting or sending to WP.
+ */
+export function scrubAiHtml(raw: string): string {
+  return scrubEmDashes(stripCodeFence(raw))
+}

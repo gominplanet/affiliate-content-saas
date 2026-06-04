@@ -7,6 +7,7 @@ import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/yout
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
+import { scrubAiHtml } from '@/lib/html-scrub'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
 import { selfCheckBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
@@ -637,7 +638,10 @@ async function handleGenerate(request: Request) {
   //         defense before anything is published or persisted.
   generated.title = scrubBanned(generated.title)
   generated.excerpt = scrubBanned(generated.excerpt)
-  generated.content = scrubBanned(generated.content)
+  // scrubAiHtml: strip ```html fence if Sonnet wrapped + replace every
+  // em-dash with a comma. The user's hard rule, enforced at the
+  // application boundary so it can't slip through the prompt.
+  generated.content = scrubAiHtml(scrubBanned(generated.content))
   // Phase 2 / Track A SEO fields (may be absent on an older prompt parse).
   generated.metaDescription = scrubBanned(generated.metaDescription || '')
   generated.seoKeyword = scrubBanned(generated.seoKeyword || '')

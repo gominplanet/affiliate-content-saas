@@ -31,6 +31,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { scrubAiHtml } from '@/lib/html-scrub'
 
 export const maxDuration = 300
 
@@ -556,17 +557,17 @@ Rules:
   // ── 2. Sonnet: write the guide HTML ──────────────────────────────────────
   const year = new Date().getUTCFullYear()
   const picksContext = picks.map((p, i) => `
-${i + 1}. ${p.review.title}  —  Label: "${p.label}"
+${i + 1}. ${p.review.title}  (Label: "${p.label}")
    URL: ${p.review.wordpress_url}
    Image: ${p.review.youtube_videos?.thumbnail_url || ''}
    SEO keyword: ${p.review.seo_keyword || 'n/a'}
    Excerpt: ${(p.review.excerpt || '').slice(0, 320)}
 `).join('\n')
 
-  const writerPrompt = `You are writing a "Best ${topic} for ${year}" buying guide for ${brandName}. The guide is built from the ${picks.length} picks below — every fact must come from those picks; never invent products, specs, or use cases. NEVER use the word "honest" or any variant.
+  const writerPrompt = `You are writing a "Best ${topic} for ${year}" buying guide for ${brandName}. The guide is built from the ${picks.length} picks below. Every fact must come from those picks; never invent products, specs, or use cases. NEVER use the word "honest" or any variant.
 
 ═══════════════════════════════════════
-PICKS (#1 is "Best Overall" — keep ordering as given)
+PICKS (#1 is "Best Overall"; keep ordering as given)
 ═══════════════════════════════════════
 ${picksContext}
 
@@ -579,7 +580,7 @@ OUTPUT: one block of valid WordPress block-HTML (Gutenberg comments OK). No pros
    - What ${reviewerName} actually tested to compile it
    - How many ended up worth recommending (${picks.length})
 
-2. QUICK PICKS TABLE (HTML — one row per pick: name, label, "Read full review" link):
+2. QUICK PICKS TABLE (HTML, one row per pick with name, label, "Read full review" link):
 <table class="gr-picks" style="width:100%;border-collapse:collapse;margin:24px 0;font-size:14px;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden">
   <thead><tr style="background:#fafafa">
     <th style="text-align:left;padding:10px 14px;font-weight:700;color:#86868b;text-transform:uppercase;font-size:11px;letter-spacing:.8px;border-bottom:1px solid #e5e5e7">Pick</th>
@@ -593,9 +594,9 @@ OUTPUT: one block of valid WordPress block-HTML (Gutenberg comments OK). No pros
 </table>
 
 3. PER-PICK SECTIONS (one H2 per pick, in order):
-   - H2: "{N}. {product name from title} — {label}" (e.g. "1. Step to Bed — Best Overall")
+   - H2: "{N}. {product name from title}, {label}" (e.g. "1. Step to Bed, Best Overall")
    - One <figure> at top with the linked review's image (from Image: field) wrapped in an <a> to the review URL; if no image, OMIT the figure
-   - 3-4 short FIRST-PERSON paragraphs — why this pick wins its slot, the specific feature that seals it, one trade-off, one quick "pick this over the others when…" scenario
+   - 3-4 short FIRST-PERSON paragraphs covering: why this pick wins its slot, the specific feature that seals it, one trade-off, one quick "pick this over the others when…" scenario
    - End the pick's section with this CTA (use the pick's URL):
      <p style="margin:18px 0 32px"><a href="{review URL}" style="display:inline-flex;align-items:center;gap:8px;background:#7C3AED;color:#fff;font-size:14px;font-weight:700;padding:12px 22px;border-radius:8px;text-decoration:none">Read the full review →</a></p>
 
@@ -610,14 +611,25 @@ OUTPUT: one block of valid WordPress block-HTML (Gutenberg comments OK). No pros
    - End with a soft CTA inviting readers to read the full review of their top match
 
 VOICE / STYLE RULES:
-- First person throughout — match how ${reviewerName} writes
-- Contractions everywhere (it's / you'll / I've / can't)
-- Short blunt sentences mixed with longer ones
+- First person throughout. Match how ${reviewerName} writes.
+- Contractions everywhere (it's, you'll, I've, can't).
+- Short blunt sentences mixed with longer ones.
+- ABSOLUTE BAN on em-dashes (—) and en-dashes (–). EVERYWHERE. Body,
+  headings, parenthetical asides, image alts. Use a comma, a period
+  (split into two sentences), or parentheses instead. If you catch
+  yourself reaching for an em-dash, STOP and rewrite that sentence.
+  This is the single most common AI-tell readers spot.
 - Never use the word "honest" or any variant. Never use: moreover,
   furthermore, additionally, in addition, in conclusion, to summarize,
   in summary, overall, delve, tapestry, elevate, utilize, game-changer,
   revolutionary, cutting-edge, genuinely (any position), actually
-  (anywhere), it's important to, it's essential to, em-dash in headings.
+  (anywhere), it's important to, it's essential to.
+- Avoid AI-rhythm phrases: "the trade-off is", "plays nicely",
+  "sounds like your situation", "your main focus", "narrow fix",
+  "where it shines", "skip straight to", "if you're prepared to". One
+  of these per article max, and only if it earns the line.
+- Vary sentence openings. Don't start three paragraphs in a row with
+  "The..." or "If you...".
 - No invented specs, prices, or features.`
 
   // ── 3. Publish ───────────────────────────────────────────────────────────
@@ -638,6 +650,43 @@ VOICE / STYLE RULES:
     : Promise.resolve(undefined)
   const tagPromise: Promise<number[]> = wpService.resolveTagIds(['buying-guide']).catch(() => [] as number[])
 
+  // Category resolution — without this, WP files the guide under the
+  // default category ("Blog" / "Uncategorized") which looks unprofessional
+  // on the homepage feed. We pull the user's WP categories and pick the
+  // best match for the topic via a tiny Haiku call. Best-effort: a failed
+  // lookup publishes uncategorized, same as before.
+  const categoryPromise: Promise<number[]> = (async () => {
+    try {
+      const wpBase = site.wordpress_url.replace(/\/+$/, '')
+      const catRes = await fetch(`${wpBase}/wp-json/wp/v2/categories?per_page=100&_fields=id,name,slug`, {
+        signal: AbortSignal.timeout(3000),
+        headers: { Accept: 'application/json' },
+        next: { revalidate: 300 },
+      })
+      if (!catRes.ok) return []
+      const cats = (await catRes.json()) as Array<{ id: number; name: string; slug: string }>
+      // Filter out junk defaults — these are catch-alls, not topical.
+      const candidates = cats.filter(c => !['uncategorized', 'blog', 'general'].includes(c.slug.toLowerCase()))
+      if (candidates.length === 0) return []
+
+      // Cheap Haiku pick — returns just the index of the best category.
+      const catList = candidates.map((c, i) => `[${i}] ${c.name}`).join('\n')
+      const pickPrompt = `Topic: "${topic}"\n\nWordPress categories on the site:\n${catList}\n\nPick the SINGLE best category for this topic. If none fits well (would be a stretch), reply with -1. Reply with ONLY the number, nothing else.`
+      const pickMsg = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 10,
+        messages: [{ role: 'user', content: pickPrompt }],
+      })
+      recordAnthropicUsage(pickMsg, { userId: user.id, tier, feature: 'buying_guide_category_pick', model: 'claude-haiku-4-5-20251001' })
+      const text = (pickMsg.content[0] as { type: string; text: string })?.text || ''
+      const idx = parseInt(text.trim(), 10)
+      if (!isFinite(idx) || idx < 0 || idx >= candidates.length) return []
+      return [candidates[idx].id]
+    } catch {
+      return []
+    }
+  })()
+
   let html = ''
   try {
     const writerMsg = await client.messages.create({
@@ -646,7 +695,13 @@ VOICE / STYLE RULES:
       messages: [{ role: 'user', content: writerPrompt }],
     })
     recordAnthropicUsage(writerMsg, { userId: user.id, tier, feature: 'buying_guide_writer', model: 'claude-sonnet-4-6' })
-    html = (writerMsg.content[0] as { type: string; text: string })?.text || ''
+    const raw = (writerMsg.content[0] as { type: string; text: string })?.text || ''
+    // Two scrubs:
+    //   1. Strip the ```html / ``` markdown fence Sonnet sometimes wraps
+    //      the output in (otherwise renders as literal text in WP).
+    //   2. Replace every em-dash with a comma — the user's hard rule
+    //      that the prompt repeats but models still ignore.
+    html = scrubAiHtml(raw)
   } catch (err) {
     return NextResponse.json({ error: `Writer failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
   }
@@ -656,15 +711,16 @@ VOICE / STYLE RULES:
 
   let wpPost: { id: number; link: string }
   try {
-    const [featuredMedia, tagIds] = await Promise.all([heroPromise, tagPromise])
+    const [featuredMedia, tagIds, categoryIds] = await Promise.all([heroPromise, tagPromise, categoryPromise])
 
     wpPost = await wpService.createPost({
       title: wpTitle,
       slug,
       content: html,
-      excerpt: `${reviewerName} tested ${picks.length} ${topic} picks — here's the round-up: best overall, best on a budget, best for specific use cases.`,
+      excerpt: `${reviewerName} tested ${picks.length} ${topic} picks. Here's the round-up: best overall, best on a budget, best for specific use cases.`,
       status: 'publish',
       tags: tagIds,
+      ...(categoryIds.length ? { categories: categoryIds } : {}),
       ...(featuredMedia ? { featured_media: featuredMedia } : {}),
       comment_status: 'closed',
       ping_status: 'closed',
