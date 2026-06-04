@@ -32,6 +32,9 @@ type Plan = {
 
 type PlanExt = Plan & { bonus?: string; badge?: string }
 
+// Caps + feature flags rewritten 2026-06-04 to match the new tier matrix
+// (see lib/tier.ts). Source of truth lives in tier.ts; this list is the
+// marketing surface that mirrors it. If you change tier.ts, change this.
 const plans: PlanExt[] = [
   {
     tier: 'trial',
@@ -45,9 +48,9 @@ const plans: PlanExt[] = [
       'YouTube Co-Pilot: description, tags, hashtags & thumbnail pushed back to YouTube',
       'Branded WordPress review site (theme + plugin auto-installed)',
       'One-click publish to your site',
-      'Facebook auto-post',
-      'Full AI agent pipeline (research → outline → draft → verdict → SEO)',
+      'Full AI agent pipeline (research, outline, draft, verdict, SEO)',
       'Geniuslink affiliate-link wrapping',
+      'Built-in AI assistant (20 messages / month)',
     ],
     highlight: false,
     ctaLabel: 'Start free',
@@ -57,17 +60,19 @@ const plans: PlanExt[] = [
     label: 'Creator',
     price: 49,
     regularPrice: 99,
-    limit: '40 posts / month',
-    description: 'For creators shipping a few reviews a week across the major socials, and trying the Pro brand-pitch workflow that lands deals.',
+    limit: '20 posts / month',
+    description: 'For creators shipping a few reviews a week across the lower-friction socials, with a taste of the Pro brand-pitch workflow.',
     features: [
-      '40 full reviews per month',
-      'Everything in the trial, uncapped monthly',
-      'Auto-post to Facebook, Threads, Bluesky, LinkedIn, Pinterest *',
+      '20 full reviews per month (blog + thumbnail + metadata bundle)',
+      'Auto-post to Facebook *, Threads *, LinkedIn, Bluesky, Pinterest *',
       'In-body AI product images (up to 3 per post)',
-      'Your Face in AI thumbnails + studio Photobooth headshots (2 faces)',
-      'Built-in AI assistant that knows your brand. Product help + affiliate coaching (one less subscription to pay for)',
-      '5 brand-collab pitch emails / month (try the Pro feature)',
-      'Monthly cap resets on your billing date. No rollover, no surprises',
+      'Your Face in AI thumbnails (1 face, 1 LoRA retrain / month)',
+      'Photobooth headshots (10 / month)',
+      'Video Script & Shot List (10 / month)',
+      '5 brand-collab pitch emails / month (taster)',
+      'Newsletter taster: 500 subscribers, 1 broadcast / month',
+      'Built-in AI assistant (200 messages / month)',
+      'Monthly caps reset on your billing date. No rollover',
     ],
     highlight: false,
     ctaLabel: 'Get Creator',
@@ -77,18 +82,22 @@ const plans: PlanExt[] = [
     label: 'Studio',
     price: 99,
     regularPrice: 199,
-    limit: '80 posts / month',
-    description: 'For the serious solo affiliate creator. Everything in Creator plus TikTok, Instagram, scripts, and comparison posts. The full toolkit on one site.',
+    limit: '60 posts / month',
+    description: 'For the serious solo affiliate creator. Adds Instagram + Telegram, scripts, Deals Hub, IG AI thumbnails, and weekly newsletter scheduling.',
     features: [
-      '80 full reviews per month',
-      'Adds TikTok + Instagram direct-post on top of Creator’s 5 platforms',
-      'Comparison & Guide posts: let MVP rank 5 products into one review',
-      'Video Script & Shot List generator (15 / month). Pre-production AI in your voice',
-      'Brand voice training (LEARN): every review reads more like you over time',
+      '60 full reviews per month (blog + thumbnail + metadata bundle)',
+      'Adds Instagram * + Telegram on top of Creator\'s platforms',
+      'Deals Hub: 5 deal posts / month with countdown banners + Amazon CSV bulk import',
+      'Refresh Images on any published post (re-renders the in-body shots)',
+      'Topic hubs auto-aggregate your reviews into category pages (built-in WP plugin)',
+      'IG AI Thumbnails (face + product, 4:5): 30 / month',
+      '2 saved faces + 3 LoRA retrains / month',
+      'Photobooth headshots (15 / month)',
+      'Video Script & Shot List (30 / month)',
       '15 brand-collab pitch emails / month',
-      '5,000 newsletter subscribers + 10 broadcasts / month',
-      '1,000 AI assistant messages / month',
-      '80 thumbnails + 80 YouTube Co-Pilot metadata refreshes / month',
+      'Newsletter: 5,000 subscribers, 4 broadcasts / month (weekly) + scheduling',
+      'AI assistant (1,000 messages / month)',
+      'Priority generation queue + priority Discord support',
     ],
     highlight: true,
     ctaLabel: 'Get Studio',
@@ -99,21 +108,26 @@ const plans: PlanExt[] = [
     price: 199,
     regularPrice: 499,
     limit: '200 posts / month',
-    bonus: '140 + 60 bonus posts',
-    description: 'Become the creator brands want. Multi-account social, Creator Campaigns, one-click Publish All, and every cap raised. When a brand asks "where will this go?", your answer is a list, not a sentence.',
+    description: 'Become the creator brands want. Comparisons, Buying Guides, Rebuild-from-video, Creator Campaigns, multi-account social, VA seats, and 10 WordPress sites.',
     features: [
-      '200 full reviews per month (140 + 60 bonus)',
-      'Multi-account social: connect multiple Facebook Pages, Instagram accounts, TikTok accounts',
-      'For Amazon influencers & associates: scout Creator Connections campaigns by commission & EPC, then one-click research, write & publish',
-      'One-click Publish All: site + every social in one shot',
-      'Native AI Instagram image: your face + the actual product, 4:5 (50 / month)',
-      'Adds X & Telegram on top of Studio’s platforms',
-      'Double the Photobooth headshots: 20 / month',
-      'Near-unlimited AI assistant: your reviews, niches & campaigns in context',
-      '100 brand-collab pitch emails / month, your direct lever for deal flow',
-      'Video scripts 30 / month · newsletter unlimited broadcasts · 10k subscribers',
-      'One-click Apply to YouTube: playlist, schedule, paid-promotion, made-for-kids, all batched',
-      'Priority queue + priority human support',
+      '200 full reviews per month (blog + thumbnail + metadata bundle)',
+      'Adds Twitter / X + TikTok * on top of Studio\'s platforms',
+      'Comparison posts: head-to-head ranked review with a named winner',
+      'Buying Guides: "Best [topic] for 2026" round-ups (auto-curate or pick-your-own)',
+      'Rebuild-from-video: re-write any legacy WordPress post from its source video',
+      'For Amazon influencers + associates: Creator Campaigns scout high-EPC programs, one-click research + write + publish',
+      'Multi-account social: multiple Facebook Pages, Instagram, TikTok accounts',
+      'Up to 10 WordPress sites on one subscription',
+      'Up to 3 Virtual Assistant seats with per-VA permissions',
+      'Deals Hub: 30 deal posts / month (Studio cap × 6)',
+      'IG AI Thumbnails (4:5): 100 / month',
+      '5 LoRA retrains / month, Photobooth 20 / month',
+      'Video Script & Shot List (150 / month)',
+      '100 brand-collab pitch emails / month',
+      'Newsletter: 10,000 subscribers, 8 broadcasts / month (twice weekly) + A/B subject lines + segmented sends',
+      'One-click Publish All: site + every connected social in one shot',
+      'AI assistant (5,000 messages / month)',
+      'Priority generation queue + priority Discord support',
     ],
     highlight: false,
     ctaLabel: 'Get Pro',
@@ -211,8 +225,9 @@ export default function PricingPage() {
       </div>
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
-        * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
-        It activates automatically on Creator &amp; Pro accounts once approved at no extra cost.
+        * Facebook, Threads, Instagram, and TikTok auto-publish are built and gated on those platforms&apos;
+        developer reviews (Meta + TikTok). They activate automatically on every paid plan that includes
+        them once approved, at no extra cost. Pinterest is approved and live.
       </p>
 
       {/* ───────────────────────────────────────────────────────────────────

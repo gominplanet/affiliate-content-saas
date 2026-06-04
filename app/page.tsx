@@ -17,42 +17,42 @@ import {
 } from 'lucide-react'
 
 // ─── Real platform availability ─────────────────────────────────────────────
-// Live = working today. Soon = built / scoped, awaiting external approval.
-// Roadmap = on the list, not promised by date.
-// Order matters for the strip layout: Live -> Pro -> Soon -> Roadmap.
-// With 10 platforms we render as a 5x2 grid for a clean split, with the
-// "ship today" platforms on the top row.
+// Status maps to the lowest tier that unlocks each platform per the new
+// matrix (see lib/tier.ts). "soon" = built but pending external review (Meta
+// + TikTok app review). 5x2 grid keeps the layout balanced with 10 cells.
 const platforms = [
-  // Top row — live integrations (WordPress + Facebook are on every plan;
-  // Threads / Bluesky / LinkedIn unlock on Creator — see pricing).
-  { label: 'WordPress',    status: 'live'    as const, color: '#21759b', logo: 'wordpress' },
-  { label: 'Facebook',     status: 'live'    as const, color: '#1877f2', logo: 'facebook' },
-  { label: 'Threads',      status: 'live'    as const, color: '#000000', logo: 'threads' },
-  { label: 'Bluesky',      status: 'live'    as const, color: '#1185fe', logo: 'bluesky' },
-  { label: 'LinkedIn',     status: 'live'    as const, color: '#0a66c2', logo: 'linkedin' },
-  // Bottom row — Pro-gated, coming soon, roadmap
-  { label: 'Instagram',    status: 'pro'     as const, color: '#E1306C', logo: 'instagram' },
+  // Top row — unlocks on Creator (the entry paid tier). Facebook + Threads
+  // are also pending Meta App Review for non-admin accounts; that's the
+  // "soon" qualifier on the badge text.
+  { label: 'WordPress',    status: 'creator' as const, color: '#21759b', logo: 'wordpress' },
+  { label: 'LinkedIn',     status: 'creator' as const, color: '#0a66c2', logo: 'linkedin' },
+  { label: 'Bluesky',      status: 'creator' as const, color: '#1185fe', logo: 'bluesky' },
+  { label: 'Pinterest',    status: 'creator' as const, color: '#e60023', logo: 'pinterest' },
+  { label: 'Facebook',     status: 'creator' as const, color: '#1877f2', logo: 'facebook' },
+  // Middle/bottom row — Studio adds Instagram + Telegram, Pro adds X + TikTok.
+  { label: 'Threads',      status: 'creator' as const, color: '#000000', logo: 'threads' },
+  { label: 'Instagram',    status: 'studio'  as const, color: '#E1306C', logo: 'instagram' },
+  { label: 'Telegram',     status: 'studio'  as const, color: '#229ED9', logo: 'telegram' },
   { label: 'Twitter / X',  status: 'pro'     as const, color: '#000000', logo: 'x' },
-  { label: 'Telegram',     status: 'pro'     as const, color: '#229ED9', logo: 'telegram' },
-  { label: 'Pinterest',    status: 'soon'    as const, color: '#e60023', logo: 'pinterest' },
-  { label: 'Email digest', status: 'roadmap' as const, color: '#34c759', logo: 'email' },
+  { label: 'TikTok',       status: 'pro'     as const, color: '#000000', logo: 'tiktok' },
 ]
 
 const statusBadge: Record<typeof platforms[number]['status'], { text: string; bg: string; fg: string }> = {
-  live:    { text: 'Live now',     bg: 'bg-[#34c759]/10',  fg: 'text-[#1f8a3a]' },
-  pro:     { text: 'Pro plan',     bg: 'bg-[#7C3AED]/10',  fg: 'text-[#7C3AED]' },
-  soon:    { text: 'Coming soon',  bg: 'bg-[#ff9500]/10',  fg: 'text-[#9a5d00]' },
-  roadmap: { text: 'On roadmap',   bg: 'bg-gray-100',      fg: 'text-[#6e6e73]' },
+  creator: { text: 'Creator+',     bg: 'bg-[#34c759]/10',  fg: 'text-[#1f8a3a]' },
+  studio:  { text: 'Studio+',      bg: 'bg-[#EC4899]/10',  fg: 'text-[#BE185D]' },
+  pro:     { text: 'Pro',          bg: 'bg-[#7C3AED]/10',  fg: 'text-[#7C3AED]' },
 }
 
+// Landing teaser — must mirror app/pricing/page.tsx. See lib/tier.ts for
+// the source of truth on caps + feature gates.
 const plans = [
   {
     tier: 'Free Trial',
     price: 0,
     regular: 0,
-    limit: '5 posts — no card',
+    limit: '5 posts, no card',
     bonus: '',
-    features: ['Free themed review site', 'YouTube Co-Pilot autopilot', 'Facebook auto-post', 'No card · no time limit'],
+    features: ['Free themed review site', 'YouTube Co-Pilot autopilot', 'Full AI agent pipeline', 'No card, no time limit'],
     cta: 'Start free',
     href: '/signup',
     highlight: false,
@@ -61,23 +61,61 @@ const plans = [
     tier: 'Creator',
     price: 49,
     regular: 99,
-    limit: '40 posts / month',
+    limit: '20 posts / month',
     bonus: '',
-    features: ['Free themed review site', 'Facebook, Threads, Bluesky, LinkedIn, Pinterest *', 'In-body AI product images (up to 3 / post)', 'Your Face in AI thumbnails + studio Photobooth headshots', '5 brand-collab pitch emails / month', 'Built-in AI assistant that knows your brand — one less subscription'],
+    features: [
+      'Free themed review site',
+      'LinkedIn, Bluesky, Pinterest, Facebook *, Threads *',
+      'In-body AI product images (3 per post)',
+      'Your Face in AI thumbnails (1 face)',
+      '10 video scripts / month',
+      'Newsletter taster (500 subs)',
+      '5 brand-collab pitches / month',
+    ],
     cta: 'Get Creator',
     href: '/pricing',
     highlight: false,
+  },
+  {
+    tier: 'Studio',
+    price: 99,
+    regular: 199,
+    limit: '60 posts / month',
+    bonus: '',
+    features: [
+      'Everything in Creator',
+      'Adds Instagram + Telegram',
+      'Deals Hub (5 deal posts / month, Amazon CSV bulk)',
+      'IG AI Thumbnails 4:5 (30 / month)',
+      'Topic hubs + Refresh images on published posts',
+      'Newsletter weekly + scheduling (5k subs)',
+      '30 video scripts, 15 brand pitches',
+      'Priority Discord support',
+    ],
+    cta: 'Get Studio',
+    href: '/pricing',
+    highlight: true,
   },
   {
     tier: 'Pro',
     price: 199,
     regular: 499,
     limit: '200 posts / month',
-    bonus: '140 + 60 bonus posts',
-    features: ['Everything in Creator', '100 brand-collab pitch emails / month', 'For Amazon influencers & associates — scout Creator Connections campaigns by commission & EPC, publish in one click', 'Native AI Instagram image — your face + the product, 4:5', 'Double the Photobooth headshots (20 / month)', 'Near-unlimited AI assistant that knows your business', 'Adds Instagram, X & Telegram', 'One-click Apply to YouTube (playlist, schedule, paid-promotion, made-for-kids)', 'One-click Publish All to socials', 'Priority support'],
+    bonus: '',
+    features: [
+      'Everything in Studio',
+      'Adds Twitter / X + TikTok *',
+      'Comparison posts + Buying Guides',
+      'Rebuild-from-video on any legacy WP post',
+      'Creator Campaigns (Amazon EPC scout, one-click publish)',
+      'Multi-account social + Publish All',
+      '10 WordPress sites + 3 VA seats',
+      '150 scripts, 100 pitches, 30 deals / month',
+      'Newsletter A/B + segmented sends (10k subs)',
+    ],
     cta: 'Get Pro',
     href: '/pricing',
-    highlight: true,
+    highlight: false,
   },
 ]
 
@@ -792,11 +830,11 @@ export default function LandingPage() {
             <p className="text-[#6e6e73] text-base sm:text-lg">Every paid plan includes a free themed review site. Cancel anytime.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             {plans.map((plan) => (
               <div
                 key={plan.tier}
-                className={`rounded-2xl p-7 flex flex-col ${
+                className={`rounded-2xl p-6 flex flex-col ${
                   plan.highlight
                     ? 'bg-[#7C3AED] text-white shadow-2xl scale-[1.03]'
                     : 'bg-white border border-gray-200 shadow-sm'
@@ -853,8 +891,9 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-8 text-center text-sm text-[#86868b]">
-            * Pinterest auto-publish is built and waiting on Pinterest&apos;s developer review.
-            Included on Creator &amp; Pro at no extra cost once approved.
+            * Facebook, Threads, Instagram, and TikTok auto-publish are gated on those platforms&apos;
+            developer review (Meta + TikTok). They activate automatically on every plan that includes
+            them once approved, at no extra cost. Pinterest is approved and live today.
           </p>
           <div className="mt-6 max-w-2xl mx-auto rounded-2xl bg-[#7C3AED]/5 border border-[#7C3AED]/20 p-5">
             <p className="text-center text-sm font-semibold text-[#7C3AED] mb-1.5">🔒 Price-lock guarantee</p>
