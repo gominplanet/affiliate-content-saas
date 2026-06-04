@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.32
+ * Version: 1.0.33
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.32');
+define('MVP_AFFILIATE_VERSION', '1.0.33');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -474,6 +474,8 @@ add_filter('the_content', function ($content) {
   <?php endif; ?>
   <span aria-hidden="true">·</span>
   <span>Reviewed by <strong style="color:#1d1d1f"><?php echo esc_html($name); ?></strong></span>
+  <span aria-hidden="true">·</span>
+  <a href="<?php echo esc_url(home_url('/how-we-test/')); ?>" style="color:#7C3AED;text-decoration:none;font-weight:600">How we test →</a>
 </div>
 
 <div class="gr-author-bio-card" style="margin:24px 0 8px;padding:20px;border:1px solid #e5e5e7;border-radius:8px;background:#fafafa;display:flex;gap:18px;align-items:flex-start">
@@ -707,6 +709,195 @@ add_filter('the_content', function ($content) {
     <?php
     return $content . ob_get_clean();
 }, 22);  // after 7c (priority 20 — author bio card) so this sits below it
+
+// ─── 7g. "Recently Updated" homepage strip ───────────────────────────────────
+//
+// TechRadar's hallmark first strip — surfaces the 6 most-recently edited
+// reviews so the homepage feels FRESH on every visit, even when no new
+// content has shipped. Sort key is post_modified (covers both freshly-
+// published and edited-then-republished).
+//
+// Rendered into wp_footer as a JS-inserted block that prepends itself to
+// the first .entry-content / .site-content / main element. Falls back to
+// document.body. Works across Kadence / Astra / GeneratePress / any theme
+// without needing per-theme hooks.
+add_action('wp_footer', function () {
+    if (!is_home() && !is_front_page()) return;
+
+    $q = new WP_Query([
+        'post_type'           => 'post',
+        'posts_per_page'      => 6,
+        'orderby'             => 'modified',
+        'order'               => 'DESC',
+        'ignore_sticky_posts' => true,
+        'no_found_rows'       => true,
+    ]);
+    if (!$q->have_posts()) return;
+
+    $cards = [];
+    foreach ($q->posts as $p) {
+        $cards[] = [
+            'title'    => get_the_title($p->ID),
+            'url'      => get_permalink($p->ID),
+            'image'    => get_the_post_thumbnail_url($p->ID, 'medium') ?: '',
+            'modified' => get_the_modified_date('M j', $p->ID),
+        ];
+    }
+    wp_reset_postdata();
+    ?>
+<style>
+  .gr-recently-updated {
+    max-width: 1200px; margin: 24px auto 32px; padding: 0 20px;
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .gr-recently-updated h2 {
+    margin: 0 0 14px; font-size: 13px; font-weight: 800; color: #86868b;
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+  .gr-recently-updated .gr-ru-scroll {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr);
+    gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory;
+    padding: 2px 0 10px; scrollbar-width: thin;
+  }
+  .gr-recently-updated .gr-ru-card {
+    scroll-snap-align: start; display: flex; flex-direction: column;
+    border: 1px solid #e5e5e7; border-radius: 10px; overflow: hidden;
+    text-decoration: none; color: #1d1d1f; background: #fff;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .gr-recently-updated .gr-ru-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+  .gr-recently-updated .gr-ru-image { aspect-ratio: 16/9; background: #f5f5f7 center/cover no-repeat; position: relative; }
+  .gr-recently-updated .gr-ru-pill {
+    position: absolute; top: 8px; left: 8px; background: rgba(255,194,0,.95); color: #1d1d1f;
+    font-size: 10px; font-weight: 800; padding: 3px 7px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .gr-recently-updated .gr-ru-body { padding: 10px 12px 12px; }
+  .gr-recently-updated .gr-ru-title { margin: 0; font-size: 13px; font-weight: 700; line-height: 1.35; color: #1d1d1f; }
+  .gr-recently-updated .gr-ru-scroll::-webkit-scrollbar { height: 6px; }
+  .gr-recently-updated .gr-ru-scroll::-webkit-scrollbar-thumb { background: #d2d2d7; border-radius: 999px; }
+</style>
+<script>
+(function () {
+  var data = <?php echo wp_json_encode($cards); ?>;
+  if (!data || !data.length) return;
+
+  var wrap = document.createElement('div');
+  wrap.className = 'gr-recently-updated';
+  var html = '<h2>Recently updated</h2><div class="gr-ru-scroll">';
+  data.forEach(function (c) {
+    var img = c.image ? ('background-image:url(' + c.image.replace(/"/g, '%22') + ')') : '';
+    html += '<a class="gr-ru-card" href="' + c.url + '">'
+         +    '<div class="gr-ru-image" style="' + img + '"><span class="gr-ru-pill">Updated ' + c.modified + '</span></div>'
+         +    '<div class="gr-ru-body"><p class="gr-ru-title">' + c.title.replace(/</g, '&lt;') + '</p></div>'
+         + '</a>';
+  });
+  html += '</div>';
+  wrap.innerHTML = html;
+
+  // Prepend INSIDE the main content area so it sits above the post grid but
+  // BELOW the site header / logo banner. Try common selectors in order.
+  var host = document.querySelector('.entry-content, .site-content, main, #content, #main')
+          || document.body;
+  if (host === document.body) host.insertBefore(wrap, host.firstChild);
+  else host.insertBefore(wrap, host.firstChild);
+})();
+</script>
+    <?php
+});
+
+// ─── 7h. "/how-we-test" virtual methodology page ─────────────────────────────
+//
+// PCMag / Tom's Guide / TechRadar all link from every review to a "How we
+// test" methodology page — strong E-E-A-T signal for Google + reader trust.
+// We register a virtual route at /how-we-test/ that renders fully from the
+// plugin (no WP page row needed). Content is auto-built from the brand
+// profile so each user's site has a methodology page out of the box.
+//
+// The meta strip on every review (7c) will link to /how-we-test/ — added
+// in the same plugin version.
+add_action('init', function () {
+    add_rewrite_rule('^how-we-test/?$', 'index.php?gr_methodology=1', 'top');
+});
+add_filter('query_vars', function ($vars) {
+    $vars[] = 'gr_methodology';
+    return $vars;
+});
+add_action('template_redirect', function () {
+    if (intval(get_query_var('gr_methodology')) !== 1) return;
+
+    $data = mvp_affiliate_get_data();
+    $brand_name = get_bloginfo('name');
+    $author = $data['authorBlock'] ?? [];
+    $author_name = trim((string) ($author['name'] ?? ''));
+    $author_bio  = trim((string) ($author['tagline'] ?? ''));
+    $author_photo = trim((string) ($author['photoUrl'] ?? ''));
+
+    status_header(200);
+    get_header();
+    ?>
+<main class="gr-how-we-test" style="max-width:760px;margin:48px auto;padding:0 20px;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1d1d1f">
+  <p style="margin:0 0 8px;font-size:12px;font-weight:800;color:#7C3AED;text-transform:uppercase;letter-spacing:.8px">Methodology</p>
+  <h1 style="margin:0 0 16px;font-size:36px;line-height:1.1;font-weight:800">How we test products at <?php echo esc_html($brand_name); ?></h1>
+  <p style="font-size:18px;color:#3a3a3c;margin:0 0 32px">Every review on this site comes from a product that's been in our hands. No press releases. No specs read off a website. Real-world testing, written up after we've actually used the thing.</p>
+
+  <?php if ($author_name && $author_photo): ?>
+  <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;margin:0 0 32px;border:1px solid #e5e5e7;border-left:4px solid #FFC200;border-radius:6px;background:#fafafa">
+    <img src="<?php echo esc_url($author_photo); ?>" alt="<?php echo esc_attr($author_name); ?>" loading="lazy" style="flex-shrink:0;width:56px;height:56px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.1)" />
+    <div>
+      <p style="margin:0;font-size:11px;font-weight:800;color:#86868b;text-transform:uppercase;letter-spacing:.8px">Lead reviewer</p>
+      <p style="margin:2px 0 4px;font-size:16px;font-weight:700">​<?php echo esc_html($author_name); ?></p>
+      <?php if ($author_bio): ?><p style="margin:0;font-size:13px;color:#3a3a3c"><?php echo esc_html($author_bio); ?></p><?php endif; ?>
+    </div>
+  </div>
+  <?php endif; ?>
+
+  <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">What we test</h2>
+  <p>Every product in our catalogue is purchased, requested, or accepted as a sample under a clear policy: we keep editorial control of every word. Reviews are not paid placements. Affiliate links are how the site stays free for readers — they never change what we say about a product.</p>
+
+  <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">How we test</h2>
+  <ul style="padding-left:22px">
+    <li><strong>Hands-on use, not unboxing.</strong> Every product gets a minimum of one week of real use in the setting it was built for — kitchen gear in the kitchen, sleep gear on the bed, tech in the office.</li>
+    <li><strong>What we actually use it for.</strong> The same scenarios the reader would. No synthetic benchmarks pulled out of a lab.</li>
+    <li><strong>Specific, repeatable claims.</strong> If we say something is loud, we tell you how loud (dB or a comparison to a known sound). If we say it's heavy, we tell you the weight or what we struggled to carry.</li>
+    <li><strong>Trade-offs surfaced.</strong> No product is perfect. Every review names at least one real downside — and which buyer that downside matters most to.</li>
+  </ul>
+
+  <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">How we score</h2>
+  <p>Every review carries a 1–5 score. The label next to the score tells you what the number means in plain English:</p>
+  <table style="width:100%;border-collapse:collapse;margin:14px 0 0;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden;font-size:14px">
+    <thead><tr style="background:#fafafa"><th style="text-align:left;padding:10px 14px;border-bottom:1px solid #e5e5e7;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86868b">Score</th><th style="text-align:left;padding:10px 14px;border-bottom:1px solid #e5e5e7;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:#86868b">Means</th></tr></thead>
+    <tbody>
+      <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-weight:700">4.6–5.0</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0">Exceptional</td></tr>
+      <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-weight:700">4.1–4.5</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0">Excellent</td></tr>
+      <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-weight:700">3.6–4.0</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0">Very Good</td></tr>
+      <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-weight:700">3.1–3.5</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0">Good</td></tr>
+      <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-weight:700">2.6–3.0</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0">Mixed</td></tr>
+      <tr><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0;font-weight:700">2.1–2.5</td><td style="padding:10px 14px;border-bottom:1px solid #f0f0f0">Disappointing</td></tr>
+      <tr><td style="padding:10px 14px;font-weight:700">1.0–2.0</td><td style="padding:10px 14px">Avoid</td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">Updates &amp; corrections</h2>
+  <p>Reviews are living documents. When a product gets a meaningful update — a software change, a price shift that flips the verdict, a long-term issue we couldn't see in week one — we revisit the post and bump the &ldquo;Updated&rdquo; date you see at the top. If we got something wrong, we mark the correction inline and explain what changed.</p>
+
+  <h2 style="font-size:22px;margin:32px 0 12px;font-weight:700">Affiliate disclosure</h2>
+  <p>Links to retailers (Amazon, Geniuslink, and others) on this site may earn a small commission when you click through and buy. That's how the site stays free. It never changes our score, our verdict, or which products we recommend. We've turned down products that didn't earn a recommendation, and we've kept products in the &ldquo;Avoid&rdquo; tier even when an affiliate would have rather we softened the language.</p>
+</main>
+    <?php
+    get_footer();
+    exit;
+});
+// Flush rewrites once on activation so the new rule is live without a manual
+// permalink-save trip. Hooked to a transient so it runs exactly once.
+register_activation_hook(__FILE__, function () {
+    flush_rewrite_rules();
+});
+add_action('init', function () {
+    if (get_option('gr_how_we_test_flushed_v1')) return;
+    flush_rewrite_rules();
+    update_option('gr_how_we_test_flushed_v1', 1);
+}, 99);
 
 // ─── 8. Query fixes ───────────────────────────────────────────────────────────
 add_action('pre_get_posts', function (WP_Query $query) {
@@ -1382,6 +1573,68 @@ add_action('wp_head', function () {
         }
     }
 }, 5);
+
+// ─── 13c2. FAQ structured data (FAQPage JSON-LD) ─────────────────────────────
+//
+// Every review the blog generator produces ends with a "Frequently Asked
+// Questions" H2 followed by H3 question + answer paragraph(s). Google
+// rewards FAQPage schema with rich results (expandable Q/A snippets in
+// search) — one of the highest-leverage SEO additions per line of code.
+//
+// We scan the post content from the FAQ heading onward, extract question
+// + answer pairs, and emit a SEPARATE <script type="application/ld+json">
+// for the FAQPage (lives alongside the existing Review schema written by
+// the blog generator into mvp_jsonld post-meta).
+add_action('wp_head', function () {
+    if (!is_singular('post')) return;
+    $post = get_post(get_queried_object_id());
+    if (!$post || !$post->post_content) return;
+
+    // Find the FAQ section start — case-insensitive, tolerant of heading
+    // level + class attributes.
+    if (!preg_match('/<(h2|h3)[^>]*>\s*(?:Frequently\s+Asked\s+Questions|FAQ|FAQs)\s*<\/\1>/i', $post->post_content, $hm, PREG_OFFSET_CAPTURE)) return;
+    $faq_start = $hm[0][1] + strlen($hm[0][0]);
+    $faq_chunk = substr($post->post_content, $faq_start);
+
+    // Cut at the next H2 (next major section, e.g. wrap-up)
+    if (preg_match('/<h2[^>]*>/i', $faq_chunk, $nxt, PREG_OFFSET_CAPTURE)) {
+        $faq_chunk = substr($faq_chunk, 0, $nxt[0][1]);
+    }
+
+    // Pull every H3 question + the content that follows (until the next H3
+    // or end of chunk).
+    if (!preg_match_all('/<h3[^>]*>(.*?)<\/h3>(.*?)(?=<h3|\z)/is', $faq_chunk, $qa_matches, PREG_SET_ORDER)) return;
+
+    $items = [];
+    foreach ($qa_matches as $m) {
+        $q = trim(html_entity_decode(strip_tags((string) $m[1]), ENT_QUOTES, 'UTF-8'));
+        // Strip tags but preserve some text structure (paragraph breaks → spaces)
+        $a_html = (string) $m[2];
+        $a_html = preg_replace('/<\/(p|li|ul|ol|div)>/i', ' ', $a_html);
+        $a = trim(html_entity_decode(strip_tags($a_html), ENT_QUOTES, 'UTF-8'));
+        $a = preg_replace('/\s+/', ' ', $a);
+        if ($q === '' || $a === '' || mb_strlen($a) < 20) continue;
+        $items[] = [
+            '@type' => 'Question',
+            'name'  => $q,
+            'acceptedAnswer' => [
+                '@type' => 'Answer',
+                'text'  => $a,
+            ],
+        ];
+        if (count($items) >= 10) break; // Google ignores >10 anyway
+    }
+    if (count($items) < 2) return; // need at least 2 Q/A for FAQPage to qualify
+
+    $faq = [
+        '@context'   => 'https://schema.org',
+        '@type'      => 'FAQPage',
+        'mainEntity' => $items,
+    ];
+    echo "\n<script type=\"application/ld+json\">"
+       . wp_json_encode($faq, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP)
+       . "</script>\n";
+}, 6);
 
 // ─── 13b. Custom <head> meta tags (site verification, etc.) ──────────────────
 // Users paste verification tags (Google Search Console, Pinterest, Facebook,
