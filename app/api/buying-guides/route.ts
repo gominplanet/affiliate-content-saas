@@ -214,11 +214,13 @@ async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClien
     try {
       // Resolve excluded tag ids up front (1 round-trip). If the tags
       // don't exist on this site, exclude params just have no effect.
+      // Cache 5 min — these IDs rarely change.
       let excludeTagIds: number[] = []
       try {
         const tagRes = await fetch(`${wpBase}/wp-json/wp/v2/tags?slug=buying-guide,comparison&_fields=id`, {
           signal: AbortSignal.timeout(3000),
           headers: { Accept: 'application/json' },
+          next: { revalidate: 300 },
         })
         if (tagRes.ok) {
           const tags = await tagRes.json() as Array<{ id: number }>
@@ -230,6 +232,7 @@ async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClien
       const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=100${excludeParam}&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
         signal: AbortSignal.timeout(8000),
         headers: { Accept: 'application/json' },
+        next: { revalidate: 300 },
       })
       if (res.ok) {
         const wpPosts = await res.json() as Array<{
@@ -361,6 +364,7 @@ export async function GET() {
       const tagRes = await fetch(`${wpBaseForGuides}/wp-json/wp/v2/tags?slug=buying-guide&_fields=id`, {
         signal: AbortSignal.timeout(3000),
         headers: { Accept: 'application/json' },
+        next: { revalidate: 300 },
       })
       if (tagRes.ok) {
         const tags = await tagRes.json() as Array<{ id: number }>
@@ -369,6 +373,7 @@ export async function GET() {
           const postsRes = await fetch(`${wpBaseForGuides}/wp-json/wp/v2/posts?tags=${tagId}&per_page=30&_fields=id,link,title,date`, {
             signal: AbortSignal.timeout(5000),
             headers: { Accept: 'application/json' },
+            next: { revalidate: 60 },
           })
           if (postsRes.ok) {
             const wpGuides = await postsRes.json() as Array<{ id: number; link: string; title: { rendered: string }; date: string }>
