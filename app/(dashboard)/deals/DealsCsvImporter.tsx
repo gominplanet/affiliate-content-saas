@@ -196,7 +196,7 @@ export default function DealsCsvImporter({ onDealsChanged }: DealsCsvImporterPro
             <FileSpreadsheet size={15} className="text-[#7C3AED]" /> Bulk import from Amazon CSV
           </h2>
           <p className="text-[12px] mt-1" style={{ color: 'var(--text-soft)' }}>
-            Drop the deals CSV Amazon Creator Connections emails you. Sort by start time, price, or discount. Schedule each post to publish the moment its deal goes live.
+            Drop the deals CSV exported from your Amazon Associates dashboard. Sort by start time, price, or discount, then schedule each post to publish the moment its deal goes live.
           </p>
         </div>
         {fileName && (
@@ -210,6 +210,48 @@ export default function DealsCsvImporter({ onDealsChanged }: DealsCsvImporterPro
           </button>
         )}
       </div>
+
+      {/* Where to find the CSV — primer shown until a file is parsed.
+          Lots of new users miss the Promotions tab or assume the CSV
+          is something they have to build by hand. Step-by-step kills
+          both confusions. */}
+      {rows.length === 0 && (
+        <div
+          className="rounded-xl p-4 mb-4 border"
+          style={{ backgroundColor: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.25)' }}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: 'rgba(124,58,237,0.18)' }}
+            >
+              <FileSpreadsheet size={14} style={{ color: '#C4B5FD' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
+                Where to find this CSV
+              </p>
+              <p className="text-[11.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+                This bulk import is for Amazon Associates and Amazon Influencers who have access to the <strong style={{ color: 'var(--text)' }}>Promotions</strong> tab on their Amazon affiliate dashboard. To get the file:
+              </p>
+              <ol className="list-decimal list-inside text-[11.5px] mt-2 space-y-1 marker:text-[#C4B5FD]" style={{ color: 'var(--text-soft)' }}>
+                <li>Open Amazon Associates, then <strong style={{ color: 'var(--text)' }}>Promotions</strong> &rsaquo; <strong style={{ color: 'var(--text)' }}>Deals Hub</strong>.</li>
+                <li>Click the yellow <strong style={{ color: 'var(--text)' }}>Export deals</strong> button (top right of the table).</li>
+                <li>Upload the downloaded .csv below.</li>
+              </ol>
+              <a
+                href="https://affiliate-program.amazon.com/home/promotionhub"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 mt-3 text-[11px] font-semibold hover:underline"
+                style={{ color: '#C4B5FD' }}
+              >
+                Open Amazon Deals Hub <ExternalLink size={10} />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Upload zone */}
       {rows.length === 0 && (
