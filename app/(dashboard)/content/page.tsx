@@ -3224,9 +3224,16 @@ export default function ContentPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(token ? { pageToken: token } : {}),
         })
-        const data: { synced?: number; nextPageToken?: string | null; error?: string } =
+        const data: { synced?: number; nextPageToken?: string | null; error?: string; code?: string } =
           await res.json().catch(() => ({}))
-        if (data.error) throw new Error(data.error)
+        if (data.error) {
+          // Throw with the code so the outer catch can branch on it for a
+          // useful toast action (e.g. "Open Setup" when channel id is
+          // missing).
+          const err = new Error(data.error) as Error & { code?: string }
+          err.code = data.code
+          throw err
+        }
         pulled += Number(data.synced || 0)
         pages += 1
         setSyncProgress({ pulled, pages })
@@ -3234,7 +3241,36 @@ export default function ContentPage() {
       } while (token && pages < 100)
       setNextPageToken(null)
       await load()
-    } catch { /* non-fatal */ } finally {
+      // Success toast — without this the user has no way to know the sync
+      // worked, especially if it pulled 0 new videos (e.g. nothing new on
+      // the channel since the last sync).
+      if (pulled === 0) {
+        toast.success('Synced. No new videos on your channel since last time.')
+      } else {
+        toast.success(`Synced ${pulled} video${pulled === 1 ? '' : 's'} from YouTube.`)
+      }
+    } catch (err: unknown) {
+      // Previously this catch was empty and swallowed every error — users
+      // hit "Sync videos", nothing happened, no toast, and they couldn't
+      // tell whether their channel id was missing, the API key was bad, or
+      // the network blipped. Now every failure surfaces with a useful
+      // action where applicable.
+      const e = err as Error & { code?: string }
+      const msg = e?.message || 'Sync failed. Try again in a moment.'
+      if (e?.code === 'no_channel_id') {
+        toast.error(msg, {
+          action: { label: 'Open Setup', onClick: () => { window.location.href = '/setup?tab=integrations' } },
+        })
+      } else if (e?.code === 'youtube_quota') {
+        toast.error('YouTube API daily quota hit. Try again after midnight Pacific time.')
+      } else if (e?.code === 'channel_not_found') {
+        toast.error('YouTube channel id not found. Double-check the id in Setup → Integrations.', {
+          action: { label: 'Fix it', onClick: () => { window.location.href = '/setup?tab=integrations' } },
+        })
+      } else {
+        toast.error(msg)
+      }
+    } finally {
       setSyncing(false)
       setSyncProgress(null)
     }

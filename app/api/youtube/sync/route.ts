@@ -12,20 +12,26 @@ export async function POST(request: Request) {
 
   const apiKey = process.env.YOUTUBE_API_KEY
   if (!apiKey) {
-    return NextResponse.json({ error: 'YouTube API key not configured' }, { status: 400 })
+    return NextResponse.json({ error: 'YouTube API key not configured on the server. Contact support.', code: 'no_api_key' }, { status: 400 })
   }
 
-  // Read per-user channel ID from integrations table
+  // Read per-user channel ID from integrations table. Use maybeSingle so a
+  // missing integrations row (rare but possible right after signup) doesn't
+  // throw the silent .single() error that the empty-catch on the client
+  // then swallows.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await supabase
     .from('integrations')
     .select('youtube_channel_id')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   const channelId = intRow?.youtube_channel_id || process.env.YOUTUBE_CHANNEL_ID
   if (!channelId) {
-    return NextResponse.json({ error: 'No YouTube channel ID configured. Add your channel ID in Blog Setup → Integrations.' }, { status: 400 })
+    return NextResponse.json({
+      error: 'No YouTube channel ID set on your account yet. Open Blog Set Up → Integrations and paste your YouTube channel ID, then try Sync again.',
+      code: 'no_channel_id',
+    }, { status: 400 })
   }
 
   let pageToken: string | undefined
@@ -73,9 +79,17 @@ export async function POST(request: Request) {
 
     if (error) throw error
 
-    return NextResponse.json({ synced: videos.length, newCount: newVideos.length, nextPageToken: nextPageToken ?? null })
+    return NextResponse.json({ synced: videos.length, newCount: newVideos.length, nextPageToken: nextPageToken ?? null, channelId })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    // Surface a stable error code when the YouTube API itself rejected us
+    // (bad channel id, quota exhausted, key revoked). Lets the client show
+    // a more useful nudge than the raw API error string.
+    const lower = message.toLowerCase()
+    const code = lower.includes('quota') ? 'youtube_quota'
+      : lower.includes('not found') || lower.includes('channelnotfound') ? 'channel_not_found'
+      : lower.includes('forbidden') || lower.includes('keyinvalid') ? 'api_key_bad'
+      : 'youtube_error'
+    return NextResponse.json({ error: message, code, channelId }, { status: 500 })
   }
 }
