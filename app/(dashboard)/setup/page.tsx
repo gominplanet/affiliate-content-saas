@@ -6,7 +6,7 @@ import {
   ExternalLink, CheckCircle, ChevronRight, Loader2,
   Globe, Wrench, Sparkles, Link2, Rocket, Eye, EyeOff,
   Download, Upload, X, ArrowLeft, Building2, Wand2,
-  Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin, Lock,
+  Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin, Lock, Clock,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { metaEnabled, socialEnabled, type GatedSocialPlatform } from '@/lib/feature-flags'
@@ -811,8 +811,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     facebook: false, instagram: false, threads: false, tiktok: false, pinterest: false,
   })
   const isUnlocked = (p: GatedSocialPlatform) => socialLocks[p]
-  // Style helper for the disabled card chrome — keeps the card visible but
-  // mutes the connect CTA so users see the feature exists and what unlocks it.
+  // Style helper for the "coming soon" CTA — keeps the card visible but
+  // mutes the connect button so users see the feature is on the way + why
+  // it's not yet live (under approval with each platform).
   const lockedCta = { opacity: 0.55, pointerEvents: 'none' as const, cursor: 'not-allowed' as const }
   const [facebook, setFacebook] = useState({ connected: false, pageName: '', pageId: '', pages: [] as { id: string; name: string }[] })
   const [fbDisconnecting, setFbDisconnecting] = useState(false)
@@ -1473,6 +1474,50 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         )}
       </div>
 
+      {/* ── Coming-soon banner — 5 socials under platform approval ──────────
+          Visible to every non-admin user (admins skip it; the reviewer Meta
+          test account also skips so the App Review screencast stays clean).
+          Replaces the previous "Admin only" framing — the gate isn't about
+          the user's tier, it's about each platform's own approval process. */}
+      {!isUnlocked('facebook') && (
+        <div
+          className="card p-5"
+          style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.07) 0%, rgba(124,58,237,0.02) 100%)', borderColor: 'rgba(124,58,237,0.25)' }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(124,58,237,0.15)' }}>
+              <Clock size={16} style={{ color: '#7C3AED' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">5 integrations coming soon</p>
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#7C3AED', color: '#fff' }}>Under review</span>
+              </div>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed mb-3">
+                <strong>Facebook</strong>, <strong>Instagram</strong>, <strong>Threads</strong>, <strong>TikTok</strong> and <strong>Pinterest</strong> are currently going through the official approval process with each platform. They&apos;ll unlock here automatically once approved. Until then, every other channel below (WordPress, LinkedIn, Bluesky, Twitter, Telegram, YouTube, Newsletter) works as normal.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { name: 'Facebook', icon: <Facebook size={11} />, bg: '#1877F2' },
+                  { name: 'Instagram', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.16c3.2 0 3.58.012 4.85.07 1.17.054 1.8.249 2.23.413.56.218.96.479 1.38.896.42.42.68.819.9 1.381.16.42.36 1.057.41 2.227.06 1.266.07 1.646.07 4.85s-.01 3.585-.07 4.85c-.06 1.17-.26 1.806-.42 2.228-.23.562-.48.96-.9 1.382-.42.42-.83.679-1.38.896-.42.164-1.06.36-2.23.413-1.27.057-1.65.07-4.85.07s-3.59-.015-4.86-.074c-1.17-.06-1.81-.256-2.24-.421-.57-.224-.96-.479-1.38-.899-.42-.42-.69-.824-.9-1.38-.16-.42-.36-1.065-.42-2.235-.05-1.26-.06-1.65-.06-4.84 0-3.2.02-3.59.06-4.86.06-1.17.26-1.81.42-2.23.21-.57.48-.96.9-1.38.42-.42.81-.69 1.38-.9.42-.17 1.05-.36 2.22-.42 1.28-.05 1.65-.06 4.86-.06l.04.03zM12 7.84a4.16 4.16 0 1 0 0 8.32 4.16 4.16 0 0 0 0-8.32z"/></svg>, bg: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' },
+                  { name: 'Threads', icon: <MessageCircle size={11} />, bg: '#000' },
+                  { name: 'TikTok', icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z"/></svg>, bg: '#000' },
+                  { name: 'Pinterest', icon: <Pin size={11} />, bg: '#E60023' },
+                ].map(p => (
+                  <span
+                    key={p.name}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold text-white"
+                    style={{ background: p.bg, opacity: 0.85 }}
+                  >
+                    {p.icon} {p.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Facebook */}
       {metaUnlocked && (
       <div className="card p-6">
@@ -1520,9 +1565,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
                 <Facebook size={14} /> Connect Facebook
               </a>
             ) : (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#1877F2' }} title="Admin-only while we restructure Pro">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#1877F2' }} title="Under approval — coming soon">
                 <Facebook size={14} /> Connect Facebook
-                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
               </div>
             )}
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
@@ -1579,9 +1624,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               <Pin size={14} /> Connect Pinterest
             </a>
           ) : (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#E60023' }} title="Admin-only while we restructure Pro">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#E60023' }} title="Under approval — coming soon">
               <Pin size={14} /> Connect Pinterest
-              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
             </div>
           )
         )}
@@ -1623,9 +1668,9 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
                 <MessageCircle size={14} /> Connect Threads
               </a>
             ) : (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-black" style={lockedCta} title="Admin-only while we restructure Pro">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-black" style={lockedCta} title="Under approval — coming soon">
                 <MessageCircle size={14} /> Connect Threads
-                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
               </div>
             )}
           </div>
@@ -1906,10 +1951,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               Connect Instagram
             </a>
           ) : (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }} title="Admin-only while we restructure Pro">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }} title="Under approval — coming soon">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>
               Connect Instagram
-              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
             </div>
           )
         )}
@@ -1971,10 +2016,10 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
               Connect TikTok
             </a>
           ) : (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-[#000000]" style={lockedCta} title="Admin-only while we restructure Pro">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-[#000000]" style={lockedCta} title="Under approval — coming soon">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" /></svg>
               Connect TikTok
-              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
             </div>
           )
         )}
