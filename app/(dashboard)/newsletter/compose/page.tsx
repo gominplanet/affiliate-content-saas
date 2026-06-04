@@ -24,8 +24,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import { useModalA11y } from '@/components/ui/useModalA11y'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import {
-  Loader2, AlertCircle, CheckCircle, Sparkles, Send, ChevronLeft,
+  Loader2, AlertCircle, CheckCircle, Sparkles, Send, ChevronLeft, Lock,
   Plus, X, Image as ImageIcon, MessageCircle, Search, ExternalLink, Tag,
 } from 'lucide-react'
 
@@ -141,6 +144,36 @@ export default function NewsletterComposePage() {
 
   // Available tags for autocomplete — loaded from /api/newsletter/subscribers.
   const [availableTags, setAvailableTags] = useState<string[]>([])
+
+  // Tier restructure 2026-06-04: Scheduling = Studio+, A/B + Segments =
+  // Pro-only. Compose page itself is Creator+ (Trial is locked from the
+  // /newsletter dashboard upstream). Sub-feature toggles below show the
+  // gate inline so Creator users see what Studio/Pro unlocks.
+  const [tier, setTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { realTier = 'trial'; apply(); return }
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
+      } catch {
+        realTier = 'trial'
+        apply()
+      }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
+  const canSchedule = tier === 'studio' || tier === 'pro' || tier === 'admin'
+  const canABTest  = tier === 'pro' || tier === 'admin'
+  const canSegment = tier === 'pro' || tier === 'admin'
 
   // ── Initial load: latest 10 posts + active sub count ──────────────────────
   useEffect(() => {
@@ -622,18 +655,31 @@ export default function NewsletterComposePage() {
                 : <> will go out to every active subscriber within a minute or two. This cannot be undone.</>}
             </p>
 
-            {/* ── A/B subject lines ────────────────────────────────────── */}
-            <div className="mb-3 border border-gray-200 dark:border-white/10 rounded-lg p-3">
-              <label className="flex items-center gap-2 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer">
+            {/* ── A/B subject lines (Pro-only) ─────────────────────────── */}
+            <div
+              className={`mb-3 border rounded-lg p-3 ${canABTest ? 'border-gray-200 dark:border-white/10' : 'border-[#7C3AED]/30 bg-[#7C3AED]/[0.04]'}`}
+            >
+              <label
+                className={`flex items-center gap-2 text-[13px] font-medium ${canABTest ? 'text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer' : 'text-[#86868b] cursor-not-allowed'}`}
+              >
                 <input
                   type="checkbox"
-                  checked={abEnabled}
-                  onChange={(e) => setAbEnabled(e.target.checked)}
-                  className="accent-[#7C3AED]"
+                  checked={canABTest && abEnabled}
+                  onChange={(e) => canABTest && setAbEnabled(e.target.checked)}
+                  disabled={!canABTest}
+                  className="accent-[#7C3AED] disabled:opacity-50"
                 />
                 A/B test the subject line
+                {!canABTest && tier !== null && (
+                  <Link
+                    href="/billing?plan=pro"
+                    className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#7C3AED]/15 text-[#7C3AED] hover:bg-[#7C3AED]/25 transition-colors"
+                  >
+                    <Lock size={9} strokeWidth={2.5} /> Pro feature
+                  </Link>
+                )}
               </label>
-              {abEnabled && (
+              {canABTest && abEnabled && (
                 <div className="mt-2 space-y-2">
                   <input
                     type="text"
@@ -658,18 +704,31 @@ export default function NewsletterComposePage() {
               )}
             </div>
 
-            {/* ── Scheduling ───────────────────────────────────────────── */}
-            <div className="mb-3 border border-gray-200 dark:border-white/10 rounded-lg p-3">
-              <label className="flex items-center gap-2 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer">
+            {/* ── Scheduling (Studio+) ─────────────────────────────────── */}
+            <div
+              className={`mb-3 border rounded-lg p-3 ${canSchedule ? 'border-gray-200 dark:border-white/10' : 'border-[#EC4899]/30 bg-[#EC4899]/[0.04]'}`}
+            >
+              <label
+                className={`flex items-center gap-2 text-[13px] font-medium ${canSchedule ? 'text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer' : 'text-[#86868b] cursor-not-allowed'}`}
+              >
                 <input
                   type="checkbox"
-                  checked={scheduleEnabled}
-                  onChange={(e) => setScheduleEnabled(e.target.checked)}
-                  className="accent-[#7C3AED]"
+                  checked={canSchedule && scheduleEnabled}
+                  onChange={(e) => canSchedule && setScheduleEnabled(e.target.checked)}
+                  disabled={!canSchedule}
+                  className="accent-[#7C3AED] disabled:opacity-50"
                 />
                 Schedule for later
+                {!canSchedule && tier !== null && (
+                  <Link
+                    href="/billing?plan=studio"
+                    className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#EC4899]/15 text-[#BE185D] hover:bg-[#EC4899]/25 transition-colors"
+                  >
+                    <Lock size={9} strokeWidth={2.5} /> Studio feature
+                  </Link>
+                )}
               </label>
-              {scheduleEnabled && (
+              {canSchedule && scheduleEnabled && (
                 <input
                   type="datetime-local"
                   value={scheduledAt}
@@ -679,18 +738,31 @@ export default function NewsletterComposePage() {
               )}
             </div>
 
-            {/* ── Segmentation ──────────────────────────────────────────── */}
-            <div className="mb-3 border border-gray-200 dark:border-white/10 rounded-lg p-3">
-              <label className="flex items-center gap-2 text-[13px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer">
+            {/* ── Segmentation (Pro-only) ──────────────────────────────── */}
+            <div
+              className={`mb-3 border rounded-lg p-3 ${canSegment ? 'border-gray-200 dark:border-white/10' : 'border-[#7C3AED]/30 bg-[#7C3AED]/[0.04]'}`}
+            >
+              <label
+                className={`flex items-center gap-2 text-[13px] font-medium ${canSegment ? 'text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer' : 'text-[#86868b] cursor-not-allowed'}`}
+              >
                 <input
                   type="checkbox"
-                  checked={segmentEnabled}
-                  onChange={(e) => setSegmentEnabled(e.target.checked)}
-                  className="accent-[#7C3AED]"
+                  checked={canSegment && segmentEnabled}
+                  onChange={(e) => canSegment && setSegmentEnabled(e.target.checked)}
+                  disabled={!canSegment}
+                  className="accent-[#7C3AED] disabled:opacity-50"
                 />
                 Send to a segment only
+                {!canSegment && tier !== null && (
+                  <Link
+                    href="/billing?plan=pro"
+                    className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#7C3AED]/15 text-[#7C3AED] hover:bg-[#7C3AED]/25 transition-colors"
+                  >
+                    <Lock size={9} strokeWidth={2.5} /> Pro feature
+                  </Link>
+                )}
               </label>
-              {segmentEnabled && (
+              {canSegment && segmentEnabled && (
                 <div className="mt-2 space-y-2 text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
                   <label className="flex items-center gap-2">
                     Source
