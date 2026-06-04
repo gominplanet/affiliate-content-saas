@@ -571,6 +571,24 @@ VOICE / STYLE RULES:
   (anywhere), it's important to, it's essential to, em-dash in headings.
 - No invented specs, prices, or features.`
 
+  // ── 3. Publish ───────────────────────────────────────────────────────────
+  // Kick the hero image upload (P08) + tag resolve in parallel with the
+  // Sonnet writer pass. The upload only needs the picks (already resolved)
+  // and the WP service; the writer is independent. Saves 1-2s wall-time.
+  const titleCase = topic.replace(/\b\w/g, c => c.toUpperCase())
+  const wpTitle = `Best ${titleCase} for ${year}: ${picks.length} Picks We Actually Tested`
+  const slug = `best-${topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${year}`
+  const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
+
+  // Featured image: use the FIRST pick that has an image (WP REST
+  // featuredmedia or matched MVP youtube thumbnail — already brand-
+  // consistent). Best-effort: a failed upload publishes without a hero.
+  const heroSrc = picks.find(p => p.review.youtube_videos?.thumbnail_url)?.review.youtube_videos?.thumbnail_url || null
+  const heroPromise: Promise<number | undefined> = heroSrc
+    ? wpService.uploadImageFromUrl(heroSrc, `${slug}-hero.jpg`).then(m => m?.id).catch(() => undefined)
+    : Promise.resolve(undefined)
+  const tagPromise: Promise<number[]> = wpService.resolveTagIds(['buying-guide']).catch(() => [] as number[])
+
   let html = ''
   try {
     const writerMsg = await client.messages.create({
@@ -587,31 +605,9 @@ VOICE / STYLE RULES:
     return NextResponse.json({ error: 'Generation returned empty body' }, { status: 500 })
   }
 
-  // ── 3. Publish ───────────────────────────────────────────────────────────
-  const titleCase = topic.replace(/\b\w/g, c => c.toUpperCase())
-  const wpTitle = `Best ${titleCase} for ${year}: ${picks.length} Picks We Actually Tested`
-  const slug = `best-${topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${year}`
-
   let wpPost: { id: number; link: string }
   try {
-    const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
-    let tagIds: number[] = []
-    try { tagIds = await wpService.resolveTagIds(['buying-guide']) } catch { /* non-fatal */ }
-
-    // ── Featured image (so the guide doesn't render with a blank card on
-    // the homepage / Recently Updated strip). Use the FIRST pick that has
-    // an image — these come from WP REST featuredmedia or the matched MVP
-    // youtube thumbnail, so they're already brand-consistent with the
-    // rest of the catalogue. Best-effort: a failed upload publishes the
-    // guide without a hero rather than blocking the request.
-    let featuredMedia: number | undefined
-    try {
-      const heroSrc = picks.find(p => p.review.youtube_videos?.thumbnail_url)?.review.youtube_videos?.thumbnail_url || null
-      if (heroSrc) {
-        const media = await wpService.uploadImageFromUrl(heroSrc, `${slug}-hero.jpg`)
-        if (media?.id) featuredMedia = media.id
-      }
-    } catch { /* non-fatal */ }
+    const [featuredMedia, tagIds] = await Promise.all([heroPromise, tagPromise])
 
     wpPost = await wpService.createPost({
       title: wpTitle,
