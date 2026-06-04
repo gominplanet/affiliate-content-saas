@@ -22,7 +22,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import {
   Loader2, AlertCircle, CheckCircle, Sparkles, Send, ChevronLeft,
@@ -343,7 +343,7 @@ export default function NewsletterComposePage() {
         )
     return (
       <>
-        <Header title={
+        <PageHero title={
           sentResult.mode === 'scheduled' ? 'Newsletter scheduled'
           : sentResult.mode === 'ab_testing' ? 'A/B test sent'
           : 'Newsletter sent'
@@ -365,7 +365,7 @@ export default function NewsletterComposePage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Compose newsletter"
         subtitle={activeSubs !== null ? `Sending to ${activeSubs} active subscribers.` : 'Pick posts, write a quick note, send.'}
       />

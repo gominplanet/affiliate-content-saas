@@ -14,7 +14,7 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
   MessageSquare, Users, Scissors, Music, Lock,
@@ -175,7 +175,7 @@ export default function TikTokDirectVideoPublishPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Post Short to TikTok"
         subtitle="Direct push from your Vertical Videos — no blog post needed. Pick how it should appear, then publish."
         actions={

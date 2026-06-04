@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Search, Loader2, CheckCircle, AlertCircle, User as UserIcon } from 'lucide-react'
 
 type Tier = 'trial' | 'creator' | 'pro' | 'admin'
@@ -84,7 +84,7 @@ export default function AdminUsersPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Admin · Users"
         subtitle="Look up a user by email and bump their tier. Changes are immediate — affects their next request."
       />

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Loader2, Send, Plus, Trash2, MessageSquare, Sparkles, Brain, X, Upload } from 'lucide-react'
 import { useConfirm } from '@/components/ui/useConfirm'
 
@@ -171,7 +171,7 @@ export default function AssistantPage() {
 
   return (
     <>
-      <Header title="AI Assistant" subtitle="Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche." />
+      <PageHero title="AI Assistant" subtitle="Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche." />
 
       <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[480px]">
         {/* Conversation list */}

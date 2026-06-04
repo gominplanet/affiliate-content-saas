@@ -19,7 +19,7 @@
  */
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import {
   Loader2, AlertCircle, CheckCircle, Send, ExternalLink, X,
   MessageSquare, Users, Scissors, Music, Lock,
@@ -179,7 +179,7 @@ export default function TikTokPublishPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Post to TikTok"
         subtitle="Pick how this post should appear on your TikTok account, then publish."
         actions={

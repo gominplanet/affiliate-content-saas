@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Loader2, AlertCircle } from 'lucide-react'
 import { TIERS } from '@/lib/tier'
 
@@ -54,7 +54,7 @@ export default function AdminCostsPage() {
 
   return (
     <>
-      <Header title="AI Cost (admin)" subtitle="Real model spend from ai_usage telemetry. Pricing is approximate list pricing." />
+      <PageHero title="AI Cost (admin)" subtitle="Real model spend from ai_usage telemetry. Pricing is approximate list pricing." />
 
       <div className="flex items-center gap-2 mb-5">
         {[7, 30, 90].map(d => (

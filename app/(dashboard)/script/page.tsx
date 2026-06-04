@@ -23,7 +23,7 @@
  * has bRoll + tips) still render via fallbacks below.
  */
 import { useCallback, useEffect, useState } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { useConfirm } from '@/components/ui/useConfirm'
 import {
   Loader2, AlertCircle, Sparkles, ChevronRight, ChevronDown,
@@ -220,7 +220,7 @@ export default function ScriptPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Video Script & Shot List"
         subtitle={subtitle}
       />

@@ -6,7 +6,7 @@
  */
 
 import type { Metadata } from 'next'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Facebook, ExternalLink, LifeBuoy, Trophy, Handshake, Gift } from 'lucide-react'
 import { FACEBOOK_GROUP_URL } from '@/lib/community'
 
@@ -22,7 +22,7 @@ const WHATS_INSIDE: Array<{ icon: typeof LifeBuoy; title: string; body: string }
 export default function CommunityPage() {
   return (
     <>
-      <Header
+      <PageHero
         title="Community"
         subtitle="Join the MVP Affiliate Facebook group — get support, share what's working, and catch member-only offers. We're in there too."
       />

@@ -16,7 +16,7 @@
 'use client'
 
 import { Fragment, useEffect, useState } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import {
   Lock, ShieldCheck, AlertCircle, Loader2, Sparkles, ChevronRight,
 } from 'lucide-react'
@@ -112,7 +112,7 @@ export default function EncryptSecretsAdminPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Encrypt secrets at rest"
         subtitle="One-time migration: encrypts every WordPress credential + social OAuth token in the database with AES-256-GCM. Idempotent — already-encrypted rows are skipped."
       />

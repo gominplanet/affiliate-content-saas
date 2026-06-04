@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { toast } from 'sonner'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
@@ -472,7 +472,7 @@ export default function BrandPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Brand Profile"
         subtitle="The single source of truth for every review you generate. The agent team reads this before writing — so your reviews actually sound like you."
         actions={

@@ -10,7 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import { Flame, Loader2, Sparkles, Download, AlertCircle, UploadCloud, Video, CheckCircle, Copy, Instagram, Plus, Trash2, Clock } from 'lucide-react'
@@ -172,7 +172,7 @@ export default function InstagramBurnerPage() {
   if (!metaUnlocked) {
     return (
       <>
-        <Header title="Instagram Burner" subtitle="Add an on-screen caption to your videos and publish them as Instagram Reels." />
+        <PageHero title="Instagram Burner" subtitle="Add an on-screen caption to your videos and publish them as Instagram Reels." />
         <div className="card p-6 max-w-xl flex items-start gap-3">
           <AlertCircle size={18} className="text-[#ff9500] flex-shrink-0 mt-0.5" />
           <div>
@@ -186,7 +186,7 @@ export default function InstagramBurnerPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Instagram Burner"
         subtitle="Upload a vertical video and burn a caption (like “LINK IN BIO”) into it — then download it for Reels, Stories, or TikTok."
       />

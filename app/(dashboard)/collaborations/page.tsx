@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
@@ -209,7 +209,7 @@ export default function CollaborationsPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Brand Deals"
         subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work — ready to copy and send. Pro feature."
       />

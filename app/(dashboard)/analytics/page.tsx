@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import Link from 'next/link'
 import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2 } from 'lucide-react'
 
@@ -68,7 +68,7 @@ export default function AnalyticsPage() {
   if (loading) {
     return (
       <>
-        <Header title="Analytics" subtitle="Click data from your affiliate links." />
+        <PageHero title="Analytics" subtitle="Click data from your affiliate links." />
         <div className="card p-12 flex flex-col items-center gap-2 text-sm text-[#86868b]">
           <Loader2 size={20} className="animate-spin text-[#7C3AED]" />
           <span>Loading click data from Geniuslink…</span>
@@ -81,7 +81,7 @@ export default function AnalyticsPage() {
   if (error) {
     return (
       <>
-        <Header title="Analytics" subtitle="Click data from your affiliate links." />
+        <PageHero title="Analytics" subtitle="Click data from your affiliate links." />
         <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
           <AlertCircle size={20} className="text-[#ff3b30]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Couldn&apos;t load analytics</p>
@@ -96,7 +96,7 @@ export default function AnalyticsPage() {
   if (data && !data.connected) {
     return (
       <>
-        <Header title="Analytics" subtitle="Click data from your affiliate links." />
+        <PageHero title="Analytics" subtitle="Click data from your affiliate links." />
         <div className="card p-8 max-w-lg flex flex-col items-center text-center gap-4">
           <div className="w-12 h-12 rounded-full bg-[#7C3AED]/10 flex items-center justify-center">
             <Link2 size={22} className="text-[#7C3AED]" />
@@ -124,7 +124,7 @@ export default function AnalyticsPage() {
   if (data && data.totals.clicks === 0 && data.posts.length === 0) {
     return (
       <>
-        <Header title="Analytics" subtitle="Click data from your affiliate links." />
+        <PageHero title="Analytics" subtitle="Click data from your affiliate links." />
         <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
           <MousePointerClick size={22} className="text-[#86868b]" />
           <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No clicks tracked yet</p>
@@ -146,7 +146,7 @@ export default function AnalyticsPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Analytics"
         subtitle="Last 30 days, human clicks only (bot/junk filtered to match Geniuslink's default). Only shortcodes tied to MVP-generated posts — your Geniuslink dashboard total will include codes from outside MVP."
         actions={

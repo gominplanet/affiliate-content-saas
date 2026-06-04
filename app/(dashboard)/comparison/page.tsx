@@ -6,7 +6,7 @@
  * BUYING GUIDE ("best for ___"). One post against your cap.
  */
 import { useState, useEffect } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Scale, Plus, X, Loader2, ExternalLink, Trophy, ListChecks } from 'lucide-react'
 import { SitePicker } from '@/components/SitePicker'
@@ -75,7 +75,7 @@ export default function ComparisonPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Compare & Guides"
         subtitle="Turn the products you've reviewed into a ranked comparison or a buying guide — published straight to your blog."
       />

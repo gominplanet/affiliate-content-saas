@@ -17,7 +17,7 @@
  * affecting their connection.
  */
 import { useEffect, useState } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Loader2, CheckCircle2, AlertTriangle, AlertCircle, Info, RotateCw, ExternalLink, Key } from 'lucide-react'
 import { SitePicker } from '@/components/SitePicker'
 import { toast } from 'sonner'
@@ -87,7 +87,7 @@ export default function WpDoctorPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="WordPress Connection Doctor"
         subtitle="Runs every check between MVP and your site, names the exact thing blocking writes, and gives you click-by-click fix steps."
       />

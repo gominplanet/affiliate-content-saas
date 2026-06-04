@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Upload, Loader2, CheckCircle2, AlertCircle, Database, Clock } from 'lucide-react'
 
 interface Stats {
@@ -101,12 +101,12 @@ export default function CreatorCampaignsAdminPage() {
   }
 
   if (isAdmin === null) {
-    return <Header title="Creator Campaigns" subtitle="Loading…" />
+    return <PageHero title="Creator Campaigns" subtitle="Loading…" />
   }
   if (!isAdmin) {
     return (
       <>
-        <Header title="Creator Campaigns" subtitle="Admin only." />
+        <PageHero title="Creator Campaigns" subtitle="Admin only." />
         <div className="card p-6 text-sm text-[#6e6e73]">
           This page is restricted to admin accounts.
         </div>
@@ -120,7 +120,7 @@ export default function CreatorCampaignsAdminPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Creator Campaigns catalog"
         subtitle="Upload the weekly Amazon Creator Connections export here. Every user instantly searches the result on their /campaigns page — no per-user upload."
       />

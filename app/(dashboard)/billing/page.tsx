@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
@@ -132,7 +132,7 @@ export default function BillingPage() {
 
   return (
     <>
-      <Header title="Plan & Billing" subtitle="See where you are this month, swap plans, or cancel, all in one place." />
+      <PageHero title="Plan & Billing" subtitle="See where you are this month, swap plans, or cancel, all in one place." />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-8">

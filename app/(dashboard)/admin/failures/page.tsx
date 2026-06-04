@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { RefreshCw, Trash2, AlertCircle, ChevronDown, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react'
 
 type JobType = 'blog_generation' | 'wp_publish' | 'social_draft' | 'youtube_sync'
@@ -265,7 +265,7 @@ export default function FailuresPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Issues"
         subtitle={loading ? '' : open > 0 ? `${open} item${open !== 1 ? 's' : ''} need attention.` : 'Everything is running smoothly.'}
         actions={

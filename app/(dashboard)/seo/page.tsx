@@ -9,7 +9,6 @@
  */
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
-import Header from '@/components/layout/Header'
 import PageHero from '@/components/layout/PageHero'
 import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
 

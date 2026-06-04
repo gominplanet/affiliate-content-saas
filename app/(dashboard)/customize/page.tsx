@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
@@ -618,7 +618,7 @@ export default function CustomizePage() {
   if (loading) {
     return (
       <>
-        <Header title="Customize Blog" subtitle="Edit the bits of your site that aren't covered by Brand Profile — Pick of the Day, in-content ad slots, footer links." />
+        <PageHero title="Customize Blog" subtitle="Edit the bits of your site that aren't covered by Brand Profile — Pick of the Day, in-content ad slots, footer links." />
         <div className="flex items-center gap-2 text-sm text-[var(--text-3)] py-8">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
@@ -628,7 +628,7 @@ export default function CustomizePage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Customize Blog"
         subtitle="Edit the bits of your site that aren't covered by Brand Profile — Pick of the Day, in-content ad slots, footer links."
         actions={

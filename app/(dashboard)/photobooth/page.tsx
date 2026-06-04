@@ -14,7 +14,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { createBrowserClient } from '@/lib/supabase/client'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { effectiveTier } from '@/lib/view-as'
 import {
@@ -303,7 +303,7 @@ export default function PhotoboothPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Photobooth"
         subtitle="Teach MVP your face once — then put the real you in every thumbnail, post, and studio-quality headshot."
       />

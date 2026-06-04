@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { Megaphone, Sparkles, X, ArrowRight, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 
 type Variant = 'news' | 'feature'
@@ -89,7 +89,7 @@ export default function AdminAnnouncementPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="News banner"
         subtitle="Post a dismissible announcement to everyone's dashboard. No deploy needed."
       />

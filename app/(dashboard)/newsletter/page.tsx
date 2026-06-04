@@ -20,7 +20,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { useConfirm } from '@/components/ui/useConfirm'
 import {
   Loader2, Mail, CheckCircle, AlertCircle, Upload, Download,
@@ -426,7 +426,7 @@ export default function NewsletterPage() {
   if (loading) {
     return (
       <>
-        <Header title="Newsletter" subtitle="Capture emails on your blog and send curated issues to your list." />
+        <PageHero title="Newsletter" subtitle="Capture emails on your blog and send curated issues to your list." />
         <div className="flex items-center gap-2 text-sm text-[#6e6e73] dark:text-[#ebebf0]">
           <Loader2 size={14} className="animate-spin" /> Loading…
         </div>
@@ -436,7 +436,7 @@ export default function NewsletterPage() {
 
   return (
     <>
-      <Header
+      <PageHero
         title="Newsletter"
         subtitle="Capture emails on your blog, then send curated issues that link back to your reviews."
       />

@@ -12,7 +12,7 @@
 
 import Link from 'next/link'
 import { ArrowRight, GraduationCap } from 'lucide-react'
-import Header from '@/components/layout/Header'
+import PageHero from '@/components/layout/PageHero'
 import { TUTORIALS } from '@/lib/tutorials'
 
 export const metadata = { title: 'Tutorials' }
@@ -20,7 +20,7 @@ export const metadata = { title: 'Tutorials' }
 export default function TutorialsPage() {
   return (
     <>
-      <Header
+      <PageHero
         title="Tutorials"
         subtitle="Every walkthrough in one place. Each section also shows its own tutorial at the top of the page — you can dismiss it inline and bring them all back from the sidebar."
       />
