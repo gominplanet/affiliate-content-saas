@@ -386,7 +386,7 @@ export default function DealsHubPage() {
               Deals Hub
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--fg-muted)' }}>
-              Drop an Amazon link, the agent writes a timely deal post with a baked thumbnail, end-date countdown, and your promo code or special link wired into every CTA.
+              Drop any product link, Amazon URL, Geniuslink, amzn.to short link, or a bare ASIN. The agent writes a timely deal post with a baked thumbnail, end-date countdown, and your promo code or special link wired into every CTA.
             </p>
           </div>
         </div>
@@ -561,7 +561,7 @@ create index if not exists blog_posts_deal_meta_gin
           <form onSubmit={handleSubmit} className="card p-6 flex flex-col gap-4">
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1.5 text-[#86868b]" htmlFor="deal-product">
-                Amazon product URL or ASIN
+                Product link or Amazon ASIN
               </label>
               <div className="relative">
                 <LinkIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#86868b] pointer-events-none" />
@@ -569,7 +569,7 @@ create index if not exists blog_posts_deal_meta_gin
                   id="deal-product"
                   type="text"
                   required
-                  placeholder="https://www.amazon.com/dp/B0XXXXXXXX  or  B0XXXXXXXX"
+                  placeholder="https://www.amazon.com/dp/...   ·   https://geni.us/...   ·   https://amzn.to/...   ·   B0XXXXXXXX"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   disabled={generating}
@@ -577,7 +577,7 @@ create index if not exists blog_posts_deal_meta_gin
                 />
               </div>
               <p className="text-[11px] mt-1.5" style={{ color: 'var(--fg-muted)' }}>
-                The agent reads the listing for the current price, the strike-through &quot;was&quot; price, any deal badge (Lightning Deal, Prime Day, etc.), and the expiration date if Amazon shows one.
+                Paste any link, Amazon URL, Geniuslink, amzn.to / a.co short link, or a bare ASIN. The agent unwraps the link, reads the underlying Amazon listing for the current price, the strike-through &quot;was&quot; price, any deal badge (Lightning Deal, Prime Day, etc.), and the expiration date if Amazon shows one.
               </p>
             </div>
 

@@ -40,6 +40,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { extractAsin, fetchAmazonProduct, isValidAsin, type AmazonProduct } from '@/services/amazon'
+import { resolveFinalUrl } from '@/lib/product-link'
 import { composeWithNanoBanana, composeWithNanoBananaPro, rehostToFal } from '@/lib/thumbnail-generators'
 import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
@@ -50,16 +51,41 @@ export const maxDuration = 300
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-/** Extract an ASIN from either a raw ASIN string or an Amazon URL. Returns
- *  null if neither shape matches — caller surfaces a 400. */
-function asinFromInput(raw: string): string | null {
+/** A short-link shortener pattern. Geniuslink (geni.us), Amazon's own
+ *  shorteners (amzn.to, a.co), and a few common third-party services all
+ *  hash the underlying URL. We unwrap them via HEAD-follow before trying
+ *  to extract the ASIN. */
+const SHORT_LINK_RE = /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly|rstyle\.me|shareasale\.com)/i
+
+/** Extract an ASIN from a free-form input. Accepts:
+ *    - A bare ASIN ("B0XXXXXXXX")
+ *    - A direct Amazon URL (/dp/ASIN, /gp/product/ASIN)
+ *    - A short link (amzn.to, a.co, geni.us, etc.) → resolved via HEAD
+ *      follow, then ASIN extracted from the final URL
+ *    - A Geniuslink wrapper → same as short-link path
+ *  Returns null if no ASIN can be coaxed out, so the caller can surface a
+ *  clear "we couldn't find an Amazon product behind that link" error. */
+async function asinFromInput(raw: string): Promise<string | null> {
   const trimmed = (raw || '').trim()
   if (!trimmed) return null
   // Direct ASIN form (case-insensitive).
   if (isValidAsin(trimmed.toUpperCase())) return trimmed.toUpperCase()
-  // Amazon URL form — extractAsin handles /dp/ASIN, /gp/product/ASIN, etc.
-  const fromUrl = extractAsin(trimmed)
-  if (fromUrl) return fromUrl
+  // Try ASIN extraction on the raw input first (handles direct Amazon URLs
+  // without paying the HEAD round-trip).
+  const directAsin = extractAsin(trimmed)
+  if (directAsin) return directAsin
+  // Short-link / affiliate-link unwrap. resolveFinalUrl HEAD-follows
+  // redirects up to a small cap and returns the final URL string.
+  if (SHORT_LINK_RE.test(trimmed)) {
+    try {
+      const resolved = await resolveFinalUrl(trimmed)
+      const fromResolved = extractAsin(resolved)
+      if (fromResolved) return fromResolved
+    } catch {
+      // Network/redirect failure — fall through to null. The caller's
+      // error message tells the user to paste the Amazon URL directly.
+    }
+  }
   return null
 }
 
@@ -356,10 +382,16 @@ export async function POST(req: Request) {
   }
 
   const rawInput = (body.url || body.asin || '').trim()
-  const asin = asinFromInput(rawInput)
+  const asin = await asinFromInput(rawInput)
   if (!asin) {
+    // Tailored message: distinguish "I gave you junk" from "I gave you a
+    // link we couldn't unwrap to an Amazon listing".
+    const looksLikeUrl = /^https?:\/\//i.test(rawInput)
+    const errorMsg = looksLikeUrl
+      ? 'That link doesn\'t resolve to an Amazon product page. The Deals Hub reads Amazon listings for pricing, so paste the Amazon URL directly, an Amazon short link (amzn.to / a.co), or a Geniuslink that points to Amazon.'
+      : 'Paste a product link or a 10-character Amazon ASIN.'
     return NextResponse.json({
-      error: 'Paste an Amazon product URL or a 10-character ASIN.',
+      error: errorMsg,
       code: 'bad_input',
     }, { status: 400 })
   }
