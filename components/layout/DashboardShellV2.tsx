@@ -62,38 +62,48 @@ const DARK_VARS: React.CSSProperties = {
   ['--bg' as string]: '#0E0E11',
   ['--bg-sidebar' as string]: '#0B0B0E',
   ['--surface' as string]: 'rgba(255,255,255,0.03)',
-  ['--surface-hover' as string]: 'rgba(255,255,255,0.05)',
-  ['--surface-bright' as string]: 'rgba(255,255,255,0.07)',
+  ['--surface-hover' as string]: 'rgba(255,255,255,0.06)',
+  ['--surface-bright' as string]: 'rgba(255,255,255,0.09)',
   ['--surface-selected' as string]: 'rgba(124,58,237,0.10)',
-  ['--border' as string]: 'rgba(255,255,255,0.06)',
-  ['--border-bright' as string]: 'rgba(255,255,255,0.10)',
+  ['--border' as string]: 'rgba(255,255,255,0.08)',
+  ['--border-bright' as string]: 'rgba(255,255,255,0.14)',
   ['--text' as string]: '#F5F5F7',
-  ['--text-muted' as string]: 'rgba(255,255,255,0.85)',
-  ['--text-soft' as string]: 'rgba(255,255,255,0.70)',
-  ['--text-subtle' as string]: 'rgba(255,255,255,0.55)',
-  ['--text-faint' as string]: 'rgba(255,255,255,0.40)',
-  ['--text-dim' as string]: 'rgba(255,255,255,0.30)',
+  ['--text-muted' as string]: 'rgba(255,255,255,0.92)',
+  // Body / nav items / most label text. Was 0.55 — too grey, users on
+  // dark mode reported eye-strain on the sidebar. Bumped to 0.86 so a
+  // resting nav row reads as actual white-ish, with the active state
+  // staying accent-violet. Hover still goes to --text (pure white).
+  ['--text-soft' as string]: 'rgba(255,255,255,0.86)',
+  ['--text-subtle' as string]: 'rgba(255,255,255,0.78)',
+  // Section labels (GROW, COLLABORATE…). Was 0.40 — barely visible.
+  // Bumped to 0.65 with letter-spacing still in the component to keep
+  // the "small caps section header" rhythm.
+  ['--text-faint' as string]: 'rgba(255,255,255,0.65)',
+  ['--text-dim' as string]: 'rgba(255,255,255,0.50)',
   ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 2px rgba(0,0,0,0.2)',
   ['--kbd-bg' as string]: 'rgba(255,255,255,0.06)',
-  ['--nav-active-bg' as string]: 'rgba(124,58,237,0.16)',
-  ['--nav-active-text' as string]: '#C4B5FD',
+  ['--nav-active-bg' as string]: 'rgba(124,58,237,0.20)',
+  ['--nav-active-text' as string]: '#D4C4FF',
 }
 
 const LIGHT_VARS: React.CSSProperties = {
   ['--bg' as string]: '#FAFAF8',
   ['--bg-sidebar' as string]: '#F4F2EE',
   ['--surface' as string]: '#FFFFFF',
-  ['--surface-hover' as string]: 'rgba(0,0,0,0.025)',
-  ['--surface-bright' as string]: 'rgba(0,0,0,0.04)',
+  ['--surface-hover' as string]: 'rgba(0,0,0,0.04)',
+  ['--surface-bright' as string]: 'rgba(0,0,0,0.06)',
   ['--surface-selected' as string]: 'rgba(124,58,237,0.08)',
-  ['--border' as string]: 'rgba(0,0,0,0.08)',
-  ['--border-bright' as string]: 'rgba(0,0,0,0.14)',
+  ['--border' as string]: 'rgba(0,0,0,0.10)',
+  ['--border-bright' as string]: 'rgba(0,0,0,0.18)',
   ['--text' as string]: '#1D1D1F',
-  ['--text-muted' as string]: 'rgba(0,0,0,0.82)',
-  ['--text-soft' as string]: 'rgba(0,0,0,0.66)',
-  ['--text-subtle' as string]: 'rgba(0,0,0,0.52)',
-  ['--text-faint' as string]: 'rgba(0,0,0,0.40)',
-  ['--text-dim' as string]: 'rgba(0,0,0,0.30)',
+  ['--text-muted' as string]: 'rgba(0,0,0,0.86)',
+  // Bumped to match the dark-mode readability calibration (0.82 → 0.78
+  // → 0.65). Body / nav rows now look proper black-ink instead of
+  // washed out grey.
+  ['--text-soft' as string]: 'rgba(0,0,0,0.78)',
+  ['--text-subtle' as string]: 'rgba(0,0,0,0.68)',
+  ['--text-faint' as string]: 'rgba(0,0,0,0.55)',
+  ['--text-dim' as string]: 'rgba(0,0,0,0.40)',
   ['--card-shadow' as string]: '0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02)',
   ['--kbd-bg' as string]: 'rgba(0,0,0,0.05)',
   ['--nav-active-bg' as string]: 'rgba(124,58,237,0.10)',
@@ -264,9 +274,9 @@ export default function DashboardShellV2({
         {/* Brand + collapse toggle */}
         <div className="px-4 pt-5 pb-4 flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-semibold text-white text-[13px]">M</span>
+            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-bold text-white text-[14px]">M</span>
             {!collapsed && (
-              <span className="font-semibold text-[14px] tracking-tight" style={{ color: 'var(--text)' }}>
+              <span className="font-semibold text-[15px] tracking-tight" style={{ color: 'var(--text)' }}>
                 MVP Affiliate
               </span>
             )}
@@ -293,7 +303,7 @@ export default function DashboardShellV2({
               <div key={group.label}>
                 {!collapsed && (
                   <p
-                    className="px-2.5 mb-1.5 text-[10px] uppercase tracking-[0.15em] font-medium"
+                    className="px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold"
                     style={{ color: 'var(--text-faint)' }}
                   >
                     {group.label}
@@ -358,16 +368,16 @@ export default function DashboardShellV2({
             className={`flex items-center gap-2 px-2 py-1.5 rounded-lg group ${collapsed ? 'justify-center' : ''}`}
             style={{ backgroundColor: 'transparent' }}
           >
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center text-[12px] font-semibold text-white flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center text-[13px] font-semibold text-white flex-shrink-0">
               {userInitial}
             </div>
             {!collapsed && (
               <>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-medium truncate" style={{ color: 'var(--text)' }}>
+                  <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text)' }}>
                     {email || 'Account'}
                   </p>
-                  <p className="text-[10px] truncate" style={{ color: 'var(--text-faint)' }}>
+                  <p className="text-[11px] font-medium truncate" style={{ color: 'var(--text-faint)' }}>
                     {String(tier).charAt(0).toUpperCase() + String(tier).slice(1)} plan
                   </p>
                 </div>
@@ -399,7 +409,7 @@ export default function DashboardShellV2({
               follow-up (needs wordpress_sites API wiring + dropdown). */}
           <Link
             href="/setup?tab=integrations"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[12px] transition-colors"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors"
             style={{
               backgroundColor: 'var(--surface)',
               borderColor: 'var(--border)',
@@ -410,7 +420,7 @@ export default function DashboardShellV2({
           >
             <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
             {wpHostname || 'No WordPress yet'}
-            <ChevronDown size={11} style={{ color: 'var(--text-faint)' }} />
+            <ChevronDown size={12} style={{ color: 'var(--text-faint)' }} />
           </Link>
 
           <div className="ml-auto flex items-center gap-3">
@@ -421,7 +431,7 @@ export default function DashboardShellV2({
                 href={`${wpSiteUrl.replace(/\/+$/, '')}/wp-admin`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-2.5 py-1.5 rounded-lg border text-[11px] inline-flex items-center gap-1.5 transition-colors"
+                className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
                 style={{
                   backgroundColor: 'var(--surface)',
                   borderColor: 'var(--border)',
@@ -431,7 +441,7 @@ export default function DashboardShellV2({
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
                 title="Open WordPress admin in a new tab"
               >
-                WP Admin <ExternalLink size={10} />
+                WP Admin <ExternalLink size={11} />
               </a>
             )}
 
@@ -457,7 +467,7 @@ export default function DashboardShellV2({
                 lands in a follow-up; for now the button is a Link. */}
             <Link
               href="/assistant"
-              className="px-2.5 py-1.5 rounded-lg border text-[11px] inline-flex items-center gap-2 transition-colors"
+              className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-2 transition-colors"
               style={{
                 backgroundColor: 'var(--surface)',
                 borderColor: 'var(--border)',
@@ -466,10 +476,10 @@ export default function DashboardShellV2({
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
             >
-              <Sparkles size={11} className="text-[#7C3AED]" />
+              <Sparkles size={12} className="text-[#7C3AED]" />
               Ask anything
               <kbd
-                className="px-1 py-0.5 rounded text-[9px] border font-mono"
+                className="px-1.5 py-0.5 rounded text-[10px] border font-mono"
                 style={{
                   backgroundColor: 'var(--kbd-bg)',
                   borderColor: 'var(--border-bright)',
@@ -522,12 +532,20 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
       href={item.href}
       title={collapsed ? item.label : undefined}
       className={cn(
-        'relative flex items-center gap-2.5 py-1.5 rounded-lg text-[13px] font-medium transition-colors',
+        // 14px (was 13px) + font-semibold (was font-medium) — boosts
+        // legibility on the dark theme without the row feeling
+        // overweight. py-2 (was py-1.5) gives a touch more breathing
+        // room for the larger glyphs.
+        'relative flex items-center gap-2.5 py-2 rounded-lg text-[14px] font-semibold transition-colors',
         collapsed ? 'justify-center' : 'px-2.5',
       )}
       style={{
         backgroundColor: active ? 'var(--nav-active-bg)' : 'transparent',
-        color: active ? 'var(--nav-active-text)' : 'var(--text-subtle)',
+        // Resting nav rows now use --text-soft (0.86 in dark, 0.78 in
+        // light) so they read as actual text, not greyed-out hints. The
+        // active row stays accent-coloured and the hover state goes to
+        // --text (pure foreground).
+        color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
       }}
       onMouseEnter={(e) => {
         if (!active) {
@@ -538,22 +556,22 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
       onMouseLeave={(e) => {
         if (!active) {
           e.currentTarget.style.backgroundColor = 'transparent'
-          e.currentTarget.style.color = 'var(--text-subtle)'
+          e.currentTarget.style.color = 'var(--text-soft)'
         }
       }}
     >
       {/* Left indicator bar — 3px violet stub that proudly marks the
           selected row. Strong enough to be obvious even when scanning
           the whole sidebar. */}
-      {active && <span className="absolute -left-2 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-[#7C3AED]" />}
+      {active && <span className="absolute -left-2 top-2 bottom-2 w-[3px] rounded-r-full bg-[#7C3AED]" />}
       <span className="flex-shrink-0">{item.icon}</span>
       {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
       {!collapsed && item.badge !== undefined && (
         <span
-          className="text-[10px] tabular-nums px-1.5 py-0.5 rounded"
+          className="text-[11px] tabular-nums px-1.5 py-0.5 rounded font-semibold"
           style={{
-            backgroundColor: active ? 'rgba(124,58,237,0.18)' : 'var(--surface-bright)',
-            color: active ? 'var(--nav-active-text)' : 'var(--text-faint)',
+            backgroundColor: active ? 'rgba(124,58,237,0.22)' : 'var(--surface-bright)',
+            color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
           }}
         >
           {item.badge}
