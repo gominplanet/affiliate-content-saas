@@ -36,7 +36,6 @@ import {
   Sun, Moon, BookOpen, BadgePercent, Megaphone, Handshake,
   Flame, GraduationCap, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
-  LayoutDashboard,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -583,6 +582,3 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
   )
 }
 
-// LayoutDashboard import safety: imported to avoid the unused-warning
-// when collapsed pruning lands. Keep as-is until follow-up.
-void LayoutDashboard
