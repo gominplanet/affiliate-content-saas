@@ -5,12 +5,17 @@ import { toast } from 'sonner'
 import Header from '@/components/layout/Header'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { TIERS, type Tier } from '@/lib/tier'
-import { effectiveTier } from '@/lib/view-as'
+import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { effectiveTier, getViewAsTier, setViewAsTier } from '@/lib/view-as'
 
 export default function BillingPage() {
   const supabase = createBrowserClient()
   const [tier, setTier] = useState<Tier>('trial')
+  // Real DB tier (never overridden by view-as). Used to decide whether to
+  // show the admin-only tier switcher card at the top of this page.
+  const [realTier, setRealTier] = useState<Tier>('trial')
+  // Current view-as override (admin only). null = "My view (Admin)".
+  const [viewAs, setViewAsState] = useState<Tier | null>(null)
   const [postsUsed, setPostsUsed] = useState(0)
   const [socialCounts, setSocialCounts] = useState({ facebook: 0, threads: 0, pinterest: 0 })
   const [loading, setLoading] = useState(true)
@@ -30,8 +35,13 @@ export default function BillingPage() {
         .eq('user_id', user.id)
         .maybeSingle()
 
+      const real = normalizeTier(data?.tier)
+      setRealTier(real)
       const userTier = effectiveTier(data?.tier as string)
       setTier(userTier)
+      // Hydrate the view-as dropdown from localStorage so the picker
+      // accurately reflects the active override on first paint.
+      setViewAsState(getViewAsTier())
 
       // Count posts used — lifetime for free, current month for paid.
       // Build monthStart in UTC so users west of UTC don't see wrong
@@ -122,7 +132,7 @@ export default function BillingPage() {
 
   return (
     <>
-      <Header title="Plan & Billing" subtitle="See where you are this month, swap plans, or cancel — all in one place." />
+      <Header title="Plan & Billing" subtitle="See where you are this month, swap plans, or cancel, all in one place." />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-8">
@@ -130,6 +140,56 @@ export default function BillingPage() {
         </div>
       ) : (
         <div className="max-w-xl flex flex-col gap-5">
+
+          {/* Admin tier preview switcher.
+              Real DB tier is admin → show a prominent card with a tier picker so
+              the admin can see every page as Trial / Creator / Studio / Pro. This
+              mirrors the sidebar dropdown (which lives under the System nav and
+              can be hard to find). Switching reloads so every page re-reads tier
+              through effectiveTier(). Visual only, real admin access is unchanged. */}
+          {realTier === 'admin' && (
+            <div
+              className="rounded-2xl p-5 border"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,.10), rgba(124,58,237,.04))',
+                borderColor: 'rgba(124,58,237,.30)',
+              }}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#7C3AED] mb-1">Admin preview</p>
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    View this app as another tier
+                  </p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+                    Visual only. Your real admin access is unchanged. Reloads every page through the override.
+                  </p>
+                </div>
+                <select
+                  value={viewAs ?? 'admin'}
+                  onChange={(e) => {
+                    const v = e.target.value as Tier
+                    setViewAsState(v === 'admin' ? null : v)
+                    setViewAsTier(v === 'admin' ? null : v)
+                    window.location.reload()
+                  }}
+                  className="text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] px-3 py-2 font-medium shrink-0"
+                  title="Preview the UI as each tier sees it. Visual only, your real admin access is unchanged."
+                >
+                  <option value="admin">My view (Admin)</option>
+                  <option value="pro">Pro</option>
+                  <option value="studio">Studio</option>
+                  <option value="creator">Creator</option>
+                  <option value="trial">Free Trial</option>
+                </select>
+              </div>
+              {viewAs && viewAs !== 'admin' && (
+                <p className="text-xs text-[#ff9500] mt-3 font-medium">
+                  Previewing as <strong>{TIERS[viewAs].label}</strong>. Click the dropdown and pick &quot;My view (Admin)&quot; to flip back.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Upgrade success banner */}
           {upgraded && (
