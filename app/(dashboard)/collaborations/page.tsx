@@ -6,7 +6,11 @@ import PageHero from '@/components/layout/PageHero'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
-import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle, Trash2, Save } from 'lucide-react'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
+import { Loader2, Sparkles, Copy, CheckCircle, AlertCircle, Trash2, Save, Handshake } from 'lucide-react'
 
 interface CollabRow {
   id: string
@@ -71,6 +75,33 @@ export default function CollaborationsPage() {
   const [deleting, setDeleting] = useState(false)
   const [savingTrack, setSavingTrack] = useState(false)
   const [trackSaved, setTrackSaved] = useState(false)
+
+  // Tier restructure 2026-06-04: Collabs is Creator+ minimum (Creator 5,
+  // Studio 15, Pro 100 per month). Trial sees the FeatureLockedCard
+  // upsell. effectiveTier() honors the admin View-as override so admins
+  // can preview the gate without changing their DB tier.
+  const [tier, setTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { realTier = 'trial'; apply(); return }
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
+      } catch {
+        realTier = 'trial'
+        apply()
+      }
+    })()
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -207,11 +238,34 @@ export default function CollaborationsPage() {
 
   const lbl = 'block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1'
 
+  // Trial gate — render the FeatureLockedCard BEFORE everything else so
+  // trial users (or admins View-as'ing trial) don't see the form load.
+  // Creator+ falls through to the regular page; tier === null is the
+  // "still loading" state.
+  if (tier !== null && tier === 'trial') {
+    return (
+      <FeatureLockedCard
+        icon={<Handshake size={28} strokeWidth={1.8} />}
+        feature="Brand Deals"
+        description="Drop a brand name. MVP researches their products + storefront, drafts a personalized pitch email that sells your work, and pulls in your real channel stats as proof of distribution. Built on the same playbook a proven brand-outreach pro uses to land deals."
+        bullets={[
+          'AI researches each brand + the angle that fits your channel',
+          'Pulls your cross-platform reach automatically (no manual stats lookup)',
+          'Editable subject line + email body — copy and send from your own inbox',
+          'Track which brands you pitched, when, and the outcome',
+          'Creator: 5 pitches / month · Studio: 15 / month · Pro: 100 / month',
+        ]}
+        requiredTier="creator"
+        currentTier={tier}
+      />
+    )
+  }
+
   return (
     <>
       <PageHero
         title="Brand Deals"
-        subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work — ready to copy and send. Pro feature."
+        subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work, ready to copy and send."
       />
 
       <TutorialVideo sectionKey="collaborations" />
