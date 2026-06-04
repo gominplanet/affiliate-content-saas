@@ -207,9 +207,27 @@ async function loadReviews(supabase: Awaited<ReturnType<typeof createServerClien
   //    to an MVP row, fabricate a ReviewRow using { title, excerpt, link }.
   //    video_id is left empty for these (used only by the POST insert path,
   //    which falls back to the top MVP-tracked pick to keep the FK valid).
+  //
+  //    Filter OUT posts tagged buying-guide or comparison — those are
+  //    round-up content, not the source reviews we want to cluster from.
   if (wpBase) {
     try {
-      const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=100&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
+      // Resolve excluded tag ids up front (1 round-trip). If the tags
+      // don't exist on this site, exclude params just have no effect.
+      let excludeTagIds: number[] = []
+      try {
+        const tagRes = await fetch(`${wpBase}/wp-json/wp/v2/tags?slug=buying-guide,comparison&_fields=id`, {
+          signal: AbortSignal.timeout(3000),
+          headers: { Accept: 'application/json' },
+        })
+        if (tagRes.ok) {
+          const tags = await tagRes.json() as Array<{ id: number }>
+          excludeTagIds = tags.map(t => t.id).filter(Boolean)
+        }
+      } catch { /* non-fatal */ }
+      const excludeParam = excludeTagIds.length ? `&tags_exclude=${excludeTagIds.join(',')}` : ''
+
+      const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=100${excludeParam}&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
         signal: AbortSignal.timeout(8000),
         headers: { Accept: 'application/json' },
       })
@@ -303,7 +321,21 @@ export async function GET() {
   const reviews = await loadReviews(supabase, user.id)
   const suggestions = await suggestTopicsAI(reviews)
 
-  // Previously generated guides
+  // ── Previously generated guides ───────────────────────────────────────────
+  // Two sources, deduped by URL:
+  //   1. blog_posts where post_type='guide' — what MVP knows about
+  //   2. WP REST posts tagged 'buying-guide' — the actual published reality
+  //
+  // WP REST is authoritative for "what's live on the blog" — blog_posts can
+  // miss rows when the insert fails silently (NOT-NULL constraint on
+  // video_id pre-migration-024, RLS edge cases, etc).
+  type GuideOut = { id: string; title: string; url: string | null; topic: string | null; created_at: string }
+  const guidesByUrl = new Map<string, GuideOut>()
+
+  const stripUrl = (u: string) => u.replace(/\/+$/, '').toLowerCase()
+  const stripHtml = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim()
+
+  // 1. blog_posts source
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: guideRows } = await (supabase as any)
     .from('blog_posts')
@@ -312,13 +344,60 @@ export async function GET() {
     .eq('post_type', 'guide')
     .order('created_at', { ascending: false })
     .limit(30)
+  for (const g of (guideRows ?? []) as Array<{ id: string; title: string; wordpress_url: string | null; seo_keyword: string | null; created_at: string }>) {
+    if (!g.wordpress_url) continue
+    guidesByUrl.set(stripUrl(g.wordpress_url), {
+      id: g.id, title: g.title, url: g.wordpress_url, topic: g.seo_keyword, created_at: g.created_at,
+    })
+  }
+
+  // 2. WP REST source — find the buying-guide tag, then pull posts with it
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: integForGuides } = await supabase
+    .from('integrations').select('wordpress_url').eq('user_id', user.id).maybeSingle()
+  const wpBaseForGuides = (integForGuides?.wordpress_url as string | null)?.replace(/\/+$/, '') || ''
+  if (wpBaseForGuides) {
+    try {
+      const tagRes = await fetch(`${wpBaseForGuides}/wp-json/wp/v2/tags?slug=buying-guide&_fields=id`, {
+        signal: AbortSignal.timeout(3000),
+        headers: { Accept: 'application/json' },
+      })
+      if (tagRes.ok) {
+        const tags = await tagRes.json() as Array<{ id: number }>
+        const tagId = tags[0]?.id
+        if (tagId) {
+          const postsRes = await fetch(`${wpBaseForGuides}/wp-json/wp/v2/posts?tags=${tagId}&per_page=30&_fields=id,link,title,date`, {
+            signal: AbortSignal.timeout(5000),
+            headers: { Accept: 'application/json' },
+          })
+          if (postsRes.ok) {
+            const wpGuides = await postsRes.json() as Array<{ id: number; link: string; title: { rendered: string }; date: string }>
+            for (const g of wpGuides) {
+              if (!g.link) continue
+              const key = stripUrl(g.link)
+              if (guidesByUrl.has(key)) continue // blog_posts row wins (has the seo_keyword as topic)
+              guidesByUrl.set(key, {
+                id: `wp-${g.id}`,
+                title: stripHtml(g.title?.rendered || ''),
+                url: g.link,
+                topic: null,
+                created_at: g.date,
+              })
+            }
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  const guides = Array.from(guidesByUrl.values())
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .slice(0, 30)
 
   return NextResponse.json({
     reviewCount: reviews.length,
     suggestions,
-    guides: ((guideRows ?? []) as Array<{ id: string; title: string; wordpress_url: string | null; seo_keyword: string | null; created_at: string }>).map(g => ({
-      id: g.id, title: g.title, url: g.wordpress_url, topic: g.seo_keyword, created_at: g.created_at,
-    })),
+    guides,
   })
 }
 
