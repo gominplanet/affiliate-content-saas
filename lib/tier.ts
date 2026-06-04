@@ -1,9 +1,30 @@
 // Plan set: trial (free, 5 posts lifetime, no card) / creator $49 / studio $99
-// / pro $199 / admin (internal, unlimited). Studio bridges the $49→$199 gap:
-// single-account creator who wants the full toolkit (TikTok/IG direct, scripts,
-// comparison posts). Pro adds Pro-only levers: multi-account social, Campaigns
-// (including the Amazon Creator Connections EPC scout via the optional browser
-// extension), Publish All, all upper caps.
+// / pro $199 / admin (internal, unlimited).
+//
+// Rewritten 2026-06-04 per tier-restructure session. Key changes:
+//   - Generation caps DROPPED for paid tiers (Creator 40→20, Studio 80→60,
+//     Pro unchanged at 200). Tier copy now sells "blog + thumbnail +
+//     metadata" as a bundle that burns 1 unit; postsPerMonth /
+//     thumbnailsPerMonth / metadataGensPerMonth all read the same cap.
+//     True atomic shared counter is a follow-up RPC (see follow-up task).
+//   - Scripts open to Creator (10/mo), Studio (30/mo), Pro (150/mo).
+//   - LoRA training opens to Creator + Studio (was Pro-only).
+//   - Deals Hub gets its own counter: Studio 5/mo, Pro 30/mo.
+//   - IG AI thumbnails opens to Studio (30/mo, was Pro-only).
+//   - Topic hubs / Refresh images go to Studio+.
+//   - Comparison posts / Buying guides / Rebuild-from-video → Pro-only.
+//   - Newsletter access opens to Creator (taster: 500 subs, 1 send/mo);
+//     Studio = weekly (5k/4); Pro = twice-weekly (10k/8).
+//   - Newsletter A/B + Segmented = Pro-only; Scheduling = Studio+.
+//   - Social matrix per tier:
+//       Creator: LinkedIn, Bluesky, Pinterest, Facebook*, Threads*
+//       Studio: + Instagram*, Telegram
+//       Pro:    + Twitter, TikTok*
+//       (* = pending external app-review gate, separate from tier gate)
+//   - VA seats: Pro 3 with granular perms.
+//   - API access + White-label: still Pro-only but HIDDEN from nav until
+//     real demand surfaces (route + page stay alive).
+//   - Priority queue + Discord priority support: Studio + Pro.
 export type Tier = 'trial' | 'creator' | 'studio' | 'pro' | 'admin'
 
 /** Default tier for a brand-new account (no Stripe subscription yet). */
@@ -37,164 +58,208 @@ export const TIERS = {
     label: 'Free Trial',
     price: 0,
     regularPrice: 0,
+    /** Shared "Generations" counter: blog + thumbnail + metadata each
+     *  burn 1 unit. Trial is gated by lifetimeMax below, not monthly. */
     postsPerMonth: null as number | null,
     /** 5 posts LIFETIME (not monthly) — hard wall after the 5th, no card,
      *  no time limit. The "aha" run. */
     lifetimeMax: 5 as number | null,
     collabsPerMonth: 0 as number | null,
-    /** Tied to the 5 Co-Pilot videos the trial covers. */
+    /** Tied to the 5 Co-Pilot videos the trial covers. Shares the same
+     *  bucket as postsPerMonth — the cap value mirrors it. */
     thumbnailsPerMonth: 5 as number | null,
     metadataGensPerMonth: 5 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
-    /** Professional headshots (Photobooth) / month. Paid-tier feature. */
+    /** Deal posts (Amazon CSV + single-link form share this bucket). */
+    dealsPerMonth: 0 as number | null,
     photoboothPerMonth: 0 as number | null,
-    /** Max saved faces a user can keep (0 = feature off for this tier). Bounds
-     *  the gpt-image anchor COGS, since each face seeds cached anchors. */
     maxFaces: 0 as number | null,
-    /** In-body blog images per post (hard ceiling — COGS guard). */
     blogImagesPerPost: 2,
-    /** AI assistant chat messages / month (product help + coach). */
     assistantMessagesPerMonth: 20 as number | null,
-    /** LoRA face-training jobs / month (0 = feature off). */
     faceTrainJobs: 0 as number | null,
-    /** Newsletter (Milestone 1+): max total subscribers the trial can keep on
-     *  their list. Hard cap — once reached, new sign-ups are rejected with
-     *  a friendly "this newsletter is full" message rather than silently
-     *  dropping them. */
     newsletterSubscribers: 100 as number | null,
-    /** Newsletter: max broadcast SENDS per billing month. The trial gets one
-     *  send so they can see the full compose → blast loop, but won't spam. */
     newsletterBroadcastsPerMonth: 1 as number | null,
-    /** Video Script & Shot List generations per calendar month. 0 = feature
-     *  off for this tier; users see a Pro-feature upsell on /script instead
-     *  of the generator. Bounds Sonnet token spend on the pre-production
-     *  tool. */
+    /** Newsletter feature flags. */
+    newsletterScheduling: false,
+    newsletterABTesting: false,
+    newsletterSegmentedSends: false,
+    /** Pre-production: video script & shot list. Separate counter from
+     *  postsPerMonth (different point in the workflow — before video). */
     scriptsPerMonth: 0 as number | null,
+    /** Content-type gates. */
+    comparisonPosts: false,
+    buyingGuides: false,
+    topicHubs: false,
+    refreshImages: false,
+    rebuildFromVideo: false,
     basePosts: 5,
     bonusPosts: 0,
     sites: 1,
-    // ADMIN-ONLY temporarily: Facebook / Instagram / Threads / TikTok /
-    // Pinterest are all gated to admin (and the Meta App-Review email)
-    // while we restructure Pro. Was ['facebook'] on the trial.
     socials: [] as readonly Social[],
+    multiAccountSocial: false,
+    publishAll: false,
+    /** Power-user / Pro-only gates. */
+    campaigns: false,
+    apiAccess: false,
+    whiteLabel: false,
+    vaSeats: 0,
     priorityQueue: false,
     prioritySupport: false,
-    publishAll: false,
   },
   creator: {
     label: 'Creator',
     price: 49,
     regularPrice: 99,
-    postsPerMonth: 40,
+    /** Shared counter: 20 generations/mo across blog + thumbnail + metadata.
+     *  Each path currently enforces its own cap at this value (true atomic
+     *  shared bucket is a follow-up RPC — see TASK_X). */
+    postsPerMonth: 20,
     lifetimeMax: null as number | null,
-    // Taster cap — lets Creator users try the Pro Collaborations
-    // workflow so they feel the upgrade pull naturally.
     collabsPerMonth: 5 as number | null,
-    thumbnailsPerMonth: 40 as number | null,
-    metadataGensPerMonth: 60 as number | null,
+    thumbnailsPerMonth: 20 as number | null,
+    metadataGensPerMonth: 20 as number | null,
     instagramAiThumbnailsPerMonth: 0 as number | null,
+    dealsPerMonth: 0 as number | null,
     photoboothPerMonth: 10 as number | null,
-    maxFaces: 2 as number | null,
+    maxFaces: 1 as number | null,
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 200 as number | null,
-    faceTrainJobs: 0 as number | null,
-    /** Newsletter: Creator-tier subscriber + broadcast caps. At the cap (1,000
-     *  subs × 4 broadcasts = 4,000 emails/mo) MVP's Resend cost is ~$1.60 —
-     *  trivial fraction of $49 MRR. */
-    newsletterSubscribers: 1000 as number | null,
-    newsletterBroadcastsPerMonth: 4 as number | null,
-    /** Video Script & Shot List — Pro feature. Creator sees the upsell card. */
-    scriptsPerMonth: 0 as number | null,
-    basePosts: 40,
+    /** Creator gets 1 LoRA retrain/mo — train your face once, the LoRA
+     *  reused freely across all 20 thumbnails. Retrain cap protects MVP
+     *  from someone hammering trainer dozens of times. */
+    faceTrainJobs: 1 as number | null,
+    /** Taster newsletter: 500 subs, 1 send/mo. Subs at the cap = upsell
+     *  pull to Studio (5k subs). */
+    newsletterSubscribers: 500 as number | null,
+    newsletterBroadcastsPerMonth: 1 as number | null,
+    newsletterScheduling: false,
+    newsletterABTesting: false,
+    newsletterSegmentedSends: false,
+    /** Video Scripts open to Creator at 10/mo (was 0). */
+    scriptsPerMonth: 10 as number | null,
+    comparisonPosts: false,
+    buyingGuides: false,
+    topicHubs: false,
+    refreshImages: false,
+    rebuildFromVideo: false,
+    basePosts: 20,
     bonusPosts: 0,
     sites: 1,
-    // ADMIN-ONLY temporarily: FB / IG / Threads / TikTok / Pinterest are
-    // gated to admin (+ Meta App-Review email for the three Meta ones)
-    // while we restructure Pro. Was: facebook, threads, linkedin,
-    // pinterest, bluesky.
-    socials: ['linkedin', 'bluesky'] as readonly Social[],
+    /** Creator unlocks: LinkedIn, Bluesky, Pinterest, Facebook*, Threads*
+     *  (* = Meta App Review still gating these for non-admin/non-reviewer
+     *  users — see app-review middleware). */
+    socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads'] as readonly Social[],
+    multiAccountSocial: false,
+    publishAll: false,
+    campaigns: false,
+    apiAccess: false,
+    whiteLabel: false,
+    vaSeats: 0,
     priorityQueue: false,
     prioritySupport: false,
-    publishAll: false,
   },
   studio:  {
     label: 'Studio',
     price: 99,
     regularPrice: 199,
-    postsPerMonth: 80,
+    /** Shared counter: 60 generations/mo. */
+    postsPerMonth: 60,
     lifetimeMax: null as number | null,
-    /** Still a taster — not full Pro outreach volume. */
     collabsPerMonth: 15 as number | null,
-    thumbnailsPerMonth: 80 as number | null,
-    metadataGensPerMonth: 80 as number | null,
-    /** Pro-only feature: IG AI thumbnails with face + product, 4:5. */
-    instagramAiThumbnailsPerMonth: 0 as number | null,
+    thumbnailsPerMonth: 60 as number | null,
+    metadataGensPerMonth: 60 as number | null,
+    /** IG AI thumbnails open to Studio at 30/mo (was Pro-only). */
+    instagramAiThumbnailsPerMonth: 30 as number | null,
+    /** Studio gets 5 deal posts / mo. Separate counter from blog. */
+    dealsPerMonth: 5 as number | null,
     photoboothPerMonth: 15 as number | null,
     maxFaces: 2 as number | null,
     blogImagesPerPost: 3,
     assistantMessagesPerMonth: 1000 as number | null,
-    /** LoRA face training is COGS-heavy; keep Pro-only. */
-    faceTrainJobs: 0 as number | null,
-    /** 5x Creator's subscriber cap; 10 broadcasts/mo covers a weekly send. */
+    /** LoRA training opens to Studio at 3/mo (was Pro-only). */
+    faceTrainJobs: 3 as number | null,
+    /** Weekly newsletter cadence: 5k subs, 4 sends/mo. */
     newsletterSubscribers: 5000 as number | null,
-    newsletterBroadcastsPerMonth: 10 as number | null,
-    /** Studio unlocks the Script & Shot List tool (was Pro-only) at half
-     *  the Pro monthly cap — main upgrade pull from Creator. */
-    scriptsPerMonth: 15 as number | null,
-    basePosts: 80,
+    newsletterBroadcastsPerMonth: 4 as number | null,
+    /** Scheduling opens to Studio. A/B + Segments stay Pro-only. */
+    newsletterScheduling: true,
+    newsletterABTesting: false,
+    newsletterSegmentedSends: false,
+    scriptsPerMonth: 30 as number | null,
+    /** Studio gates. */
+    comparisonPosts: false,
+    buyingGuides: false,
+    topicHubs: true,
+    refreshImages: true,
+    rebuildFromVideo: false,
+    basePosts: 60,
     bonusPosts: 0,
     sites: 1,
-    // ADMIN-ONLY temporarily: FB / IG / Threads / TikTok / Pinterest are
-    // gated to admin (+ Meta App-Review email for the three Meta ones)
-    // while we restructure Pro. Was: facebook, threads, linkedin,
-    // pinterest, bluesky, tiktok, instagram.
-    socials: ['linkedin', 'bluesky'] as readonly Social[],
-    priorityQueue: false,
-    prioritySupport: false,
-    /** Publish All (one-click site + every social) remains Pro-only. */
+    /** Studio = Creator's + Instagram* + Telegram. */
+    socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads', 'instagram', 'telegram'] as readonly Social[],
+    multiAccountSocial: false,
     publishAll: false,
+    campaigns: false,
+    apiAccess: false,
+    whiteLabel: false,
+    vaSeats: 0,
+    /** Priority queue + Discord priority support kick in at Studio. */
+    priorityQueue: true,
+    prioritySupport: true,
   },
   pro:     {
     label: 'Pro',
     price: 199,
     regularPrice: 499,
+    /** Shared counter: 200 generations/mo. */
     postsPerMonth: 200,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
-    thumbnailsPerMonth: 300 as number | null,
-    metadataGensPerMonth: 300 as number | null,
-    instagramAiThumbnailsPerMonth: 50 as number | null,
-    /** 20 professional headshots / month — bounds gpt-image COGS. */
+    thumbnailsPerMonth: 200 as number | null,
+    metadataGensPerMonth: 200 as number | null,
+    instagramAiThumbnailsPerMonth: 100 as number | null,
+    /** Pro: 30 deal posts/mo (revised down from 90 → 60 → 30 for COGS). */
+    dealsPerMonth: 30 as number | null,
     photoboothPerMonth: 20 as number | null,
     maxFaces: 2 as number | null,
     blogImagesPerPost: 4,
-    // High enough to feel unlimited for normal daily use (~160/day) while
-    // still bounding worst-case Haiku cost (~$25/mo at the ceiling).
     assistantMessagesPerMonth: 5000 as number | null,
-    // 3 LoRA training jobs / month — bounded ($1.50/job has no natural
-    // ceiling, so it's explicitly capped rather than uncapped).
-    faceTrainJobs: 3 as number | null,
-    /** Newsletter: Pro-tier caps. 10k subscribers + unlimited broadcasts —
-     *  even at heavy use (say 10 broadcasts × 10k = 100k emails/mo) the Resend
-     *  cost is ~$40, still well under 25% of Pro's $199 MRR. The contact cap
-     *  protects MVP from a creator suddenly importing a 50k list and tanking
-     *  shared sender rep before deliverability quarantine catches it. */
+    /** Pro: 5 LoRA retrains/mo. */
+    faceTrainJobs: 5 as number | null,
+    /** Twice-weekly cadence: 10k subs, 8 sends/mo. */
     newsletterSubscribers: 10000 as number | null,
-    newsletterBroadcastsPerMonth: null as number | null,
-    /** Video Script & Shot List — 30 generations / calendar month. At
-     *  ~5k Sonnet tokens per generation that's roughly $5/mo per
-     *  fully-using creator — under 3% of Pro's $199 MRR. */
-    scriptsPerMonth: 30 as number | null,
+    newsletterBroadcastsPerMonth: 8 as number | null,
+    /** Pro newsletter unlocks: Scheduling (inherited), A/B subject lines,
+     *  Segmented sends (segment-builder UI is a follow-up task). */
+    newsletterScheduling: true,
+    newsletterABTesting: true,
+    newsletterSegmentedSends: true,
+    scriptsPerMonth: 150 as number | null,
+    /** Pro content-type gates. */
+    comparisonPosts: true,
+    buyingGuides: true,
+    topicHubs: true,
+    refreshImages: true,
+    rebuildFromVideo: true,
     basePosts: 140,
     bonusPosts: 60,
-    sites: 1,
-    // ADMIN-ONLY temporarily: FB / IG / Threads / TikTok / Pinterest are
-    // gated to admin (+ Meta App-Review email for the three Meta ones)
-    // while we restructure Pro. Was the full set of 9.
-    socials: ['linkedin', 'twitter', 'bluesky', 'telegram'] as readonly Social[],
+    /** Pro multi-site: up to 10 WP sites. */
+    sites: 10,
+    /** Pro = Studio's + Twitter + TikTok*. */
+    socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads', 'instagram', 'telegram', 'twitter', 'tiktok'] as readonly Social[],
+    /** Multi-account social: per-post FB Page / IG account picker. */
+    multiAccountSocial: true,
+    publishAll: true,
+    campaigns: true,
+    /** API access + White-label HIDDEN from nav for now. The features
+     *  exist; the nav links are commented out in DashboardShellV2 until
+     *  real demand surfaces. */
+    apiAccess: true,
+    whiteLabel: true,
+    /** VA / Agency seats: up to 3 invitees with granular permissions. */
+    vaSeats: 3,
     priorityQueue: true,
     prioritySupport: true,
-    publishAll: true,
   },
   admin:   {
     label: 'Admin',
@@ -206,23 +271,35 @@ export const TIERS = {
     thumbnailsPerMonth: null as number | null,
     metadataGensPerMonth: null as number | null,
     instagramAiThumbnailsPerMonth: null as number | null,
+    dealsPerMonth: null as number | null,
     photoboothPerMonth: null as number | null,
     maxFaces: null as number | null,
     blogImagesPerPost: 6,
     assistantMessagesPerMonth: null as number | null,
     faceTrainJobs: null as number | null,
-    /** Newsletter: admin uncapped — internal accounts, no shared-rep risk. */
     newsletterSubscribers: null as number | null,
     newsletterBroadcastsPerMonth: null as number | null,
-    /** Video Script & Shot List — admin uncapped. */
+    newsletterScheduling: true,
+    newsletterABTesting: true,
+    newsletterSegmentedSends: true,
     scriptsPerMonth: null as number | null,
+    comparisonPosts: true,
+    buyingGuides: true,
+    topicHubs: true,
+    refreshImages: true,
+    rebuildFromVideo: true,
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
     socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram', 'tiktok'] as readonly Social[],
+    multiAccountSocial: true,
+    publishAll: true,
+    campaigns: true,
+    apiAccess: true,
+    whiteLabel: true,
+    vaSeats: 999,
     priorityQueue: true,
     prioritySupport: true,
-    publishAll: true,
   },
 } as const
 
@@ -242,7 +319,7 @@ export function tierAllowsSocial(tier: Tier, social: Social): boolean {
   return TIERS[normalizeTier(tier)].socials.includes(social)
 }
 
-/** Newsletter subscriber cap for the given tier. null = unlimited (Pro+).
+/** Newsletter subscriber cap for the given tier. null = unlimited (admin).
  *  Used by /api/newsletter/subscribe to reject new sign-ups past the cap
  *  with an upgrade nudge instead of silently dropping them. */
 export function allowedNewsletterSubscribers(tier: Tier): number | null {
@@ -256,13 +333,45 @@ export function allowedNewsletterBroadcasts(tier: Tier): number | null {
   return TIERS[normalizeTier(tier)].newsletterBroadcastsPerMonth
 }
 
+/** Generic feature-flag lookup. Cleaner than scattering `tier === 'pro'`
+ *  checks across routes; reads one source of truth. Use for boolean gates:
+ *    tierHas(tier, 'comparisonPosts') / 'buyingGuides' / 'rebuildFromVideo' /
+ *    'topicHubs' / 'refreshImages' / 'newsletterScheduling' /
+ *    'newsletterABTesting' / 'newsletterSegmentedSends' / 'campaigns' /
+ *    'apiAccess' / 'whiteLabel' / 'multiAccountSocial' / 'publishAll' /
+ *    'priorityQueue' / 'prioritySupport'.
+ *
+ *  Numeric caps stay on TIERS[tier].X directly — this helper is for booleans
+ *  + the few "feature-on/off" flags where the answer is yes/no, not how-many. */
+export function tierHas(
+  tier: Tier,
+  key:
+    | 'comparisonPosts'
+    | 'buyingGuides'
+    | 'topicHubs'
+    | 'refreshImages'
+    | 'rebuildFromVideo'
+    | 'newsletterScheduling'
+    | 'newsletterABTesting'
+    | 'newsletterSegmentedSends'
+    | 'campaigns'
+    | 'apiAccess'
+    | 'whiteLabel'
+    | 'multiAccountSocial'
+    | 'publishAll'
+    | 'priorityQueue'
+    | 'prioritySupport',
+): boolean {
+  return TIERS[normalizeTier(tier)][key]
+}
+
 /** Next-tier upgrade hint for capped actions. Returns null when the
  *  user is already on Pro / Admin (no upward path). Used by routes to
  *  build a "Upgrade to Pro → 300 thumbnails / mo" call-to-action when
  *  a user hits a cap. */
 export function nextTierFor(
   tier: Tier,
-  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth' | 'scriptsPerMonth',
+  cap: 'postsPerMonth' | 'collabsPerMonth' | 'thumbnailsPerMonth' | 'metadataGensPerMonth' | 'instagramAiThumbnailsPerMonth' | 'scriptsPerMonth' | 'dealsPerMonth',
 ): { tier: Tier; label: string; limit: number | null } | null {
   tier = normalizeTier(tier)
   const order: Tier[] = ['trial', 'creator', 'studio', 'pro']
@@ -408,9 +517,9 @@ export async function checkUsageLimit(
 /**
  * Video Script & Shot List monthly cap. Counts rows in `video_scripts` for
  * this user since the 1st of the current UTC month, against the tier's
- * `scriptsPerMonth`. Pro-only by design — Trial / Creator return `allowed:
- * false` with a "Pro feature" upsell so the /script page shows the gate
- * instead of the generator.
+ * `scriptsPerMonth`. Creator+ tiers all have access now (Creator 10/mo,
+ * Studio 30/mo, Pro 150/mo) — trial returns "feature off" since trial is
+ * onboarding-only.
  *
  * Returns the current count + cap on success too, so the page can render a
  * "X of 30 used this month" meter without a second query.
@@ -450,12 +559,13 @@ export async function checkScriptUsage(
   // Admin — uncapped (cap === null).
   if (cap === null) return { allowed: true, tier, used, cap: null, resetLabel }
 
-  // Tiers with cap === 0 (trial / creator) → upsell instead of usage block.
+  // Tiers with cap === 0 (trial only now — Creator opened to 10/mo in the
+  // 2026-06-04 tier restructure) → upsell instead of usage block.
   if (cap === 0) {
     const next = nextTierFor(tier, 'scriptsPerMonth')
     return {
       allowed: false,
-      reason: 'Video scripts are a Pro feature. Upgrade to start generating film-ready scripts in your voice.',
+      reason: 'Video scripts are a paid-tier feature. Upgrade to start generating film-ready scripts in your voice.',
       tier,
       used: 0,
       cap: 0,
@@ -471,6 +581,71 @@ export async function checkScriptUsage(
       used,
       cap,
       upgrade: nextTierFor(tier, 'scriptsPerMonth'),
+    }
+  }
+
+  return { allowed: true, tier, used, cap, resetLabel }
+}
+
+/**
+ * Deals Hub monthly cap. Counts rows in `blog_posts` where post_type='deal'
+ * (or deal_meta IS NOT NULL) since the start of the user's billing window.
+ * Studio 5/mo, Pro 30/mo. Creator + Trial return "feature off" → upsell.
+ */
+export async function checkDealsUsage(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createServerClient>>,
+  userId: string,
+): Promise<
+  | { allowed: true; tier: Tier; used: number; cap: number | null; resetLabel: string }
+  | { allowed: false; reason: string; tier: Tier; used: number; cap: number | null; upgrade: ReturnType<typeof nextTierFor> }
+> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ig } = await supabase
+    .from('integrations')
+    .select('tier,subscription_period_start,subscription_period_end')
+    .eq('user_id', userId)
+    .single()
+  const tier = normalizeTier(ig?.tier)
+  const cap = TIERS[tier].dealsPerMonth
+  const { startISO, resetLabel } = billingWindow({
+    periodStart: ig?.subscription_period_start ?? null,
+    periodEnd: ig?.subscription_period_end ?? null,
+  })
+
+  // Admin — uncapped.
+  if (cap === null) return { allowed: true, tier, used: 0, cap: null, resetLabel }
+
+  // Studio + Pro have caps > 0. Trial + Creator have cap 0 → upsell card.
+  if (cap === 0) {
+    return {
+      allowed: false,
+      reason: 'Deals Hub is a Studio + Pro feature. Upgrade to publish timely deal posts with countdown banners and bulk-import from your Amazon Associates dashboard.',
+      tier,
+      used: 0,
+      cap: 0,
+      upgrade: nextTierFor(tier, 'dealsPerMonth'),
+    }
+  }
+
+  // Count deal posts in window. deal_meta column is on blog_posts
+  // (migration 093). post_type='deal' is the canonical signal.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count } = await supabase
+    .from('blog_posts')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('post_type', 'deal')
+    .gte('created_at', startISO)
+  const used = count ?? 0
+
+  if (used >= cap) {
+    return {
+      allowed: false,
+      reason: `You've used all ${cap} deal posts this month on the ${TIERS[tier].label} plan. Resets ${resetLabel}.`,
+      tier,
+      used,
+      cap,
+      upgrade: nextTierFor(tier, 'dealsPerMonth'),
     }
   }
 

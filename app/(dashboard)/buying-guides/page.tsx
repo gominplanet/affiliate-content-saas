@@ -19,6 +19,9 @@ import Link from 'next/link'
 import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { normalizeTier, type Tier } from '@/lib/tier'
 
 interface Suggestion { topic: string; count: number }
 interface GuideRow { id: string; title: string; url: string | null; topic: string | null; created_at: string }
@@ -39,6 +42,11 @@ export default function BuyingGuidesPage() {
   // when the user's live WP catalogue is below 500 posts. We render a
   // locked card instead of the topic input.
   const [locked, setLocked] = useState<{ threshold: number; current: number } | null>(null)
+  // Tier restructure 2026-06-04: Buying Guides is Pro-only. Creator + Studio
+  // users see the FeatureLockedCard upsell instead of the catalogue-lock OR
+  // the topic input. tier === null = still loading (avoids flashing the
+  // lock card to Pro users while we fetch).
+  const [tier, setTier] = useState<Tier | null>(null)
   // FULL AUTO vs LET ME SEE — review the AI's picks before publishing.
   // Persisted in localStorage so the preference sticks across visits.
   const [mode, setMode] = useState<Mode>('review')
@@ -60,6 +68,27 @@ export default function BuyingGuidesPage() {
     setMode(next)
     try { localStorage.setItem('mvp_bg_mode', next) } catch { /* ignore */ }
   }
+
+  // Fetch user tier on mount for the Pro-only gate. Runs in parallel with
+  // refresh() — we don't await it because the gate check happens at render
+  // time. Failures default to 'trial' so a logged-out / network-glitch user
+  // sees the upsell, not the form.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { if (!cancelled) setTier('trial'); return }
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        if (!cancelled) setTier(normalizeTier((data as { tier?: string } | null)?.tier))
+      } catch {
+        if (!cancelled) setTier('trial')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => { void refresh() }, [])
 
@@ -206,6 +235,30 @@ export default function BuyingGuidesPage() {
     } finally {
       setDeletingId(null)
     }
+  }
+
+  // ── Tier gate ────────────────────────────────────────────────────
+  // Buying Guides is Pro-only as of the 2026-06-04 tier restructure.
+  // Non-Pro users see the FeatureLockedCard upsell. Render this BEFORE
+  // the catalogue lock so a Creator with 500+ WP posts doesn't get a
+  // misleading "you have enough posts!" view.
+  if (tier !== null && tier !== 'pro' && tier !== 'admin') {
+    return (
+      <FeatureLockedCard
+        icon={<BookOpen size={28} strokeWidth={1.8} />}
+        feature="Buying Guides"
+        description='Generate a long-form "Best [topic] for 2026" round-up from your published reviews. The AI picks 5-7 best-fit reviews, slots them as Best Overall / Best Budget / Best for X, writes the guide, and publishes to your blog tagged buying-guide.'
+        bullets={[
+          'Re-uses your existing review catalogue (no duplicate writing)',
+          'Auto-slots reviews into Best Overall, Best Budget, Best for X categories',
+          'Tagged "buying-guide" in WordPress for clean filtering',
+          'Two modes: Full Auto (publish immediately) or Let Me See (approve picks first)',
+          'Unlocks at 500+ published reviews — re-uses what you already shipped',
+        ]}
+        requiredTier="pro"
+        currentTier={tier}
+      />
+    )
   }
 
   // ── Locked state ────────────────────────────────────────────────

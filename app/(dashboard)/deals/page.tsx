@@ -38,6 +38,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
 import DealsCsvImporter from './DealsCsvImporter'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { normalizeTier, type Tier } from '@/lib/tier'
 
 interface DealRow {
   id: string
@@ -126,6 +129,27 @@ export default function DealsHubPage() {
   const [previewPromoCode, setPreviewPromoCode] = useState('')
   const [previewPromoUrl, setPreviewPromoUrl] = useState('')
   const [previewDealEnd, setPreviewDealEnd] = useState('')
+
+  // Tier restructure 2026-06-04: Deals Hub is Studio + Pro only. Trial +
+  // Creator see the FeatureLockedCard upsell. tier === null while loading
+  // so non-Studio users don't see the form flash before the lock card.
+  const [tier, setTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { if (!cancelled) setTier('trial'); return }
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        if (!cancelled) setTier(normalizeTier((data as { tier?: string } | null)?.tier))
+      } catch {
+        if (!cancelled) setTier('trial')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // ── Load mode from localStorage on mount ────────────────────────────────
   useEffect(() => {
@@ -378,6 +402,29 @@ export default function DealsHubPage() {
     } finally {
       setDeletingId(null)
     }
+  }
+
+  // Tier gate — Trial + Creator see the upsell card instead of the form.
+  // Render BEFORE everything else so the locked card replaces the page,
+  // not appears alongside the deal form.
+  if (tier !== null && tier !== 'studio' && tier !== 'pro' && tier !== 'admin') {
+    return (
+      <FeatureLockedCard
+        icon={<BadgePercent size={28} strokeWidth={1.8} />}
+        feature="Deals Hub"
+        description="Paste an Amazon link (or any Geniuslink/amzn.to short link), optionally add a promo code, and MVP writes a timely deal post with a baked countdown thumbnail, end-date countdown, and your promo code wired into every CTA. Bulk-import a full Amazon Creator Connections CSV to schedule a month's worth of deal posts in one go."
+        bullets={[
+          'Single-link form: paste, customize, publish',
+          'Bulk CSV import: drop the Amazon Associates "Export deals" file, generate or schedule rows individually',
+          'Countdown banner + buy button wired into the deal end-date',
+          'Promo-code support (writes the code into every CTA on the post)',
+          'Occasion auto-detection (Prime Day, Black Friday, Lightning Deal, Lowest Price YTD, etc.)',
+          'Refresh price action keeps live posts in sync with Amazon',
+        ]}
+        requiredTier="studio"
+        currentTier={tier}
+      />
+    )
   }
 
   return (

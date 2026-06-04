@@ -7,9 +7,11 @@
  */
 import { useState, useEffect } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Scale, Plus, X, Loader2, ExternalLink, Trophy, ListChecks } from 'lucide-react'
 import { SitePicker } from '@/components/SitePicker'
+import { normalizeTier } from '@/lib/tier'
 
 const MAX_URLS = 10
 
@@ -50,7 +52,9 @@ export default function ComparisonPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const isPaid = tier === 'creator' || tier === 'pro' || tier === 'admin'
+  // Tier restructure 2026-06-04: Comparison + Buying Guides are now Pro-only.
+  // (Was Creator+; Creator users see the FeatureLockedCard upsell now.)
+  const isPro = tier === 'pro' || tier === 'admin'
   const validCount = urls.filter(u => u.trim()).length
 
   const setUrl = (i: number, v: string) => setUrls(prev => prev.map((u, idx) => (idx === i ? v : u)))
@@ -80,13 +84,24 @@ export default function ComparisonPage() {
         subtitle="Turn the products you've reviewed into a ranked comparison or a buying guide — published straight to your blog."
       />
 
-      {tier !== null && !isPaid && (
-        <div className="mb-4 rounded-xl border border-[#ff9500]/30 bg-[#ff9500]/5 px-4 py-3">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Available on Creator & Pro</p>
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Multi-product comparisons and buying guides are a paid feature. <a href="/pricing" className="text-[#7C3AED] hover:underline">Upgrade</a> to unlock.</p>
-        </div>
+      {tier !== null && !isPro && (
+        <FeatureLockedCard
+          icon={<Scale size={28} strokeWidth={1.8} />}
+          feature="Compare & Buying Guides"
+          description="Paste 2-10 YouTube videos (each a product you reviewed). MVP writes a ranked head-to-head comparison or a 'best for ___' buying guide, with a verdict box, pros/cons, and a mobile-optimized comparison table — published straight to WordPress."
+          bullets={[
+            'Multi-product head-to-head with a named winner',
+            'Buying guide mode: "best for ___" so readers self-select',
+            'Verdict box at the top, comparison table mid-article',
+            'Mobile layout + Schema.org markup so the post ranks',
+            'Publishes straight to your WordPress site',
+          ]}
+          requiredTier="pro"
+          currentTier={normalizeTier(tier)}
+        />
       )}
 
+      {(tier === null || isPro) && (
       <div className="max-w-2xl flex flex-col gap-5">
         {/* Format toggle */}
         <div>
@@ -202,7 +217,7 @@ export default function ComparisonPage() {
 
         <button
           onClick={generate}
-          disabled={busy || !isPaid || validCount < 2}
+          disabled={busy || !isPro || validCount < 2}
           className="btn-primary self-start"
           title={validCount < 2 ? 'Add at least 2 product videos' : undefined}
         >
@@ -212,6 +227,7 @@ export default function ComparisonPage() {
         </button>
         {busy && <p className="text-xs text-[#86868b] -mt-2">This can take a minute or two — resolving each product, ranking, generating images, and publishing.</p>}
       </div>
+      )}
     </>
   )
 }
