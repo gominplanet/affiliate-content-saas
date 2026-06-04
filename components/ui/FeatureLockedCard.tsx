@@ -41,9 +41,9 @@ interface FeatureLockedCardProps {
   /** Optional 3-5 bullet points of capabilities. Specific > generic. */
   bullets?: string[]
   /** Minimum tier that unlocks this feature. Determines the upgrade CTA. */
-  requiredTier: 'studio' | 'pro'
+  requiredTier: 'creator' | 'studio' | 'pro'
   /** Current user tier. Used to render "Currently on [Tier]" + decide
-   *  whether the CTA is "Upgrade to Studio" or "Upgrade to Pro". */
+   *  whether the CTA is "Upgrade to Creator/Studio/Pro". */
   currentTier: Tier
 }
 
@@ -55,8 +55,14 @@ export default function FeatureLockedCard({
   requiredTier,
   currentTier,
 }: FeatureLockedCardProps) {
-  const tierLabel = requiredTier === 'pro' ? 'Pro' : 'Studio'
-  const tierAccent = requiredTier === 'pro' ? '#7C3AED' : '#EC4899'
+  const tierLabel =
+    requiredTier === 'pro' ? 'Pro' :
+    requiredTier === 'studio' ? 'Studio' : 'Creator'
+  // Brand accents per tier (matches /pricing): Creator teal, Studio pink,
+  // Pro violet. Keeps the visual hierarchy consistent across upsell cards.
+  const tierAccent =
+    requiredTier === 'pro' ? '#7C3AED' :
+    requiredTier === 'studio' ? '#EC4899' : '#10B981'
   const checkoutHref = `/billing?plan=${requiredTier}`
 
   const currentTierLabel =

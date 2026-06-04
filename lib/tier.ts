@@ -77,8 +77,10 @@ export const TIERS = {
     blogImagesPerPost: 2,
     assistantMessagesPerMonth: 20 as number | null,
     faceTrainJobs: 0 as number | null,
-    newsletterSubscribers: 100 as number | null,
-    newsletterBroadcastsPerMonth: 1 as number | null,
+    /** Newsletter is Creator-min as of 2026-06-04 tier restructure. Trial
+     *  loses the 100 subs / 1 broadcast taster — sees FeatureLockedCard. */
+    newsletterSubscribers: 0 as number | null,
+    newsletterBroadcastsPerMonth: 0 as number | null,
     /** Newsletter feature flags. */
     newsletterScheduling: false,
     newsletterABTesting: false,

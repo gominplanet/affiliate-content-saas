@@ -21,7 +21,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
+import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { useConfirm } from '@/components/ui/useConfirm'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { type Tier } from '@/lib/tier'
+import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import {
   Loader2, Mail, CheckCircle, AlertCircle, Upload, Download,
   Copy, Trash2, RefreshCw, ShieldCheck, Globe, Send, ExternalLink,
@@ -94,6 +98,34 @@ export default function NewsletterPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [subs, setSubs] = useState<SubscriberRow[]>([])
   const [counts, setCounts] = useState<Counts>({ active: 0, pending: 0, unsubscribed: 0 })
+
+  // Tier restructure 2026-06-04: Newsletter is Creator+ minimum. Trial sees
+  // the FeatureLockedCard upsell instead of the dashboard. effectiveTier()
+  // honors the admin View-as override so admins can preview the gated UX.
+  const [tier, setTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let realTier: string = 'trial'
+    const apply = () => { if (!cancelled) setTier(effectiveTier(realTier)) }
+
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { realTier = 'trial'; apply(); return }
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        realTier = (data as { tier?: string } | null)?.tier ?? 'trial'
+        apply()
+      } catch {
+        realTier = 'trial'
+        apply()
+      }
+    })()
+
+    window.addEventListener(VIEW_AS_EVENT, apply)
+    return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
+  }, [])
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null)
   // Paste-list importer state — opens a modal so creators can paste a
@@ -421,6 +453,30 @@ export default function NewsletterPage() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }).catch(() => { /* ignore */ })
+  }
+
+  // Tier gate — Trial users see the upsell card BEFORE the loading
+  // spinner so they don't briefly see "Loading…" and then a lock card.
+  // Creator+ passes through to the normal dashboard.
+  if (tier !== null && tier === 'trial') {
+    return (
+      <FeatureLockedCard
+        icon={<Mail size={28} strokeWidth={1.8} />}
+        feature="Newsletter"
+        description="Capture email subscribers from your blog and send curated issues that link back to your reviews. Every send drives traffic to your highest-EPC posts, and your list compounds over time."
+        bullets={[
+          'Embed a sign-up form on your WordPress blog (one shortcode)',
+          'Compose issues with a live preview + auto-pulled review picks',
+          'CAN-SPAM compliant (mailing address footer + 1-click unsubscribe)',
+          'Sender domain verify + DKIM for inbox-first deliverability',
+          'Creator: 500 subs, 1 send/mo (taster)',
+          'Studio: 5,000 subs, weekly sends + scheduling',
+          'Pro: 10,000 subs, twice-weekly + A/B subject lines + segmented sends',
+        ]}
+        requiredTier="creator"
+        currentTier={tier}
+      />
+    )
   }
 
   if (loading) {
