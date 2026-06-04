@@ -11,6 +11,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
+import { createBrowserClient } from '@/lib/supabase/client'
+import { normalizeTier, type Tier } from '@/lib/tier'
 
 interface Check { id: string; label: string; pass: boolean; weight: number; hint?: string }
 interface PostRow {
@@ -79,6 +81,28 @@ export default function SeoPage() {
   const [rebuildFeedback, setRebuildFeedback] = useState('')
   const [rebuildStage, setRebuildStage] = useState<'' | 'linking' | 'generating'>('')
   const [rebuildError, setRebuildError] = useState<string | null>(null)
+  // Tier restructure 2026-06-04: Rebuild-from-video is Pro-only. Tracked
+  // separately from the rest of SEO so the page still loads / shows scores
+  // for everyone — we just hide the Rebuild button for non-Pro users.
+  // Server (/api/blog/attach-video) is the source of truth; this is UX.
+  const [tier, setTier] = useState<Tier | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { if (!cancelled) setTier('trial'); return }
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        if (!cancelled) setTier(normalizeTier((data as { tier?: string } | null)?.tier))
+      } catch {
+        if (!cancelled) setTier('trial')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+  const canRebuild = tier === 'pro' || tier === 'admin'
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -899,8 +923,9 @@ export default function SeoPage() {
                       {/* Rebuild-from-video — for low-score / legacy posts where
                           the auto-fixer can't help (no comparison table, thin
                           body, fabricated patterns). Paste the YouTube URL and
-                          we rebuild the body in place. */}
-                      {p.wordpressPostId && (
+                          we rebuild the body in place. Pro-only as of the
+                          2026-06-04 tier restructure (server enforces too). */}
+                      {p.wordpressPostId && canRebuild && (
                         <button
                           onClick={() => { setRebuildTarget(p); setRebuildUrl(''); setRebuildFeedback(''); setRebuildError(null) }}
                           className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#5856d6] hover:bg-[#4845b4] transition-colors"

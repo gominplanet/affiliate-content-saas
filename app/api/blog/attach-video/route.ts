@@ -170,6 +170,19 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Tier restructure 2026-06-04: Rebuild-from-video is Pro-only. Trial /
+  // Creator / Studio get a 403 with code: 'tier_not_allowed' so the client
+  // can swap in the FeatureLockedCard upsell instead of a generic error.
+  const { data: integ } = await supabase
+    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const tier = (integ as { tier?: string } | null)?.tier ?? 'trial'
+  if (tier !== 'pro' && tier !== 'admin') {
+    return NextResponse.json({
+      error: 'Rebuild-from-video is a Pro-tier feature. Upgrade to rebuild legacy posts in place from their source video.',
+      code: 'tier_not_allowed',
+    }, { status: 403 })
+  }
+
   let body: { wordpressPostId?: number; youtubeUrl?: string; siteId?: string | null }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
 
