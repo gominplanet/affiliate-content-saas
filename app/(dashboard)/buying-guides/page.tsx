@@ -16,13 +16,16 @@
 import { useEffect, useState, FormEvent } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2, Trash2 } from 'lucide-react'
+import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2, Trash2, Library, ListChecks, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
+
+// "Pick my own" mode shares the same URL count cap as /comparison did.
+const MAX_MANUAL_URLS = 10
 
 interface Suggestion { topic: string; count: number }
 interface GuideRow { id: string; title: string; url: string | null; topic: string | null; created_at: string }
@@ -51,6 +54,22 @@ export default function BuyingGuidesPage() {
   // FULL AUTO vs LET ME SEE — review the AI's picks before publishing.
   // Persisted in localStorage so the preference sticks across visits.
   const [mode, setMode] = useState<Mode>('review')
+
+  // Source: 'catalogue' = auto-pick from your existing reviews (the
+  // headline feature, but needs 500+ posts). 'manual' = paste YouTube
+  // URLs of specific products (the workflow that used to live in
+  // /comparison's Guide mode — moved here 2026-06-04 to consolidate).
+  // 'manual' has no catalogue threshold; Pro tier is the only gate.
+  const [source, setSource] = useState<'catalogue' | 'manual'>('catalogue')
+  const [manualUrls, setManualUrls] = useState<string[]>(['', ''])
+  const [manualTopic, setManualTopic] = useState<string>('')
+  const manualValidCount = manualUrls.filter(u => u.trim()).length
+  const setManualUrl = (i: number, v: string) =>
+    setManualUrls(prev => prev.map((u, idx) => (idx === i ? v : u)))
+  const addManualUrl = () =>
+    setManualUrls(prev => prev.length >= MAX_MANUAL_URLS ? prev : [...prev, ''])
+  const removeManualUrl = (i: number) =>
+    setManualUrls(prev => prev.length <= 2 ? prev : prev.filter((_, idx) => idx !== i))
   // Two-phase preview state. When the user (in review mode) submits a
   // topic, the server returns picks; we render them as editable cards
   // until the user clicks Publish.
@@ -213,6 +232,47 @@ export default function BuyingGuidesPage() {
     void generate(topic)
   }
 
+  /** "Pick my own" mode submit — paste 2-10 YouTube URLs, MVP writes a
+   *  guide ranking just those products. Hits /api/blog/comparison with
+   *  format='guide', same code path the old /comparison page used. */
+  async function generateManual(e: FormEvent) {
+    e.preventDefault()
+    const urls = manualUrls.map(u => u.trim()).filter(Boolean)
+    if (urls.length < 2) {
+      toast.error('Add at least 2 product videos')
+      return
+    }
+    setGenerating(true)
+    try {
+      const r = await fetch('/api/blog/comparison', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrls: urls,
+          format: 'guide',
+          topic: manualTopic.trim() || undefined,
+        }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || 'Generation failed')
+      toast.success(`Published "${j.title}"`, {
+        action: { label: 'View', onClick: () => window.open(j.url, '_blank') },
+        duration: 12_000,
+      })
+      // Reset form + refresh the Recent guides list so the new post
+      // shows up. Catalogue-side refresh() is fine here even though we
+      // didn't go through /api/buying-guides — the new row has
+      // post_type='guide' so the list query picks it up.
+      setManualUrls(['', ''])
+      setManualTopic('')
+      void refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Generation failed')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   /** Delete a guide. Two-step: confirm → DELETE /api/buying-guides which
    *  removes the WP post AND the MVP blog_posts row (if any). */
   async function deleteGuide(g: GuideRow) {
@@ -255,13 +315,14 @@ export default function BuyingGuidesPage() {
       <FeatureLockedCard
         icon={<BookOpen size={28} strokeWidth={1.8} />}
         feature="Buying Guides"
-        description='Generate a long-form "Best [topic] for 2026" round-up from your published reviews. The AI picks 5-7 best-fit reviews, slots them as Best Overall / Best Budget / Best for X, writes the guide, and publishes to your blog tagged buying-guide.'
+        description='Long-form "Best [topic] for 2026" round-ups in your voice — either auto-curated from your existing review catalogue or built from a handful of YouTube URLs you specify. Slots picks into Best Overall / Best Budget / Best for X, writes the guide, publishes to WordPress.'
         bullets={[
-          'Re-uses your existing review catalogue (no duplicate writing)',
-          'Auto-slots reviews into Best Overall, Best Budget, Best for X categories',
+          'Two ways to start: pick from your catalogue OR paste 2-10 YouTube URLs of your own',
+          '"Pick from my catalogue" auto-curates 5-7 best-fit reviews (unlocks at 500+ published posts)',
+          '"Pick my own" works immediately — no catalogue threshold',
+          'Auto-slots picks into Best Overall, Best Budget, Best for X categories',
           'Tagged "buying-guide" in WordPress for clean filtering',
-          'Two modes: Full Auto (publish immediately) or Let Me See (approve picks first)',
-          'Unlocks at 500+ published reviews — re-uses what you already shipped',
+          'Full Auto (publish immediately) or Let Me See (approve picks first) sub-modes',
         ]}
         requiredTier="pro"
         currentTier={tier}
@@ -269,11 +330,12 @@ export default function BuyingGuidesPage() {
     )
   }
 
-  // ── Locked state ────────────────────────────────────────────────
-  // Renders a single explanatory card when the live WP catalogue is
-  // below the unlock threshold. Sidebar already hides the entry; this
-  // is the safety net for direct-URL navigation.
-  if (locked) {
+  // ── Catalogue-locked state ──────────────────────────────────────
+  // Only blocks when source === 'catalogue'. Users in 'manual' mode
+  // bypass the 500-post threshold entirely — they're picking products
+  // themselves. The lock card now offers a one-click switch to manual
+  // mode so creators aren't dead-ended.
+  if (locked && source === 'catalogue') {
     const remaining = Math.max(0, locked.threshold - locked.current)
     return (
       <div className="space-y-6">
@@ -283,10 +345,11 @@ export default function BuyingGuidesPage() {
               <Lock className="w-6 h-6" style={{ color: '#7C3AED' }} />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides (locked)</h1>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Auto-curate is locked</h1>
               <p className="text-sm mt-2" style={{ color: 'var(--fg-muted)' }}>
-                The round-up format needs a wide catalogue to produce diverse, useful guides. Unlocks automatically
-                once your live blog has <strong>{locked.threshold} published posts</strong>.
+                The catalogue round-up format needs a wide library to produce diverse picks. Unlocks automatically
+                once your live blog has <strong>{locked.threshold} published posts</strong>. Or skip the wait
+                and pick the products yourself below.
               </p>
               <div className="mt-4 rounded-lg border p-4" style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}>
                 <div className="flex items-baseline gap-2">
@@ -303,6 +366,14 @@ export default function BuyingGuidesPage() {
                   {remaining > 0 ? `${remaining} more to unlock.` : 'Refresh — you should be unlocked.'}
                 </p>
               </div>
+              <Button
+                onClick={() => setSource('manual')}
+                className="mt-5 px-5"
+                style={{ background: '#7C3AED', color: '#fff' }}
+              >
+                <ListChecks className="w-4 h-4 mr-2" />
+                Pick the products myself instead
+              </Button>
             </div>
           </div>
         </div>
@@ -312,6 +383,43 @@ export default function BuyingGuidesPage() {
 
   return (
     <div className="space-y-6">
+      {/* ── Source toggle: pick from catalogue vs paste your own URLs.
+          Sits at the very top so the user knows what input shape they
+          are about to fill in. */}
+      <div
+        role="tablist"
+        aria-label="Where do the products come from?"
+        className="inline-flex items-center rounded-lg border p-1 text-xs font-semibold"
+        style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={source === 'catalogue'}
+          onClick={() => setSource('catalogue')}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md transition"
+          style={{
+            background: source === 'catalogue' ? '#7C3AED' : 'transparent',
+            color: source === 'catalogue' ? '#fff' : 'var(--fg-muted)',
+          }}
+        >
+          <Library className="w-3.5 h-3.5" /> Pick from my catalogue
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={source === 'manual'}
+          onClick={() => setSource('manual')}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md transition"
+          style={{
+            background: source === 'manual' ? '#7C3AED' : 'transparent',
+            color: source === 'manual' ? '#fff' : 'var(--fg-muted)',
+          }}
+        >
+          <ListChecks className="w-3.5 h-3.5" /> Pick my own
+        </button>
+      </div>
+
       {/* ── Hero + topic input ─────────────────────────────────────── */}
       <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
         <div className="flex items-start gap-4 mb-5">
@@ -323,80 +431,183 @@ export default function BuyingGuidesPage() {
               <div>
                 <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides</h1>
                 <p className="text-sm mt-1.5" style={{ color: 'var(--fg-muted)' }}>
-                  Generate a long-form &ldquo;Best [topic] for {new Date().getUTCFullYear()}&rdquo; round-up from your published reviews.
-                  The AI picks 5–7 best-fit reviews, slots them as Best Overall / Best Budget / Best for X, writes the guide, and publishes to your blog tagged{' '}
-                  <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>buying-guide</span>.
+                  {source === 'catalogue' ? (
+                    <>
+                      Generate a long-form &ldquo;Best [topic] for {new Date().getUTCFullYear()}&rdquo; round-up from your published reviews.
+                      The AI picks 5–7 best-fit reviews, slots them as Best Overall / Best Budget / Best for X, writes the guide, and publishes to your blog tagged{' '}
+                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>buying-guide</span>.
+                    </>
+                  ) : (
+                    <>
+                      Paste 2–10 YouTube URLs (one product per video). MVP ranks them, writes a &ldquo;best for ___&rdquo; guide, generates images, and publishes to your blog tagged{' '}
+                      <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>buying-guide</span>. No catalogue threshold — works from day one.
+                    </>
+                  )}
                 </p>
               </div>
               {/* Mode toggle — FULL AUTO publishes immediately; LET ME SEE
                   shows picks first so you can edit labels or drop ones you
-                  don't like before the writer runs. */}
-              <div
-                role="radiogroup"
-                aria-label="Generation mode"
-                className="inline-flex items-center rounded-lg border p-1 text-xs font-semibold flex-shrink-0"
-                style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
-              >
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === 'auto'}
-                  onClick={() => updateMode('auto')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition"
-                  style={{
-                    background: mode === 'auto' ? '#7C3AED' : 'transparent',
-                    color: mode === 'auto' ? '#fff' : 'var(--fg-muted)',
-                  }}
+                  don't like before the writer runs. Only shown for the
+                  catalogue source; manual mode always renders a single
+                  preview-free generate flow (no picker stage to review). */}
+              {source === 'catalogue' && (
+                <div
+                  role="radiogroup"
+                  aria-label="Generation mode"
+                  className="inline-flex items-center rounded-lg border p-1 text-xs font-semibold flex-shrink-0"
+                  style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
                 >
-                  <Zap className="w-3.5 h-3.5" /> Full auto
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={mode === 'review'}
-                  onClick={() => updateMode('review')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition"
-                  style={{
-                    background: mode === 'review' ? '#7C3AED' : 'transparent',
-                    color: mode === 'review' ? '#fff' : 'var(--fg-muted)',
-                  }}
-                >
-                  <Eye className="w-3.5 h-3.5" /> Let me see
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === 'auto'}
+                    onClick={() => updateMode('auto')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition"
+                    style={{
+                      background: mode === 'auto' ? '#7C3AED' : 'transparent',
+                      color: mode === 'auto' ? '#fff' : 'var(--fg-muted)',
+                    }}
+                  >
+                    <Zap className="w-3.5 h-3.5" /> Full auto
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === 'review'}
+                    onClick={() => updateMode('review')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition"
+                    style={{
+                      background: mode === 'review' ? '#7C3AED' : 'transparent',
+                      color: mode === 'review' ? '#fff' : 'var(--fg-muted)',
+                    }}
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Let me see
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <form onSubmit={onSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={topic}
-            onChange={e => setTopic(e.target.value)}
-            placeholder="e.g. sleep masks for side sleepers, cooling pillows, under-eye masks…"
-            maxLength={200}
-            disabled={generating}
-            className="flex-1 rounded-lg px-4 py-3 text-sm outline-none border"
-            style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
-          />
-          <Button
-            type="submit"
-            disabled={generating || !topic.trim()}
-            className="px-5 whitespace-nowrap"
-            style={{ background: '#7C3AED', color: '#fff' }}
-          >
-            {generating ? (
-              <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Writing…</>
-            ) : (
-              <><Sparkles className="w-4 h-4 mr-2" /> Generate</>
-            )}
-          </Button>
-        </form>
+        {/* CATALOGUE source — type a topic, AI picks from your reviews. */}
+        {source === 'catalogue' && (
+          <>
+            <form onSubmit={onSubmit} className="flex gap-2">
+              <input
+                type="text"
+                value={topic}
+                onChange={e => setTopic(e.target.value)}
+                placeholder="e.g. sleep masks for side sleepers, cooling pillows, under-eye masks…"
+                maxLength={200}
+                disabled={generating}
+                className="flex-1 rounded-lg px-4 py-3 text-sm outline-none border"
+                style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+              />
+              <Button
+                type="submit"
+                disabled={generating || !topic.trim()}
+                className="px-5 whitespace-nowrap"
+                style={{ background: '#7C3AED', color: '#fff' }}
+              >
+                {generating ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Writing…</>
+                ) : (
+                  <><Sparkles className="w-4 h-4 mr-2" /> Generate</>
+                )}
+              </Button>
+            </form>
 
-        <p className="text-xs mt-3" style={{ color: 'var(--fg-muted)' }}>
-          {loading ? 'Scanning your library…' : `${reviewCount} published reviews in your catalogue.`}
-          {mode === 'auto' && <span className="ml-2" style={{ color: '#dc2626' }}>· Full auto mode publishes immediately.</span>}
-        </p>
+            <p className="text-xs mt-3" style={{ color: 'var(--fg-muted)' }}>
+              {loading ? 'Scanning your library…' : `${reviewCount} published reviews in your catalogue.`}
+              {mode === 'auto' && <span className="ml-2" style={{ color: '#dc2626' }}>· Full auto mode publishes immediately.</span>}
+            </p>
+          </>
+        )}
+
+        {/* MANUAL source — paste 2-10 YouTube URLs, MVP ranks + writes
+            the guide. No catalogue threshold. */}
+        {source === 'manual' && (
+          <form onSubmit={generateManual} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>
+                Topic / title <span style={{ color: 'var(--fg-muted)' }}>(optional — MVP infers it from your videos)</span>
+              </label>
+              <input
+                type="text"
+                value={manualTopic}
+                onChange={e => setManualTopic(e.target.value)}
+                placeholder='e.g. "Best Wine Travel Protectors in 2026"'
+                maxLength={200}
+                disabled={generating}
+                className="w-full rounded-lg px-4 py-3 text-sm outline-none border"
+                style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--fg)' }}>
+                YouTube video URLs <span style={{ color: 'var(--fg-muted)' }}>({manualValidCount}/{MAX_MANUAL_URLS} — one product per video)</span>
+              </label>
+              <div className="flex flex-col gap-2">
+                {manualUrls.map((u, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="text-xs w-5 text-right" style={{ color: 'var(--fg-muted)' }}>{i + 1}.</span>
+                    <input
+                      type="url"
+                      value={u}
+                      onChange={e => setManualUrl(i, e.target.value)}
+                      placeholder="https://www.youtube.com/watch?v=…"
+                      disabled={generating}
+                      className="flex-1 rounded-lg px-3 py-2 text-sm outline-none border"
+                      style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+                    />
+                    {manualUrls.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => removeManualUrl(i)}
+                        disabled={generating}
+                        className="p-1.5 rounded-md transition"
+                        style={{ color: 'var(--fg-muted)' }}
+                        title="Remove"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {manualUrls.length < MAX_MANUAL_URLS && (
+                <button
+                  type="button"
+                  onClick={addManualUrl}
+                  disabled={generating}
+                  className="mt-2 flex items-center gap-1.5 text-xs font-medium hover:underline disabled:opacity-50"
+                  style={{ color: '#7C3AED' }}
+                >
+                  <Plus size={13} /> Add another product
+                </button>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              disabled={generating || manualValidCount < 2}
+              className="px-5"
+              style={{ background: '#7C3AED', color: '#fff' }}
+            >
+              {generating ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Researching & writing…</>
+              ) : (
+                <><Sparkles className="w-4 h-4 mr-2" /> Generate guide</>
+              )}
+            </Button>
+            {generating && (
+              <p className="text-xs" style={{ color: 'var(--fg-muted)' }}>
+                Resolving each product, ranking, generating images, and publishing. Usually a minute or two.
+              </p>
+            )}
+          </form>
+        )}
       </div>
 
       {/* ── LET ME SEE preview cards (only shown after picker runs) ─ */}
