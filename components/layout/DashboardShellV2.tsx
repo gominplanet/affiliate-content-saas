@@ -47,6 +47,11 @@ interface NavItemDef {
   /** Hide unless gate is true. Used for showBuyingGuides + showDeals
    *  + admin-only links. */
   gate?: boolean
+  /** External link — opens in a new tab. Used for the Recommended Tools
+   *  group (Oink, Levanta, etc.) — those are partner-affiliate links
+   *  the user earns commission on, so they get a small ExternalLink
+   *  glyph + always-new-tab behaviour. */
+  external?: boolean
 }
 
 interface NavGroupDef {
@@ -208,6 +213,21 @@ export default function DashboardShellV2({
         { href: '/developers', icon: <KeyRound size={15} />, label: 'API Access' },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistants' },
         { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
+      ],
+    },
+    // Recommended tools — external partner-affiliate links the user earns
+    // commission on. Carried over from the legacy Sidebar's "RECOMMENDED
+    // TOOLS" block. Sits low in the IA (last public-user group) because
+    // they're discovery items, not daily-driver routes. Each opens in a
+    // new tab via external:true.
+    {
+      label: 'Recommended tools',
+      items: [
+        { href: 'https://geni.us/2y5sBo', icon: <ExternalLink size={13} />, label: 'Oink', external: true },
+        { href: 'https://geni.us/GCad5Q', icon: <ExternalLink size={13} />, label: 'Levanta', external: true },
+        { href: 'https://geni.us/Z0q3hY', icon: <ExternalLink size={13} />, label: 'PartnerBoost', external: true },
+        { href: 'https://geni.us/khuHTe', icon: <ExternalLink size={13} />, label: 'Archer Affiliate', external: true },
+        { href: 'https://geni.us/Y70p9R', icon: <ExternalLink size={13} />, label: 'Geniuslink', external: true },
       ],
     },
     // Admin-only block. Only added to NAV_GROUPS when isAdmin so
@@ -528,45 +548,45 @@ export default function DashboardShellV2({
 // ── Sub-components ──────────────────────────────────────────────────────
 
 function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolean; collapsed: boolean }) {
-  return (
-    <Link
-      href={item.href}
-      title={collapsed ? item.label : undefined}
-      className={cn(
-        // 14px (was 13px) + font-semibold (was font-medium) — boosts
-        // legibility on the dark theme without the row feeling
-        // overweight. py-2 (was py-1.5) gives a touch more breathing
-        // room for the larger glyphs.
-        'relative flex items-center gap-2.5 py-2 rounded-lg text-[14px] font-semibold transition-colors',
-        collapsed ? 'justify-center' : 'px-2.5',
-      )}
-      style={{
-        backgroundColor: active ? 'var(--nav-active-bg)' : 'transparent',
-        // Resting nav rows now use --text-soft (0.86 in dark, 0.78 in
-        // light) so they read as actual text, not greyed-out hints. The
-        // active row stays accent-coloured and the hover state goes to
-        // --text (pure foreground).
-        color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
-      }}
-      onMouseEnter={(e) => {
-        if (!active) {
-          e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
-          e.currentTarget.style.color = 'var(--text)'
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!active) {
-          e.currentTarget.style.backgroundColor = 'transparent'
-          e.currentTarget.style.color = 'var(--text-soft)'
-        }
-      }}
-    >
-      {/* Left indicator bar — 3px violet stub that proudly marks the
-          selected row. Strong enough to be obvious even when scanning
-          the whole sidebar. */}
+  // External items (Recommended tools) open in a new tab via a plain <a>
+  // — Next.js Link's prefetcher is wasted on offsite URLs, and we want
+  // target="_blank" + rel="noopener" for safety on partner links.
+  const className = cn(
+    // 14px + font-semibold + py-2 for legibility (calibrated for the
+    // dark theme in commit 929cdb4).
+    'relative flex items-center gap-2.5 py-2 rounded-lg text-[14px] font-semibold transition-colors',
+    collapsed ? 'justify-center' : 'px-2.5',
+  )
+  const style: React.CSSProperties = {
+    backgroundColor: active ? 'var(--nav-active-bg)' : 'transparent',
+    color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
+  }
+  const onMouseEnter = (e: React.MouseEvent<HTMLElement>) => {
+    if (!active) {
+      e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
+      e.currentTarget.style.color = 'var(--text)'
+    }
+  }
+  const onMouseLeave = (e: React.MouseEvent<HTMLElement>) => {
+    if (!active) {
+      e.currentTarget.style.backgroundColor = 'transparent'
+      e.currentTarget.style.color = 'var(--text-soft)'
+    }
+  }
+
+  const inner = (
+    <>
+      {/* Left indicator bar — only for active internal items. External
+          tools never get the bar even on hover. */}
       {active && <span className="absolute -left-2 top-2 bottom-2 w-[3px] rounded-r-full bg-[#7C3AED]" />}
       <span className="flex-shrink-0">{item.icon}</span>
       {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+      {/* External-link glyph — small tail icon hinting "opens off-site".
+          Hidden when the sidebar is collapsed (the row icon is already
+          ExternalLink in that mode). */}
+      {!collapsed && item.external && (
+        <ExternalLink size={11} className="opacity-60 flex-shrink-0" />
+      )}
       {!collapsed && item.badge !== undefined && (
         <span
           className="text-[11px] tabular-nums px-1.5 py-0.5 rounded font-semibold"
@@ -578,6 +598,36 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
           {item.badge}
         </span>
       )}
+    </>
+  )
+
+  if (item.external) {
+    return (
+      <a
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={collapsed ? `${item.label} (opens in new tab)` : undefined}
+        className={className}
+        style={style}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        {inner}
+      </a>
+    )
+  }
+
+  return (
+    <Link
+      href={item.href}
+      title={collapsed ? item.label : undefined}
+      className={className}
+      style={style}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {inner}
     </Link>
   )
 }
