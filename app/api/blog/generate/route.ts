@@ -1179,16 +1179,19 @@ async function handleGenerate(request: Request) {
     // article (re-hosted on WP for a permanent URL) and skip AI generation.
     if (includeImages && userImageUrls.length > 0) {
       try {
-        const uploaded: Array<{ url: string; alt: string }> = []
-        for (let i = 0; i < userImageUrls.length; i++) {
+        // Parallel uploads — was sequential ~700ms each → 4 images = 2.8s.
+        // The AI-generated path (further down at ~line 1288) already does
+        // this; aligning here closes the gap.
+        const uploaded = await Promise.all(userImageUrls.map(async (src, i) => {
           try {
-            const media = await wpService.uploadImageFromUrl(userImageUrls[i], `${slug}-body${i + 1}.jpg`)
-            if (media?.source_url) uploaded.push({ url: media.source_url, alt: `${altFor(i)}` })
-            else uploaded.push({ url: userImageUrls[i], alt: `${altFor(i)}` }) // fallback: embed the public URL directly
+            const media = await wpService.uploadImageFromUrl(src, `${slug}-body${i + 1}.jpg`)
+            return media?.source_url
+              ? { url: media.source_url, alt: altFor(i) }
+              : { url: src, alt: altFor(i) } // fallback: embed the public URL directly
           } catch {
-            uploaded.push({ url: userImageUrls[i], alt: `${altFor(i)}` })
+            return { url: src, alt: altFor(i) }
           }
-        }
+        }))
         heroImageUrl = uploaded[0]?.url ?? heroImageUrl
         if (uploaded.length > 0) {
           const slots = autoPlacementIndices(content, uploaded.length)

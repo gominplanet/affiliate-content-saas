@@ -116,9 +116,12 @@ export async function POST(request: Request) {
     .slice(-12)
     .map(m => ({ role: m.role, content: m.content }))
 
-  // Persist the user's message + bump conversation timestamp.
-  await sb.from('assistant_messages').insert({ conversation_id: conversationId, user_id: user.id, role: 'user', content: message })
-  await sb.from('assistant_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId)
+  // Persist the user's message + bump conversation timestamp — in parallel,
+  // they're independent writes. Saves ~150-300ms before the stream starts.
+  await Promise.all([
+    sb.from('assistant_messages').insert({ conversation_id: conversationId, user_id: user.id, role: 'user', content: message }),
+    sb.from('assistant_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId),
+  ])
 
   // ── Personalization context — brand + the user's real activity. This is
   //    the edge a generic $20 chatbot can't have: it knows their niches,

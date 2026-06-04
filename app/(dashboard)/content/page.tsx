@@ -2686,18 +2686,30 @@ export default function ContentPage() {
     // Supabase caps a single .select() at 1,000 rows. Channels with more
     // synced videos than that would silently get truncated, so we page
     // through with .range() until we've pulled everything.
+    //
+    // EXPLICIT COLUMN LIST — we drop `transcript` (50KB+ per video, only
+    // used downstream by the AI re-write modal which fetches on demand)
+    // and `description` (kept in WP) from the initial pull. For a 500-
+    // video creator that's a 25MB→3MB savings on each dashboard load.
     async function fetchAllVideos(): Promise<Record<string, unknown>[]> {
       const PAGE = 1000
+      const COLS = [
+        'id','user_id','youtube_video_id','title','thumbnail_url',
+        'published_at','selected_category','product_url','status',
+        'duration_seconds','view_count','tags','instagram_video_url',
+        'instagram_image_url','instagram_story_image_url','face_model_id',
+        'last_fetched_at','created_at','updated_at',
+      ].join(',')
       const all: Record<string, unknown>[] = []
       for (let from = 0; ; from += PAGE) {
         const { data, error } = await sb
           .from('youtube_videos')
-          .select('*')
+          .select(COLS)
           .eq('user_id', uid)
           .order('published_at', { ascending: false })
           .range(from, from + PAGE - 1)
         if (error) break
-        const chunk = (data as Record<string, unknown>[]) ?? []
+        const chunk = (data as unknown as Record<string, unknown>[]) ?? []
         all.push(...chunk)
         if (chunk.length < PAGE) break
       }

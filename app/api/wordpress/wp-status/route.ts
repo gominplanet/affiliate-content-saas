@@ -93,18 +93,25 @@ export async function GET(req: Request) {
           .eq('user_id', user.id)
           .eq('url', site.wordpress_url)
           .maybeSingle()
+        // Two independent updates — run in parallel.
+        const updates: Array<Promise<unknown>> = []
         if (existing && existing.api_token !== s.proxy_secret) {
-          await sb
-            .from('wordpress_sites')
-            .update({ api_token: maybeEncrypt(s.proxy_secret) })
-            .eq('id', existing.id)
+          updates.push(
+            sb
+              .from('wordpress_sites')
+              .update({ api_token: maybeEncrypt(s.proxy_secret) })
+              .eq('id', existing.id)
+          )
         }
         // Also mirror to the legacy integrations column so single-site users
         // who haven't been migrated to wordpress_sites still get the proxy.
-        await sb
-          .from('integrations')
-          .update({ wordpress_api_token: maybeEncrypt(s.proxy_secret) })
-          .eq('user_id', user.id)
+        updates.push(
+          sb
+            .from('integrations')
+            .update({ wordpress_api_token: maybeEncrypt(s.proxy_secret) })
+            .eq('user_id', user.id)
+        )
+        if (updates.length) await Promise.all(updates)
       } catch { /* non-fatal — proxy will be retried next status check */ }
     }
 

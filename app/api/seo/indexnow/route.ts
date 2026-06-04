@@ -61,14 +61,14 @@ export async function POST() {
     grouped.set(key, arr)
   }
 
-  // ── Submit per site ─────────────────────────────────────────────────────
-  let totalSubmitted = 0
-  const perSiteResults: Array<{ site: string; submitted?: number; error?: string }> = []
-  for (const [siteId, slugs] of grouped.entries()) {
+  // ── Submit per site, IN PARALLEL ─────────────────────────────────────────
+  // Each site's credential lookup + /status fetch (10s timeout!) + submit
+  // call used to run serially. A 3-site Pro user paid 3× the wall-time.
+  // Promise.all gates on the slowest single site, not the sum.
+  const perSiteResults = await Promise.all(Array.from(grouped.entries()).map(async ([siteId, slugs]) => {
     const site = await getWordPressCredentials(supabase, user.id, siteId)
     if (!site) {
-      perSiteResults.push({ site: siteId, error: 'site credentials unavailable' })
-      continue
+      return { site: siteId, error: 'site credentials unavailable' } as { site: string; submitted?: number; error?: string }
     }
     const wpBase = site.wordpress_url.replace(/\/$/, '')
     const auth = `Basic ${Buffer.from(`${site.wordpress_username}:${site.wordpress_app_password.replace(/\s+/g, '')}`).toString('base64')}`
@@ -78,21 +78,19 @@ export async function POST() {
     try {
       const res = await fetch(`${wpBase}/wp-json/affiliateos/v1/status`, { headers: { Authorization: auth }, signal: AbortSignal.timeout(10_000) })
       if (res.ok) { const s = await res.json().catch(() => ({})); key = (s?.indexnow_key as string) || '' }
-    } catch { /* per-site failure is non-fatal; we continue to other sites */ }
+    } catch { /* per-site failure is non-fatal */ }
     if (!key) {
-      perSiteResults.push({ site: site.site_label, error: 'IndexNow not available — update the MVP plugin to v1.0.11+ on this site.' })
-      continue
+      return { site: site.site_label, error: 'IndexNow not available — update the MVP plugin to v1.0.11+ on this site.' }
     }
 
     const urls = slugs.map(slug => `${wpBase}/${slug}`)
     const result = await submitToIndexNow(wpBase, key, urls)
     if (!result.ok) {
-      perSiteResults.push({ site: site.site_label, error: `IndexNow rejected the request (status ${result.status}).` })
-    } else {
-      totalSubmitted += result.submitted
-      perSiteResults.push({ site: site.site_label, submitted: result.submitted })
+      return { site: site.site_label, error: `IndexNow rejected the request (status ${result.status}).` }
     }
-  }
+    return { site: site.site_label, submitted: result.submitted }
+  }))
+  const totalSubmitted = perSiteResults.reduce((sum, r) => sum + (r.submitted ?? 0), 0)
 
   if (totalSubmitted === 0) {
     return NextResponse.json({ error: 'No URLs accepted by IndexNow.', sites: perSiteResults }, { status: 502 })
