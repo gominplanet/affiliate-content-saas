@@ -1,1478 +1,2208 @@
-import Link from 'next/link'
-import Image from 'next/image'
-import { SALES_PAUSED, SALES_PAUSED_MESSAGE } from '@/lib/sales-paused'
+/**
+ * / — public-facing homepage (mvpaffiliate.io).
+ *
+ * Promoted from /landing-preview on 2026-06-04 — the dark sales page
+ * is now the canonical landing surface. The previous light-themed
+ * homepage was archived (git history) when this took over.
+ *
+ * Sits outside /preview/* so it doesn't inherit the dashboard preview's
+ * sidebar/topbar layout. Uses the same CSS-variable theme system so the
+ * sun/moon toggle works identically.
+ *
+ * Source of truth for tier copy: lib/tier.ts → mirrored in PRICING_TIERS
+ * below and in app/pricing/page.tsx. If you change one, change all three.
+ */
+'use client'
+
+import { useState, useEffect } from 'react'
 import {
-  CheckCircle,
-  ArrowRight,
-  Zap,
-  Globe,
-  Sparkles,
-  Wand2,
-  LayoutTemplate,
-  Star,
-  Tag,
-  Play,
-  ShieldCheck,
-  Clock,
+  FileText, Image as ImageIcon, Music2, Instagram, Mail, Scale, Calendar,
+  Play, Sun, Moon, Sparkles, ArrowRight, Bookmark,
+  Twitter, AtSign, Cloud, Send, Facebook,
+  Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
+  Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
+  Crown, Rocket, Plus, Minus,
 } from 'lucide-react'
 
-// ─── Real platform availability ─────────────────────────────────────────────
-// Status maps to the lowest tier that unlocks each platform per the new
-// matrix (see lib/tier.ts). "soon" = built but pending external review (Meta
-// + TikTok app review). 5x2 grid keeps the layout balanced with 10 cells.
-const platforms = [
-  // Top row — unlocks on Creator (the entry paid tier). Facebook + Threads
-  // are also pending Meta App Review for non-admin accounts; that's the
-  // "soon" qualifier on the badge text.
-  { label: 'WordPress',    status: 'creator' as const, color: '#21759b', logo: 'wordpress' },
-  { label: 'LinkedIn',     status: 'creator' as const, color: '#0a66c2', logo: 'linkedin' },
-  { label: 'Bluesky',      status: 'creator' as const, color: '#1185fe', logo: 'bluesky' },
-  { label: 'Pinterest',    status: 'creator' as const, color: '#e60023', logo: 'pinterest' },
-  { label: 'Facebook',     status: 'creator' as const, color: '#1877f2', logo: 'facebook' },
-  // Middle/bottom row — Studio adds Instagram + Telegram, Pro adds X + TikTok.
-  { label: 'Threads',      status: 'creator' as const, color: '#000000', logo: 'threads' },
-  { label: 'Instagram',    status: 'studio'  as const, color: '#E1306C', logo: 'instagram' },
-  { label: 'Telegram',     status: 'studio'  as const, color: '#229ED9', logo: 'telegram' },
-  { label: 'Twitter / X',  status: 'pro'     as const, color: '#000000', logo: 'x' },
-  { label: 'TikTok',       status: 'pro'     as const, color: '#000000', logo: 'tiktok' },
+const DARK_VARS: React.CSSProperties = {
+  ['--bg' as string]: '#0E0E11',
+  ['--surface' as string]: 'rgba(255,255,255,0.04)',
+  ['--surface-bright' as string]: 'rgba(255,255,255,0.08)',
+  ['--border' as string]: 'rgba(255,255,255,0.08)',
+  ['--text' as string]: '#F5F5F7',
+  ['--text-muted' as string]: 'rgba(255,255,255,0.85)',
+  ['--text-soft' as string]: 'rgba(255,255,255,0.65)',
+  ['--text-subtle' as string]: 'rgba(255,255,255,0.50)',
+  ['--text-faint' as string]: 'rgba(255,255,255,0.38)',
+  ['--card-shadow' as string]: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 8px rgba(0,0,0,0.3)',
+  ['--hero-opacity' as string]: '0.55',
+  ['--line-color' as string]: 'rgba(124,58,237,0.55)',
+  ['--line-glow' as string]: 'rgba(124,58,237,0.35)',
+  ['--center-bg' as string]: 'linear-gradient(135deg, #7C3AED, #C026D3)',
+}
+
+const LIGHT_VARS: React.CSSProperties = {
+  ['--bg' as string]: '#FAFAF8',
+  ['--surface' as string]: '#FFFFFF',
+  ['--surface-bright' as string]: 'rgba(0,0,0,0.05)',
+  ['--border' as string]: 'rgba(0,0,0,0.10)',
+  ['--text' as string]: '#1D1D1F',
+  ['--text-muted' as string]: 'rgba(0,0,0,0.82)',
+  ['--text-soft' as string]: 'rgba(0,0,0,0.62)',
+  ['--text-subtle' as string]: 'rgba(0,0,0,0.50)',
+  ['--text-faint' as string]: 'rgba(0,0,0,0.40)',
+  ['--card-shadow' as string]: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.03)',
+  ['--hero-opacity' as string]: '0.22',
+  ['--line-color' as string]: 'rgba(124,58,237,0.55)',
+  ['--line-glow' as string]: 'rgba(124,58,237,0.18)',
+  ['--center-bg' as string]: 'linear-gradient(135deg, #7C3AED, #C026D3)',
+}
+
+/** Hub diagram constants. Computed once so the SVG and the absolutely
+ *  positioned spoke nodes share the same geometry. Bumped from 8 spokes
+ *  to 13 (full social coverage) — container + radius widened so the pills
+ *  don't crowd each other. */
+const CX = 380
+const CY = 290
+const RADIUS = 250
+const VIEW_W = 760
+const VIEW_H = 580
+
+interface Spoke {
+  /** Angle in degrees, 0 = right, 90 = down, -90 = up. */
+  angle: number
+  label: string
+  icon: React.ReactNode
+}
+
+/** 13 spokes total, ~27.7° apart. Layout flows clockwise starting at
+ *  top: 5 content outputs (blog/thumbnail/comparison/newsletter/scheduled),
+ *  then 8 social platforms. Labels kept short so the pills don't overlap
+ *  at the equator. */
+const SPOKES: Spoke[] = [
+  { angle:  -90.0, label: 'Blog post',  icon: <FileText size={13} /> },
+  { angle:  -62.3, label: 'Thumbnail',  icon: <ImageIcon size={13} /> },
+  { angle:  -34.6, label: 'Comparison', icon: <Scale size={13} /> },
+  { angle:   -6.9, label: 'Newsletter', icon: <Mail size={13} /> },
+  { angle:   20.8, label: 'Scheduled',  icon: <Calendar size={13} /> },
+  { angle:   48.5, label: 'TikTok',     icon: <Music2 size={13} /> },
+  { angle:   76.2, label: 'Instagram',  icon: <Instagram size={13} /> },
+  { angle:  103.8, label: 'Pinterest',  icon: <Bookmark size={13} /> },
+  { angle:  131.5, label: 'X',          icon: <Twitter size={13} /> },
+  { angle:  159.2, label: 'Threads',    icon: <AtSign size={13} /> },
+  { angle:  186.9, label: 'Bluesky',    icon: <Cloud size={13} /> },
+  { angle:  214.6, label: 'Telegram',   icon: <Send size={13} /> },
+  { angle:  242.3, label: 'FB Groups',  icon: <Facebook size={13} /> },
 ]
 
-const statusBadge: Record<typeof platforms[number]['status'], { text: string; bg: string; fg: string }> = {
-  creator: { text: 'Creator+',     bg: 'bg-[#34c759]/10',  fg: 'text-[#1f8a3a]' },
-  studio:  { text: 'Studio+',      bg: 'bg-[#EC4899]/10',  fg: 'text-[#BE185D]' },
-  pro:     { text: 'Pro',          bg: 'bg-[#7C3AED]/10',  fg: 'text-[#7C3AED]' },
-}
-
-// Landing teaser — must mirror app/pricing/page.tsx. See lib/tier.ts for
-// the source of truth on caps + feature gates.
-const plans = [
-  {
-    tier: 'Free Trial',
-    price: 0,
-    regular: 0,
-    limit: '5 posts, no card',
-    bonus: '',
-    features: ['Free themed review site', 'YouTube Co-Pilot autopilot', 'Full AI agent pipeline', 'No card, no time limit'],
-    cta: 'Start free',
-    href: '/signup',
-    highlight: false,
-  },
-  {
-    tier: 'Creator',
-    price: 49,
-    regular: 99,
-    limit: '20 posts / month',
-    bonus: '',
-    features: [
-      'Free themed review site',
-      'LinkedIn, Bluesky, Pinterest, Facebook *, Threads *',
-      'In-body AI product images (3 per post)',
-      'Your Face in AI thumbnails (1 face)',
-      '10 video scripts / month',
-      'Newsletter taster (500 subs)',
-      '5 brand-collab pitches / month',
-    ],
-    cta: 'Get Creator',
-    href: '/pricing',
-    highlight: false,
-  },
-  {
-    tier: 'Studio',
-    price: 99,
-    regular: 199,
-    limit: '60 posts / month',
-    bonus: '',
-    features: [
-      'Everything in Creator',
-      'Adds Instagram + Telegram',
-      'Deals Hub (5 deal posts / month, Amazon CSV bulk)',
-      'IG AI Thumbnails 4:5 (30 / month)',
-      'Topic hubs + Refresh images on published posts',
-      'Newsletter weekly + scheduling (5k subs)',
-      '30 video scripts, 15 brand pitches',
-      'Priority Discord support',
-    ],
-    cta: 'Get Studio',
-    href: '/pricing',
-    highlight: true,
-  },
-  {
-    tier: 'Pro',
-    price: 199,
-    regular: 499,
-    limit: '200 posts / month',
-    bonus: '',
-    features: [
-      'Everything in Studio',
-      'Adds Twitter / X + TikTok *',
-      'Comparison posts + Buying Guides',
-      'Rebuild-from-video on any legacy WP post',
-      'Creator Campaigns (Amazon EPC scout, one-click publish)',
-      'Multi-account social + Publish All',
-      '10 WordPress sites + 3 VA seats',
-      '150 scripts, 100 pitches, 30 deals / month',
-      'Newsletter A/B + segmented sends (10k subs)',
-    ],
-    cta: 'Get Pro',
-    href: '/pricing',
-    highlight: false,
-  },
-]
-
-const faqs = [
-  {
-    q: 'How does the YouTube workflow actually work?',
-    a: 'Upload an unlisted draft to YouTube. Dropping the Amazon ASIN in the title gives the most precise match, but it\'s optional — MVP detects the product from your title and description on its own. The agent team then generates the YouTube description (with your affiliate link), 10 SEO video tags, 5 hashtags, and a click-magnet thumbnail. One click pushes everything back into your YouTube draft. Pro adds one-click batch settings: playlist, schedule, paid-promotion disclosure, and made-for-kids flag.',
-  },
-  {
-    q: 'Do I have to promote Amazon products?',
-    a: 'No. Amazon is the easiest path, but if you promote a product on a brand site or store, just put that link in your video description — MVP uses it as your product link, wraps it with your Geniuslink for tracking, and writes the review and YouTube metadata around the real product. Not an Amazon associate? You\'re still fully covered.',
-  },
-  {
-    q: 'Can I track my traffic with Google Analytics?',
-    a: 'Yes. Add your GA4 Measurement ID (or a Google Tag Manager container) in Customize Blog and we inject the tracking for you — no code to paste. There\'s a step-by-step guide right in the dashboard, plus a clicks dashboard for your affiliate links when Geniuslink is connected.',
-  },
-  {
-    q: 'Do I need my own WordPress site?',
-    a: 'You need a domain and a WordPress install (any host — we test on Hostinger). Connect it once and we install the MVP Affiliate theme + plugin automatically. Your reviews land on a real editorial homepage from day one — no setup, no theme shopping, no plugin hunting.',
-  },
-  {
-    q: 'Is the content AI-generated?',
-    a: 'Yes — but not by a single chatbot. We orchestrate an army of specialized agents: one researches the product, one designs the outline for SEO, one matches your voice — trained from your Brand Profile and refined from the posts you publish (your Learning profile) — one drafts the body section by section, one writes the verdict + Buy/Skip block, one inserts affiliate links cleanly, one writes the FAQ, one tags and categorizes. The output is reviewed in YouTube Co-Pilot before publish — you always have the final say.',
-  },
-  {
-    q: 'What\'s the built-in AI assistant?',
-    a: 'A business-aware chat assistant included in every plan (with higher limits as you move up). It already knows your brand, your recent posts and campaigns, and helps with setup, affiliate strategy, and content questions. It remembers context across chats, and you can import your history from ChatGPT or any other AI tool so it picks up where you left off — one less $20/mo subscription to keep.',
-  },
-  {
-    q: 'What are the brand-collab pitch emails?',
-    a: 'A Pro feature for landing brand deals. Name a brand or product you want to work with and we generate a personalized outreach email — built on your real storefront, Linktree and channel stats, with a brand-specific angle and your full cross-platform reach as proof of distribution. Pro includes up to 100 pitches a month; Creator gets a taster of 5 / month.',
-  },
-  {
-    q: 'Do I own the content?',
-    a: 'You own everything generated for your account. We don\'t reuse, resell, or train models on your content.',
-  },
-  {
-    q: 'What happens after my 5 free posts?',
-    a: 'You can upgrade to Creator or Pro to keep going — no time limit on the trial, so upgrade whenever you\'re ready. Your existing posts and connected site stay exactly as they are; nothing gets taken down.',
-  },
-  {
-    q: 'Can I cancel anytime?',
-    a: 'Yes — one click in your billing portal. No contracts, no exit fees. You keep access through the end of the period you paid for.',
-  },
-  {
-    q: 'How does posting to Instagram work?',
-    a: 'MVP auto-publishes the visual to Instagram via the official API — a Reel for Shorts, an auto-composed image post, or a Story. The one thing Instagram itself doesn\'t allow is clickable links in posts or captions, and its API can\'t set Story link stickers. So for the affiliate link on Instagram you add it where Instagram permits — a Story link sticker (we give you a one-tap copy and the exact 5-second steps) or your bio. Every other platform (Facebook, Threads, LinkedIn, Pinterest, X, Bluesky, Telegram) gets the link posted automatically.',
-  },
-  {
-    q: 'Why is Pinterest "coming soon"?',
-    a: 'Pinterest requires apps to pass their developer review before live API access. We\'re going through that process now. Once approved, every paid plan gets Pinterest auto-publish — no upgrade required.',
-  },
-]
-
-export default function LandingPage() {
-  return (
-    <div className="min-h-screen bg-white text-[#1d1d1f]">
-
-      {/* ── Nav ────────────────────────────────────────────────────────────── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-6 py-3 bg-white/90 backdrop-blur-md border-b border-gray-100">
-        <Link href="/" className="flex items-center gap-2">
-          <Image src="/mvp-affiliate-logo.webp" alt="MVP Affiliate" width={36} height={36} className="rounded-xl" />
-          <span className="font-semibold text-[#1d1d1f] hidden sm:inline">MVP Affiliate</span>
-        </Link>
-        <div className="flex items-center gap-1 sm:gap-2">
-          <a
-            href="https://mvp-affiliate.getrewardful.com/signup"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden md:inline-flex items-center gap-1.5 text-sm font-medium text-[#1f8a3a] hover:text-[#136b2c] transition-colors px-3 py-2"
-            title="Earn 10% recurring for every creator you refer"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-[#34c759]" />
-            Earn 10%
-          </a>
-          <Link href="/pricing" className="hidden sm:block text-sm text-[#6e6e73] hover:text-[#1d1d1f] transition-colors px-3 py-2">
-            Pricing
-          </Link>
-          <Link href="/login" className="hidden sm:block text-sm text-[#6e6e73] hover:text-[#1d1d1f] transition-colors px-3 py-2">
-            Sign in
-          </Link>
-          {SALES_PAUSED ? (
-            <span className="text-sm font-semibold bg-gray-200 dark:bg-white/10 text-[#86868b] px-4 py-2 rounded-xl cursor-not-allowed" title={SALES_PAUSED_MESSAGE}>
-              Sign-ups paused
-            </span>
-          ) : (
-            <Link href="/signup" className="text-sm font-semibold bg-[#7C3AED] hover:bg-[#6D28D9] text-white px-4 py-2 rounded-xl transition-colors">
-              Start free
-            </Link>
-          )}
-        </div>
-      </nav>
-
-      {/* ── Hero ───────────────────────────────────────────────────────────── */}
-      <section className="pt-28 sm:pt-36 pb-12 sm:pb-20 px-5 sm:px-6 relative overflow-hidden bg-gradient-to-b from-[#f0f7ff] via-white to-white">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1100px] h-[600px] bg-[#7C3AED]/8 rounded-full blur-[120px] pointer-events-none" />
-        <div className="relative max-w-5xl mx-auto flex flex-col items-center text-center">
-
-          {/* Free-posts pill */}
-          <div className="inline-flex items-center gap-2 bg-white border border-[#7C3AED]/20 rounded-full px-3 py-1.5 text-xs sm:text-sm text-[#7C3AED] font-medium mb-6 shadow-sm">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#34c759] animate-pulse" />
-            5 free posts. No card. No catch.
-          </div>
-
-          {/* Main title */}
-          <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight leading-[1.05] mb-6 text-[#1d1d1f]">
-            One real video in.<br className="hidden sm:block" /> A whole <span className="text-[#7C3AED]">affiliate engine</span> out.
-          </h1>
-
-          {/* Positioning line — the moat, up front */}
-          <p className="text-base sm:text-lg font-semibold text-[#7C3AED] max-w-3xl mb-8">
-            Every other AI spins content from keywords and thumbnails from prompts. MVP builds it all from your <span className="underline decoration-[#7C3AED]/30 underline-offset-2">actual review video</span> — so it&apos;s grounded in what you really said and showed, and fact-checked against your own words. Never fabricated.
-          </p>
-
-          {/* Centered infographic */}
-          <div className="relative w-full max-w-4xl mb-10">
-            <Image
-              src="/automation-hub.webp"
-              alt="MVP Affiliate automation hub — YouTube, Instagram, Facebook, Threads, LinkedIn, X, Pinterest, Bluesky, Telegram"
-              width={1400}
-              height={788}
-              priority
-              className="w-full h-auto rounded-2xl shadow-xl"
-            />
-          </div>
-
-          {/* Subtext */}
-          <p className="text-lg sm:text-xl text-[#3a3a3c] max-w-3xl mb-8 leading-relaxed">
-            Record the video. We do everything else. From one unlisted YouTube draft, an army of
-            AI agents ships a long-form, SEO-optimized review on your branded review site, a
-            click-tuned YouTube description with affiliate links inserted cleanly, video tags and
-            hashtags ranked for discovery, a click-magnet thumbnail — plus fan-out posts to
-            Instagram (Reels, Feed posts and Stories), Facebook, Threads, LinkedIn, Pinterest, X,
-            Bluesky and Telegram.
-            <span className="font-semibold text-[#1d1d1f]"> Two clicks: one ships it to YouTube, one publishes the post + every social. ~2 hours of unpaid post-production per video → gone.</span>
-          </p>
-
-          {SALES_PAUSED && (
-            <div className="mx-auto mb-5 max-w-2xl rounded-2xl bg-[#ff9500]/10 border border-[#ff9500]/30 px-5 py-3 text-center">
-              <p className="text-sm font-semibold text-[#1d1d1f] mb-0.5">Sign-ups & purchases temporarily paused</p>
-              <p className="text-xs text-[#6e6e73] leading-relaxed">{SALES_PAUSED_MESSAGE}</p>
-            </div>
-          )}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            {SALES_PAUSED ? (
-              <span className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gray-200 text-[#86868b] font-semibold px-7 py-3.5 rounded-2xl text-base cursor-not-allowed">
-                Sign-ups paused — back soon
-              </span>
-            ) : (
-              <Link href="/signup" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors shadow-lg shadow-[#7C3AED]/25">
-                Start free — 5 posts <ArrowRight size={17} />
-              </Link>
-            )}
-            <Link href="/pricing" className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 text-[#1d1d1f] font-semibold px-7 py-3.5 rounded-2xl text-base transition-colors">
-              See pricing
-            </Link>
-          </div>
-          <p className="mt-4 text-sm text-[#86868b]">
-            Includes a free themed review site · Cancel anytime
-          </p>
-        </div>
-      </section>
-
-      {/* ── Platform strip ─────────────────────────────────────────────────── */}
-      <section className="py-16 sm:py-20 border-y border-gray-100 bg-[#fafafa]">
-        <div className="max-w-5xl mx-auto px-5 sm:px-6">
-          <p className="text-center text-sm text-[#3a3a3c] mb-10 uppercase tracking-widest font-semibold">
-            One click fans every review out to every platform that matters
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 max-w-4xl mx-auto">
-            {platforms.map(({ label, status, color, logo }) => {
-              const badge = statusBadge[status]
-              return (
-                <div
-                  key={label}
-                  className="flex flex-col items-center gap-3 p-5 rounded-2xl bg-white border border-gray-100 hover:border-gray-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
-                >
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm"
-                    style={{ background: color }}
-                  >
-                    <PlatformLogo name={logo} />
-                  </div>
-                  <span className="text-sm font-semibold text-[#1d1d1f] text-center leading-tight">{label}</span>
-                  <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full ${badge.bg} ${badge.fg}`}>
-                    {badge.text}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-          <p className="mt-10 text-center text-sm text-[#3a3a3c] max-w-2xl mx-auto leading-relaxed">
-            We only ship what works. Pinterest auto-publish is built and in Pinterest&apos;s developer
-            review queue — activates automatically once approved. Email digests are on the roadmap.
-            No false promises.
-          </p>
-        </div>
-      </section>
-
-      {/* ── YouTube Co-Pilot autopilot ─────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14 max-w-3xl mx-auto">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#ff0000] uppercase tracking-wider mb-3">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-              For YouTubers
-            </span>
-            <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">Your YouTube Co-Pilot, on autopilot.</h2>
-            <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
-              Save an unlisted draft on YouTube. MVP Affiliate pulls the video, identifies the
-              product — from your title, or the Amazon or store link in your description — deploys an
-              agent team to write everything you&apos;d normally hate writing, and pushes the finished
-              YouTube package back to your video for you. The matching long-form review goes live on
-              your branded site with one more click.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-            <StepCard
-              n="01"
-              icon={<Wand2 size={20} />}
-              title="Save an unlisted draft"
-              desc="Upload the video and save. Drop the Amazon ASIN in the title for an exact match, or just link the product (Amazon or any store) in the description — MVP figures out the rest. No description, no tags, no thumbnail, no hashtags. Walk away."
-              accent="#ff0000"
-            />
-            <StepCard
-              n="02"
-              icon={<Sparkles size={20} />}
-              title="The agent team builds everything"
-              desc="A full editorial review for your site · a YouTube description with affiliate links · 10 SEO video tags · 5 hashtags · a click-magnet thumbnail. Written in your voice from your Brand Profile."
-              accent="#5856d6"
-            />
-            <StepCard
-              n="03"
-              icon={<Globe size={20} />}
-              title="Two clicks. Both platforms live."
-              desc="Click 1 pushes the description, tags, hashtags and thumbnail back to YouTube. Click 2 publishes the review on your site and fans it out to every social you've connected — Instagram (Reels for Shorts, auto-composed image posts + Stories for long-form), Facebook, Threads, LinkedIn, Pinterest, X, Bluesky, Telegram."
-              accent="#34c759"
-            />
-          </div>
-
-          <div className="rounded-2xl bg-gradient-to-br from-[#fff5f5] to-[#fff] border border-red-100 p-6 sm:p-8 text-center max-w-3xl mx-auto">
-            <p className="text-sm font-semibold text-[#ff0000] mb-2 uppercase tracking-wider">The math creators care about</p>
-            <p className="text-xl sm:text-2xl font-bold text-[#1d1d1f] leading-tight mb-2">
-              ~2 hours of post-production per video → under 5 minutes
-            </p>
-            <p className="text-sm sm:text-base text-[#3a3a3c]">
-              YouTube description, tag research, hashtag picking, thumbnail design, blog post writing,
-              affiliate link insertion, social post copy for every platform — the unpaid tax on every
-              upload. We run all of it, every time, while you record the next one.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Army of agents ─────────────────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-[#0a0a0a] text-white relative overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-[#7C3AED]/15 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-[#5856d6]/15 rounded-full blur-[120px] pointer-events-none" />
-        <div className="relative max-w-6xl mx-auto">
-          <div className="text-center mb-14">
-            <span className="inline-block text-sm font-semibold text-[#4ea3ff] uppercase tracking-wider mb-4 px-3 py-1 rounded-full bg-[#7C3AED]/15 border border-[#7C3AED]/30">
-              The MVP Affiliate difference
-            </span>
-            <h2 className="text-5xl sm:text-6xl md:text-7xl font-black mb-6 leading-[1.05] tracking-tight text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.8)]">
-              An <span className="bg-gradient-to-r from-[#4ea3ff] to-[#a78bfa] bg-clip-text text-transparent">army of agents</span><br className="sm:hidden" /> on every review
-            </h2>
-            <p className="text-lg sm:text-xl text-gray-200 max-w-2xl mx-auto leading-relaxed">
-              Other tools paste your prompt into one model and hope for the best. We orchestrate a team of
-              specialized AI agents — each one focused on a single job, working together to produce a review
-              that&apos;s genuinely worth publishing.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            <AgentCard color="#7C3AED" name="Researcher" job="Pulls product specs, pricing, reviews" />
-            <AgentCard color="#5856d6" name="Outline Architect" job="Designs the review structure for SEO + flow" />
-            <AgentCard color="#34c759" name="Voice Matcher" job="Reads your brand profile and writes in your tone" />
-            <AgentCard color="#ff9500" name="Body Drafter" job="Writes the long-form review section by section" />
-            <AgentCard color="#ff3b30" name="Verdict Builder" job="Writes the Buy/Skip + Quick Verdict block" />
-            <AgentCard color="#af52de" name="Link Weaver" job="Inserts affiliate links cleanly into the body" />
-            <AgentCard color="#5ac8fa" name="FAQ Author" job="Generates a relevant FAQ block from the body" />
-            <AgentCard color="#ffcc00" name="Tag & Categorize" job="SEO tags, internal categories, social hashtags" />
-          </div>
-
-          <p className="mt-10 text-center text-base text-gray-400 max-w-2xl mx-auto">
-            Every agent feeds the next. The result lands in your YouTube Co-Pilot, ready for you to review and publish.
-            You always have the final say before anything goes live.
-          </p>
-
-          {/* Fact-grounded trust line */}
-          <div className="mt-8 max-w-2xl mx-auto rounded-2xl border border-[#34c759]/30 bg-[#34c759]/5 px-6 py-5 text-center">
-            <p className="text-sm font-semibold text-white mb-1.5 flex items-center justify-center gap-2">
-              <ShieldCheck size={16} className="text-[#34c759]" /> Fact-grounded — never made up
-            </p>
-            <p className="text-sm text-gray-300 leading-relaxed">
-              Every quote, number, and claim traces back to your actual video transcript and the real product page. The agents won&apos;t invent a personal story you never told or specs that don&apos;t exist — unlike a generic AI writer that hallucinates to fill space. Your reviews stay true to what you actually said.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Instagram fan-out (Pro flagship) ───────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-white via-[#fef6f9] to-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14 max-w-3xl mx-auto">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-gradient-to-r from-[#f09433]/15 via-[#dc2743]/15 to-[#bc1888]/15 border border-[#dc2743]/30 text-[#bc1888]">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>
-              Pro flagship · Instagram fan-out
-            </span>
-            <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">
-              Every review, automatically on Instagram.
-            </h2>
-            <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
-              Most affiliate tools stop at the blog post. We go further — one click and your review
-              lands on your Instagram feed and Stories, formatted for each surface, with captions
-              and hashtags written in your voice. No Canva, no manual upload, no copy-pasting links.
-            </p>
-          </div>
-
-          {/* Two flows side-by-side */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-            {/* Vertical Shorts → Reels */}
-            <div className="rounded-2xl bg-white border border-gray-200 p-6 sm:p-7 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ background: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' }}>
-                  9:16
-                </div>
-                <p className="text-xs font-bold uppercase tracking-wider text-[#bc1888]">Vertical Shorts</p>
-              </div>
-              <h3 className="text-xl font-bold text-[#1d1d1f] mb-2 leading-tight">Your YouTube Shorts → Instagram Reels + Stories</h3>
-              <p className="text-sm text-[#3a3a3c] leading-relaxed mb-4">
-                Upload your vertical MP4 once. We post it as a Reel with an AI-written caption (hook + 20 hashtags tuned for Instagram SEO) and as a Story so you can drop a Link sticker for affiliate clicks.
-              </p>
-              <ul className="text-[13px] text-[#3a3a3c] space-y-2">
-                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Reel caption matches your brand voice</li>
-                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Preview & edit before publishing</li>
-                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Affiliate URL surfaced for Story sticker</li>
-              </ul>
-            </div>
-
-            {/* Horizontal → Image post */}
-            <div className="rounded-2xl bg-white border border-gray-200 p-6 sm:p-7 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ background: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' }}>
-                  4:5
-                </div>
-                <p className="text-xs font-bold uppercase tracking-wider text-[#bc1888]">Long-form videos</p>
-              </div>
-              <h3 className="text-xl font-bold text-[#1d1d1f] mb-2 leading-tight">Your long-form video → a native AI Instagram image</h3>
-              <p className="text-sm text-[#3a3a3c] leading-relaxed mb-4">
-                Generate a fresh 1080×1350 feed image built for Instagram — your trained face holding the product, a punchy headline overlay, brand-tuned. Or auto-compose one from your thumbnail + brand colors. Either way: zero Canva, zero design work.
-              </p>
-              <ul className="text-[13px] text-[#3a3a3c] space-y-2">
-                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> AI image with your real face + the actual product</li>
-                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> 👍 / 👎 the result — the style picker learns your taste</li>
-                <li className="flex items-start gap-2"><CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Regenerate any time, no Canva subscription</li>
-              </ul>
-            </div>
-          </div>
-
-          {/* CTA card */}
-          <div className="rounded-2xl p-6 sm:p-8 text-center max-w-3xl mx-auto border border-[#dc2743]/20" style={{ background: 'linear-gradient(135deg, #fff5f8 0%, #fef6f0 100%)' }}>
-            <p className="text-sm font-semibold mb-2 uppercase tracking-wider" style={{ color: '#bc1888' }}>Pro plan</p>
-            <p className="text-xl sm:text-2xl font-bold text-[#1d1d1f] leading-tight mb-3">
-              The only tool that closes the Instagram loop
-            </p>
-            <p className="text-sm sm:text-base text-[#3a3a3c] mb-5 max-w-xl mx-auto">
-              Other affiliate tools leave Instagram as a manual chore. We compose, write, and publish — feed and Stories — from the same source. Pro plan unlocks the full fan-out.
-            </p>
-            <Link href="/pricing" className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-semibold text-white transition-opacity hover:opacity-90" style={{ background: 'linear-gradient(45deg, #f09433 0%, #dc2743 50%, #bc1888 100%)' }}>
-              See Pro pricing <ArrowRight size={15} />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Collaborations / brand deals (Pro) ─────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14 max-w-3xl mx-auto">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-[#34c759]/10 text-[#1f8a3a]">
-              Pro flagship · Brand collaborations
-            </span>
-            <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">
-              Don&apos;t just publish reviews. Land the brand deals.
-            </h2>
-            <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
-              The hardest part of affiliate income isn&apos;t the content — it&apos;s getting brands to
-              say yes. Pro generates personalized brand-collab pitch emails built on a method that
-              actually lands partnerships: your real numbers, your platforms, a specific angle for
-              each brand. Up to 100 pitches a month.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-            <StepCard
-              n="01"
-              icon={<Wand2 size={20} />}
-              title="Tell us the brand"
-              desc="Drop in the brand or product you want to work with. We pull your storefront, Linktree and channel stats to build your pitch from real data."
-              accent="#34c759"
-            />
-            <StepCard
-              n="02"
-              icon={<Sparkles size={20} />}
-              title="We write the pitch"
-              desc="A personalized outreach email with a brand-specific angle, your reach across every platform, and a clean ask — written in your voice, not a generic template."
-              accent="#7C3AED"
-            />
-            <StepCard
-              n="03"
-              icon={<ArrowRight size={20} />}
-              title="Send + track"
-              desc="Copy, tweak, send. When a brand asks 'where will this go?', your answer is a list of live placements across YouTube, your site, and 8 socials — not a promise."
-              accent="#5856d6"
-            />
-          </div>
-
-          <div className="rounded-2xl bg-gradient-to-br from-[#f0fff4] to-[#fff] border border-[#34c759]/20 p-6 sm:p-8 text-center max-w-3xl mx-auto">
-            <p className="text-sm font-semibold text-[#1f8a3a] mb-2 uppercase tracking-wider">Why it works</p>
-            <p className="text-xl sm:text-2xl font-bold text-[#1d1d1f] leading-tight mb-2">
-              Brands fund creators who can prove distribution.
-            </p>
-            <p className="text-sm sm:text-base text-[#3a3a3c]">
-              Every review you ship already fans out to YouTube, your branded site, and every connected
-              social. That footprint IS your pitch — and Pro turns it into outreach that converts.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ── What's in every review (anatomy) ───────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-[#f7f9fc] to-white border-y border-gray-100">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">A full editorial review. Every time.</h2>
-            <p className="text-[#6e6e73] text-base sm:text-lg max-w-2xl mx-auto">
-              Not a wall of AI slop. A structured, conversion-built review with the same anatomy
-              Wirecutter and Tom&apos;s Guide use — disclaimer, embedded video, scannable verdict,
-              buy/skip, Q&amp;A, rating box, internal tags. Ready to outrank thin affiliate sites.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
-            {/* Annotated review mockup */}
-            <div className="lg:col-span-3">
-              <ReviewAnatomy />
-            </div>
-
-            {/* Callouts */}
-            <div className="lg:col-span-2 flex flex-col gap-4">
-              <AnatomyCallout
-                n={1}
-                icon={<ShieldCheck size={16} />}
-                title="Affiliate disclaimer"
-                desc="Auto-inserted above every review. Compliant by default."
-              />
-              <AnatomyCallout
-                n={2}
-                icon={<Play size={16} />}
-                title="Embedded YouTube review"
-                desc="If you linked a video, it shows in a custom 'Watch Our Review' block."
-              />
-              <AnatomyCallout
-                n={3}
-                icon={<CheckCircle size={16} />}
-                title="Quick verdict + Buy/Skip"
-                desc="The block readers actually scroll to. Generated from your take."
-              />
-              <AnatomyCallout
-                n={4}
-                icon={<Sparkles size={16} />}
-                title="Body with built-in affiliate links"
-                desc="Geniuslink-friendly. CTAs styled, not pasted as raw text."
-              />
-              <AnatomyCallout
-                n={5}
-                icon={<Star size={16} />}
-                title="Final rating box"
-                desc="A scannable verdict block, color-matched to your theme."
-              />
-              <AnatomyCallout
-                n={6}
-                icon={<Tag size={16} />}
-                title="Tags + categories"
-                desc="Auto-tagged for SEO and internal site discovery."
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── The site you get ───────────────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-
-          <div>
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#7C3AED] uppercase tracking-wider mb-3">
-              <LayoutTemplate size={14} /> Included on every plan
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-bold mb-4 text-[#1d1d1f]">A real editorial site, not a default blog</h2>
-            <p className="text-[#6e6e73] text-base sm:text-lg mb-6 leading-relaxed">
-              Connect your domain and we install the MVP Affiliate WordPress theme + plugin in one
-              step — no themes to shop for, no widgets to wire. You get an editorial homepage with a
-              rotating Pick of the Day, a 4-post featured grid, category hubs, sidebar + in-content
-              ad slots you control, and a footer wired to your bio, logo and socials. Brand colors,
-              fonts and tone of voice all flow from your Brand Profile — every new review lands
-              styled and on-brand without you opening WordPress once.
-            </p>
-            <ul className="flex flex-col gap-3 mb-6">
-              <FeatureLine>Editorial hero + 4-post featured grid on the homepage</FeatureLine>
-              <FeatureLine>&quot;Pick of the Day&quot; rotating featured post (12h / 24h / pinned)</FeatureLine>
-              <FeatureLine>Sidebar + in-content ad blocks you control from the dashboard</FeatureLine>
-              <FeatureLine>Logo banner, social icons, brand colors + fonts</FeatureLine>
-              <FeatureLine>Mobile-first layout, fast page loads, clean URLs</FeatureLine>
-            </ul>
-            {SALES_PAUSED ? (
-              <span className="inline-flex items-center gap-2 text-[#86868b] font-semibold cursor-not-allowed">
-                Sign-ups paused — back soon
-              </span>
-            ) : (
-              <Link href="/signup" className="inline-flex items-center gap-2 text-[#7C3AED] font-semibold hover:gap-3 transition-all">
-                Start with the themed site free <ArrowRight size={16} />
-              </Link>
-            )}
-          </div>
-
-          <SitePreviewFrame />
-        </div>
-      </section>
-
-      {/* ── Stack consolidation pitch ───────────────────────────────────────
-          Straight, concrete cost comparison: the 5 tools an active affiliate
-          creator is already paying for, vs MVP doing it all in one. This is
-          a price-pressure pitch (you're already spending this elsewhere),
-          distinct from the "How we stack up" capability comparison below. */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-[#f7f9fc] to-white">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-14 max-w-3xl mx-auto">
-            <span className="inline-block text-xs font-bold text-[#7C3AED] uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-[#7C3AED]/10">
-              Stack consolidation
-            </span>
-            <h2 className="text-3xl sm:text-5xl font-bold mb-4 text-[#1d1d1f] leading-[1.1]">
-              You&apos;re already paying <span className="text-[#7C3AED]">$223/mo</span> for this.
-            </h2>
-            <p className="text-[#3a3a3c] text-lg sm:text-xl leading-relaxed">
-              Most active affiliate creators are running 5 separate tools to do what MVP does in one click.
-              None of them talk to each other. We checked the math — yours probably looks like this.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-6 lg:gap-8 items-center">
-
-            {/* LEFT — the current stack */}
-            <div className="rounded-2xl bg-white border border-gray-200 p-6 sm:p-7 shadow-sm">
-              <p className="text-xs font-semibold text-[#86868b] uppercase tracking-wider mb-4">Your stack today</p>
-              <div className="flex flex-col gap-3.5">
-                <StackTool emoji="🔗" name="Lasso" job="Affiliate link mgmt + WordPress display blocks" price="$49/mo" />
-                <StackTool emoji="✍️" name="Surfer SEO" job="AI-written long-form review articles" price="$89/mo" />
-                <StackTool emoji="📅" name="Buffer (Team)" job="Schedule social posts to 8+ channels" price="$50/mo" />
-                <StackTool emoji="🎯" name="TubeBuddy Pro" job="YouTube metadata, tags, hashtag research" price="$20/mo" />
-                <StackTool emoji="🎨" name="Canva Pro" job="Thumbnails + Instagram image posts" price="$15/mo" />
-              </div>
-              <div className="mt-5 pt-5 border-t border-gray-200 flex items-baseline justify-between">
-                <span className="text-sm font-semibold text-[#1d1d1f]">Total per month</span>
-                <span className="text-3xl font-bold text-[#1d1d1f]">$223</span>
-              </div>
-              <p className="text-[11px] text-[#86868b] mt-2 leading-relaxed">
-                And they don&apos;t talk to each other. You&apos;re the integration layer.
-              </p>
-            </div>
-
-            {/* MIDDLE — divider with arrow */}
-            <div className="flex lg:flex-col items-center justify-center gap-2 py-2">
-              <span className="hidden lg:block text-xs font-bold text-[#86868b] uppercase tracking-widest">vs</span>
-              <ArrowRight size={28} className="text-[#7C3AED] hidden lg:block" />
-              <span className="lg:hidden text-xs font-bold text-[#86868b] uppercase tracking-widest">↓ becomes ↓</span>
-            </div>
-
-            {/* RIGHT — MVP all-in-one */}
-            <div
-              className="rounded-2xl p-6 sm:p-7 shadow-xl text-white relative overflow-hidden"
-              style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #5856d6 100%)' }}
-            >
-              <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full blur-3xl pointer-events-none" />
-              <p className="relative text-xs font-semibold text-white/80 uppercase tracking-wider mb-4">One tool. Same job.</p>
-              <div className="relative flex flex-col gap-3">
-                <StackPerk label="Affiliate link mgmt + branded WordPress site" />
-                <StackPerk label="AI-written reviews in your brand voice" />
-                <StackPerk label="Auto-post to Facebook, Threads, Bluesky, LinkedIn, Pinterest" />
-                <StackPerk label="YouTube metadata + tags + click-magnet thumbnail" />
-                <StackPerk label="In-body AI product images on every review" />
-                <StackPerk label="Affiliate disclaimer + Geniuslink routing built in" />
-              </div>
-              <div className="relative mt-5 pt-5 border-t border-white/20 flex items-baseline justify-between">
-                <span className="text-sm font-semibold">Creator plan</span>
-                <span className="text-3xl font-bold">$49<span className="text-base font-medium">/mo</span></span>
-              </div>
-              <p className="relative text-[11px] text-white/80 mt-2 leading-relaxed">
-                Pro at $199 adds Instagram, X &amp; Telegram, the native AI Instagram image (your face + the product), double the Photobooth headshots, and one-click Publish All.
-              </p>
-            </div>
-          </div>
-
-          {/* Bottom savings callout */}
-          <div className="mt-10 rounded-2xl bg-[#34c759]/10 border border-[#34c759]/30 px-6 py-5 max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-[#1d1d1f] mb-1">Creator covers the core for $49 — Pro replaces the whole stack for $199.</p>
-              <p className="text-xs text-[#3a3a3c]">Creator does the writing, links, YouTube metadata, thumbnails &amp; 5-channel posting. Pro adds all 8 channels + the AI Instagram image — still under the $223 you&apos;re paying, and one tool instead of five that don&apos;t talk to each other.</p>
-            </div>
-            <Link
-              href="/pricing"
-              className="flex-shrink-0 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#34c759] hover:bg-[#2db34a] transition-colors"
-            >
-              See pricing <ArrowRight size={14} />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Comparison table ───────────────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white border-y border-gray-100">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">How we stack up</h2>
-            <p className="text-[#3a3a3c] text-base sm:text-lg max-w-2xl mx-auto">
-              The straight comparison nobody else will show you. Keyword writers and prompt-based
-              thumbnail tools don&apos;t touch the full creator workflow — and none of them build from
-              your real video.
-            </p>
-          </div>
-          <div className="overflow-x-auto rounded-2xl border border-gray-200">
-            <table className="w-full text-left text-base min-w-[640px]">
-              <thead>
-                <tr className="bg-[#f7f9fc] text-sm uppercase tracking-wider text-[#6e6e73]">
-                  <th className="p-4 font-semibold">What you need</th>
-                  <th className="p-4 font-semibold text-[#7C3AED]">MVP Affiliate</th>
-                  <th className="p-4 font-semibold">Keyword AI writers</th>
-                  <th className="p-4 font-semibold">AI thumbnail / YT tools</th>
-                  <th className="p-4 font-semibold">Stitch 4+ tools together</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                <CompareRow label="Built from your REAL video (transcript + frames)" us="check" gen="cross" free="manual" diy="cross" />
-                <CompareRow label="Long-form review auto-published to WordPress" us="check" gen="check" free="cross" diy="manual" />
-                <CompareRow label="YouTube title / description / tags pushed to your video" us="check" gen="cross" free="check" diy="manual" />
-                <CompareRow label="Click-magnet thumbnail from your real frames" us="check" gen="cross" free="manual" diy="manual" />
-                <CompareRow label="Affiliate links inserted + click tracking" us="check" gen="manual" free="cross" diy="manual" />
-                <CompareRow label="Multi-product comparisons & buying guides" us="check" gen="check" free="cross" diy="manual" />
-                <CompareRow label="Fan-out to 8 socials (FB, IG, Threads, LI, Pinterest, X, Bluesky, Telegram)" us="check" gen="cross" free="cross" diy="manual" />
-                <CompareRow label="Native AI Instagram image — your face + the product" us="check" gen="cross" free="cross" diy="cross" />
-                <CompareRow label="Only writes what's in your video — no invented stories" us="check" gen="cross" free="cross" diy="manual" />
-                <CompareRow label="One tool — not 3–4 subscriptions to wire together" us="check" gen="cross" free="cross" diy="cross" />
-                <CompareRow label="Cost per month" us="from $49" gen="$9–99" free="$20–69" diy="$100–300+" />
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-5 text-center text-sm text-[#6e6e73]">
-            <strong>check</strong> = handled for you · <strong>manual</strong> = possible but you do the work · <strong>cross</strong> = not supported
-          </p>
-        </div>
-      </section>
-
-      {/* ── Why MVP wins in 2026 (the search-update moat) ──────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-[#0a0a0a] to-[#15103a] text-white">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12 max-w-3xl mx-auto">
-            <span className="inline-block text-xs font-bold uppercase tracking-wider mb-3 px-3 py-1 rounded-full bg-white/10 text-[#a78bfa]">
-              Why MVP wins in 2026
-            </span>
-            <h2 className="text-3xl sm:text-5xl font-bold mb-5 leading-[1.1]">
-              Google changed the rules. We were already playing by them.
-            </h2>
-            <p className="text-lg text-gray-300 leading-relaxed">
-              Google&apos;s 2026 core update made <span className="text-white font-semibold">first-hand experience</span> the
-              dominant ranking signal — and the sites hit hardest were the ones spinning AI articles from keywords and
-              SERPs, with no real testing behind them. AI answer engines lean the same way, citing real video and
-              multimodal sources first.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <p className="text-sm font-bold text-[#4ea3ff] uppercase tracking-wider mb-2">Real experience, built in</p>
-              <p className="text-sm text-gray-300 leading-relaxed">Every post is built from a video you actually recorded — your real transcript and real frames. That&apos;s the exact signal Google now rewards, and the one keyword tools structurally can&apos;t fake.</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <p className="text-sm font-bold text-[#34c759] uppercase tracking-wider mb-2">Fact-grounded, not fabricated</p>
-              <p className="text-sm text-gray-300 leading-relaxed">No invented test results or made-up stories — claims trace back to your words and the real product. Trust that survives both readers and Google&apos;s spam systems.</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-              <p className="text-sm font-bold text-[#ff9500] uppercase tracking-wider mb-2">The whole funnel, one tool</p>
-              <p className="text-sm text-gray-300 leading-relaxed">Reviews, <span className="text-white font-semibold">multi-product comparisons &amp; buying guides</span>, thumbnails, YouTube metadata, and social fan-out — from one video, on one subscription. Not four tools duct-taped together.</p>
-            </div>
-          </div>
-
-          <p className="mt-8 text-center text-sm text-gray-400 max-w-2xl mx-auto">
-            Competitors optimize for volume. MVP optimizes for the one thing the 2026 web actually rewards: proof you were really there.
-          </p>
-        </div>
-      </section>
-
-      {/* ── Pricing teaser ─────────────────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-white to-[#f7f9fc]">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <span className="inline-block text-xs font-semibold text-[#34c759] uppercase tracking-wider mb-2">
-              Early access pricing — locked in for life
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">Pick a plan that fits your output</h2>
-            <p className="text-[#6e6e73] text-base sm:text-lg">Every paid plan includes a free themed review site. Cancel anytime.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-            {plans.map((plan) => (
-              <div
-                key={plan.tier}
-                className={`rounded-2xl p-6 flex flex-col ${
-                  plan.highlight
-                    ? 'bg-[#7C3AED] text-white shadow-2xl scale-[1.03]'
-                    : 'bg-white border border-gray-200 shadow-sm'
-                }`}
-              >
-                {plan.highlight && (
-                  <div className="flex items-center gap-1.5 mb-3">
-                    <Zap size={12} className="text-yellow-300" />
-                    <span className="text-[10px] font-semibold text-yellow-300 uppercase tracking-wide">Most Popular</span>
-                  </div>
-                )}
-                <p className={`text-xs font-semibold mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b]'}`}>{plan.tier}</p>
-                <div className="flex items-end gap-1.5 mb-1">
-                  <span className="text-4xl font-bold">${plan.price}</span>
-                  {plan.price > 0 && (
-                    <span className={`text-xs mb-1.5 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b]'}`}>/mo</span>
-                  )}
-                </div>
-                {plan.regular > plan.price && (
-                  <p className={`text-[11px] mb-1 ${plan.highlight ? 'text-blue-100' : 'text-[#86868b]'}`}>
-                    <span className="line-through">${plan.regular}/mo</span>{' '}
-                    <span className={plan.highlight ? 'text-yellow-300 font-semibold' : 'text-[#34c759] font-semibold'}>
-                      save ${plan.regular - plan.price}
-                    </span>
-                  </p>
-                )}
-                <p className={`text-sm font-medium ${plan.highlight ? 'text-blue-100' : 'text-[#7C3AED]'}`}>{plan.limit}</p>
-                {plan.bonus && (
-                  <p className={`text-xs font-medium mb-3 ${plan.highlight ? 'text-yellow-300' : 'text-[#34c759]'}`}>
-                    ↑ {plan.bonus}
-                  </p>
-                )}
-                {!plan.bonus && <div className="mb-3" />}
-                <ul className="flex flex-col gap-2 mb-6 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-[13px]">
-                      <CheckCircle size={13} className={`mt-0.5 flex-shrink-0 ${plan.highlight ? 'text-blue-200' : 'text-[#34c759]'}`} />
-                      <span className={plan.highlight ? 'text-blue-50' : 'text-[#1d1d1f]'}>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href={plan.href}
-                  className={`w-full py-2.5 rounded-xl font-semibold text-sm text-center transition-colors ${
-                    plan.highlight
-                      ? 'bg-white text-[#7C3AED] hover:bg-blue-50'
-                      : 'bg-[#7C3AED] text-white hover:bg-[#6D28D9]'
-                  }`}
-                >
-                  {plan.cta}
-                </Link>
-              </div>
-            ))}
-          </div>
-
-          <p className="mt-8 text-center text-sm text-[#86868b]">
-            * Facebook, Threads, Instagram, and TikTok auto-publish are gated on those platforms&apos;
-            developer review (Meta + TikTok). They activate automatically on every plan that includes
-            them once approved, at no extra cost. Pinterest is approved and live today.
-          </p>
-          <div className="mt-6 max-w-2xl mx-auto rounded-2xl bg-[#7C3AED]/5 border border-[#7C3AED]/20 p-5">
-            <p className="text-center text-sm font-semibold text-[#7C3AED] mb-1.5">🔒 Price-lock guarantee</p>
-            <p className="text-center text-sm text-[#3a3a3c] leading-relaxed">
-              When you subscribe at these Early Access rates, your price stays locked in for as long as
-              you keep your plan — even if we raise prices later. The rate only changes if you choose to
-              upgrade or downgrade tiers.
-            </p>
-          </div>
-          <p className="mt-3 text-center text-sm text-[#86868b] dark:text-[#8e8e93]">
-            Want all the details? <Link href="/pricing" className="text-[#7C3AED] font-semibold hover:underline">See full pricing →</Link>
-          </p>
-        </div>
-      </section>
-
-      {/* ── FAQ ────────────────────────────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-white">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f]">Questions, answered straight</h2>
-            <p className="text-[#6e6e73] text-base sm:text-lg">No fluff. No spin.</p>
-          </div>
-          <div className="flex flex-col gap-3">
-            {faqs.map((f) => (
-              <details key={f.q} className="group rounded-xl border border-gray-200 bg-white p-6 hover:border-[#7C3AED]/40 transition-colors">
-                <summary className="flex items-center justify-between cursor-pointer list-none">
-                  <span className="text-lg font-semibold text-[#1d1d1f]">{f.q}</span>
-                  <span className="text-[#86868b] group-open:rotate-180 transition-transform">
-                    <ArrowRight size={18} className="rotate-90" />
-                  </span>
-                </summary>
-                <p className="mt-3 text-base text-[#3a3a3c] leading-relaxed">{f.a}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Affiliate / referral program ────────────────────────────────────
-          Two doors at the bottom of the page: buy below, or earn here.
-          Rewardful-hosted signup; we never see card data, payouts are
-          managed by Rewardful + Stripe. 10% recurring lifetime. */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-b from-white to-[#f0fff4]">
-        <div className="max-w-5xl mx-auto">
-          <div className="rounded-3xl border border-[#34c759]/30 bg-white p-8 sm:p-12 shadow-sm relative overflow-hidden">
-            <div className="absolute -top-20 -right-20 w-72 h-72 bg-[#34c759]/15 rounded-full blur-3xl pointer-events-none" />
-
-            <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-10 items-center">
-              <div>
-                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider mb-4 px-3 py-1 rounded-full bg-[#34c759]/15 text-[#1f8a3a]">
-                  Affiliate program
-                </span>
-                <h2 className="text-3xl sm:text-4xl font-bold mb-3 text-[#1d1d1f] leading-[1.1]">
-                  Refer a creator. Earn <span className="text-[#34c759]">10% every month</span>, forever.
-                </h2>
-                <p className="text-[#3a3a3c] text-base sm:text-lg leading-relaxed mb-6">
-                  Send creators our way — every paying customer you refer pays you 10% of their plan
-                  for as long as they stay. Not a one-time bounty. Not a 90-day cookie. Recurring
-                  commission for the lifetime of the membership.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                  <ReferralStat label="Per Pro referral" value="$19.90/mo" sub="forever" />
-                  <ReferralStat label="10 Pro referrals" value="$199/mo" sub="$2,388/year" />
-                  <ReferralStat label="50 Pro referrals" value="$995/mo" sub="$11,940/year" />
-                </div>
-
-                <ul className="text-sm text-[#3a3a3c] flex flex-col gap-1.5 mb-1">
-                  <li className="flex items-start gap-2">
-                    <CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Tracked + paid out by Rewardful — automatic, transparent, no spreadsheets
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Personal dashboard with real-time clicks, signups, and earnings
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <CheckCircle size={14} className="text-[#34c759] mt-0.5 flex-shrink-0" /> Net-30 payouts via PayPal or Wise — no minimum threshold
-                  </li>
-                </ul>
-              </div>
-
-              {/* CTA card */}
-              <div className="lg:w-64 flex flex-col gap-4">
-                <a
-                  href="https://mvp-affiliate.getrewardful.com/signup"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 px-6 py-4 rounded-2xl text-base font-semibold text-white bg-[#34c759] hover:bg-[#2db34a] transition-colors shadow-lg shadow-[#34c759]/30"
-                >
-                  Join the program <ArrowRight size={17} />
-                </a>
-                <p className="text-xs text-[#86868b] text-center leading-relaxed">
-                  Free to join. Takes 60 seconds. You don&apos;t need to be a customer.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Final CTA ──────────────────────────────────────────────────────── */}
-      <section className="py-20 sm:py-28 px-5 sm:px-6 bg-gradient-to-br from-[#7C3AED] to-[#5856d6] text-white">
-        <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-3xl sm:text-5xl font-bold mb-4 leading-[1.1]">Stop writing descriptions. Start shipping reviews.</h2>
-          <p className="text-blue-100 text-base sm:text-lg mb-8 max-w-xl mx-auto">
-            One YouTube draft → a full review site, an optimized YouTube package, and social posts
-            on every platform. 5 free posts. No card. Cancel anytime.
-          </p>
-          {SALES_PAUSED ? (
-            <span className="inline-flex items-center justify-center gap-2 bg-white/40 text-white font-semibold px-8 py-4 rounded-2xl text-base shadow-2xl cursor-not-allowed">
-              Sign-ups paused — back soon
-            </span>
-          ) : (
-            <Link
-              href="/signup"
-              className="inline-flex items-center justify-center gap-2 bg-white hover:bg-blue-50 text-[#7C3AED] font-semibold px-8 py-4 rounded-2xl text-base transition-colors shadow-2xl"
-            >
-              Start free <ArrowRight size={17} />
-            </Link>
-          )}
-          <p className="mt-5 text-sm text-blue-100/80 flex items-center justify-center gap-1.5">
-            <Clock size={13} /> Most users publish their first review within 15 minutes of signing up.
-          </p>
-        </div>
-      </section>
-
-      {/* ── Footer ─────────────────────────────────────────────────────────── */}
-      <footer className="border-t border-gray-100 py-10 px-5 sm:px-6 bg-white">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Image src="/mvp-affiliate-logo.webp" alt="MVP Affiliate" width={28} height={28} className="rounded-lg" />
-            <span className="text-sm font-semibold text-[#1d1d1f]">MVP Affiliate</span>
-            <span className="text-xs text-[#86868b] ml-2">© {new Date().getFullYear()} Gominplanet Holdings Ltd</span>
-          </div>
-          <div className="flex items-center gap-5 text-xs text-[#86868b] flex-wrap justify-center">
-            <Link href="/pricing" className="hover:text-[#1d1d1f]">Pricing</Link>
-            <a
-              href="https://mvp-affiliate.getrewardful.com/signup"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#1f8a3a] hover:text-[#136b2c] font-medium inline-flex items-center gap-1"
-            >
-              <span className="w-1 h-1 rounded-full bg-[#34c759]" />
-              Affiliate program
-            </a>
-            <Link href="/privacy" className="hover:text-[#1d1d1f]">Privacy</Link>
-            <Link href="/terms" className="hover:text-[#1d1d1f]">Terms</Link>
-            <Link href="/login" className="hover:text-[#1d1d1f]">Sign in</Link>
-          </div>
-        </div>
-        <p className="max-w-6xl mx-auto mt-6 pt-5 border-t border-gray-100 text-[11px] leading-relaxed text-[#86868b] text-center px-2">
-          MVP Affiliate is a service of <strong className="font-semibold text-[#6e6e73]">Gominplanet Holdings Ltd</strong>, an exempted company
-          incorporated in Anguilla, British West Indies under the Business Companies Act, 2022 (company&nbsp;no.&nbsp;A000003427).
-          Registered office: The Hansa Bank Building, 1st Floor, PO Box 886, Landsome Road, The Valley, AI-2640, Anguilla, BWI.
-          {' '}Contact: <a href="mailto:us@gominplanet.com" className="underline hover:text-[#1d1d1f]">us@gominplanet.com</a>.
-        </p>
-      </footer>
-    </div>
-  )
-}
-
-// ─── Building-block components ─────────────────────────────────────────────
-
-function StepCard({ n, icon, title, desc, accent }: { n: string; icon: React.ReactNode; title: string; desc: string; accent: string }) {
-  return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-7 hover:shadow-lg hover:border-gray-200 transition-all">
-      <div className="flex items-center gap-3 mb-4">
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-white"
-          style={{ background: accent }}
-        >
-          {icon}
-        </div>
-        <span className="text-2xl font-bold text-gray-200">{n}</span>
-      </div>
-      <h3 className="text-xl font-semibold text-[#1d1d1f] mb-2">{title}</h3>
-      <p className="text-base text-[#3a3a3c] leading-relaxed">{desc}</p>
-    </div>
-  )
-}
-
-function FeatureLine({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-start gap-2.5 text-base text-[#1d1d1f]">
-      <CheckCircle size={17} className="text-[#34c759] mt-0.5 flex-shrink-0" />
-      <span>{children}</span>
-    </li>
-  )
-}
-
-/** Single row in the "your current stack" card — emoji, name, job, price. */
-function StackTool({ emoji, name, job, price }: { emoji: string; name: string; job: string; price: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="text-xl flex-shrink-0">{emoji}</span>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-[#1d1d1f] leading-tight">{name}</p>
-        <p className="text-[11px] text-[#6e6e73] leading-snug truncate">{job}</p>
-      </div>
-      <span className="text-sm font-bold text-[#1d1d1f] tabular-nums flex-shrink-0">{price}</span>
-    </div>
-  )
-}
-
-/** Small stat tile for the affiliate program section — label + big value + sub. */
-function ReferralStat({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className="rounded-xl bg-[#34c759]/8 border border-[#34c759]/20 p-3.5">
-      <p className="text-[10px] font-semibold text-[#1f8a3a] uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-2xl font-bold text-[#1d1d1f] tabular-nums leading-none">{value}</p>
-      <p className="text-[11px] text-[#6e6e73] mt-1">{sub}</p>
-    </div>
-  )
-}
-
-/** Single check-mark line in the MVP "one tool" card. */
-function StackPerk({ label }: { label: string }) {
-  return (
-    <div className="flex items-start gap-2.5 text-sm text-white">
-      <CheckCircle size={15} className="text-[#34c759] mt-0.5 flex-shrink-0" />
-      <span className="leading-snug">{label}</span>
-    </div>
-  )
-}
-
-function AnatomyCallout({ n, icon, title, desc }: { n: number; icon: React.ReactNode; title: string; desc: string }) {
-  return (
-    <div className="flex items-start gap-3 p-3 rounded-xl bg-white border border-gray-100 hover:border-[#7C3AED]/30 transition-colors">
-      <span className="w-7 h-7 rounded-full bg-[#7C3AED] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-        {n}
-      </span>
-      <div className="flex-1">
-        <p className="flex items-center gap-1.5 text-base font-semibold text-[#1d1d1f]">
-          <span className="text-[#7C3AED]">{icon}</span>
-          {title}
-        </p>
-        <p className="text-sm text-[#3a3a3c] mt-1 leading-relaxed">{desc}</p>
-      </div>
-    </div>
-  )
-}
-
-/** Hero browser-frame mockup: shows the homepage shape of a real review site. */
-function BrowserFrame() {
-  return (
-    <div className="relative">
-      {/* Stacked depth shadow */}
-      <div className="absolute inset-2 rounded-2xl bg-[#7C3AED]/10 blur-2xl" />
-      <div className="relative rounded-2xl shadow-2xl bg-white border border-gray-200 overflow-hidden">
-        {/* Browser chrome */}
-        <div className="flex items-center gap-1.5 px-3 py-2.5 bg-gray-50 border-b border-gray-100">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
-          <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
-          <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
-          <div className="ml-3 flex-1 bg-white border border-gray-200 rounded-md px-2 py-0.5 text-[10px] text-[#86868b] font-mono">
-            yourdomain.com
-          </div>
-        </div>
-        {/* Site preview */}
-        <div className="bg-white">
-          {/* Utility bar */}
-          <div className="bg-black text-white text-[9px] py-1.5 px-3 flex justify-between">
-            <span className="opacity-80">This site contains affiliate links.</span>
-            <span className="flex gap-1.5"><span>▶</span><span>○</span></span>
-          </div>
-          {/* Logo banner */}
-          <div className="bg-black py-3 flex justify-center">
-            <div className="w-10 h-10 rounded-full bg-[#7dc3c8] flex items-center justify-center text-[10px] font-bold">LG</div>
-          </div>
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-serif font-bold text-[#1d1d1f]">Your Review Site</p>
-              <p className="text-[8px] text-[#86868b] uppercase tracking-wider">Real takes on the gear you buy</p>
-            </div>
-            <div className="flex gap-2 text-[9px] text-[#6e6e73]">
-              <span>Reviews</span>
-              <span>Categories</span>
-            </div>
-          </div>
-          {/* Hero */}
-          <div className="px-4 py-5 text-center">
-            <p className="font-serif text-lg font-bold leading-tight">Your Review Site</p>
-            <p className="text-[10px] text-[#86868b] mt-0.5">Real takes on the gear you buy</p>
-          </div>
-          {/* Featured grid */}
-          <div className="px-3 pb-4 grid grid-cols-2 gap-2">
-            <div className="row-span-2 rounded bg-gradient-to-br from-orange-200 to-orange-100 aspect-[3/4] p-2 flex flex-col justify-end">
-              <span className="text-[8px] font-bold bg-white px-1.5 py-0.5 rounded uppercase w-fit">Review</span>
-              <p className="text-[10px] font-bold mt-1 leading-tight">The Anti-Fatigue Mat That Saved Our Kitchen</p>
-            </div>
-            <div className="rounded bg-gradient-to-br from-blue-200 to-blue-100 aspect-video p-2 flex flex-col justify-end">
-              <p className="text-[8px] font-bold leading-tight">Cleansing Balm Review</p>
-            </div>
-            <div className="rounded bg-gradient-to-br from-green-200 to-green-100 aspect-video p-2 flex flex-col justify-end">
-              <p className="text-[8px] font-bold leading-tight">10ft Cobweb Duster Tested</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* Floating badge */}
-      <div className="absolute -bottom-4 -right-2 sm:right-4 bg-white rounded-xl shadow-xl border border-gray-100 px-3 py-2 flex items-center gap-2">
-        <div className="w-7 h-7 rounded-lg bg-[#34c759] flex items-center justify-center">
-          <Sparkles size={13} className="text-white" />
-        </div>
-        <div>
-          <p className="text-[10px] font-semibold text-[#1d1d1f] leading-tight">Just published</p>
-          <p className="text-[9px] text-[#86868b] leading-tight">via MVP Affiliate</p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Larger "What you get" site preview. */
-function SitePreviewFrame() {
-  return (
-    <div className="relative">
-      <div className="absolute -inset-4 rounded-3xl bg-gradient-to-br from-[#7C3AED]/10 to-[#5856d6]/10 blur-2xl" />
-      <div className="relative rounded-2xl shadow-2xl bg-white border border-gray-200 overflow-hidden">
-        <div className="flex items-center gap-1.5 px-3 py-2.5 bg-gray-50 border-b border-gray-100">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
-          <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
-          <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
-        </div>
-        <div className="bg-white">
-          <div className="bg-black text-white text-[10px] py-1.5 px-4">This site contains affiliate links.</div>
-          <div className="bg-black py-4 flex justify-center">
-            <div className="w-12 h-12 rounded-full bg-[#7dc3c8]" />
-          </div>
-          <div className="px-5 py-4 border-b border-gray-100">
-            <p className="font-serif font-bold">Let&apos;s Give You Reviews</p>
-            <p className="text-[10px] text-[#86868b]">Real-world gear reviews from real homes</p>
-          </div>
-          <div className="px-5 py-6">
-            <p className="font-serif text-2xl font-bold text-center leading-tight">Latest Reviews</p>
-            <div className="grid grid-cols-3 gap-2 mt-4">
-              {[
-                'from-orange-200 to-orange-100',
-                'from-blue-200 to-blue-100',
-                'from-green-200 to-green-100',
-              ].map((g, i) => (
-                <div key={i} className={`rounded bg-gradient-to-br ${g} aspect-square p-2 flex flex-col justify-end`}>
-                  <span className="text-[8px] font-bold bg-white px-1.5 py-0.5 rounded uppercase w-fit">Blog</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="bg-black px-5 py-4 grid grid-cols-3 gap-3 text-white">
-            <div>
-              <p className="text-[8px] uppercase tracking-wider opacity-60">About</p>
-              <p className="text-[10px] font-semibold mt-1">Paul Boomy</p>
-              <p className="text-[8px] opacity-70 mt-0.5 leading-snug">Reviews from a real home.</p>
-            </div>
-            <div>
-              <p className="text-[8px] uppercase tracking-wider opacity-60">Categories</p>
-              <p className="text-[9px] mt-1">Kitchen</p>
-              <p className="text-[9px]">Cleaning</p>
-            </div>
-            <div>
-              <p className="text-[8px] uppercase tracking-wider opacity-60">Follow</p>
-              <div className="flex gap-1 mt-1">
-                <span className="w-4 h-4 rounded bg-white/20" />
-                <span className="w-4 h-4 rounded bg-white/20" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** Long review anatomy mockup with numbered annotation pins. */
-function ReviewAnatomy() {
-  return (
-    <div className="relative rounded-2xl shadow-2xl bg-white border border-gray-200 overflow-hidden">
-      <div className="flex items-center gap-1.5 px-3 py-2.5 bg-gray-50 border-b border-gray-100">
-        <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
-      </div>
-      <div className="p-6 bg-white">
-        {/* Title */}
-        <p className="font-serif text-xl font-bold leading-tight mb-3">
-          TranquilRelax Kitchen Mats Review: The Anti-Fatigue Upgrade Tired Feet Deserve
-        </p>
-        <p className="text-[10px] text-[#86868b] mb-4">By Paul Boomy · May 13, 2026</p>
-
-        {/* (1) Disclaimer */}
-        <Pin n={1} side="left">
-          <div className="rounded bg-[#fffbe6] border-l-4 border-[#ffc200] p-2 mb-4">
-            <p className="text-[10px] text-[#1d1d1f]">This post contains affiliate links. We may earn a commission at no extra cost to you.</p>
-          </div>
-        </Pin>
-
-        {/* (2) YouTube block */}
-        <Pin n={2} side="right">
-          <div className="mb-4">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-[#555] mb-1 flex items-center gap-1">
-              <span className="w-3 h-3 bg-[#ff0000] rounded-sm" /> Watch Our Review
-            </p>
-            <div className="aspect-video rounded bg-gradient-to-br from-gray-800 to-gray-600 relative flex items-center justify-center">
-              <div className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
-                <Play size={12} className="text-[#ff0000] ml-0.5" />
-              </div>
-            </div>
-          </div>
-        </Pin>
-
-        {/* (3) Verdict */}
-        <Pin n={3} side="left">
-          <div className="rounded border-2 border-black p-3 mb-4">
-            <p className="text-[9px] font-black uppercase tracking-wider mb-1.5 border-b-2 border-[#ffc200] pb-1">Quick Verdict</p>
-            <p className="text-[10px] font-semibold leading-snug">Solid budget anti-fatigue mats. Cushion held up over 2 weeks of daily cooking.</p>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <div>
-                <p className="text-[8px] font-bold text-[#1a7a3c] uppercase">Buy if</p>
-                <p className="text-[8px] mt-0.5">✓ You cook daily on hard tile</p>
-              </div>
-              <div>
-                <p className="text-[8px] font-bold text-[#c0392b] uppercase">Skip if</p>
-                <p className="text-[8px] mt-0.5">✗ You want a statement rug</p>
-              </div>
-            </div>
-          </div>
-        </Pin>
-
-        {/* (4) Body */}
-        <Pin n={4} side="right">
-          <p className="text-[10px] leading-relaxed text-[#333] mb-2">
-            I cook a lot. My kitchen floor is tile. Hard, cold, unforgiving tile.
-            Then I picked up the <span className="text-[#7C3AED] underline">TranquilRelax Kitchen Mats</span>{' '}
-            and genuinely wondered why I waited this long.
-          </p>
-          <p className="text-[10px] leading-relaxed text-[#333] mb-3">
-            The cushioning does its job on your feet, knees, and lower back...
-          </p>
-        </Pin>
-
-        {/* (5) Rating */}
-        <Pin n={5} side="left">
-          <div className="rounded bg-black text-white p-3 mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-2xl font-black text-[#ffc200] leading-none">4.2/5</p>
-              <p className="text-[8px] uppercase tracking-wider opacity-50 mt-0.5">Final Rating</p>
-            </div>
-            <p className="text-[9px] opacity-80 leading-snug flex-1">A solid, budget-friendly fix for anyone standing on hard tile.</p>
-          </div>
-        </Pin>
-
-        {/* (6) Tags */}
-        <Pin n={6} side="right">
-          <div className="flex flex-wrap gap-1">
-            {['#kitchenmats', '#antifatigue', '#kitchencomfort', '#amazonfinds'].map((t) => (
-              <span key={t} className="text-[8px] font-semibold bg-gray-100 text-[#555] px-2 py-0.5 rounded-full">{t}</span>
-            ))}
-          </div>
-        </Pin>
-      </div>
-    </div>
-  )
-}
-
-/** Inline platform-logo SVGs. Monochrome white, sized to fit a 40px chip. */
-function PlatformLogo({ name }: { name: string }) {
-  const props = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'white', className: 'text-white' }
-  switch (name) {
-    case 'wordpress':
-      return (
-        <svg {...props} fill="none" stroke="white" strokeWidth="1.8">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M2 12 L12 22" />
-          <path d="M5 7 L12 2 L19 7" />
-          <path d="M7 14 L17 14" />
-        </svg>
-      )
-    case 'facebook':
-      return (
-        <svg {...props}>
-          <path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.99 22 12z" />
-        </svg>
-      )
-    case 'threads':
-      return (
-        <svg {...props}>
-          <path d="M12.18 21.5h-.04c-2.93-.02-5.18-.99-6.69-2.88C4.1 16.93 3.39 14.6 3.36 11.7v-.01c.03-2.9.74-5.23 2.1-6.92C6.96 2.88 9.21 1.91 12.13 1.9h.04c2.25.02 4.13.59 5.6 1.71 1.38 1.05 2.35 2.55 2.88 4.45l-1.82.51c-.92-3.27-3.23-4.94-6.66-4.96-2.27.02-3.99.73-5.11 2.14-1.05 1.31-1.6 3.2-1.62 5.62.02 2.42.57 4.31 1.62 5.62 1.12 1.41 2.84 2.13 5.11 2.14 2.05-.01 3.4-.49 4.53-1.6.51-.5.91-1.11 1.21-1.82-.31-.18-.65-.34-1-.47-.92-.36-1.93-.5-2.99-.4-.79.08-1.46.31-1.99.66-.42.28-.7.65-.83 1.07-.13.43-.06.84.2 1.2.27.36.71.62 1.32.74.91.18 1.85-.04 2.42-.4.34-.21.6-.52.78-.91l1.73.78c-.32.66-.83 1.22-1.5 1.63-.93.57-2.2.79-3.4.55-.99-.2-1.81-.71-2.36-1.47-.55-.76-.7-1.69-.44-2.6.26-.91.93-1.7 1.94-2.27.83-.47 1.84-.75 2.93-.83.41-.03.83-.04 1.24-.04 1.13 0 2.21.18 3.18.55.39.15.76.33 1.11.55.15-.93.07-1.86-.25-2.74-.43-1.2-1.27-2.13-2.43-2.72-1.18-.59-2.7-.84-4.4-.72-.94.06-1.83.24-2.65.53l-.6-1.79c.99-.34 2.05-.55 3.16-.62 1.97-.13 3.74.16 5.13.85 1.4.7 2.46 1.83 3.06 3.27.59 1.43.66 3.04.18 4.66-.39 1.31-1.05 2.49-1.93 3.41-.91.95-2.04 1.66-3.3 2.07-.74.24-1.51.36-2.31.36z" />
-        </svg>
-      )
-    case 'linkedin':
-      return (
-        <svg {...props}>
-          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.063 2.063 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-        </svg>
-      )
-    case 'pinterest':
-      return (
-        <svg {...props}>
-          <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.688 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.099.12.112.225.085.345-.09.375-.293 1.199-.334 1.363-.053.225-.172.271-.402.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.92-7.252 4.158 0 7.392 2.967 7.392 6.923 0 4.135-2.607 7.462-6.233 7.462-1.214 0-2.357-.629-2.746-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24c6.624 0 11.99-5.367 11.99-11.987C24.007 5.367 18.641.001.012.001z" />
-        </svg>
-      )
-    case 'x':
-      return (
-        <svg {...props}>
-          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-        </svg>
-      )
-    case 'bluesky':
-      return (
-        <svg {...props}>
-          <path d="M12 10.8c-1.087-2.114-4.046-6.053-6.798-7.995C2.566.944 1.561 1.266.902 1.565.139 1.908 0 3.08 0 3.768c0 .69.378 5.65.624 6.479.815 2.736 3.713 3.66 6.383 3.364.136-.02.275-.039.415-.056-.138.022-.276.04-.415.056-3.911.58-7.386 2.005-2.83 7.078 5.013 5.19 6.87-1.113 7.823-4.308.953 3.195 2.05 9.271 7.733 4.308 4.267-4.308 1.172-6.498-2.74-7.078a8.741 8.741 0 01-.415-.056c.14.017.279.036.415.056 2.67.297 5.568-.628 6.383-3.364.246-.828.624-5.79.624-6.478 0-.69-.139-1.861-.902-2.206-.659-.298-1.664-.62-4.3 1.24C16.046 4.748 13.087 8.687 12 10.8z" />
-        </svg>
-      )
-    case 'telegram':
-      return (
-        <svg {...props}>
-          <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
-        </svg>
-      )
-    case 'instagram':
-      return (
-        <svg {...props}>
-          <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z" />
-        </svg>
-      )
-    case 'email':
-      return (
-        <svg {...props} fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2.5" y="4" width="19" height="16" rx="2" />
-          <path d="m22 6-10 7L2 6" />
-        </svg>
-      )
-    default:
-      return null
+/** Convert an angle to {x,y} on the spoke circle. */
+function spokePos(angleDeg: number) {
+  const rad = (angleDeg * Math.PI) / 180
+  return {
+    x: CX + RADIUS * Math.cos(rad),
+    y: CY + RADIUS * Math.sin(rad),
   }
 }
 
-function AgentCard({ color, name, job }: { color: string; name: string; job: string }) {
+export default function LandingPreview() {
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem('mvp-landing-theme')
+    if (saved === 'light' || saved === 'dark') setTheme(saved)
+  }, [])
+  useEffect(() => {
+    sessionStorage.setItem('mvp-landing-theme', theme)
+  }, [theme])
+
   return (
-    <div className="group relative rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 p-5 hover:border-white/30 transition-all hover:scale-[1.02]">
-      <div className="flex items-start gap-3 mb-3">
-        <span
-          className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0 shadow-lg"
-          style={{ background: color, boxShadow: `0 0 16px ${color}` }}
-        />
-        <p className="text-lg font-bold text-white leading-tight">{name}</p>
-      </div>
-      <p className="text-sm text-gray-400 leading-relaxed">{job}</p>
+    <div
+      style={{
+        ...(theme === 'dark' ? DARK_VARS : LIGHT_VARS),
+        backgroundColor: 'var(--bg)',
+        color: 'var(--text)',
+      }}
+      className="min-h-screen font-[Inter,system-ui,sans-serif]"
+    >
+      {/* Page-scoped keyframes for the hub animation. Lives here so the
+          preview is fully self-contained — no global CSS edits. */}
+      <style jsx global>{`
+        @keyframes mvp-center-in {
+          from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+          to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        @keyframes mvp-spoke-in {
+          from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+          to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        @keyframes mvp-line-draw {
+          from { stroke-dashoffset: 320; }
+          to   { stroke-dashoffset: 0; }
+        }
+        @keyframes mvp-line-pulse {
+          0%, 100% { opacity: 0.55; }
+          50%      { opacity: 0.95; }
+        }
+        @keyframes mvp-ring-pulse {
+          0%, 100% { opacity: 0.4; transform: translate(-50%, -50%) scale(1); }
+          50%      { opacity: 0.0; transform: translate(-50%, -50%) scale(1.25); }
+        }
+        @keyframes mvp-play-pulse {
+          0%   { transform: scale(1);    opacity: 0.5; }
+          70%  { transform: scale(1.6);  opacity: 0;   }
+          100% { transform: scale(1.6);  opacity: 0;   }
+        }
+        html { scroll-behavior: smooth; }
+      `}</style>
+
+      <Nav theme={theme} onToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />
+      <Hero />
+      <PlatformBar />
+      <DemoVideoSection />
+      <RolesSection />
+      <WorkflowSection />
+      <BeforeAfterSection />
+      <GroundedSection />
+      <PricingSection />
+      <ProofSection />
+      <FAQSection />
+      <FinalCTASection />
+      <Footer />
+      <StickyBottomBar />
     </div>
   )
 }
 
-function CompareRow({ label, us, gen, free, diy }: { label: string; us: string; gen: string; free: string; diy: string }) {
+/** Demo video section — large centered video frame with a clickable play
+ *  overlay. Currently a CSS-styled placeholder (gradient backdrop + mock
+ *  dashboard hint + play button); swap the inner content for a real video
+ *  poster image / embed when the demo is recorded. The play button has a
+ *  gentle breathing pulse so it reads as "alive and clickable" from any
+ *  distance on the page. */
+function DemoVideoSection() {
   return (
-    <tr>
-      <td className="p-4 font-semibold text-[#1d1d1f]">{label}</td>
-      <td className="p-4 bg-[#7C3AED]/5"><CompareCell value={us} highlight /></td>
-      <td className="p-4"><CompareCell value={gen} /></td>
-      <td className="p-4"><CompareCell value={free} /></td>
-      <td className="p-4"><CompareCell value={diy} /></td>
-    </tr>
+    <section id="demo" className="px-6 lg:px-8 pb-24 -mt-8 relative">
+      <div className="max-w-5xl mx-auto">
+        {/* Section eyebrow + heading */}
+        <div className="text-center mb-8">
+          <p
+            className="text-[11px] uppercase tracking-[0.18em] font-medium mb-3"
+            style={{ color: 'var(--text-faint)' }}
+          >
+            See it in motion
+          </p>
+          <h2
+            className="text-[28px] lg:text-[36px] font-semibold tracking-tight leading-tight max-w-2xl mx-auto"
+            style={{ color: 'var(--text)' }}
+          >
+            One review video.{' '}
+            <span style={{ color: 'var(--text-soft)' }}>Nine outputs.</span>{' '}
+            <span style={{ color: 'var(--text-soft)' }}>Ten minutes.</span>
+          </h2>
+        </div>
+
+        {/* The video frame. Wrapper provides the violet outer glow + soft
+            shadow. Inner div is what the visitor clicks. */}
+        <div
+          className="relative rounded-2xl overflow-hidden cursor-pointer group transition-transform duration-200 hover:scale-[1.005]"
+          style={{
+            boxShadow: '0 24px 80px -16px rgba(124,58,237,0.35), 0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--border)',
+          }}
+          onClick={() => {
+            // Hook up to a real video modal or YouTube embed here.
+            // For now, the click is just a visual indicator.
+          }}
+        >
+          {/* Aspect ratio holder (16:9). All visual layers stack inside. */}
+          <div className="relative aspect-video w-full overflow-hidden bg-[#0E0E11]">
+            {/* Mesh gradient backdrop — same family as hero, slightly
+                offset so the demo doesn't look like a copy of the hero. */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `
+                  radial-gradient(45% 65% at 30% 30%, rgba(124,58,237,0.40), transparent 60%),
+                  radial-gradient(40% 60% at 75% 60%, rgba(192,38,211,0.32), transparent 65%),
+                  radial-gradient(60% 50% at 50% 95%, rgba(99,102,241,0.25), transparent 70%),
+                  linear-gradient(180deg, #0E0E11, #1A1A22)
+                `,
+              }}
+            />
+
+            {/* Faint UI-chrome hint at the top — gives the impression of a
+                real product screenshot underneath without committing to one.
+                Three tiny circles like a macOS window. */}
+            <div className="absolute top-4 left-4 flex gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-white/15" />
+              <span className="w-2.5 h-2.5 rounded-full bg-white/15" />
+              <span className="w-2.5 h-2.5 rounded-full bg-white/15" />
+            </div>
+
+            {/* Mock dashboard preview hint — three subtle rectangular
+                "cards" that imply "this is the actual MVP interface" without
+                trying to fake a screenshot. */}
+            <div className="absolute inset-x-12 top-12 bottom-20 grid grid-cols-3 gap-3 opacity-30">
+              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
+              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
+              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
+            </div>
+
+            {/* Play button — large, violet, with a soft breathing pulse so
+                it reads as the focal point from any scroll position. */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="relative">
+                {/* Outer pulsing ring */}
+                <span
+                  className="absolute inset-0 rounded-full"
+                  style={{
+                    backgroundColor: 'rgba(124,58,237,0.35)',
+                    animation: 'mvp-play-pulse 2.5s ease-out infinite',
+                  }}
+                />
+                {/* The button itself */}
+                <button
+                  type="button"
+                  aria-label="Play demo video"
+                  className="relative w-20 h-20 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] flex items-center justify-center text-white transition-all duration-200 group-hover:scale-105"
+                  style={{ boxShadow: '0 12px 32px rgba(124,58,237,0.55)' }}
+                >
+                  <Play size={28} fill="currentColor" className="ml-1" />
+                </button>
+              </div>
+            </div>
+
+            {/* Bottom-right: mock timestamp pill — adds credibility ("this
+                is a 1:30 video, not a sales pitch") at a glance. */}
+            <div
+              className="absolute bottom-4 right-4 px-2 py-1 rounded text-[11px] font-medium tabular-nums text-white/85 backdrop-blur-sm"
+              style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+            >
+              0:00 · 1:30
+            </div>
+
+            {/* Bottom progress bar — empty for now, decorative. Implies
+                "this is a video player, ready to play." */}
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
+              <div className="h-full bg-[#7C3AED]" style={{ width: '0%' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Caption below the video — sets expectations so visitors who
+            don't click still get the value prop. */}
+        <p
+          className="text-center mt-6 text-[14px] max-w-xl mx-auto leading-relaxed"
+          style={{ color: 'var(--text-subtle)' }}
+        >
+          90 seconds. No talking head. Just the workflow: drop a YouTube URL → MVP turns it into 9 platforms → click publish.
+        </p>
+      </div>
+    </section>
   )
 }
 
-function CompareCell({ value, highlight }: { value: string; highlight?: boolean }) {
-  if (value === 'check') return <CheckCircle size={20} className={highlight ? 'text-[#7C3AED]' : 'text-[#34c759]'} />
-  if (value === 'cross') return <span className="inline-flex items-center justify-center w-5 h-5 text-[#86868b]">—</span>
-  if (value === 'manual') return <span className="text-sm text-[#ff9500] font-medium">manual</span>
-  return <span className={`text-sm font-semibold ${highlight ? 'text-[#7C3AED]' : 'text-[#1d1d1f]'}`}>{value}</span>
+/** Section 3 — "Roles MVP plays".
+ *
+ *  Frames the product as a TEAM of specialists you already have on payroll
+ *  the moment you subscribe. Eight roles, 4×2 grid, glass cards. Each card:
+ *  icon → role label → one product-led line that says what MVP actually
+ *  does for that role.
+ *
+ *  Copy intent: every line passes the "would a creator hire this?" test —
+ *  concrete deliverable, no vague benefit-speak.
+ */
+function RolesSection() {
+  return (
+    <section id="roles" className="px-6 lg:px-8 pt-24 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        {/* Section header — eyebrow + headline + sub. Centered, same
+            rhythm as the hero but slightly tighter. */}
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <Sparkles size={10} />
+            One hub. Many hats.
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            MVP is many roles.
+            <br />
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              One subscription.
+            </span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Plans, writes, schedules, optimizes, publishes, so you focus on what only you can do.
+          </p>
+        </div>
+
+        {/* 4×2 grid of role cards. Drops to 2×4 on tablet, 1×8 on phone. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {ROLES.map((role) => (
+            <RoleCard key={role.label} {...role} />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
 }
 
-function Pin({ n, side, children }: { n: number; side: 'left' | 'right'; children: React.ReactNode }) {
+interface Role {
+  icon: React.ReactNode
+  label: string
+  line: string
+}
+
+const ROLES: Role[] = [
+  {
+    icon: <Compass size={18} />,
+    label: 'Planner',
+    line: 'See your whole content pipeline. Plan a month in one view.',
+  },
+  {
+    icon: <Calendar size={18} />,
+    label: 'Scheduler',
+    line: 'Schedule once. MVP fires off every platform at the perfect time.',
+  },
+  {
+    icon: <HeartHandshake size={18} />,
+    label: 'Collaborator',
+    line: 'Your AI partner, trained on your voice. Always ready to think with you.',
+  },
+  {
+    icon: <PenLine size={18} />,
+    label: 'Script writer',
+    line: 'Long-form video scripts in your voice. From idea to teleprompter in minutes.',
+  },
+  {
+    icon: <Share2 size={18} />,
+    label: 'Social generator',
+    line: 'Nine social platforms. Each post written native to that one. No copy-paste.',
+  },
+  {
+    icon: <Globe size={18} />,
+    label: 'WordPress publisher',
+    line: 'Publish straight to your WordPress. Pro: up to 10 sites from one account.',
+  },
+  {
+    icon: <TrendingUp size={18} />,
+    label: 'SEO optimizer',
+    line: 'Per-post SEO scoring + one-click "fix all" across your entire catalog.',
+  },
+  {
+    icon: <Wand2 size={18} />,
+    label: 'Thumbnail studio',
+    line: 'CTR-tested thumbnails and titles. AI-picked from your actual video frames.',
+  },
+]
+
+function RoleCard({ icon, label, line }: Role) {
+  return (
+    <div
+      className="rounded-2xl border p-5 h-full flex flex-col gap-3 transition-all duration-200 hover:-translate-y-0.5"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(124,58,237,0.35)')}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+    >
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{
+          background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
+          color: '#C4B5FD',
+          border: '1px solid rgba(124,58,237,0.25)',
+        }}
+      >
+        {icon}
+      </div>
+      <h3 className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+        {label}
+      </h3>
+      <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+        {line}
+      </p>
+    </div>
+  )
+}
+
+/** Section 4 — "The 4-minute workflow."
+ *
+ *  Horizontal timeline of 4 numbered steps with a connecting line through
+ *  the center. The line uses a violet→fuchsia gradient that fades at both
+ *  ends so it visually starts at step 1 and ends at step 4 without
+ *  dangling past either side.
+ *
+ *  Layout:
+ *  - Desktop (lg): 4 columns side-by-side, connecting line is horizontal
+ *    behind the number circles.
+ *  - Mobile/tablet: stacked vertically. Connecting line becomes a vertical
+ *    bar on the left, number circles offset right.
+ *
+ *  Number circles use position: relative + z-index to sit on top of the
+ *  line. Each step card is a glass card matching Section 3's rhythm.
+ */
+function WorkflowSection() {
+  return (
+    <section id="how-it-works" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-16">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <Zap size={10} />
+            How it works
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            The{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              4-minute
+            </span>{' '}
+            workflow.
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            From video to nine outputs, fact-grounded and in your voice.
+          </p>
+        </div>
+
+        {/* Timeline container — relative so the line can be absolutely
+            positioned. The line lives in two flavors that toggle by media
+            query so we get one horizontal track on desktop and one vertical
+            track on mobile. */}
+        <div className="relative">
+          {/* Horizontal line (desktop only). Sits at ~y=44px to align with
+              the center of the number circles. Fades at both edges so it
+              visually originates from step 1 and dies into step 4. */}
+          <div
+            className="hidden lg:block absolute top-[44px] left-[12.5%] right-[12.5%] h-px"
+            style={{
+              background:
+                'linear-gradient(90deg, transparent 0%, rgba(124,58,237,0.55) 12%, rgba(192,38,211,0.55) 88%, transparent 100%)',
+            }}
+            aria-hidden
+          />
+          {/* Vertical line (mobile/tablet). Same gradient logic, rotated. */}
+          <div
+            className="lg:hidden absolute top-12 bottom-12 left-[26px] w-px"
+            style={{
+              background:
+                'linear-gradient(180deg, transparent 0%, rgba(124,58,237,0.55) 8%, rgba(192,38,211,0.55) 92%, transparent 100%)',
+            }}
+            aria-hidden
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 lg:gap-4">
+            {STEPS.map((step, i) => (
+              <StepCard key={step.title} index={i + 1} step={step} />
+            ))}
+          </div>
+        </div>
+
+        {/* Footnote below the timeline — sets expectations and re-affirms
+            the "no copy-paste" pattern. */}
+        <p
+          className="text-center mt-12 text-[13px]"
+          style={{ color: 'var(--text-faint)' }}
+        >
+          One channel. One workflow. Nine outputs. Zero copy-paste.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+interface Step {
+  icon: React.ReactNode
+  title: string
+  body: string
+}
+
+const STEPS: Step[] = [
+  {
+    icon: <Youtube size={18} />,
+    title: 'Pick a video.',
+    body: 'MVP already has your YouTube channel synced (transcript, product, gallery, and timestamps are pre-loaded). No URLs to paste. No copy-paste.',
+  },
+  {
+    icon: <ShieldCheck size={18} />,
+    title: 'It grounds everything in real facts.',
+    body: 'No invented features. No fabricated stories. Just what you actually said in the video, pulled straight from the transcript and the scraped product data.',
+  },
+  {
+    icon: <Sparkles size={18} />,
+    title: 'Generate 9 outputs in one click.',
+    body: 'Blog post, comparison, thumbnail, newsletter, plus 6 native social posts. All in your voice. All in about four minutes.',
+  },
+  {
+    icon: <Upload size={18} />,
+    title: 'Publish or schedule.',
+    body: 'Hit your WordPress site, the social queue, or the calendar. Your call. Everything you make stays yours, on your domain, forever.',
+  },
+]
+
+function StepCard({ index, step }: { index: number; step: Step }) {
+  return (
+    <div className="relative pl-16 lg:pl-0">
+      {/* Number circle. On mobile, sits flush left of the card and the
+          vertical line passes through it. On desktop, centered above the
+          card title. The solid background covers the connecting line so
+          the circles read as nodes on a wire. */}
+      <div
+        className="absolute lg:relative top-0 left-0 lg:left-auto lg:mx-auto w-[52px] h-[52px] rounded-full flex items-center justify-center mb-0 lg:mb-5 z-10"
+        style={{
+          background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+          boxShadow: '0 0 0 6px var(--bg), 0 6px 20px rgba(124,58,237,0.35)',
+        }}
+      >
+        <span className="text-white text-[16px] font-semibold tabular-nums">{index}</span>
+      </div>
+
+      <div
+        className="rounded-2xl border p-5 lg:p-6 h-full flex flex-col gap-3 transition-all duration-200 hover:-translate-y-0.5"
+        style={{
+          backgroundColor: 'var(--surface)',
+          borderColor: 'var(--border)',
+          boxShadow: 'var(--card-shadow)',
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'rgba(124,58,237,0.35)')}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+      >
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
+            color: '#C4B5FD',
+            border: '1px solid rgba(124,58,237,0.25)',
+          }}
+        >
+          {step.icon}
+        </div>
+        <h3 className="text-[16px] font-semibold tracking-tight leading-snug" style={{ color: 'var(--text)' }}>
+          {step.title}
+        </h3>
+        <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+          {step.body}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Section 5 — "Grounded in real video. Trained on real voice."
+ *
+ *  The fact-grounded differentiator section. Sells the product against
+ *  generic AI content tools without naming any competitor. Lands as a
+ *  comparison table (the old way vs MVP) followed by a founder-quote
+ *  card that ties back to the hero's trust strip.
+ *
+ *  Honesty notes:
+ *  - Every row is something MVP actually does (verified against the
+ *    product's current behavior — scraping product pages, using
+ *    transcripts, LEARN voice profile, video frames in thumbnails,
+ *    publish-ready output).
+ *  - The "Thumbnails" row specifically — NOT a generic "images" row —
+ *    because in-article images mix real product photos with AI; only
+ *    thumbnails are reliably grounded in actual video frames.
+ *
+ *  Layout: 2-col comparison table on desktop. On mobile, each row
+ *  stacks the two columns vertically with the label as a pill above.
+ */
+function GroundedSection() {
+  return (
+    <section id="grounded" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <ShieldCheck size={10} />
+            Grounded. Never guessed.
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            Grounded in{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              real video.
+            </span>
+            <br />
+            Trained on{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              real voice.
+            </span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            If MVP can&apos;t prove it from your transcript or the product page, MVP doesn&apos;t say it.
+          </p>
+        </div>
+
+        {/* Comparison table. Desktop: 2 columns side by side with a faint
+            vertical divider. Mobile: each row stacks both columns with the
+            label-pill on top. */}
+        <div
+          className="rounded-2xl border overflow-hidden"
+          style={{
+            backgroundColor: 'var(--surface)',
+            borderColor: 'var(--border)',
+            boxShadow: 'var(--card-shadow)',
+          }}
+        >
+          {/* Header row */}
+          <div className="hidden sm:grid grid-cols-[160px_1fr_1fr] items-center gap-4 px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+            <span className="text-[10px] uppercase tracking-[0.15em]" style={{ color: 'var(--text-faint)' }}>Dimension</span>
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full"
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: 'var(--text-faint)' }}
+              >
+                <XIcon size={11} />
+              </span>
+              <span className="text-[11px] uppercase tracking-[0.15em]" style={{ color: 'var(--text-subtle)' }}>The old way</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className="inline-flex items-center justify-center w-5 h-5 rounded-full"
+                style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)', color: '#FFFFFF' }}
+              >
+                <Check size={11} />
+              </span>
+              <span className="text-[11px] uppercase tracking-[0.15em] font-semibold" style={{ color: '#9D6BFF' }}>MVP</span>
+            </div>
+          </div>
+
+          {/* Rows */}
+          {COMPARISON_ROWS.map((row, i) => (
+            <ComparisonRow key={row.label} row={row} isLast={i === COMPARISON_ROWS.length - 1} />
+          ))}
+        </div>
+
+        {/* Founder quote close — the "B touch" — ties Section 5 back to the
+            hero trust strip. */}
+        <div
+          className="mt-10 rounded-2xl border p-6 sm:p-8 max-w-3xl mx-auto"
+          style={{
+            backgroundColor: 'var(--surface)',
+            borderColor: 'rgba(124,58,237,0.25)',
+            boxShadow: 'var(--card-shadow)',
+          }}
+        >
+          <Quote size={20} className="text-[#7C3AED] mb-3" />
+          <p className="text-[16px] sm:text-[17px] leading-relaxed mb-4 italic" style={{ color: 'var(--text-muted)' }}>
+            &ldquo;I built MVP because at 2 a.m. I was still rewriting AI-generated posts that invented features my products didn&apos;t have. Every other tool either sounded like a robot or made me triple-check every claim. So I built the one I needed.&rdquo;
+          </p>
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+            Built by a creator who&apos;s done{' '}
+            <span className="font-semibold" style={{ color: 'var(--text)' }}>$3M+/yr</span> in affiliate sales.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface ComparisonRowData {
+  label: string
+  oldWay: string
+  mvpWay: string
+}
+
+const COMPARISON_ROWS: ComparisonRowData[] = [
+  {
+    label: 'Facts',
+    oldWay: 'Invents features the product doesn’t have.',
+    mvpWay: 'Pulls real specs from the product page you reviewed.',
+  },
+  {
+    label: 'Stories',
+    oldWay: 'Fabricates “experiences” you never had.',
+    mvpWay: 'Uses what you actually said in the transcript.',
+  },
+  {
+    label: 'Voice',
+    oldWay: 'Sounds like every other AI post on the internet.',
+    mvpWay: 'Trained on your channel: your phrasing, your hooks.',
+  },
+  {
+    label: 'Thumbnails',
+    oldWay: 'Generic AI illustrations.',
+    mvpWay: 'Built from your actual video frames, with your face baked in.',
+  },
+  {
+    label: 'Time',
+    oldWay: 'You spend an hour rewriting before publishing.',
+    mvpWay: 'Publish-ready out of the box.',
+  },
+]
+
+function ComparisonRow({ row, isLast }: { row: ComparisonRowData; isLast: boolean }) {
+  return (
+    <div
+      className={`px-5 py-5 sm:py-4 ${isLast ? '' : 'border-b'}`}
+      style={{ borderColor: 'var(--border)' }}
+    >
+      {/* Mobile: stacked */}
+      <div className="sm:hidden flex flex-col gap-2.5">
+        <span
+          className="self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-[0.12em] font-medium"
+          style={{ backgroundColor: 'rgba(124,58,237,0.10)', color: '#9D6BFF' }}
+        >
+          {row.label}
+        </span>
+        <div className="flex items-start gap-2">
+          <XIcon size={14} className="flex-shrink-0 mt-0.5" style={{ color: 'var(--text-faint)' }} />
+          <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-subtle)' }}>
+            {row.oldWay}
+          </p>
+        </div>
+        <div className="flex items-start gap-2">
+          <Check size={14} className="flex-shrink-0 mt-0.5" style={{ color: '#9D6BFF' }} />
+          <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text)' }}>
+            {row.mvpWay}
+          </p>
+        </div>
+      </div>
+
+      {/* Desktop: 3-column grid */}
+      <div className="hidden sm:grid grid-cols-[160px_1fr_1fr] items-start gap-4">
+        <span className="text-[13px] font-semibold tracking-tight pt-0.5" style={{ color: 'var(--text)' }}>
+          {row.label}
+        </span>
+        <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-subtle)' }}>
+          {row.oldWay}
+        </p>
+        <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {row.mvpWay}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Section 6 — Pricing.
+ *
+ *  Three monetized tiers shown side-by-side (Creator / Studio / Pro).
+ *  Trial is positioned as the WAY IN (no-card banner above the cards),
+ *  not as a fourth column — nobody chooses "trial" as a tier.
+ *
+ *  Studio is flagged as Most Popular per the audit (sits in the middle
+ *  price point + unlocks the most-asked features: TikTok + Instagram +
+ *  Scripts). Pro is the power tier (multi-site + IG AI thumbnails +
+ *  face training + everything uncapped).
+ *
+ *  Prices + features mirror lib/tier.ts exactly so the page never drifts
+ *  from the live system. The regularPrice strikethrough sells the
+ *  founder-pricing window without making it feel like a permanent
+ *  discount.
+ */
+function PricingSection() {
+  return (
+    <section id="pricing" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-10">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <Sparkles size={10} />
+            Pricing
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            Start free.{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              Scale when you&apos;re ready.
+            </span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Every plan includes the full Central Hub. Cancel anytime. Your WordPress site stays yours forever.
+          </p>
+        </div>
+
+        {/* Trial banner — the no-card "way in" sits ABOVE the cards so it
+            reads as "start here, then pick a tier when you're ready." */}
+        <div
+          className="rounded-2xl border p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6"
+          style={{
+            backgroundColor: 'rgba(16,185,129,0.06)',
+            borderColor: 'rgba(16,185,129,0.25)',
+          }}
+        >
+          <div
+            className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #10B981, #059669)', color: '#FFFFFF' }}
+          >
+            <Sparkles size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[15px] font-semibold mb-1" style={{ color: 'var(--text)' }}>
+              Try MVP free. No card required.
+            </p>
+            <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              Get 5 full posts on the house. Generate, publish, share, see if it fits your workflow before you pay a cent. No time limit on the trial.
+            </p>
+          </div>
+          <a
+            href="/signup"
+            className="px-5 py-2.5 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
+            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}
+          >
+            Start free →
+          </a>
+        </div>
+
+        {/* 3-tier grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+          {PRICING_TIERS.map(tier => (
+            <PricingCard key={tier.name} tier={tier} />
+          ))}
+        </div>
+
+        {/* Trust strip below the cards. */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Cancel anytime
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Switch plans up or down
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Your WordPress site stays yours forever
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Founder pricing locked for life
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface PricingTier {
+  name: string
+  tagline: string
+  price: number
+  regularPrice: number
+  highlight: boolean
+  icon: React.ReactNode
+  features: string[]
+  cta: string
+}
+
+// Refreshed 2026-06-04 to match the new tier matrix (lib/tier.ts). This
+// preview page is the headline sales deck; numbers MUST match /pricing.
+// If you edit one, edit both (and update tier.ts if the change is real).
+const PRICING_TIERS: PricingTier[] = [
+  {
+    name: 'Creator',
+    tagline: 'For one channel, one niche.',
+    price: 49,
+    regularPrice: 99,
+    highlight: false,
+    icon: <Sparkles size={16} />,
+    features: [
+      '20 posts / month (blog + thumbnail + metadata bundle)',
+      '5 socials: LinkedIn, Bluesky, Pinterest, Facebook *, Threads *',
+      '1 face + 1 LoRA retrain / month, 10 Photobooth headshots',
+      '10 video scripts + shot-lists / month',
+      'Newsletter taster: 500 subs, 1 broadcast / month',
+      '5 brand-collab pitch emails / month',
+      '200 assistant messages / month',
+      '1 WordPress site',
+    ],
+    cta: 'Start as Creator',
+  },
+  {
+    name: 'Studio',
+    tagline: 'For creators who post everywhere.',
+    price: 99,
+    regularPrice: 199,
+    highlight: true,
+    icon: <Crown size={16} />,
+    features: [
+      '60 posts / month (blog + thumbnail + metadata bundle)',
+      'Adds Instagram * + Telegram on top of Creator',
+      'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
+      'IG AI Thumbnails 4:5 (30 / month)',
+      'Topic hubs + Refresh Images on published posts',
+      '2 faces + 3 LoRA retrains / month, 15 Photobooth headshots',
+      '30 video scripts, 15 brand pitches',
+      'Newsletter: 5,000 subs, weekly + scheduling',
+      '1,000 assistant messages / month',
+      'Priority Discord support',
+    ],
+    cta: 'Go Studio',
+  },
+  {
+    name: 'Pro',
+    tagline: 'For operators running a portfolio.',
+    price: 199,
+    regularPrice: 499,
+    highlight: false,
+    icon: <Rocket size={16} />,
+    features: [
+      '200 posts / month + Comparisons + Buying Guides',
+      'Adds Twitter / X + TikTok * (9 socials total)',
+      'Rebuild-from-video on any legacy WP post',
+      'Creator Campaigns (Amazon EPC scout, one-click publish)',
+      'Up to 10 WordPress sites + 3 Virtual Assistant seats',
+      'Multi-account social + one-click Publish All',
+      '30 deal posts / month, 100 IG AI thumbs, 5 LoRA retrains',
+      '150 video scripts, 100 brand pitches',
+      'Newsletter: 10k subs, twice-weekly + A/B + segments',
+      '5,000 assistant messages / month',
+      'Priority generation queue + priority Discord support',
+    ],
+    cta: 'Go Pro',
+  },
+]
+
+function PricingCard({ tier }: { tier: PricingTier }) {
+  const highlight = tier.highlight
   return (
     <div className="relative">
-      <span
-        className={`absolute top-1 ${side === 'left' ? '-left-3' : '-right-3'} w-6 h-6 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white shadow-md z-10`}
+      {highlight && (
+        <div
+          className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-[0.15em] text-white z-10"
+          style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+        >
+          Most popular
+        </div>
+      )}
+      <div
+        className={`rounded-2xl border p-6 h-full flex flex-col gap-5 transition-all duration-200 ${highlight ? 'lg:-translate-y-2' : 'hover:-translate-y-0.5'}`}
+        style={{
+          backgroundColor: 'var(--surface)',
+          borderColor: highlight ? 'rgba(124,58,237,0.5)' : 'var(--border)',
+          boxShadow: highlight
+            ? '0 8px 32px rgba(124,58,237,0.15), inset 0 1px 0 rgba(255,255,255,0.06)'
+            : 'var(--card-shadow)',
+        }}
       >
-        {n}
-      </span>
-      {children}
+        {/* Header — icon + tier name + tagline. */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
+                color: '#C4B5FD',
+                border: '1px solid rgba(124,58,237,0.25)',
+              }}
+            >
+              {tier.icon}
+            </span>
+            <h3 className="text-[20px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+              {tier.name}
+            </h3>
+          </div>
+          <p className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+            {tier.tagline}
+          </p>
+        </div>
+
+        {/* Price block. Regular price strikethrough on top, current price big. */}
+        <div>
+          <p className="text-[12px] line-through" style={{ color: 'var(--text-faint)' }}>
+            ${tier.regularPrice}/month regular
+          </p>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[40px] font-semibold tracking-tight tabular-nums" style={{ color: 'var(--text)' }}>
+              ${tier.price}
+            </span>
+            <span className="text-[14px]" style={{ color: 'var(--text-soft)' }}>
+              /month
+            </span>
+          </div>
+          <p className="text-[11px] mt-1" style={{ color: 'var(--text-faint)' }}>
+            Founder pricing, locked for the life of your subscription.
+          </p>
+        </div>
+
+        {/* Feature list. */}
+        <ul className="flex flex-col gap-2.5 flex-1">
+          {tier.features.map((f, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <Check
+                size={13}
+                className="flex-shrink-0 mt-1"
+                style={{ color: highlight ? '#9D6BFF' : 'var(--text-soft)' }}
+              />
+              <span className="text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                {f}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        {/* CTA. Carries the plan slug so the signup flow lands the user
+            on the right checkout post-signup. */}
+        <a
+          href={`/signup?plan=${tier.name.toLowerCase()}`}
+          className="w-full px-4 py-3 rounded-xl text-center text-[14px] font-semibold transition-all"
+          style={{
+            background: highlight
+              ? 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)'
+              : 'var(--surface-bright)',
+            color: highlight ? '#FFFFFF' : 'var(--text)',
+            boxShadow: highlight ? '0 4px 20px rgba(124,58,237,0.35)' : 'none',
+            border: highlight ? 'none' : '1px solid var(--border)',
+          }}
+        >
+          {tier.cta} →
+        </a>
+      </div>
+    </div>
+  )
+}
+
+/** Section 7 — Proof.
+ *
+ *  We don't have user testimonials yet, so this section grounds the
+ *  promise in NUMBERS we can defend: the founder's $3M+/yr operation,
+ *  the 4-min workflow, the 9 outputs per video, the fact-grounding
+ *  guarantee. No fabricated quotes.
+ *
+ *  Below the stat row: a "Built for these niches" panel that names real
+ *  categories MVP supports without naming individual customers.
+ */
+function ProofSection() {
+  return (
+    <section id="proof" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-12">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <TrendingUp size={10} />
+            Numbers that matter
+          </span>
+          <h2
+            className="text-[36px] sm:text-[44px] font-semibold tracking-tight leading-[1.1] mb-4"
+            style={{ color: 'var(--text)' }}
+          >
+            Built by an operator. Run daily.
+          </h2>
+          <p
+            className="text-[16px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Every number on this page is something the founder uses MVP to do every week.
+          </p>
+        </div>
+
+        {/* 4-up stat row. Each big number with a label. */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {STATS.map(s => (
+            <StatCard key={s.label} stat={s} />
+          ))}
+        </div>
+
+      </div>
+    </section>
+  )
+}
+
+interface Stat {
+  value: string
+  label: string
+  detail: string
+}
+
+const STATS: Stat[] = [
+  { value: '$3M+', label: '/yr proven', detail: 'in affiliate sales by the founder' },
+  { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
+  { value: '9', label: 'outputs per video', detail: 'blog + thumb + 7 socials' },
+  { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
+]
+
+function StatCard({ stat }: { stat: Stat }) {
+  return (
+    <div
+      className="rounded-2xl border p-5 text-center"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+    >
+      <p
+        className="text-[36px] sm:text-[42px] font-semibold tracking-tight tabular-nums leading-none"
+        style={{
+          background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}
+      >
+        {stat.value}
+      </p>
+      <p className="text-[12px] uppercase tracking-[0.12em] mt-2 mb-1" style={{ color: 'var(--text)' }}>
+        {stat.label}
+      </p>
+      <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+        {stat.detail}
+      </p>
+    </div>
+  )
+}
+
+/** Section 8 — FAQ.
+ *
+ *  Six accordion items covering the top objections. Each opens with
+ *  smooth height animation. Honest, specific answers — no
+ *  legalese, no marketing fluff.
+ *
+ *  Topics chosen to address the strongest "but…" objections from the
+ *  page so far:
+ *    1. Trial mechanics (5 lifetime posts, no card)
+ *    2. WordPress ownership (yours forever)
+ *    3. Will it sound like me? (LEARN voice profile)
+ *    4. Cancel + refund mechanics
+ *    5. Fact-grounding guarantee
+ *    6. Switching plans
+ */
+function FAQSection() {
+  const [openIdx, setOpenIdx] = useState<number | null>(0)
+  return (
+    <section id="faq" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-3xl mx-auto">
+        <div className="text-center mb-12">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            Questions you might be having
+          </span>
+          <h2
+            className="text-[36px] sm:text-[44px] font-semibold tracking-tight leading-[1.1]"
+            style={{ color: 'var(--text)' }}
+          >
+            Common questions.
+          </h2>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {FAQS.map((f, i) => (
+            <FAQItem
+              key={i}
+              q={f.q}
+              a={f.a}
+              isOpen={openIdx === i}
+              onToggle={() => setOpenIdx(openIdx === i ? null : i)}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const FAQS = [
+  {
+    q: 'How does the free trial work?',
+    a: 'You get 5 full posts on the house. No card required, no time limit. Generate, publish, share, see how it fits your workflow. If you decide MVP is for you, pick a plan (Creator, Studio, or Pro) and you keep going. If not, no charge, no follow-up emails. Your trial just sits there.',
+  },
+  {
+    q: 'Do I need to host my own WordPress site?',
+    a: 'Yes, and that\'s the whole point. MVP publishes to YOUR WordPress site on YOUR domain. We never host your content. You own everything you make, forever, even if you cancel. Most creators host on SiteGround, Hostinger, Bluehost, Cloudways, or WP Engine. Any of them work.',
+  },
+  {
+    q: 'Will MVP-generated content actually sound like me?',
+    a: 'Yes. MVP trains a voice profile on your channel: your phrasing, your hooks, your closers, your structure. Every blog post and social caption gets generated through that profile, not a generic AI persona. The longer you use it, the better the match. You can also tune the voice manually if you want it sharper, longer, or more conversational.',
+  },
+  {
+    q: 'Can I cancel anytime? What happens to my content?',
+    a: 'Yes, cancel from your billing page anytime. Your subscription runs through the end of the current period, then stops. Your content stays on your WordPress site forever (it\'s on YOUR domain, not ours). Nothing gets deleted. Your account stays open in read-only mode so you can come back later.',
+  },
+  {
+    q: 'How do you guarantee MVP doesn\'t fabricate facts about my products?',
+    a: 'Two layers. First: the generator pulls product specs directly from the product page you reviewed (Amazon, the brand site, wherever the buy link points). It uses those specs verbatim, no model "imagination." Second: every story / experience claim comes from your actual video transcript. If you didn\'t say it on camera, MVP doesn\'t put it in the post.',
+  },
+  {
+    q: 'Can I switch plans up or down later?',
+    a: 'Anytime. Upgrade and the difference is pro-rated and applied immediately. Downgrade and the new plan kicks in at the next billing cycle (you keep the higher plan\'s features until then). No "annual commitment" trap.',
+  },
+]
+
+function FAQItem({ q, a, isOpen, onToggle }: { q: string; a: string; isOpen: boolean; onToggle: () => void }) {
+  return (
+    <div
+      className="rounded-xl border overflow-hidden transition-colors"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: isOpen ? 'rgba(124,58,237,0.35)' : 'var(--border)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+    >
+      <button
+        onClick={onToggle}
+        className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left"
+      >
+        <span className="text-[15px] font-medium leading-snug" style={{ color: 'var(--text)' }}>
+          {q}
+        </span>
+        <span
+          className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-transform"
+          style={{
+            backgroundColor: isOpen ? 'rgba(124,58,237,0.15)' : 'rgba(255,255,255,0.05)',
+            color: isOpen ? '#9D6BFF' : 'var(--text-soft)',
+          }}
+        >
+          {isOpen ? <Minus size={13} /> : <Plus size={13} />}
+        </span>
+      </button>
+      {isOpen && (
+        <div className="px-5 pb-4 -mt-1">
+          <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            {a}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Section 9 — Final CTA.
+ *
+ *  Full-bleed dark/light closing panel that re-states the offer one
+ *  more time before the scroll ends. Big headline, twin CTAs, and the
+ *  same trust elements as the pricing section for consistency.
+ *
+ *  Background uses a soft radial gradient so the section reads as a
+ *  visual "landing" rather than just another card.
+ */
+function FinalCTASection() {
+  return (
+    <section
+      id="get-started"
+      className="px-6 lg:px-8 pt-16 pb-24 relative overflow-hidden"
+    >
+      {/* Background: soft violet radial that fades out, matching the hub
+          diagram's visual rhythm. Theme-aware via --bg + the overlay. */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(ellipse 70% 60% at 50% 30%, rgba(124,58,237,0.18), transparent 70%)',
+        }}
+        aria-hidden
+      />
+
+      <div className="max-w-4xl mx-auto text-center relative">
+        <span
+          className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-6"
+          style={{
+            backgroundColor: 'rgba(124,58,237,0.15)',
+            color: '#C4B5FD',
+            border: '1px solid rgba(124,58,237,0.30)',
+          }}
+        >
+          Ready when you are
+        </span>
+        <h2
+          className="text-[44px] sm:text-[60px] font-semibold tracking-tight leading-[1.02] mb-5"
+          style={{ color: 'var(--text)' }}
+        >
+          Start your{' '}
+          <span
+            style={{
+              background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            Central Hub.
+          </span>
+        </h2>
+        <p
+          className="text-[17px] sm:text-[18px] leading-relaxed max-w-2xl mx-auto mb-8"
+          style={{ color: 'var(--text-soft)' }}
+        >
+          Five free posts. No card. No time limit. See if MVP fits your workflow before you pay a cent.
+        </p>
+
+        {/* Twin CTAs — primary action + lower-friction demo link. */}
+        <div className="flex flex-col sm:flex-row gap-3 items-center justify-center mb-8">
+          <a
+            href="/signup"
+            className="px-7 py-3.5 rounded-xl text-[15px] font-semibold text-white inline-flex items-center gap-2 transition-all hover:scale-[1.02]"
+            style={{
+              background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+              boxShadow: '0 8px 28px rgba(124,58,237,0.40)',
+            }}
+          >
+            Start your free trial
+            <ArrowRight size={16} />
+          </a>
+          <a
+            href="#demo"
+            className="px-5 py-3.5 rounded-xl text-[15px] inline-flex items-center gap-2 transition-colors"
+            style={{
+              backgroundColor: 'var(--surface-bright)',
+              color: 'var(--text)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <Play size={14} />
+            Watch the 90-second demo
+          </a>
+        </div>
+
+        {/* Trust strip — matches pricing section's strip for consistency. */}
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> No card required
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> 5 full posts free
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Cancel anytime
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Check size={12} className="text-[#10B981]" /> Your WordPress site stays yours
+          </span>
+        </div>
+
+        {/* Founder signature line — final reassurance. */}
+        <p className="text-[12px] mt-10" style={{ color: 'var(--text-faint)' }}>
+          Built by a creator who&apos;s done <span className="font-semibold" style={{ color: 'var(--text-soft)' }}>$3M+/yr</span> in affiliate sales. Made for creators who want the same.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+/** Top nav — minimal: logo + sign in + theme toggle. Sticky so it stays
+ *  accessible while scrolling. Will gain Pricing/Demo links when those
+ *  sections exist further down the page. */
+function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => void }) {
+  return (
+    <nav
+      className="sticky top-0 z-20 backdrop-blur-md px-8 py-4 flex items-center justify-between relative"
+      style={{
+        backgroundColor: theme === 'dark' ? 'rgba(14,14,17,0.7)' : 'rgba(250,250,248,0.7)',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <a href="/" className="flex items-center gap-2">
+        <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#C026D3] flex items-center justify-center font-semibold text-white text-[14px]">M</span>
+        <span className="font-semibold text-[15px] tracking-tight" style={{ color: 'var(--text)' }}>
+          MVP Affiliate
+        </span>
+      </a>
+      {/* Anchor links — visible on lg+ so the long page stays skimmable.
+          Each item points at a section id elsewhere on the page; smooth
+          scroll is enabled globally via the `html { scroll-behavior:
+          smooth }` rule near the top of LandingPreview. */}
+      <div className="hidden lg:flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
+        {NAV_ANCHORS.map(a => (
+          <a
+            key={a.href}
+            href={a.href}
+            className="px-3 py-1.5 rounded-lg text-[13px] transition-colors hover:opacity-100"
+            style={{ color: 'var(--text-soft)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-soft)')}
+          >
+            {a.label}
+          </a>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onToggle}
+          className="p-2 rounded-lg transition-colors"
+          style={{ color: 'var(--text-soft)' }}
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        >
+          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+        </button>
+        <a
+          href="/login"
+          className="px-3 py-1.5 rounded-lg text-[13px] transition-colors"
+          style={{ color: 'var(--text-soft)' }}
+        >
+          Sign in
+        </a>
+        <a
+          href="/signup"
+          className="px-3.5 py-1.5 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-[13px] font-medium text-white transition-colors"
+        >
+          Start free trial
+        </a>
+      </div>
+    </nav>
+  )
+}
+
+const NAV_ANCHORS = [
+  { label: 'Roles', href: '#roles' },
+  { label: 'Workflow', href: '#how-it-works' },
+  { label: 'Pricing', href: '#pricing' },
+  { label: 'FAQ', href: '#faq' },
+]
+
+/** The hero — locked copy + animated hub diagram + CTAs. */
+function Hero() {
+  return (
+    <section className="relative overflow-hidden">
+      {/* Background mesh gradient — same recipe as the dashboard preview's
+          hero, scaled up. Opacity adapts to theme via var. */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          opacity: 'var(--hero-opacity)',
+          background: `
+            radial-gradient(50% 70% at 25% 25%, rgba(124,58,237,0.55), transparent 60%),
+            radial-gradient(45% 65% at 80% 20%, rgba(192,38,211,0.45), transparent 65%),
+            radial-gradient(70% 50% at 60% 100%, rgba(99,102,241,0.30), transparent 70%)
+          `,
+        }}
+      />
+
+      <div className="relative max-w-7xl mx-auto px-8 pt-20 pb-28 grid lg:grid-cols-[1fr_760px] gap-12 items-center">
+        {/* ── Left: copy + CTAs ────────────────────────────────────── */}
+        <div>
+          {/* Pill */}
+          <div
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[11px] uppercase tracking-[0.16em] font-medium mb-4"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--border)',
+              color: 'var(--text-soft)',
+            }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
+            For affiliate creators
+          </div>
+
+          {/* Trust strip — lifted to live above the headline. Establishes
+              credibility BEFORE the bold value claim, so the headline
+              lands on a primed visitor. */}
+          <p className="mb-6 text-[12px] font-medium" style={{ color: 'var(--text-subtle)' }}>
+            Built by a <span style={{ color: 'var(--text-muted)' }}>$3M/yr affiliate creator</span>. No card to start.
+          </p>
+
+          {/* Main + Secondary headlines */}
+          <h1
+            className="text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.02]"
+            style={{ color: 'var(--text)' }}
+          >
+            Your Central<br />
+            Content Hub.
+          </h1>
+          <p
+            className="mt-4 text-[20px] font-medium tracking-tight"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            One Review. Every Output. One Hub.
+          </p>
+
+          {/* Sub */}
+          <p
+            className="mt-6 text-[16px] leading-relaxed max-w-xl"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            From one review video: a published blog post, a CTR-tested thumbnail, 9 social variants, a newsletter draft, and a full week of scheduled posts. In ten minutes. <span style={{ color: 'var(--text)' }}>Grounded in what you actually said.</span>
+          </p>
+
+          {/* CTAs — primary button + its supporting reassurance live as
+              separate elements so the button stays readable and the
+              "yours forever" promise sits clearly below both CTAs. */}
+          <div className="mt-8">
+            <div className="flex flex-wrap items-center gap-3">
+              <a
+                href="/signup"
+                className="px-5 py-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-[14px] font-semibold text-white inline-flex items-center gap-2 transition-colors shadow-[0_4px_16px_rgba(124,58,237,0.3)]"
+              >
+                Start your free trial
+                <ArrowRight size={14} />
+              </a>
+              <a
+                href="#demo"
+                className="px-5 py-3 rounded-xl border text-[14px] font-medium inline-flex items-center gap-2 transition-colors"
+                style={{
+                  backgroundColor: 'var(--surface)',
+                  borderColor: 'var(--border)',
+                  color: 'var(--text)',
+                }}
+              >
+                <Play size={13} fill="currentColor" />
+                Watch the 90-second demo
+              </a>
+            </div>
+            <p className="mt-3 text-[12px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
+              <span className="w-1 h-1 rounded-full bg-[#10B981]" />
+              Keep your WordPress site forever.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Right: animated hub diagram ───────────────────────────── */}
+        <HubDiagram />
+      </div>
+    </section>
+  )
+}
+
+/** The hub diagram: SVG lines drawn between a central node and 8 spoke
+ *  nodes, animated on page load (lines draw outward in sequence; spokes
+ *  pop in once each line arrives; lines then breathe gently forever).
+ *
+ *  Layered:
+ *    - SVG (z-0): lines + radial pulse rings under center
+ *    - HTML (z-10): the 8 spoke nodes
+ *    - HTML (z-20): the center video node, drawn last so it covers line
+ *                   endpoints
+ */
+function HubDiagram() {
+  return (
+    <div className="relative w-full mx-auto" style={{ maxWidth: VIEW_W, height: VIEW_H }}>
+      <svg
+        viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        aria-hidden="true"
+      >
+        {/* Lines from center to each spoke. Drawn from a long dasharray
+            offset down to 0 (the "drawing" effect). Each line gets a
+            stagger via animation-delay; once drawn, pulse forever. */}
+        {SPOKES.map((s, i) => {
+          const { x, y } = spokePos(s.angle)
+          const drawDelay = 0.2 + i * 0.08
+          const pulseDelay = drawDelay + 0.4
+          return (
+            <line
+              key={i}
+              x1={CX}
+              y1={CY}
+              x2={x}
+              y2={y}
+              stroke="var(--line-color)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              style={{
+                strokeDasharray: 320,
+                strokeDashoffset: 320,
+                animation: `
+                  mvp-line-draw 0.45s ease-out ${drawDelay}s forwards,
+                  mvp-line-pulse 3s ease-in-out ${pulseDelay}s infinite
+                `,
+                filter: 'drop-shadow(0 0 4px var(--line-glow))',
+              }}
+            />
+          )
+        })}
+
+        {/* Subtle expanding rings under the center node — adds "energy
+            radiating from the source" feeling without being loud. */}
+        <circle cx={CX} cy={CY} r={50} fill="rgba(124,58,237,0.12)" style={{ animation: 'mvp-ring-pulse 4s ease-out infinite' }} />
+        <circle cx={CX} cy={CY} r={50} fill="rgba(124,58,237,0.08)" style={{ animation: 'mvp-ring-pulse 4s ease-out 2s infinite' }} />
+      </svg>
+
+      {/* Spoke nodes, positioned absolutely at the calculated coords.
+          Fade in after their connecting line completes drawing. */}
+      {SPOKES.map((s, i) => {
+        const { x, y } = spokePos(s.angle)
+        const fadeDelay = 0.2 + i * 0.08 + 0.5
+        return (
+          <div
+            key={i}
+            className="absolute"
+            style={{
+              left: x,
+              top: y,
+              opacity: 0,
+              animation: `mvp-spoke-in 0.4s ease-out ${fadeDelay}s forwards`,
+            }}
+          >
+            <SpokeNode icon={s.icon} label={s.label} />
+          </div>
+        )
+      })}
+
+      {/* Center node — the "Your review video" card. Drawn last (highest
+          z) so it sits cleanly on top of the line endpoints. */}
+      <div
+        className="absolute"
+        style={{
+          left: CX,
+          top: CY,
+          opacity: 0,
+          animation: 'mvp-center-in 0.5s ease-out forwards',
+        }}
+      >
+        <CenterNode />
+      </div>
+    </div>
+  )
+}
+
+function CenterNode() {
+  return (
+    <div
+      className="rounded-2xl px-5 py-4 flex items-center gap-3 text-white"
+      style={{
+        background: 'var(--center-bg)',
+        boxShadow: '0 12px 32px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
+        minWidth: 220,
+      }}
+    >
+      <div className="w-10 h-10 rounded-lg bg-white/15 flex items-center justify-center backdrop-blur-sm">
+        <Play size={16} fill="currentColor" className="ml-0.5" />
+      </div>
+      <div className="flex-1">
+        <p className="text-[10px] uppercase tracking-[0.16em] font-medium opacity-75">Your video</p>
+        <p className="text-[13px] font-semibold leading-tight mt-0.5">YouTube review</p>
+      </div>
+    </div>
+  )
+}
+
+function SpokeNode({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <div
+      className="rounded-xl px-3 py-2 border text-[12px] font-medium flex items-center gap-2 whitespace-nowrap"
+      style={{
+        backgroundColor: 'var(--surface)',
+        borderColor: 'var(--border)',
+        color: 'var(--text)',
+        boxShadow: 'var(--card-shadow)',
+      }}
+    >
+      <span className="text-[#7C3AED]">{icon}</span>
+      {label}
+    </div>
+  )
+}
+
+/** Platform bar — slim strip directly under the hero that names every
+ *  platform MVP publishes to. Reinforces the breadth promise of the hub
+ *  diagram with concrete platform names, and bonus: helps SEO
+ *  discoverability for "WordPress + TikTok + Instagram + ..." searches.
+ *
+ *  Visual: monochrome icons + names laid out horizontally, separated by
+ *  thin dividers. Theme-aware via var(--text-faint). Wraps on mobile.
+ */
+function PlatformBar() {
+  return (
+    <section className="px-6 lg:px-8 pt-2 pb-12 relative">
+      <div className="max-w-5xl mx-auto">
+        <p
+          className="text-[10px] uppercase tracking-[0.18em] text-center mb-4"
+          style={{ color: 'var(--text-faint)' }}
+        >
+          Publishes natively to
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+          {PLATFORMS.map((p, i) => (
+            <span key={p.name} className="inline-flex items-center gap-3">
+              <span
+                className="inline-flex items-center gap-2 text-[13px]"
+                style={{ color: 'var(--text-soft)' }}
+              >
+                <span style={{ color: 'var(--text-muted)' }}>{p.icon}</span>
+                {p.name}
+              </span>
+              {i < PLATFORMS.length - 1 && (
+                <span className="hidden sm:inline" style={{ color: 'var(--text-faint)' }}>·</span>
+              )}
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const PLATFORMS = [
+  { name: 'WordPress', icon: <Globe size={14} /> },
+  { name: 'TikTok', icon: <Music2 size={14} /> },
+  { name: 'Instagram', icon: <Instagram size={14} /> },
+  { name: 'Pinterest', icon: <Bookmark size={14} /> },
+  { name: 'X', icon: <Twitter size={14} /> },
+  { name: 'Threads', icon: <AtSign size={14} /> },
+  { name: 'Bluesky', icon: <Cloud size={14} /> },
+  { name: 'Telegram', icon: <Send size={14} /> },
+  { name: 'Facebook', icon: <Facebook size={14} /> },
+]
+
+/** Before/After visual — sits between Workflow (Section 4) and Grounded
+ *  (Section 5). Sells the "one subscription replaces a tool stack" pitch
+ *  viscerally: a chaotic grid of generic tool boxes on the left, the
+ *  single MVP hub on the right, an arrow between.
+ *
+ *  Why no competitor names: the user has flagged repeatedly never to
+ *  name competitors (vidIQ, Tubebuddy, etc.) in user-facing copy. So
+ *  the "before" side uses generic role labels (Writing tool, Scheduler,
+ *  Designer, Publisher, etc.) instead — readers fill in their own
+ *  current stack.
+ */
+function BeforeAfterSection() {
+  return (
+    <section id="stack" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              color: '#9D6BFF',
+              border: '1px solid rgba(124,58,237,0.25)',
+            }}
+          >
+            <Sparkles size={10} />
+            One subscription replaces your stack
+          </span>
+          <h2
+            className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            Five tools and a tab tangle.{' '}
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              Or one hub.
+            </span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Stop paying for eight different subscriptions and stitching them together by hand.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-stretch gap-6 lg:gap-4">
+          {/* BEFORE column — chaotic grid of greyed-out tool boxes. */}
+          <div
+            className="rounded-2xl border p-6 sm:p-7 relative"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'var(--border)',
+              boxShadow: 'var(--card-shadow)',
+            }}
+          >
+            <p className="text-[11px] uppercase tracking-[0.15em] mb-5" style={{ color: 'var(--text-faint)' }}>
+              The old way
+            </p>
+            <div className="grid grid-cols-2 gap-2.5">
+              {OLD_STACK.map(t => (
+                <div
+                  key={t}
+                  className="rounded-lg border px-3 py-2.5 text-[12px] text-center relative overflow-hidden"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.02)',
+                    borderColor: 'var(--border)',
+                    color: 'var(--text-subtle)',
+                  }}
+                >
+                  <span className="line-through opacity-80">{t}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-5 text-[12px] leading-relaxed" style={{ color: 'var(--text-subtle)' }}>
+              Eight subscriptions. Eight tabs open. Copy-paste between them. Reformat for every platform. Forget what was where.
+            </p>
+            <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--text-subtle)' }}>
+              $500+/mo · hours per video
+            </p>
+          </div>
+
+          {/* Arrow — horizontal on desktop, vertical on mobile/tablet. */}
+          <div className="hidden lg:flex items-center justify-center">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center"
+              style={{
+                background: 'linear-gradient(135deg, #7C3AED, #C026D3)',
+                boxShadow: '0 6px 20px rgba(124,58,237,0.35)',
+              }}
+            >
+              <ArrowRight size={20} className="text-white" />
+            </div>
+          </div>
+          <div className="lg:hidden flex items-center justify-center -my-2">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center rotate-90"
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+            >
+              <ArrowRight size={18} className="text-white" />
+            </div>
+          </div>
+
+          {/* AFTER column — single MVP hub with a violet glow. */}
+          <div
+            className="rounded-2xl border p-6 sm:p-7 relative overflow-hidden"
+            style={{
+              backgroundColor: 'var(--surface)',
+              borderColor: 'rgba(124,58,237,0.40)',
+              boxShadow: '0 8px 32px rgba(124,58,237,0.15), inset 0 1px 0 rgba(255,255,255,0.06)',
+            }}
+          >
+            <p className="text-[11px] uppercase tracking-[0.15em] mb-5" style={{ color: '#9D6BFF' }}>
+              The MVP way
+            </p>
+            <div
+              className="rounded-xl p-5 flex items-center gap-4 mb-4"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.18), rgba(192,38,211,0.14))',
+                border: '1px solid rgba(124,58,237,0.30)',
+              }}
+            >
+              <div
+                className="w-14 h-14 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+              >
+                <Sparkles size={22} className="text-white" />
+              </div>
+              <div>
+                <p className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+                  MVP Central Hub
+                </p>
+                <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                  Every role. One workflow.
+                </p>
+              </div>
+            </div>
+            <ul className="flex flex-col gap-2">
+              {NEW_BENEFITS.map(b => (
+                <li key={b} className="flex items-start gap-2 text-[12.5px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  <Check size={12} className="flex-shrink-0 mt-1 text-[#9D6BFF]" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-5 text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+              From <span style={{ color: '#9D6BFF' }}>$49/mo</span> · 4 minutes per video
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+const OLD_STACK = [
+  'Writing tool',
+  'Image / thumbnail tool',
+  'Newsletter platform',
+  'Social scheduler',
+  'WordPress plugin',
+  'SEO add-on',
+  'Comparison generator',
+  'Brand kit tool',
+]
+
+const NEW_BENEFITS = [
+  'One subscription instead of eight.',
+  'Every output ready in minutes, not hours.',
+  'No copy-paste between platforms.',
+  'Same voice across blog, email, and social.',
+]
+
+/** Footer — closes the page with a clean lockup of navigation, legal,
+ *  and social links. Required before this preview can replace the live
+ *  root landing.
+ *
+ *  Layout: 4-column desktop (Product / Resources / Company / Legal),
+ *  collapsing to 2 columns on tablet and 1 column on mobile. Brand
+ *  lockup + tagline sit on top spanning the full width.
+ *
+ *  All links are placeholders pointing at expected routes — the user
+ *  can adjust each href once the actual destinations exist.
+ */
+function Footer() {
+  return (
+    <footer
+      className="px-6 lg:px-8 pt-16 pb-10 mt-12 border-t"
+      style={{ borderColor: 'var(--border)' }}
+    >
+      <div className="max-w-6xl mx-auto">
+        {/* Brand row */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pb-10 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
+                style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+              >
+                <Sparkles size={14} className="text-white" />
+              </span>
+              <span className="text-[16px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+                MVP Affiliate
+              </span>
+            </div>
+            <p className="text-[13px] max-w-md leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+              Your central content hub. One review video, every output, your voice — grounded in what you actually said.
+            </p>
+          </div>
+          <a
+            href="/signup"
+            className="px-4 py-2 rounded-lg text-[13px] font-medium text-white whitespace-nowrap"
+            style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+          >
+            Start free →
+          </a>
+        </div>
+
+        {/* Link columns */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 py-10">
+          <FooterCol
+            title="Product"
+            links={[
+              { label: 'Roles', href: '#roles' },
+              { label: 'Workflow', href: '#how-it-works' },
+              { label: 'Pricing', href: '#pricing' },
+              { label: 'FAQ', href: '#faq' },
+              { label: 'Watch demo', href: '#demo' },
+            ]}
+          />
+          <FooterCol
+            title="Resources"
+            links={[
+              { label: 'WordPress setup', href: '/setup' },
+              { label: 'Connection Doctor', href: '/setup/wp-doctor' },
+              { label: 'Help center', href: '/help' },
+              { label: 'Blog', href: '/blog' },
+            ]}
+          />
+          <FooterCol
+            title="Company"
+            links={[
+              { label: 'About', href: '/about' },
+              { label: 'Contact', href: '/contact' },
+              { label: 'Affiliates', href: '/affiliates' },
+            ]}
+          />
+          <FooterCol
+            title="Legal"
+            links={[
+              { label: 'Privacy', href: '/privacy' },
+              { label: 'Terms', href: '/terms' },
+              { label: 'Cookie policy', href: '/cookies' },
+            ]}
+          />
+        </div>
+
+        {/* Bottom strip — copyright + small print */}
+        <div className="pt-8 border-t flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
+          <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+            © {new Date().getFullYear()} MVP Affiliate. All rights reserved. Built by a creator, for creators.
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+            Your WordPress site stays yours, forever.
+          </p>
+        </div>
+      </div>
+    </footer>
+  )
+}
+
+function FooterCol({ title, links }: { title: string; links: { label: string; href: string }[] }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-[0.15em] mb-4 font-semibold" style={{ color: 'var(--text)' }}>
+        {title}
+      </p>
+      <ul className="flex flex-col gap-2.5">
+        {links.map(l => (
+          <li key={l.href}>
+            <a
+              href={l.href}
+              className="text-[13px] transition-colors"
+              style={{ color: 'var(--text-soft)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text)')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-soft)')}
+            >
+              {l.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Sticky bottom CTA bar — slim chrome that fades in after the user
+ *  scrolls past the hero. Always-visible "Start free trial" while they
+ *  read the rest of the page. Dismissible per-session via localStorage
+ *  so we don't nag users who've already declined once.
+ *
+ *  Why session-scoped (not permanent): a user who dismisses on Monday
+ *  and comes back Friday is a different context. Re-show.
+ *
+ *  Why fade-in instead of always-on: doesn't compete with the hero CTAs
+ *  while the user is still in the "what is this?" mode. Once they've
+ *  scrolled past the hero, the bar reinforces the offer without being
+ *  in the way.
+ */
+function StickyBottomBar() {
+  const [visible, setVisible] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    // Hide on first paint if user dismissed in this session.
+    if (sessionStorage.getItem('mvp-landing-cta-dismissed') === '1') {
+      setDismissed(true)
+      return
+    }
+    const onScroll = () => {
+      // Show once scrolled past ~80% of the viewport height (past hero
+      // on most screens). Hide when back near top.
+      const trigger = window.innerHeight * 0.8
+      setVisible(window.scrollY > trigger)
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  if (dismissed) return null
+
+  return (
+    <div
+      className="fixed bottom-0 left-0 right-0 z-30 transition-transform duration-300 pointer-events-none"
+      style={{
+        transform: visible ? 'translateY(0)' : 'translateY(100%)',
+      }}
+    >
+      <div
+        className="mx-auto max-w-4xl m-4 rounded-2xl backdrop-blur-md border px-4 py-3 flex items-center gap-3 pointer-events-auto"
+        style={{
+          // Slightly translucent so the page peeks through and the bar
+          // doesn't feel like a hard popup.
+          backgroundColor: 'rgba(14,14,17,0.85)',
+          borderColor: 'rgba(124,58,237,0.30)',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(124,58,237,0.10)',
+        }}
+      >
+        <span
+          className="inline-flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+        >
+          <Sparkles size={14} className="text-white" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-medium leading-tight" style={{ color: '#F5F5F7' }}>
+            Try MVP free — 5 posts, no card.
+          </p>
+          <p className="text-[11px] hidden sm:block" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            See if it fits your workflow before you pay a cent.
+          </p>
+        </div>
+        <a
+          href="/signup"
+          className="px-3.5 py-2 rounded-lg text-[12px] font-semibold text-white whitespace-nowrap inline-flex items-center gap-1.5"
+          style={{ background: 'linear-gradient(135deg, #7C3AED, #C026D3)' }}
+        >
+          Start free
+          <ArrowRight size={12} />
+        </a>
+        <button
+          onClick={() => {
+            sessionStorage.setItem('mvp-landing-cta-dismissed', '1')
+            setDismissed(true)
+          }}
+          className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 transition-colors hover:bg-white/10"
+          style={{ color: 'rgba(255,255,255,0.55)' }}
+          aria-label="Dismiss CTA"
+        >
+          <XIcon size={13} />
+        </button>
+      </div>
     </div>
   )
 }
