@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.38
+ * Version: 1.0.39
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.38');
+define('MVP_AFFILIATE_VERSION', '1.0.39');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -133,7 +133,16 @@ if (!function_exists('mvp_affiliate_activate')) {
         // strip on POST). 32 bytes = 64 hex chars — generous entropy and
         // immune to brute-force at the timing of a normal request.
         if (!get_option('affiliateos_proxy_secret')) {
-            update_option('affiliateos_proxy_secret', bin2hex(random_bytes(32)));
+            // random_bytes throws on hosts with no CSPRNG (rare but exists
+            // on stripped-down PHP builds). Fall back to wp_generate_password
+            // which is also cryptographically strong but tolerates a
+            // missing CSPRNG.
+            try {
+                $secret = bin2hex(random_bytes(32));
+            } catch (\Throwable $e) {
+                $secret = wp_generate_password(64, false);
+            }
+            update_option('affiliateos_proxy_secret', $secret);
         }
     }
 }
@@ -197,6 +206,20 @@ if (!function_exists('mvp_affiliate_indexnow_submit')) {
         if (!$key || empty($urls)) return;
         $host = wp_parse_url(home_url(), PHP_URL_HOST);
         if (!$host) return;
+        // Skip staging / localhost — IndexNow rejects those + we'd spam our
+        // own logs. Cover common dev hostnames (localhost, *.local, *.test,
+        // *.dev, *.lan, IP literals, .ngrok.io tunnels).
+        $h = strtolower($host);
+        if (
+            $h === 'localhost' ||
+            substr($h, -6) === '.local' ||
+            substr($h, -5) === '.test' ||
+            substr($h, -4) === '.dev' ||
+            substr($h, -4) === '.lan' ||
+            substr($h, -9) === '.ngrok.io' ||
+            substr($h, -12) === '.ngrok-free.app' ||
+            (bool) preg_match('/^\d+\.\d+\.\d+\.\d+$/', $h)
+        ) return;
         wp_remote_post('https://api.indexnow.org/indexnow', array(
             'headers'  => array('Content-Type' => 'application/json; charset=utf-8'),
             'body'     => wp_json_encode(array(
@@ -1547,6 +1570,12 @@ add_action('wp_footer', function () {
 // shown on every public front-end page.
 add_action('wp_footer', function () {
     if (is_admin()) return;
+    // Skip on login / password-recovery / activation flows — the widget
+    // has no business on those screens and was rendering on wp-login.php
+    // because is_admin() is false there. $GLOBALS['pagenow'] is set by
+    // WP core before wp_footer fires.
+    $pagenow = isset($GLOBALS['pagenow']) ? (string) $GLOBALS['pagenow'] : '';
+    if (in_array($pagenow, ['wp-login.php', 'wp-register.php', 'wp-activate.php', 'wp-signup.php'], true)) return;
     // Brand name renders inside two HTML <span>s, so esc_html. Site URL
     // renders inside a JS string literal so esc_js. Mixing these risks XSS
     // or broken JS, hence the two-escape split.

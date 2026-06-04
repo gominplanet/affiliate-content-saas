@@ -231,7 +231,7 @@ export default function BuyingGuidesPage() {
             {guides.map(g => (
               <div key={g.id} className="p-4 flex items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate" style={{ color: 'var(--fg)' }}>{g.title}</div>
+                  <div className="font-medium truncate" style={{ color: 'var(--fg)' }} title={g.title}>{g.title}</div>
                   <div className="text-xs mt-0.5" style={{ color: 'var(--fg-muted)' }}>
                     {g.topic && <span className="capitalize">{g.topic}</span>}
                     {g.topic && ' · '}
@@ -242,8 +242,10 @@ export default function BuyingGuidesPage() {
                   <Link
                     href={g.url}
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg"
                     style={{ background: 'var(--bg)', color: 'var(--fg)' }}
+                    title={g.title}
                   >
                     View <ExternalLink className="w-3.5 h-3.5" />
                   </Link>
