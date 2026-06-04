@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.35
+ * Version: 1.0.36
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.35');
+define('MVP_AFFILIATE_VERSION', '1.0.36');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -795,12 +795,35 @@ add_action('wp_footer', function () {
   html += '</div>';
   wrap.innerHTML = html;
 
-  // Prepend INSIDE the main content area so it sits above the post grid but
-  // BELOW the site header / logo banner. Try common selectors in order.
+  // Place the strip BELOW the "Pick of the Day" / Editor's Pick hero so the
+  // featured post stays the first thing visitors see. Try in priority order:
+  //   1. .mvp-pick / .mvp-pick-homepage — the theme-rendered Pick of the Day
+  //   2. First <article> inside main content — the homepage hero post
+  //   3. Fallback: top of main container
+  function placeAfter(el) {
+    if (el && el.parentNode) {
+      el.parentNode.insertBefore(wrap, el.nextSibling);
+      return true;
+    }
+    return false;
+  }
+
+  var pick = document.querySelector('.mvp-pick-homepage, .mvp-pick');
+  if (placeAfter(pick)) return;
+
+  var firstArticle = document.querySelector(
+    '.entry-content article:first-of-type, ' +
+    '.site-content article:first-of-type, ' +
+    'main article:first-of-type, ' +
+    '#content article:first-of-type, ' +
+    '#main article:first-of-type'
+  );
+  if (placeAfter(firstArticle)) return;
+
+  // Fallback — prepend to main container.
   var host = document.querySelector('.entry-content, .site-content, main, #content, #main')
           || document.body;
-  if (host === document.body) host.insertBefore(wrap, host.firstChild);
-  else host.insertBefore(wrap, host.firstChild);
+  host.insertBefore(wrap, host.firstChild);
 })();
 </script>
     <?php
