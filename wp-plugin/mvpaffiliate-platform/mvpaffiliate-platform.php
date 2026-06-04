@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.36
+ * Version: 1.0.37
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.36');
+define('MVP_AFFILIATE_VERSION', '1.0.37');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -476,6 +476,19 @@ add_filter('the_content', function ($content) {
   <span>Reviewed by <strong style="color:#1d1d1f"><?php echo esc_html($name); ?></strong></span>
   <span aria-hidden="true">·</span>
   <a href="<?php echo esc_url(home_url('/how-we-test/')); ?>" style="color:#7C3AED;text-decoration:none;font-weight:600">How we test →</a>
+  <?php
+  // Primary tag link — surfaces the topic hub. Use the first tag that
+  // isn't the "buying-guide" tag (which is a content-format marker, not
+  // a topic). Falls back silently if the post has no tags.
+  $post_tags = wp_get_post_tags(get_the_ID());
+  $primary_tag = null;
+  foreach ($post_tags as $t) {
+      if ($t->slug !== 'buying-guide' && $t->slug !== 'comparison') { $primary_tag = $t; break; }
+  }
+  if ($primary_tag): ?>
+    <span aria-hidden="true">·</span>
+    <a href="<?php echo esc_url(get_tag_link($primary_tag->term_id)); ?>" style="color:#7C3AED;text-decoration:none;font-weight:600">More <?php echo esc_html($primary_tag->name); ?> →</a>
+  <?php endif; ?>
 </div>
 
 <div class="gr-author-bio-card" style="margin:24px 0 8px;padding:20px;border:1px solid #e5e5e7;border-radius:8px;background:#fafafa;display:flex;gap:18px;align-items:flex-start">
@@ -960,6 +973,173 @@ add_action('init', function () {
     flush_rewrite_rules();
     update_option('gr_how_we_test_flushed_v1', 1);
 }, 99);
+
+// ─── 7i. Topic hub on tag + category archive pages ───────────────────────────
+//
+// Every tag (and primary category) archive on the site becomes a "Best
+// [topic]" hub page. PCMag / Tom's Guide / TechRadar each have their hub
+// pages as the highest-traffic non-review URLs — they aggregate every
+// related review and surface the buying guide for the category.
+//
+// What this renders BEFORE the archive's normal post grid:
+//   - Editorial header (topic title + count + description)
+//   - Buying-guide promo card IF a guide tagged 'buying-guide' has the
+//     matching seo_keyword or topic term in its title
+//
+// Injected via wp_footer JS so theme-independent — works on Kadence /
+// Astra / GeneratePress / any classic theme. Inserts above the first
+// .archive-description / .page-header / first <article> in main.
+add_action('wp_footer', function () {
+    if (!(is_tag() || is_category())) return;
+    $term = get_queried_object();
+    if (!$term || !isset($term->name)) return;
+
+    $count       = isset($term->count) ? intval($term->count) : 0;
+    $description = isset($term->description) ? wp_strip_all_tags($term->description) : '';
+    $name        = (string) $term->name;
+    $slug        = (string) ($term->slug ?? '');
+
+    // Look up a buying guide that's likely about this topic. The guide
+    // generator tags every guide with 'buying-guide' and writes the topic
+    // into the title ("Best <topic> for 2026"). Match by case-insensitive
+    // substring on the term name.
+    $guide_url = '';
+    $guide_title = '';
+    $guide_img = '';
+    if ($slug !== 'buying-guide') {
+        // Resolve the 'buying-guide' tag.
+        $bg_tag = get_term_by('slug', 'buying-guide', 'post_tag');
+        if ($bg_tag) {
+            $guide_q = new WP_Query([
+                'post_type'           => 'post',
+                'tag_id'              => $bg_tag->term_id,
+                'posts_per_page'      => 10,
+                's'                   => $name, // fuzzy match by title
+                'ignore_sticky_posts' => true,
+                'no_found_rows'       => true,
+            ]);
+            if ($guide_q->have_posts()) {
+                $best = $guide_q->posts[0];
+                $guide_url   = get_permalink($best->ID);
+                $guide_title = get_the_title($best->ID);
+                $guide_img   = get_the_post_thumbnail_url($best->ID, 'medium') ?: '';
+            }
+            wp_reset_postdata();
+        }
+    }
+
+    $hub_label = is_tag() ? 'Topic' : 'Category';
+    ?>
+<style>
+  .gr-topic-hub {
+    max-width: 1200px; margin: 24px auto 32px; padding: 0 20px;
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .gr-topic-hub .gr-th-eyebrow {
+    font-size: 11px; font-weight: 800; color: #7C3AED;
+    text-transform: uppercase; letter-spacing: 1px; margin: 0 0 8px;
+  }
+  .gr-topic-hub .gr-th-title {
+    font-size: 32px; font-weight: 800; line-height: 1.1; margin: 0 0 8px;
+    color: var(--global-palette1, #1d1d1f);
+  }
+  .gr-topic-hub .gr-th-meta {
+    font-size: 14px; color: #6e6e73; margin: 0 0 16px;
+  }
+  .gr-topic-hub .gr-th-desc {
+    font-size: 15px; line-height: 1.6; color: #3a3a3c; margin: 0 0 24px;
+    max-width: 720px;
+  }
+  .gr-topic-hub .gr-th-guide {
+    display: flex; gap: 16px; padding: 16px;
+    background: linear-gradient(135deg, #f5f0ff 0%, #ede7ff 100%);
+    border: 1px solid #d4c4ff; border-radius: 12px;
+    text-decoration: none; color: inherit; transition: transform .15s, box-shadow .15s;
+    margin: 0 0 24px;
+  }
+  .gr-topic-hub .gr-th-guide:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(124,58,237,.15); }
+  .gr-topic-hub .gr-th-guide-image {
+    flex-shrink: 0; width: 140px; aspect-ratio: 16/9; border-radius: 8px;
+    background: #fff center/cover no-repeat;
+  }
+  .gr-topic-hub .gr-th-guide-body { min-width: 0; flex: 1; padding: 4px 0; }
+  .gr-topic-hub .gr-th-guide-eyebrow {
+    font-size: 10px; font-weight: 800; color: #7C3AED;
+    text-transform: uppercase; letter-spacing: .8px; margin: 0 0 4px;
+  }
+  .gr-topic-hub .gr-th-guide-title {
+    font-size: 17px; font-weight: 700; line-height: 1.3; margin: 0 0 6px;
+    color: #1d1d1f;
+  }
+  .gr-topic-hub .gr-th-guide-cta {
+    font-size: 13px; font-weight: 600; color: #7C3AED;
+  }
+  @media (max-width: 600px) {
+    .gr-topic-hub .gr-th-title { font-size: 24px; }
+    .gr-topic-hub .gr-th-guide-image { width: 96px; }
+  }
+</style>
+<script>
+(function () {
+  var data = <?php echo wp_json_encode([
+      'eyebrow'      => $hub_label,
+      'title'        => $name,
+      'count'        => $count,
+      'description'  => $description,
+      'guideUrl'     => $guide_url,
+      'guideTitle'   => $guide_title,
+      'guideImage'   => $guide_img,
+  ]); ?>;
+  if (!data || !data.title) return;
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  var html = '<div class="gr-topic-hub">'
+    + '<p class="gr-th-eyebrow">' + escapeHtml(data.eyebrow) + '</p>'
+    + '<h1 class="gr-th-title">Best ' + escapeHtml(data.title) + ' reviews</h1>'
+    + '<p class="gr-th-meta">' + escapeHtml(String(data.count)) + ' review' + (data.count === 1 ? '' : 's') + ' in this topic</p>';
+  if (data.description) {
+    html += '<p class="gr-th-desc">' + escapeHtml(data.description) + '</p>';
+  }
+  if (data.guideUrl && data.guideTitle) {
+    var img = data.guideImage ? ('background-image:url(' + data.guideImage.replace(/"/g, '%22') + ')') : '';
+    html += '<a class="gr-th-guide" href="' + data.guideUrl + '">'
+         +    '<div class="gr-th-guide-image" style="' + img + '"></div>'
+         +    '<div class="gr-th-guide-body">'
+         +      '<p class="gr-th-guide-eyebrow">✦ Buying guide</p>'
+         +      '<p class="gr-th-guide-title">' + escapeHtml(data.guideTitle) + '</p>'
+         +      '<p class="gr-th-guide-cta">See our top picks →</p>'
+         +    '</div>'
+         +  '</a>';
+  }
+  html += '</div>';
+  var wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  var hub = wrap.firstChild;
+
+  // Place ABOVE the post grid. Try in order:
+  // 1. .archive-description / .page-header / .term-description (replace title)
+  // 2. First article in main
+  // 3. Top of main container
+  var anchor = document.querySelector('.archive-description, .page-header, .term-description');
+  if (anchor && anchor.parentNode) {
+    anchor.parentNode.insertBefore(hub, anchor);
+    anchor.style.display = 'none'; // hide the theme's default archive header (we replaced it)
+    return;
+  }
+  var firstArticle = document.querySelector('.entry-content article:first-of-type, main article:first-of-type, .site-content article:first-of-type, #content article:first-of-type');
+  if (firstArticle && firstArticle.parentNode) {
+    firstArticle.parentNode.insertBefore(hub, firstArticle);
+    return;
+  }
+  var host = document.querySelector('.entry-content, .site-content, main, #content, #main') || document.body;
+  host.insertBefore(hub, host.firstChild);
+})();
+</script>
+    <?php
+});
 
 // ─── 8. Query fixes ───────────────────────────────────────────────────────────
 add_action('pre_get_posts', function (WP_Query $query) {
