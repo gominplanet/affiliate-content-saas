@@ -222,7 +222,7 @@ export default function BuyingGuidesPage() {
               <Lock className="w-6 h-6" style={{ color: '#7C3AED' }} />
             </div>
             <div className="flex-1">
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides — locked</h1>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides (locked)</h1>
               <p className="text-sm mt-2" style={{ color: 'var(--fg-muted)' }}>
                 The round-up format needs a wide catalogue to produce diverse, useful guides. Unlocks automatically
                 once your live blog has <strong>{locked.threshold} published posts</strong>.

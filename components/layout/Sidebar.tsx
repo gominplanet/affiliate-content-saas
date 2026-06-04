@@ -637,17 +637,18 @@ export default function Sidebar({ email, wpSiteUrl: wpSiteUrlProp, showBuyingGui
               <select
                 value={viewAs}
                 onChange={(e) => {
-                  const v = e.target.value as 'admin' | 'pro' | 'creator' | 'trial'
+                  const v = e.target.value as 'admin' | 'pro' | 'studio' | 'creator' | 'trial'
                   setViewAs(v)
                   setViewAsTier(v === 'admin' ? null : v)
                   // Reload so every page re-reads tier through effectiveTier().
                   window.location.reload()
                 }}
                 className="w-full text-xs rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] px-2 py-1.5"
-                title="Preview the UI as each tier sees it. Visual only — your real admin access is unchanged."
+                title="Preview the UI as each tier sees it. Visual only, your real admin access is unchanged."
               >
                 <option value="admin">My view (Admin)</option>
                 <option value="pro">Pro</option>
+                <option value="studio">Studio</option>
                 <option value="creator">Creator</option>
                 <option value="trial">Free Trial</option>
               </select>

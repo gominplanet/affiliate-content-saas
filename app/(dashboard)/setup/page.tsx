@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { metaEnabled, socialEnabled, type GatedSocialPlatform } from '@/lib/feature-flags'
+import { effectiveTier } from '@/lib/view-as'
 import { Suspense } from 'react'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import WordPressSitesManager from '@/components/dashboard/WordPressSitesManager'
@@ -895,14 +896,21 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     // gating moved to the Connect button itself so non-admin users see the
     // feature exists (and that it's locked) instead of it being silently
     // hidden. The per-platform unlock state below controls whether each
-    // Connect button is live or shown as a disabled "Admin only" pill.
+    // Connect button is live or shown as a disabled "Coming soon" pill.
     setMetaUnlocked(true)
+    // Honour the admin View-as override: if the real tier is admin but
+    // the admin has switched to "View as Pro/Creator/Studio/Trial" in the
+    // sidebar, evaluate the social locks against the preview tier so the
+    // Coming-soon banner + locked pills render the way a paying user
+    // would see them. effectiveTier() collapses to the real tier for
+    // non-admins (no preview applies).
+    const effTier = effectiveTier(row?.tier as string | null | undefined)
     setSocialLocks({
-      facebook:  socialEnabled('facebook',  { tier: row?.tier, email: user.email }),
-      instagram: socialEnabled('instagram', { tier: row?.tier, email: user.email }),
-      threads:   socialEnabled('threads',   { tier: row?.tier, email: user.email }),
-      tiktok:    socialEnabled('tiktok',    { tier: row?.tier, email: user.email }),
-      pinterest: socialEnabled('pinterest', { tier: row?.tier, email: user.email }),
+      facebook:  socialEnabled('facebook',  { tier: effTier, email: user.email }),
+      instagram: socialEnabled('instagram', { tier: effTier, email: user.email }),
+      threads:   socialEnabled('threads',   { tier: effTier, email: user.email }),
+      tiktok:    socialEnabled('tiktok',    { tier: effTier, email: user.email }),
+      pinterest: socialEnabled('pinterest', { tier: effTier, email: user.email }),
     })
     if (row) {
       setYoutubeChannelId(row.youtube_channel_id ?? '')

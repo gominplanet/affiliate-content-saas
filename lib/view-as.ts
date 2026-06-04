@@ -18,7 +18,10 @@ const EVENT = 'mvp:view-as-changed'
 export function getViewAsTier(): Tier | null {
   if (typeof window === 'undefined') return null
   const v = window.localStorage.getItem(KEY)
-  return v === 'trial' || v === 'creator' || v === 'pro' || v === 'admin' ? v : null
+  // Studio is a real tier between Creator + Pro. Was missing here, so a
+  // 'studio' selection would round-trip to null and silently behave as
+  // 'My view (Admin)'.
+  return v === 'trial' || v === 'creator' || v === 'studio' || v === 'pro' || v === 'admin' ? v : null
 }
 
 export function setViewAsTier(t: Tier | null) {
