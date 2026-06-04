@@ -16,11 +16,14 @@
 import { useEffect, useState, FormEvent } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock } from 'lucide-react'
+import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface Suggestion { topic: string; count: number }
 interface GuideRow { id: string; title: string; url: string | null; topic: string | null; created_at: string }
+interface PreviewPick { wordpress_url: string; title: string; excerpt: string | null; image: string | null; label: string }
+
+type Mode = 'auto' | 'review'
 
 export default function BuyingGuidesPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
@@ -33,6 +36,27 @@ export default function BuyingGuidesPage() {
   // when the user's live WP catalogue is below 500 posts. We render a
   // locked card instead of the topic input.
   const [locked, setLocked] = useState<{ threshold: number; current: number } | null>(null)
+  // FULL AUTO vs LET ME SEE — review the AI's picks before publishing.
+  // Persisted in localStorage so the preference sticks across visits.
+  const [mode, setMode] = useState<Mode>('review')
+  // Two-phase preview state. When the user (in review mode) submits a
+  // topic, the server returns picks; we render them as editable cards
+  // until the user clicks Publish.
+  const [previewPicks, setPreviewPicks] = useState<PreviewPick[] | null>(null)
+  const [previewTopic, setPreviewTopic] = useState<string>('')
+
+  // Load mode pref once on mount.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('mvp_bg_mode')
+      if (saved === 'auto' || saved === 'review') setMode(saved)
+    } catch { /* localStorage unavailable */ }
+  }, [])
+
+  function updateMode(next: Mode) {
+    setMode(next)
+    try { localStorage.setItem('mvp_bg_mode', next) } catch { /* ignore */ }
+  }
 
   useEffect(() => { void refresh() }, [])
 
@@ -60,6 +84,9 @@ export default function BuyingGuidesPage() {
     }
   }
 
+  /** Phase 1: run the picker. If mode === 'auto', the server then writes
+   *  + publishes in the same request (preview flag false). If mode ===
+   *  'review', the server returns picks for the user to approve. */
   async function generate(t: string) {
     const cleaned = t.trim()
     if (!cleaned) {
@@ -67,25 +94,78 @@ export default function BuyingGuidesPage() {
       return
     }
     setGenerating(true)
+    setPreviewPicks(null)
     try {
       const r = await fetch('/api/buying-guides', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: cleaned }),
+        body: JSON.stringify({ topic: cleaned, preview: mode === 'review' }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'Generation failed')
-      toast.success(`Published "${j.title}"`, {
-        action: { label: 'View', onClick: () => window.open(j.url, '_blank') },
-        duration: 12_000,
-      })
-      setTopic('')
-      void refresh()
+      if (j.preview) {
+        // LET ME SEE — render the picks for approval.
+        setPreviewPicks(j.picks || [])
+        setPreviewTopic(j.topic || cleaned)
+      } else {
+        // FULL AUTO — published already.
+        toast.success(`Published "${j.title}"`, {
+          action: { label: 'View', onClick: () => window.open(j.url, '_blank') },
+          duration: 12_000,
+        })
+        setTopic('')
+        void refresh()
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Generation failed')
     } finally {
       setGenerating(false)
     }
+  }
+
+  /** Phase 2: user approved the picks (possibly modified). Server skips
+   *  the picker and runs writer + publish on the approved set. */
+  async function publishApproved() {
+    if (!previewPicks || previewPicks.length < 3) {
+      toast.error('Keep at least 3 picks to publish')
+      return
+    }
+    setGenerating(true)
+    try {
+      const r = await fetch('/api/buying-guides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: previewTopic,
+          approvedPicks: previewPicks.map(p => ({ wordpress_url: p.wordpress_url, label: p.label })),
+        }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error || 'Publish failed')
+      toast.success(`Published "${j.title}"`, {
+        action: { label: 'View', onClick: () => window.open(j.url, '_blank') },
+        duration: 12_000,
+      })
+      setTopic('')
+      setPreviewPicks(null)
+      setPreviewTopic('')
+      void refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Publish failed')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  function removePick(url: string) {
+    setPreviewPicks(prev => prev ? prev.filter(p => p.wordpress_url !== url) : prev)
+  }
+  function updatePickLabel(url: string, label: string) {
+    setPreviewPicks(prev => prev ? prev.map(p => p.wordpress_url === url ? { ...p, label } : p) : prev)
+  }
+  function discardPreview() {
+    setPreviewPicks(null)
+    setPreviewTopic('')
   }
 
   function onSubmit(e: FormEvent) {
@@ -143,12 +223,52 @@ export default function BuyingGuidesPage() {
             <BookOpen className="w-6 h-6" style={{ color: '#7C3AED' }} />
           </div>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides</h1>
-            <p className="text-sm mt-1.5" style={{ color: 'var(--fg-muted)' }}>
-              Generate a long-form &ldquo;Best [topic] for {new Date().getUTCFullYear()}&rdquo; round-up from your published reviews.
-              The AI picks 5–7 best-fit reviews, slots them as Best Overall / Best Budget / Best for X, writes the guide, and publishes to your blog tagged{' '}
-              <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>buying-guide</span>.
-            </p>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--fg)' }}>Buying Guides</h1>
+                <p className="text-sm mt-1.5" style={{ color: 'var(--fg-muted)' }}>
+                  Generate a long-form &ldquo;Best [topic] for {new Date().getUTCFullYear()}&rdquo; round-up from your published reviews.
+                  The AI picks 5–7 best-fit reviews, slots them as Best Overall / Best Budget / Best for X, writes the guide, and publishes to your blog tagged{' '}
+                  <span className="font-mono text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg)', color: 'var(--fg)' }}>buying-guide</span>.
+                </p>
+              </div>
+              {/* Mode toggle — FULL AUTO publishes immediately; LET ME SEE
+                  shows picks first so you can edit labels or drop ones you
+                  don't like before the writer runs. */}
+              <div
+                role="radiogroup"
+                aria-label="Generation mode"
+                className="inline-flex items-center rounded-lg border p-1 text-xs font-semibold flex-shrink-0"
+                style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+              >
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === 'auto'}
+                  onClick={() => updateMode('auto')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition"
+                  style={{
+                    background: mode === 'auto' ? '#7C3AED' : 'transparent',
+                    color: mode === 'auto' ? '#fff' : 'var(--fg-muted)',
+                  }}
+                >
+                  <Zap className="w-3.5 h-3.5" /> Full auto
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === 'review'}
+                  onClick={() => updateMode('review')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md transition"
+                  style={{
+                    background: mode === 'review' ? '#7C3AED' : 'transparent',
+                    color: mode === 'review' ? '#fff' : 'var(--fg-muted)',
+                  }}
+                >
+                  <Eye className="w-3.5 h-3.5" /> Let me see
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -179,8 +299,96 @@ export default function BuyingGuidesPage() {
 
         <p className="text-xs mt-3" style={{ color: 'var(--fg-muted)' }}>
           {loading ? 'Scanning your library…' : `${reviewCount} published reviews in your catalogue.`}
+          {mode === 'auto' && <span className="ml-2" style={{ color: '#dc2626' }}>· Full auto mode publishes immediately.</span>}
         </p>
       </div>
+
+      {/* ── LET ME SEE preview cards (only shown after picker runs) ─ */}
+      {previewPicks && previewPicks.length > 0 && (
+        <div className="rounded-xl border p-6" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
+          <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+            <div>
+              <h2 className="text-lg font-bold" style={{ color: 'var(--fg)' }}>
+                Review the AI&rsquo;s picks
+              </h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--fg-muted)' }}>
+                Topic: <strong>&ldquo;{previewTopic}&rdquo;</strong> · {previewPicks.length} pick{previewPicks.length === 1 ? '' : 's'} · edit labels or remove any you don&rsquo;t want before publishing.
+              </p>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <Button
+                onClick={discardPreview}
+                disabled={generating}
+                className="px-4"
+                style={{ background: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--border)' }}
+              >
+                Discard
+              </Button>
+              <Button
+                onClick={() => void publishApproved()}
+                disabled={generating || previewPicks.length < 3}
+                className="px-5 whitespace-nowrap"
+                style={{ background: '#7C3AED', color: '#fff' }}
+              >
+                {generating ? (
+                  <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Writing…</>
+                ) : (
+                  <><CheckCircle2 className="w-4 h-4 mr-2" /> Publish these {previewPicks.length} picks</>
+                )}
+              </Button>
+            </div>
+          </div>
+          {previewPicks.length < 3 && (
+            <p className="text-xs mb-3" style={{ color: '#dc2626' }}>
+              Need at least 3 picks to publish.
+            </p>
+          )}
+          <div className="grid gap-3">
+            {previewPicks.map((p, i) => (
+              <div
+                key={p.wordpress_url}
+                className="flex items-start gap-3 rounded-lg border p-3"
+                style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+              >
+                <div className="flex-shrink-0 w-20 h-14 rounded-md overflow-hidden bg-gray-100" style={{
+                  backgroundImage: p.image ? `url(${p.image})` : undefined,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold" style={{ background: 'rgba(124,58,237,.12)', color: '#7C3AED' }}>
+                      {i + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={p.label}
+                      onChange={e => updatePickLabel(p.wordpress_url, e.target.value.slice(0, 60))}
+                      disabled={generating}
+                      className="flex-1 text-xs font-bold uppercase tracking-wider px-2 py-1 rounded outline-none border"
+                      style={{ background: 'var(--panel)', color: '#7C3AED', borderColor: 'var(--border)' }}
+                    />
+                  </div>
+                  <div className="font-medium text-sm truncate" style={{ color: 'var(--fg)' }} title={p.title}>{p.title}</div>
+                  {p.excerpt && (
+                    <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--fg-muted)' }}>{p.excerpt}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removePick(p.wordpress_url)}
+                  disabled={generating}
+                  className="flex-shrink-0 p-1.5 rounded-md hover:bg-red-50 disabled:opacity-40"
+                  title="Remove this pick"
+                  aria-label="Remove pick"
+                >
+                  <X className="w-4 h-4" style={{ color: '#dc2626' }} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Suggested topics (from clustering) ─────────────────────── */}
       <div>

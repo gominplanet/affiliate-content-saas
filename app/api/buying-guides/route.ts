@@ -428,11 +428,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Buying guides require the Pro tier.', code: 'tier_not_allowed' }, { status: 403 })
   }
 
-  let body: { topic?: string }
+  // POST accepts three flows:
+  //   1. { topic }                            → FULL AUTO: pick + write + publish
+  //   2. { topic, preview: true }             → LET ME SEE step 1: run picker only, return picks
+  //   3. { topic, approvedPicks: [{ wordpress_url, label }] }
+  //                                           → LET ME SEE step 2: skip picker, use these,
+  //                                             run writer + publish
+  let body: { topic?: string; preview?: boolean; approvedPicks?: Array<{ wordpress_url?: string; label?: string }> }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
   const topic = (body.topic || '').trim()
   if (!topic) return NextResponse.json({ error: 'topic required' }, { status: 400 })
   if (topic.length > 200) return NextResponse.json({ error: 'topic too long' }, { status: 400 })
+  const previewMode = body.preview === true
+  const approvedPicksInput = Array.isArray(body.approvedPicks) ? body.approvedPicks : null
 
   const reviews = await loadReviews(supabase, user.id)
   if (reviews.length < 3) {
@@ -476,33 +484,74 @@ Rules:
 - NEVER use the word "honest".`
 
   let picks: Array<{ review: ReviewRow; label: string }> = []
-  try {
-    const pickerMsg = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 800,
-      messages: [{ role: 'user', content: pickerPrompt }],
-    })
-    recordAnthropicUsage(pickerMsg, { userId: user.id, tier, feature: 'buying_guide_picker', model: 'claude-haiku-4-5-20251001' })
-    const text = (pickerMsg.content[0] as { type: string; text: string })?.text || ''
-    const m = text.match(/\{[\s\S]*\}/)
-    if (m) {
-      const parsed = JSON.parse(m[0]) as { picks?: Array<{ index?: number; label?: string }> }
-      picks = (parsed.picks || [])
-        .map(p => {
-          const r = typeof p.index === 'number' ? reviews[p.index] : null
-          if (!r) return null
-          return { review: r, label: (p.label || 'Best Overall').slice(0, 60) }
-        })
-        .filter(Boolean) as Array<{ review: ReviewRow; label: string }>
-    }
-  } catch (err) {
-    return NextResponse.json({ error: `Picker failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
-  }
 
-  if (picks.length < 3) {
-    return NextResponse.json({ error: `Couldn't find 3 reviews matching "${topic}". Try a broader topic or add more reviews first.` }, { status: 400 })
+  if (approvedPicksInput && approvedPicksInput.length > 0) {
+    // LET ME SEE step 2 — user already approved a set of picks. Skip
+    // the Haiku picker pass entirely. Resolve approved picks against
+    // the catalogue by wordpress_url; reject if any pick can't be
+    // matched (a review may have been deleted between preview + publish).
+    const byUrl = new Map<string, ReviewRow>()
+    for (const r of reviews) {
+      if (r.wordpress_url) byUrl.set(r.wordpress_url.toLowerCase(), r)
+    }
+    const resolved: Array<{ review: ReviewRow; label: string }> = []
+    for (const ap of approvedPicksInput) {
+      const url = (ap.wordpress_url || '').toLowerCase().trim()
+      if (!url) continue
+      const r = byUrl.get(url)
+      if (!r) continue
+      resolved.push({ review: r, label: ((ap.label as string) || 'Best Overall').toString().slice(0, 60) })
+    }
+    if (resolved.length < 3) {
+      return NextResponse.json({ error: 'Need at least 3 approved picks to publish.', code: 'too_few_picks' }, { status: 400 })
+    }
+    picks = resolved.slice(0, 7)
+  } else {
+    // FULL AUTO / LET ME SEE step 1 — run the Haiku picker pass.
+    try {
+      const pickerMsg = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 800,
+        messages: [{ role: 'user', content: pickerPrompt }],
+      })
+      recordAnthropicUsage(pickerMsg, { userId: user.id, tier, feature: 'buying_guide_picker', model: 'claude-haiku-4-5-20251001' })
+      const text = (pickerMsg.content[0] as { type: string; text: string })?.text || ''
+      const m = text.match(/\{[\s\S]*\}/)
+      if (m) {
+        const parsed = JSON.parse(m[0]) as { picks?: Array<{ index?: number; label?: string }> }
+        picks = (parsed.picks || [])
+          .map(p => {
+            const r = typeof p.index === 'number' ? reviews[p.index] : null
+            if (!r) return null
+            return { review: r, label: (p.label || 'Best Overall').slice(0, 60) }
+          })
+          .filter(Boolean) as Array<{ review: ReviewRow; label: string }>
+      }
+    } catch (err) {
+      return NextResponse.json({ error: `Picker failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 500 })
+    }
+
+    if (picks.length < 3) {
+      return NextResponse.json({ error: `Couldn't find 3 reviews matching "${topic}". Try a broader topic or add more reviews first.` }, { status: 400 })
+    }
+    picks = picks.slice(0, 7)
+
+    // LET ME SEE step 1 — return picks for user approval, skip writer + publish.
+    if (previewMode) {
+      return NextResponse.json({
+        ok: true,
+        preview: true,
+        topic,
+        picks: picks.map(p => ({
+          wordpress_url: p.review.wordpress_url,
+          title: p.review.title,
+          excerpt: p.review.excerpt,
+          image: p.review.youtube_videos?.thumbnail_url || null,
+          label: p.label,
+        })),
+      })
+    }
   }
-  picks = picks.slice(0, 7)
 
   // ── 2. Sonnet: write the guide HTML ──────────────────────────────────────
   const year = new Date().getUTCFullYear()
