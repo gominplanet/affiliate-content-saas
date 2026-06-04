@@ -9,7 +9,7 @@ import {
   Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin, Lock,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { metaEnabled } from '@/lib/feature-flags'
+import { metaEnabled, socialEnabled, type GatedSocialPlatform } from '@/lib/feature-flags'
 import { Suspense } from 'react'
 import { TutorialVideo } from '@/components/TutorialVideo'
 import WordPressSitesManager from '@/components/dashboard/WordPressSitesManager'
@@ -798,7 +798,22 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [youtubeChannelId, setYoutubeChannelId] = useState('')
   // Meta cards are hidden from the public while under review, but shown to
   // admins + the reviewer test account (resolved from tier/email in load()).
-  const [metaUnlocked, setMetaUnlocked] = useState(metaEnabled())
+  // Always true — the per-platform locks below are what actually gate the
+  // Connect CTAs. Kept as state for backwards-compat with the three sites
+  // below that wrap card chrome in {metaUnlocked && (...)}, but no longer
+  // hides anything.
+  const [metaUnlocked, setMetaUnlocked] = useState(true)
+  // Per-platform admin gate for the FIVE social integrations the user wants
+  // locked down (FB / IG / Threads / TikTok / Pinterest). Default to false
+  // until load() resolves the user's tier + email; admin unlocks all five,
+  // Meta App-Review reviewer email unlocks the three Meta ones.
+  const [socialLocks, setSocialLocks] = useState<Record<GatedSocialPlatform, boolean>>({
+    facebook: false, instagram: false, threads: false, tiktok: false, pinterest: false,
+  })
+  const isUnlocked = (p: GatedSocialPlatform) => socialLocks[p]
+  // Style helper for the disabled card chrome — keeps the card visible but
+  // mutes the connect CTA so users see the feature exists and what unlocks it.
+  const lockedCta = { opacity: 0.55, pointerEvents: 'none' as const, cursor: 'not-allowed' as const }
   const [facebook, setFacebook] = useState({ connected: false, pageName: '', pageId: '', pages: [] as { id: string; name: string }[] })
   const [fbDisconnecting, setFbDisconnecting] = useState(false)
   const [fbNotice, setFbNotice] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -875,7 +890,19 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     const { data } = await supabase.from('integrations').select('*').eq('user_id', user.id).single()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = data as any
-    setMetaUnlocked(metaEnabled({ tier: row?.tier, email: user.email }))
+    // Card visibility for Meta integrations: ALWAYS render the cards now —
+    // gating moved to the Connect button itself so non-admin users see the
+    // feature exists (and that it's locked) instead of it being silently
+    // hidden. The per-platform unlock state below controls whether each
+    // Connect button is live or shown as a disabled "Admin only" pill.
+    setMetaUnlocked(true)
+    setSocialLocks({
+      facebook:  socialEnabled('facebook',  { tier: row?.tier, email: user.email }),
+      instagram: socialEnabled('instagram', { tier: row?.tier, email: user.email }),
+      threads:   socialEnabled('threads',   { tier: row?.tier, email: user.email }),
+      tiktok:    socialEnabled('tiktok',    { tier: row?.tier, email: user.email }),
+      pinterest: socialEnabled('pinterest', { tier: row?.tier, email: user.email }),
+    })
     if (row) {
       setYoutubeChannelId(row.youtube_channel_id ?? '')
       setWpUrl(row.wordpress_url ?? '')
@@ -1484,13 +1511,20 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <a
-              href="/api/auth/facebook"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
-              style={{ backgroundColor: '#1877F2' }}
-            >
-              <Facebook size={14} /> Connect Facebook
-            </a>
+            {isUnlocked('facebook') ? (
+              <a
+                href="/api/auth/facebook"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
+                style={{ backgroundColor: '#1877F2' }}
+              >
+                <Facebook size={14} /> Connect Facebook
+              </a>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#1877F2' }} title="Admin-only while we restructure Pro">
+                <Facebook size={14} /> Connect Facebook
+                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+              </div>
+            )}
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
               You&apos;ll be sent to Facebook to grant access — on that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post.
             </p>
@@ -1536,13 +1570,20 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </button>
           </div>
         ) : (
-          <a
-            href="/api/auth/pinterest"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
-            style={{ backgroundColor: '#E60023' }}
-          >
-            <Pin size={14} /> Connect Pinterest
-          </a>
+          isUnlocked('pinterest') ? (
+            <a
+              href="/api/auth/pinterest"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
+              style={{ backgroundColor: '#E60023' }}
+            >
+              <Pin size={14} /> Connect Pinterest
+            </a>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#E60023' }} title="Admin-only while we restructure Pro">
+              <Pin size={14} /> Connect Pinterest
+              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+            </div>
+          )
         )}
       </div>
 
@@ -1574,12 +1615,19 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <a
-              href="/api/auth/threads"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors bg-black hover:bg-[#1d1d1f]"
-            >
-              <MessageCircle size={14} /> Connect Threads
-            </a>
+            {isUnlocked('threads') ? (
+              <a
+                href="/api/auth/threads"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors bg-black hover:bg-[#1d1d1f]"
+              >
+                <MessageCircle size={14} /> Connect Threads
+              </a>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-black" style={lockedCta} title="Admin-only while we restructure Pro">
+                <MessageCircle size={14} /> Connect Threads
+                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1846,16 +1894,24 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </p>
           </div>
         ) : (
-          <a
-            href="/api/auth/instagram"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-              <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/>
-            </svg>
-            Connect Instagram
-          </a>
+          isUnlocked('instagram') ? (
+            <a
+              href="/api/auth/instagram"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/>
+              </svg>
+              Connect Instagram
+            </a>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)' }} title="Admin-only while we restructure Pro">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 5.838c3.405 0 6.162 2.76 6.162 6.162 0 3.405-2.76 6.162-6.162 6.162-3.405 0-6.162-2.76-6.162-6.162 0-3.405 2.76-6.162 6.162-6.162zM12 16c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm7.846-10.405c0 .795-.646 1.44-1.44 1.44-.795 0-1.44-.646-1.44-1.44 0-.794.646-1.439 1.44-1.439.793-.001 1.44.645 1.44 1.439z"/></svg>
+              Connect Instagram
+              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+            </div>
+          )
         )}
       </div>
       )}
@@ -1904,15 +1960,23 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             </p>
           </div>
         ) : (
-          <a
-            href="/api/auth/tiktok"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-[#000000] hover:bg-[#1c1c1e] transition-colors"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
-              <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" />
-            </svg>
-            Connect TikTok
-          </a>
+          isUnlocked('tiktok') ? (
+            <a
+              href="/api/auth/tiktok"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-[#000000] hover:bg-[#1c1c1e] transition-colors"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" />
+              </svg>
+              Connect TikTok
+            </a>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-[#000000]" style={lockedCta} title="Admin-only while we restructure Pro">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5.8 20.1a6.34 6.34 0 0 0 10.86-4.43V8.45a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1.84-.34z" /></svg>
+              Connect TikTok
+              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Admin only</span>
+            </div>
+          )
         )}
       </div>
 

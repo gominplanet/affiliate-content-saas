@@ -19,8 +19,20 @@
  * Flip back to "true" (or remove) once the app is approved + Live.
  */
 
-/** Temporary App-Review allowlist — empty this (and flip NEXT_PUBLIC_META_ENABLED
- *  to true) once the app is approved for everyone. Lowercased. */
+/**
+ * Meta App-Review test account allowlist.
+ *
+ * Submitted to Meta as the "Test Account" in the app review form so the
+ * reviewer can sign in to MVP and exercise the IG / FB / Threads OAuth
+ * flows from the screencast. Email below logs in as a tier='admin' user
+ * on the production DB so the reviewer sees every Meta-gated surface.
+ *
+ * Currently submitted: info@gominreviews.com  (admin tier, password
+ * shared with Meta via the App Review submission form).
+ *
+ * Empty this list (and flip NEXT_PUBLIC_META_ENABLED to true) once the
+ * Meta app is approved + Live for everyone. Lowercased.
+ */
 const META_REVIEW_EMAILS = ['info@gominreviews.com']
 
 export function metaEnabled(opts?: { tier?: string | null; email?: string | null }): boolean {
@@ -30,6 +42,30 @@ export function metaEnabled(opts?: { tier?: string | null; email?: string | null
   // App-Review flows remain testable.
   if (opts?.tier === 'admin') return true
   if (opts?.email && META_REVIEW_EMAILS.includes(opts.email.trim().toLowerCase())) return true
+  return false
+}
+
+/**
+ * Per-platform admin gate for the FIVE social integrations the user wants
+ * locked down while restructuring Pro tier: facebook, instagram, threads,
+ * tiktok, pinterest. Everyone except admin sees them greyed-out in the
+ * setup UI; non-admin OAuth-start hits get redirected to /pricing.
+ *
+ * Meta platforms (facebook, instagram, threads) ALSO let the Meta App-
+ * Review test account through so the app-review screencast keeps working.
+ * TikTok + Pinterest are pure admin-only.
+ *
+ * Useful for both client (pass tier + email at load time) and server.
+ */
+export type GatedSocialPlatform = 'facebook' | 'instagram' | 'threads' | 'tiktok' | 'pinterest'
+const META_PLATFORMS: ReadonlySet<GatedSocialPlatform> = new Set(['facebook', 'instagram', 'threads'])
+
+export function socialEnabled(
+  platform: GatedSocialPlatform,
+  opts?: { tier?: string | null; email?: string | null },
+): boolean {
+  if (opts?.tier === 'admin') return true
+  if (META_PLATFORMS.has(platform) && opts?.email && META_REVIEW_EMAILS.includes(opts.email.trim().toLowerCase())) return true
   return false
 }
 

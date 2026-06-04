@@ -72,8 +72,10 @@ export const TIERS = {
     basePosts: 5,
     bonusPosts: 0,
     sites: 1,
-    // Facebook + WordPress only on the trial; every other pill is locked.
-    socials: ['facebook'] as readonly Social[],
+    // ADMIN-ONLY temporarily: Facebook / Instagram / Threads / TikTok /
+    // Pinterest are all gated to admin (and the Meta App-Review email)
+    // while we restructure Pro. Was ['facebook'] on the trial.
+    socials: [] as readonly Social[],
     priorityQueue: false,
     prioritySupport: false,
     publishAll: false,
@@ -105,7 +107,11 @@ export const TIERS = {
     basePosts: 40,
     bonusPosts: 0,
     sites: 1,
-    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'bluesky'] as readonly Social[],
+    // ADMIN-ONLY temporarily: FB / IG / Threads / TikTok / Pinterest are
+    // gated to admin (+ Meta App-Review email for the three Meta ones)
+    // while we restructure Pro. Was: facebook, threads, linkedin,
+    // pinterest, bluesky.
+    socials: ['linkedin', 'bluesky'] as readonly Social[],
     priorityQueue: false,
     prioritySupport: false,
     publishAll: false,
@@ -137,12 +143,11 @@ export const TIERS = {
     basePosts: 80,
     bonusPosts: 0,
     sites: 1,
-    /** Adds TikTok + Instagram on top of Creator's 5 platforms — the second
-     *  main upgrade pull from Creator. Pro adds Twitter + Telegram on top. */
-    socials: [
-      'facebook', 'threads', 'linkedin', 'pinterest', 'bluesky',
-      'tiktok', 'instagram',
-    ] as readonly Social[],
+    // ADMIN-ONLY temporarily: FB / IG / Threads / TikTok / Pinterest are
+    // gated to admin (+ Meta App-Review email for the three Meta ones)
+    // while we restructure Pro. Was: facebook, threads, linkedin,
+    // pinterest, bluesky, tiktok, instagram.
+    socials: ['linkedin', 'bluesky'] as readonly Social[],
     priorityQueue: false,
     prioritySupport: false,
     /** Publish All (one-click site + every social) remains Pro-only. */
@@ -182,7 +187,10 @@ export const TIERS = {
     basePosts: 140,
     bonusPosts: 60,
     sites: 1,
-    socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram', 'tiktok'] as readonly Social[],
+    // ADMIN-ONLY temporarily: FB / IG / Threads / TikTok / Pinterest are
+    // gated to admin (+ Meta App-Review email for the three Meta ones)
+    // while we restructure Pro. Was the full set of 9.
+    socials: ['linkedin', 'twitter', 'bluesky', 'telegram'] as readonly Social[],
     priorityQueue: true,
     prioritySupport: true,
     publishAll: true,
