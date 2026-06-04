@@ -16,6 +16,7 @@ export type DealOccasionSlug =
   | 'none'
   | 'lightning_deal'
   | 'lowest_price_ytd'
+  | 'renewed'
   | 'prime_day'
   | 'prime_big_deal_days'
   | 'black_friday'
@@ -78,6 +79,22 @@ const OCCASIONS: Record<DealOccasionSlug, DealOccasion> = {
     // Green = "savings" cue, distinct from the orange Lightning chip and
     // the violet "regular deal" default.
     badgeBg: '#0E8C4A',
+    badgeFg: '#FFFFFF',
+  },
+  renewed: {
+    slug: 'renewed',
+    badgeLabel: 'AMAZON RENEWED',
+    longLabel: 'Amazon Renewed deal',
+    // Amazon Renewed = professionally inspected, tested, cleaned, and
+    // typically backed by Amazon's 90-day Renewed Guarantee. The hype is
+    // honest about it being pre-owned/refurbished — readers who don't
+    // mind that gap save 30-50% on the same model. The writer needs to
+    // surface this clearly so the post doesn't read like a normal deal
+    // and bait-and-switch the buyer at checkout.
+    hypePhrase: 'an Amazon Renewed listing, so it\'s professionally inspected + warranty-backed but NOT brand new — the trade is buying refurbished for the price gap',
+    // Teal: distinct from green (savings), orange (Lightning), violet
+    // (regular). Signals "different category" without screaming caution.
+    badgeBg: '#00B4B4',
     badgeFg: '#FFFFFF',
   },
   prime_day: {
@@ -195,6 +212,7 @@ export function listOccasions(): DealOccasion[] {
     OCCASIONS.none,
     OCCASIONS.lightning_deal,
     OCCASIONS.lowest_price_ytd,
+    OCCASIONS.renewed,
     OCCASIONS.prime_day,
     OCCASIONS.prime_big_deal_days,
     OCCASIONS.black_friday,

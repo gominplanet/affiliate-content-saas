@@ -734,6 +734,14 @@ function buildDealWriterPrompt(p: DealWriterPromptInput): string {
     ? 'No specific occasion (regular price drop).'
     : `This is a ${p.occasionLong} deal. Context: ${p.occasionHype}. Lean into the occasion in the hook + closing CTA, but never invent specific event-only inventory claims.`
 
+  // Amazon Renewed has a mandatory disclosure: the buyer is getting a
+  // refurbished unit, not new. Burying that detail = bait-and-switch at
+  // checkout, which violates our no-deception standard. Force the writer
+  // to surface it in the hook AND in "Before you buy".
+  const renewedDisclosure = p.occasion === 'renewed'
+    ? `\nMANDATORY RENEWED DISCLOSURE: This is an Amazon Renewed listing — the unit is professionally inspected and refurbished, NOT brand-new. The article MUST surface this fact:\n  - In the opening hook (one short sentence acknowledging refurbished status, e.g. "It's the Renewed version, professionally inspected and refurbished, not new — and that's exactly why it costs less.")\n  - In "Before you buy" (a sentence explaining the Amazon Renewed 90-day guarantee + what "refurbished" actually means here)\nDo NOT frame this like a regular deal. Buyers should know what they're getting before they click.`
+    : ''
+
   const fallbackUrl = `https://www.amazon.com/dp/${p.product.asin}`
   const promoLine = (() => {
     const lines: string[] = []
@@ -759,7 +767,7 @@ DEAL ENVELOPE
 - ${endLine}
 - ${occasionLine}
 - Badge text on thumbnail: ${p.badgeLabel} (don't put this exact string in the body, the thumbnail handles it)
-- ${promoLine}
+- ${promoLine}${renewedDisclosure}
 
 ${DEAL_VOICE_RULES}
 
