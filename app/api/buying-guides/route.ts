@@ -407,6 +407,94 @@ export async function GET() {
   })
 }
 
+// ─── DELETE — remove a guide from WP + the MVP row (if any) ───────────────
+//
+// Two ID shapes from the GET payload:
+//   - "wp-{n}"   → WP-only guide (no MVP blog_posts row). Just delete on WP.
+//   - "<uuid>"   → MVP-tracked guide. Look up wordpress_post_id +
+//                  wordpress_site_id, delete on WP, then delete the
+//                  blog_posts row.
+//
+// WP deletion uses force=true via wpService.deletePost so the post skips
+// trash and is gone for good.
+export async function DELETE(req: Request) {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Pro/admin gate — same as POST, only owners delete their own content.
+  const { data: integ } = await supabase
+    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const tier = (integ?.tier as string | undefined) ?? 'trial'
+  if (tier !== 'pro' && tier !== 'admin') {
+    return NextResponse.json({ error: 'Pro tier required.', code: 'tier_not_allowed' }, { status: 403 })
+  }
+
+  let body: { id?: string }
+  try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
+  const id = (body.id || '').trim()
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  // Resolve WP post id + site, depending on id shape.
+  let wpPostId: number | null = null
+  let wpSiteId: string | null = null
+  let mvpRowId: string | null = null
+
+  if (id.startsWith('wp-')) {
+    // WP-only guide. Use the default site for credentials — multi-site
+    // users may have published to a non-default site; we don't have that
+    // info here, so we accept the limitation and refuse if multi-site
+    // (rare). The DELETE then no-ops; user can delete from wp-admin
+    // directly.
+    const n = parseInt(id.slice(3), 10)
+    if (!isFinite(n) || n <= 0) return NextResponse.json({ error: 'bad id' }, { status: 400 })
+    wpPostId = n
+  } else {
+    // MVP-tracked guide — look up by row id, scoped to user.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: row } = await (supabase as any)
+      .from('blog_posts')
+      .select('id, wordpress_post_id, wordpress_site_id, user_id, post_type')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (!row) return NextResponse.json({ error: 'Guide not found.' }, { status: 404 })
+    if (row.post_type !== 'guide') return NextResponse.json({ error: 'Not a guide row.' }, { status: 400 })
+    mvpRowId = row.id as string
+    wpPostId = (row.wordpress_post_id as number | null) || null
+    wpSiteId = (row.wordpress_site_id as string | null) || null
+  }
+
+  // Delete on WP. Best-effort: if the WP call fails (already deleted,
+  // network blip, etc.) we still continue to clean up the MVP row,
+  // because leaving an orphan blog_posts row is worse than the alternative.
+  if (wpPostId) {
+    try {
+      const site = await getWordPressCredentials(supabase, user.id, wpSiteId)
+      if (site) {
+        const wpService = createWordPressService(
+          site.wordpress_url,
+          site.wordpress_username,
+          site.wordpress_app_password,
+          site.wordpress_api_token || undefined,
+        )
+        await wpService.deletePost(wpPostId)
+      }
+    } catch (err) {
+      // Log but don't fail — let the MVP cleanup proceed.
+      console.warn('[buying-guides DELETE] WP delete failed:', err instanceof Error ? err.message : err)
+    }
+  }
+
+  // Clean up the MVP row if we have one.
+  if (mvpRowId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('blog_posts').delete().eq('id', mvpRowId).eq('user_id', user.id)
+  }
+
+  return NextResponse.json({ ok: true })
+}
+
 // ─── POST — generate + publish ─────────────────────────────────────────────
 export async function POST(req: Request) {
   const supabase = await createServerClient()

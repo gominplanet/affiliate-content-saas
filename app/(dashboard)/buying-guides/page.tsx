@@ -16,8 +16,9 @@
 import { useEffect, useState, FormEvent } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2 } from 'lucide-react'
+import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 interface Suggestion { topic: string; count: number }
 interface GuideRow { id: string; title: string; url: string | null; topic: string | null; created_at: string }
@@ -26,8 +27,10 @@ interface PreviewPick { wordpress_url: string; title: string; excerpt: string | 
 type Mode = 'auto' | 'review'
 
 export default function BuyingGuidesPage() {
+  const { confirm, ConfirmHost } = useConfirm()
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [guides, setGuides] = useState<GuideRow[]>([])
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [reviewCount, setReviewCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [topic, setTopic] = useState('')
@@ -171,6 +174,38 @@ export default function BuyingGuidesPage() {
   function onSubmit(e: FormEvent) {
     e.preventDefault()
     void generate(topic)
+  }
+
+  /** Delete a guide. Two-step: confirm → DELETE /api/buying-guides which
+   *  removes the WP post AND the MVP blog_posts row (if any). */
+  async function deleteGuide(g: GuideRow) {
+    const ok = await confirm({
+      title: 'Delete this guide?',
+      description: `"${g.title}" will be removed from your WordPress blog and your library. This can't be undone.`,
+      confirmLabel: 'Delete guide',
+      destructive: true,
+    })
+    if (!ok) return
+    setDeletingId(g.id)
+    // Optimistic remove so the row goes away immediately — if the request
+    // errors we put it back.
+    const prevGuides = guides
+    setGuides(prev => prev.filter(x => x.id !== g.id))
+    try {
+      const r = await fetch('/api/buying-guides', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: g.id }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `Delete failed (${r.status})`)
+      toast.success('Guide deleted.')
+    } catch (err) {
+      setGuides(prevGuides) // rollback
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   // ── Locked state ────────────────────────────────────────────────
@@ -446,23 +481,39 @@ export default function BuyingGuidesPage() {
                     {new Date(g.created_at).toLocaleDateString()}
                   </div>
                 </div>
-                {g.url && (
-                  <Link
-                    href={g.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg"
-                    style={{ background: 'var(--bg)', color: 'var(--fg)' }}
-                    title={g.title}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {g.url && (
+                    <Link
+                      href={g.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                      style={{ background: 'var(--bg)', color: 'var(--fg)' }}
+                      title={g.title}
+                    >
+                      View <ExternalLink className="w-3.5 h-3.5" />
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void deleteGuide(g)}
+                    disabled={deletingId === g.id}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg border transition hover:border-red-300 hover:bg-red-50 disabled:opacity-40"
+                    style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
+                    title="Delete guide"
+                    aria-label="Delete guide"
                   >
-                    View <ExternalLink className="w-3.5 h-3.5" />
-                  </Link>
-                )}
+                    {deletingId === g.id
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Trash2 className="w-3.5 h-3.5" style={{ color: '#dc2626' }} />}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
+      <ConfirmHost />
     </div>
   )
 }
