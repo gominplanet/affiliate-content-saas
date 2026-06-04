@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { toast } from 'sonner'
 import Header from '@/components/layout/Header'
 import { Loader2, Send, Plus, Trash2, MessageSquare, Sparkles, Brain, X, Upload } from 'lucide-react'
+import { useConfirm } from '@/components/ui/useConfirm'
 
 interface Conversation { id: string; title: string; updated_at: string }
 interface Msg { role: 'user' | 'assistant'; content: string }
@@ -15,6 +17,7 @@ const STARTERS = [
 ]
 
 export default function AssistantPage() {
+  const { confirm, ConfirmHost } = useConfirm()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Msg[]>([])
@@ -100,9 +103,24 @@ export default function AssistantPage() {
   }
 
   async function deleteConversation(id: string) {
-    await fetch(`/api/assistant/conversations/${id}`, { method: 'DELETE' }).catch(() => {})
-    if (activeId === id) newChat()
-    loadConversations()
+    const ok = await confirm({
+      title: 'Delete this conversation?',
+      description: 'The messages will be removed for good.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    try {
+      const res = await fetch(`/api/assistant/conversations/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        toast.error(`Couldn't delete (${res.status})`)
+        return
+      }
+      if (activeId === id) newChat()
+      loadConversations()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed')
+    }
   }
 
   async function send(text: string) {
@@ -284,6 +302,7 @@ export default function AssistantPage() {
           </div>
         </div>
       )}
+      <ConfirmHost />
     </>
   )
 }

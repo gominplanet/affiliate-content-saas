@@ -74,9 +74,17 @@ export default function AgencyPage() {
   async function refresh() {
     try {
       const res = await fetch('/api/agency')
-      if (!res.ok) return
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        toast.error(`Could not load Virtual Assistants${body ? `: ${body.slice(0, 120)}` : ''}`)
+        return
+      }
       const data = await res.json()
       setState(data)
+    } catch (err) {
+      // Network blip / response.json() throws — without this catch the
+      // page sat on the paywall card even on Pro because state stayed null.
+      toast.error(err instanceof Error ? err.message : 'Could not load Virtual Assistants')
     } finally {
       setLoading(false)
     }

@@ -541,15 +541,20 @@ export default function CustomizePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       })
-      const json = await res.json()
-      if (json.error) { toast.error(json.error); return }
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) { toast.error(json.error || `Save failed (${res.status})`); return }
       if (json.wordpress === 'failed') {
-        setWpPushError(json.wordpressError || 'WordPress push failed — check your credentials in Site & Integrations.')
+        const msg = json.wordpressError || 'WordPress push failed — check your credentials in Site & Integrations.'
+        setWpPushError(msg)
+        toast.error(msg)
       } else {
         // Auto-purge cache so changes appear immediately on the live blog.
         fetch('/api/wordpress/purge-cache', { method: 'POST' }).catch(() => {})
+        toast.success('Saved — pushed to your blog.')
       }
       setSaved(true); setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed')
     } finally { setSaving(false) }
   }
 

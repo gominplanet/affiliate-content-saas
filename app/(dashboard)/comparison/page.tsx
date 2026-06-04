@@ -29,12 +29,24 @@ export default function ComparisonPage() {
   const [siteId, setSiteId] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;supabase.from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-        .then(({ data }: { data: { tier?: string } | null }) => setTier(data?.tier ?? 'trial'))
-    })
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        // No user → land on the trial gate so the upgrade banner shows and
+        // the Generate button stays correctly disabled. Without this default,
+        // tier stayed null forever and isPaid evaluated false in a way that
+        // still let some downstream UI render half-paid.
+        if (!user) { if (!cancelled) setTier('trial'); return }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await supabase
+          .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+        if (!cancelled) setTier((data?.tier as string | undefined) ?? 'trial')
+      } catch {
+        if (!cancelled) setTier('trial')
+      }
+    })()
+    return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

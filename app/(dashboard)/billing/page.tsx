@@ -19,48 +19,55 @@ export default function BillingPage() {
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await supabase
-      .from('integrations')
-      .select('tier')
-      .eq('user_id', user.id)
-      .single()
-
-    const userTier = effectiveTier(data?.tier as string)
-    setTier(userTier)
-
-    // Count posts used — lifetime for free, current month for paid
-    const limits = TIERS[userTier]
-    const now = new Date()
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-
-    if (limits.lifetimeMax !== null) {
-      const { count } = await supabase
-        .from('blog_posts')
-        .select('id', { count: 'exact', head: true })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await supabase
+        .from('integrations')
+        .select('tier')
         .eq('user_id', user.id)
-      setPostsUsed(count ?? 0)
-    } else if (limits.postsPerMonth !== null) {
-      const { count } = await supabase
-        .from('blog_posts')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .gte('published_at', monthStart)
-      setPostsUsed(count ?? 0)
+        .maybeSingle()
+
+      const userTier = effectiveTier(data?.tier as string)
+      setTier(userTier)
+
+      // Count posts used — lifetime for free, current month for paid.
+      // Build monthStart in UTC so users west of UTC don't see wrong
+      // numbers for the first/last few hours of every month.
+      const limits = TIERS[userTier]
+      const now = new Date()
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+
+      if (limits.lifetimeMax !== null) {
+        const { count } = await supabase
+          .from('blog_posts')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+        setPostsUsed(count ?? 0)
+      } else if (limits.postsPerMonth !== null) {
+        const { count } = await supabase
+          .from('blog_posts')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('published_at', monthStart)
+        setPostsUsed(count ?? 0)
+      }
+
+      // Social post counts this month
+      const [fbRes, thRes, pinRes] = await Promise.all([
+        supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('facebook_post_id', 'is', null).gte('published_at', monthStart),
+        supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('threads_post_id', 'is', null).gte('published_at', monthStart),
+        supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('pinterest_pin_id', 'is', null).gte('published_at', monthStart),
+      ])
+      setSocialCounts({ facebook: fbRes.count ?? 0, threads: thRes.count ?? 0, pinterest: pinRes.count ?? 0 })
+    } finally {
+      // Always exit the loading state — without this finally a thrown
+      // supabase error or `!user` early return left the page on the
+      // spinner forever.
+      setLoading(false)
     }
-
-    // Social post counts this month
-    const [fbRes, thRes, pinRes] = await Promise.all([
-      supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('facebook_post_id', 'is', null).gte('published_at', monthStart),
-      supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('threads_post_id', 'is', null).gte('published_at', monthStart),
-      supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('pinterest_pin_id', 'is', null).gte('published_at', monthStart),
-    ])
-    setSocialCounts({ facebook: fbRes.count ?? 0, threads: thRes.count ?? 0, pinterest: pinRes.count ?? 0 })
-
-    setLoading(false)
   }, [supabase])
 
   useEffect(() => { load() }, [load])
