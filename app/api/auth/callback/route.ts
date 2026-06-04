@@ -18,6 +18,13 @@ function safeNext(raw: string | null): string {
   if (!raw.startsWith('/')) return '/dashboard'
   if (raw.startsWith('//')) return '/dashboard'
   if (raw.startsWith('/\\')) return '/dashboard'
+  // Reject URL-encoded slash/backslash variants that some redirect handlers
+  // decode AFTER the origin check ( `/%2fevil.com`, `/%5cevil.com`,
+  // `/%2F%2Fevil.com`). Belt-and-braces: also reject control chars and
+  // any non-ASCII high-bit byte that some URL parsers normalize down to /.
+  if (/%2f|%5c|%00|%01|%02|%03|%04|%05|%06|%07|%08|%09|%0a|%0b|%0c|%0d|%0e|%0f/i.test(raw)) return '/dashboard'
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(raw)) return '/dashboard'
   // Reject any scheme-looking content (e.g. `/something/javascript:alert()`).
   if (/^\/[^/]*:/.test(raw)) return '/dashboard'
   return raw

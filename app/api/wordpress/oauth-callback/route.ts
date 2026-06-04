@@ -15,6 +15,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createServerClient } from '@/lib/supabase/server'
 import { verifyState } from '@/lib/wp-oauth'
 import { maybeEncrypt } from '@/lib/secrets'
 
@@ -53,6 +54,35 @@ export async function GET(request: Request) {
     return setupUrl({
       wp_oauth: 'error',
       wp_oauth_reason: 'Connection link expired. Please click Connect WordPress again.',
+    })
+  }
+
+  // ── Bind the credential save to the SESSION user ─────────────────────────
+  // The signed state only proves the call came from our /oauth-start; the
+  // user_id baked into it is whoever STARTED the flow, NOT whoever just
+  // authorized on the WP site. Without this check, an attacker who runs
+  // /oauth-start with their own session + siteUrl=evil.com (a WP they
+  // control) can trick a victim into authorizing on evil.com — the
+  // victim's freshly-minted Application Password then gets PERSISTED to
+  // the ATTACKER's MVP integrations row.
+  //
+  // We close that by requiring the current cookie session to match
+  // state.userId. UX cost: a user whose session lapsed mid-flow has to
+  // sign in again before completing the connect — small price for
+  // closing a full account-takeover surface.
+  try {
+    const supabase = await createServerClient()
+    const { data: { user: sessionUser } } = await supabase.auth.getUser()
+    if (!sessionUser || sessionUser.id !== state.userId) {
+      return setupUrl({
+        wp_oauth: 'error',
+        wp_oauth_reason: 'Sign in first, then click Connect WordPress again. (Session expired during connect.)',
+      })
+    }
+  } catch {
+    return setupUrl({
+      wp_oauth: 'error',
+      wp_oauth_reason: 'Couldn\'t verify your session. Sign in and try again.',
     })
   }
 

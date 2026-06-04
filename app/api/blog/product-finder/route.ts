@@ -106,8 +106,15 @@ export async function POST(req: Request) {
 
   // 3a. WP REST — primary source. Pull up to 100 posts (per_page max). If a
   //     site has more, the recent 100 covers what visitors typically ask.
+  //
+  //     IMPORTANT: build wpBase from the DB-trusted `match.wordpress_url`,
+  //     NOT from the user-supplied `site`. The host-match on `wantHost`
+  //     guarantees the URLs resolve to the same hostname, but the URL
+  //     parser would happily process `http://169.254.169.254@trusted.com/`
+  //     where wantHost matches `trusted.com` but the fetch goes to the
+  //     metadata IP. Sourcing from the DB closes that SSRF entirely.
   try {
-    const wpBase = site.replace(/\/+$/, '')
+    const wpBase = (match.wordpress_url as string).replace(/\/+$/, '')
     const wpRes = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=100&_embed=wp:featuredmedia&_fields=link,title,excerpt,_links,_embedded`, {
       signal: AbortSignal.timeout(8000),
       headers: { Accept: 'application/json' },
