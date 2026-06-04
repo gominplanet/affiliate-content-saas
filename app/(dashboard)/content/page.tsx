@@ -2751,7 +2751,7 @@ export default function ContentPage() {
     const [vids, { data: brand }, { data: integration }, { data: blogPosts }, liveResp, { data: seoCache }] = await Promise.all([
       fetchAllVideos(),
       sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups').eq('user_id', user.id).single(),
-      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', user.id).single(),
+      sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,setup_status,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', user.id).single(),
       sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
@@ -2768,7 +2768,14 @@ export default function ContentPage() {
 
     setChecks({
       brandReady: !!(b?.name && (b.niches as string[] || []).length > 0),
-      wpReady: !!(i?.wordpress_url && i?.wordpress_username),
+      // WordPress check: setup_status='site_ready' is the honest signal
+      // post-fix — oauth-callback now writes 'wp_auth_failed' instead of
+      // 'site_ready' when the credentials test fails. Falls back to the
+      // legacy truthy-check for users who connected BEFORE setup_status
+      // was a thing (those rows have setup_status=null but a working AP).
+      wpReady: i?.setup_status
+        ? i.setup_status === 'site_ready'
+        : !!(i?.wordpress_url && i?.wordpress_username),
       videosReady: vids.length > 0,
     })
     setWpSiteUrl((i?.wordpress_url as string) || '')

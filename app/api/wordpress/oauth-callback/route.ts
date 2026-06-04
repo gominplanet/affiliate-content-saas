@@ -158,6 +158,13 @@ export async function GET(request: Request) {
   const admin = createAdminClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = admin as any
+  // Honest setup_status: only claim 'site_ready' when the smoke test
+  // actually passed. testOk=false means the AP was minted but WP rejected
+  // it (host-strip, security plugin, etc.) — saving with 'site_ready'
+  // would have green-checked the onboarding step even though publishing
+  // would fail. Use 'wp_auth_failed' so the dashboard can surface the
+  // reconnect prompt and not treat the wizard as complete.
+  const newSetupStatus = testOk ? 'site_ready' : 'wp_auth_failed'
   const { error: upsertErr } = await sb.from('integrations').upsert(
     {
       user_id: state.userId,
@@ -167,7 +174,7 @@ export async function GET(request: Request) {
       // at read time via maybeDecrypt() in lib/wordpress-sites.ts.
       wordpress_app_password: maybeEncrypt(cleanPw),
       wordpress_api_token: maybeEncrypt(cleanPw),
-      setup_status: 'site_ready',
+      setup_status: newSetupStatus,
     },
     { onConflict: 'user_id' },
   )

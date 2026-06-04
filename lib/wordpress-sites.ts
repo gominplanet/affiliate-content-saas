@@ -252,7 +252,12 @@ export async function setDefaultSite(
 
 /** Add a new site. Tier-gates BEFORE the insert (the DB trigger also
  *  enforces a hard 5-cap as a safety net regardless of tier). The first
- *  site a user adds becomes the default automatically. */
+ *  site a user adds becomes the default automatically.
+ *
+ *  Verifies the credentials WORK against WordPress before the insert.
+ *  Without this, a user with bad creds (typo, wrong AP, plugin not
+ *  installed) would still see their site in the picker, then hit
+ *  publish errors silently. Now we refuse with a specific reason. */
 export async function addSite(
   supabase: Client,
   userId: string,
@@ -263,8 +268,11 @@ export async function addSite(
     username: string
     appPassword: string
     apiToken?: string | null
+    /** Set to true to skip the live WP verification — useful for tests
+     *  or callers that already ran probeUnverifiedCreds. Default false. */
+    skipVerify?: boolean
   },
-): Promise<{ ok: true; site: WordPressSite } | { ok: false; error: string }> {
+): Promise<{ ok: true; site: WordPressSite } | { ok: false; error: string; code?: string }> {
   const cap = await canAddSite(supabase, userId, tier)
   if (!cap.allowed) {
     return {
@@ -272,8 +280,32 @@ export async function addSite(
       error: tier === 'pro'
         ? `You've reached the 5-site limit for Pro. Remove a site first.`
         : `Multi-site is a Pro feature. Upgrade to Pro to connect up to 5 WordPress sites.`,
+      code: 'tier_capped',
     }
   }
+
+  // Verify the credentials work before saving anything. Imports inline to
+  // avoid a circular dep at module load (wordpress-health imports this
+  // file's getWordPressCredentials).
+  if (!input.skipVerify) {
+    const { probeUnverifiedCreds } = await import('./wordpress-health')
+    const probe = await probeUnverifiedCreds({
+      url: normalizeUrl(input.url),
+      username: input.username.trim(),
+      appPassword: input.appPassword,
+    })
+    if (probe.state !== 'verified') {
+      // Map to a friendly per-state message so the UI can show the user
+      // exactly what to fix without dumping raw DB errors.
+      const msg = probe.state === 'auth_failed'
+        ? `${probe.message} (HTTP ${probe.details?.httpStatus || '?'}).`
+        : probe.state === 'plugin_missing'
+          ? probe.message + ' Install the MVP Affiliate plugin via the Blog Setup wizard, then try adding the site again.'
+          : probe.message
+      return { ok: false, error: msg, code: probe.state }
+    }
+  }
+
   const isFirst = cap.current === 0
   const { data, error } = await supabase
     .from('wordpress_sites')
@@ -289,7 +321,7 @@ export async function addSite(
     } as never)
     .select('id, label, url, username, app_password, api_token, is_default, display_order')
     .single()
-  if (error || !data) return { ok: false, error: error?.message || 'Insert failed' }
+  if (error || !data) return { ok: false, error: error?.message || 'Insert failed', code: 'db_error' }
   return { ok: true, site: rowToSite(data) }
 }
 

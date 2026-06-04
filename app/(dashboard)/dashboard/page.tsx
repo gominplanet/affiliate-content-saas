@@ -32,7 +32,7 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     sb.from('youtube_videos').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id),
     sb.from('blog_posts').select('id', { count: 'estimated', head: true }).eq('user_id', user!.id),
-    sb.from('integrations').select('tier,subscription_period_start,subscription_period_end,wordpress_url,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).maybeSingle(),
+    sb.from('integrations').select('tier,subscription_period_start,subscription_period_end,wordpress_url,setup_status,youtube_oauth_access_token,facebook_page_id,pinterest_access_token,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,instagram_user_id').eq('user_id', user!.id).maybeSingle(),
   ])
 
   // ── Plan & usage ────────────────────────────────────────────────────────
@@ -97,8 +97,15 @@ export default async function DashboardPage() {
   const isNewUser = publishedCount === 0
 
   const int = integration as Record<string, unknown> | null
+  // WordPress flag: count as "connected" ONLY when the wizard's smoke
+  // test passed (setup_status='site_ready'). Previously this was just
+  // truthy-check on wordpress_url, which flipped green the moment any
+  // URL was saved, even if the AP was rejected by WP. oauth-callback now
+  // marks 'wp_auth_failed' when the test fails, so this is the honest
+  // signal.
+  const wpConnected = int?.setup_status === 'site_ready'
   const platformFlags = [
-    !!(int?.wordpress_url),
+    wpConnected,
     !!(int?.youtube_oauth_access_token),
     !!(int?.facebook_page_id),
     !!(int?.pinterest_access_token),
