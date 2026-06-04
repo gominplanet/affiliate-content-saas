@@ -872,6 +872,18 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const [wpUrl, setWpUrl] = useState('')
   const [wpUsername, setWpUsername] = useState('')
   const [wpAppPassword, setWpAppPassword] = useState('')
+  // True when the integrations row has a saved Application Password.
+  // Drives the "Connected" pill + Test-button enabled state WITHOUT
+  // shipping the encrypted ciphertext to the client (which caused the
+  // long-standing "wrong password" bug — the AP column is encrypted at
+  // rest and the page was loading the ciphertext into wpAppPassword,
+  // which the test route then sent to WP, which rejected as 401).
+  const [wpAppPasswordSaved, setWpAppPasswordSaved] = useState(false)
+  // Live WP connection state. Driven by /api/wordpress/health on mount
+  // and after any reconnect. Replaces the old DB-field-only "Connected"
+  // pill that lied when the saved AP was actually invalid.
+  type WpHealthState = 'verified' | 'auth_failed' | 'plugin_missing' | 'unreachable' | 'no_creds' | 'checking'
+  const [wpHealth, setWpHealth] = useState<{ state: WpHealthState; message: string }>({ state: 'checking', message: '' })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -916,7 +928,14 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
       setYoutubeChannelId(row.youtube_channel_id ?? '')
       setWpUrl(row.wordpress_url ?? '')
       setWpUsername(row.wordpress_username ?? '')
-      setWpAppPassword(row.wordpress_app_password ?? '')
+      // Never load the encrypted Application Password into a client-side
+      // form input — that ciphertext used to get sent back as the
+      // password on Test Connection, which WP always rejected as 401.
+      // Track presence via wpAppPasswordSaved instead; the actual
+      // password leaves the server only via getWordPressCredentials on
+      // routes that need it.
+      setWpAppPassword('')
+      setWpAppPasswordSaved(!!row.wordpress_app_password)
       const pages = JSON.parse(row.facebook_pages_json || '[]')
       setFacebook({ connected: !!row.facebook_page_id, pageName: row.facebook_page_name ?? '', pageId: row.facebook_page_id ?? '', pages })
       const boards = JSON.parse(row.pinterest_boards_json || '[]')
@@ -955,6 +974,33 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
     setLoading(false)
     onLoad()
   }, [supabase, onLoad])
+
+  // Live WP health check. Fires on mount (after the DB row loads) and
+  // again every time the page is in focus, so the "Connected" pill always
+  // reflects the actual ping result instead of the truthy-field guess.
+  // The result determines the pill colour + message + the "Reconnect"
+  // CTA visibility — see render block ~line 1362.
+  const refreshWpHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/wordpress/health')
+      const j = await res.json().catch(() => null) as {
+        state?: WpHealthState
+        message?: string
+      } | null
+      if (j?.state) {
+        setWpHealth({ state: j.state, message: j.message || '' })
+      }
+    } catch {
+      // Network error → keep whatever state we had. Don't lie either
+      // way; a stale "Verified" is preferable to flipping to a
+      // misleading "Unreachable" on a momentary blip.
+    }
+  }, [])
+
+  useEffect(() => {
+    if (wpUrl) refreshWpHealth()
+    else setWpHealth({ state: 'no_creds', message: '' })
+  }, [wpUrl, wpAppPasswordSaved, refreshWpHealth])
 
   useEffect(() => {
     const fbConnected = searchParams.get('fb_connected')
@@ -1049,9 +1095,22 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   async function testWordPress() {
     setWpTesting(true); setWpTestResult(null)
     try {
-      const res = await fetch('/api/wordpress/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: wpUrl, username: wpUsername, password: wpAppPassword }) })
+      // Three modes:
+      //   1. Form has a fresh AP typed in → POST that (pre-save verify
+      //      during the wizard).
+      //   2. No form AP but a saved one exists → POST {useStored:true}
+      //      so the server pulls + decrypts from the integrations row.
+      //      THIS is the path that fixes the "wrong password" bug — the
+      //      old code shipped the encrypted ciphertext as the password.
+      //   3. Neither → 400; UI keeps the button disabled in this case.
+      const body = wpAppPassword
+        ? { url: wpUrl, username: wpUsername, password: wpAppPassword }
+        : { useStored: true }
+      const res = await fetch('/api/wordpress/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
       setWpTestResult({ ok: data.ok, message: data.message || data.error })
+      // Re-run the health check so the pill reflects the test result.
+      refreshWpHealth()
     } catch { setWpTestResult({ ok: false, message: 'Request failed — check your site URL' }) }
     finally { setWpTesting(false) }
   }
@@ -1359,19 +1418,48 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">WordPress</p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93] truncate">{wpUrl || 'Not connected'}</p>
           </div>
-          {wpUrl && wpAppPassword && (
-            <span className="flex items-center gap-1 text-xs font-medium text-[#34c759] flex-shrink-0"><Check size={12} /> Connected</span>
+          {/* Truthful status pill — driven by the live /api/wordpress/health
+              ping, NOT by DB-field truthiness. Each state maps to its own
+              colour + label so the user sees the real situation at a
+              glance instead of a permanently green "Connected" that the
+              Test button then contradicts. */}
+          {wpUrl && (
+            <span className={`flex items-center gap-1 text-xs font-medium flex-shrink-0 ${
+              wpHealth.state === 'verified' ? 'text-[#34c759]'
+              : wpHealth.state === 'checking' ? 'text-[#86868b]'
+              : 'text-[#ff3b30]'
+            }`}>
+              {wpHealth.state === 'checking' ? <Loader2 size={12} className="animate-spin" />
+                : wpHealth.state === 'verified' ? <Check size={12} />
+                : <span className="w-2 h-2 rounded-full bg-current" />}
+              {wpHealth.state === 'verified' ? 'Connected'
+                : wpHealth.state === 'checking' ? 'Checking…'
+                : wpHealth.state === 'auth_failed' ? 'Auth failed'
+                : wpHealth.state === 'plugin_missing' ? 'Plugin missing'
+                : wpHealth.state === 'unreachable' ? 'Unreachable'
+                : 'Not connected'}
+            </span>
           )}
         </div>
 
-        {wpUrl && wpAppPassword ? (
+        {wpUrl && wpAppPasswordSaved ? (
           <>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              Connected as <strong>{wpUsername}</strong>. Use the buttons below to verify the connection or run maintenance. To change credentials, click <strong>Update credentials</strong> and reconnect in one click.
+              {wpHealth.state === 'verified' ? (
+                <>Connected as <strong>{wpUsername}</strong>. Use the buttons below to verify the connection or run maintenance. To change credentials, click <strong>Update credentials</strong> and reconnect in one click.</>
+              ) : wpHealth.state === 'auth_failed' ? (
+                <><strong className="text-[#ff3b30]">Your saved Application Password no longer works.</strong> Click <strong>Update credentials</strong> below to reconnect in one click. Your existing posts stay live.</>
+              ) : wpHealth.state === 'plugin_missing' ? (
+                <><strong className="text-[#ff3b30]">The MVP Affiliate plugin isn&apos;t installed or active on this site.</strong> Reinstall it via the wizard below, then click Test connection.</>
+              ) : wpHealth.state === 'unreachable' ? (
+                <><strong className="text-[#ff3b30]">{wpHealth.message}</strong></>
+              ) : (
+                <>Loading WordPress status…</>
+              )}
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
-              <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || !wpAppPassword} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40 disabled:opacity-40 transition-colors">
+              <button type="button" onClick={testWordPress} disabled={wpTesting || !wpUrl || !wpUsername || (!wpAppPassword && !wpAppPasswordSaved)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]/40 disabled:opacity-40 transition-colors">
                 {wpTesting ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />} Test connection
               </button>
               <button type="button" onClick={fixCssCorruption} disabled={fixingCss || !wpUrl} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-white/10 rounded-lg text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#ff3b30]/40 disabled:opacity-40 transition-colors">
@@ -1395,7 +1483,7 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         )}
 
         {/* One-click Connect (Authorize-Application flow) + Token fallback */}
-        {(showReconnect || !wpUrl || !wpAppPassword) && (
+        {(showReconnect || !wpUrl || !wpAppPasswordSaved) && (
           <div className="mt-4 rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 p-4 space-y-3">
             {/* Primary: one-click connect */}
             <div>

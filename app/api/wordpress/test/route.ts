@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createWordPressService } from '@/services/wordpress'
 import { createServerClient } from '@/lib/supabase/server'
 import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export const maxDuration = 20
 
@@ -15,10 +16,42 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { url, username, password } = await request.json()
+    const body = await request.json().catch(() => ({})) as {
+      url?: string
+      username?: string
+      password?: string
+      // When true (or when password is missing), the server reads the
+      // credentials from getWordPressCredentials() instead of trusting
+      // the client. This fixes the long-standing bug where the setup
+      // page passed the ENCRYPTED ciphertext (loaded raw from Supabase
+      // by setup/page.tsx) as the password, which WP always rejected
+      // with 401 → "wrong password" — even though the saved Application
+      // Password was actually fine. The client-supplied path stays for
+      // the wizard flow where a fresh password is being entered before
+      // it's saved to the DB.
+      useStored?: boolean
+      siteId?: string | null
+    }
+
+    let { url, username, password } = body
+    const useStored = body.useStored === true || (!password && !!user)
+
+    if (useStored) {
+      const stored = await getWordPressCredentials(supabase, user.id, body.siteId ?? null)
+      if (!stored) {
+        return NextResponse.json({
+          ok: false,
+          step: 'no_creds',
+          error: 'No WordPress credentials saved yet. Connect your site below first.',
+        })
+      }
+      url = stored.wordpress_url
+      username = stored.wordpress_username
+      password = stored.wordpress_app_password
+    }
 
     if (!url || !username || !password) {
-      return NextResponse.json({ error: 'url, username, and password are required' }, { status: 400 })
+      return NextResponse.json({ error: 'url, username, and password are required (or set useStored:true to test the saved credentials)' }, { status: 400 })
     }
 
     // SSRF guard — reject private/loopback/metadata addresses BEFORE
@@ -67,10 +100,10 @@ export async function POST(request: Request) {
       })
     }
 
-    const body = await basicRes.text()
+    const errBody = await basicRes.text()
     return NextResponse.json({
       ok: false, step: 'auth',
-      error: `WordPress returned ${basicRes.status}: ${body.slice(0, 150)}`,
+      error: `WordPress returned ${basicRes.status}: ${errBody.slice(0, 150)}`,
     })
 
   } catch (err: unknown) {
