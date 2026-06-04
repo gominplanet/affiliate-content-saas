@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.33
+ * Version: 1.0.34
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.33');
+define('MVP_AFFILIATE_VERSION', '1.0.34');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -816,6 +816,11 @@ add_action('wp_footer', function () {
 //
 // The meta strip on every review (7c) will link to /how-we-test/ — added
 // in the same plugin version.
+// Two-path detection — we intercept the URL directly in template_redirect
+// so we don't rely on WP's rewrite-rules cache (which only flushes on
+// permalink-save or fresh plugin activation; plugin UPDATES don't fire
+// register_activation_hook). The rewrite rule below is kept as a hint
+// for completeness but the path match is what actually fires the page.
 add_action('init', function () {
     add_rewrite_rule('^how-we-test/?$', 'index.php?gr_methodology=1', 'top');
 });
@@ -824,7 +829,20 @@ add_filter('query_vars', function ($vars) {
     return $vars;
 });
 add_action('template_redirect', function () {
-    if (intval(get_query_var('gr_methodology')) !== 1) return;
+    $is_methodology = intval(get_query_var('gr_methodology')) === 1;
+    if (!$is_methodology) {
+        // Fallback path detection — works whether rewrite rules were
+        // flushed or not. We compare the request path against /how-we-test
+        // with optional trailing slash.
+        $uri = isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '';
+        $path = trim((string) parse_url($uri, PHP_URL_PATH), '/');
+        // Account for sites installed in a subdirectory.
+        $home_path = trim((string) parse_url(home_url('/'), PHP_URL_PATH), '/');
+        if ($home_path !== '' && strpos($path, $home_path . '/') === 0) {
+            $path = substr($path, strlen($home_path) + 1);
+        }
+        if ($path !== 'how-we-test') return;
+    }
 
     $data = mvp_affiliate_get_data();
     $brand_name = get_bloginfo('name');
