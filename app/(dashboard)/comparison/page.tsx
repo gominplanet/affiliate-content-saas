@@ -1,15 +1,20 @@
 'use client'
 
 /**
- * Compare & Guides — paste up to 10 YouTube URLs (each a product you reviewed)
- * and MVP writes a multi-product COMPARISON (ranked, with a winner) or a
- * BUYING GUIDE ("best for ___"). One post against your cap.
+ * Compare products — paste up to 10 YouTube URLs (each a product you reviewed)
+ * and MVP writes a ranked head-to-head COMPARISON with a named winner. One
+ * post against your cap.
+ *
+ * The old Buying Guide MODE was removed 2026-06-04 to consolidate around a
+ * single buying-guide entry point at /buying-guides (which has both an
+ * auto-curate-from-catalogue mode AND a paste-your-own-URLs mode that
+ * replaces what used to live here).
  */
 import { useState, useEffect } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
-import { Scale, Plus, X, Loader2, ExternalLink, Trophy, ListChecks } from 'lucide-react'
+import { Scale, Plus, X, Loader2, ExternalLink } from 'lucide-react'
 import { SitePicker } from '@/components/SitePicker'
 import { normalizeTier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
@@ -19,7 +24,10 @@ const MAX_URLS = 10
 export default function ComparisonPage() {
   const supabase = createBrowserClient()
   const [urls, setUrls] = useState<string[]>(['', ''])
-  const [mode, setMode] = useState<'comparison' | 'guide'>('comparison')
+  // Mode is locked to 'comparison' — Buying Guide mode moved to
+  // /buying-guides as of 2026-06-04. Kept as a const (not state) so the
+  // /api/blog/comparison contract stays the same.
+  const mode = 'comparison' as const
   const [topic, setTopic] = useState('')
   const [heroDataUrl, setHeroDataUrl] = useState<string | null>(null)
   const [heroName, setHeroName] = useState<string | null>(null)
@@ -95,21 +103,21 @@ export default function ComparisonPage() {
   return (
     <>
       <PageHero
-        title="Compare & Guides"
-        subtitle="Turn the products you've reviewed into a ranked comparison or a buying guide — published straight to your blog."
+        title="Compare products"
+        subtitle="Paste the YouTube videos for the products you've reviewed — get a ranked head-to-head comparison with a named winner, published straight to your blog."
       />
 
       {tier !== null && !isPro && (
         <FeatureLockedCard
           icon={<Scale size={28} strokeWidth={1.8} />}
-          feature="Compare & Buying Guides"
-          description="Paste 2-10 YouTube videos (each a product you reviewed). MVP writes a ranked head-to-head comparison or a 'best for ___' buying guide, with a verdict box, pros/cons, and a mobile-optimized comparison table — published straight to WordPress."
+          feature="Compare products"
+          description="Paste 2-10 YouTube videos (each a product you reviewed). MVP writes a ranked head-to-head comparison with a named winner, verdict box, pros/cons, and a mobile-optimized comparison table — published straight to WordPress."
           bullets={[
             'Multi-product head-to-head with a named winner',
-            'Buying guide mode: "best for ___" so readers self-select',
             'Verdict box at the top, comparison table mid-article',
             'Mobile layout + Schema.org markup so the post ranks',
             'Publishes straight to your WordPress site',
+            'For buying-guide round-ups (e.g. "Best [topic] for 2026"), see Buying Guides in the sidebar',
           ]}
           requiredTier="pro"
           currentTier={normalizeTier(tier)}
@@ -118,27 +126,6 @@ export default function ComparisonPage() {
 
       {(tier === null || isPro) && (
       <div className="max-w-2xl flex flex-col gap-5">
-        {/* Format toggle */}
-        <div>
-          <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">What should MVP write?</label>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setMode('comparison')}
-              className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition ${mode === 'comparison' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}
-            >
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><Trophy size={14} className="text-[#ff9500]" /> Comparison</span>
-              <span className="text-xs text-[#86868b]">Head-to-head, ranked, names a winner.</span>
-            </button>
-            <button
-              onClick={() => setMode('guide')}
-              className={`flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition ${mode === 'guide' ? 'border-[#7C3AED] bg-[#7C3AED]/5' : 'border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'}`}
-            >
-              <span className="flex items-center gap-1.5 text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]"><ListChecks size={14} className="text-[#34c759]" /> Buying Guide</span>
-              <span className="text-xs text-[#86868b]">&ldquo;Best for ___&rdquo; — helps readers self-select.</span>
-            </button>
-          </div>
-        </div>
-
         {/* Topic (optional) */}
         <div>
           <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Topic / title <span className="text-[#86868b] font-normal">(optional — MVP infers it from your videos)</span></label>
@@ -219,7 +206,7 @@ export default function ComparisonPage() {
         {result && (
           <div className="rounded-xl border border-[#34c759]/30 bg-[#34c759]/5 px-4 py-3">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Published! &ldquo;{result.title}&rdquo;</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">{result.productCount} products · {result.mode === 'comparison' ? 'comparison' : 'buying guide'}</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">{result.productCount} products · comparison</p>
             <a href={result.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline">
               View post <ExternalLink size={12} />
             </a>
@@ -238,7 +225,7 @@ export default function ComparisonPage() {
         >
           {busy
             ? <><Loader2 size={14} className="animate-spin" /> Researching {validCount} products & writing…</>
-            : <><Scale size={14} /> Generate {mode === 'comparison' ? 'comparison' : 'buying guide'}</>}
+            : <><Scale size={14} /> Generate comparison</>}
         </button>
         {busy && <p className="text-xs text-[#86868b] -mt-2">This can take a minute or two — resolving each product, ranking, generating images, and publishing.</p>}
       </div>
