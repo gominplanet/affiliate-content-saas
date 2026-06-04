@@ -2693,14 +2693,33 @@ export default function ContentPage() {
     // video creator that's a 25MB→3MB savings on each dashboard load.
     async function fetchAllVideos(): Promise<Record<string, unknown>[]> {
       const PAGE = 1000
+      // COLS audit (fixed bug where the read returned 0 rows for every
+      // user despite the sync writing thousands):
+      //   - DROPPED: status (only on blog_posts), tags (only
+      //     generated_tags exists here), face_model_id (doesn't exist),
+      //     last_fetched_at (doesn't exist; transcript_fetched_at does
+      //     but isn't used by the Library page).
+      //   - ADDED: is_vertical — CRITICAL, this is what splits
+      //     horizontal/vertical tabs. Was previously missing from the
+      //     SELECT so every row landed as "undefined", which the !==
+      //     true filter treated as horizontal but never as vertical
+      //     (and the SELECT itself was already erroring on the bad
+      //     columns, so the bug compounded).
+      //
+      // Every column in this list is verified against
+      // lib/types/database.ts — if you add one here, make sure the
+      // regenerated Supabase types include it or the SELECT will error
+      // and silently empty the entire Library again.
       const COLS = [
         'id','user_id','youtube_video_id','title','thumbnail_url',
-        'published_at','selected_category','product_url','status',
-        'duration_seconds','view_count','tags','instagram_video_url',
-        'instagram_image_url','instagram_story_image_url','face_model_id',
-        'last_fetched_at','created_at','updated_at',
+        'published_at','selected_category','product_url',
+        'duration_seconds','view_count','is_vertical',
+        'instagram_video_url','instagram_image_url','instagram_story_image_url',
+        'created_at','updated_at',
       ].join(',')
       const all: Record<string, unknown>[] = []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let lastError: any = null
       for (let from = 0; ; from += PAGE) {
         const { data, error } = await sb
           .from('youtube_videos')
@@ -2708,10 +2727,23 @@ export default function ContentPage() {
           .eq('user_id', uid)
           .order('published_at', { ascending: false })
           .range(from, from + PAGE - 1)
-        if (error) break
+        if (error) {
+          // Stash for the toast below. Previously a silent break, which
+          // hid this exact class of bug for an unknown number of users.
+          lastError = error
+          console.error('[library] youtube_videos SELECT failed:', error)
+          break
+        }
         const chunk = (data as unknown as Record<string, unknown>[]) ?? []
         all.push(...chunk)
         if (chunk.length < PAGE) break
+      }
+      if (lastError && all.length === 0) {
+        // Surface to the user instead of silently rendering empty state.
+        // If the read partially succeeded (some pages OK, later one
+        // failed), we keep what we got and don't toast — the user sees
+        // partial data, which is better than blank.
+        toast.error(`Couldn't load your Library: ${lastError.message || 'unknown DB error'}. Refresh the page or contact support.`)
       }
       return all
     }
