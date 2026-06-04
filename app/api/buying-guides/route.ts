@@ -444,6 +444,22 @@ VOICE / STYLE RULES:
     const wpService = createWordPressService(site.wordpress_url, site.wordpress_username, site.wordpress_app_password, site.wordpress_api_token || undefined)
     let tagIds: number[] = []
     try { tagIds = await wpService.resolveTagIds(['buying-guide']) } catch { /* non-fatal */ }
+
+    // ── Featured image (so the guide doesn't render with a blank card on
+    // the homepage / Recently Updated strip). Use the FIRST pick that has
+    // an image — these come from WP REST featuredmedia or the matched MVP
+    // youtube thumbnail, so they're already brand-consistent with the
+    // rest of the catalogue. Best-effort: a failed upload publishes the
+    // guide without a hero rather than blocking the request.
+    let featuredMedia: number | undefined
+    try {
+      const heroSrc = picks.find(p => p.review.youtube_videos?.thumbnail_url)?.review.youtube_videos?.thumbnail_url || null
+      if (heroSrc) {
+        const media = await wpService.uploadImageFromUrl(heroSrc, `${slug}-hero.jpg`)
+        if (media?.id) featuredMedia = media.id
+      }
+    } catch { /* non-fatal */ }
+
     wpPost = await wpService.createPost({
       title: wpTitle,
       slug,
@@ -451,6 +467,7 @@ VOICE / STYLE RULES:
       excerpt: `${reviewerName} tested ${picks.length} ${topic} picks — here's the round-up: best overall, best on a budget, best for specific use cases.`,
       status: 'publish',
       tags: tagIds,
+      ...(featuredMedia ? { featured_media: featuredMedia } : {}),
       comment_status: 'closed',
       ping_status: 'closed',
     })
