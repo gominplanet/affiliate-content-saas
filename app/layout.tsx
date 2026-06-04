@@ -58,7 +58,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             />
           </>
         )}
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+        {/* Default theme flipped to 'dark' for the V2 dashboard chrome
+            (task #143). next-themes persists the user choice in
+            localStorage, so anyone who toggled to a specific theme
+            previously keeps their pick. Only first-load users see the
+            new dark default. */}
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           {children}
         </ThemeProvider>
       </body>

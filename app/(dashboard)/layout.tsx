@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import Sidebar from '@/components/layout/Sidebar'
+import DashboardShellV2 from '@/components/layout/DashboardShellV2'
 import { Toaster } from '@/components/ui/toaster'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -53,23 +53,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const showDeals = tier === 'studio' || tier === 'pro' || tier === 'admin'
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      <Sidebar email={user.email} wpSiteUrl={wpSiteUrl} showBuyingGuides={showBuyingGuides} showDeals={showDeals} />
-      <main className="flex-1 overflow-y-auto w-full" style={{ background: 'var(--bg)' }}>
-        {/* pt-16 on mobile leaves room for the fixed hamburger button; px-4 keeps
-            content from kissing the screen edge on phones. lg: restores the
-            generous desktop padding. */}
-        {/* max-w-6xl kept so long copy doesn't run to absurd line lengths
-            on ultra-wide monitors, but mx-auto dropped so the content
-            sits flush against the sidebar instead of floating in the
-            middle of the viewport. */}
-        <div className="max-w-6xl px-4 sm:px-6 lg:px-8 pt-16 lg:pt-8 pb-8">
-          {children}
-        </div>
-      </main>
+    <>
+      {/* DashboardShellV2 is the new chrome (per task #143). The legacy
+          Sidebar.tsx + the old wrapper stayed in components/layout/
+          intentionally for rollback; once the new look is locked in for
+          a few days a follow-up commit deletes them. */}
+      <DashboardShellV2
+        email={user.email}
+        wpSiteUrl={wpSiteUrl}
+        tier={tier}
+        showBuyingGuides={showBuyingGuides}
+        showDeals={showDeals}
+      >
+        {children}
+      </DashboardShellV2>
       {/* Single Toaster mount for every dashboard route — see
           components/ui/toaster.tsx for usage. */}
       <Toaster />
-    </div>
+    </>
   )
 }
