@@ -117,6 +117,12 @@ export async function POST(request: Request) {
       portfolioUrl: body.portfolioUrl?.toString().trim()
         || ((brand as Record<string, unknown> | null)?.linktree_url as string | undefined)?.trim()
         || '',
+      // Media kit URL — form override wins; falls back to the saved
+      // brand_profiles.media_kit_url so the email always includes it
+      // when the user has set one. Migration 102.
+      mediaKitUrl: body.mediaKitUrl?.toString().trim()
+        || ((brand as Record<string, unknown> | null)?.media_kit_url as string | undefined)?.trim()
+        || '',
       collabsDone: body.collabsDone?.toString().trim() || '',
       exampleLinks: Array.isArray(body.exampleLinks)
         ? body.exampleLinks.map(s => String(s).trim()).filter(Boolean).slice(0, 3)

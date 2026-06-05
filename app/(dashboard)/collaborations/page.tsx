@@ -49,6 +49,9 @@ export default function CollaborationsPage() {
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [portfolioUrl, setPortfolioUrl] = useState('')
+  // Media kit URL — set once on Brand Profile, pre-fills here so users
+  // don't retype it on every pitch. Empty = email skips the line.
+  const [mediaKitUrl, setMediaKitUrl] = useState('')
   // Extra reach-out channels brands can use besides email. Stored on
   // brand_profiles so we only ask once; pre-fills on subsequent pitches.
   const [whatsapp, setWhatsapp] = useState('')
@@ -118,6 +121,7 @@ export default function CollaborationsPage() {
         setYoutubeUrl(p => p || d.prefill.youtubeUrl || '')
         setAmazonStorefront(p => p || d.prefill.amazonStorefront || '')
         setPortfolioUrl(p => p || d.prefill.portfolioUrl || '')
+        setMediaKitUrl(p => p || d.prefill.mediaKitUrl || '')
         setWhatsapp(p => p || d.prefill.whatsapp || '')
         setWechat(p => p || d.prefill.wechat || '')
         setLark(p => p || d.prefill.lark || '')
@@ -142,7 +146,7 @@ export default function CollaborationsPage() {
       const res = await fetch('/api/collaborations/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes, livestreams, livestreamLink, portfolioUrl, whatsapp, wechat, lark }),
+        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes, livestreams, livestreamLink, portfolioUrl, mediaKitUrl, whatsapp, wechat, lark }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Save failed') }
       setTrackSaved(true); setTimeout(() => setTrackSaved(false), 2000)
@@ -211,7 +215,7 @@ export default function CollaborationsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brandName, productOrAsin, amazonStorefront, websiteUrl, youtubeUrl, portfolioUrl,
+          brandName, productOrAsin, amazonStorefront, websiteUrl, youtubeUrl, portfolioUrl, mediaKitUrl,
           platforms: [...platforms],
           bannerAds, bannerAdsAmount, freeSample, productionFee, productionFeeAmount, shareAddress,
           livestreams, livestreamLink,
@@ -296,7 +300,7 @@ export default function CollaborationsPage() {
             Recommended: free media kit template
           </p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-            Brands almost always ask for a media kit before agreeing to a deal. Oink for Influencers has a clean, free template you can fill in once and attach to every pitch email you send from here.
+            Brands almost always ask for a media kit before agreeing to a deal. Oink for Influencers has a clean, free template — fill it in once, host it (Notion / Google Doc / Canva share link / PDF), then <strong>paste the public URL in the &ldquo;Media kit URL&rdquo; field below</strong> and every pitch email will include it.
           </p>
           <a
             href="https://oinkforinfluencers.com/get-your-free-media-kit/"
@@ -335,6 +339,27 @@ export default function CollaborationsPage() {
           <div>
             <label className={lbl}>Portfolio / link hub <span className="text-[#86868b]">(Linktree, etc.)</span></label>
             <input value={portfolioUrl} onChange={e => setPortfolioUrl(e.target.value)} placeholder="linktr.ee/yourname" className="input-field text-sm w-full" />
+          </div>
+          {/* Media kit URL — public link to the creator's hosted media
+              kit (PDF, Notion, Google Doc, Canva). Threaded into the
+              generated email's sign-off so brands click straight to it.
+              Saved to Brand Profile on submit so this only needs to be
+              filled in once. See migration 102. */}
+          <div className="sm:col-span-2">
+            <label className={lbl}>
+              Media kit URL <span className="text-[#86868b]">(the link brands click before agreeing to a deal)</span>
+            </label>
+            <input
+              value={mediaKitUrl}
+              onChange={e => setMediaKitUrl(e.target.value)}
+              placeholder="https://your-mediakit-link.com (Oink, Canva, Notion, hosted PDF…)"
+              className="input-field text-sm w-full"
+              type="url"
+              inputMode="url"
+            />
+            <p className="mt-1 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+              Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>, fill it in, host it (Notion / Google Doc / Canva share link / PDF), and paste the URL here.
+            </p>
           </div>
         </div>
 

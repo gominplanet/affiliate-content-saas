@@ -71,6 +71,10 @@ export async function GET() {
       youtubeUrl: brand?.youtube_channel_url ?? '',
       amazonStorefront: brand?.amazon_storefront_url ?? '',
       portfolioUrl: brand?.linktree_url ?? '',
+      // Media kit URL — set once on Brand Profile, pre-fills the
+      // collab form so the user doesn't retype on every pitch.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mediaKitUrl: ((brand as any)?.media_kit_url as string | null | undefined) ?? '',
       collabsDone: brand?.collab_track_record ?? '',
       exampleLinks: Array.isArray(brand?.collab_example_links) ? brand.collab_example_links : [],
       extraNotes: brand?.collab_extra_notes ?? '',

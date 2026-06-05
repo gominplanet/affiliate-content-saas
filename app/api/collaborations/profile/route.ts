@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       livestreams?: unknown
       livestreamLink?: unknown
       portfolioUrl?: unknown
+      mediaKitUrl?: unknown
       whatsapp?: unknown
       wechat?: unknown
       lark?: unknown
@@ -56,6 +57,11 @@ export async function POST(request: Request) {
         collab_livestreams: !!body.livestreams,
         collab_livestream_link: str(body.livestreamLink),
         ...(portfolio ? { linktree_url: portfolio } : {}),
+        // Media kit URL (migration 102). Same defensive convention as
+        // portfolio — only overwrite when the form has a non-empty value
+        // so a blank field on a single pitch can't wipe what the user
+        // saved in Brand Profile.
+        ...(str(body.mediaKitUrl).trim() ? { media_kit_url: str(body.mediaKitUrl).trim() } : {}),
         // Contact channels — only update each one when a non-empty value
         // arrives, so a blank field in a single pitch can't wipe an
         // already-saved handle. Same defensive convention as portfolio.

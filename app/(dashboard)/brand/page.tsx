@@ -131,6 +131,10 @@ interface BrandData {
   threads_url: string
   amazon_storefront_url: string
   linktree_url: string
+  /** Public URL of the creator's hosted media kit. Pre-fills the
+   *  /collaborations form so brands get the kit link in every pitch
+   *  email. Set once here; the collab form can override per-pitch. */
+  media_kit_url: string
   contact_email: string
   /** Channel the creator wants brands to reach them through. Drives the
    *  "Let's Work Together" line in generated YouTube descriptions and the
@@ -208,6 +212,7 @@ const DEFAULT: BrandData = {
   threads_url: '',
   amazon_storefront_url: '',
   linktree_url: '',
+  media_kit_url: '',
   contact_email: '',
   contact_preference: 'website',
   sample_full_name: '',
@@ -315,6 +320,8 @@ export default function BrandPage() {
         threads_url: row.threads_url ?? '',
         amazon_storefront_url: row.amazon_storefront_url ?? '',
         linktree_url: row.linktree_url ?? '',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        media_kit_url: ((row as any).media_kit_url as string | null | undefined) ?? '',
         contact_email: row.contact_email ?? '',
         contact_preference: (row.contact_preference === 'email' ? 'email' : 'website'),
         sample_full_name: row.sample_full_name ?? '',
@@ -353,6 +360,7 @@ export default function BrandPage() {
       facebook_url:        normalizeUrl(data.facebook_url),
       threads_url:         normalizeUrl(data.threads_url),
       amazon_storefront_url: normalizeUrl(data.amazon_storefront_url),
+      media_kit_url:       normalizeUrl(data.media_kit_url),
       linktree_url: normalizeUrl(data.linktree_url),
     }
     // Update local state so the user sees their normalized URLs after save
@@ -638,6 +646,26 @@ export default function BrandPage() {
                   className="input-field"
                 />
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">A single hub of all your channels. Pre-fills the Collaborations pitch email.</p>
+              </div>
+              {/* Media kit URL — added 2026-06-05 alongside the Oink
+                  recommendation. Brands almost always ask for one
+                  before agreeing to a deal; we surface it here so
+                  every generated pitch email at /collaborations
+                  includes the link automatically. Migration 102. */}
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">
+                  Media kit URL <span className="text-[#86868b]">(optional but recommended)</span>
+                </label>
+                <input
+                  type="text"
+                  value={data.media_kit_url}
+                  onChange={(e) => set('media_kit_url', e.target.value)}
+                  placeholder="https://your-mediakit-link.com (Notion, Google Doc, Canva, hosted PDF…)"
+                  className="input-field"
+                />
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                  Brands almost always ask for a media kit before agreeing to a deal — paste yours here and every pitch email from /collaborations includes the link automatically. Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>.
+                </p>
               </div>
             </div>
           </div>

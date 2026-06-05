@@ -34,6 +34,11 @@ export interface CollabInput {
     rating: string | null
   } | null
   portfolioUrl?: string
+  /** Public URL of the creator's media kit. Threaded into the pitch
+   *  email so brands can click straight to it — they almost always
+   *  ask for one before agreeing to a deal. Set once on Brand Profile;
+   *  the form can override per-pitch. Empty = email skips the line. */
+  mediaKitUrl?: string
   collabsDone?: string
   exampleLinks?: string[]
   extraNotes?: string
@@ -110,6 +115,10 @@ Return a tight markdown brief under 250 words. No fluff.`,
     input.youtubeUrl || brand?.youtube_channel_url ? `YouTube: ${input.youtubeUrl || brand.youtube_channel_url}` : '',
     input.amazonStorefront ? `Amazon storefront: ${input.amazonStorefront}` : '',
     input.portfolioUrl ? `Portfolio / link hub (all channels): ${input.portfolioUrl}` : '',
+    // Media kit URL — falls back to brand_profiles.media_kit_url when the
+    // form didn't include it. Including this line in the sign-off block is
+    // table stakes; brands ask for the kit before committing to a deal.
+    (input.mediaKitUrl ?? (brand?.media_kit_url as string | undefined)) ? `Media kit (include this link in the sign-off so the brand can click straight to it): ${input.mediaKitUrl ?? brand.media_kit_url}` : '',
     brand?.contact_email ? `Contact email (sign off with this): ${brand.contact_email}` : '',
     // Extra reply channels — only fall through to brand_profiles when
     // the form didn't include them, so a form override always wins.
