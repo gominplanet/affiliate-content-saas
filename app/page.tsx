@@ -266,14 +266,25 @@ function DemoVideoSection() {
               <span className="w-2.5 h-2.5 rounded-full bg-white/15" />
             </div>
 
-            {/* Mock dashboard preview hint — three subtle rectangular
-                "cards" that imply "this is the actual MVP interface" without
-                trying to fake a screenshot. */}
-            <div className="absolute inset-x-12 top-12 bottom-20 grid grid-cols-3 gap-3 opacity-30">
-              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
-              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
-              <div className="rounded-lg border border-white/10 bg-white/[0.04]" />
-            </div>
+            {/* Real product frame from the demo video (extracted at the
+                42-second mark). Sits behind the play button so visitors
+                see what they're about to watch. If the file is missing
+                the browser silently 404s the background-image and the
+                mesh gradient underneath still shows — no broken-image
+                icon, no layout shift. */}
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: 'url(/demo/poster.jpg)' }}
+              aria-hidden
+            />
+
+            {/* Soft dark overlay so the violet play button + pulse stay
+                the clear focal point against any frame from the video. */}
+            <div
+              className="absolute inset-0"
+              style={{ backgroundColor: 'rgba(0,0,0,0.35)' }}
+              aria-hidden
+            />
 
             {/* Play button — large, violet, with a soft breathing pulse so
                 it reads as the focal point from any scroll position. */}
@@ -367,6 +378,7 @@ function DemoVideoSection() {
             </button>
             <video
               src="/demo/mvp-90s.mp4"
+              poster="/demo/poster.jpg"
               controls
               autoPlay
               playsInline
