@@ -173,12 +173,17 @@ export default function LandingPreview() {
   )
 }
 
-/** Demo video section — large centered video frame with a clickable play
- *  overlay. Click opens a fullscreen modal lightbox that plays the real
- *  90-second demo MP4 from /public/demo/mvp-90s.mp4 (self-hosted, not
- *  YouTube — see commit history for the "why self-host" call). The play
- *  button has a gentle breathing pulse so it reads as "alive and
- *  clickable" from any distance on the page.
+/** Intro video section — large centered video frame with a clickable
+ *  play overlay. Click opens a fullscreen modal lightbox that plays the
+ *  real 90-second founder introduction MP4 from /public/demo/mvp-90s.mp4
+ *  (self-hosted, not YouTube — see commit history for the "why self-host"
+ *  call). NOTE: section id stays "demo" and the directory stays /demo/
+ *  to keep all the #demo anchor links + asset URLs stable; the user-
+ *  facing copy is what we updated to "introduction" since this is a
+ *  founder intro, not a product walkthrough.
+ *
+ *  The play button has a gentle breathing pulse so it reads as "alive
+ *  and clickable" from any distance on the page.
  *
  *  Modal close behaviors: ESC key, X button top-right, click anywhere
  *  outside the video frame. Body scroll is locked while the modal is
@@ -210,15 +215,15 @@ function DemoVideoSection() {
             className="text-[11px] uppercase tracking-[0.18em] font-medium mb-3"
             style={{ color: 'var(--text-faint)' }}
           >
-            See it in motion
+            A quick introduction
           </p>
           <h2
-            className="text-[28px] lg:text-[36px] font-semibold tracking-tight leading-tight max-w-2xl mx-auto"
+            className="text-[28px] lg:text-[36px] font-semibold tracking-tight leading-tight max-w-3xl mx-auto"
             style={{ color: 'var(--text)' }}
           >
-            One review video.{' '}
-            <span style={{ color: 'var(--text-soft)' }}>Nine outputs.</span>{' '}
-            <span style={{ color: 'var(--text-soft)' }}>Ten minutes.</span>
+            Why we built MVP.{' '}
+            <span style={{ color: 'var(--text-soft)' }}>What it does.</span>{' '}
+            <span style={{ color: 'var(--text-soft)' }}>What&apos;s free when you start.</span>
           </h2>
         </div>
 
@@ -228,7 +233,7 @@ function DemoVideoSection() {
         <div
           role="button"
           tabIndex={0}
-          aria-label="Play 90-second demo"
+          aria-label="Play 90-second introduction"
           className="relative rounded-2xl overflow-hidden cursor-pointer group transition-transform duration-200 hover:scale-[1.005] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED] focus-visible:ring-offset-2"
           style={{
             boxShadow: '0 24px 80px -16px rgba(124,58,237,0.35), 0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--border)',
@@ -301,7 +306,7 @@ function DemoVideoSection() {
                 {/* The button itself */}
                 <button
                   type="button"
-                  aria-label="Play demo video"
+                  aria-label="Play introduction video"
                   className="relative w-20 h-20 rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] flex items-center justify-center text-white transition-all duration-200 group-hover:scale-105"
                   style={{ boxShadow: '0 12px 32px rgba(124,58,237,0.55)' }}
                 >
@@ -333,7 +338,7 @@ function DemoVideoSection() {
           className="text-center mt-6 text-[14px] max-w-xl mx-auto leading-relaxed"
           style={{ color: 'var(--text-subtle)' }}
         >
-          90 seconds. No talking head. Just the workflow: drop a YouTube URL → MVP turns it into 9 platforms → click publish.
+          90 seconds. The story behind MVP, what it does, and what you get free when you start.
         </p>
       </div>
 
@@ -359,7 +364,7 @@ function DemoVideoSection() {
           onClick={() => setOpen(false)}
           role="dialog"
           aria-modal="true"
-          aria-label="Demo video"
+          aria-label="Introduction video"
         >
           {/* Stop clicks on the video itself from closing the modal —
               that should only happen on backdrop clicks. */}
@@ -370,7 +375,7 @@ function DemoVideoSection() {
             <button
               type="button"
               onClick={() => setOpen(false)}
-              aria-label="Close demo video"
+              aria-label="Close introduction"
               className="absolute -top-12 right-0 sm:top-2 sm:right-2 w-10 h-10 rounded-full flex items-center justify-center text-white hover:scale-110 transition-transform z-10"
               style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
             >
@@ -386,7 +391,7 @@ function DemoVideoSection() {
               className="w-full rounded-2xl shadow-2xl"
               style={{ maxHeight: '85vh' }}
             >
-              Your browser does not support the video tag. <a href="/demo/mvp-90s.mp4">Download the demo</a> instead.
+              Your browser does not support the video tag. <a href="/demo/mvp-90s.mp4">Download the introduction</a> instead.
             </video>
           </div>
         </div>
@@ -1525,7 +1530,7 @@ function FinalCTASection() {
             }}
           >
             <Play size={14} />
-            Watch the 90-second demo
+            Watch the 90-second intro
           </a>
         </div>
 
@@ -1711,7 +1716,7 @@ function Hero() {
                 }}
               >
                 <Play size={13} fill="currentColor" />
-                Watch the 90-second demo
+                Watch the 90-second intro
               </a>
             </div>
             <p className="mt-3 text-[12px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
@@ -2141,7 +2146,7 @@ function Footer() {
               { label: 'Workflow', href: '#how-it-works' },
               { label: 'Pricing', href: '#pricing' },
               { label: 'FAQ', href: '#faq' },
-              { label: 'Watch demo', href: '#demo' },
+              { label: 'Watch intro', href: '#demo' },
             ]}
           />
           <FooterCol
