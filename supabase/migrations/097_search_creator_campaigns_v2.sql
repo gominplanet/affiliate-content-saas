@@ -49,6 +49,13 @@ returns table (
 )
 language plpgsql
 stable
+-- Attach the longer statement budget at the function level rather than
+-- via SET LOCAL inside the body — Postgres rejects SET LOCAL inside
+-- non-VOLATILE functions ("SET is not allowed in a non-volatile
+-- function"). The function-attribute form has identical effect: this
+-- timeout overrides the connection default for the duration of the
+-- call and only the call, then reverts.
+set statement_timeout to '20s'
 as $$
 declare
   v_limit integer := greatest(coalesce(p_limit, 500), 1);
@@ -58,12 +65,6 @@ declare
   -- inner sort cheap.
   v_overfetch integer := least(greatest(v_limit * 5, 500), 5000);
 begin
-  -- Give this RPC a longer statement budget than the default 8s. It
-  -- only ever runs from authenticated users hitting the catalog
-  -- search, the work is bounded by v_overfetch, and 20s is still
-  -- well under any timeout that would cascade into the API route.
-  set local statement_timeout = '20s';
-
   if p_keyword is null or p_keyword = '' then
     return query
     with candidates as (
