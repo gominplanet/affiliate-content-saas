@@ -37,7 +37,7 @@ import {
   Flame, GraduationCap, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
-  Share2, UserSquare,
+  Share2, UserSquare, Lightbulb,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -179,6 +179,11 @@ export default function DashboardShellV2({
       items: [
         { href: '/dashboard', icon: <Home size={15} />, label: 'Dashboard' },
         { href: '/content', icon: <Library size={15} />, label: 'Library' },
+        // Brainstorm — daily-check "what should I make next" surface.
+        // Reads 90-day perf snapshot + lets the user one-shot a
+        // grounded brainstorm via the Help Desk. Lives under Today
+        // because it answers a daily question, not a setup one.
+        { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm' },
       ],
     },
     {
