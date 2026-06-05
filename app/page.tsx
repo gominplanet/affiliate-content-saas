@@ -174,12 +174,33 @@ export default function LandingPreview() {
 }
 
 /** Demo video section — large centered video frame with a clickable play
- *  overlay. Currently a CSS-styled placeholder (gradient backdrop + mock
- *  dashboard hint + play button); swap the inner content for a real video
- *  poster image / embed when the demo is recorded. The play button has a
- *  gentle breathing pulse so it reads as "alive and clickable" from any
- *  distance on the page. */
+ *  overlay. Click opens a fullscreen modal lightbox that plays the real
+ *  90-second demo MP4 from /public/demo/mvp-90s.mp4 (self-hosted, not
+ *  YouTube — see commit history for the "why self-host" call). The play
+ *  button has a gentle breathing pulse so it reads as "alive and
+ *  clickable" from any distance on the page.
+ *
+ *  Modal close behaviors: ESC key, X button top-right, click anywhere
+ *  outside the video frame. Body scroll is locked while the modal is
+ *  open so the page doesn't jitter when the lightbox renders. */
 function DemoVideoSection() {
+  const [open, setOpen] = useState(false)
+
+  // ESC-to-close + body scroll lock. Both live in the same effect so
+  // they enable + tear down together — a half-applied state (scroll
+  // locked but no ESC listener) would be surprising.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('keydown', onKey)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [open])
+
   return (
     <section id="demo" className="px-6 lg:px-8 pb-24 -mt-8 relative">
       <div className="max-w-5xl mx-auto">
@@ -202,15 +223,22 @@ function DemoVideoSection() {
         </div>
 
         {/* The video frame. Wrapper provides the violet outer glow + soft
-            shadow. Inner div is what the visitor clicks. */}
+            shadow. Inner div is what the visitor clicks — opens the
+            fullscreen modal with the real demo MP4. */}
         <div
-          className="relative rounded-2xl overflow-hidden cursor-pointer group transition-transform duration-200 hover:scale-[1.005]"
+          role="button"
+          tabIndex={0}
+          aria-label="Play 90-second demo"
+          className="relative rounded-2xl overflow-hidden cursor-pointer group transition-transform duration-200 hover:scale-[1.005] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED] focus-visible:ring-offset-2"
           style={{
             boxShadow: '0 24px 80px -16px rgba(124,58,237,0.35), 0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--border)',
           }}
-          onClick={() => {
-            // Hook up to a real video modal or YouTube embed here.
-            // For now, the click is just a visual indicator.
+          onClick={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setOpen(true)
+            }
           }}
         >
           {/* Aspect ratio holder (16:9). All visual layers stack inside. */}
@@ -297,6 +325,60 @@ function DemoVideoSection() {
           90 seconds. No talking head. Just the workflow: drop a YouTube URL → MVP turns it into 9 platforms → click publish.
         </p>
       </div>
+
+      {/* Modal lightbox — renders only when `open === true` so the
+          <video> element doesn't even mount until the user clicks
+          play. Means: zero bandwidth burned on scroll-by traffic,
+          zero JS player code parsed unless interest is real.
+
+          Close behaviors:
+            - X button top-right
+            - Click anywhere outside the video frame (handler on the
+              backdrop; the video stops propagation)
+            - ESC key (effect on the parent component)
+
+          The MP4 lives in /public/demo/ so it ships from Vercel's
+          edge CDN. `preload="metadata"` fetches only the first few
+          KB until the user hits play — keeps the modal-open feel
+          snappy without auto-pulling the whole 39MB asset. */}
+      {open && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 backdrop-blur-sm"
+          style={{ backgroundColor: 'rgba(0,0,0,0.85)' }}
+          onClick={() => setOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Demo video"
+        >
+          {/* Stop clicks on the video itself from closing the modal —
+              that should only happen on backdrop clicks. */}
+          <div
+            className="relative w-full max-w-5xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close demo video"
+              className="absolute -top-12 right-0 sm:top-2 sm:right-2 w-10 h-10 rounded-full flex items-center justify-center text-white hover:scale-110 transition-transform z-10"
+              style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}
+            >
+              <XIcon size={20} strokeWidth={2.5} />
+            </button>
+            <video
+              src="/demo/mvp-90s.mp4"
+              controls
+              autoPlay
+              playsInline
+              preload="metadata"
+              className="w-full rounded-2xl shadow-2xl"
+              style={{ maxHeight: '85vh' }}
+            >
+              Your browser does not support the video tag. <a href="/demo/mvp-90s.mp4">Download the demo</a> instead.
+            </video>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
