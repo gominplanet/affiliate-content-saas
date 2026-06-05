@@ -68,7 +68,8 @@ const IN_APP_ROUTES = [
 /**
  * Wrap any bare in-app route in a markdown link so the renderer below
  * picks it up. Only wraps tokens that aren't already inside a markdown
- * link (`[text](...)`) or code (`/path`).
+ * link (`[text](...)`), inline code (`/path`), or the URL part of an
+ * existing markdown link `(url)`.
  *
  * Word-boundary-aware so we don't break `1/2 cup` or paths inside code
  * blocks. Idempotent — running it twice on the same string is a no-op.
@@ -76,14 +77,21 @@ const IN_APP_ROUTES = [
 function preProcessRoutes(md: string): string {
   let out = md
   for (const route of IN_APP_ROUTES) {
-    // (?<![\w\]/`]) — not preceded by word char, `]`, `/`, or backtick.
-    //   `]` guards against double-wrapping when the assistant already
-    //   emitted [Setup](/setup); `/` guards against /a/b style paths;
-    //   backtick guards against `/setup` inline code.
+    // (?<![\w\]/`(]) — not preceded by:
+    //   * word char (avoids /setup matching inside path-like-this/setup)
+    //   * `]`       (the assistant already emitted [text](/path) — don't
+    //                touch the URL inside (...))
+    //   * `/`       (already inside a deeper path)
+    //   * backtick  (`/setup` inline code)
+    //   * `(`       (the URL part of an EXISTING markdown link, e.g.
+    //                [Face Training](/face-training) — without this
+    //                guard the preprocessor would wrap the URL again
+    //                and the parser produces a broken nested href.
+    //                2026-06-05 bugfix.)
     // (?![\w-]) — followed by a non-word character or string end.
     //   Stops /setup from matching inside /setup-wizard etc.
     const re = new RegExp(
-      `(?<![\\w\\]/\`])${route.replace(/[/\\^$+?.()|[\]{}]/g, '\\$&')}(?![\\w-])`,
+      `(?<![\\w\\]/\`(])${route.replace(/[/\\^$+?.()|[\]{}]/g, '\\$&')}(?![\\w-])`,
       'g',
     )
     out = out.replace(re, `[\`${route}\`](${route})`)
