@@ -63,7 +63,7 @@ export default function CreatorCampaignsAdminPage() {
       const path = `${user.id}/creator-campaigns-imports/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.zip`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: upErr } = await (supabase.storage as any)
-        .from('instagram-videos')
+        .from('admin-uploads')
         .upload(path, file, {
           cacheControl: '60',
           upsert: false,
@@ -77,11 +77,11 @@ export default function CreatorCampaignsAdminPage() {
       // public URL if signing isn't allowed for some reason.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: signed, error: signErr } = await (supabase.storage as any)
-        .from('instagram-videos')
+        .from('admin-uploads')
         .createSignedUrl(path, 600)
       let upstreamUrl: string | null = signed?.signedUrl ?? null
       if (!upstreamUrl) {
-        const { data: urlData } = supabase.storage.from('instagram-videos').getPublicUrl(path)
+        const { data: urlData } = supabase.storage.from('admin-uploads').getPublicUrl(path)
         upstreamUrl = urlData.publicUrl
       }
       if (!upstreamUrl) {
@@ -121,7 +121,7 @@ export default function CreatorCampaignsAdminPage() {
       // Clean up the temporary zip from Storage — we have the parsed data
       // in the catalog table now, no need to retain the source.
       try {
-        await supabase.storage.from('instagram-videos').remove([path])
+        await supabase.storage.from('admin-uploads').remove([path])
       } catch { /* non-fatal */ }
     } catch (e) {
       setResult({ ok: false, message: e instanceof Error ? e.message : 'Upload failed' })
