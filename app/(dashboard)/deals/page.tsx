@@ -37,7 +37,15 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
-import DealsCsvImporter from './DealsCsvImporter'
+// DealsCsvImporter + /api/deals/parse-csv removed 2026-06-05. Amazon's
+// Promotions/Deals Hub export was triggering Supabase Disk IO budget
+// depletion when users dropped 1000+ row CSVs through the
+// browser→server upsert pipeline, and the resulting deal posts were
+// rarely curated. Users add deals one product at a time via the
+// single-deal form above — slower but more deliberate, and cheap on
+// the DB. If we bring bulk import back, do it via a browser-only
+// filter pass (like /admin/creator-campaigns) so the server never
+// sees the un-filtered rows.
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -722,19 +730,9 @@ create index if not exists blog_posts_deal_meta_gin
         )}
 
         {/* ── Bulk CSV import (Amazon Creator Connections) ──────────── */}
-        {/* Mounted between the single-product form and Recent Deals so
-            users see it after they've made one deal post the "manual"
-            way and want to scale up to a whole calendar of upcoming
-            deals. onDealsChanged refreshes the Recent Deals list after
-            each row publishes/schedules. */}
-        <DealsCsvImporter
-          onDealsChanged={() => {
-            fetch('/api/deals')
-              .then((r) => r.json())
-              .then((j) => { if (j?.deals) setDeals(j.deals) })
-              .catch(() => {})
-          }}
-        />
+        {/* Bulk CSV importer removed 2026-06-05 — see header comment for
+            rationale. Users add deals via the single-product form
+            above. */}
 
         {/* ── Recent deals list ──────────────────────────────────────── */}
         <div className="card p-6">
