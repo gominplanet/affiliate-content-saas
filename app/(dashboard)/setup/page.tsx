@@ -440,47 +440,94 @@ function Step1({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
         <ArrowLeft size={14} /> Back
       </button>
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Create your Hostinger account</h2>
+        <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
+          Step 1 of 4 · ~10 min · you&apos;ll leave this page
+        </div>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Get hosting + a domain</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Hostinger is where your affiliate blog will live. You&apos;ll get a domain and fast hosting for under $3/month.
+          Your blog needs to live somewhere. Hostinger is what we recommend — under $3/month and includes a free domain for year one.
         </p>
       </div>
+
+      {/* Big primary CTA */}
       <div className="card p-5 border border-[#7C3AED]/20 bg-[#7C3AED]/3">
         <div className="flex items-start gap-4">
           <div className="w-10 h-10 rounded-xl bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
             <Globe size={20} className="text-[#7C3AED]" />
           </div>
           <div className="flex-1">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Hostinger Web Hosting</p>
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Sign up for Hostinger</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-              Includes a free domain name, 1-click WordPress installer, fast SSD hosting, and free SSL.
-              The <strong>Premium</strong> plan is the sweet spot.
+              Free domain (year one), 1-click WordPress installer, fast SSD hosting, free SSL.
             </p>
             <a href="https://geni.us/ANaArQ" target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">
-              Get Hostinger → <ExternalLink size={13} />
+              Sign up for Hostinger → <ExternalLink size={13} />
             </a>
           </div>
         </div>
       </div>
+
+      {/* Pick this exact plan — opinionated picker so users don't get lost on the Hostinger pricing page */}
       <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
-        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">What to do on Hostinger:</p>
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Pick this exact plan:</p>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start gap-2 p-2 rounded-lg bg-[#34c759]/5 border border-[#34c759]/20">
+            <Check size={14} className="text-[#34c759] flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Premium plan — $2.99/mo</p>
+              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">The sweet spot. Free domain, 100 sites, unmetered bandwidth.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2 p-2 rounded-lg">
+            <X size={14} className="text-[#86868b] flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs font-medium text-[#86868b] dark:text-[#8e8e93]">Single plan — too restricted (no email, 1 site only)</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2 p-2 rounded-lg">
+            <X size={14} className="text-[#86868b] flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs font-medium text-[#86868b] dark:text-[#8e8e93]">Business plan — overkill, upgrade later if you need it</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* While-you're-there checklist — keeps the user from making expensive mistakes */}
+      <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">While you&apos;re there, do these 3 things:</p>
         <ol className="flex flex-col gap-3">
-          {[
-            'Click the link above and choose a hosting plan — Premium or Business recommended.',
-            'During checkout, register a new domain name (included free for the first year).',
-            'Complete payment and set up your account.',
-            'Come back here — the next step will walk you through installing WordPress.',
-          ].map((text, i) => (
-            <li key={i} className="flex items-start gap-3">
-              <span className="w-5 h-5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
-            </li>
-          ))}
+          <li className="flex items-start gap-3">
+            <span className="w-5 h-5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
+            <div className="flex-1">
+              <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Pick your domain name</p>
+              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Short, easy to spell, no hyphens. Hostinger gives you one free for year one.</p>
+            </div>
+          </li>
+          <li className="flex items-start gap-3">
+            <span className="w-5 h-5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
+            <div className="flex-1">
+              <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Pay for 24 or 48 months</p>
+              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">The $2.99 price only holds on multi-year. The 12-month plan jumps to $11/mo at renewal.</p>
+            </div>
+          </li>
+          <li className="flex items-start gap-3">
+            <span className="w-5 h-5 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
+            <div className="flex-1">
+              <p className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]"><Lock size={11} className="inline -mt-0.5 mr-1 text-[#7C3AED]" />Save these 2 things in your password manager BEFORE closing the Hostinger tab:</p>
+              <ul className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mt-1 ml-2 flex flex-col gap-0.5">
+                <li>• Your Hostinger account password</li>
+                <li>• Your domain name (you&apos;ll type it in Step 3)</li>
+              </ul>
+            </div>
+          </li>
         </ol>
       </div>
+
       <div className="flex items-center gap-3">
-        <button onClick={onNext} className="btn-primary">I have a Hostinger account <ChevronRight size={15} /></button>
-        <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Already signed up? Skip ahead.</p>
+        <button onClick={onNext} className="btn-primary">Done — I have hosting <ChevronRight size={15} /></button>
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Already have hosting elsewhere? Skip ahead.</p>
       </div>
     </div>
   )
@@ -491,67 +538,134 @@ function Step2({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Install WordPress, theme &amp; plugins</h2>
+        <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
+          Step 2 of 4 · ~5 min · in Hostinger&apos;s control panel
+        </div>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Install WordPress</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          Complete all three sections below before moving on. Each one takes about 2 minutes.
+          WordPress is the software your blog runs on. Hostinger installs it for you in a few clicks.
         </p>
       </div>
 
+      {/* Open hPanel — primary action */}
+      <div className="card p-5 border border-[#7C3AED]/20 bg-[#7C3AED]/3">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-xl bg-[#7C3AED]/10 flex items-center justify-center flex-shrink-0">
+            <Wrench size={20} className="text-[#7C3AED]" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Open hPanel</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
+              hPanel = Hostinger&apos;s control panel. Think of it as the behind-the-scenes settings page for your site.
+            </p>
+            <a href="https://hpanel.hostinger.com" target="_blank" rel="noopener noreferrer" className="btn-primary text-sm">
+              Open hPanel → <ExternalLink size={13} />
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* Follow these clicks — numbered steps inside hPanel */}
       <div className="flex flex-col gap-3">
-        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Part 1 — Install WordPress</p>
+        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Follow these 5 clicks:</p>
         {[
-          { title: 'Log in to hPanel', desc: 'Go to hpanel.hostinger.com and sign in to your Hostinger account.', action: { label: 'Open hPanel', href: 'https://hpanel.hostinger.com' } },
-          { title: 'Click "WordPress" in the sidebar', desc: 'In the left menu find the WordPress section and click it.' },
-          { title: 'Click "Install"', desc: 'Hit Install and select your domain name from the dropdown.' },
-          { title: 'Set your admin credentials', desc: 'Enter a username, your email, and a strong password. Write these down — you\'ll need them in the Launch step.' },
-          { title: 'Click "Install" and wait ~2 minutes', desc: 'WordPress will install automatically. You\'ll see a success screen when done.' },
-        ].map(({ title, desc, action }, i) => (
-          <div key={i} className="flex items-start gap-4 p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000]">
+          { title: 'Sign in to hPanel', desc: 'Use the password you saved in Step 1.' },
+          { title: 'Click "Websites" in the top nav', desc: 'Then click your domain name.' },
+          { title: 'Click "Auto Installer" → WordPress', desc: 'Hostinger&apos;s 1-click WordPress installer.' },
+          {
+            title: 'Fill in 3 fields',
+            desc: 'Site name (anything — change later). Admin email (yours). Admin password: click Generate.',
+            highlight: true,
+            highlightContent: (
+              <div className="flex items-start gap-2 mt-2 p-2.5 rounded-lg bg-[#7C3AED]/10 border border-[#7C3AED]/20">
+                <Lock size={13} className="text-[#7C3AED] flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7] leading-relaxed">
+                  <strong>Save the admin password in your password manager BEFORE clicking anywhere else.</strong>{' '}
+                  This is the password for your WordPress admin — losing it means reinstalling WordPress.
+                </p>
+              </div>
+            ),
+          },
+          { title: 'Click "Install" and wait 1-2 min', desc: 'Green ✓ when done.' },
+        ].map(({ title, desc, highlight, highlightContent }, i) => (
+          <div key={i} className={`flex items-start gap-4 p-4 rounded-xl ${highlight ? 'bg-[#7C3AED]/5 border border-[#7C3AED]/15' : 'bg-[#f5f5f7] dark:bg-[#000]'}`}>
             <span className="w-6 h-6 rounded-full bg-[#1d1d1f] text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
             <div className="flex-1">
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">{title}</p>
               <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{desc}</p>
+              {highlightContent}
             </div>
-            {action && (
-              <a href={action.href} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs px-3 py-1.5 flex-shrink-0">
-                {action.label} <ExternalLink size={11} />
-              </a>
-            )}
           </div>
         ))}
       </div>
 
-      <div className="flex flex-col gap-3">
-        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider">Part 2 — Install the MVP Affiliate plugin</p>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-          One plugin handles everything: blog layout, banners, social bar, footer, and the connection back to this dashboard. Download it, upload to WordPress, activate. ~60 seconds total.
-        </p>
-        <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] flex flex-col gap-3">
-          <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm self-start inline-flex">
-            <Download size={14} /> Download MVP Affiliate plugin
+      {/* Part 2 — install the MVP plugin + generate the connection token.
+          Same screen as the WordPress install above so the user can do both
+          back-to-back without losing flow. Split with a clear separator so
+          they know it's a distinct task. */}
+      <div className="border-t border-gray-200 dark:border-white/10 pt-6 -mt-2">
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wider mb-1">Now connect it to MVP (~3 min)</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+            Two clicks: install our plugin into the WordPress you just installed, then generate a token. The plugin handles theme, layout, banners, footer — everything else is automatic.
+          </p>
+        </div>
+
+        {/* DNS sanity check — important to surface NOW, not at launch */}
+        <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/50 dark:bg-amber-500/5 p-3 mb-4 flex items-start gap-2">
+          <Clock size={14} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+          <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+            <strong>Before continuing:</strong> visit your domain in a browser. If it shows a Hostinger placeholder (not a &ldquo;DNS propagating&rdquo; or &ldquo;site not found&rdquo; page), you&apos;re good. If not, give it 15-30 min and refresh — DNS sometimes takes a beat after install.
+          </p>
+        </div>
+
+        {/* Download */}
+        <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] mb-3">
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Download the plugin (10 sec)</p>
+          <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm inline-flex">
+            <Download size={14} /> Download mvpaffiliate-platform.zip
           </a>
+        </div>
+
+        {/* Install steps */}
+        <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] mb-3">
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Install &amp; activate (90 sec)</p>
           <ol className="flex flex-col gap-2">
             {[
-              'In your WordPress admin, go to Plugins → Add New Plugin → Upload Plugin.',
-              'Choose the ZIP file you just downloaded and click Install Now.',
-              'Click Activate Plugin once it finishes.',
-              'You\'ll see a new "MVP Affiliate" menu appear in the sidebar — open it.',
-              'Click Install & activate MVP Affiliate theme, then click Generate Connection Token.',
-              'Copy the token — you\'ll paste it in the Launch step.',
-            ].map((text, i) => (
+              <>Open your WordPress admin: <span className="font-mono text-[10px] bg-white/60 dark:bg-white/10 px-1 py-0.5 rounded">yourdomain.com/wp-admin</span></>,
+              <>Log in with the admin password you saved in Step 2 above.</>,
+              <><strong>Plugins</strong> → <strong>Add New Plugin</strong> → <strong>Upload Plugin</strong></>,
+              <>Choose the ZIP → <strong>Install Now</strong> → <strong>Activate Plugin</strong></>,
+              <>A new <strong>&ldquo;MVP Affiliate&rdquo;</strong> menu appears in the left sidebar → click it.</>,
+            ].map((node, i) => (
               <li key={i} className="flex items-start gap-2.5">
                 <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{text}</p>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{node}</p>
               </li>
             ))}
           </ol>
-          <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-            To get to wp-admin: visit <span className="font-mono">yourdomain.com/wp-admin</span> and log in with the credentials you set in Part 1.
-          </p>
+        </div>
+
+        {/* Generate token */}
+        <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000]">
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Generate your connection token (60 sec)</p>
+          <ol className="flex flex-col gap-2">
+            {[
+              <>In the MVP Affiliate menu, click <strong>Install &amp; activate MVP Affiliate theme</strong> → wait 10 sec for the green ✓.</>,
+              <>Click <strong>Generate Connection Token</strong> → a long string appears.</>,
+              <><strong>Copy it</strong> — you&apos;ll paste it on the next screen.</>,
+            ].map((node, i) => (
+              <li key={i} className="flex items-start gap-2.5">
+                <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{node}</p>
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
 
-      <button onClick={onNext} className="btn-primary self-start">Plugin installed, token ready <ChevronRight size={15} /></button>
+      <button onClick={onNext} className="btn-primary self-start">I have my token <ChevronRight size={15} /></button>
     </div>
   )
 }
@@ -565,9 +679,13 @@ function Step3({ data, onChange, onNext }: { data: BrandData; onChange: (d: Bran
   return (
     <div className="flex flex-col gap-7">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Customize your site</h2>
+        <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
+          Step 3 of 4 · optional · ~2 min
+        </div>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Make it yours (optional)</h2>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
-          This is what makes your blog feel like <em>yours</em>. All fields are optional — skip what you don&apos;t have yet.
+          Logo, headshot, bio, social links. All fields are optional — skip anything you don&apos;t have yet and come back to add it from your Brand Profile after launch.
         </p>
       </div>
 
@@ -684,25 +802,14 @@ function Step4({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Launch your review site</h2>
-        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">One connection token, one brand color. We auto-install the MVP Affiliate theme + plugin, wire up the homepage, build your About + Privacy pages, and configure your sidebar + footer. About 60 seconds.</p>
-      </div>
-
-      <div className="bg-[#f5f5f7] dark:bg-[#000] rounded-xl p-5">
-        <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">Before you launch — quick check:</p>
-        <ul className="flex flex-col gap-2">
-          {[
-            'WordPress is installed and you can log in to wp-admin',
-            'The MVP Affiliate plugin is installed and activated (from Step 2)',
-            'You\'ve installed Kadence + generated your Connection Token from the MVP Affiliate menu',
-            'Your domain is live — not just "DNS propagating" (can take up to 24h after signup)',
-          ].map((item, i) => (
-            <li key={i} className="flex items-start gap-2">
-              <span className="text-[#34c759] mt-0.5 flex-shrink-0">✓</span>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">{item}</p>
-            </li>
-          ))}
-        </ul>
+        <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93] mb-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED]" />
+          Step 4 of 4 · ~1 min · fully automatic
+        </div>
+        <h2 className="text-xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Launch your blog</h2>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0]">
+          Paste your token, pick a brand color, hit Launch. We build your homepage, About page, Privacy page, sidebar and footer in about 60 seconds.
+        </p>
       </div>
 
       <div className="flex flex-col gap-4">
@@ -792,7 +899,12 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
 
 // ─── Manual Facebook token ────────────────────────────────────────────────────
 // ─── Integrations panel (shown after WordPress is connected) ──────────────────
-function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
+// Exported so the dedicated /connect-socials page can render the same UI
+// without duplicating the OAuth/state machinery. Same client-component
+// boundary; importing into another 'use client' page works fine in App
+// Router. The default export of this file (SetupPage) is still the
+// canonical /setup route.
+export function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
   const supabase = createBrowserClient()
   const searchParams = useSearchParams()
 
@@ -2224,60 +2336,26 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         )}
       </div>
 
-      {/* Geniuslink */}
-      <div className="card p-5 flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-create smart affiliate links from ASINs in YouTube Co-Pilot</p>
-          </div>
-          {geniuslinkKey && geniuslinkSecret && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+      {/* Geniuslink + Amazon-tag moved to Brand Profile on 2026-06-05.
+          Leave a pointer so anyone hitting this URL knows where the
+          settings live now. Keep the state above intact so old code paths
+          that read geniuslinkKey/Secret/amazonAssociatesTag still work
+          (the IntegrationsPanel save() still writes them — they just
+          aren&apos;t editable here anymore). The Brand Profile page is the
+          new editing surface. */}
+      <div className="card p-5 flex items-start gap-3 border border-[#7C3AED]/20 bg-[#7C3AED]/3">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10 flex-shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         </div>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          Geniuslink turns a plain Amazon product link into a geo-targeted short link (e.g. <code className="bg-[var(--surface-2)] px-1 rounded">geni.us/abc123</code>) that routes shoppers to their local Amazon store. To connect, log in to your Geniuslink account, go to <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">app.geni.us/settings → Integrate with our API</a>, and copy your <strong>API Key</strong> and <strong>API Secret</strong>.
-        </p>
-        <div className="flex flex-col gap-3">
-          <div>
-            <label htmlFor="setup-geniuslink-key" className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Key</label>
-            <input id="setup-geniuslink-key" name="geniuslink-key" type="text" value={geniuslinkKey} onChange={e => setGeniuslinkKey(e.target.value)} placeholder="e.g. e353413c5f52..." className="input-field text-xs font-mono" />
-          </div>
-          <div>
-            <label htmlFor="setup-geniuslink-secret" className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
-            <input id="setup-geniuslink-secret" name="geniuslink-secret" type="password" value={geniuslinkSecret} onChange={e => setGeniuslinkSecret(e.target.value)} placeholder="Your Geniuslink API secret" className="input-field text-xs font-mono" />
-          </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">Affiliate Link Routing moved to Brand Profile</p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+            Geniuslink + your Amazon Associates tag now live under <strong>Brand Profile → Affiliate Link Routing</strong>. Same data, same database — just one less page to remember.
+          </p>
         </div>
-      </div>
-
-      {/* Amazon Associates */}
-      <div className="card p-5 flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#ff9900]/10 flex items-center justify-center flex-shrink-0">
-            <span className="text-sm">🛒</span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Amazon Associates</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Used as affiliate link fallback when Geniuslink isn't configured</p>
-          </div>
-          {amazonAssociatesTag && <span className="ml-auto flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
-        </div>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          If you're not using Geniuslink, your Amazon Associates tracking tag is used as the fallback — it's appended to product URLs so you still earn commissions. Find your tag in <a href="https://affiliate-program.amazon.com/home/account/tag/manage" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Amazon Associates → Account → Manage Tracking IDs</a>. It looks like <code className="bg-[var(--surface-2)] px-1 rounded">yourbrand-20</code>.
-        </p>
-        <div>
-          <label htmlFor="setup-amazon-associates-tag" className="block text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Associates Tag</label>
-          <input
-            id="setup-amazon-associates-tag"
-            name="amazon-associates-tag"
-            type="text"
-            value={amazonAssociatesTag}
-            onChange={e => setAmazonAssociatesTag(e.target.value)}
-            placeholder="e.g. yourtag-20"
-            className="input-field text-xs font-mono"
-          />
-        </div>
+        <a href="/brand" className="btn-secondary text-xs flex-shrink-0">
+          Open Brand Profile →
+        </a>
       </div>
 
       {error && <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{error}</p>}
@@ -2329,6 +2407,11 @@ function SetupPageInner() {
   const [brandData, setBrandData] = useState<BrandData>(defaultBrand)
   const [hydrated, setHydrated] = useState(false)
   const [setupComplete, setSetupComplete] = useState(false)
+  // When true, /setup ignores `setupComplete` and shows the wizard view even
+  // for users with a connected site — used by the manager view's "Start wizard"
+  // button so a Pro user can walk a SECOND brand-new blog through the same
+  // wizard without nuking their existing default site.
+  const [forceWizard, setForceWizard] = useState(false)
   const [completedUrl, setCompletedUrl] = useState('')
   const supabase = createBrowserClient()
 
@@ -2468,9 +2551,12 @@ function SetupPageInner() {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Site & Integrations</h1>
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Other settings</h1>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+            Affiliate links, YouTube, and social platforms.{' '}
+            <a href="/setup" className="text-[#7C3AED] hover:underline font-medium">← Back to Blog Set Up</a>
+          </p>
         </div>
-        <TabBar />
         <TutorialVideo sectionKey="integrations" />
         <IntegrationsPanel onLoad={() => {}} />
         {/* Multi-site WordPress manager — Pro feature. Renders only if the
@@ -2497,42 +2583,90 @@ function SetupPageInner() {
     )
   }
 
-  // ── Already connected (WordPress tab) ─────────────────────────────────────
-  if (setupComplete) {
+  // ── Already connected — Manager view ──────────────────────────────────────
+  // Surfaces the multi-site manager, connection doctor, brand customizations
+  // shortcut, and "Add another site" CTA in one clean view. Replaces the old
+  // tiny "WordPress connected" card buried inside the Integrations tab.
+  if (setupComplete && !forceWizard) {
     return (
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Site & Integrations</h1>
+      <div className="max-w-2xl mx-auto space-y-4">
+        <div className="mb-2">
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
+            Your WordPress sites, connection health, and publishing settings.
+          </p>
         </div>
-        <TabBar />
         <TutorialVideo sectionKey="blog-setup" />
-        <div className="card p-6">
-          <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+
+        {/* Primary status — current default site at a glance */}
+        <div className="card p-5">
+          <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-[#34c759]/10 flex items-center justify-center flex-shrink-0">
               <CheckCircle size={18} className="text-[#34c759]" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">WordPress connected</p>
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] truncate mt-0.5">{completedUrl || 'Your blog is ready to publish.'}</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Your blog is live and connected</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] truncate mt-0.5">{completedUrl || 'Ready to publish.'}</p>
             </div>
-            <span className="flex items-center gap-1 text-xs font-medium text-[#34c759] flex-shrink-0">
-              <Check size={12} /> Active
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
             {completedUrl && (
-              <a href={completedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs">
+              <a href={completedUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs flex-shrink-0">
                 Visit blog <ExternalLink size={11} />
               </a>
             )}
-            <button
-              onClick={handleReset}
-              className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors"
-            >
-              <LogOut size={12} /> Disconnect & connect a different site
-            </button>
           </div>
         </div>
+
+        {/* Multi-site manager — Pro feature. List of all connected sites with
+            add/edit/delete/set-default controls. Was previously hidden inside
+            the Integrations tab; promoted here as the primary content of /setup
+            for returning users. */}
+        <WordPressSitesManager />
+
+        {/* Connection doctor — pinpoints security plugins / firewalls blocking
+            writes. Surfaced here so users self-serve when posting breaks. */}
+        <div className="card p-5 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Posting trouble?</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
+              Run the connection doctor — it pinpoints the exact plugin, firewall, or CDN rule blocking writes and gives you click-by-click fix steps.
+            </p>
+          </div>
+          <a href="/setup/wp-doctor" className="btn-secondary text-xs flex-shrink-0">
+            Run doctor →
+          </a>
+        </div>
+
+        {/* Brand customizations shortcut — your logo/headshot/social links
+            are part of the brand profile, but get pushed to your WordPress
+            site on every publish. Surface the link so users know where to
+            edit them. */}
+        <div className="card p-5 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Brand customizations</p>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
+              Logo, headshot, About bio, contact email, social links — all live in your Brand Profile and push to your default WordPress site on every save.
+            </p>
+          </div>
+          <a href="/brand" className="btn-secondary text-xs flex-shrink-0">
+            Edit brand →
+          </a>
+        </div>
+
+        {/* Footnote — for the rare user who wants to build ANOTHER brand-new
+            blog from scratch (Hostinger sign-up → install). Most "add a
+            site" cases are handled by WordPressSitesManager's own
+            "+ Add another site" modal above (paste a token from a live
+            site). Kept as a small text link instead of a CTA card so it
+            doesn&apos;t compete with the primary add flow. */}
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93] text-center pt-2">
+          Setting up a brand-new blog from scratch?{' '}
+          <button
+            onClick={() => { setForceWizard(true); setMode(null); setStep(1) }}
+            className="text-[#7C3AED] hover:underline font-medium"
+          >
+            Run the full setup wizard →
+          </button>
+        </p>
       </div>
     )
   }
@@ -2542,10 +2676,9 @@ function SetupPageInner() {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Site & Integrations</h1>
-          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Connect your affiliate blog to start publishing from YouTube.</p>
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
+          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in a few minutes.</p>
         </div>
-        <TabBar />
         <TutorialVideo sectionKey="blog-setup" />
         <div className="card p-7">
           <ModePicker onSelect={setMode} />
@@ -2559,9 +2692,8 @@ function SetupPageInner() {
     return (
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Site & Integrations</h1>
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
         </div>
-        <TabBar />
         <TutorialVideo sectionKey="blog-setup" />
         <div className="card p-7">
           <ExistingConnect
@@ -2580,10 +2712,9 @@ function SetupPageInner() {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Site & Integrations</h1>
-        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in minutes.</p>
+        <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
+        <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in a few minutes.</p>
       </div>
-      <TabBar />
       <TutorialVideo sectionKey="blog-setup" />
 
       <div className="flex items-center justify-between mb-2">

@@ -228,6 +228,14 @@ export default function BrandPage() {
   const [headshotUploading, setHeadshotUploading] = useState(false)
   const [purging, setPurging] = useState(false)
   const [purged, setPurged] = useState(false)
+  // Geniuslink + Amazon-tag fallback live on the `integrations` table
+  // (not `brand_profiles`) but logically belong with the brand identity —
+  // they're how affiliate URLs get routed across the user's content. Moved
+  // here from /setup → Integrations tab on 2026-06-05 so all "this is my
+  // brand and how it monetizes" settings sit on one page.
+  const [geniuslinkKey, setGeniuslinkKey] = useState('')
+  const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
+  const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
 
   async function purgeCache() {
     setPurging(true)
@@ -252,6 +260,25 @@ export default function BrandPage() {
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+
+    // Load Geniuslink + Amazon-tag from `integrations` in parallel with the
+    // brand_profiles row — they sit on different tables but render together
+    // in the "Affiliate link routing" card below.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    supabase
+      .from('integrations')
+      .select('geniuslink_api_key, geniuslink_api_secret, amazon_associates_tag')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then(({ data: intRow }: { data: any }) => {
+        if (intRow) {
+          setGeniuslinkKey(intRow.geniuslink_api_key ?? '')
+          setGeniuslinkSecret(intRow.geniuslink_api_secret ?? '')
+          setAmazonAssociatesTag(intRow.amazon_associates_tag ?? '')
+        }
+      })
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: row } = await supabase
       .from('brand_profiles')
@@ -344,6 +371,31 @@ export default function BrandPage() {
       setSaving(false)
       setSaveError(`Save failed: ${dbError.message}`)
       return
+    }
+
+    // ── 1b. Save Geniuslink + Amazon-tag to `integrations` ────────────────
+    // These live on `integrations` (not `brand_profiles`) because they're
+    // tied to auth state, but they belong with brand identity in the UI.
+    // Fire and forget — a failure here doesn't block the brand-profile
+    // save; we surface it in wpPushNote so the user sees it.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: intError } = await (supabase as any)
+        .from('integrations')
+        .upsert(
+          {
+            user_id: user.id,
+            geniuslink_api_key: geniuslinkKey.trim() || null,
+            geniuslink_api_secret: geniuslinkSecret.trim() || null,
+            amazon_associates_tag: amazonAssociatesTag.trim() || null,
+          },
+          { onConflict: 'user_id' },
+        )
+      if (intError) {
+        setWpPushNote(`Brand saved, but affiliate routing keys failed: ${intError.message}`)
+      }
+    } catch (e) {
+      setWpPushNote(`Brand saved, but affiliate routing keys failed: ${e instanceof Error ? e.message : 'unknown error'}`)
     }
 
     // ── 2. Sync to WordPress (route through our server so the same Application
@@ -619,6 +671,104 @@ export default function BrandPage() {
 
           {/* Writing Style, About You, Target Reader and Words to Avoid
               moved to the LEARN page (single editing surface for voice). */}
+
+          {/* Affiliate link routing — Geniuslink + Amazon-tag fallback.
+              These travel with brand identity (they're the "how do my
+              affiliate links work" answer), so they live here rather than
+              buried in /setup → Integrations. Moved 2026-06-05. Stored on
+              the `integrations` table; loaded/saved alongside the brand
+              profile via the same Save button. */}
+          <div className="card p-6">
+            <div className="flex items-center gap-1.5 mb-1">
+              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Affiliate Link Routing</h2>
+              <InfoTip>
+                When MVP inserts an Amazon product link into your blog or YouTube description, it routes via Geniuslink (if configured) so shoppers land on their local Amazon store. If you haven&apos;t set up Geniuslink, your Amazon Associates tracking tag is appended as the fallback.
+              </InfoTip>
+            </div>
+            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+              How affiliate links are stamped into your content. Geniuslink is the smart routing layer; your Amazon tag is the simple fallback.
+            </p>
+
+            {/* Geniuslink */}
+            <div className="rounded-xl border border-gray-200 dark:border-white/10 p-4 mb-3">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10 flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink</p>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Geo-targeted short links from any ASIN</p>
+                </div>
+                {geniuslinkKey && geniuslinkSecret && (
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0">
+                    <Check size={12} /> Connected
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+                Log in at <a href="https://app.geni.us/settings" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">app.geni.us/settings → Integrate with our API</a> and copy your API Key and API Secret.
+              </p>
+              <div className="flex flex-col gap-2">
+                <div>
+                  <label htmlFor="brand-geniuslink-key" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Key</label>
+                  <input
+                    id="brand-geniuslink-key"
+                    name="geniuslink-key"
+                    type="text"
+                    value={geniuslinkKey}
+                    onChange={e => setGeniuslinkKey(e.target.value)}
+                    placeholder="e.g. e353413c5f52..."
+                    className="input-field text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="brand-geniuslink-secret" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">API Secret</label>
+                  <input
+                    id="brand-geniuslink-secret"
+                    name="geniuslink-secret"
+                    type="password"
+                    value={geniuslinkSecret}
+                    onChange={e => setGeniuslinkSecret(e.target.value)}
+                    placeholder="Your Geniuslink API secret"
+                    className="input-field text-xs font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Amazon Associates fallback */}
+            <div className="rounded-xl border border-gray-200 dark:border-white/10 p-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#ff9900]/10 flex-shrink-0">
+                  <span className="text-sm">🛒</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Amazon Associates tag</p>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Fallback when Geniuslink isn&apos;t set</p>
+                </div>
+                {amazonAssociatesTag && (
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0">
+                    <Check size={12} /> Set
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+                Find your tag at <a href="https://affiliate-program.amazon.com/home/account/tag/manage" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Amazon Associates → Account → Manage Tracking IDs</a>. It looks like <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 py-0.5 rounded text-[10px]">yourbrand-20</code>.
+              </p>
+              <div>
+                <label htmlFor="brand-amazon-tag" className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Associates Tag</label>
+                <input
+                  id="brand-amazon-tag"
+                  name="amazon-tag"
+                  type="text"
+                  value={amazonAssociatesTag}
+                  onChange={e => setAmazonAssociatesTag(e.target.value)}
+                  placeholder="e.g. yourbrand-20"
+                  className="input-field text-xs font-mono"
+                />
+              </div>
+            </div>
+          </div>
 
           {/* Brand-outreach contact preference. Drives the "Let's Work
               Together" line in YouTube descriptions and the reply-to channel

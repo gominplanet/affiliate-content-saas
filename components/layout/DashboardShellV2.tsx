@@ -198,12 +198,14 @@ export default function DashboardShellV2({
       label: 'Set up',
       items: [
         { href: '/setup', icon: <Wrench size={15} />, label: 'Blog Set Up' },
-        { href: '/setup?tab=integrations', icon: <Plug size={15} />, label: 'Integrations' },
-        // Connect Socials drops the user on /setup?tab=integrations and
-        // smooth-scrolls to the #social-platforms anchor — no separate
-        // page to maintain, but the user gets a direct "go connect my
-        // socials" entry in the onboarding spine.
-        { href: '/setup?tab=integrations#social-platforms', icon: <Share2 size={15} />, label: 'Connect Socials' },
+        // /connect-socials is a real top-level route as of 2026-06-05 —
+        // no longer a hash anchor inside /setup?tab=integrations. Hosts
+        // YouTube + every social channel. The old `Integrations` sidebar
+        // entry was removed because everything moved to its proper home:
+        //   - WordPress  → /setup (Blog Set Up — wizard + manager)
+        //   - Geniuslink → /brand (Brand Profile → Affiliate Link Routing)
+        //   - Socials    → /connect-socials (this entry)
+        { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
         { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
         { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
         // Face Models points at /photobooth — same page that hosts
