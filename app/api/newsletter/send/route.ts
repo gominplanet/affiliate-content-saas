@@ -38,7 +38,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { normalizeTier, allowedNewsletterBroadcasts } from '@/lib/tier'
+import { normalizeTier, allowedNewsletterBroadcasts, tierHas } from '@/lib/tier'
 import { isEmailConfigured } from '@/services/email'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import {
@@ -128,6 +128,30 @@ export async function POST(req: Request) {
     .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
   const defaultSite = await getWordPressCredentials(supabase, user.id)
   const tier = normalizeTier(integ?.tier as string | undefined)
+
+  // Tier restructure 2026-06-04: gate the SUB-features (A/B / scheduling /
+  // segmented sends) server-side. Compose UI hides the toggles for
+  // ineligible tiers but a curl request could still set scheduled_at /
+  // subject_b / segment_filter and bypass.
+  if (body.scheduled_at && !tierHas(tier, 'newsletterScheduling')) {
+    return NextResponse.json({
+      error: 'Scheduling broadcasts is a Studio + Pro feature.',
+      code: 'tier_not_allowed_scheduling',
+    }, { status: 403 })
+  }
+  if (body.subject_b && !tierHas(tier, 'newsletterABTesting')) {
+    return NextResponse.json({
+      error: 'A/B subject lines are a Pro feature.',
+      code: 'tier_not_allowed_ab',
+    }, { status: 403 })
+  }
+  if (body.segment_filter && !tierHas(tier, 'newsletterSegmentedSends')) {
+    return NextResponse.json({
+      error: 'Segmented sends are a Pro feature.',
+      code: 'tier_not_allowed_segments',
+    }, { status: 403 })
+  }
+
   const monthlyCap = allowedNewsletterBroadcasts(tier)
   if (monthlyCap !== null) {
     const monthStart = new Date()

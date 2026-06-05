@@ -15,7 +15,7 @@ import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { verifyProductMatch } from '@/lib/product-image'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
-import { normalizeTier, allowedBlogImages } from '@/lib/tier'
+import { normalizeTier, allowedBlogImages, tierHas } from '@/lib/tier'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
@@ -57,6 +57,17 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
   const tier = normalizeTier(wp?.tier)
+
+  // Tier restructure 2026-06-04: Refresh Images is Studio+ per tier matrix.
+  // (Was previously ungated — Trial/Creator could hit the route directly
+  // and burn FAL credits even though /seo and Library UIs hide the button.)
+  if (!tierHas(tier, 'refreshImages')) {
+    return NextResponse.json({
+      error: 'Refresh Images is a Studio + Pro feature. Upgrade to re-render the photos on any of your published posts.',
+      code: 'tier_not_allowed',
+    }, { status: 403 })
+  }
+
   const site = await getWordPressCredentials(
     supabase,
     user.id,

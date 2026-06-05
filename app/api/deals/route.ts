@@ -46,6 +46,7 @@ import { recordUsage } from '@/lib/ai-usage'
 import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
+import { checkDealsUsage } from '@/lib/tier'
 
 export const maxDuration = 300
 
@@ -313,16 +314,23 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Tier gate
-  const { data: integ } = await supabase
-    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  const tier = (integ?.tier as string | undefined) ?? 'trial'
-  if (tier !== 'studio' && tier !== 'pro' && tier !== 'admin') {
+  // Tier gate + monthly cap (Studio 5/mo, Pro 30/mo). checkDealsUsage
+  // does both: the access gate (cap === 0 means tier doesn't get Deals)
+  // and the monthly counter. Wired in 2026-06-04 audit — was previously
+  // only blocking by raw tier, so Studio + Pro could publish unlimited
+  // deals against the per-tier cap defined in lib/tier.ts.
+  const dealsCheck = await checkDealsUsage(supabase, user.id)
+  if (!dealsCheck.allowed) {
     return NextResponse.json({
-      error: 'Deals Hub requires the Studio or Pro tier.',
+      error: dealsCheck.reason,
       code: 'tier_not_allowed',
-    }, { status: 403 })
+      currentTier: dealsCheck.tier,
+      cap: dealsCheck.cap,
+      used: dealsCheck.used,
+      upgrade: dealsCheck.upgrade,
+    }, { status: dealsCheck.cap === 0 ? 403 : 429 })
   }
+  const tier = dealsCheck.tier
 
   // Parse + validate body
   let body: {

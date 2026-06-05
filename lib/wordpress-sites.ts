@@ -30,7 +30,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { maybeDecrypt } from '@/lib/secrets'
 import type { Database } from '@/lib/types/database'
-import { normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 
 type Client = SupabaseClient<Database>
 
@@ -46,16 +46,11 @@ export interface WordPressSite {
   isDefault: boolean
 }
 
-/** Per-tier site cap. Driven by tier config so future tier changes (e.g.
- *  an Agency tier with 25 sites) only need a TIERS update, not code edits.
- *  Studio + Creator keep their 1-site behaviour; Pro gets 5; Admin uncapped. */
+/** Per-tier site cap. Reads from `lib/tier.ts` so future tier changes
+ *  (e.g. raising Pro from 10 → 15 sites) only need a TIERS update.
+ *  Per the 2026-06-04 matrix: trial/creator/studio = 1, pro = 10, admin = 999. */
 export function maxSitesForTier(tier: Tier): number {
-  const t = normalizeTier(tier)
-  if (t === 'admin') return 999
-  if (t === 'pro') return 5
-  // Creator + Studio + trial all get exactly one site — same as the
-  // single-site behaviour before this migration.
-  return 1
+  return TIERS[normalizeTier(tier)].sites
 }
 
 /** Whether the user can add another site (true when below their tier cap).

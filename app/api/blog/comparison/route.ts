@@ -123,14 +123,17 @@ export async function POST(request: Request) {
     .from('integrations')
     .select('tier,wordpress_url,wordpress_username,wordpress_app_password,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
   const tier = normalizeTier(wp?.tier)
 
-  // Paid tiers only (Creator / Pro / Admin) — trial can't use multi-product.
-  if (tier === 'trial') {
+  // Tier restructure 2026-06-04: Comparison + Buying Guides are Pro-only.
+  // (Was previously only blocking trial — Creator + Studio could curl the
+  // route and burn the Comparison/Guide path. Cross-checked vs tier matrix:
+  // comparisonPosts + buyingGuides are both Pro-tier-only booleans.)
+  if (tier !== 'pro' && tier !== 'admin') {
     return NextResponse.json({
-      error: 'Comparisons & buying guides are available on the Creator and Pro plans.',
-      limitReached: true, cap: 'posts', currentTier: tier,
+      error: 'Comparisons and Buying Guides are a Pro feature. Upgrade to unlock multi-product reviews and "best for ___" round-ups.',
+      limitReached: true, cap: 'posts', currentTier: tier, code: 'tier_not_allowed',
     }, { status: 403 })
   }
   // Multi-site: resolve target site (default if siteId omitted). See

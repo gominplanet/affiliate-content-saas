@@ -285,13 +285,17 @@ export async function POST(request: Request) {
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
     const tier = (intRow?.tier as Tier) ?? 'trial'
-    if (tier !== 'pro' && tier !== 'admin') {
+    // Tier restructure 2026-06-04: IG AI thumbnails opened to Studio
+    // (30/mo) on top of Pro (100/mo). Trial + Creator still blocked.
+    // (Was previously Pro-only — but the tier matrix puts Studio at
+    // 30/mo via instagramAiThumbnailsPerMonth.)
+    if (tier !== 'studio' && tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({
-        error: `Native Instagram AI thumbnails are a ${TIERS.pro.label} feature.`,
+        error: `Native Instagram AI thumbnails are a ${TIERS.studio.label}+ feature.`,
         limitReached: true,
         cap: 'instagram_ai',
         currentTier: tier,
-        upgrade: { tier: 'pro' as Tier, label: TIERS.pro.label, limit: TIERS.pro.instagramAiThumbnailsPerMonth },
+        upgrade: { tier: 'studio' as Tier, label: TIERS.studio.label, limit: TIERS.studio.instagramAiThumbnailsPerMonth },
       }, { status: 403 })
     }
 

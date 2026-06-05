@@ -155,12 +155,20 @@ export async function POST(req: NextRequest) {
   // owner can re-send manually if delivery failed.
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
   const acceptUrl = `${appUrl}/agency/accept/${plaintext}`
+  // Escape every interpolated value before it touches the HTML email
+  // body. user.email + role are technically safe at the API layer
+  // (Supabase validates emails; role is an enum-checked literal), but
+  // defence-in-depth here is cheap — a future code path that loosens
+  // either input shouldn't be able to XSS the recipient.
+  const ownerEmailSafe = escapeHtml(user.email || 'Someone')
+  const roleSafe = escapeHtml(role)
+  const subjectSafe = `${user.email || 'Someone'} invited you to their MVP Affiliate team`
   try {
     await sendEmail({
       to: email,
-      subject: `${user.email || 'Someone'} invited you to their MVP Affiliate team`,
+      subject: subjectSafe,
       html: `<p>Hi,</p>
-<p>${user.email || 'Someone'} invited you to join their MVP Affiliate team as a <b>${role}</b>.</p>
+<p>${ownerEmailSafe} invited you to join their MVP Affiliate team as a <b>${roleSafe}</b>.</p>
 ${note ? `<p>Personal note: <em>${escapeHtml(note)}</em></p>` : ''}
 <p><a href="${acceptUrl}" style="background:#7C3AED;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:600">Accept invite</a></p>
 <p style="color:#666;font-size:13px">Or paste this URL into your browser:<br><code style="font-size:12px">${acceptUrl}</code></p>

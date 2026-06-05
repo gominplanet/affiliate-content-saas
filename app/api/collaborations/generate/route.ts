@@ -6,7 +6,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsPublishAll, TIERS, billingWindow, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, billingWindow, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 
@@ -24,8 +24,16 @@ export async function POST(request: Request) {
       supabase.from('brand_profiles').select('*').eq('user_id', user.id).single(),
     ])
     const tier = normalizeTier(intRow?.tier)
-    if (!tierAllowsPublishAll(tier)) {
-      return NextResponse.json({ error: 'Collaborations is a Pro plan feature.' }, { status: 403 })
+    // Tier restructure 2026-06-04: Collabs is Creator+ minimum per matrix
+    // (Creator 5/mo, Studio 15/mo, Pro 100/mo). Was incorrectly gated to
+    // publishAll (Pro-only), which both over-restricted Creator/Studio AND
+    // short-circuited the per-tier collab cap enforcement below.
+    if (TIERS[tier].collabsPerMonth === 0) {
+      return NextResponse.json({
+        error: 'Brand-collab pitch emails are a paid-tier feature. Upgrade to Creator+ to start landing deals.',
+        currentTier: tier,
+        code: 'tier_not_allowed',
+      }, { status: 403 })
     }
 
     // Per-BILLING-PERIOD cap from the single source of truth
