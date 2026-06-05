@@ -23,6 +23,26 @@ interface Stats {
   most_recent_import: string | null
 }
 
+/** Coerce ANY thrown value or server-returned error shape into a readable
+ *  string. Plain `String(x)` on `{message: "..."}` gives "[object Object]",
+ *  which was leaking into the UI when the API returned a structured error
+ *  payload that the client then passed straight into `new Error(...)`. This
+ *  walks the common shapes (string, Error, {message}, {error}, nested) and
+ *  falls back to JSON.stringify for truly weird values so the user always
+ *  sees actual text, never "[object Object]". */
+function toErrorString(x: unknown): string {
+  if (x == null) return 'Unknown error'
+  if (typeof x === 'string') return x
+  if (x instanceof Error) return x.message || x.name || 'Error'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const o = x as any
+  if (typeof o.message === 'string') return o.message
+  if (typeof o.error === 'string') return o.error
+  if (o.error && typeof o.error === 'object') return toErrorString(o.error)
+  if (typeof o.statusText === 'string') return o.statusText
+  try { return JSON.stringify(o).slice(0, 300) } catch { return 'Unrecognized error shape' }
+}
+
 export default function CreatorCampaignsAdminPage() {
   const supabase = createBrowserClient()
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
@@ -76,7 +96,7 @@ export default function CreatorCampaignsAdminPage() {
         })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .catch((e: any) => ({ error: { message: `Network error during upload: ${e?.message || e}. If this says "Failed to fetch", the most likely cause is that the admin-uploads Storage bucket doesn\'t exist yet — run migration 095_admin_uploads_bucket.sql in Supabase, then retry.` } }))
-      if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`)
+      if (upErr) throw new Error(`Storage upload failed: ${toErrorString(upErr)}`)
       // Signed URL instead of public URL so this works even when the
       // bucket is private (which it is by default on new Supabase
       // projects). 10-minute TTL is plenty — the server downloads the
@@ -94,7 +114,7 @@ export default function CreatorCampaignsAdminPage() {
         upstreamUrl = urlData.publicUrl
       }
       if (!upstreamUrl) {
-        throw new Error(`Could not get a download URL for the uploaded zip${signErr ? `: ${signErr.message}` : ''}`)
+        throw new Error(`Could not get a download URL for the uploaded zip${signErr ? `: ${toErrorString(signErr)}` : ''}`)
       }
 
       let r: Response
@@ -109,7 +129,7 @@ export default function CreatorCampaignsAdminPage() {
         // failures (DNS, CORS, browser-side block). Wrap with a marker
         // so the catch below shows it's the API call that died, not
         // the Storage upload.
-        throw new Error(`Network error reaching /api/admin/creator-campaigns/import: ${e instanceof Error ? e.message : String(e)}`)
+        throw new Error(`Network error reaching /api/admin/creator-campaigns/import: ${toErrorString(e)}`)
       }
       // Read as text first so we can surface the real error even when
       // Vercel returns a non-JSON error page (function timeout, memory
@@ -129,7 +149,7 @@ export default function CreatorCampaignsAdminPage() {
             : `Server error ${r.status}: ${snippet || 'no response body'}. The function likely timed out (Amazon's export can exceed Vercel's per-function ceiling) or ran out of memory.`,
         )
       }
-      if (!r.ok) throw new Error(d.error || `Import failed (${r.status})`)
+      if (!r.ok) throw new Error(d.error ? toErrorString(d.error) : `Import failed (${r.status})`)
       setResult({
         ok: true,
         message: `Imported ${(d.upserted ?? 0).toLocaleString()} campaigns · ${(d.deduped_count ?? 0).toLocaleString()} unique rows · ${d.stale_deleted ?? 0} stale rows pruned.`,
@@ -142,7 +162,7 @@ export default function CreatorCampaignsAdminPage() {
         await supabase.storage.from('admin-uploads').remove([path])
       } catch { /* non-fatal */ }
     } catch (e) {
-      setResult({ ok: false, message: e instanceof Error ? e.message : 'Upload failed' })
+      setResult({ ok: false, message: toErrorString(e) })
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
