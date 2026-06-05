@@ -123,13 +123,31 @@ export async function POST(req: Request) {
   }
 
   // ── Tier cap: broadcasts per billing month ────────────────────────────────
+  // Read defensively: migration 100 adds integrations.legacy_creator_newsletter
+  // for the grandfather notice work. Until it runs, selecting that column
+  // makes Postgres throw "column does not exist", which would land us in
+  // a fall-through where tier reads as undefined → normalizes to 'trial' →
+  // newsletter cap reads as 0 and EVERY send 402s with "broadcast cap
+  // (0/month)" — including for paying users. Fix: try the full select
+  // first; on column-not-found error, fall back to tier-only and treat
+  // legacy flag as false. 2026-06-05 hotfix.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await supabase
+  type IntegRow = { tier?: string; legacy_creator_newsletter?: boolean } | null
+  let integ: IntegRow = null
+  const withLegacy = await supabase
     .from('integrations').select('tier, legacy_creator_newsletter').eq('user_id', user.id).maybeSingle()
+  if (withLegacy.error) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fallback = await supabase
+      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    integ = (fallback.data as IntegRow) ?? null
+  } else {
+    integ = (withLegacy.data as IntegRow) ?? null
+  }
   const defaultSite = await getWordPressCredentials(supabase, user.id)
-  const tier = normalizeTier((integ as { tier?: string } | null)?.tier)
+  const tier = normalizeTier(integ?.tier)
   // Legacy-Creator grandfathering — see migration 100 + lib/tier.ts comment.
-  const legacyCreatorNewsletter = Boolean((integ as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter)
+  const legacyCreatorNewsletter = Boolean(integ?.legacy_creator_newsletter)
 
   // Tier restructure 2026-06-04: gate the SUB-features (A/B / scheduling /
   // segmented sends) server-side. Compose UI hides the toggles for

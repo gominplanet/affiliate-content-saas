@@ -189,13 +189,30 @@ export async function POST(req: NextRequest) {
   if (!settings || !settings.enabled) {
     return json({ ok: false, error: "This newsletter isn't accepting signups right now." }, { status: 404 })
   }
+  // Defensive read — see app/api/newsletter/send/route.ts for full
+  // explanation. Until migration 100 runs, selecting
+  // legacy_creator_newsletter would error out and silently downgrade
+  // every creator to 'trial' (cap = 0).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await admin
+  type IntegRow = { tier?: string; legacy_creator_newsletter?: boolean } | null
+  let integ: IntegRow = null
+  const withLegacy = await admin
     .from('integrations')
     .select('tier, legacy_creator_newsletter')
     .eq('user_id', creatorUserId)
     .maybeSingle()
-  const tier = normalizeTier((integ as { tier?: string } | null)?.tier)
+  if (withLegacy.error) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fallback = await admin
+      .from('integrations')
+      .select('tier')
+      .eq('user_id', creatorUserId)
+      .maybeSingle()
+    integ = (fallback.data as IntegRow) ?? null
+  } else {
+    integ = (withLegacy.data as IntegRow) ?? null
+  }
+  const tier = normalizeTier(integ?.tier)
 
   // ── 4. Cap check (count active + pending — both consume the cap) ──────────
   // Pending counts because spammers could flood pendings to push real
@@ -203,7 +220,7 @@ export async function POST(req: NextRequest) {
   // or hard-bounced (deletable later).
   // Legacy-Creator grandfathering — see migration 100 + lib/tier.ts comment.
   const cap = allowedNewsletterSubscribers(tier, {
-    legacyCreatorNewsletter: Boolean((integ as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter),
+    legacyCreatorNewsletter: Boolean(integ?.legacy_creator_newsletter),
   })
   if (cap !== null) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

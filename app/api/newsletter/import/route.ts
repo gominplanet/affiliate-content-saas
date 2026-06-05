@@ -33,14 +33,28 @@ export async function POST(req: Request) {
   if (!csv.trim()) return NextResponse.json({ error: 'No CSV provided.' }, { status: 400 })
 
   // ── Tier cap pre-flight ────────────────────────────────────────────────────
+  // Defensive read — see app/api/newsletter/send/route.ts for full
+  // explanation. Until migration 100 runs, selecting
+  // legacy_creator_newsletter would error out and silently downgrade
+  // every creator to 'trial' (subscribers cap = 0).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: integ } = await supabase
+  type IntegRow = { tier?: string; legacy_creator_newsletter?: boolean } | null
+  let integ: IntegRow = null
+  const withLegacy = await supabase
     .from('integrations').select('tier, legacy_creator_newsletter').eq('user_id', user.id).maybeSingle()
-  const tier = normalizeTier((integ as { tier?: string } | null)?.tier)
+  if (withLegacy.error) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fallback = await supabase
+      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    integ = (fallback.data as IntegRow) ?? null
+  } else {
+    integ = (withLegacy.data as IntegRow) ?? null
+  }
+  const tier = normalizeTier(integ?.tier)
   // Legacy-Creator grandfathering — see migration 100 + lib/tier.ts comment.
   // Users who were paying when the 2026-06-04 cap dropped get the old 1000.
   const cap = allowedNewsletterSubscribers(tier, {
-    legacyCreatorNewsletter: Boolean((integ as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter),
+    legacyCreatorNewsletter: Boolean(integ?.legacy_creator_newsletter),
   })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { count: currentCount } = await supabase
