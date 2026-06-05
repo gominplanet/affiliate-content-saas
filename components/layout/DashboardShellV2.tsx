@@ -36,6 +36,7 @@ import {
   Sun, Moon, BookOpen, BadgePercent, Megaphone, Handshake,
   Flame, GraduationCap, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
+  Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -179,6 +180,12 @@ export default function DashboardShellV2({
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
         { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Instagram Burner' },
+        // Photobooth — face training + studio-quality headshot generation.
+        // Lives in Create because it's a visual-content tool the creator
+        // actively uses; sits next to Instagram Burner since both are about
+        // "your likeness" output. /face-training was merged into this page
+        // and just redirects here, so this single entry covers both.
+        { href: '/photobooth', icon: <Camera size={15} />, label: 'Photobooth' },
       ],
     },
     {
@@ -226,6 +233,11 @@ export default function DashboardShellV2({
         //   { href: '/branding', icon: <Palette size={15} />, label: 'White-label' },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistants' },
         { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
+        // Community lands users on the MVP Affiliate Facebook group hub
+        // (Discord-rethink era, see app/(dashboard)/community/page.tsx).
+        // Sits last in Settings because it's a low-frequency, support-style
+        // link, not a daily-driver route.
+        { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
       ],
     },
     // Recommended tools — external partner-affiliate links the user earns
@@ -250,13 +262,25 @@ export default function DashboardShellV2({
     },
     // Admin-only block. Only added to NAV_GROUPS when isAdmin so
     // non-admins never see these entries.
+    //
+    // Order: people / health first (Users, Failures), then
+    // dollars + observability (AI Cost, Blog Quality, Template
+    // Performance), then content tooling (Creator Campaigns
+    // catalog, Designer-text playground, News banner), then
+    // ops (Encrypt Secrets). Daily-drivers up top, one-off
+    // tools below.
     ...(isAdmin ? [{
       label: 'Admin',
       items: [
         { href: '/admin/users', icon: <UserCog size={15} />, label: 'Users (admin)' },
         { href: '/admin/failures', icon: <AlertTriangle size={15} />, label: 'Failures' },
         { href: '/admin/costs', icon: <DollarSign size={15} />, label: 'AI Cost (admin)' },
+        { href: '/admin/blog-quality', icon: <Activity size={15} />, label: 'Blog Quality' },
+        { href: '/admin/template-performance', icon: <BarChart3 size={15} />, label: 'Template Performance' },
+        { href: '/admin/creator-campaigns', icon: <Upload size={15} />, label: 'Creator Campaigns (admin)' },
+        { href: '/admin/designer-text', icon: <Wand2 size={15} />, label: 'Designer Text Playground' },
         { href: '/admin/announcement', icon: <Newspaper size={15} />, label: 'News banner (admin)' },
+        { href: '/admin/encrypt-secrets', icon: <ShieldCheck size={15} />, label: 'Encrypt Secrets' },
       ],
     }] : []),
   ]
