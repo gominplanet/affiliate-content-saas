@@ -22,6 +22,7 @@ import {
   Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
   Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
   Crown, Rocket, Plus, Minus,
+  LayoutTemplate, BadgePercent,
 } from 'lucide-react'
 
 const DARK_VARS: React.CSSProperties = {
@@ -163,6 +164,7 @@ export default function LandingPreview() {
       <WorkflowSection />
       <BeforeAfterSection />
       <GroundedSection />
+      <BrandedSiteSection />
       <PricingSection />
       <ProofSection />
       <FAQSection />
@@ -937,6 +939,216 @@ function ComparisonRow({ row, isLast }: { row: ComparisonRowData; isLast: boolea
     </div>
   )
 }
+
+/** Section 5.5 — Branded WordPress site.
+ *
+ *  The "wait, there's more, and it's FREE" moment right before the price
+ *  reveal. Every other affiliate AI hands you content and walks away.
+ *  MVP installs a complete editorial review site on your domain the moment
+ *  you connect WordPress — including a trial user. The cost-stack card at
+ *  the bottom makes the value concrete by listing what you'd otherwise pay
+ *  (theme + plugins + setup time).
+ *
+ *  Three feature columns:
+ *    1. Editorial review theme (design + UX + layout)
+ *    2. Affiliate marketing plugin (monetization tooling)
+ *    3. SEO + automation (discovery + cross-linking)
+ *  Then a unified "what you'd otherwise pay" card with the savings math.
+ *
+ *  Position in flow: between Grounded (the truth/no-fabrication section)
+ *  and Pricing. Creates a "wait there's more" beat right before the
+ *  price reveal so the cards below feel like even more of a steal. */
+function BrandedSiteSection() {
+  return (
+    <section className="px-6 lg:px-8 py-24 relative">
+      <div className="max-w-6xl mx-auto">
+        {/* Section header */}
+        <div className="text-center mb-14 max-w-3xl mx-auto">
+          <p
+            className="text-[11px] uppercase tracking-[0.18em] font-medium mb-4"
+            style={{ color: 'var(--text-faint)' }}
+          >
+            Free with every plan, trial included
+          </p>
+          <h2
+            className="text-[28px] lg:text-[40px] font-semibold tracking-tight leading-tight mb-5"
+            style={{ color: 'var(--text)' }}
+          >
+            A real branded WordPress site.{' '}
+            <span style={{ color: 'var(--text-soft)' }}>Day one.</span>{' '}
+            <span style={{ color: '#9D6BFF' }}>Even on the trial.</span>
+          </h2>
+          <p
+            className="text-[16px] sm:text-[17px] leading-relaxed"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            Every other affiliate AI hands you content and walks away. You&apos;re still
+            on the hook for buying a theme, hunting plugins, building the layout, and
+            figuring out conversion. MVP installs a complete editorial review site on
+            YOUR WordPress, YOUR domain, the moment you connect. Designed for affiliate
+            reviews. Tuned for conversion. Yours forever, even if you cancel.
+          </p>
+        </div>
+
+        {/* 3-column feature stack — Theme / Plugin / SEO + Automation */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
+          {SITE_FEATURE_COLUMNS.map((col) => (
+            <div
+              key={col.eyebrow}
+              className="rounded-2xl border p-6 lg:p-7"
+              style={{
+                backgroundColor: 'var(--surface)',
+                borderColor: 'var(--border)',
+                boxShadow: 'var(--card-shadow)',
+              }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className="inline-flex items-center justify-center w-6 h-6 rounded-md"
+                  style={{ backgroundColor: 'rgba(124,58,237,0.18)', color: '#9D6BFF' }}
+                >
+                  {col.icon}
+                </span>
+                <p className="text-[10px] uppercase tracking-[0.15em] font-semibold" style={{ color: '#9D6BFF' }}>
+                  {col.eyebrow}
+                </p>
+              </div>
+              <h3 className="text-[18px] lg:text-[20px] font-semibold mb-5 leading-snug" style={{ color: 'var(--text)' }}>
+                {col.tagline}
+              </h3>
+              <ul className="flex flex-col gap-2.5">
+                {col.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2.5 text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+                    <Check size={14} className="flex-shrink-0 mt-0.5" style={{ color: '#10B981' }} strokeWidth={2.5} />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        {/* "What you'd otherwise pay" cost-stack card. Mirrors the bundle-math
+            section on /pricing but tighter, and frames the savings vs. the
+            cobbled-together stack a creator would normally need. */}
+        <div
+          className="rounded-2xl border p-7 lg:p-8 max-w-4xl mx-auto"
+          style={{
+            background: 'linear-gradient(180deg, rgba(124,58,237,0.04), rgba(124,58,237,0.01))',
+            borderColor: 'rgba(124,58,237,0.30)',
+            boxShadow: 'var(--card-shadow)',
+          }}
+        >
+          <p className="text-center text-[11px] uppercase tracking-[0.18em] font-semibold mb-5" style={{ color: '#9D6BFF' }}>
+            What it would cost you to build this yourself
+          </p>
+          <ul className="flex flex-col gap-2.5 max-w-2xl mx-auto mb-7">
+            {SITE_COST_STACK.map(([tool, price]) => (
+              <li key={tool} className="flex items-baseline justify-between gap-3 border-b border-dashed pb-2" style={{ borderColor: 'var(--border)' }}>
+                <span className="text-[13.5px]" style={{ color: 'var(--text-soft)' }}>{tool}</span>
+                <span className="font-mono text-[12.5px] tabular-nums" style={{ color: 'var(--text-faint)' }}>{price}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-center sm:text-left">
+            <div>
+              <p className="text-[12px] uppercase tracking-[0.15em] mb-1" style={{ color: 'var(--text-faint)' }}>
+                Cobbled together
+              </p>
+              <p className="text-[24px] font-mono font-semibold" style={{ color: 'var(--text)' }}>
+                ~$504<span className="text-[16px]" style={{ color: 'var(--text-faint)' }}>/yr</span>
+                <span className="text-[14px] ml-2" style={{ color: 'var(--text-faint)' }}>+ a weekend</span>
+              </p>
+            </div>
+            <span className="hidden sm:block text-[20px]" style={{ color: 'var(--text-faint)' }}>→</span>
+            <div>
+              <p className="text-[12px] uppercase tracking-[0.15em] mb-1" style={{ color: '#10B981' }}>
+                With MVP
+              </p>
+              <p className="text-[28px] font-mono font-bold" style={{ color: '#10B981' }}>
+                $0
+                <span className="text-[14px] ml-2 font-sans font-normal" style={{ color: 'var(--text-faint)' }}>
+                  / installed in 5 minutes
+                </span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Final emphasis line — drives home the "even trial users" angle. */}
+        <p className="text-center text-[15px] mt-8 max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+          The site is yours. On your domain. Forever. Even after you cancel,
+          even if you only use the 5 free trial posts, you keep the WordPress
+          install, the theme, the plugin, and every review you published.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+/** Three-column feature stack for the WordPress site section. Each column
+ *  is a logical bucket (theme / plugin / discovery) with 7-8 concrete
+ *  features. Bullet copy intentionally specific (real shortcode names,
+ *  real plugin behaviors) so the section reads as "this is built" not
+ *  "this is roadmap." */
+const SITE_FEATURE_COLUMNS = [
+  {
+    eyebrow: 'Editorial review theme',
+    tagline: 'Designed for reviews. Not generic.',
+    icon: <LayoutTemplate size={13} />,
+    features: [
+      'Hero + verdict box + pros / cons + comparison table layout',
+      'Sticky table of contents on long reviews',
+      'Sticky "Buy Now" bar on mobile (your highest-converting CTA)',
+      'Reviewed-by credibility box with author photo and bio',
+      'FTC-compliant affiliate disclosure banners auto-inserted',
+      'Light and dark theme support, mobile-first responsive',
+      'Topic hub pages auto-aggregate your reviews by category',
+    ],
+  },
+  {
+    eyebrow: 'Affiliate marketing plugin',
+    tagline: 'Built-in monetization tooling.',
+    icon: <BadgePercent size={13} />,
+    features: [
+      'Geniuslink affiliate-link wrapping (your tracking, your commissions)',
+      'AI Product Finder chatbot embedded on every post',
+      'Deal banner + countdown timer shortcodes',
+      'Buying Guides shortcode + comparison-table shortcode',
+      'Newsletter signup form (one shortcode, full form)',
+      'Final-verdict Buy / Skip block at the end of every post',
+      'No .htaccess editing, no API key juggling',
+    ],
+  },
+  {
+    eyebrow: 'SEO + automation',
+    tagline: 'Discoverable the day it ships.',
+    icon: <TrendingUp size={13} />,
+    features: [
+      'Schema.org Review markup for rich snippets in Google',
+      'Auto-generated XML sitemap kept in sync as you publish',
+      'Answer-first H2 leads tuned for AI search engines (AEO)',
+      'Internal linking auto-generated across your full catalog',
+      'Topic clustering for compounding SEO authority',
+      'Theme + plugin auto-installed when you connect WordPress',
+      'Works with Hostinger, SiteGround, Bluehost, Cloudways, WP Engine',
+    ],
+  },
+] as const
+
+/** What you'd otherwise be paying. Numbers are public pricing for the
+ *  most common stack (Cuppa Pro / Schema Pro / Pretty Links Pro /
+ *  TablePress Pro / OptinMonster basic / UpdraftPlus Premium). The
+ *  list is the math behind the ~$504/yr total in the card. */
+const SITE_COST_STACK: ReadonlyArray<readonly [string, string]> = [
+  ['Affiliate review theme (Cuppa Pro, Newspaper, etc.)', '$59-$99 / yr'],
+  ['Schema markup plugin (Schema Pro)', '$89 / yr'],
+  ['Affiliate link manager (Pretty Links Pro)', '$99 / yr'],
+  ['Comparison-table builder (TablePress Pro)', '$79 / yr'],
+  ['Newsletter signup plugin (OptinMonster basic)', '$108 / yr'],
+  ['Site backups + security (UpdraftPlus Premium)', '$70 / yr'],
+  ['Your weekend setting it all up', 'priceless'],
+]
 
 /** Section 6 — Pricing.
  *
