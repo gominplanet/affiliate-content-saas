@@ -54,6 +54,39 @@ export default function CreatorCampaignsAdminPage() {
   // runs and on completion.
   const [progress, setProgress] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  // ── Import filters ────────────────────────────────────────────────────
+  // The Amazon Creator Connections weekly export ships ~600k rows, most
+  // of them not worth a blog post (low commission, short runway, dying
+  // budget). Filtering at PARSE TIME (in the browser, before anything
+  // hits the server) keeps the catalog small + the DB IO low. Defaults
+  // are the "aggressive" preset — admins can loosen them per upload.
+  //
+  // Last-used values are saved to localStorage so the admin doesn't
+  // re-type them every week.
+  const [minCommission, setMinCommission] = useState(15)
+  const [minDaysLeft, setMinDaysLeft] = useState(90)
+  const [minBudget, setMinBudget] = useState(1000)
+  // Load saved filter values once on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const saved = window.localStorage.getItem('mvp-cc-import-filters')
+      if (!saved) return
+      const v = JSON.parse(saved) as { minCommission?: number; minDaysLeft?: number; minBudget?: number }
+      if (typeof v.minCommission === 'number') setMinCommission(v.minCommission)
+      if (typeof v.minDaysLeft === 'number') setMinDaysLeft(v.minDaysLeft)
+      if (typeof v.minBudget === 'number') setMinBudget(v.minBudget)
+    } catch { /* corrupt JSON / no storage — ignore */ }
+  }, [])
+  // Persist on each change. Cheap, no debounce needed (3 number inputs).
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem('mvp-cc-import-filters', JSON.stringify({
+        minCommission, minDaysLeft, minBudget,
+      }))
+    } catch { /* quota / disabled — non-fatal */ }
+  }, [minCommission, minDaysLeft, minBudget])
 
   const loadStats = useCallback(async () => {
     try {
@@ -181,9 +214,19 @@ export default function CreatorCampaignsAdminPage() {
           const priceNum = priceMatch ? parseFloat(priceMatch[0]) : NaN
           const price = isNaN(priceNum) || priceNum <= 0 ? null : priceNum
           // Same actionable-only filter as the legacy server-side parse.
-          if ((commission ?? 0) <= 0) return true
-          if (daysLeft !== null && daysLeft <= 0) return true
-          if (!(budgetRemain > 0 && slots > 0)) return true
+          // Apply the admin's configured filters. Each one drops the
+          // row entirely (doesn't even send it to the server), so the
+          // catalog stays as small as possible. Defaults (15% / 90d /
+          // $1000) shrink Amazon's ~600k-row weekly export to roughly
+          // 30-50k actionable rows, which is what the search RPC + the
+          // canonical recompute can chew through without breaking a
+          // sweat on Supabase's per-tier IO budget.
+          if ((commission ?? 0) < minCommission) return true
+          if (daysLeft !== null && daysLeft < minDaysLeft) return true
+          // Days-left null means Amazon didn't ship an end date — keep
+          // those rows (the boost might just be open-ended).
+          if (budgetRemain < minBudget) return true
+          if (slots <= 0) return true
           rows.push({
             asin,
             campaign_id: campaignId,
@@ -343,9 +386,95 @@ export default function CreatorCampaignsAdminPage() {
         </h2>
         <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside mb-4">
           <li>Go to Amazon Creator Connections → click <strong>Download all available campaigns</strong></li>
-          <li>Drop the resulting .zip below — server parses every .csv inside and replaces the catalog</li>
+          <li>Drop the resulting .zip below — the browser parses every .csv inside and replaces the catalog</li>
           <li>Rows from your previous upload that aren&apos;t in this one get cleaned up automatically</li>
         </ol>
+
+        {/* ── Filters block ─────────────────────────────────────────
+            Pre-filter at PARSE time before anything hits the DB. Three
+            knobs are enough — commission floor, days-left runway, and
+            budget-remaining health. The "Aggressive" preset is the
+            recommended weekly default; it shrinks Amazon's ~600k-row
+            export to ~30-50k actionable rows. Last-used values persist
+            via localStorage so it's set-once-and-forget.
+
+            Why filter at parse time vs server-side: every row that
+            survives the filter writes to 7 indexes on the catalog
+            table — IO that Supabase's per-tier budget cares about.
+            Cutting 90% at the browser keeps the DB happy. */}
+        <div className="rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50/60 dark:bg-white/[0.02] p-4 mb-4">
+          <div className="flex items-baseline justify-between mb-3">
+            <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Filters</p>
+            <div className="flex items-center gap-1 text-[10px]">
+              <button
+                type="button"
+                onClick={() => { setMinCommission(15); setMinDaysLeft(90); setMinBudget(1000) }}
+                className="px-2 py-1 rounded border border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-100 dark:hover:bg-white/5"
+                title="Aggressive: 15% / 90d / $1000 — recommended"
+              >
+                Aggressive
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMinCommission(10); setMinDaysLeft(60); setMinBudget(0) }}
+                className="px-2 py-1 rounded border border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-100 dark:hover:bg-white/5"
+                title="Moderate: 10% / 60d / $0"
+              >
+                Moderate
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMinCommission(5); setMinDaysLeft(30); setMinBudget(0) }}
+                className="px-2 py-1 rounded border border-gray-200 dark:border-white/10 text-[#6e6e73] dark:text-[#ebebf0] hover:bg-gray-100 dark:hover:bg-white/5"
+                title="Light: 5% / 30d / $0"
+              >
+                Light
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="flex flex-col gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
+              Min commission %
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={Number.isFinite(minCommission) ? minCommission : ''}
+                onChange={e => setMinCommission(parseFloat(e.target.value) || 0)}
+                disabled={uploading}
+                className="px-2 py-1.5 text-sm rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
+              Min days left
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={Number.isFinite(minDaysLeft) ? minDaysLeft : ''}
+                onChange={e => setMinDaysLeft(parseFloat(e.target.value) || 0)}
+                disabled={uploading}
+                className="px-2 py-1.5 text-sm rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-[11px] text-[#6e6e73] dark:text-[#ebebf0]">
+              Min budget remaining ($)
+              <input
+                type="number"
+                min={0}
+                step={100}
+                value={Number.isFinite(minBudget) ? minBudget : ''}
+                onChange={e => setMinBudget(parseFloat(e.target.value) || 0)}
+                disabled={uploading}
+                className="px-2 py-1.5 text-sm rounded-md border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7]"
+              />
+            </label>
+          </div>
+          <p className="mt-3 text-[10px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+            Current filters: <strong>≥{minCommission}% commission · ≥{minDaysLeft} days runway · ≥${minBudget.toLocaleString()} budget remaining</strong>. Amazon&apos;s weekly export ships ~600k rows; these cut it to ~30-50k high-quality ones, which keeps the catalog fast + Supabase IO healthy. Settings persist between uploads.
+          </p>
+        </div>
 
         <input
           ref={fileRef}
