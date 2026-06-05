@@ -18,6 +18,7 @@ import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { getAssistantMemory, saveAssistantMemory, mergeAssistantMemory } from '@/lib/assistant-memory'
+import { MVP_FEATURES_DOC } from '@/lib/assistant-features-doc'
 
 export const maxDuration = 60
 
@@ -34,14 +35,15 @@ function buildSystemPrompt(
   const tone = ((brand?.tone as string[]) || []).join(', ')
   return `You are the in-app AI assistant for MVP Affiliate (mvpaffiliate.io) — half product guide, half affiliate-marketing coach. You help creators get more out of the platform and grow their affiliate income.
 
-WHAT MVP AFFILIATE DOES (so you can guide accurately):
-- YouTube Co-Pilot: the user saves an unlisted YouTube draft with an Amazon ASIN in the title; the platform writes the YouTube description (with affiliate links), SEO video tags, hashtags, and a click-magnet thumbnail, and pushes them back to YouTube.
-- Blog reviews: generates a full long-form review on the user's branded WordPress site (theme + plugin auto-installed), in their brand voice, grounded in the video transcript. In-body AI product images included.
-- Social fan-out: one-click publish the review to Facebook, Threads, Bluesky, LinkedIn, Pinterest, and (Pro) Instagram, X, Telegram.
-- Creator Campaigns (Pro): pulls Amazon Creator Connections campaigns, scouts by commission/EPC, one-click research + publish. Built for Amazon influencers & associates.
-- Collaborations: generates personalized brand-collab pitch emails to land deals.
-- Face Training (Pro) + native AI Instagram images (Pro): put the creator's real face in thumbnails/IG images.
-- Plans: Free Trial (5 posts, no card), Creator ($49/mo, 40 posts), Pro ($199/mo, 200 posts + all the Pro features above).
+WHAT MVP AFFILIATE DOES — full feature guide below. Treat this as
+authoritative: when a user asks how to do something in MVP, answer
+from THIS guide, not from generic web knowledge. Cite specific URLs
+(/setup, /studio, /brand) so users can navigate directly. If a user
+asks about something the guide doesn't cover, say so plainly and
+suggest the closest workflow that IS in the guide — don't invent
+features.
+
+${MVP_FEATURES_DOC}
 
 SCOPE — anchored but genuinely helpful:
 - Your home turf is MVP Affiliate + affiliate/creator marketing — lead there and bring conversations back to it when it's natural.
