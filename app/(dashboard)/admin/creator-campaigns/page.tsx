@@ -61,6 +61,11 @@ export default function CreatorCampaignsAdminPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not signed in.')
       const path = `${user.id}/creator-campaigns-imports/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.zip`
+      // Tag each step so a generic "TypeError: Failed to fetch" (which
+      // can come from the supabase client OR our own fetch) tells us
+      // which leg of the flow actually broke. Without this, the user
+      // just sees "Failed to fetch" with no hint whether the Storage
+      // upload, the URL signing, or the API call was the failing step.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: upErr } = await (supabase.storage as any)
         .from('admin-uploads')
@@ -69,6 +74,8 @@ export default function CreatorCampaignsAdminPage() {
           upsert: false,
           contentType: 'application/zip',
         })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .catch((e: any) => ({ error: { message: `Network error during upload: ${e?.message || e}. If this says "Failed to fetch", the most likely cause is that the admin-uploads Storage bucket doesn\'t exist yet — run migration 095_admin_uploads_bucket.sql in Supabase, then retry.` } }))
       if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`)
       // Signed URL instead of public URL so this works even when the
       // bucket is private (which it is by default on new Supabase
@@ -79,6 +86,8 @@ export default function CreatorCampaignsAdminPage() {
       const { data: signed, error: signErr } = await (supabase.storage as any)
         .from('admin-uploads')
         .createSignedUrl(path, 600)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .catch((e: any) => ({ data: null, error: { message: `Network error during URL sign: ${e?.message || e}` } }))
       let upstreamUrl: string | null = signed?.signedUrl ?? null
       if (!upstreamUrl) {
         const { data: urlData } = supabase.storage.from('admin-uploads').getPublicUrl(path)
@@ -88,11 +97,20 @@ export default function CreatorCampaignsAdminPage() {
         throw new Error(`Could not get a download URL for the uploaded zip${signErr ? `: ${signErr.message}` : ''}`)
       }
 
-      const r = await fetch('/api/admin/creator-campaigns/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ upstreamUrl }),
-      })
+      let r: Response
+      try {
+        r = await fetch('/api/admin/creator-campaigns/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ upstreamUrl }),
+        })
+      } catch (e) {
+        // fetch() throws TypeError("Failed to fetch") on network-level
+        // failures (DNS, CORS, browser-side block). Wrap with a marker
+        // so the catch below shows it's the API call that died, not
+        // the Storage upload.
+        throw new Error(`Network error reaching /api/admin/creator-campaigns/import: ${e instanceof Error ? e.message : String(e)}`)
+      }
       // Read as text first so we can surface the real error even when
       // Vercel returns a non-JSON error page (function timeout, memory
       // overflow, uncaught throw before our outer catch). Without this,
