@@ -40,6 +40,25 @@ type Row = {
 }
 
 export async function POST(request: Request) {
+  // Top-level try/catch so ANY uncaught throw inside the import flow
+  // (corrupted zip, JSZip decompression-bomb guard, malformed CSV, OOM,
+  // Supabase service-role rejection) returns JSON instead of letting
+  // Vercel send its plain-text "An error occurred" fallback. The client
+  // parses our response as JSON, so a non-JSON body throws
+  // SyntaxError("Unexpected token 'A'") on the user's side and they
+  // have no idea what actually failed. JSON always.
+  try {
+    return await runImport(request)
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[creator-campaigns/import] uncaught:', e)
+    return NextResponse.json({
+      error: `Import crashed: ${e instanceof Error ? e.message : 'unknown error'}. Check the Vercel function logs for the full stack — this usually means the zip was malformed, the function ran out of memory, or hit the per-invocation timeout.`,
+    }, { status: 500 })
+  }
+}
+
+async function runImport(request: Request): Promise<NextResponse> {
   // ── Admin gate ────────────────────────────────────────────────────────────
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -58,9 +77,15 @@ export async function POST(request: Request) {
   //    server-side parsing. ────────────────────────────────────────────────
   const body = await request.json().catch(() => null) as { upstreamUrl?: string } | null
   const upstreamUrl = (body?.upstreamUrl || '').trim()
-  if (!upstreamUrl || !/^https:\/\/.+\.supabase\.(co|in)\/.+/.test(upstreamUrl)) {
+  // Accept both public URLs (.../storage/v1/object/public/...) and signed
+  // URLs (.../storage/v1/object/sign/...?token=...). Both have the same
+  // *.supabase.{co,in} host shape; the path differs. Use URL() to validate
+  // the hostname so signed-URL query strings don't trip the regex.
+  let host = ''
+  try { host = new URL(upstreamUrl).host } catch { /* falls through */ }
+  if (!upstreamUrl || !/\.supabase\.(co|in)$/.test(host)) {
     return NextResponse.json({
-      error: 'Expected JSON body { upstreamUrl } pointing at a Supabase Storage .zip',
+      error: 'Expected JSON body { upstreamUrl } pointing at a Supabase Storage .zip (public or signed URL)',
     }, { status: 400 })
   }
 
