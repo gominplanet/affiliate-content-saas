@@ -26,10 +26,13 @@ export async function GET() {
       .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,pinterest_access_token,instagram_user_id')
       .eq('user_id', user.id)
       .single(),
+    // Cast through `any` because contact_whatsapp/wechat/lark were added
+    // in migration 096; the generated Database types in this branch don't
+    // know about them yet. Next types-regen pass will let us drop the cast.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    supabase
+    (supabase as any)
       .from('brand_profiles')
-      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes,collab_livestreams,collab_livestream_link')
+      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes,collab_livestreams,collab_livestream_link,contact_whatsapp,contact_wechat,contact_lark')
       .eq('user_id', user.id)
       .single(),
   ])
@@ -62,6 +65,9 @@ export async function GET() {
       extraNotes: brand?.collab_extra_notes ?? '',
       livestreams: !!brand?.collab_livestreams,
       livestreamLink: brand?.collab_livestream_link ?? '',
+      whatsapp: brand?.contact_whatsapp ?? '',
+      wechat: brand?.contact_wechat ?? '',
+      lark: brand?.contact_lark ?? '',
     },
   })
 }

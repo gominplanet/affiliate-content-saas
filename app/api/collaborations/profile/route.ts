@@ -23,6 +23,9 @@ export async function POST(request: Request) {
       livestreams?: unknown
       livestreamLink?: unknown
       portfolioUrl?: unknown
+      whatsapp?: unknown
+      wechat?: unknown
+      lark?: unknown
     }
 
     const str = (v: unknown) => (typeof v === 'string' ? v : '')
@@ -39,8 +42,12 @@ export async function POST(request: Request) {
           .slice(0, 3)
       : []
 
+    // Cast through `any` for the new contact_whatsapp/wechat/lark
+    // columns added in migration 096 — generated Database types in
+    // this branch don't have them yet. Drop the cast on next types
+    // regen pass.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('brand_profiles')
       .update({
         collab_track_record: str(body.collabsDone),
@@ -49,6 +56,12 @@ export async function POST(request: Request) {
         collab_livestreams: !!body.livestreams,
         collab_livestream_link: str(body.livestreamLink),
         ...(portfolio ? { linktree_url: portfolio } : {}),
+        // Contact channels — only update each one when a non-empty value
+        // arrives, so a blank field in a single pitch can't wipe an
+        // already-saved handle. Same defensive convention as portfolio.
+        ...(str(body.whatsapp).trim() ? { contact_whatsapp: str(body.whatsapp).trim() } : {}),
+        ...(str(body.wechat).trim()   ? { contact_wechat:   str(body.wechat).trim()   } : {}),
+        ...(str(body.lark).trim()     ? { contact_lark:     str(body.lark).trim()     } : {}),
       })
       .eq('user_id', user.id)
 

@@ -37,6 +37,12 @@ export interface CollabInput {
   collabsDone?: string
   exampleLinks?: string[]
   extraNotes?: string
+  /** Additional ways for the brand to reply outside of email. All
+   *  optional. Show up in the email's "Best ways to reach me" sign-off
+   *  block when filled; skipped silently when empty. */
+  whatsapp?: string
+  wechat?: string
+  lark?: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,6 +111,11 @@ Return a tight markdown brief under 250 words. No fluff.`,
     input.amazonStorefront ? `Amazon storefront: ${input.amazonStorefront}` : '',
     input.portfolioUrl ? `Portfolio / link hub (all channels): ${input.portfolioUrl}` : '',
     brand?.contact_email ? `Contact email (sign off with this): ${brand.contact_email}` : '',
+    // Extra reply channels — only fall through to brand_profiles when
+    // the form didn't include them, so a form override always wins.
+    (input.whatsapp ?? brand?.contact_whatsapp) ? `WhatsApp: ${input.whatsapp ?? brand.contact_whatsapp}` : '',
+    (input.wechat   ?? brand?.contact_wechat)   ? `WeChat: ${input.wechat ?? brand.contact_wechat}` : '',
+    (input.lark     ?? brand?.contact_lark)     ? `Lark: ${input.lark ?? brand.contact_lark}` : '',
     // Explicit reply-to channel the creator wants brands to use. The
     // signature should always include the email (it IS an email), but
     // when preference=website, also direct the brand to the website
@@ -198,7 +209,12 @@ Produce the blocks in THIS order (skip a block only if its data is absent):
 1. Greeting — "Hi <Brand> Team,"
 2. Who we are + "Here is why we are worth your time:"
 3. LIST: credibility/accolades bullets
-4. Links block — include ONLY the lines whose URL was provided, each on its own line: "You can see all our channels here: <Linktree/portfolio>" and/or "Amazon storefront: <storefront>". Skip this entire block if neither URL exists.
+4. Links block — include ONLY the lines whose URL was provided, each on its own line. Use these exact prefixes so the brand can scan them quickly:
+   - "Blog: <website/blog URL>"
+   - "YouTube: <YouTube channel URL>"
+   - "Amazon storefront: <storefront URL>"
+   - "All our channels: <Linktree/portfolio URL>"
+   Include any that have a URL; skip the rest. If none of these four URLs exist, skip the entire block.
 5. The pitch: collaborate on the product/ASIN + "Here is exactly what we produce from one review:"
 6. LIST: one bullet per deliverable — a YouTube video review, a blog post on <blog>, then ONE bullet per platform from "Promotion platforms offered" (only those — never list a platform that was not offered)
 7. Live streams: include this block ONLY if the creator is open to live streams. Say they're also open to live streams on their channels, and if a best-livestream link was provided, include it as proof ("Here's one of our live streams: <link>"). Then the open-to-more-products/categories paragraph.
@@ -208,7 +224,8 @@ Produce the blocks in THIS order (skip a block only if its data is absent):
 11. LIST: the free-sample request phrased as a friendly ask; then any paid placements phrased clearly as OPTIONAL offerings (start those lines with "Optional —", e.g. "Optional — a paid banner ad placement on our blog at <amount>/month"). Never present the paid options as requirements.
 12. "Ship samples to:" then the address lines (only if sharing address) — address as its own block
 13. Long-term close paragraph
-14. Sign-off: creator name(s), then brand/site, then contact email (each on its own line, one block)`
+14. CONTACT block (only if any of WhatsApp / WeChat / Lark are present in the creator profile). Lead-in line "Best ways to reach me:" on its own line, then a LIST block where each provided channel is on its own line. Use these exact prefixes: "- Email: <email>", "- WhatsApp: <whatsapp>", "- WeChat: <wechat>", "- Lark: <lark>". Always include the email line first when an email is known; then include each of WhatsApp/WeChat/Lark only if its value was given. Skip the block entirely when no email AND no whatsapp/wechat/lark are present.
+15. Sign-off: creator name(s), then brand/site, then contact email (each on its own line, one block). If the CONTACT block above already listed the email, the sign-off may still repeat it — brands skim the bottom.`
 
   const userMsg = `TARGET BRAND: ${input.brandName}
 

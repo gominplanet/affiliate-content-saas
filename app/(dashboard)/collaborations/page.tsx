@@ -49,6 +49,11 @@ export default function CollaborationsPage() {
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [portfolioUrl, setPortfolioUrl] = useState('')
+  // Extra reach-out channels brands can use besides email. Stored on
+  // brand_profiles so we only ask once; pre-fills on subsequent pitches.
+  const [whatsapp, setWhatsapp] = useState('')
+  const [wechat, setWechat] = useState('')
+  const [lark, setLark] = useState('')
 
   const [allPlatforms, setAllPlatforms] = useState<string[]>([])
   const [platforms, setPlatforms] = useState<Set<string>>(new Set())
@@ -113,6 +118,9 @@ export default function CollaborationsPage() {
         setYoutubeUrl(p => p || d.prefill.youtubeUrl || '')
         setAmazonStorefront(p => p || d.prefill.amazonStorefront || '')
         setPortfolioUrl(p => p || d.prefill.portfolioUrl || '')
+        setWhatsapp(p => p || d.prefill.whatsapp || '')
+        setWechat(p => p || d.prefill.wechat || '')
+        setLark(p => p || d.prefill.lark || '')
         setCollabsDone(p => p || d.prefill.collabsDone || '')
         setExtraNotes(p => p || d.prefill.extraNotes || '')
         if (d.prefill.livestreams) setLivestreams(true)
@@ -134,7 +142,7 @@ export default function CollaborationsPage() {
       const res = await fetch('/api/collaborations/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes, livestreams, livestreamLink, portfolioUrl }),
+        body: JSON.stringify({ collabsDone, exampleLinks, extraNotes, livestreams, livestreamLink, portfolioUrl, whatsapp, wechat, lark }),
       })
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Save failed') }
       setTrackSaved(true); setTimeout(() => setTrackSaved(false), 2000)
@@ -208,6 +216,10 @@ export default function CollaborationsPage() {
           bannerAds, bannerAdsAmount, freeSample, productionFee, productionFeeAmount, shareAddress,
           livestreams, livestreamLink,
           collabsDone, exampleLinks: exampleLinks.map(s => s.trim()).filter(Boolean), extraNotes,
+          // Extra reach-out channels for the email's "Best ways to reach me"
+          // block. Trimmed empties get filtered out in the lib + the prompt
+          // skips the line entirely when the value is blank.
+          whatsapp: whatsapp.trim(), wechat: wechat.trim(), lark: lark.trim(),
         }),
       })
       const d = await res.json().catch(() => ({}))
@@ -296,6 +308,26 @@ export default function CollaborationsPage() {
           <div>
             <label className={lbl}>Portfolio / link hub <span className="text-[#86868b]">(Linktree, etc.)</span></label>
             <input value={portfolioUrl} onChange={e => setPortfolioUrl(e.target.value)} placeholder="linktr.ee/yourname" className="input-field text-sm w-full" />
+          </div>
+        </div>
+
+        {/* Direct-reply channels for the email's sign-off. Brands love
+            being able to ping a creator on WhatsApp / WeChat / Lark
+            instead of waiting for an email reply — especially overseas
+            brands, which is most of Amazon's seller pool. All optional. */}
+        <p className="mt-5 mb-2 text-[11px] font-semibold uppercase tracking-wider text-[#86868b] dark:text-[#8e8e93]">Other ways brands can reach you <span className="font-normal text-[10px] normal-case tracking-normal">(optional, saved to your profile)</span></p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className={lbl}>WhatsApp</label>
+            <input value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="+1 555 555 5555" className="input-field text-sm w-full" />
+          </div>
+          <div>
+            <label className={lbl}>WeChat ID</label>
+            <input value={wechat} onChange={e => setWechat(e.target.value)} placeholder="your-wechat-id" className="input-field text-sm w-full" />
+          </div>
+          <div>
+            <label className={lbl}>Lark</label>
+            <input value={lark} onChange={e => setLark(e.target.value)} placeholder="email or Lark ID" className="input-field text-sm w-full" />
           </div>
         </div>
       </div>

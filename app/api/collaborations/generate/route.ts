@@ -122,6 +122,12 @@ export async function POST(request: Request) {
         ? body.exampleLinks.map(s => String(s).trim()).filter(Boolean).slice(0, 3)
         : [],
       extraNotes: body.extraNotes?.toString().trim() || '',
+      // Extra reach-out channels for the email's contact block. Empty
+      // strings get filtered out inside generateCollabEmail (it skips
+      // the line entirely when the value is blank), so .trim() suffices.
+      whatsapp: body.whatsapp?.toString().trim() || '',
+      wechat:   body.wechat?.toString().trim()   || '',
+      lark:     body.lark?.toString().trim()     || '',
     }
 
     const { subject, body: emailBody, email, citations } = await generateCollabEmail(input, brand, { userId: user.id, tier })
