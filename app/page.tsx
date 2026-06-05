@@ -1840,6 +1840,10 @@ const NAV_ANCHORS = [
   { label: 'Workflow', href: '#how-it-works' },
   { label: 'Pricing', href: '#pricing' },
   { label: 'FAQ', href: '#faq' },
+  // /affiliates is a full page, not an in-page anchor — added here so the
+  // top nav surfaces the program for prospects who'd otherwise only see
+  // it via the footer link.
+  { label: 'Affiliates', href: '/affiliates' },
 ]
 
 /** The hero — locked copy + animated hub diagram + CTAs. */
