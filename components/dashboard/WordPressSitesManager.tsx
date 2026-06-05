@@ -300,14 +300,30 @@ function AddSiteModal({
   onClose: () => void
   onAdded: () => void
 }) {
+  // Two paths to connect a site:
+  //  - "token": paste the one-line Connection Token from MVP Affiliate
+  //    plugin (wp-admin → MVP Affiliate → Generate Connection Token).
+  //    Fastest, no fields to fill in. Default because most users
+  //    installed our plugin during the wizard.
+  //  - "appPassword": legacy 4-field manual flow. For people who don't
+  //    have our plugin (e.g. a managed WordPress install where they
+  //    can't add plugins) — they generate a WP-native Application
+  //    Password and paste the 24-char value here.
+  const [mode, setMode] = useState<'token' | 'appPassword'>('token')
   const [label, setLabel] = useState('')
+  const [token, setToken] = useState('')
   const [url, setUrl] = useState('')
   const [username, setUsername] = useState('')
   const [appPassword, setAppPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   async function submit() {
-    if (!url || !username || !appPassword) {
+    if (mode === 'token') {
+      if (!token.trim()) {
+        toast.error('Paste your Connection Token to continue.')
+        return
+      }
+    } else if (!url || !username || !appPassword) {
       toast.error('Fill out URL, username, and application password.')
       return
     }
@@ -316,12 +332,19 @@ function AddSiteModal({
       const res = await fetch('/api/wordpress/sites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          label: label.trim(),
-          url: url.trim(),
-          username: username.trim(),
-          appPassword: appPassword.trim(),
-        }),
+        body: JSON.stringify(
+          mode === 'token'
+            ? {
+                label: label.trim(),
+                token: token.trim(),
+              }
+            : {
+                label: label.trim(),
+                url: url.trim(),
+                username: username.trim(),
+                appPassword: appPassword.trim(),
+              }
+        ),
       })
       const j = await res.json().catch(() => ({}))
       if (res.ok) {
@@ -373,14 +396,80 @@ function AddSiteModal({
       >
         <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Add another WordPress site</p>
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4 leading-relaxed">
-          Paste an Application Password from any WordPress site you control. Step-by-step instructions below.
+          {mode === 'token'
+            ? 'Paste the Connection Token from your second site\'s MVP Affiliate plugin and we handle the rest.'
+            : 'Paste an Application Password from any WordPress site you control. Step-by-step instructions below.'}
         </p>
 
-        {/* "How do I get this?" instructions — always-visible because
-            this modal is unusable without them. Numbered + with a
-            deep-link button that opens the user's wp-admin Application
-            Passwords page directly once they've typed their Site URL. */}
-        <details open className="mb-4 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 p-4">
+        {/* Mode switcher — Token (default, MVP plugin path) vs.
+            Application Password (legacy/no-plugin path). Same one-of-two
+            pattern used elsewhere in the wizard so the UI stays
+            consistent. */}
+        <div className="flex items-center gap-1 bg-[#f5f5f7] dark:bg-[#000] p-1 rounded-xl mb-4">
+          <button
+            type="button"
+            onClick={() => setMode('token')}
+            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              mode === 'token'
+                ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-apple-sm border border-gray-200/80 dark:border-white/10'
+                : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
+            }`}
+          >
+            Connection Token <span className="text-[10px] text-[#86868b] ml-1">(recommended)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('appPassword')}
+            className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              mode === 'appPassword'
+                ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-apple-sm border border-gray-200/80 dark:border-white/10'
+                : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
+            }`}
+          >
+            Application Password
+          </button>
+        </div>
+
+        {/* Token mode — instruction block */}
+        {mode === 'token' && (
+          <details open className="mb-4 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 p-4">
+            <summary className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer select-none flex items-center justify-between gap-2">
+              <span>How to get a Connection Token (30 sec)</span>
+              <span className="text-[10px] uppercase tracking-wider text-[#86868b]">click to expand/collapse</span>
+            </summary>
+            <ol className="mt-3 flex flex-col gap-2 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+              <li className="flex items-start gap-2">
+                <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
+                <span>Log in to <strong>wp-admin</strong> on the WordPress site you want to add.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
+                <span>
+                  In the left sidebar, click <strong>MVP Affiliate</strong>. (If you don&apos;t see it: install the plugin first — <a href="/mvpaffiliate-platform.zip" download className="text-[#7C3AED] hover:underline">download mvpaffiliate-platform.zip</a> → Plugins → Add New → Upload Plugin → Activate.)
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
+                <span>Click <strong>Generate Connection Token</strong> → copy the long string that appears.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">4</span>
+                <span>Paste it below and click Connect site.</span>
+              </li>
+            </ol>
+            <p className="mt-3 text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+              No plugin access? Use the <button type="button" onClick={() => setMode('appPassword')} className="text-[#7C3AED] hover:underline font-medium">Application Password tab</button> instead — manual but works on any WordPress install.
+            </p>
+          </details>
+        )}
+
+        {/* Application Password mode — instruction block */}
+        {mode === 'appPassword' && (
+          /* "How do I get this?" instructions — always-visible because
+              this modal is unusable without them. Numbered + with a
+              deep-link button that opens the user's wp-admin Application
+              Passwords page directly once they've typed their Site URL. */
+          <details open className="mb-4 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 p-4">
           <summary className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer select-none flex items-center justify-between gap-2">
             <span>How to get an Application Password (1 min)</span>
             <span className="text-[10px] uppercase tracking-wider text-[#86868b]">click to expand/collapse</span>
@@ -428,10 +517,12 @@ function AddSiteModal({
             </p>
           )}
           <p className="mt-2 text-[10px] text-[#86868b] dark:text-[#8e8e93]">
-            Don&apos;t see &ldquo;Application Passwords&rdquo;? Your host (commonly Hostinger&apos;s legacy CDN, WPEngine, or some security plugins) may have disabled it. Disable any security plugin temporarily, or contact your host to re-enable Application Passwords.
+            Don&apos;t see &ldquo;Application Passwords&rdquo;? Your host (commonly Hostinger&apos;s legacy CDN, WPEngine, or some security plugins) may have disabled it. Disable any security plugin temporarily, or contact your host to re-enable Application Passwords. <button type="button" onClick={() => setMode('token')} className="text-[#7C3AED] hover:underline font-medium">Or use our Connection Token instead →</button>
           </p>
-        </details>
+          </details>
+        )}
 
+        {/* Fields — Label is shared; the rest depends on `mode`. */}
         <div className="flex flex-col gap-3">
           <Field
             label="Label"
@@ -440,27 +531,41 @@ function AddSiteModal({
             onChange={setLabel}
             hint="Just for you — shown in the site picker."
           />
-          <Field
-            label="Site URL"
-            placeholder="https://your-site.com"
-            value={url}
-            onChange={setUrl}
-            hint="Full URL with https://. No trailing slash."
-          />
-          <Field
-            label="WordPress username"
-            placeholder="admin"
-            value={username}
-            onChange={setUsername}
-          />
-          <Field
-            label="Application password"
-            placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
-            value={appPassword}
-            onChange={setAppPassword}
-            hint="The 24-character password WordPress shows you ONCE. Spaces are stripped automatically."
-            type="password"
-          />
+
+          {mode === 'token' ? (
+            <Field
+              label="Connection Token"
+              placeholder="Paste the long string from wp-admin → MVP Affiliate"
+              value={token}
+              onChange={setToken}
+              hint="One-line base64 token. Contains the site URL, username, and Application Password — all encoded."
+              type="password"
+            />
+          ) : (
+            <>
+              <Field
+                label="Site URL"
+                placeholder="https://your-site.com"
+                value={url}
+                onChange={setUrl}
+                hint="Full URL with https://. No trailing slash."
+              />
+              <Field
+                label="WordPress username"
+                placeholder="admin"
+                value={username}
+                onChange={setUsername}
+              />
+              <Field
+                label="Application password"
+                placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
+                value={appPassword}
+                onChange={setAppPassword}
+                hint="The 24-character password WordPress shows you ONCE. Spaces are stripped automatically."
+                type="password"
+              />
+            </>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 mt-5 pt-4 border-t border-[var(--border-2)]">
