@@ -36,8 +36,12 @@ function ConnectSocialsInner() {
       </div>
       <TutorialVideo sectionKey="integrations" />
       {/* Same panel that lives at /setup?tab=integrations. Reused so OAuth
-          callbacks, in-flight states, and DB writes stay consistent. */}
-      <IntegrationsPanel onLoad={() => {}} />
+          callbacks, in-flight states, and DB writes stay consistent.
+          mode="socials" hides the legacy WordPress OAuth section and
+          the "Geniuslink moved to Brand Profile" pointer — they belong
+          on /setup and /brand respectively, not on a Connect Socials
+          page. */}
+      <IntegrationsPanel onLoad={() => {}} mode="socials" />
     </div>
   )
 }

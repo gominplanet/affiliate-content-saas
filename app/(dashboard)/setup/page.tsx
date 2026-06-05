@@ -904,7 +904,14 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
 // boundary; importing into another 'use client' page works fine in App
 // Router. The default export of this file (SetupPage) is still the
 // canonical /setup route.
-export function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
+//
+// `mode` prop filters which sections render:
+//   'all'     — show everything (legacy /setup?tab=integrations URL).
+//   'socials' — hide the legacy WordPress OAuth section and the
+//               "Affiliate Link Routing moved to Brand Profile" pointer.
+//               Used by /connect-socials so the page reads as just
+//               "YouTube + social channels" without confusing detours.
+export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void; mode?: 'all' | 'socials' }) {
   const supabase = createBrowserClient()
   const searchParams = useSearchParams()
 
@@ -1520,7 +1527,10 @@ export function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         )}
       </div>
 
-      {/* WordPress connection — Application Password is managed inside the MVP Affiliate plugin */}
+      {/* WordPress connection — Application Password is managed inside the MVP Affiliate plugin.
+          Hidden in 'socials' mode because /connect-socials is just about social platforms;
+          WordPress lives at /setup (Blog Set Up) where the wizard + manager handle it properly. */}
+      {mode !== 'socials' && (
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -1681,6 +1691,8 @@ export function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           </div>
         )}
       </div>
+      )}
+      {/* /end WordPress section — only rendered when mode !== 'socials' */}
 
       {/* ── Coming-soon banner — 5 socials under platform approval ──────────
           Visible to every non-admin user (admins skip it; the reviewer Meta
@@ -2342,7 +2354,11 @@ export function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           that read geniuslinkKey/Secret/amazonAssociatesTag still work
           (the IntegrationsPanel save() still writes them — they just
           aren&apos;t editable here anymore). The Brand Profile page is the
-          new editing surface. */}
+          new editing surface.
+          Hidden in 'socials' mode — /connect-socials is a focused page
+          about social channels and doesn&apos;t need the affiliate-routing
+          breadcrumb. */}
+      {mode !== 'socials' && (
       <div className="card p-5 flex items-start gap-3 border border-[#7C3AED]/20 bg-[#7C3AED]/3">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#7C3AED]/10 flex-shrink-0">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -2357,6 +2373,8 @@ export function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
           Open Brand Profile →
         </a>
       </div>
+      )}
+      {/* /end Geniuslink-moved pointer — only rendered when mode !== 'socials' */}
 
       {error && <p className="text-sm text-[#ff3b30] bg-[#ff3b30]/5 border border-[#ff3b30]/20 rounded-lg px-3 py-2">{error}</p>}
 
