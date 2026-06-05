@@ -18,7 +18,7 @@
  * record display) above the embed snippet. Milestone 3 will add a
  * "Compose newsletter" CTA + recent-broadcasts table.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -29,7 +29,7 @@ import { type Tier } from '@/lib/tier'
 import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import {
   Loader2, Mail, CheckCircle, AlertCircle, Upload, Download,
-  Copy, Trash2, RefreshCw, ShieldCheck, Globe, Send, ExternalLink,
+  Copy, Trash2, RefreshCw, ShieldCheck, Globe, Send, ExternalLink, Info,
 } from 'lucide-react'
 
 interface DkimRecord {
@@ -220,6 +220,26 @@ export default function NewsletterPage() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  // ── Auto re-check sender domain on mount when status is 'pending' ──────
+  // Common case: user added DNS records hours/days ago, Resend has actually
+  // verified them, but our DB cache is stale because the user never
+  // clicked Verify after Resend caught up. Page-load auto-poll catches
+  // this without burning Resend API calls on every visit (one shot per
+  // page mount, gated on actually-pending state). Test emails arriving
+  // is NOT a signal the domain is verified — those fall back to the
+  // shared MVP sender (lib/newsletter.ts deriveFromAddress) — so users
+  // can sit on pending status for days while still receiving mail.
+  const autoVerifiedRef = useRef(false)
+  useEffect(() => {
+    if (autoVerifiedRef.current) return
+    if (!settings?.sender_domain) return
+    if (settings.domain_status !== 'pending') return
+    if (domainBusy) return
+    autoVerifiedRef.current = true
+    void verifyDomain()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.sender_domain, settings?.domain_status])
 
   async function saveSetting(patch: Partial<Settings>, fieldLabel: string) {
     if (!settings) return
@@ -811,6 +831,28 @@ export default function NewsletterPage() {
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-3 leading-relaxed">
           Send newsletters from your own domain (e.g. <code className="font-mono text-[11px]">newsletter@mail.yourdomain.com</code>) so subscribers recognise the sender and inboxes trust the email. Until verified, MVP sends from a shared address.
         </p>
+
+        {/* "Why is this still pending if emails work?" — common confusion
+            in support pings. Subscribe/test emails arrive even while the
+            user's sender domain is pending because deriveFromAddress()
+            falls back to the shared MVP sender. Verified status only
+            unlocks the FROM address showing the user's domain — it has
+            no bearing on whether mail is being delivered at all. */}
+        {settings?.sender_domain && settings.domain_status === 'pending' && (
+          <div className="rounded-md border border-[#ff9500]/30 bg-[#ff9500]/[0.06] px-3 py-2 mb-3 flex items-start gap-2 text-[11px] leading-relaxed text-[#1d1d1f] dark:text-[#f5f5f7]">
+            <Info size={12} className="text-[#ff9500] mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p>
+                <strong>Test emails arrive even while this says &ldquo;Pending&rdquo;</strong> — we fall back to a shared sender until your domain is verified. &ldquo;Verified&rdquo; only changes the FROM address subscribers see (so it reads as your brand, not MVP).
+              </p>
+              {settings.domain_checked_at && (
+                <p className="text-[#86868b] dark:text-[#8e8e93] mt-1">
+                  Last checked: {new Date(settings.domain_checked_at).toLocaleString()}. We auto-re-check whenever you open this page; click <strong>Verify</strong> below to force a fresh check now.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* State (a): no domain set yet → input + add button */}
         {!settings?.sender_domain && (
