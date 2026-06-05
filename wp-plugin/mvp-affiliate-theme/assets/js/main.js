@@ -80,16 +80,19 @@
     });
   });
 
-  // ── Auto Table of Contents for long posts ──────────────────────────────────
-  // Builds a TOC at the top of .mvp-single-body when there are 4+ H2s.
-  // Each H2 gets an id (slugified) so the TOC anchors work. On mobile the
-  // panel starts collapsed; tapping the header expands it. Smooth scroll
-  // on TOC link click. CSS sits in main.css under .mvp-toc.
-  (function buildToc() {
+  // ── Auto Table of Contents — REMOVED 2026-06-05 ───────────────────────────
+  // User feedback: the "In this review" TOC box was wasting space at the
+  // top of every long-form post (especially deal posts where the H2
+  // structure is tight and readable top-to-bottom). Killed entirely.
+  //
+  // We still slugify each H2's id below so anchor links from elsewhere
+  // (FAQ schema, share-this-section, in-body internal links) keep
+  // working — only the rendered TOC element is gone.
+  (function slugifyHeadingIds() {
     var body = document.querySelector('.mvp-single-body');
     if (!body) return;
     var h2s = body.querySelectorAll(':scope > h2');
-    if (h2s.length < 4) return;
+    if (!h2s.length) return;
     var slug = function (str) {
       return (str || '')
         .toLowerCase()
@@ -98,47 +101,15 @@
         .replace(/\s+/g, '-')
         .slice(0, 60);
     };
-    var nav = document.createElement('nav');
-    nav.className = 'mvp-toc';
-    if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) {
-      nav.classList.add('is-collapsed');
-    }
-    var toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'mvp-toc-toggle';
-    toggle.setAttribute('aria-expanded', nav.classList.contains('is-collapsed') ? 'false' : 'true');
-    toggle.textContent = 'In this review';
-    var list = document.createElement('ul');
-    list.className = 'mvp-toc-list';
     var used = {};
     h2s.forEach(function (h2) {
       var label = (h2.textContent || '').trim();
       if (!label) return;
       var id = h2.id || slug(label);
-      // Avoid id collisions if two H2s slug to the same thing.
       var base = id, i = 2;
       while (used[id]) { id = base + '-' + i; i++; }
       used[id] = true;
       h2.id = id;
-      var li = document.createElement('li');
-      var a = document.createElement('a');
-      a.href = '#' + id;
-      a.textContent = label;
-      a.addEventListener('click', function (e) {
-        e.preventDefault();
-        h2.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        history.replaceState(null, '', '#' + id);
-      });
-      li.appendChild(a);
-      list.appendChild(li);
     });
-    if (!list.children.length) return;
-    nav.appendChild(toggle);
-    nav.appendChild(list);
-    toggle.addEventListener('click', function () {
-      var collapsed = nav.classList.toggle('is-collapsed');
-      toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    });
-    body.insertBefore(nav, body.firstChild);
   })();
 })();
