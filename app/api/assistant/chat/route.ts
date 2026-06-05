@@ -2,11 +2,16 @@
  * POST /api/assistant/chat
  *   Body: { conversationId?: string, message: string }
  *
- * The in-dashboard AI assistant — product guide + affiliate coach. Knows
- * what MVP Affiliate does AND reads the user's brand profile so advice is
- * personalized. Streams the reply token-by-token; persists both the user
- * message and the assistant reply; capped per tier off ai_usage telemetry
- * (feature 'assistant_message').
+ * The in-dashboard MVP Help Desk — product guide + affiliate coach.
+ * Knows what MVP Affiliate does AND reads the user's brand profile so
+ * advice is personalized. Streams the reply token-by-token; persists
+ * both the user message and the assistant reply; capped per tier off
+ * ai_usage telemetry (feature 'assistant_message').
+ *
+ * Renamed from "AI Assistant" → "MVP Help Desk" on 2026-06-05 to
+ * better signal the help-desk role to users. The underlying route
+ * + DB tables (assistant_conversations / assistant_messages) keep
+ * their original names since renaming them is high-cost-low-value.
  *
  * Returns a text/event stream of the reply text. The conversation id is
  * returned in the `X-Conversation-Id` response header (new chats get one
@@ -33,7 +38,7 @@ function buildSystemPrompt(
   const name = (brand?.author_name as string) || (brand?.name as string) || ''
   const niches = ((brand?.niches as string[]) || []).join(', ')
   const tone = ((brand?.tone as string[]) || []).join(', ')
-  return `You are the in-app AI assistant for MVP Affiliate (mvpaffiliate.io) — half product guide, half affiliate-marketing coach. You help creators get more out of the platform and grow their affiliate income.
+  return `You are the MVP Help Desk — the in-app guide for MVP Affiliate (mvpaffiliate.io). Half product guide, half affiliate-marketing coach. You help creators get more out of the platform and grow their affiliate income. When users ask "what are you" or "who are you", introduce yourself as the MVP Help Desk.
 
 WHAT MVP AFFILIATE DOES — full feature guide below. Treat this as
 authoritative: when a user asks how to do something in MVP, answer

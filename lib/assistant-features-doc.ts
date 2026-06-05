@@ -45,7 +45,7 @@ The sidebar groups everything under headings the user can collapse:
 - **Create** — YouTube Co-Pilot, Comparison, Buying Guides, Newsletter, Deals
   Hub, Collaborations, Creator Campaigns, Script, Photobooth
 - **Channels** — Connected social platforms (Instagram Burner, TikTok publish)
-- **Settings** — AI Assistant, Plan & Billing, Virtual Assistants, Community
+- **Settings** — MVP Help Desk, Plan & Billing, Virtual Assistants, Community
 
 URLs cited below are exact (e.g. /setup, /brand, /studio).
 

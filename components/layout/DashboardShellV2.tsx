@@ -258,7 +258,7 @@ export default function DashboardShellV2({
       // the community link.
       label: 'Settings',
       items: [
-        { href: '/assistant', icon: <Bot size={15} />, label: 'AI Assistant' },
+        { href: '/assistant', icon: <Bot size={15} />, label: 'MVP Help Desk' },
         { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
         // API Access (/developers) and White-label Branding (/branding) are
         // built and tier-gated, but hidden from the sidebar per the
@@ -575,7 +575,7 @@ export default function DashboardShellV2({
               {isDark ? <Sun size={14} /> : <Moon size={14} />}
             </button>
 
-            {/* Ask anything — opens AI Assistant. Cmd+K hotkey wiring
+            {/* Ask anything — opens the MVP Help Desk. Cmd+K hotkey wiring
                 lands in a follow-up; for now the button is a Link. */}
             <Link
               href="/assistant"
