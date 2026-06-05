@@ -1614,6 +1614,17 @@ function IntegrationsPanel({ onLoad }: { onLoad: () => void }) {
         </div>
       )}
 
+      {/* Social platforms heading — anchor target for the Set up
+          sidebar's "Connect Socials" link (href: /setup?tab=integrations
+          #social-platforms). Sits OUTSIDE the metaUnlocked wrapper below
+          so the heading still renders even when FB/IG/Threads/TikTok/
+          Pinterest are locked behind admin approval — the user lands
+          here, sees what's available, sees what's coming. */}
+      <div id="social-platforms" className="pt-4 scroll-mt-20">
+        <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] uppercase tracking-wide mb-1">Connect socials</h3>
+        <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Where your published posts and shorts go out. Each connect is a one-time grant — connect what you'll actually use.</p>
+      </div>
+
       {/* Facebook */}
       {metaUnlocked && (
       <div className="card p-6">
@@ -2291,6 +2302,24 @@ function SetupPageInner() {
     const next = searchParams.get('tab') === 'integrations' ? 'integrations' : 'wordpress'
     setTab(prev => prev === next ? prev : next)
   }, [searchParams])
+
+  // Scroll-to-hash for in-page anchors like #social-platforms (the
+  // sidebar's "Connect Socials" entry uses this). Next App Router
+  // doesn't fire native hash scroll when the tab change re-mounts the
+  // integrations content, so we wait a tick for the section to paint,
+  // then scrollIntoView ourselves. Runs whenever the tab settles.
+  useEffect(() => {
+    if (tab !== 'integrations') return
+    const hash = typeof window === 'undefined' ? '' : window.location.hash.slice(1)
+    if (!hash) return
+    // RAF + small timeout gives React a chance to render the
+    // integrations subtree before we look up the target element.
+    const id = setTimeout(() => {
+      const el = document.getElementById(hash)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+    return () => clearTimeout(id)
+  }, [tab])
   const [mode, setMode] = useState<Mode>(null)
   const [step, setStep] = useState<Step>(1)
   const [wordpressUrl, setWordpressUrl] = useState('')

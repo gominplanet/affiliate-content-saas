@@ -37,6 +37,7 @@ import {
   Flame, GraduationCap, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
+  Share2, UserSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -198,8 +199,19 @@ export default function DashboardShellV2({
       items: [
         { href: '/setup', icon: <Wrench size={15} />, label: 'Blog Set Up' },
         { href: '/setup?tab=integrations', icon: <Plug size={15} />, label: 'Integrations' },
+        // Connect Socials drops the user on /setup?tab=integrations and
+        // smooth-scrolls to the #social-platforms anchor — no separate
+        // page to maintain, but the user gets a direct "go connect my
+        // socials" entry in the onboarding spine.
+        { href: '/setup?tab=integrations#social-platforms', icon: <Share2 size={15} />, label: 'Connect Socials' },
         { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
         { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
+        // Face Models points at /photobooth — same page that hosts
+        // headshot generation. In Set up the entry frames it as the
+        // "do this once" face-upload surface; the Create entry frames
+        // the same page as the "use it to generate headshots" surface.
+        // Two intents, one URL.
+        { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog' },
         { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
       ],
@@ -309,15 +321,29 @@ export default function DashboardShellV2({
   // ── Active-route detection. Match by prefix so a child route still
   // highlights its parent (e.g. /admin/users/123 lights /admin/users).
   const isActive = useCallback((href: string) => {
-    // Special case: /setup?tab=integrations vs /setup — both go to /setup
-    // but we want them to highlight independently based on the query.
-    if (href.includes('?')) {
-      const [path, query] = href.split('?')
-      const params = new URLSearchParams(query)
-      const tabKey = params.get('tab')
+    // Special case: /setup?tab=integrations vs /setup vs
+    // /setup?tab=integrations#social-platforms — all three target /setup
+    // but should highlight independently. Splitting on '#' first then '?'
+    // lets us match against pathname + ?tab + #hash separately so the
+    // sidebar correctly disambiguates "Integrations" from
+    // "Connect Socials" (same tab, different hash anchor).
+    if (href.includes('?') || href.includes('#')) {
+      // Split hash off first so the query parser doesn't pick it up.
+      const [pathAndQuery, hashTarget] = href.split('#')
+      const [path, query] = pathAndQuery.split('?')
+      const tabKey = query ? new URLSearchParams(query).get('tab') : null
       if (typeof window !== 'undefined') {
+        if (pathname !== path) return false
         const currentTab = new URLSearchParams(window.location.search).get('tab')
-        return pathname === path && currentTab === tabKey
+        const currentHash = window.location.hash.slice(1)
+        if (tabKey !== null && currentTab !== tabKey) return false
+        if (hashTarget) {
+          // Entries with a hash only highlight when that hash is in the
+          // URL. Entries WITHOUT a hash should NOT highlight when a hash
+          // entry is the active one — otherwise both light up.
+          return currentHash === hashTarget
+        }
+        return !currentHash
       }
       return false
     }
