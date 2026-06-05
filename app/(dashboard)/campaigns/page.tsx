@@ -667,20 +667,14 @@ function CampaignsInner() {
               <option value={1000}>Top 1000</option>
             </select>
           </div>
-          {/* Price range — both optional. A blank input maps to NaN
-              which the request builder skips, so leaving these alone
-              keeps the search behavior identical to before this row
-              existed. Pair them so the user can frame searches like
-              "solar lanterns under $50" or "$25–$100 wireless
-              earbuds". */}
-          <div>
-            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Min price ($)</label>
-            <input type="number" value={isNaN(impMinPrice) ? '' : impMinPrice} onChange={e => setImpMinPrice(parseFloat(e.target.value))} placeholder="any" className="input-field text-sm w-full" />
-          </div>
-          <div>
-            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Max price ($)</label>
-            <input type="number" value={isNaN(impMaxPrice) ? '' : impMaxPrice} onChange={e => setImpMaxPrice(parseFloat(e.target.value))} placeholder="any" className="input-field text-sm w-full" />
-          </div>
+          {/* Price range filters were live here briefly, but Amazon's
+              Creator Connections weekly export does NOT ship a price
+              column — so the catalog has nothing to filter on and the
+              inputs only confused users. The schema, RPC params, and
+              wiring all stay in place so this row can come back in 30
+              seconds once price-lookup-at-queue-time lands (we already
+              have services/amazon.fetchAmazonProduct on tap for the
+              Deals Hub). Hidden, not deleted. */}
         </div>
         <label className="flex items-center gap-2 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3">
           <input type="checkbox" checked={impNeedBudget} onChange={e => setImpNeedBudget(e.target.checked)} />
