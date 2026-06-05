@@ -768,7 +768,37 @@ create index if not exists blog_posts_deal_meta_gin
 
         {/* ── Recent deals list ──────────────────────────────────────── */}
         <div className="card p-6">
-          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--fg)' }}>Recent deals</h2>
+          <div className="flex items-baseline justify-between gap-3 mb-3">
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--fg)' }}>Recent deals</h2>
+          </div>
+
+          {/* Icon legend — what each action button on a deal row does.
+              MVP rule: never assume the user can guess what an icon
+              means. Tooltips need hover; this is always visible. Shown
+              once at the top of the list rather than labeling each
+              icon on every row (keeps rows compact). */}
+          {!loading && deals.length > 0 && (
+            <div className="rounded-lg border p-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px]" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)', color: 'var(--fg-muted)' }}>
+              <span className="font-semibold" style={{ color: 'var(--fg)' }}>What the buttons do:</span>
+              <span className="inline-flex items-center gap-1">
+                <ExternalLink size={11} className="text-[#7C3AED]" />
+                <strong style={{ color: 'var(--fg)' }}>View</strong> — open the live post on your blog
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <DollarSign size={11} className="text-[#34c759]" />
+                <strong style={{ color: 'var(--fg)' }}>$</strong> — re-fetch Amazon&apos;s current price (article + images stay the same; only the numbers update)
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <RotateCcw size={11} className="text-[#7C3AED]" />
+                <strong style={{ color: 'var(--fg)' }}>↻</strong> — regenerate the whole post from scratch with your latest voice + layout
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Trash2 size={11} className="text-[#ff3b30]" />
+                <strong style={{ color: 'var(--fg)' }}>🗑</strong> — delete this deal post (removes from your blog too)
+              </span>
+            </div>
+          )}
+
           {loading ? (
             <p className="text-xs flex items-center gap-2" style={{ color: 'var(--fg-muted)' }}>
               <Loader2 size={12} className="animate-spin" /> Loading...
