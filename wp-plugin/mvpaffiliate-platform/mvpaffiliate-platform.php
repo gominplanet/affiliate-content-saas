@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.41
+ * Version: 1.0.42
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.41');
+define('MVP_AFFILIATE_VERSION', '1.0.42');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -1593,22 +1593,35 @@ add_action('wp_footer', function () {
     ?>
 <style id="mvp-pf-css">
   .mvp-pf-fab {
-    /* Top-left so we don't fight the sticky Amazon CTA in the bottom-right
-       corner. 120px from the top clears the logo banner on most posts. */
-    position: fixed; top: 120px; left: 24px; z-index: 2147483640;
+    /* Bottom-center, floating ABOVE the sticky Amazon CTA bar (z-index
+       9999) so it visually sits between the "Reviewed in this post"
+       eyebrow on the left and the orange Amazon button on the right.
+       Pages without the sticky CTA still get a friendly bottom-center
+       pill — nothing else competes for that spot. */
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 10000;
     background: #7C3AED; color: #fff; border: 0; border-radius: 999px;
-    padding: 12px 18px 12px 14px; font: 600 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 10px 16px 10px 12px; font: 600 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     box-shadow: 0 12px 30px rgba(124,58,237,.35); cursor: pointer; display: inline-flex;
-    align-items: center; gap: 8px;
+    align-items: center; gap: 8px; white-space: nowrap;
   }
   .mvp-pf-fab .mvp-pf-spark {
-    width: 22px; height: 22px; border-radius: 999px; background: rgba(255,255,255,.18);
-    display: inline-flex; align-items: center; justify-content: center; font-size: 14px;
+    width: 20px; height: 20px; border-radius: 999px; background: rgba(255,255,255,.18);
+    display: inline-flex; align-items: center; justify-content: center; font-size: 13px;
   }
-  .mvp-pf-fab:hover { transform: translateY(-1px); }
+  .mvp-pf-fab:hover { transform: translateX(-50%) translateY(-1px); }
+  /* On small screens the sticky CTA bar gets dense — keep the pill
+     compact so it still fits between the title and the orange CTA. */
+  @media (max-width: 600px) {
+    .mvp-pf-fab { padding: 8px 12px 8px 10px; font-size: 12px; }
+    .mvp-pf-fab .mvp-pf-spark { width: 16px; height: 16px; font-size: 11px; }
+  }
   .mvp-pf-panel {
-    /* Anchored to the FAB (top-left). Drops down from underneath the pill. */
-    position: fixed; top: 170px; left: 24px; z-index: 2147483641;
+    /* Anchored to the FAB (bottom-center). Pops UP from above the pill
+       so the user reads top-to-bottom: header -> input -> results, with
+       the pill they just clicked at the bottom. */
+    position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+    z-index: 10001;
     width: 360px; max-width: calc(100vw - 32px); max-height: 70vh; overflow: auto;
     background: #fff; color: #1d1d1f; border: 1px solid #e5e5e7; border-radius: 14px;
     box-shadow: 0 24px 60px rgba(0,0,0,.18); font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
