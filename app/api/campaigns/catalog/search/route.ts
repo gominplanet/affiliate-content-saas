@@ -88,9 +88,23 @@ export async function GET(request: Request) {
       commission: r.commission ?? 0,
     }))
 
+  // Surface the catalog's freshness so the UI can show "last refreshed
+  // X days ago" — the user has no other way to know whether the admin
+  // ran the weekly upload yet. Cheap one-row query against the same
+  // table, runs in parallel with the search above (well, sequentially
+  // here but indexed on imported_at so it's a single index lookup).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: freshness } = await (supabase as any)
+    .from('creator_connections_catalog')
+    .select('imported_at')
+    .order('imported_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
   return NextResponse.json({
     matches: final,
     totalScanned: rows.length,
     uniqueAsins: byAsin.size,
+    lastRefresh: freshness?.imported_at ?? null,
   })
 }

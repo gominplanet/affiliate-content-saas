@@ -200,6 +200,24 @@ const STATUS: Record<Campaign['status'], { label: string; bg: string; fg: string
   failed:      { label: 'Failed',      bg: 'bg-[#ff3b30]/10',  fg: 'text-[#ff3b30]' },
 }
 
+/** Human-readable "X hours ago" / "X days ago" / "yesterday" for the
+ *  catalog freshness label. Falls back to the raw locale date when the
+ *  timestamp is more than 30 days old (means the admin upload is
+ *  seriously overdue and the user should see the actual date, not "a
+ *  month ago"). */
+function formatFreshness(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (!Number.isFinite(t)) return iso
+  const mins = Math.max(0, Math.round((Date.now() - t) / 60000))
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  const days = Math.round(hours / 24)
+  if (days === 1) return 'yesterday'
+  if (days <= 30) return `${days} days ago`
+  return new Date(iso).toLocaleDateString()
+}
+
 function CampaignsInner() {
   const [items, setItems] = useState<Campaign[] | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -233,6 +251,11 @@ function CampaignsInner() {
   const [impMatches, setImpMatches] = useState<{ asin: string; campaignId: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }[]>([])
   const [impMsg, setImpMsg] = useState<string | null>(null)
   const [impErr, setImpErr] = useState<string | null>(null)
+  // Catalog freshness — surfaced by /api/campaigns/catalog/search so we
+  // can show "Catalog last refreshed X ago" under the search button.
+  // Lets the user know whether to expect this week's deals or last
+  // week's, without exposing the admin status route to non-admins.
+  const [catalogFreshAt, setCatalogFreshAt] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -296,11 +319,14 @@ function CampaignsInner() {
     }).catch(() => {})
   }
 
-  // Search the centralized catalog (admin-populated). Replaces the per-user
-  // .zip upload for 99% of the flow — the user just picks filters and we
-  // run the same dedupe/cap/order logic that the legacy zip parser did,
-  // server-side instead of in the browser. runImport (.zip path) is kept
-  // for future-proofing in case admin upload is delayed.
+  // Search the centralized catalog (populated weekly by the admin via
+  // /admin/creator-campaigns). The user picks filters; we run the same
+  // dedupe/cap/order logic that the legacy zip parser did, server-side
+  // instead of in the browser. The old per-user .zip upload path was
+  // removed 2026-06-05 — it was wired but unreachable from the UI for
+  // months, so users were uploading their own export when the catalog
+  // could have answered for them. Pull it back from git history if the
+  // admin upload ever needs a backup.
   async function runCatalogSearch() {
     setImpErr(null); setImpMsg(null); setImpMatches([]); setImpScanned(0)
     setImpPhase('parsing')
@@ -318,136 +344,18 @@ function CampaignsInner() {
       const matches = (data.matches ?? []) as typeof impMatches
       setImpMatches(matches)
       setImpScanned(data.totalScanned ?? 0)
+      setCatalogFreshAt((data.lastRefresh as string | null) ?? null)
       setImpPhase('ready')
+      const refreshIso = (data.lastRefresh as string | null) ?? null
       setImpMsg(
         matches.length === 0
-          ? 'No matches with these filters. Try widening: lower the commission, shorter days-left, or untick the budget toggle.'
-          : `${matches.length.toLocaleString()} matches queued from a shared catalog of ${data.uniqueAsins.toLocaleString()} unique products.`,
+          ? (refreshIso
+              ? 'No matches with these filters. Try widening: lower the commission, shorter days-left, or untick the budget toggle.'
+              : 'The catalog hasn\'t been imported yet. Check back in a few hours or ping support.')
+          : `${matches.length.toLocaleString()} matches ready to queue (from a shared catalog of ${data.uniqueAsins.toLocaleString()} unique products).`,
       )
     } catch (e) {
       setImpErr(e instanceof Error ? e.message : 'Search failed.')
-      setImpPhase('idle')
-    }
-  }
-
-  async function runImport(file: File) {
-    setImpErr(null); setImpMsg(null); setImpMatches([]); setImpScanned(0)
-    setImpPhase('parsing')
-    try {
-      const [{ default: JSZip }, { streamCsv }] = await Promise.all([
-        import('jszip'),
-        import('@/lib/parse-csv'),
-      ])
-      const zip = await JSZip.loadAsync(file)
-      const csvs = Object.values(zip.files).filter(f => !f.dir && /\.csv$/i.test(f.name))
-      if (csvs.length === 0) throw new Error('No .csv files found in that zip.')
-
-      const kw = impKw.trim().toLowerCase()
-      const minComm = isNaN(impMinComm) ? 0 : impMinComm
-      const minDays = isNaN(impMinDays) ? 0 : impMinDays
-      const COLLECT_MAX = Math.max(impCap, 3000) // bound memory; sort+trim after
-      type M = { asin: string; campaignId: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }
-      const out: M[] = []
-      const now = Date.now()
-      let total = 0
-      // Diagnostics so 0-match is debuggable instead of a mystery.
-      let kwHits = 0, cutComm = 0, cutDays = 0, cutBudget = 0, cutNoAsin = 0, badDate = 0
-
-      for (const entry of csvs) {
-        if (out.length >= COLLECT_MAX) break
-        const text = await entry.async('string')
-        let idx: Record<string, number> | null = null
-        await streamCsv(text, (cols, i) => {
-          if (i === 0) {
-            idx = {}
-            cols.forEach((h, k) => {
-              const x = h.toLowerCase()
-              // Exact-ish matches: 'end' alone also hits "Recommended"
-              // (recomm-END-ed) and 'campaign start', which silently
-              // pointed the end-date at the wrong column → every row
-              // failed the days gate → 0 matches.
-              if (x.includes('asin')) idx!.asin = k
-              else if (x.includes('campaign name')) idx!.name = k
-              else if (x.includes('campaign id')) idx!.cid = k
-              else if (x.includes('brand')) idx!.brand = k
-              else if (x.includes('campaign end') || x.includes('end date')) idx!.end = k
-              else if (x.includes('commission')) idx!.comm = k
-              else if (x.includes('remain')) idx!.budget = k
-              else if (x.includes('available')) idx!.slots = k
-            })
-            return true
-          }
-          if (!idx) return true
-          total++
-          const asinRaw = cols[idx.asin] ?? ''
-          const asin = (asinRaw.match(/[A-Z0-9]{10}/) || [])[0] || ''
-          if (!asin) { cutNoAsin++; return true }
-          const name = (cols[idx.name] ?? '').trim()
-          const brand = (cols[idx.brand] ?? '').trim()
-
-          // Keyword first (so the breakdown reflects the user's search).
-          if (kw) {
-            const hay = `${brand} ${name} ${asinRaw}`.toLowerCase()
-            if (!hay.includes(kw)) return out.length < COLLECT_MAX
-          }
-          kwHits++
-
-          const comm = parseFloat((cols[idx.comm] ?? '').replace(/[^\d.]/g, '')) || 0
-          // Robust end-date: pull a YYYY-MM-DD anywhere in the cell.
-          const endCell = (cols[idx.end] ?? '').trim()
-          const dm = endCell.match(/(\d{4})-(\d{2})-(\d{2})/)
-          let daysLeft: number | null = null
-          if (dm) {
-            const endMs = Date.UTC(+dm[1], +dm[2] - 1, +dm[3])
-            daysLeft = Math.floor((endMs - now) / 86400000)
-          } else if (endCell) {
-            badDate++ // unparseable but present — don't silently zero everything
-          }
-          const budgetRemain = parseFloat((cols[idx.budget] ?? '').replace(/[^\d.]/g, '')) || 0
-          const slots = parseFloat((cols[idx.slots] ?? '').replace(/[^\d.]/g, '')) || 0
-
-          if (comm < minComm) { cutComm++; return out.length < COLLECT_MAX }
-          // Only enforce the days gate when we actually parsed a date;
-          // an unknown date shouldn't wipe out every result.
-          if (daysLeft !== null && daysLeft < minDays) { cutDays++; return out.length < COLLECT_MAX }
-          if (impNeedBudget && (budgetRemain <= 0 || slots <= 0)) { cutBudget++; return out.length < COLLECT_MAX }
-
-          const campaignId = idx.cid != null ? (cols[idx.cid] ?? '').trim() : ''
-          out.push({ asin, campaignId, campaignName: name || brand || asin, brand, epc: `${comm}%`, endsAt: dm ? `${dm[1]}-${dm[2]}-${dm[3]}` : '', commission: comm })
-          setImpScanned(total)
-          return out.length < COLLECT_MAX
-        }, (seen) => setImpScanned(seen))
-      }
-
-      // Dedupe on ASIN, best commission first, cap.
-      const byAsin = new Map<string, M>()
-      for (const m of out) {
-        const prev = byAsin.get(m.asin)
-        if (!prev || m.commission > prev.commission) byAsin.set(m.asin, m)
-      }
-      const uniqueAsins = byAsin.size
-      const final = [...byAsin.values()].sort((a, b) => b.commission - a.commission).slice(0, impCap)
-      setImpMatches(final)
-      setImpPhase('ready')
-      const kwLabel = kw ? `"${impKw.trim()}" matched ${kwHits.toLocaleString()}` : `${kwHits.toLocaleString()} rows`
-      // Many campaigns share the same product, so passed-rows ≫ unique ASINs.
-      const dedupeNote = uniqueAsins !== out.length
-        ? `${out.length.toLocaleString()} passed → ${uniqueAsins.toLocaleString()} unique products`
-        : `${uniqueAsins.toLocaleString()} unique products`
-      const capNote = uniqueAsins > impCap ? `, queued top ${impCap}` : ''
-      const cuts = [
-        cutComm ? `${cutComm.toLocaleString()} cut by commission<${minComm}%` : '',
-        cutDays ? `${cutDays.toLocaleString()} cut by <${minDays} days` : '',
-        cutBudget ? `${cutBudget.toLocaleString()} cut by no budget/slots` : '',
-        badDate ? `${badDate.toLocaleString()} had an unreadable end date (kept)` : '',
-      ].filter(Boolean).join(' · ')
-      setImpMsg(
-        `Scanned ${total.toLocaleString()} · ${kwLabel} · ${dedupeNote}${capNote} · ${final.length} queued` +
-        (cuts ? ` — ${cuts}` : '') +
-        (final.length === 0 ? '. Loosen the filters above.' : '.'),
-      )
-    } catch (e) {
-      setImpErr(e instanceof Error ? e.message : 'Could not read that export.')
       setImpPhase('idle')
     }
   }
@@ -684,18 +592,22 @@ function CampaignsInner() {
 
       )}
 
-      {/* Creator Connections — Amazon campaigns .zip importer */}
+      {/* Creator Connections — search the shared catalog (no per-user upload).
+          The catalog is refreshed weekly from /admin/creator-campaigns.
+          Every user just hits Search. The old per-user .zip upload was
+          removed 2026-06-05; see runCatalogSearch above for the new
+          single-path flow. */}
       {tab === 'cc' && (
       <div className="card p-5 mb-6 max-w-3xl">
         <div className="flex items-center gap-2 mb-2">
           <Sparkles size={14} className="text-[#7C3AED]" />
-          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Import the Amazon campaigns export (.zip)</p>
+          <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Search Amazon Creator Connections</p>
         </div>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
-          On Amazon Creator Connections click <strong>Download all available campaigns</strong>, then drop
-          the .zip here. We filter it in your browser (nothing huge is uploaded) and queue the matches.
-          The keyword matches the campaign &amp; brand name (e.g. &quot;vacuum&quot;). Leave it blank to
-          pull everything that fits the filters.
+          Pick your filters and hit <strong>Search catalog</strong> — we pull the matching campaigns from
+          the centralized Amazon Creator Connections weekly export. Keyword matches the campaign &amp;
+          brand name (e.g. &quot;vacuum&quot;). Leave it blank to pull everything that fits the other
+          filters.
         </p>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
           <strong>Why fewer queue than match:</strong> Amazon lists the same product under many separate
@@ -734,16 +646,14 @@ function CampaignsInner() {
         </label>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-colors ${impPhase === 'parsing' || impPhase === 'pushing' ? 'bg-gray-200 text-[#86868b] cursor-default' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300'}`}>
-            {impPhase === 'parsing' ? <><Loader2 size={14} className="animate-spin" /> Reading…</> : <><Sparkles size={14} /> Choose .zip</>}
-            <input
-              type="file"
-              accept=".zip,application/zip"
-              className="hidden"
-              disabled={impPhase === 'parsing' || impPhase === 'pushing'}
-              onChange={e => { const f = e.target.files?.[0]; if (f) runImport(f); e.target.value = '' }}
-            />
-          </label>
+          <button
+            type="button"
+            onClick={runCatalogSearch}
+            disabled={impPhase === 'parsing' || impPhase === 'pushing'}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${impPhase === 'parsing' || impPhase === 'pushing' ? 'bg-gray-200 text-[#86868b] cursor-default' : 'text-white bg-[#7C3AED] hover:bg-[#6D28D9]'}`}
+          >
+            {impPhase === 'parsing' ? <><Loader2 size={14} className="animate-spin" /> Searching…</> : <><Sparkles size={14} /> Search catalog</>}
+          </button>
           {impPhase === 'ready' && impMatches.length > 0 && (
             <button
               onClick={pushImported}
@@ -761,6 +671,17 @@ function CampaignsInner() {
           {impMsg && <span className="text-xs text-[#1f8a3a]">{impMsg}</span>}
           {impErr && <span className="text-xs text-[#ff3b30] flex items-center gap-1.5"><AlertCircle size={12} /> {impErr}</span>}
         </div>
+        {/* Catalog freshness — tells the user whether this week's deals
+            are loaded yet. Filled in after the first search returns. */}
+        {catalogFreshAt && (
+          <p className="mt-3 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+            Catalog last refreshed{' '}
+            <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+              {formatFreshness(catalogFreshAt)}
+            </span>
+            . We re-import the Amazon Creator Connections weekly export from the admin panel.
+          </p>
+        )}
       </div>
       )}
 
