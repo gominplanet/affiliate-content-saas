@@ -355,7 +355,16 @@ function CampaignsInner() {
           : `${matches.length.toLocaleString()} matches ready to queue (from a shared catalog of ${data.uniqueAsins.toLocaleString()} unique products).`,
       )
     } catch (e) {
-      setImpErr(e instanceof Error ? e.message : 'Search failed.')
+      // Catalog timeouts come back as "canceling statement due to
+      // statement timeout" from Postgres. That's intimidating + opaque
+      // to a creator — translate it to a useful hint so they know what
+      // to try (narrow the keyword, raise the commission, or just
+      // retry).
+      const raw = e instanceof Error ? e.message : 'Search failed.'
+      const friendly = /statement timeout|canceling statement/i.test(raw)
+        ? 'The catalog took too long to scan for that search. Try narrowing the keyword (e.g. "wireless headphones" instead of just blank), raising the min commission, or hitting Search again — the second run is usually faster because Postgres warms its caches.'
+        : raw
+      setImpErr(friendly)
       setImpPhase('idle')
     }
   }
