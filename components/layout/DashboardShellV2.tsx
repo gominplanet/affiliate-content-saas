@@ -163,11 +163,45 @@ export default function DashboardShellV2({
   // Mirrors the preview's IA but maps to the real routes. Gates honor the
   // server-supplied showBuyingGuides + showDeals (Pro/Studio tiering +
   // 500-post catalogue threshold) and metaEnabled (Instagram Burner).
+  //
+  // IA restructure 2026-06-05: a new "Set up" group sits between Today and
+  // Create. It collects everything a brand-new user has to touch ONCE to
+  // get the platform working for them: WordPress install, integrations,
+  // brand identity, voice training, blog appearance, tutorials. Pulled
+  // those items out of Manage and Settings so onboarding reads
+  // top-to-bottom: see your dashboard -> set things up -> start creating.
+  // The old Manage group folded into Today (Library is a "where am I
+  // now" surface, same as Dashboard).
   const NAV_GROUPS: NavGroupDef[] = [
     {
       label: 'Today',
       items: [
         { href: '/dashboard', icon: <Home size={15} />, label: 'Dashboard' },
+        { href: '/content', icon: <Library size={15} />, label: 'Library' },
+      ],
+    },
+    {
+      // The onboarding spine. Every item here is a "you only do this
+      // once (or rarely)" surface — point a new user at this group and
+      // they'll have a working, branded, voice-trained blog by the end.
+      // Order = the order a fresh signup should touch them:
+      //   1. Blog Set Up    -> get WordPress installed + connected
+      //   2. Integrations   -> hook up YouTube, Stripe, socials
+      //   3. Brand Profile  -> name, niches, tone-of-voice settings
+      //   4. Voice Training -> teach the AI your writing voice (LEARN
+      //                        profile honoured by every content agent
+      //                        per the LEARN-always-applied rule)
+      //   5. Customize Blog -> theme colors, layout, hero copy
+      //   6. Tutorials      -> reference videos for anything that's still
+      //                        unclear once they're rolling
+      label: 'Set up',
+      items: [
+        { href: '/setup', icon: <Wrench size={15} />, label: 'Blog Set Up' },
+        { href: '/setup?tab=integrations', icon: <Plug size={15} />, label: 'Integrations' },
+        { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
+        { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
+        { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog' },
+        { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
       ],
     },
     {
@@ -189,21 +223,6 @@ export default function DashboardShellV2({
       ],
     },
     {
-      label: 'Manage',
-      items: [
-        { href: '/content', icon: <Library size={15} />, label: 'Library' },
-        { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
-        // LEARN — voice/style training. Page existed all along at /learn
-        // but the link was dropped during the V2 sidebar rebuild (oversight).
-        // Lives next to Brand Profile because they're conceptually the same
-        // "this is how my content sounds" surface, just different angles
-        // (Brand Profile = top-of-stack settings, LEARN = ongoing voice
-        // tuning that every agent honors per the LEARN-always-applied rule).
-        { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
-        { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog' },
-      ],
-    },
-    {
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
@@ -218,10 +237,13 @@ export default function DashboardShellV2({
       ],
     },
     {
+      // Blog Set Up, Integrations, and Tutorials moved to the "Set up"
+      // group as part of the 2026-06-05 IA restructure — keep them in
+      // exactly one place so onboarding flows linearly. Settings is now
+      // only the day-2 surfaces: ongoing AI chat, billing, teammates, and
+      // the community link.
       label: 'Settings',
       items: [
-        { href: '/setup', icon: <Wrench size={15} />, label: 'Blog Set Up' },
-        { href: '/setup?tab=integrations', icon: <Plug size={15} />, label: 'Integrations' },
         { href: '/assistant', icon: <Bot size={15} />, label: 'AI Assistant' },
         { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
         // API Access (/developers) and White-label Branding (/branding) are
@@ -232,7 +254,6 @@ export default function DashboardShellV2({
         //   { href: '/developers', icon: <KeyRound size={15} />, label: 'API Access' },
         //   { href: '/branding', icon: <Palette size={15} />, label: 'White-label' },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistants' },
-        { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
         // Community lands users on the MVP Affiliate Facebook group hub
         // (Discord-rethink era, see app/(dashboard)/community/page.tsx).
         // Sits last in Settings because it's a low-frequency, support-style
