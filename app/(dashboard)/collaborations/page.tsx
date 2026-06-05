@@ -282,6 +282,33 @@ export default function CollaborationsPage() {
 
       <TutorialVideo sectionKey="collaborations" />
 
+      {/* Recommended Tools — outside-of-MVP resources that help with the
+          brand-outreach workflow. Surfaced here because /collaborations is
+          where users are actively thinking about pitches. The Oink media
+          kit is a free template that pairs nicely with our generated pitch
+          email — users attach the kit, paste the email, send. */}
+      <div className="card p-4 mb-5 max-w-3xl border border-[#ff9500]/20 bg-[#ff9500]/[0.04] flex items-start gap-3">
+        <div className="w-9 h-9 rounded-lg bg-[#ff9500]/15 flex items-center justify-center flex-shrink-0">
+          <span className="text-base">🎁</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-0.5">
+            Recommended: free media kit template
+          </p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+            Brands almost always ask for a media kit before agreeing to a deal. Oink for Influencers has a clean, free template you can fill in once and attach to every pitch email you send from here.
+          </p>
+          <a
+            href="https://oinkforinfluencers.com/get-your-free-media-kit/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-[#7C3AED] hover:underline"
+          >
+            Get the Oink free media kit ↗
+          </a>
+        </div>
+      </div>
+
       <div className="card p-5 mb-5 max-w-3xl">
         <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-3">1 · Your channels & the brand</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
