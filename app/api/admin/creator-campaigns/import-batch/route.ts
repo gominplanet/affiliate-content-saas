@@ -125,6 +125,8 @@ async function runBatch(request: Request): Promise<NextResponse> {
   // upload and didn't show up in this one. Prune it.
   let staleDeleted: number | null = null
   let cleanupError: string | null = null
+  let canonicalCount: number | null = null
+  let canonicalError: string | null = null
   if (isFinal) {
     const { error, count } = await sb
       .from('creator_connections_catalog')
@@ -132,12 +134,27 @@ async function runBatch(request: Request): Promise<NextResponse> {
       .lt('imported_at', batchStart)
     if (error) cleanupError = error.message
     else staleDeleted = count ?? 0
+
+    // Refresh the is_canonical flag (one row per ASIN, highest
+    // commission). Search RPC queries WHERE is_canonical = true, so
+    // this is what makes new rows actually findable + drops any
+    // ASINs that have no actionable row in this import. Cheap: two
+    // UPDATEs in the function, both index-backed.
+    const { data: canonical, error: canonErr } = await sb
+      .rpc('recompute_canonical_creator_campaigns')
+    if (canonErr) canonicalError = canonErr.message
+    else if (typeof canonical === 'number') canonicalCount = canonical
   }
 
   return NextResponse.json({
     ok: true,
     upserted,
     failed_chunks: failed,
-    ...(isFinal ? { stale_deleted: staleDeleted, stale_cleanup_error: cleanupError } : {}),
+    ...(isFinal ? {
+      stale_deleted: staleDeleted,
+      stale_cleanup_error: cleanupError,
+      canonical_count: canonicalCount,
+      canonical_error: canonicalError,
+    } : {}),
   })
 }

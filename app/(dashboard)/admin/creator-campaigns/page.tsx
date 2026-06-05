@@ -237,11 +237,17 @@ export default function CreatorCampaignsAdminPage() {
           const staleNote = typeof d.stale_deleted === 'number'
             ? ` · ${d.stale_deleted.toLocaleString()} stale rows pruned`
             : (d.stale_cleanup_error ? ` · cleanup error: ${d.stale_cleanup_error}` : '')
+          // canonical_count = unique products users actually search.
+          // Surface it so the admin can sanity-check (e.g. 631K rows →
+          // ~40K canonical = 16x dedup, sounds right).
+          const canonicalNote = typeof d.canonical_count === 'number'
+            ? ` · ${d.canonical_count.toLocaleString()} unique products searchable`
+            : (d.canonical_error ? ` · canonical refresh error: ${d.canonical_error}` : '')
           setResult({
             ok: true,
             message:
               `Imported ${totalUpserted.toLocaleString()} of ${deduped.length.toLocaleString()} ` +
-              `unique rows from ${scannedTotal.toLocaleString()} scanned${staleNote}` +
+              `unique rows from ${scannedTotal.toLocaleString()} scanned${staleNote}${canonicalNote}` +
               (totalFailures.length ? ` · ${totalFailures.length} chunk(s) failed (retry to fill in)` : ''),
           })
         }
