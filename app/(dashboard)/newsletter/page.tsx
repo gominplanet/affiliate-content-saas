@@ -188,7 +188,20 @@ export default function NewsletterPage() {
   }>>([])
   // Sender-domain card state (Milestone 2)
   const [domainInput, setDomainInput] = useState('')
-  const [domainBusy, setDomainBusy] = useState<'add' | 'verify' | 'remove' | null>(null)
+  const [domainBusy, setDomainBusy] = useState<'add' | 'verify' | 'remove' | 'dns-check' | null>(null)
+  // DNS diagnostic state — populated when user clicks "Run DNS check".
+  // Server-side endpoint resolves each Resend record against public DNS
+  // and reports match/wrong/not_found per row. Cleared on every fresh
+  // run so stale results never confuse the user.
+  interface DnsCheckResult {
+    type: string
+    hostname: string
+    expectedValue: string
+    foundValues: string[]
+    result: 'match' | 'partial' | 'wrong' | 'not_found' | 'error'
+    hint?: string
+  }
+  const [dnsCheck, setDnsCheck] = useState<{ results: DnsCheckResult[]; allMatch: boolean } | null>(null)
   const [domainMsg, setDomainMsg] = useState<{ ok: boolean; text: string } | null>(null)
   // Per-record copy feedback — keyed by `${type}:${name}` so each "Copy"
   // button can flash its own "Copied!" independently.
@@ -304,6 +317,29 @@ export default function NewsletterPage() {
       }
     } catch (e) {
       setDomainMsg({ ok: false, text: e instanceof Error ? e.message : 'Verification failed.' })
+    } finally {
+      setDomainBusy(null)
+    }
+  }
+
+  // Run server-side DNS lookups against each record Resend expects and
+  // display per-row match / not-found / wrong status. Helps users pinpoint
+  // which specific record needs fixing instead of staring at a blanket
+  // "Pending" badge. See /api/newsletter/domain/dns-check.
+  async function runDnsCheck() {
+    setDomainBusy('dns-check')
+    setDnsCheck(null)
+    setDomainMsg(null)
+    try {
+      const r = await fetch('/api/newsletter/domain/dns-check')
+      const d = await r.json()
+      if (!r.ok) {
+        setDomainMsg({ ok: false, text: d.error || 'DNS check failed.' })
+        return
+      }
+      setDnsCheck({ results: d.results, allMatch: d.summary?.allMatch ?? false })
+    } catch (e) {
+      setDomainMsg({ ok: false, text: e instanceof Error ? e.message : 'DNS check failed.' })
     } finally {
       setDomainBusy(null)
     }
@@ -963,11 +999,76 @@ export default function NewsletterPage() {
                     </tbody>
                   </table>
                 </div>
-                <div className="px-3 py-2 bg-[#f5f5f7] dark:bg-[#1c1c1e] border-t border-gray-200 dark:border-white/10">
+                <div className="px-3 py-2 bg-[#f5f5f7] dark:bg-[#1c1c1e] border-t border-gray-200 dark:border-white/10 flex items-center justify-between gap-3 flex-wrap">
                   <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
                     DNS can take a few minutes to an hour to propagate. Add the records, then come back and hit Verify.
                   </p>
+                  {/* "Run DNS check" — server-side resolves each record
+                      against public DNS and shows per-row match/missing/
+                      wrong status. Far more useful than the binary
+                      Verify badge for diagnosing exactly which row is
+                      the holdup. */}
+                  <button
+                    type="button"
+                    onClick={() => void runDnsCheck()}
+                    disabled={domainBusy === 'dns-check'}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-md border border-[#7C3AED]/30 text-[#7C3AED] hover:bg-[#7C3AED]/10 disabled:opacity-50"
+                  >
+                    {domainBusy === 'dns-check'
+                      ? <><Loader2 size={11} className="animate-spin" /> Checking DNS…</>
+                      : <><RefreshCw size={11} /> Run DNS check</>
+                    }
+                  </button>
                 </div>
+
+                {/* DNS check results — per-record diagnostic. Shows
+                    exactly what was resolved at the public DNS so the
+                    user can pinpoint which row is missing/wrong. */}
+                {dnsCheck && (
+                  <div className="px-3 py-3 border-t border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e]">
+                    <p className="text-[11px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">
+                      DNS lookup results
+                      {dnsCheck.allMatch
+                        ? <span className="ml-2 text-[#34c759]">— all records found ✓</span>
+                        : <span className="ml-2 text-[#ff9500]">— some records aren&apos;t matching yet</span>
+                      }
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      {dnsCheck.results.map((r, i) => {
+                        const ok = r.result === 'match'
+                        const soft = r.result === 'partial'
+                        const bad = r.result === 'not_found' || r.result === 'wrong' || r.result === 'error'
+                        const badgeColor = ok ? 'text-[#34c759] bg-[#34c759]/10'
+                          : soft ? 'text-[#ff9500] bg-[#ff9500]/10'
+                          : 'text-[#ff3b30] bg-[#ff3b30]/10'
+                        const badgeLabel = ok ? 'Match'
+                          : soft ? 'Partial match'
+                          : r.result === 'not_found' ? 'Not found'
+                          : r.result === 'wrong' ? 'Wrong value'
+                          : 'DNS error'
+                        return (
+                          <div key={`${r.type}:${r.hostname}:${i}`} className="rounded-md border border-gray-200 dark:border-white/10 p-2.5">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-mono text-[11px] text-[#1d1d1f] dark:text-[#f5f5f7]">{r.type}</span>
+                                <span className="font-mono text-[11px] text-[#86868b] dark:text-[#8e8e93] truncate">{r.hostname}</span>
+                              </div>
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${badgeColor}`}>{badgeLabel}</span>
+                            </div>
+                            {bad && r.foundValues.length > 0 && (
+                              <p className="text-[10px] text-[#6e6e73] dark:text-[#ebebf0] mb-1">
+                                <span className="font-semibold">Found:</span> <code className="font-mono text-[10px] break-all">{r.foundValues[0].slice(0, 200)}{r.foundValues[0].length > 200 ? '…' : ''}</code>
+                              </p>
+                            )}
+                            {r.hint && !ok && (
+                              <p className="text-[10px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">{r.hint}</p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </>
