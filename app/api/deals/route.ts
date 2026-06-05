@@ -755,19 +755,19 @@ export async function POST(req: Request) {
   }
 
   // ── Save row ──────────────────────────────────────────────────────────
-  // blog_posts.video_id is NOT NULL in some older deployments — fall back
-  // to the user's most-recent video_id if we can't tie this deal to a
-  // specific video. (Deals never have a source video by definition.)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: anyReview } = await (supabase as any)
-    .from('blog_posts')
-    .select('video_id')
-    .eq('user_id', user.id)
-    .not('video_id', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  const fallbackVideoId = (anyReview?.video_id as string | null) || null
+  // Deals never have a source video by definition. video_id is nullable
+  // on blog_posts, and Postgres treats NULL as distinct under the
+  // (user_id, video_id) unique constraint, so multiple null-video deals
+  // per user are allowed.
+  //
+  // The earlier "fall back to most-recent video_id" hack was a leftover
+  // from when video_id was NOT NULL. With nullable video_id, the
+  // fallback was actively HARMFUL — it kept colliding with the existing
+  // review row that owned that video_id, hitting the
+  // blog_posts_user_id_video_id_key unique constraint on every deal
+  // insert. Result: first deal failed, every subsequent deal failed
+  // identically, the WP posts piled up un-tracked.
+  const fallbackVideoId: string | null = null
 
   const dealMeta = {
     asin: product.asin,
