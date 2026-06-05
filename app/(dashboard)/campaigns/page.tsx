@@ -406,7 +406,16 @@ function CampaignsInner() {
       })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error || 'Import failed')
-      setImpMsg(`Queued ${d.inserted} — ${d.skipped} already in your queue.`)
+      // Surface enrich totals when present (server scraped Amazon for
+      // prices + titles after inserting). If the user queued nothing
+      // new, skip the enrich tally entirely.
+      const enrichNote =
+        d.inserted > 0 && typeof d.enriched === 'number'
+          ? d.enriched === d.inserted
+            ? ` · prices looked up on all ${d.enriched}`
+            : ` · prices on ${d.enriched}/${d.inserted}${d.enrich_failed ? ` (${d.enrich_failed} skipped: Amazon throttled or no price listed)` : ''}`
+          : ''
+      setImpMsg(`Queued ${d.inserted}. ${d.skipped} already in your queue${enrichNote}.`)
       setImpMatches([])
       setImpPhase('idle')
       await load()
@@ -706,7 +715,13 @@ function CampaignsInner() {
             </button>
           )}
           {impPhase === 'pushing' && (
-            <span className="text-xs text-[#86868b] flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Queuing…</span>
+            <span className="text-xs text-[#86868b] flex items-center gap-1.5">
+              <Loader2 size={12} className="animate-spin" />
+              {/* The bulk of the wait here is the per-ASIN Amazon
+                  scrape for price + title (throttled 5 concurrent).
+                  Up to ~20s for a 100-row queue. Be honest about it. */}
+              Queuing + looking up prices on Amazon…
+            </span>
           )}
           {impPhase === 'parsing' && (
             <span className="text-xs text-[#86868b]">Scanned {impScanned.toLocaleString()} rows…</span>

@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
+import { fetchAmazonProduct } from '@/services/amazon'
 
 export const maxDuration = 60
 
@@ -94,16 +95,69 @@ export async function POST(request: Request) {
       .map(c => ({ ...c, user_id: user.id, status: 'pending' as const }))
 
     let inserted = 0
+    let insertedRows: Array<{ id: string; asin: string }> = []
     if (toInsert.length > 0) {
       // Cast through `any` — campaigns.product_price was added in
       // migration 099 and the generated Database types in this branch
       // don't know about it yet. Drop the cast on the next types-regen
       // pass.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error, count } = await (supabase as any)
-        .from('campaigns').insert(toInsert, { count: 'exact' })
+      const { data, error, count } = await (supabase as any)
+        .from('campaigns')
+        .insert(toInsert, { count: 'exact' })
+        .select('id,asin')
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       inserted = count ?? toInsert.length
+      insertedRows = (data ?? []) as Array<{ id: string; asin: string }>
+    }
+
+    // ── Price + title enrichment (best-effort, throttled) ─────────────────
+    // Amazon's Creator Connections weekly export ships no price column,
+    // so the catalog rows we just queued have price = null. Scrape each
+    // product page now to backfill product_price + product_title on the
+    // freshly-queued rows. Stays under Vercel's 60s function ceiling at
+    // queue ≤100: concurrency 5, batches of 5, ~1-2s per batch.
+    //
+    // Best-effort by design — Amazon will rate-limit some calls, return
+    // captchas, or just not surface a price for some ASINs. We log the
+    // miss and leave the column null (which the UI renders as "no price
+    // chip"). The queue itself still lands every row.
+    const enrichResult = { ok: 0, failed: 0 }
+    if (insertedRows.length > 0) {
+      const CONCURRENCY = 5
+      // Parse "$24.99" / "$19.99 - $29.99" → 24.99 / 19.99. Mirrors the
+      // admin parser logic so price formatting is consistent across the
+      // two ingest paths.
+      const parsePrice = (s: string | null): number | null => {
+        if (!s) return null
+        const m = s.match(/[\d]+\.?\d*/)
+        const n = m ? parseFloat(m[0]) : NaN
+        return isNaN(n) || n <= 0 ? null : n
+      }
+      async function enrichOne(row: { id: string; asin: string }) {
+        try {
+          const product = await fetchAmazonProduct(row.asin)
+          const price = parsePrice(product.price)
+          const title = product.title?.trim() || null
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any)
+            .from('campaigns')
+            .update({
+              ...(price ? { product_price: price } : {}),
+              ...(title ? { product_title: title } : {}),
+            })
+            .eq('id', row.id)
+          enrichResult.ok++
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn(`[campaigns/import enrich] ${row.asin}:`, e instanceof Error ? e.message : e)
+          enrichResult.failed++
+        }
+      }
+      for (let i = 0; i < insertedRows.length; i += CONCURRENCY) {
+        const batch = insertedRows.slice(i, i + CONCURRENCY)
+        await Promise.all(batch.map(enrichOne))
+      }
     }
 
     return NextResponse.json({
@@ -112,6 +166,8 @@ export async function POST(request: Request) {
       skipped: clean.length - toInsert.length,
       received: incoming.length,
       cappedAt: incoming.length > MAX ? MAX : null,
+      enriched: enrichResult.ok,
+      enrich_failed: enrichResult.failed,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
