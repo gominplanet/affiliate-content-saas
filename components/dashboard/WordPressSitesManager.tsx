@@ -123,6 +123,27 @@ export default function WordPressSitesManager() {
         </div>
       )}
 
+      {/* Icon legend — each site row has 3 icon-only action buttons
+          (Star / Pencil / Trash2). Per the "hand-hold users as much as
+          possible" rule, surface what each icon does in plain English
+          above the list so non-technical users don't need to hover.
+          Same pattern as the Deals page Recent Deals legend. */}
+      <div className="rounded-lg border border-gray-200 dark:border-white/10 bg-[var(--surface-2)] p-3 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+        <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">What the buttons do:</span>
+        <span className="inline-flex items-center gap-1">
+          <Star size={11} className="text-[#7C3AED]" />
+          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Star</strong> — set as default (fresh blog posts publish here)
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Pencil size={11} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
+          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pencil</strong> — rename the label (just for your site picker)
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Trash2 size={11} className="text-[#ff3b30]" />
+          <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Trash</strong> — disconnect this site (does NOT delete WordPress posts)
+        </span>
+      </div>
+
       <ul className="flex flex-col gap-2">
         {data.sites.map(site => (
           <SiteRow
