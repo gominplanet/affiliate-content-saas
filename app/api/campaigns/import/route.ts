@@ -13,7 +13,13 @@ import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
 
 export const maxDuration = 60
 
-const MAX = 1000 // hard server cap regardless of client
+// Hard server cap regardless of what the client sent. Lowered from 1000
+// to 100 per the 2026-06-05 product decision — a single creator queuing
+// more than 100 campaigns at once tends to bloat their library with
+// low-attention posts AND burn the per-tier blog-generation cap on
+// rows they'll never publish. UI also offers a max of 100 in the
+// Queue cap dropdown; this is the defence-in-depth backstop.
+const MAX = 100
 
 interface Incoming {
   asin?: string

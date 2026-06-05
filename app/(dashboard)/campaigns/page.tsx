@@ -254,7 +254,10 @@ function CampaignsInner() {
   const [impMinPrice, setImpMinPrice] = useState<number>(NaN)
   const [impMaxPrice, setImpMaxPrice] = useState<number>(NaN)
   const [impNeedBudget, setImpNeedBudget] = useState(true)
-  const [impCap, setImpCap] = useState(500)
+  // Hard ceiling 100 per user request 2026-06-05. Default to 50 so
+  // a fresh page-load doesn't suggest "Top 100" as the implicit
+  // recommendation — users can opt up if they need more.
+  const [impCap, setImpCap] = useState(50)
   const [impPhase, setImpPhase] = useState<'idle' | 'parsing' | 'ready' | 'pushing'>('idle')
   const [impScanned, setImpScanned] = useState(0)
   const [impMatches, setImpMatches] = useState<{ asin: string; campaignId: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number; price: number | null }[]>([])
@@ -658,13 +661,17 @@ function CampaignsInner() {
           </div>
           <div>
             <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Queue cap</label>
+            {/* 100 ceiling per user request 2026-06-05: a single creator
+                queueing more than 100 campaigns at once tends to bloat
+                their library with low-attention posts (and burns the
+                shared catalog → blog generation quota fast). Top 100
+                is the hard cap. If we ever raise it, also bump the
+                server-side MAX in /api/campaigns/import. */}
             <select value={impCap} onChange={e => setImpCap(parseInt(e.target.value, 10))} className="input-field text-sm w-full">
               <option value={10}>Top 10</option>
               <option value={20}>Top 20</option>
               <option value={50}>Top 50</option>
-              <option value={200}>Top 200</option>
-              <option value={500}>Top 500</option>
-              <option value={1000}>Top 1000</option>
+              <option value={100}>Top 100</option>
             </select>
           </div>
           {/* Price range filters were live here briefly, but Amazon's
