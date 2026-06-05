@@ -182,9 +182,17 @@ export async function GET() {
     .limit(25)
 
   if (first.error) {
-    const msg = String(first.error?.message || first.error?.code || '')
+    const msg = String(first.error?.message || '')
+    const details = String((first.error as { details?: string })?.details || '')
+    const hint = String((first.error as { hint?: string })?.hint || '')
+    const code = String(first.error?.code || '')
     console.error('[deals GET] full select failed:', first.error)
-    if (/deal_meta/i.test(msg) || /column .* does not exist/i.test(msg)) {
+    // Detect missing migration 093 from any field Postgres / Supabase
+    // might surface it on: message, code (42703), details, or hint. The
+    // earlier check only looked at message + code, which silently missed
+    // the case where Supabase wraps the column-missing error and puts the
+    // identifier in `details` instead.
+    if (/deal_meta/i.test(msg) || /column .* does not exist/i.test(msg) || /deal_meta/i.test(details) || /deal_meta/i.test(hint) || code === '42703') {
       // Migration 093 not applied. Fall back to the meta-less columns so
       // the user still sees deal post titles + URLs while we tell them
       // to run the migration.
@@ -816,9 +824,17 @@ export async function POST(req: Request) {
     .select('id')
     .single()
   if (firstInsert.error) {
-    const msg = String(firstInsert.error?.message || firstInsert.error?.code || '')
+    const msg = String(firstInsert.error?.message || '')
+    const details = String((firstInsert.error as { details?: string })?.details || '')
+    const hint = String((firstInsert.error as { hint?: string })?.hint || '')
+    const code = String(firstInsert.error?.code || '')
     console.error('[deals POST] insert with deal_meta failed:', firstInsert.error)
-    if (/deal_meta/i.test(msg) || /column .* does not exist/i.test(msg)) {
+    // Detect missing migration 093 from any field Postgres / Supabase
+    // might surface it on: message, code (42703), details, or hint. The
+    // earlier check only looked at message + code, which silently missed
+    // the case where Supabase wraps the column-missing error and puts the
+    // identifier in `details` instead.
+    if (/deal_meta/i.test(msg) || /column .* does not exist/i.test(msg) || /deal_meta/i.test(details) || /deal_meta/i.test(hint) || code === '42703') {
       migrationNeeded = '093_blog_posts_deal_meta'
       // Retry without deal_meta. The deal post still lives, the user just
       // loses the meta-driven pills on the Recent Deals row until they
