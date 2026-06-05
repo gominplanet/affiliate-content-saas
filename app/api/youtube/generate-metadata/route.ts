@@ -7,7 +7,7 @@ import { createGeniuslinkService } from '@/services/geniuslink'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
-import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, normalizeTier, checkGenerationLimit, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { scoreTitle } from '@/lib/thumbnail-score'
 
@@ -350,25 +350,17 @@ export async function POST(request: Request) {
     const tier = normalizeTier(intRow?.tier)
     TELEMETRY = { userId: user.id, tier }
 
-    // Cap gate — metadata generations / billing period. Pre-flight the
-    // check so we never fire the 5-agent swarm for a user at cap.
-    const metaCap = TIERS[tier].metadataGensPerMonth
-    const capCheck = await checkUsageCap(
-      supabase, user.id, PRIMARY_FEATURE.metadata, metaCap,
-      (intRow?.subscription_period_start as string | null) ?? null,
-      (intRow?.subscription_period_end as string | null) ?? null,
-    )
-    if (capCheck?.exceeded) {
-      const next = nextTierFor(tier, 'metadataGensPerMonth')
-      const nextHint = next
-        ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
-        : ''
+    // Cap gate — unified Generations bucket (migration 101). Bundles
+    // blog + thumbnail + metadata into one count per billing period.
+    // Pre-flight so we never fire the 5-agent swarm for a user at cap.
+    const usage = await checkGenerationLimit(supabase, user.id)
+    if (!usage.allowed) {
       return NextResponse.json({
-        error: `You've hit your ${metaCap} metadata generations for this billing period on the ${TIERS[tier].label} plan.${nextHint} Resets ${capCheck.resetLabel}.`,
+        error: usage.reason,
         limitReached: true,
-        cap: 'metadata',
-        currentTier: tier,
-        upgrade: next ? { tier: next.tier, label: next.label, limit: next.limit } : null,
+        cap: 'generations',
+        currentTier: usage.tier,
+        upgrade: usage.upgrade,
       }, { status: 429 })
     }
 

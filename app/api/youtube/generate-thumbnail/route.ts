@@ -8,7 +8,7 @@ import { fal } from '@fal-ai/client'
 import sharp from 'sharp'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
-import { TIERS, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, nextTierFor, normalizeTier, checkGenerationLimit, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
 import { type TextPosition } from '@/lib/thumbnail-textzone'
@@ -683,32 +683,22 @@ export async function POST(request: Request) {
       if (autoFaceModels.length === 1) { faceModel = autoFaceModels[0]; autoFaceModels = [] }
     }
 
-    // Cap gate — thumbnail generations / billing period. Pre-flight the
-    // check so we never charge Fal credits + waste 3 Anthropic calls on
-    // a user who's already at cap. Skips for quickMode (hook-only call
-    // is essentially free, no images generated).
+    // Cap gate — unified Generations bucket (migration 101). Bundles
+    // blog + thumbnail + metadata into one count per billing period so
+    // a Creator burns one bucket of 20, not 20 of each independently.
+    // Skips for quickMode (hook-only call is essentially free, no
+    // images generated). variantCount is passed as p_units so a "2
+    // variants" click reserves 2 units up front instead of letting
+    // someone 1 below cap silently overshoot.
     if (!quickMode) {
-      const thumbCap = TIERS[tier].thumbnailsPerMonth
-      const capCheck = await checkUsageCap(
-        supabase, user.id, PRIMARY_FEATURE.thumbnail, thumbCap,
-        (tierRow?.subscription_period_start as string | null) ?? null,
-        (tierRow?.subscription_period_end as string | null) ?? null,
-      )
-      // capCheck.used is the count BEFORE this generation; we need room
-      // for `variantCount` more or we reject. Otherwise a user 1 below
-      // their cap could click "2 variants" and silently overshoot.
-      const wouldExceed = thumbCap !== null && capCheck && (capCheck.used + variantCount > thumbCap)
-      if (capCheck?.exceeded || wouldExceed) {
-        const next = nextTierFor(tier, 'thumbnailsPerMonth')
-        const nextHint = next
-          ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
-          : ''
+      const usage = await checkGenerationLimit(supabase, user.id, { units: variantCount })
+      if (!usage.allowed) {
         return NextResponse.json({
-          error: `You've hit your ${thumbCap} thumbnail generations for this billing period on the ${TIERS[tier].label} plan.${nextHint} Resets ${capCheck?.resetLabel ?? ''}.`,
+          error: usage.reason,
           limitReached: true,
-          cap: 'thumbnails',
-          currentTier: tier,
-          upgrade: next ? { tier: next.tier, label: next.label, limit: next.limit } : null,
+          cap: 'generations',
+          currentTier: usage.tier,
+          upgrade: usage.upgrade,
         }, { status: 429 })
       }
     }

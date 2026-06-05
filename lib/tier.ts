@@ -355,6 +355,18 @@ export function allowedNewsletterBroadcasts(
   return TIERS[t].newsletterBroadcastsPerMonth
 }
 
+/** Unified "generations per billing month" cap across blog posts, YouTube
+ *  thumbnails, and YouTube metadata. The 2026-06-04 restructure declared
+ *  these one bundle (Creator 20, Studio 60, Pro 200) but each route
+ *  enforced its own cap independently — letting a Creator burn 60. The
+ *  RPC try_consume_generation_quota() (migration 101) sums all three
+ *  counters under a per-user lock; this helper returns the cap value to
+ *  pass into it. Reads the postsPerMonth slot since the three numbers
+ *  are deliberately mirrored. */
+export function allowedGenerationsPerMonth(tier: Tier): number | null {
+  return TIERS[normalizeTier(tier)].postsPerMonth
+}
+
 /** Generic feature-flag lookup. Cleaner than scattering `tier === 'pro'`
  *  checks across routes; reads one source of truth. Use for boolean gates:
  *    tierHas(tier, 'comparisonPosts') / 'buyingGuides' / 'rebuildFromVideo' /
@@ -672,4 +684,73 @@ export async function checkDealsUsage(
   }
 
   return { allowed: true, tier, used, cap, resetLabel }
+}
+
+/**
+ * Unified generation cap check across blog, YouTube thumbnail, and
+ * YouTube metadata. Wraps the try_consume_generation_quota() RPC
+ * (migration 101) so all three routes go through one chokepoint.
+ *
+ * Replaces the previous per-route gates that each enforced
+ * postsPerMonth / thumbnailsPerMonth / metadataGensPerMonth
+ * independently — that pattern let a Creator burn 20 of each = 60
+ * ops/mo instead of the intended 20.
+ *
+ * `units` matters because the thumbnail route supports N variants per
+ * call (variantCount=1..10). Pass variantCount so the pre-flight
+ * accounts for the full batch the user is asking for, not just one.
+ *
+ * Returns the same shape as checkUsageLimit so route migration is a
+ * straight swap.
+ */
+export async function checkGenerationLimit(
+  supabase: Awaited<ReturnType<typeof import('@/lib/supabase/server').createServerClient>>,
+  userId: string,
+  opts: { units?: number } = {},
+): Promise<
+  | { allowed: true }
+  | { allowed: false; reason: string; tier: Tier; upgrade: ReturnType<typeof nextTierFor> }
+> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ig } = await supabase
+    .from('integrations')
+    .select('tier,subscription_period_start,subscription_period_end')
+    .eq('user_id', userId)
+    .single()
+  const tier = normalizeTier(ig?.tier)
+
+  // Admin — unlimited, never gated.
+  if (tier === 'admin') return { allowed: true }
+
+  const limit = allowedGenerationsPerMonth(tier)
+  // null = unlimited (admin only — handled above; this is a safety net).
+  if (limit === null) return { allowed: true }
+
+  const { startISO, resetLabel } = billingWindow({
+    periodStart: ig?.subscription_period_start ?? null,
+    periodEnd: ig?.subscription_period_end ?? null,
+  })
+
+  const units = Math.max(1, opts.units ?? 1)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ok } = await (supabase as any).rpc('try_consume_generation_quota', {
+    p_user: userId,
+    p_monthly: limit,
+    p_window_start: startISO,
+    p_units: units,
+  })
+
+  if (ok === true) return { allowed: true }
+
+  const next = nextTierFor(tier, 'postsPerMonth')
+  const nextHint = next
+    ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit}/month`}.`
+    : ''
+  return {
+    allowed: false,
+    reason: `You've reached your ${limit} generations cap this billing period. Generations include blog posts, YouTube thumbnails, and YouTube metadata.${nextHint} Resets ${resetLabel}.`,
+    tier,
+    upgrade: next,
+  }
 }

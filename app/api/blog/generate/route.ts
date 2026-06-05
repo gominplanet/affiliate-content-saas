@@ -5,7 +5,7 @@ import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { YoutubeTranscript } from 'youtube-transcript'
-import { checkUsageLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
+import { checkUsageLimit, checkGenerationLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
 import { scrubBanned } from '@/lib/scrub'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
@@ -233,13 +233,27 @@ async function handleGenerate(request: Request) {
       }, { status: 403 })
     }
   } else {
-    // Fresh generation — check the monthly post cap as before.
-    const usage = await checkUsageLimit(supabase, user.id)
+    // Fresh generation — gate against the unified Generations cap that
+    // bundles blog + thumbnail + metadata into one bucket per billing
+    // period (migration 101). Trial users still hit the lifetime gate
+    // first via checkUsageLimit; paid tiers go straight through the
+    // unified RPC.
+    const trialUsage = await checkUsageLimit(supabase, user.id)
+    if (!trialUsage.allowed) {
+      return NextResponse.json({
+        error: trialUsage.reason,
+        limitReached: true,
+        cap: 'posts',
+        currentTier: trialUsage.tier,
+        upgrade: trialUsage.upgrade,
+      }, { status: 403 })
+    }
+    const usage = await checkGenerationLimit(supabase, user.id)
     if (!usage.allowed) {
       return NextResponse.json({
         error: usage.reason,
         limitReached: true,
-        cap: 'posts',
+        cap: 'generations',
         currentTier: usage.tier,
         upgrade: usage.upgrade,
       }, { status: 403 })
