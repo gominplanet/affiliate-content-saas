@@ -157,6 +157,25 @@ export function normaliseDomainStatus(raw: string | null | undefined): 'pending'
   return 'pending'
 }
 
+/** List every domain in our Resend account. Used by the /domain/resync
+ *  endpoint to recover from drift: if the user's saved resend_domain_id
+ *  no longer matches what's in Resend (deleted/recreated/migrated), we
+ *  can find their domain by NAME and patch the ID. Returns the raw
+ *  array — caller filters/maps as needed. */
+export async function listResendDomains(): Promise<ResendDomain[]> {
+  const client = getClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (client as any).domains.list()
+  if (result.error) {
+    throw new Error(`Resend domains.list failed: ${result.error.message ?? JSON.stringify(result.error)}`)
+  }
+  // Resend's SDK returns { data: { data: [...] } } or { data: [...] }
+  // depending on version. Normalize both shapes.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const raw = (result.data as any)?.data ?? result.data
+  return Array.isArray(raw) ? (raw as ResendDomain[]) : []
+}
+
 /** Create a domain in our Resend account. Returns the full domain object
  *  including the DNS records the user needs to add. Throws on failure so
  *  the caller can surface the specific Resend error (e.g. "domain already

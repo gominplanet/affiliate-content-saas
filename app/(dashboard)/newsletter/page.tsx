@@ -188,7 +188,7 @@ export default function NewsletterPage() {
   }>>([])
   // Sender-domain card state (Milestone 2)
   const [domainInput, setDomainInput] = useState('')
-  const [domainBusy, setDomainBusy] = useState<'add' | 'verify' | 'remove' | 'dns-check' | null>(null)
+  const [domainBusy, setDomainBusy] = useState<'add' | 'verify' | 'remove' | 'dns-check' | 'resync' | null>(null)
   // DNS diagnostic state — populated when user clicks "Run DNS check".
   // Server-side endpoint resolves each Resend record against public DNS
   // and reports match/wrong/not_found per row. Cleared on every fresh
@@ -340,6 +340,38 @@ export default function NewsletterPage() {
       setDnsCheck({ results: d.results, allMatch: d.summary?.allMatch ?? false })
     } catch (e) {
       setDomainMsg({ ok: false, text: e instanceof Error ? e.message : 'DNS check failed.' })
+    } finally {
+      setDomainBusy(null)
+    }
+  }
+
+  // "Re-sync from Resend" — finds the user's sender domain by NAME in
+  // their Resend account and updates our cached state. Recovers from
+  // two stuck cases the regular Verify button can't:
+  //   1. Stored resend_domain_id no longer matches what's in Resend.
+  //   2. Resend's UI / API says verified but our cache lags.
+  // The endpoint covers both with a single round trip. See
+  // /api/newsletter/domain/resync for details.
+  async function resyncDomain() {
+    setDomainBusy('resync')
+    setDomainMsg(null)
+    try {
+      const r = await fetch('/api/newsletter/domain/resync', { method: 'POST' })
+      const d = await r.json()
+      if (!r.ok) {
+        setDomainMsg({ ok: false, text: d.error || 'Re-sync failed.' })
+      } else {
+        setSettings(d.settings)
+        const s = d.settings?.domain_status
+        const idChangedNote = d.idChanged ? ' (your stored Resend domain id was out of date — patched).' : ''
+        if (s === 'verified') {
+          setDomainMsg({ ok: true, text: `Re-synced from Resend — your domain is verified${idChangedNote}` })
+        } else {
+          setDomainMsg({ ok: false, text: `Re-synced from Resend. Resend currently reports "${d.resendStatus || s}"${idChangedNote} — if Resend's own dashboard shows Verified, give it a minute and try again.` })
+        }
+      }
+    } catch (e) {
+      setDomainMsg({ ok: false, text: e instanceof Error ? e.message : 'Re-sync failed.' })
     } finally {
       setDomainBusy(null)
     }
@@ -930,6 +962,20 @@ export default function NewsletterPage() {
                   className="px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 transition-colors"
                 >
                   {domainBusy === 'verify' ? <><Loader2 size={11} className="animate-spin inline mr-1" /> Checking…</> : <>Verify</>}
+                </button>
+              )}
+              {/* "Re-sync from Resend" — recovers from stale-cache /
+                  domain-id-drift when Resend's own dashboard shows
+                  Verified but MVP still says Pending. Soft secondary
+                  styling since it's a diagnostic, not the primary path. */}
+              {settings.domain_status !== 'verified' && (
+                <button
+                  onClick={() => void resyncDomain()}
+                  disabled={domainBusy === 'resync'}
+                  className="px-3 py-1.5 rounded-md text-xs font-semibold border border-[#7C3AED]/30 text-[#7C3AED] hover:bg-[#7C3AED]/10 disabled:opacity-50 transition-colors"
+                  title="Use this if Resend's own dashboard shows your domain as Verified but MVP still says Pending — it re-fetches state from Resend and patches any out-of-date IDs."
+                >
+                  {domainBusy === 'resync' ? <><Loader2 size={11} className="animate-spin inline mr-1" /> Re-syncing…</> : <><RefreshCw size={11} className="inline mr-1" /> Re-sync from Resend</>}
                 </button>
               )}
               <button
