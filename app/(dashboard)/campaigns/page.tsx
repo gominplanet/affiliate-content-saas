@@ -378,9 +378,17 @@ function CampaignsInner() {
       // to try (narrow the keyword, raise the commission, or just
       // retry).
       const raw = e instanceof Error ? e.message : 'Search failed.'
-      const friendly = /statement timeout|canceling statement/i.test(raw)
-        ? 'The catalog took too long to scan for that search. Try narrowing the keyword (e.g. "wireless headphones" instead of just blank), raising the min commission, or hitting Search again — the second run is usually faster because Postgres warms its caches.'
-        : raw
+      // Translate the common Postgres-shaped errors into something the
+      // user can actually act on. Two patterns we see in practice:
+      //   - timeout (intimidating, just retry)
+      //   - is_canonical missing (admin hasn't run migration 099b yet;
+      //     surfaces as "column c.is_canonical does not exist")
+      let friendly = raw
+      if (/statement timeout|canceling statement/i.test(raw)) {
+        friendly = 'The catalog took too long to scan for that search. Try narrowing the keyword (e.g. "wireless headphones" instead of just blank), raising the min commission, or hitting Search again — the second run is usually faster because Postgres warms its caches.'
+      } else if (/is_canonical does not exist|column .*is_canonical/i.test(raw)) {
+        friendly = 'Catalog needs a one-time DB migration to be searchable. Ask the admin to run migration 099b_search_rpc_self_heal.sql in Supabase — it adds the is_canonical column the search RPC depends on. Should take under a minute.'
+      }
       setImpErr(friendly)
       setImpPhase('idle')
     }
