@@ -30,6 +30,7 @@ import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 import {
   Loader2, AlertCircle, CheckCircle, Sparkles, Send, ChevronLeft, Lock,
   Plus, X, Image as ImageIcon, MessageCircle, Search, ExternalLink, Tag,
+  Check, Users,
 } from 'lucide-react'
 
 interface PickablePost {
@@ -135,15 +136,32 @@ export default function NewsletterComposePage() {
 
   // ── Segmentation ──────────────────────────────────────────────────────────
   // When segmentEnabled, the send route narrows recipients by source /
-  // signup date / tags. Tags are user-defined free-text labels on
-  // subscribers (e.g. 'paying', 'lead').
+  // signup window / tags. Tags are user-defined free-text labels on
+  // subscribers (e.g. 'paying', 'lead', 'archived').
   const [segmentEnabled, setSegmentEnabled] = useState(false)
   const [segSource, setSegSource] = useState<'all' | 'blog_form' | 'csv_import' | 'manual'>('all')
   const [segSignedUpAfter, setSegSignedUpAfter] = useState('')
-  const [segTagsRaw, setSegTagsRaw] = useState('')      // comma-separated
+  // signedUpBefore was supported by the back-end (lib/newsletter-send.ts)
+  // since migration 090 but had no UI. Surfaced 2026-06-05 so users can
+  // build "signed up between X and Y" segments.
+  const [segSignedUpBefore, setSegSignedUpBefore] = useState('')
+  // Tags as a Set for O(1) toggle; serialized to a string[] when sent.
+  const [segTags, setSegTags] = useState<Set<string>>(new Set())
+  // Custom tag input — for users adding a tag that isn't in availableTags
+  // yet (e.g. they typed it on the subscribers page after this compose
+  // page loaded). Submitted on Enter; trimmed + deduped.
+  const [segCustomTagInput, setSegCustomTagInput] = useState('')
 
   // Available tags for autocomplete — loaded from /api/newsletter/subscribers.
   const [availableTags, setAvailableTags] = useState<string[]>([])
+
+  // Live preview — "Matches X of Y active subscribers" computed
+  // server-side via /api/newsletter/segment-preview whenever the
+  // segment criteria change. Debounced 250ms so rapid typing/clicking
+  // doesn't hammer the endpoint. null = not loaded yet, undefined =
+  // request in flight.
+  const [segPreview, setSegPreview] = useState<{ matching: number; total: number } | null>(null)
+  const [segPreviewLoading, setSegPreviewLoading] = useState(false)
 
   // Tier restructure 2026-06-04: Scheduling = Studio+, A/B + Segments =
   // Pro-only. Compose page itself is Creator+ (Trial is locked from the
@@ -195,6 +213,47 @@ export default function NewsletterComposePage() {
       }
     })()
   }, [])
+
+  // ── Live segment preview ──────────────────────────────────────────────────
+  // POST the current filter to /api/newsletter/segment-preview every
+  // time it changes. Server returns { matching, total } so the
+  // compose page can render "Matches 47 of 312 active subscribers"
+  // inline. 250ms debounce so each keystroke/chip toggle doesn't
+  // hammer the endpoint. Skip when segmentation is off or Pro-gate
+  // blocks the user.
+  useEffect(() => {
+    if (!segmentEnabled || !canSegment) {
+      setSegPreview(null)
+      return
+    }
+    const handle = setTimeout(() => {
+      void (async () => {
+        setSegPreviewLoading(true)
+        try {
+          const filter: Record<string, unknown> = {}
+          if (segSource !== 'all') filter.source = segSource
+          if (segSignedUpAfter) filter.signedUpAfter = new Date(segSignedUpAfter).toISOString()
+          if (segSignedUpBefore) filter.signedUpBefore = new Date(segSignedUpBefore).toISOString()
+          if (segTags.size > 0) filter.tags = Array.from(segTags)
+          const r = await fetch('/api/newsletter/segment-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filter: Object.keys(filter).length > 0 ? filter : null }),
+          })
+          if (r.ok) {
+            const d = await r.json() as { matching: number; total: number }
+            setSegPreview({ matching: d.matching, total: d.total })
+          }
+        } finally {
+          setSegPreviewLoading(false)
+        }
+      })()
+    }, 250)
+    return () => clearTimeout(handle)
+  // canSegment depends on tier which is loaded async; including it here
+  // re-runs the preview once Pro status resolves.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segmentEnabled, segSource, segSignedUpAfter, segSignedUpBefore, segTags, canSegment])
 
   // ── Debounced server-side search across the entire catalogue ──────────────
   // Empty query → reload the latest 10. Non-empty → fire to the API with
@@ -309,8 +368,8 @@ export default function NewsletterComposePage() {
         const filter: Record<string, unknown> = {}
         if (segSource !== 'all') filter.source = segSource
         if (segSignedUpAfter) filter.signedUpAfter = new Date(segSignedUpAfter).toISOString()
-        const tags = segTagsRaw.split(',').map(s => s.trim()).filter(Boolean)
-        if (tags.length > 0) filter.tags = tags
+        if (segSignedUpBefore) filter.signedUpBefore = new Date(segSignedUpBefore).toISOString()
+        if (segTags.size > 0) filter.tags = Array.from(segTags)
         if (Object.keys(filter).length > 0) payload.segment_filter = filter
       }
 
@@ -763,9 +822,10 @@ export default function NewsletterComposePage() {
                 )}
               </label>
               {canSegment && segmentEnabled && (
-                <div className="mt-2 space-y-2 text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
+                <div className="mt-3 space-y-3 text-[12px] text-[#6e6e73] dark:text-[#ebebf0]">
+                  {/* Source dropdown — single-select */}
                   <label className="flex items-center gap-2">
-                    Source
+                    <span className="w-24 flex-shrink-0">Source</span>
                     <select value={segSource} onChange={(e) => setSegSource(e.target.value as typeof segSource)} className="flex-1 px-2 py-1 rounded border bg-white dark:bg-white/5">
                       <option value="all">All sources</option>
                       <option value="blog_form">Blog form</option>
@@ -773,30 +833,111 @@ export default function NewsletterComposePage() {
                       <option value="manual">Manual add</option>
                     </select>
                   </label>
-                  <label className="flex items-center gap-2">
-                    Signed up after
-                    <input
-                      type="date"
-                      value={segSignedUpAfter}
-                      onChange={(e) => setSegSignedUpAfter(e.target.value)}
-                      className="flex-1 px-2 py-1 rounded border bg-white dark:bg-white/5"
-                    />
-                  </label>
-                  <label className="flex items-center gap-2">
-                    Tags (any of)
-                    <input
-                      type="text"
-                      value={segTagsRaw}
-                      onChange={(e) => setSegTagsRaw(e.target.value)}
-                      placeholder="paying, lead, archived"
-                      className="flex-1 px-2 py-1 rounded border bg-white dark:bg-white/5"
-                    />
-                  </label>
-                  {availableTags.length > 0 && (
-                    <p className="opacity-70 leading-tight">
-                      Known tags: {availableTags.slice(0, 12).join(', ')}
-                    </p>
-                  )}
+
+                  {/* Signed-up window — after + before */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] opacity-80">Signed up after</span>
+                      <input
+                        type="date"
+                        value={segSignedUpAfter}
+                        onChange={(e) => setSegSignedUpAfter(e.target.value)}
+                        className="px-2 py-1 rounded border bg-white dark:bg-white/5"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] opacity-80">Signed up before</span>
+                      <input
+                        type="date"
+                        value={segSignedUpBefore}
+                        onChange={(e) => setSegSignedUpBefore(e.target.value)}
+                        className="px-2 py-1 rounded border bg-white dark:bg-white/5"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Tag chip picker — click to toggle. Union of
+                      availableTags + tags the user has already added
+                      (so a custom tag stays visible as a chip even if
+                      it isn't in availableTags yet). */}
+                  <div>
+                    <p className="text-[11px] opacity-80 mb-1.5">Tags (subscriber matches if any tag matches)</p>
+                    {availableTags.length === 0 && segTags.size === 0 ? (
+                      <p className="text-[11px] opacity-60 italic">
+                        You haven&apos;t tagged any subscribers yet. Add tags on the <Link href="/newsletter/subscribers" className="text-[#7C3AED] hover:underline">subscribers page</Link> to segment by them.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {Array.from(new Set([...availableTags, ...Array.from(segTags)])).sort().map(tag => {
+                          const active = segTags.has(tag)
+                          return (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => {
+                                setSegTags(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(tag)) next.delete(tag)
+                                  else next.add(tag)
+                                  return next
+                                })
+                              }}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-colors ${
+                                active
+                                  ? 'bg-[#7C3AED] text-white border-[#7C3AED]'
+                                  : 'bg-white dark:bg-white/5 text-[#6e6e73] dark:text-[#ebebf0] border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40'
+                              }`}
+                            >
+                              {active && <Check size={9} strokeWidth={3} />} {tag}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {/* Custom-tag entry — for tags added on subscribers
+                        page after this compose loaded. Enter to commit. */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={segCustomTagInput}
+                        onChange={(e) => setSegCustomTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            const t = segCustomTagInput.trim()
+                            if (t) {
+                              setSegTags(prev => new Set([...prev, t]))
+                              setSegCustomTagInput('')
+                            }
+                          }
+                        }}
+                        placeholder="Add a tag (Enter)"
+                        className="flex-1 px-2 py-1 rounded border bg-white dark:bg-white/5 text-[11px]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live preview — "Matches X of Y active subscribers" */}
+                  <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/[0.06] px-3 py-2 flex items-center gap-2">
+                    {segPreviewLoading ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin text-[#7C3AED]" />
+                        <span className="text-[11px] text-[#7C3AED]">Calculating segment…</span>
+                      </>
+                    ) : segPreview ? (
+                      <>
+                        <Users size={12} className="text-[#7C3AED]" />
+                        <span className="text-[12px] text-[#1d1d1f] dark:text-[#f5f5f7]">
+                          <strong className="text-[#7C3AED]">{segPreview.matching}</strong> of {segPreview.total} active subscribers will receive this
+                          {segPreview.matching === 0 && (
+                            <span className="ml-2 text-[#ff3b30]">— send disabled</span>
+                          )}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[11px] opacity-60">Set criteria above to preview the segment size.</span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
