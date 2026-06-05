@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
 import { Loader2, Send, Plus, Trash2, MessageSquare, Sparkles, Brain, X, Upload } from 'lucide-react'
 import { useConfirm } from '@/components/ui/useConfirm'
+import { MessageMarkdown } from '@/components/assistant/MessageMarkdown'
 
 interface Conversation { id: string; title: string; updated_at: string }
 interface Msg { role: 'user' | 'assistant'; content: string }
@@ -219,15 +220,15 @@ export default function AssistantPage() {
             )}
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed ${m.role === 'user' ? 'bg-[#7C3AED] text-white' : 'bg-gray-100 dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
-                  {m.content}
+                <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${m.role === 'user' ? 'bg-[#7C3AED] text-white whitespace-pre-wrap' : 'bg-gray-100 dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]'}`}>
+                  {m.role === 'user' ? m.content : <MessageMarkdown content={m.content} />}
                 </div>
               </div>
             ))}
             {streaming && (
               <div className="flex justify-start">
-                <div className="max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap leading-relaxed bg-gray-100 dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]">
-                  {streaming}
+                <div className="max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed bg-gray-100 dark:bg-white/5 text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  <MessageMarkdown content={streaming} />
                 </div>
               </div>
             )}

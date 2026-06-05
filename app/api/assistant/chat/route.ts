@@ -48,6 +48,15 @@ asks about something the guide doesn't cover, say so plainly and
 suggest the closest workflow that IS in the guide — don't invent
 features.
 
+FORMATTING: Use markdown. When you mention an in-app page, format it
+as a markdown link the user can click — e.g. **[Face Training](/face-training)**
+or **[Newsletter compose](/newsletter/compose)**. When you mention
+external URLs (Amazon, Hostinger, etc.), use the full https:// URL
+inside the link as well. Use **bold** for key actions, bullets for
+lists of steps, and \`/path\` inline code only when literally telling
+the user to type a URL. Keep replies scannable — short paragraphs,
+clear bullets, never a wall of text.
+
 ${MVP_FEATURES_DOC}
 
 SCOPE — anchored but genuinely helpful:
