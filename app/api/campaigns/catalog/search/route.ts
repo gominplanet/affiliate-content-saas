@@ -32,6 +32,7 @@ interface RpcRow {
   commission: number | null
   ends_at: string | null
   days_left: number | null
+  price: number | null
 }
 
 export async function GET(request: Request) {
@@ -45,12 +46,19 @@ export async function GET(request: Request) {
   const minDays = Math.max(0, Number(searchParams.get('minDays') || 0))
   const needBudget = (searchParams.get('needBudget') || '1') === '1'
   const limit = Math.min(3000, Math.max(1, Number(searchParams.get('limit') || 500)))
+  // Price bounds — both optional. Empty string / missing / non-numeric
+  // becomes null which the RPC reads as "no bound on that side". We
+  // don't clamp to ≥0 because the RPC null-checks before comparing.
+  const minPriceRaw = searchParams.get('minPrice')
+  const maxPriceRaw = searchParams.get('maxPrice')
+  const minPrice = minPriceRaw && !isNaN(Number(minPriceRaw)) ? Number(minPriceRaw) : null
+  const maxPrice = maxPriceRaw && !isNaN(Number(maxPriceRaw)) ? Number(maxPriceRaw) : null
 
-  // Modest overfetch (2x, min 200) to leave headroom for the dedupe-by-ASIN
-  // pass below without making Postgres sort 2000+ rows just so we can throw
-  // most away. The earlier overfetch=2000 was crossing the per-statement
-  // timeout for keyword searches even with trigram indexes — each extra
-  // row in the LIMIT N means more candidates the planner has to sort.
+  // Since the RPC now returns one canonical row per ASIN (migration
+  // 098 added is_canonical), the route-side dedupe is no-op work.
+  // Overfetch stays at 2x as cheap insurance in case a future RPC
+  // refactor reintroduces duplicates — Postgres barely notices the
+  // extra few hundred rows on the canonical subset.
   const overfetch = Math.max(limit * 2, 200)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,6 +68,8 @@ export async function GET(request: Request) {
     p_min_days: minDays,
     p_need_budget: needBudget,
     p_limit: overfetch,
+    p_min_price: minPrice,
+    p_max_price: maxPrice,
   })
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -86,6 +96,7 @@ export async function GET(request: Request) {
       epc: r.commission != null ? `${r.commission}%` : '',
       endsAt: r.ends_at || '',
       commission: r.commission ?? 0,
+      price: r.price,
     }))
 
   // Surface the catalog's freshness so the UI can show "last refreshed

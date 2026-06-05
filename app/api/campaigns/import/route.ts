@@ -21,6 +21,9 @@ interface Incoming {
   campaignName?: string
   epc?: string
   endsAt?: string
+  /** Snapshot of the catalog's price at the moment the user queued
+   *  this row. Optional because legacy/manual paths might not send it. */
+  price?: number | null
 }
 
 export async function POST(request: Request) {
@@ -51,6 +54,10 @@ export async function POST(request: Request) {
         campaign_name: c.campaignName?.toString().trim() || null,
         epc: c.epc?.toString().trim() || null,
         ends_at: c.endsAt?.toString().trim() || null,
+        // Coerce only numeric prices; anything else (string, NaN, null)
+        // lands as null on the row, which the queue UI renders as no
+        // price chip rather than "$NaN".
+        product_price: typeof c.price === 'number' && isFinite(c.price) && c.price > 0 ? c.price : null,
       }))
       .filter(c => {
         if (!/^[A-Z0-9]{10}$/.test(c.asin) || seen.has(c.asin)) return false
@@ -82,8 +89,12 @@ export async function POST(request: Request) {
 
     let inserted = 0
     if (toInsert.length > 0) {
+      // Cast through `any` — campaigns.product_price was added in
+      // migration 099 and the generated Database types in this branch
+      // don't know about it yet. Drop the cast on the next types-regen
+      // pass.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error, count } = await supabase
+      const { error, count } = await (supabase as any)
         .from('campaigns').insert(toInsert, { count: 'exact' })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       inserted = count ?? toInsert.length

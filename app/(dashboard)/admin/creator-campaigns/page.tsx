@@ -117,6 +117,7 @@ export default function CreatorCampaignsAdminPage() {
         budget_remain: number
         slots_available: number
         has_budget_and_slots: boolean
+        price: number | null
       }
       const now = Date.now()
       const rows: Row[] = []
@@ -139,6 +140,11 @@ export default function CreatorCampaignsAdminPage() {
               else if (x.includes('commission')) idx!.comm = k
               else if (x.includes('remain')) idx!.budget = k
               else if (x.includes('available')) idx!.slots = k
+              // Amazon's export labels the price column variously
+              // ("Price", "Product Price", "Price (USD)") — settle for
+              // any header that contains "price". Last-write-wins is
+              // fine because the export only has one such column.
+              else if (x.includes('price')) idx!.price = k
             })
             return true
           }
@@ -164,6 +170,16 @@ export default function CreatorCampaignsAdminPage() {
           }
           const budgetRemain = parseFloat((cols[idx.budget] ?? '').replace(/[^\d.]/g, '')) || 0
           const slots = parseFloat((cols[idx.slots] ?? '').replace(/[^\d.]/g, '')) || 0
+          // Price: Amazon ships either a single number ($24.99), a
+          // range ("$19.99 - $29.99"), or blank. Strip currency + take
+          // the first number we see — that's the lower bound when
+          // it's a range, which is the conservative read (a user
+          // filtering "max $25" should still see a $19.99–$29.99
+          // product because it starts under $25).
+          const priceCell = idx.price != null ? (cols[idx.price] ?? '') : ''
+          const priceMatch = priceCell.match(/[\d]+\.?\d*/)
+          const priceNum = priceMatch ? parseFloat(priceMatch[0]) : NaN
+          const price = isNaN(priceNum) || priceNum <= 0 ? null : priceNum
           // Same actionable-only filter as the legacy server-side parse.
           if ((commission ?? 0) <= 0) return true
           if (daysLeft !== null && daysLeft <= 0) return true
@@ -179,6 +195,7 @@ export default function CreatorCampaignsAdminPage() {
             budget_remain: budgetRemain,
             slots_available: slots,
             has_budget_and_slots: budgetRemain > 0 && slots > 0,
+            price,
           })
           return true
         })

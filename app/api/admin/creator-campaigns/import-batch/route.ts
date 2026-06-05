@@ -47,6 +47,7 @@ type Row = {
   budget_remain: number
   slots_available: number
   has_budget_and_slots: boolean
+  price?: number | null
 }
 
 export async function POST(request: Request) {

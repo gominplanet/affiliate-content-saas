@@ -15,7 +15,7 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('campaigns')
-      .select('id,asin,cc_campaign_id,product_title,campaign_name,epc,ends_at,status,error_message,wordpress_url,blog_post_id,category,hero_kind,created_at')
+      .select('id,asin,cc_campaign_id,product_title,campaign_name,epc,ends_at,status,error_message,wordpress_url,blog_post_id,category,hero_kind,product_price,created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(100),

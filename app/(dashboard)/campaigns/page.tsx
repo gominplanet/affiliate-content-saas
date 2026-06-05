@@ -30,6 +30,9 @@ interface Campaign {
   blog_post_id: string | null
   category: string | null
   hero_kind: 'ai' | 'product' | null
+  /** Price snapshotted at queue time. Null if the catalog had no
+   *  price for that row (Amazon sometimes ships price-less listings). */
+  product_price: number | null
   created_at: string
 }
 
@@ -244,11 +247,17 @@ function CampaignsInner() {
   const [impKw, setImpKw] = useState('')
   const [impMinComm, setImpMinComm] = useState(10)
   const [impMinDays, setImpMinDays] = useState(120)
+  // Price bounds — both optional. NaN (empty input) means "no bound on
+  // that side", which the search route translates to a null param the
+  // RPC reads as "any price". Default to NaN so a stock search behaves
+  // exactly as before for users who never touch the price fields.
+  const [impMinPrice, setImpMinPrice] = useState<number>(NaN)
+  const [impMaxPrice, setImpMaxPrice] = useState<number>(NaN)
   const [impNeedBudget, setImpNeedBudget] = useState(true)
   const [impCap, setImpCap] = useState(500)
   const [impPhase, setImpPhase] = useState<'idle' | 'parsing' | 'ready' | 'pushing'>('idle')
   const [impScanned, setImpScanned] = useState(0)
-  const [impMatches, setImpMatches] = useState<{ asin: string; campaignId: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number }[]>([])
+  const [impMatches, setImpMatches] = useState<{ asin: string; campaignId: string; campaignName: string; brand: string; epc: string; endsAt: string; commission: number; price: number | null }[]>([])
   const [impMsg, setImpMsg] = useState<string | null>(null)
   const [impErr, setImpErr] = useState<string | null>(null)
   // Catalog freshness — surfaced by /api/campaigns/catalog/search so we
@@ -335,6 +344,11 @@ function CampaignsInner() {
         keyword: impKw.trim(),
         minCommission: String(isNaN(impMinComm) ? 0 : impMinComm),
         minDays: String(isNaN(impMinDays) ? 0 : impMinDays),
+        // Only attach price params when the user actually typed a
+        // number. Sending an empty string leaves the RPC to default
+        // those bounds to null = "no bound" rather than = 0.
+        ...(isNaN(impMinPrice) ? {} : { minPrice: String(impMinPrice) }),
+        ...(isNaN(impMaxPrice) ? {} : { maxPrice: String(impMaxPrice) }),
         needBudget: impNeedBudget ? '1' : '0',
         limit: String(impCap),
       })
@@ -379,6 +393,11 @@ function CampaignsInner() {
         body: JSON.stringify({
           campaigns: impMatches.map(m => ({
             asin: m.asin, campaignId: m.campaignId, campaignName: m.campaignName, epc: m.epc, endsAt: m.endsAt,
+            // Snapshot the price at queue time. The catalog could refresh
+            // (and the price could shift) between now and when the user
+            // actually writes the post — we want the queue row to show
+            // what they saw when they decided to add it.
+            price: m.price,
           })),
         }),
       })
@@ -648,6 +667,20 @@ function CampaignsInner() {
               <option value={1000}>Top 1000</option>
             </select>
           </div>
+          {/* Price range — both optional. A blank input maps to NaN
+              which the request builder skips, so leaving these alone
+              keeps the search behavior identical to before this row
+              existed. Pair them so the user can frame searches like
+              "solar lanterns under $50" or "$25–$100 wireless
+              earbuds". */}
+          <div>
+            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Min price ($)</label>
+            <input type="number" value={isNaN(impMinPrice) ? '' : impMinPrice} onChange={e => setImpMinPrice(parseFloat(e.target.value))} placeholder="any" className="input-field text-sm w-full" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Max price ($)</label>
+            <input type="number" value={isNaN(impMaxPrice) ? '' : impMaxPrice} onChange={e => setImpMaxPrice(parseFloat(e.target.value))} placeholder="any" className="input-field text-sm w-full" />
+          </div>
         </div>
         <label className="flex items-center gap-2 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3">
           <input type="checkbox" checked={impNeedBudget} onChange={e => setImpNeedBudget(e.target.checked)} />
@@ -780,6 +813,11 @@ function CampaignsInner() {
                   <div className="flex items-center gap-3 text-[11px] text-[#86868b] dark:text-[#8e8e93] flex-wrap">
                     <span className="font-mono">{c.asin}</span>
                     {c.campaign_name && <span>· {c.campaign_name}</span>}
+                    {/* Price chip — only show when we actually captured
+                        one (Amazon ships some price-less listings). */}
+                    {typeof c.product_price === 'number' && c.product_price > 0 && (
+                      <span>· ${c.product_price.toFixed(2)}</span>
+                    )}
                     {c.epc && <span>· {c.epc} boost</span>}
                     {c.ends_at && (
                       <span className={`inline-flex items-center gap-1 ${expired ? 'text-[#ff3b30]' : 'text-[#1f8a3a]'}`}>
