@@ -186,6 +186,13 @@ export default function DashboardShellV2({
       items: [
         { href: '/content', icon: <Library size={15} />, label: 'Library' },
         { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
+        // LEARN — voice/style training. Page existed all along at /learn
+        // but the link was dropped during the V2 sidebar rebuild (oversight).
+        // Lives next to Brand Profile because they're conceptually the same
+        // "this is how my content sounds" surface, just different angles
+        // (Brand Profile = top-of-stack settings, LEARN = ongoing voice
+        // tuning that every agent honors per the LEARN-always-applied rule).
+        { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog' },
       ],
     },
