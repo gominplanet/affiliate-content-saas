@@ -23,7 +23,7 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
-      .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,pinterest_access_token,instagram_user_id')
+      .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,pinterest_access_token,instagram_user_id,tiktok_access_token')
       .eq('user_id', user.id)
       .single(),
     // Cast through `any` because contact_whatsapp/wechat/lark were added
@@ -32,22 +32,33 @@ export async function GET() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('brand_profiles')
-      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes,collab_livestreams,collab_livestream_link,contact_whatsapp,contact_wechat,contact_lark')
+      .select('website_url,youtube_channel_url,instagram_url,tiktok_url,facebook_url,pinterest_url,threads_url,twitter_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes,collab_livestreams,collab_livestream_link,contact_whatsapp,contact_wechat,contact_lark')
       .eq('user_id', user.id)
       .single(),
   ])
 
-  // Connected = a usable channel the creator can actually deliver on.
+  // A platform shows up as a "Your offer" pill if EITHER:
+  //   - the creator has OAuth-connected it (token in integrations), OR
+  //   - they've listed a profile URL on brand_profiles
+  // The OR is important — many creators have a real Twitter/Facebook
+  // presence they post to manually without ever connecting OAuth in MVP,
+  // and they still want to offer that channel in collab pitches. Only
+  // checking the OAuth side hid those from the pill row even when the
+  // URL was clearly filled in on their Brand Profile.
+  //
+  // LinkedIn, Bluesky, and Telegram have no profile-URL twin on
+  // brand_profiles today, so they remain OAuth-only. If we ever add
+  // those URL columns, expand the union below.
   const platforms = [
     brand?.website_url && 'Blog',
-    (brand?.youtube_channel_url) && 'YouTube',
-    intg?.instagram_user_id && 'Instagram',
-    brand?.tiktok_url && 'TikTok',
-    intg?.facebook_page_id && 'Facebook',
-    intg?.threads_access_token && 'Threads',
-    intg?.twitter_access_token && 'X',
+    brand?.youtube_channel_url && 'YouTube',
+    (intg?.instagram_user_id || brand?.instagram_url) && 'Instagram',
+    (intg?.tiktok_access_token || brand?.tiktok_url) && 'TikTok',
+    (intg?.facebook_page_id || brand?.facebook_url) && 'Facebook',
+    (intg?.threads_access_token || brand?.threads_url) && 'Threads',
+    (intg?.twitter_access_token || brand?.twitter_url) && 'X',
+    (intg?.pinterest_access_token || brand?.pinterest_url) && 'Pinterest',
     intg?.linkedin_access_token && 'LinkedIn',
-    intg?.pinterest_access_token && 'Pinterest',
     intg?.bluesky_handle && 'Bluesky',
     intg?.telegram_channel_id && 'Telegram',
   ].filter(Boolean) as string[]
