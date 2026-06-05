@@ -192,16 +192,19 @@ export async function POST(req: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await admin
     .from('integrations')
-    .select('tier')
+    .select('tier, legacy_creator_newsletter')
     .eq('user_id', creatorUserId)
     .maybeSingle()
-  const tier = normalizeTier(integ?.tier as string | undefined)
+  const tier = normalizeTier((integ as { tier?: string } | null)?.tier)
 
   // ── 4. Cap check (count active + pending — both consume the cap) ──────────
   // Pending counts because spammers could flood pendings to push real
   // signups past the cap. A row only "frees" the cap if it's unsubscribed
   // or hard-bounced (deletable later).
-  const cap = allowedNewsletterSubscribers(tier)
+  // Legacy-Creator grandfathering — see migration 100 + lib/tier.ts comment.
+  const cap = allowedNewsletterSubscribers(tier, {
+    legacyCreatorNewsletter: Boolean((integ as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter),
+  })
   if (cap !== null) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { count } = await admin

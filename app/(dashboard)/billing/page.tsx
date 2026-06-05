@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
+import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
 import { Zap, CheckCircle, Loader2, PartyPopper } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
@@ -136,6 +137,11 @@ export default function BillingPage() {
   return (
     <>
       <PageHero title="Plan & Billing" subtitle="See where you are this month, swap plans, or cancel, all in one place." />
+
+      {/* Legacy-Creator grandfather banner. Self-hides for non-Creator
+          users and Creators not on the legacy flag. Renders before the
+          plan picker so it's the first thing they see when shopping. */}
+      <LegacyCapsNotice />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-8">

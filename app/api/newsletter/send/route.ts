@@ -125,9 +125,11 @@ export async function POST(req: Request) {
   // ── Tier cap: broadcasts per billing month ────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await supabase
-    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    .from('integrations').select('tier, legacy_creator_newsletter').eq('user_id', user.id).maybeSingle()
   const defaultSite = await getWordPressCredentials(supabase, user.id)
-  const tier = normalizeTier(integ?.tier as string | undefined)
+  const tier = normalizeTier((integ as { tier?: string } | null)?.tier)
+  // Legacy-Creator grandfathering — see migration 100 + lib/tier.ts comment.
+  const legacyCreatorNewsletter = Boolean((integ as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter)
 
   // Tier restructure 2026-06-04: gate the SUB-features (A/B / scheduling /
   // segmented sends) server-side. Compose UI hides the toggles for
@@ -152,7 +154,7 @@ export async function POST(req: Request) {
     }, { status: 403 })
   }
 
-  const monthlyCap = allowedNewsletterBroadcasts(tier)
+  const monthlyCap = allowedNewsletterBroadcasts(tier, { legacyCreatorNewsletter })
   if (monthlyCap !== null) {
     const monthStart = new Date()
     monthStart.setUTCDate(1)

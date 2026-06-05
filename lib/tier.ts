@@ -323,16 +323,36 @@ export function tierAllowsSocial(tier: Tier, social: Social): boolean {
 
 /** Newsletter subscriber cap for the given tier. null = unlimited (admin).
  *  Used by /api/newsletter/subscribe to reject new sign-ups past the cap
- *  with an upgrade nudge instead of silently dropping them. */
-export function allowedNewsletterSubscribers(tier: Tier): number | null {
-  return TIERS[normalizeTier(tier)].newsletterSubscribers
+ *  with an upgrade nudge instead of silently dropping them.
+ *
+ *  Grandfathering: pass { legacyCreatorNewsletter: true } to return the
+ *  pre-2026-06-04 cap (1000) for Creator users who were paying when the
+ *  cap was lowered. The flag is stored on integrations.legacy_creator_newsletter
+ *  and set true for any Creator with an active Stripe sub at migration
+ *  100 run time. No-op for other tiers. */
+export function allowedNewsletterSubscribers(
+  tier: Tier,
+  opts?: { legacyCreatorNewsletter?: boolean },
+): number | null {
+  const t = normalizeTier(tier)
+  if (opts?.legacyCreatorNewsletter && t === 'creator') return 1000
+  return TIERS[t].newsletterSubscribers
 }
 
 /** Newsletter broadcast-send cap per billing month. null = unlimited. Used
  *  by /api/newsletter/send to gate the send button + render the upgrade
- *  banner once the creator hits the ceiling. */
-export function allowedNewsletterBroadcasts(tier: Tier): number | null {
-  return TIERS[normalizeTier(tier)].newsletterBroadcastsPerMonth
+ *  banner once the creator hits the ceiling.
+ *
+ *  Grandfathering: same pattern as allowedNewsletterSubscribers — legacy
+ *  Creator users get the pre-2026-06-04 cap (4/month) when the
+ *  legacyCreatorNewsletter flag is true. */
+export function allowedNewsletterBroadcasts(
+  tier: Tier,
+  opts?: { legacyCreatorNewsletter?: boolean },
+): number | null {
+  const t = normalizeTier(tier)
+  if (opts?.legacyCreatorNewsletter && t === 'creator') return 4
+  return TIERS[t].newsletterBroadcastsPerMonth
 }
 
 /** Generic feature-flag lookup. Cleaner than scattering `tier === 'pro'`

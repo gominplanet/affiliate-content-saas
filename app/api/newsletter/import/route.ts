@@ -35,9 +35,13 @@ export async function POST(req: Request) {
   // ── Tier cap pre-flight ────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await supabase
-    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-  const tier = normalizeTier(integ?.tier as string | undefined)
-  const cap = allowedNewsletterSubscribers(tier)
+    .from('integrations').select('tier, legacy_creator_newsletter').eq('user_id', user.id).maybeSingle()
+  const tier = normalizeTier((integ as { tier?: string } | null)?.tier)
+  // Legacy-Creator grandfathering — see migration 100 + lib/tier.ts comment.
+  // Users who were paying when the 2026-06-04 cap dropped get the old 1000.
+  const cap = allowedNewsletterSubscribers(tier, {
+    legacyCreatorNewsletter: Boolean((integ as { legacy_creator_newsletter?: boolean } | null)?.legacy_creator_newsletter),
+  })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { count: currentCount } = await supabase
     .from('newsletter_subscribers')

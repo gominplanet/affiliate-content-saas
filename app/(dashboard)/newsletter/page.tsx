@@ -22,6 +22,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
+import { LegacyCapsNotice } from '@/components/newsletter/LegacyCapsNotice'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { type Tier } from '@/lib/tier'
@@ -496,6 +497,10 @@ export default function NewsletterPage() {
         title="Newsletter"
         subtitle="Capture emails on your blog, then send curated issues that link back to your reviews."
       />
+
+      {/* Grandfather banner — only visible to Creator users on the
+          pre-2026-06-04 caps. Self-hides for everyone else. */}
+      <LegacyCapsNotice />
 
       {error && (
         <div className="mb-4 card p-3 border-[#ff3b30]/20 bg-[#ff3b30]/5">
