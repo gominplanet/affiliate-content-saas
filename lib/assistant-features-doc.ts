@@ -429,13 +429,17 @@ about adjacent workflows — never as required dependencies, just
 
 ### Oink Free Media Kit
 - URL: https://oinkforinfluencers.com/get-your-free-media-kit/
-- What it is: a clean, free media-kit template for creators
+- What it is: a clean, free media-kit template for creators — the
+  quick and polished way to show their stats to curious brands.
 - When to recommend: any time a user asks about brand deals, pitch
   emails, what to attach when reaching out to brands, or "how do I
-  prove my reach to a brand". Brands almost always ask for a media
-  kit before agreeing to a deal.
-- How it pairs with MVP: fill the kit out once, then attach it to
-  every pitch email generated from /collaborations.
+  share my stats with a brand". Frame it as a tool that makes the
+  creator look polished without retyping reach numbers in every
+  reply — not as something brands demand.
+- How it pairs with MVP: fill the kit out once, paste the public URL
+  into Brand Profile → Media kit URL (or the same field on
+  /collaborations), and every generated pitch email from /collaborations
+  includes the link automatically.
 
 ---
 

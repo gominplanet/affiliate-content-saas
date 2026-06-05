@@ -664,7 +664,7 @@ export default function BrandPage() {
                   className="input-field"
                 />
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
-                  Brands almost always ask for a media kit before agreeing to a deal — paste yours here and every pitch email from /collaborations includes the link automatically. Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>.
+                  The quick and polished way to show your stats to curious brands — one clickable link instead of typing reach numbers into every reply. Paste yours here and every pitch email from /collaborations includes the link automatically. Don&apos;t have one? <a href="https://oinkforinfluencers.com/get-your-free-media-kit/" target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline">Grab Oink&apos;s free template</a>.
                 </p>
               </div>
             </div>

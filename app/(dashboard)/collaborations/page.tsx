@@ -300,7 +300,7 @@ export default function CollaborationsPage() {
             Recommended: free media kit template
           </p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-            Brands almost always ask for a media kit before agreeing to a deal. Oink for Influencers has a clean, free template — fill it in once, host it (Notion / Google Doc / Canva share link / PDF), then <strong>paste the public URL in the &ldquo;Media kit URL&rdquo; field below</strong> and every pitch email will include it.
+            A media kit is the quick and polished way to show your stats to curious brands — one clickable link instead of typing reach numbers into every reply. Oink for Influencers has a clean, free template: fill it in once, host it (Notion / Google Doc / Canva share link / PDF), then <strong>paste the public URL in the &ldquo;Media kit URL&rdquo; field below</strong> and every pitch email will include it.
           </p>
           <a
             href="https://oinkforinfluencers.com/get-your-free-media-kit/"
@@ -347,7 +347,7 @@ export default function CollaborationsPage() {
               filled in once. See migration 102. */}
           <div className="sm:col-span-2">
             <label className={lbl}>
-              Media kit URL <span className="text-[#86868b]">(the link brands click before agreeing to a deal)</span>
+              Media kit URL <span className="text-[#86868b]">(the quick and polished way to show your stats to curious brands)</span>
             </label>
             <input
               value={mediaKitUrl}
