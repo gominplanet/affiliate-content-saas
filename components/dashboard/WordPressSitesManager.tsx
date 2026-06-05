@@ -338,16 +338,33 @@ function AddSiteModal({
   const panelRef = useRef<HTMLDivElement | null>(null)
   const onA11yKey = useModalA11y(true, panelRef, onClose)
 
+  // Cleaned URL for the "Open Application Passwords" deep-link button.
+  // wp-admin's Application Passwords page lives at
+  // {url}/wp-admin/profile.php#application-passwords-section so we can
+  // open it in a new tab with one click as long as the user has typed
+  // their Site URL above. Strip trailing slash before appending.
+  const cleanUrl = url.trim().replace(/\/+$/, '')
+  const appPwUrl = cleanUrl
+    ? `${cleanUrl}/wp-admin/profile.php#application-passwords-section`
+    : ''
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      // Backdrop: bumped from black/40 to black/70 + stronger blur so the
+      // panel doesn't bleed visually into the page underneath (user
+      // feedback 2026-06-05: "pop up window needs to be less transparent").
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md"
       onClick={onClose}
       onKeyDown={onA11yKey}
       role="presentation"
     >
       <div
         ref={panelRef}
-        className="card p-6 max-w-md w-full outline-none"
+        // Solid background override on the panel itself — the shared
+        // `card` class uses a translucent surface that lets the page
+        // bleed through. Explicit white/dark fills here so the modal
+        // reads as a true overlay, not glass.
+        className="card p-6 max-w-md w-full outline-none bg-white dark:bg-[#1c1c1e] shadow-2xl"
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -356,8 +373,64 @@ function AddSiteModal({
       >
         <p className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Add another WordPress site</p>
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4 leading-relaxed">
-          Generate an Application Password in your site&apos;s <code className="px-1 py-0.5 rounded bg-[var(--surface-2)] text-[10px]">wp-admin → Users → Profile → Application Passwords</code>, then paste it here.
+          Paste an Application Password from any WordPress site you control. Step-by-step instructions below.
         </p>
+
+        {/* "How do I get this?" instructions — always-visible because
+            this modal is unusable without them. Numbered + with a
+            deep-link button that opens the user's wp-admin Application
+            Passwords page directly once they've typed their Site URL. */}
+        <details open className="mb-4 rounded-xl border border-[#7C3AED]/20 bg-[#7C3AED]/5 p-4">
+          <summary className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] cursor-pointer select-none flex items-center justify-between gap-2">
+            <span>How to get an Application Password (1 min)</span>
+            <span className="text-[10px] uppercase tracking-wider text-[#86868b]">click to expand/collapse</span>
+          </summary>
+          <ol className="mt-3 flex flex-col gap-2 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+            <li className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">1</span>
+              <span>Log in to your WordPress site as an admin user.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
+              <span>
+                Go to <strong>Users → Profile</strong> in the left sidebar (or click the link below once you&apos;ve typed your Site URL).
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
+              <span>Scroll down to the <strong>Application Passwords</strong> section (near the bottom).</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">4</span>
+              <span>
+                Type a name like <code className="px-1 py-0.5 rounded bg-white/60 dark:bg-white/10 text-[10px]">MVP Affiliate</code> in the &ldquo;New Application Password Name&rdquo; box → click <strong>Add New Application Password</strong>.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">5</span>
+              <span>
+                WordPress shows a 24-character password ONCE — copy it (spaces are fine) and paste below.
+              </span>
+            </li>
+          </ol>
+          {appPwUrl ? (
+            <a
+              href={appPwUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-[#7C3AED] hover:underline"
+            >
+              Open Application Passwords on your site → ↗
+            </a>
+          ) : (
+            <p className="mt-3 text-[10px] text-[#86868b] dark:text-[#8e8e93] italic">
+              Type your Site URL below to enable the one-click &ldquo;Open Application Passwords&rdquo; link.
+            </p>
+          )}
+          <p className="mt-2 text-[10px] text-[#86868b] dark:text-[#8e8e93]">
+            Don&apos;t see &ldquo;Application Passwords&rdquo;? Your host (commonly Hostinger&apos;s legacy CDN, WPEngine, or some security plugins) may have disabled it. Disable any security plugin temporarily, or contact your host to re-enable Application Passwords.
+          </p>
+        </details>
 
         <div className="flex flex-col gap-3">
           <Field
