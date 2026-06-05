@@ -458,7 +458,39 @@ export default function DealsHubPage() {
               Deals Hub
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--fg-muted)' }}>
-              Drop any product link, Amazon URL, Geniuslink, amzn.to short link, or a bare ASIN. The agent writes a timely deal post with a baked thumbnail, end-date countdown, and your promo code or special link wired into every CTA.
+              Drop any Amazon URL, Geniuslink, amzn.to short link, or a bare ASIN. The agent writes a timely deal post with a baked thumbnail, end-date countdown, and your promo code or special link wired into every CTA.
+            </p>
+          </div>
+        </div>
+
+        {/* Amazon-only + Deals Hub link callout. Two things every Deals user
+            needs to know before they start dropping URLs:
+            (1) this feature pulls product data from Amazon, so non-Amazon
+                links won't work — surfacing this here saves the "why didn't
+                my Walmart link work" support pings;
+            (2) most users don't realize Amazon Associates has its own
+                public Deals Hub where they can browse every live deal they
+                qualify to promote. Direct link saves them a Google search. */}
+        <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[#ff9500]/15">
+            <span className="text-base">🛒</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--fg)' }}>
+              Amazon-only feature
+            </p>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--fg-muted)' }}>
+              Deals Hub pulls product data from Amazon. Non-Amazon links (Walmart, Shopify stores, etc.) won&apos;t work here. Find live deals you qualify for at{' '}
+              <a
+                href="https://affiliate-program.amazon.com/deals-hub"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium hover:underline inline-flex items-center gap-0.5"
+                style={{ color: '#7C3AED' }}
+              >
+                Amazon Associates → Deals Hub <ExternalLink size={11} />
+              </a>
+              {' '}— browse every deal, copy any ASIN or product URL, then paste below.
             </p>
           </div>
         </div>
