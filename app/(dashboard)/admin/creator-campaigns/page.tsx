@@ -49,6 +49,10 @@ export default function CreatorCampaignsAdminPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [uploading, setUploading] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  // Live progress so the admin sees the import isn't hung. Updated as
+  // we walk the zip + each upsert batch lands. Re-set to null between
+  // runs and on completion.
+  const [progress, setProgress] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const loadStats = useCallback(async () => {
@@ -73,98 +77,182 @@ export default function CreatorCampaignsAdminPage() {
   }, [supabase, loadStats])
 
   async function upload(file: File) {
-    setUploading(true); setResult(null)
+    setUploading(true); setResult(null); setProgress(null)
     try {
-      // Vercel caps multipart-body POSTs at ~4.5 MB. Amazon's weekly export
-      // is bigger than that, so upload to Supabase Storage first (no size
-      // limit), then hand the API the public URL to fetch + parse.
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not signed in.')
-      const path = `${user.id}/creator-campaigns-imports/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.zip`
-      // Tag each step so a generic "TypeError: Failed to fetch" (which
-      // can come from the supabase client OR our own fetch) tells us
-      // which leg of the flow actually broke. Without this, the user
-      // just sees "Failed to fetch" with no hint whether the Storage
-      // upload, the URL signing, or the API call was the failing step.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: upErr } = await (supabase.storage as any)
-        .from('admin-uploads')
-        .upload(path, file, {
-          cacheControl: '60',
-          upsert: false,
-          contentType: 'application/zip',
-        })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .catch((e: any) => ({ error: { message: `Network error during upload: ${e?.message || e}. If this says "Failed to fetch", the most likely cause is that the admin-uploads Storage bucket doesn\'t exist yet — run migration 095_admin_uploads_bucket.sql in Supabase, then retry.` } }))
-      if (upErr) throw new Error(`Storage upload failed: ${toErrorString(upErr)}`)
-      // Signed URL instead of public URL so this works even when the
-      // bucket is private (which it is by default on new Supabase
-      // projects). 10-minute TTL is plenty — the server downloads the
-      // zip immediately on the next fetch call. Falls back to the
-      // public URL if signing isn't allowed for some reason.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: signed, error: signErr } = await (supabase.storage as any)
-        .from('admin-uploads')
-        .createSignedUrl(path, 600)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .catch((e: any) => ({ data: null, error: { message: `Network error during URL sign: ${e?.message || e}` } }))
-      let upstreamUrl: string | null = signed?.signedUrl ?? null
-      if (!upstreamUrl) {
-        const { data: urlData } = supabase.storage.from('admin-uploads').getPublicUrl(path)
-        upstreamUrl = urlData.publicUrl
+      // Architecture (2026-06-05 rewrite):
+      //   - PARSE happens in the BROWSER. We dynamic-import jszip +
+      //     lib/parse-csv only when the admin clicks the button, so the
+      //     page bundle stays small.
+      //   - UPSERT happens server-side, in BATCHES of ~2k rows. Each
+      //     batch is its own HTTP call to /import-batch, well under
+      //     Vercel's per-function ceiling.
+      //
+      // This replaces the legacy single-call /import route, which
+      // parsed + upserted everything server-side and was hitting
+      // FUNCTION_INVOCATION_TIMEOUT on the 436K-row weekly export
+      // (~870 sequential 500-row upsert chunks > 5 min).
+      setProgress('Loading parser…')
+      const [{ default: JSZip }, { streamCsv }] = await Promise.all([
+        import('jszip'),
+        import('@/lib/parse-csv'),
+      ])
+
+      setProgress('Reading zip…')
+      const zip = await JSZip.loadAsync(file)
+      const csvs = Object.values(zip.files).filter(f => !f.dir && /\.csv$/i.test(f.name))
+      if (csvs.length === 0) throw new Error('No .csv files found inside the zip')
+
+      // ── Parse every CSV into a Row[] ──────────────────────────────────
+      // Same shape the server's upsert expects. Filtering happens here
+      // (commission > 0, days_left valid, budget+slots remaining) so we
+      // don't waste bytes shipping unactionable rows to the server.
+      type Row = {
+        asin: string
+        campaign_id: string
+        campaign_name: string | null
+        brand: string | null
+        commission: number | null
+        ends_at: string | null
+        days_left: number | null
+        budget_remain: number
+        slots_available: number
+        has_budget_and_slots: boolean
       }
-      if (!upstreamUrl) {
-        throw new Error(`Could not get a download URL for the uploaded zip${signErr ? `: ${toErrorString(signErr)}` : ''}`)
+      const now = Date.now()
+      const rows: Row[] = []
+      let scannedTotal = 0
+      for (let c = 0; c < csvs.length; c++) {
+        const entry = csvs[c]
+        setProgress(`Parsing ${c + 1}/${csvs.length} (${entry.name})…`)
+        const text = await entry.async('string')
+        let idx: Record<string, number> | null = null
+        await streamCsv(text, (cols, i) => {
+          if (i === 0) {
+            idx = {}
+            cols.forEach((h, k) => {
+              const x = h.toLowerCase()
+              if (x.includes('asin')) idx!.asin = k
+              else if (x.includes('campaign name')) idx!.name = k
+              else if (x.includes('campaign id')) idx!.cid = k
+              else if (x.includes('brand')) idx!.brand = k
+              else if (x.includes('campaign end') || x.includes('end date')) idx!.end = k
+              else if (x.includes('commission')) idx!.comm = k
+              else if (x.includes('remain')) idx!.budget = k
+              else if (x.includes('available')) idx!.slots = k
+            })
+            return true
+          }
+          if (!idx) return true
+          scannedTotal++
+          const asinRaw = cols[idx.asin] ?? ''
+          const asin = (asinRaw.match(/[A-Z0-9]{10}/) || [])[0] || ''
+          if (!asin) return true
+          const campaignId = idx.cid != null ? (cols[idx.cid] ?? '').trim() : ''
+          if (!campaignId) return true
+          const name = (cols[idx.name] ?? '').trim() || null
+          const brand = (cols[idx.brand] ?? '').trim() || null
+          const comm = parseFloat((cols[idx.comm] ?? '').replace(/[^\d.]/g, ''))
+          const commission = isNaN(comm) ? null : comm
+          const endCell = (cols[idx.end] ?? '').trim()
+          const dm = endCell.match(/(\d{4})-(\d{2})-(\d{2})/)
+          let endsAt: string | null = null
+          let daysLeft: number | null = null
+          if (dm) {
+            endsAt = `${dm[1]}-${dm[2]}-${dm[3]}`
+            const endMs = Date.UTC(+dm[1], +dm[2] - 1, +dm[3])
+            daysLeft = Math.floor((endMs - now) / 86400000)
+          }
+          const budgetRemain = parseFloat((cols[idx.budget] ?? '').replace(/[^\d.]/g, '')) || 0
+          const slots = parseFloat((cols[idx.slots] ?? '').replace(/[^\d.]/g, '')) || 0
+          // Same actionable-only filter as the legacy server-side parse.
+          if ((commission ?? 0) <= 0) return true
+          if (daysLeft !== null && daysLeft <= 0) return true
+          if (!(budgetRemain > 0 && slots > 0)) return true
+          rows.push({
+            asin,
+            campaign_id: campaignId,
+            campaign_name: name,
+            brand,
+            commission,
+            ends_at: endsAt,
+            days_left: daysLeft,
+            budget_remain: budgetRemain,
+            slots_available: slots,
+            has_budget_and_slots: budgetRemain > 0 && slots > 0,
+          })
+          return true
+        })
       }
 
-      let r: Response
-      try {
-        r = await fetch('/api/admin/creator-campaigns/import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ upstreamUrl }),
-        })
-      } catch (e) {
-        // fetch() throws TypeError("Failed to fetch") on network-level
-        // failures (DNS, CORS, browser-side block). Wrap with a marker
-        // so the catch below shows it's the API call that died, not
-        // the Storage upload.
-        throw new Error(`Network error reaching /api/admin/creator-campaigns/import: ${toErrorString(e)}`)
-      }
-      // Read as text first so we can surface the real error even when
-      // Vercel returns a non-JSON error page (function timeout, memory
-      // overflow, uncaught throw before our outer catch). Without this,
-      // the user just saw "Unexpected token 'A', 'An error o'..." which
-      // is the client's JSON.parse choking on Vercel's HTML/text body.
-      const raw = await r.text()
-      let d: { error?: string; upserted?: number; deduped_count?: number; stale_deleted?: number }
-      try {
-        d = JSON.parse(raw)
-      } catch {
-        // Trim Vercel's verbose error page down to the first useful line.
-        const snippet = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)
-        throw new Error(
-          r.ok
-            ? `Server returned a non-JSON response: ${snippet}`
-            : `Server error ${r.status}: ${snippet || 'no response body'}. The function likely timed out (Amazon's export can exceed Vercel's per-function ceiling) or ran out of memory.`,
-        )
-      }
-      if (!r.ok) throw new Error(d.error ? toErrorString(d.error) : `Import failed (${r.status})`)
-      setResult({
-        ok: true,
-        message: `Imported ${(d.upserted ?? 0).toLocaleString()} campaigns · ${(d.deduped_count ?? 0).toLocaleString()} unique rows · ${d.stale_deleted ?? 0} stale rows pruned.`,
+      // ── Dedupe on (campaign_id, asin) so the server's onConflict
+      //    upsert doesn't choke on intra-batch duplicates. Amazon's
+      //    export does include them. ───────────────────────────────────
+      const seen = new Set<string>()
+      const deduped = rows.filter(r => {
+        const key = `${r.campaign_id} ${r.asin}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
       })
-      await loadStats()
 
-      // Clean up the temporary zip from Storage — we have the parsed data
-      // in the catalog table now, no need to retain the source.
-      try {
-        await supabase.storage.from('admin-uploads').remove([path])
-      } catch { /* non-fatal */ }
+      if (deduped.length === 0) {
+        throw new Error(`Parsed ${scannedTotal.toLocaleString()} rows but found 0 actionable ones (commission > 0, budget + slots remaining, not expired). Check the column headers.`)
+      }
+
+      // ── Stream to the server in 2k-row batches ────────────────────────
+      // Single shared batchStart so the FINAL call can prune anything
+      // older than this import as stale.
+      const batchStart = new Date().toISOString()
+      const BATCH = 2000
+      let totalUpserted = 0
+      const totalFailures: Array<{ start: number; end: number; error: string }> = []
+      for (let i = 0; i < deduped.length; i += BATCH) {
+        const slice = deduped.slice(i, i + BATCH)
+        const isFinal = i + BATCH >= deduped.length
+        setProgress(
+          `Sending batch ${Math.floor(i / BATCH) + 1}/${Math.ceil(deduped.length / BATCH)} ` +
+          `(${i.toLocaleString()}/${deduped.length.toLocaleString()} rows)…`,
+        )
+        let r: Response
+        try {
+          r = await fetch('/api/admin/creator-campaigns/import-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rows: slice, batchStart, isFinal }),
+          })
+        } catch (e) {
+          throw new Error(`Network error sending batch ${i}-${i + slice.length}: ${toErrorString(e)}`)
+        }
+        const raw = await r.text()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let d: any
+        try { d = JSON.parse(raw) } catch {
+          const snippet = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)
+          throw new Error(r.ok ? `Server returned non-JSON: ${snippet}` : `Server error ${r.status}: ${snippet || 'no body'}`)
+        }
+        if (!r.ok) throw new Error(d.error ? toErrorString(d.error) : `Batch failed (${r.status})`)
+        totalUpserted += d.upserted ?? 0
+        if (Array.isArray(d.failed_chunks)) totalFailures.push(...d.failed_chunks)
+        if (isFinal) {
+          const staleNote = typeof d.stale_deleted === 'number'
+            ? ` · ${d.stale_deleted.toLocaleString()} stale rows pruned`
+            : (d.stale_cleanup_error ? ` · cleanup error: ${d.stale_cleanup_error}` : '')
+          setResult({
+            ok: true,
+            message:
+              `Imported ${totalUpserted.toLocaleString()} of ${deduped.length.toLocaleString()} ` +
+              `unique rows from ${scannedTotal.toLocaleString()} scanned${staleNote}` +
+              (totalFailures.length ? ` · ${totalFailures.length} chunk(s) failed (retry to fill in)` : ''),
+          })
+        }
+      }
+
+      await loadStats()
     } catch (e) {
       setResult({ ok: false, message: toErrorString(e) })
     } finally {
       setUploading(false)
+      setProgress(null)
       if (fileRef.current) fileRef.current.value = ''
     }
   }
@@ -258,6 +346,12 @@ export default function CreatorCampaignsAdminPage() {
             : <><Upload size={14} /> Choose .zip</>}
         </button>
 
+        {progress && uploading && (
+          <div className="mt-4 flex items-start gap-2 text-sm text-[#86868b]">
+            <Loader2 size={14} className="flex-shrink-0 mt-0.5 animate-spin" />
+            <span>{progress}</span>
+          </div>
+        )}
         {result && (
           <div className={`mt-4 flex items-start gap-2 text-sm ${result.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>
             {result.ok
