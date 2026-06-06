@@ -920,6 +920,16 @@ BLOCK 1 rules:
   PRODUCT INFO. NEVER add a function, component, or "2-in-1 / combo / multi-X /
   doubles-as" framing the source doesn't state (e.g. do NOT write "Water Bottle LED
   Lantern" for a plain water bottle, or add an attached light/speaker/fan/cooler).
+
+  ★ BRAND-NAME RULE (2026-06-07 fix — the WagComb incident): the product
+  BRAND/MAKER name you put in the title MUST appear verbatim somewhere in
+  the transcript OR the PRODUCT INFO block above. Do NOT invent or guess a
+  brand. If you can't find a clear brand in the sources, use a generic
+  descriptor instead ("Electric Flea Comb Review", "Washable Dog Bed
+  Review") — never substitute a different real product's brand name to
+  fill the gap. The body and the title MUST describe the SAME brand and
+  product type.
+
   The title is the SEED for the whole post, the slug, and the URL — a fabricated
   identity here poisons every section. Truthful first, catchy second. Never "honest".
 - slug: kebab-case derived from the truthful title — it must NOT contain any term
