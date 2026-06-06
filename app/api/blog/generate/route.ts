@@ -1048,9 +1048,28 @@ async function handleGenerate(request: Request) {
     slug,
     content,
     excerpt: generated.excerpt,
+    // The blog_posts.status column is the MVP-side lifecycle, separate
+    // from the WP-side status. We use 'published' even for scheduled
+    // posts so the Library's status='published' filter still picks them
+    // up — the "is it live yet?" question is answered by scheduled_for
+    // being in the past, not by this column. (Previously we considered
+    // a separate 'scheduled' status here, but it would have required
+    // touching every status='published' filter in the codebase. The
+    // scheduled_for column does the same job without the blast radius.)
     status: 'published',
     wordpress_post_id: wpPost.id,
     wordpress_url: wpPost.link,
+    // Set ONLY when the generate call was scheduled (scheduleMode +
+    // scheduledFor were on the body). Live publishes leave both at null.
+    // The Library reads scheduled_for to render the "Scheduled · X" pill
+    // and to hide the Schedule/Publish-to-all buttons on rows that are
+    // already queued.
+    ...(isScheduled && scheduledForIso
+      ? {
+          scheduled_for: scheduledForIso,
+          schedule_mode: scheduleMode,
+        }
+      : {}),
     // Tag the post with the wordpress_sites row it was published to so
     // /content can show "Wine Reviews" badges and per-site filters. Skip
     // the 'legacy' sentinel (Phase-3 bridge): that means the user is still
@@ -1077,9 +1096,13 @@ async function handleGenerate(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ep = existingPost as any
   let savedPost
+  // `scheduled_for` + `schedule_mode` were added in migration 104. The
+  // supabase-generated types haven't been regenerated yet, so an `as any`
+  // cast on the table reference bypasses the strict shape check. Drop the
+  // cast after `npx supabase gen types` runs.
   if (ep?.id) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('blog_posts')
       .update(blogPayload)
       .eq('id', ep.id)
@@ -1088,7 +1111,7 @@ async function handleGenerate(request: Request) {
     savedPost = data
   } else {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('blog_posts')
       .insert(blogPayload)
       .select()

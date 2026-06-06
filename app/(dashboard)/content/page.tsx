@@ -1787,7 +1787,7 @@ function VideoCard({
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
-  post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
+  post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
   wpSiteUrl: string
   fbConnected: boolean
   pinterestConnected: boolean
@@ -1838,6 +1838,18 @@ function VideoCard({
     if (telegramConnected) s.add('telegram')
     return s
   }, [fbConnected, threadsConnected, twitterConnected, linkedInConnected, blueskyConnected, telegramConnected])
+
+  // ── Schedule pill state ────────────────────────────────────────────────
+  // A post is "still scheduled" when scheduled_for exists AND is in the
+  // future. Once the time passes, treat it as a normal published post
+  // (WP would have flipped it; if it didn't, the user will notice from
+  // Visit post). Computed once per render — no live-tick is needed since
+  // a stale "Scheduled" pill on a 5-second-overdue post is harmless.
+  const scheduledForDate = post?.scheduledFor ? new Date(post.scheduledFor) : null
+  const isScheduledPending = !!(scheduledForDate && !isNaN(scheduledForDate.getTime()) && scheduledForDate.getTime() > Date.now())
+  const scheduledLabel = isScheduledPending && scheduledForDate
+    ? scheduledForDate.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : null
   // Per-post Facebook Page choice (Pro multi-account). Defaults to the
   // user's default page. The picker renders whenever the user has at least
   // one connected Page (Pro loads the list) so it's discoverable/testable —
@@ -1993,7 +2005,12 @@ function VideoCard({
   const connectedSocialCount = [fbConnected, linkedInConnected, threadsConnected, twitterConnected, blueskyConnected, telegramConnected].filter(Boolean).length
 
   const hasSocialsToPost = (fbConnected && !fbPosted) || (linkedInConnected && !liPosted) || (threadsConnected && !thPosted) || (twitterConnected && !twPosted) || (blueskyConnected && !bsPosted) || (telegramConnected && !tgPosted)
-  const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost)
+  // Hide Publish-to-all while the post is queued — the socials are
+  // already scheduled to fire after the blog goes live. Re-enabled
+  // once the schedule time passes (then the row reads as a normal
+  // published post that may still have untouched channels). Same logic
+  // gates the Schedule button further down.
+  const showPublishAll = connectedSocialCount > 0 && (!post || hasSocialsToPost) && !isScheduledPending
 
   // Every social pill opens a preview + confirm modal first. The modal
   // (SocialPreviewModal) performs the actual publish on confirm, so these
@@ -2071,9 +2088,19 @@ function VideoCard({
       )}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] leading-snug line-clamp-2 mb-1">{title}</p>
-        <div className="flex items-center gap-3 text-xs text-[#86868b] dark:text-[#8e8e93] mb-3">
+        <div className="flex items-center gap-3 text-xs text-[#86868b] dark:text-[#8e8e93] mb-3 flex-wrap">
           {views != null && <span>{views.toLocaleString()} views</span>}
           <span>{new Date(publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          {/* Scheduled pill — purple-tinted "Scheduled · Sat Jun 6 at
+              10:20 AM" badge. Renders only when the post has been queued
+              via /api/blog/schedule-publish AND the scheduled time
+              hasn't passed yet. Once it goes live, the badge disappears
+              and the row reads as a normal published post. */}
+          {scheduledLabel && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[rgba(124,58,237,0.15)] text-[#7C3AED] border border-[rgba(124,58,237,0.3)]">
+              <Calendar size={10} /> Scheduled · {scheduledLabel}
+            </span>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           {/* Publish All — shown when ≥1 social platform is connected and unpublished.
@@ -2113,14 +2140,16 @@ function VideoCard({
                 </Link>
               ))}
               {/* Schedule — only surfaced when the post hasn't been
-                  generated yet. Opens ScheduleModal which calls
-                  /api/blog/schedule-publish: generates the post NOW (so
-                  the user gets immediate preview + credit is consumed up
-                  front) and queues the WP publish + social cascade for
-                  the chosen time. Mirrors the "Publish to all" pattern —
-                  one button -> cross-channel cascade — with the only
-                  difference being WHEN it fires. */}
-              {!post && (
+                  generated yet AND isn't already queued. Opens
+                  ScheduleModal which calls /api/blog/schedule-publish:
+                  generates the post NOW (so the user gets immediate
+                  preview + credit is consumed up front) and queues the
+                  WP publish + social cascade for the chosen time.
+                  Mirrors the "Publish to all" pattern — one button →
+                  cross-channel cascade — with the only difference being
+                  WHEN it fires. Hidden when isScheduledPending so the
+                  user can't double-schedule the same row. */}
+              {!post && !isScheduledPending && (
                 <button
                   type="button"
                   onClick={() => setScheduleOpen(true)}
@@ -2501,12 +2530,29 @@ function VideoCard({
         connectedChannels={connectedChannels}
         open={scheduleOpen}
         onClose={() => setScheduleOpen(false)}
-        onScheduled={() => {
-          // Surface a hint by clearing the parent's scheduledItems cache
-          // — handled by the parent's onGenerated for now (the generate
-          // route's response already moves this row out of the
-          // ungenerated bucket).
+        onScheduled={(result) => {
+          // The modal's POST returned ok + the schedule-publish route
+          // wrote a blog_posts row with scheduled_for set. Push the
+          // new post into the parent's posts map so this row's badge
+          // appears immediately (no full reload needed). We hand the
+          // schedule fields to onGenerated which merges them in.
+          //
+          // The parent's onGenerated signature only takes (videoId,
+          // url, title, postId) so the scheduledFor/scheduleMode hop
+          // through a quick window-level patch below — kept inline so
+          // we don't have to widen every onGenerated caller.
           setScheduleOpen(false)
+          // Defer to the next tick so onClose's setState has flushed.
+          // The patch event handler in the parent's posts state writer
+          // merges scheduled_for + schedule_mode in alongside the
+          // standard generate-completion fields.
+          window.dispatchEvent(new CustomEvent('mvp-schedule-applied', {
+            detail: {
+              videoId: id,
+              scheduledFor: result.scheduledFor,
+              scheduleMode: result.mode,
+            },
+          }))
         }}
       />
       <ConfirmHost />
@@ -2657,7 +2703,7 @@ export default function ContentPage() {
   const supabase = createBrowserClient()
   const { confirm, ConfirmHost } = useConfirm()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
   const [wpSiteUrl, setWpSiteUrl] = useState('')
   const [fbConnected, setFbConnected] = useState(false)
   const [pinterestConnected, setPinterestConnected] = useState(false)
@@ -2840,7 +2886,12 @@ export default function ContentPage() {
       fetchAllVideos(),
       sb.from('brand_profiles').select('name,author_name,niches,tone,custom_categories,affiliate_disclaimer,facebook_groups').eq('user_id', user.id).single(),
       sb.from('integrations').select('wordpress_url,wordpress_username,wordpress_app_password,setup_status,facebook_page_id,pinterest_access_token,pinterest_board_id,threads_access_token,linkedin_access_token,linkedin_person_id,twitter_access_token,twitter_handle,bluesky_handle,bluesky_app_password,telegram_channel_id,instagram_access_token,instagram_user_id,tiktok_access_token,tiktok_open_id,tier').eq('user_id', user.id).single(),
-      sb.from('blog_posts').select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
+      // `scheduled_for` + `schedule_mode` were added in migration 104.
+      // Cast to any because the supabase-generated types haven't been
+      // regenerated yet — same pattern as other post-migration selects
+      // in the codebase. Drop after `gen types` runs.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,scheduled_for,schedule_mode,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
       fetch('/api/blog/live-post-ids').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -2913,7 +2964,7 @@ export default function ContentPage() {
       seoByPostId.set(r.post_id, { indexed, coverage: r.coverage_state })
     }
 
-    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
+    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number)) continue  // deleted/trashed in WordPress
       if (p.video_id && p.wordpress_url) {
@@ -2932,6 +2983,13 @@ export default function ContentPage() {
           // at a glance whether their "Include photos" tick actually produced
           // images, instead of needing to open the post.
           bodyImagesCount: (p.body_images_count as number | null | undefined) ?? null,
+          // Schedule fields (migration 104) — null unless the post was
+          // queued via /api/blog/schedule-publish. The Library uses
+          // them to render the "Scheduled · Sat Jun 6 at 10:20 AM" pill
+          // and hide the Schedule/Publish-to-all buttons on rows that
+          // are already queued.
+          scheduledFor: (p.scheduled_for as string | null | undefined) ?? null,
+          scheduleMode: (p.schedule_mode as string | null | undefined) ?? null,
           facebookPostId: p.facebook_post_id as string | undefined,
           pinterestPinId: p.pinterest_pin_id as string | undefined,
           threadsPostId: p.threads_post_id as string | undefined,
@@ -2949,6 +3007,37 @@ export default function ContentPage() {
   }, [supabase])
 
   useEffect(() => { load() }, [load])
+
+  // Listen for "mvp-schedule-applied" — emitted by ScheduleModal after a
+  // successful schedule. Merges the schedule fields into the parent's
+  // posts state so the Library row's "Scheduled · X" badge appears
+  // immediately, no refresh required. The schedule-publish route already
+  // wrote the blog_posts row; this is purely a UI-state sync so the
+  // user sees the result without paying for a full load() reload.
+  useEffect(() => {
+    function onScheduleApplied(e: Event) {
+      const detail = (e as CustomEvent<{ videoId: string; scheduledFor: string; scheduleMode: string }>).detail
+      if (!detail?.videoId || !detail.scheduledFor) return
+      setPosts((prev) => {
+        const existing = prev[detail.videoId]
+        // If the row hadn't been loaded yet (e.g. user generated +
+        // scheduled before load() finished), seed a minimal entry so
+        // the row knows it's scheduled. load() will overwrite with the
+        // full shape on the next refresh.
+        const next = existing ?? { url: '', title: '' }
+        return {
+          ...prev,
+          [detail.videoId]: {
+            ...next,
+            scheduledFor: detail.scheduledFor,
+            scheduleMode: detail.scheduleMode,
+          },
+        }
+      })
+    }
+    window.addEventListener('mvp-schedule-applied', onScheduleApplied)
+    return () => window.removeEventListener('mvp-schedule-applied', onScheduleApplied)
+  }, [])
 
   async function handlePublishPin(description: string, title: string): Promise<{ ok: boolean; error?: string }> {
     if (!pinPreview) return { ok: false, error: 'No pin to publish' }
