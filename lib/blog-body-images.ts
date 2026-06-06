@@ -23,13 +23,40 @@ export function gutenbergImageBlock(url: string, alt: string, caption?: string):
 <!-- /wp:image -->\n`
 }
 
-/** Byte offsets where each heading block starts, in document order. */
+/**
+ * Byte offsets where each heading block starts, in document order.
+ *
+ * Matches BOTH formats the writer can emit:
+ *   - Gutenberg block markers: `<!-- wp:heading ...`
+ *   - Raw HTML headings: `<h2>`, `<h3>`, `<h4>`
+ *
+ * Why both: the blog generator outputs raw `<h2>` tags (see
+ * lib/blog-self-check.ts which strips/inspects `<h2 class="...">`),
+ * but the in-body image editor + some legacy paths use Gutenberg
+ * blocks. The old version only matched the Gutenberg form, so on
+ * raw-HTML posts it returned 0 offsets and insertImagesAtHeadings
+ * fell back to appending every image at the end of the post
+ * (2026-06-05 bug report — "post made images BUT placed them at
+ * the end"). De-duped by offset so a heading that appears as both
+ * a comment marker AND the inner `<h2>` tag (some WP themes do
+ * this) only counts once.
+ */
 export function headingOffsets(content: string): number[] {
-  const offsets: number[] = []
-  const re = /<!-- wp:heading\b/g
+  const offsets = new Set<number>()
+  // Gutenberg block markers — when present, they precede the inner
+  // <h2>/<h3> by a handful of chars; using the comment as the anchor
+  // means the inserted image lands ABOVE the whole block (markup +
+  // content) which is the correct visual position.
+  const reBlock = /<!-- wp:heading\b/g
   let m: RegExpExecArray | null
-  while ((m = re.exec(content)) !== null) offsets.push(m.index)
-  return offsets
+  while ((m = reBlock.exec(content)) !== null) offsets.add(m.index)
+  // Raw HTML headings — the format the blog writer actually emits.
+  // h2/h3/h4 covered; h1 excluded because the post title isn't in
+  // the body content. Case-insensitive for safety (WP themes
+  // occasionally lowercase tags during round-tripping).
+  const reTag = /<h[234]\b/gi
+  while ((m = reTag.exec(content)) !== null) offsets.add(m.index)
+  return [...offsets].sort((a, b) => a - b)
 }
 
 export interface BodyImagePlacement {
