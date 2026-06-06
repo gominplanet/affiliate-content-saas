@@ -14,6 +14,7 @@ import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner
 import { SOCIAL_CAP } from '@/lib/social-cap'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import type { SchedulableSocial } from '@/lib/schedule-types'
+import { SocialPill } from '@/components/content/SocialPill'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
@@ -507,79 +508,8 @@ function RewriteFeedbackModal({
 
 // Unified social pill used in the per-video card. Same shape for every
 // platform — brand color is applied to the icon only when unposted, and
-// fills the whole pill when posted. Keeps the row visually coherent
-// regardless of how many networks the user has connected.
-function SocialPill({
-  brand,
-  icon,
-  label,
-  postedLabel,
-  posted,
-  loading,
-  onClick,
-  locked,
-  scheduleFailed,
-}: {
-  brand: string
-  icon: React.ReactNode
-  label: string
-  postedLabel: string
-  posted: boolean
-  loading: boolean
-  onClick?: () => void
-  /** Platform is connected but not allowed on the user's tier — show a
-   *  locked pill that links to pricing instead of posting. */
-  locked?: boolean
-  /** Most-recent scheduled push for this channel FAILED. Drives a small
-   *  ⚠ overlay on the pill so the user can spot broken cascades at a
-   *  glance. 2026-06-07 P1.2 fix. */
-  scheduleFailed?: boolean
-}) {
-  if (locked) {
-    return (
-      <a
-        href="/pricing"
-        title={`${label} publishing is on a higher plan — upgrade to unlock`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-gray-300 dark:border-white/15 text-[#86868b] hover:border-[#7C3AED]/40 hover:text-[#7C3AED] transition-colors"
-      >
-        <span style={{ display: 'inline-flex', opacity: 0.55 }}>{icon}</span>
-        <span>{label}</span>
-        <span className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10">Upgrade</span>
-      </a>
-    )
-  }
-  if (posted) {
-    return (
-      <span
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white shadow-sm"
-        style={{ background: brand }}
-      >
-        <CheckCircle size={11} /> {postedLabel}
-      </span>
-    )
-  }
-  return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      title={scheduleFailed ? `${label}: last scheduled push failed — click to retry manually` : undefined}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/[0.04] disabled:opacity-60 transition-all ${
-        scheduleFailed
-          ? 'border-[#ff3b30]/40 bg-[#ff3b30]/5 dark:bg-[#ff3b30]/10 hover:border-[#ff3b30]/60'
-          : 'border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] hover:border-gray-300 dark:hover:border-white/20'
-      }`}
-    >
-      {loading
-        ? <Loader2 size={11} className="animate-spin" style={{ color: brand }} />
-        : <span style={{ color: brand, display: 'inline-flex' }}>{icon}</span>
-      }
-      <span>{label}</span>
-      {scheduleFailed && (
-        <AlertCircle size={11} className="text-[#ff3b30]" aria-label="Last scheduled push failed" />
-      )}
-    </button>
-  )
-}
+// SocialPill extracted to components/content/SocialPill.tsx (2026-06-07).
+// First step in the content/page.tsx split — pure-leaf components first.
 
 function GenerateButton({
   videoId, youtubeVideoId, existingPost, userTier, onDone,
