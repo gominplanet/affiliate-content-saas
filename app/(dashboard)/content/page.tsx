@@ -3720,10 +3720,18 @@ export default function ContentPage() {
 
   // Posts-tab search: filter the published list by title (strip HTML entities
   // for a forgiving match). Bulk-select + the list both use this.
+  // ALSO filter to "orphans" — posts whose source video isn't in the current
+  // youtube_videos list. Without this, the "Older posts archive" section
+  // duplicates every row already shown in the rich VideoCard "Recent"
+  // section above. Orphans matter (older posts, deleted videos), so we
+  // keep them visible; non-orphans live in Recent.
   const postQuery = postSearch.trim().toLowerCase()
+  const videoIdsInLibrary = new Set(videos.map(v => v.id as string))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orphanPosts = allBlogPosts.filter((p: any) => !p.videoId || !videoIdsInLibrary.has(p.videoId))
   const filteredPosts = postQuery
-    ? allBlogPosts.filter(p => (p.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery))
-    : allBlogPosts
+    ? orphanPosts.filter(p => (p.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery))
+    : orphanPosts
 
   return (
     <>

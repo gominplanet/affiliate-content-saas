@@ -19,9 +19,13 @@
 //
 // The "Publish to all"-style cascade defaults to firing every connected
 // channel 5 minutes after the blog goes live (so the URL is reliably
-// live before any link-bearing push). Newsletter waits 30 min — though
-// that's just the offset stored in the row; the actual newsletter send
-// stays a separate flow we don't touch here.
+// live before any link-bearing push).
+//
+// Newsletter is intentionally NOT in the cascade — the Resend-backed
+// send flow has its own scheduling (lib/newsletter-send.ts + the
+// newsletter compose page) with subject lines, segments, and A/B
+// support. Wiring it through this modal would be duplicate UX with
+// worse capability. Use the Newsletter page to schedule a blast.
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'

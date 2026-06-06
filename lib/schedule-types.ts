@@ -22,7 +22,7 @@
  *      draft-flip).
  *   3. Social pushes fire at T + offset, one per chosen channel.
  *      Defaults below — link-driven socials get +5 min so the URL has
- *      a moment to settle in; the newsletter waits 30 min so the post
+ *      a moment to settle in. Newsletter is NOT in this cascade — that
  *      has engagement signals before the email blast.
  */
 
@@ -44,9 +44,9 @@ export type SchedulableSocial =
 
 /** Default minute offsets between the blog publish and each social push.
  *  Picked so the link is reliably live (+5 min beats WP-cron jitter)
- *  before any push that includes a link; the newsletter waits longer to
- *  ride engagement signals. Users can override per-channel in the
- *  Schedule modal's Advanced expansion. */
+ *  before any push that includes a link. Users can override per-channel
+ *  in the Schedule modal's Advanced expansion. (Newsletter has its own
+ *  flow in /newsletter — not in this cascade.) */
 export const DEFAULT_SOCIAL_OFFSETS_MIN: Record<SchedulableSocial, number> = {
   facebook: 5,
   threads: 5,
@@ -56,10 +56,8 @@ export const DEFAULT_SOCIAL_OFFSETS_MIN: Record<SchedulableSocial, number> = {
   telegram: 5,
 }
 
-/** Optional newsletter offset — surfaced for completeness; the actual
- *  newsletter scheduling flow lives elsewhere. Kept here so the modal
- *  has a single source of truth when we wire it up. */
-export const DEFAULT_NEWSLETTER_OFFSET_MIN = 30
+// (Newsletter offset removed 2026-06-06 — newsletter has its own scheduler
+// at /newsletter; mixing them here was confusing.)
 
 /** Per-channel schedule entry — what the modal posts to schedule-publish. */
 export interface SocialScheduleEntry {

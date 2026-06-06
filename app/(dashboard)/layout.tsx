@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import DashboardShellV2 from '@/components/layout/DashboardShellV2'
 import { Toaster } from '@/components/ui/toaster'
+import MigrationDriftBanner from '@/components/admin/MigrationDriftBanner'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerClient()
@@ -65,6 +66,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
         showBuyingGuides={showBuyingGuides}
         showDeals={showDeals}
       >
+        {/* Migration drift banner — admin-only sticky warning that
+            recent feature-gating migrations haven't been applied on the
+            target DB. Renders nothing for non-admins. See
+            components/admin/MigrationDriftBanner.tsx for which migs are
+            checked. */}
+        <MigrationDriftBanner />
         {children}
       </DashboardShellV2>
       {/* Single Toaster mount for every dashboard route — see
