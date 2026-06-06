@@ -518,6 +518,7 @@ function SocialPill({
   loading,
   onClick,
   locked,
+  scheduleFailed,
 }: {
   brand: string
   icon: React.ReactNode
@@ -529,6 +530,10 @@ function SocialPill({
   /** Platform is connected but not allowed on the user's tier — show a
    *  locked pill that links to pricing instead of posting. */
   locked?: boolean
+  /** Most-recent scheduled push for this channel FAILED. Drives a small
+   *  ⚠ overlay on the pill so the user can spot broken cascades at a
+   *  glance. 2026-06-07 P1.2 fix. */
+  scheduleFailed?: boolean
 }) {
   if (locked) {
     return (
@@ -557,13 +562,21 @@ function SocialPill({
     <button
       onClick={onClick}
       disabled={loading}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/[0.04] hover:border-gray-300 dark:hover:border-white/20 disabled:opacity-60 transition-all"
+      title={scheduleFailed ? `${label}: last scheduled push failed — click to retry manually` : undefined}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border text-[#1d1d1f] dark:text-[#f5f5f7] hover:bg-gray-50 dark:hover:bg-white/[0.04] disabled:opacity-60 transition-all ${
+        scheduleFailed
+          ? 'border-[#ff3b30]/40 bg-[#ff3b30]/5 dark:bg-[#ff3b30]/10 hover:border-[#ff3b30]/60'
+          : 'border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] hover:border-gray-300 dark:hover:border-white/20'
+      }`}
     >
       {loading
         ? <Loader2 size={11} className="animate-spin" style={{ color: brand }} />
         : <span style={{ color: brand, display: 'inline-flex' }}>{icon}</span>
       }
       <span>{label}</span>
+      {scheduleFailed && (
+        <AlertCircle size={11} className="text-[#ff3b30]" aria-label="Last scheduled push failed" />
+      )}
     </button>
   )
 }
@@ -1851,11 +1864,15 @@ function InstagramPublishModalShell({ onClose, children }: { onClose: () => void
 
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({
-  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, onCustomCategoryAdded,
+  video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, failedSchedulePlatforms, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
   video: Record<string, unknown>
   post?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string } | null
+  /** Platforms whose MOST RECENT scheduled push for this post FAILED.
+   *  Drives the ⚠ on the social pill so the user can spot broken
+   *  cascades at a glance. Populated by the parent Library load(). */
+  failedSchedulePlatforms?: ReadonlySet<string>
   wpSiteUrl: string
   fbConnected: boolean
   pinterestConnected: boolean
@@ -2364,6 +2381,7 @@ function VideoCard({
                   label="Facebook" postedLabel="On Facebook"
                   posted={fbPosted} loading={fbPosting} onClick={handleFacebookPost}
                   locked={!tierAllowsSocial(userTier, 'facebook')}
+                  scheduleFailed={failedSchedulePlatforms?.has('facebook')}
                 />
               )}
               {fbConnected && showFbAccountPicker && (
@@ -2398,6 +2416,7 @@ function VideoCard({
                   label="Threads" postedLabel="On Threads"
                   posted={thPosted} loading={thPosting} onClick={handleThreadsPost}
                   locked={!tierAllowsSocial(userTier, 'threads')}
+                  scheduleFailed={failedSchedulePlatforms?.has('threads')}
                 />
               )}
               {linkedInConnected && (
@@ -2407,6 +2426,7 @@ function VideoCard({
                   label="LinkedIn" postedLabel="On LinkedIn"
                   posted={liPosted} loading={liPosting} onClick={handleLinkedInPost}
                   locked={!tierAllowsSocial(userTier, 'linkedin')}
+                  scheduleFailed={failedSchedulePlatforms?.has('linkedin')}
                 />
               )}
               {twitterConnected && (
@@ -2416,6 +2436,7 @@ function VideoCard({
                   label="X" postedLabel="On X"
                   posted={twPosted} loading={twPosting} onClick={handleTwitterPost}
                   locked={!tierAllowsSocial(userTier, 'twitter')}
+                  scheduleFailed={failedSchedulePlatforms?.has('twitter')}
                 />
               )}
               {blueskyConnected && (
@@ -2425,6 +2446,7 @@ function VideoCard({
                   label="Bluesky" postedLabel="On Bluesky"
                   posted={bsPosted} loading={bsPosting} onClick={handleBlueskyPost}
                   locked={!tierAllowsSocial(userTier, 'bluesky')}
+                  scheduleFailed={failedSchedulePlatforms?.has('bluesky')}
                 />
               )}
               {telegramConnected && (
@@ -2434,6 +2456,7 @@ function VideoCard({
                   label="Telegram" postedLabel="On Telegram"
                   posted={tgPosted} loading={tgPosting} onClick={handleTelegramPost}
                   locked={!tierAllowsSocial(userTier, 'telegram')}
+                  scheduleFailed={failedSchedulePlatforms?.has('telegram')}
                 />
               )}
               {instagramConnected && (
@@ -2847,6 +2870,12 @@ export default function ContentPage() {
   const { confirm, ConfirmHost } = useConfirm()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
   const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
+  // Per-post map of platforms whose MOST RECENT scheduled push failed.
+  // Drives the ⚠ warning next to the social pill in VideoCard. Filled
+  // by load() from scheduled_posts. 2026-06-07 UX fix — previously the
+  // user only saw failed scheduled pushes in the bell or by clicking
+  // into the Scheduled tab.
+  const [failedSchedules, setFailedSchedules] = useState<Record<string, Set<string>>>({})
   const [wpSiteUrl, setWpSiteUrl] = useState('')
   const [fbConnected, setFbConnected] = useState(false)
   const [pinterestConnected, setPinterestConnected] = useState(false)
@@ -3155,6 +3184,42 @@ export default function ContentPage() {
       }
     }
     setPosts(postMap)
+
+    // ── Failed-schedule map (2026-06-07) ──────────────────────────────
+    // Pull every social-cascade row from scheduled_posts and find the
+    // MOST RECENT attempt per (blog_post_id, platform). If the most
+    // recent is 'failed', the row's social pill gets a ⚠ in the UI.
+    // A later successful retry on the same channel clears it. Limited
+    // to last 30 days so the query stays cheap as history grows.
+    try {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: schedRows } = await (sb as any)
+        .from('scheduled_posts')
+        .select('blog_post_id,platform,status,updated_at')
+        .eq('user_id', user.id)
+        .gte('updated_at', thirtyDaysAgo)
+        .order('updated_at', { ascending: false })
+        .limit(500)
+      // Dedup: keep only the FIRST row per (blog_post_id, platform) —
+      // that's the most recent attempt thanks to the order desc.
+      const seen = new Set<string>()
+      const failedMap: Record<string, Set<string>> = {}
+      for (const r of ((schedRows ?? []) as Array<{ blog_post_id: string; platform: string | null; status: string }>)) {
+        if (!r.blog_post_id || !r.platform) continue
+        const key = `${r.blog_post_id}|${r.platform}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        if (r.status === 'failed') {
+          if (!failedMap[r.blog_post_id]) failedMap[r.blog_post_id] = new Set()
+          failedMap[r.blog_post_id].add(r.platform)
+        }
+      }
+      setFailedSchedules(failedMap)
+    } catch (e) {
+      console.warn('[library] failed-schedule lookup failed (non-fatal)', e instanceof Error ? e.message : String(e))
+    }
+
     setLoading(false)
   }, [supabase])
 
@@ -3931,6 +3996,20 @@ export default function ContentPage() {
                 {syncing ? `Syncing${syncProgress ? ` (${syncProgress.pulled})` : ''}…` : 'Sync videos'}
               </Button>
             )}
+            {/* Refresh — re-runs the Library load() so a scheduled post
+                that fired while the page was open jumps to Posts/Recent
+                without a full reload. 2026-06-07 UX fix. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={load}
+              loading={loading}
+              disabled={loading}
+              leftIcon={!loading ? <RefreshCw size={14} /> : undefined}
+              title="Reload videos + posts from the database"
+            >
+              {loading ? 'Refreshing…' : 'Refresh'}
+            </Button>
           </div>
         }
       />
@@ -4138,6 +4217,7 @@ export default function ContentPage() {
                     customCategories={customCategories}
                     brandDisclaimer={brandDisclaimer}
                     brandFacebookGroups={brandFacebookGroups}
+                    failedSchedulePlatforms={posts[video.id as string]?.postId ? failedSchedules[posts[video.id as string]!.postId!] : undefined}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
@@ -4511,6 +4591,7 @@ export default function ContentPage() {
                     customCategories={customCategories}
                     brandDisclaimer={brandDisclaimer}
                     brandFacebookGroups={brandFacebookGroups}
+                    failedSchedulePlatforms={posts[video.id as string]?.postId ? failedSchedules[posts[video.id as string]!.postId!] : undefined}
                     onCustomCategoryAdded={setCustomCategories}
                     onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
                     onDismiss={() => dismissVideo(video.id as string)}
