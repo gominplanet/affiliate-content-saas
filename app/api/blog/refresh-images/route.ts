@@ -298,13 +298,11 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
   if (uploaded.length === 0) return NextResponse.json({ error: 'Image generation failed — try again in a moment.' }, { status: 502 })
 
-  // Spread images through the body — prefers H2 headings, falls back to
-  // paragraph boundaries when there aren't enough usable headings to
-  // avoid clustering. Minimum-separation guard prevents back-to-back
-  // images even when the picker is short on candidates. Old cycle-by-
-  // modulo approach (slots[i % slots.length]) put both images at the
-  // same heading when the post had only 1 eligible H2 — fixed
-  // 2026-06-05 with pickBodyImageOffsets + insertImagesAtOffsets.
+  // Spread images through the body strictly at usable H2 boundaries
+  // (skip first/last heading + tail blocks + Quick Verdict). The original
+  // 2026-05 rule the user asked to restore — no paragraph fallback because
+  // that's what caused images to cluster back-to-back when the post had
+  // few usable H2s. See lib/blog-body-images.ts pickBodyImageOffsets.
   const offsets = pickBodyImageOffsets(stripped, uploaded.length)
   const finalContent = insertImagesAtOffsets(
     stripped,

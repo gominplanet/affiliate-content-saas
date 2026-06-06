@@ -1212,10 +1212,10 @@ async function handleGenerate(request: Request) {
         }))
         heroImageUrl = uploaded[0]?.url ?? heroImageUrl
         if (uploaded.length > 0) {
-          // Spread images via the offset picker — falls back to paragraph
-          // boundaries when there aren't enough usable H2s + enforces a
-          // minimum byte distance between picks so no two images land
-          // back-to-back. See lib/blog-body-images.ts pickBodyImageOffsets.
+          // Spread images strictly at usable H2 boundaries — skip first H2
+          // (opener), skip last (closer/tail boundary), skip Quick Verdict /
+          // Related / FAQ / About tail. The original 2026-05 rule the user
+          // asked to restore. See lib/blog-body-images.ts pickBodyImageOffsets.
           const offsets = pickBodyImageOffsets(content, uploaded.length)
           finalContent = insertImagesAtOffsets(
             content,
@@ -1489,8 +1489,8 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
           }
           if (uploaded.length > 0) {
             // See the user-images branch (~line 1215) for the picker
-            // rationale — falls back to paragraph boundaries + enforces
-            // minimum separation so images don't cluster.
+            // rationale — H2-only spread, skip opener + closer + tail
+            // blocks, no paragraph fallback (it caused clustering).
             const placementOffsets = pickBodyImageOffsets(content, uploaded.length)
             finalContent = insertImagesAtOffsets(
               content,
