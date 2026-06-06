@@ -113,7 +113,22 @@ export default function ScheduleModal({
 
   if (!open) return null
 
-  async function handleSubmit() {
+  /**
+   * Submit handler. Closes the modal IMMEDIATELY then runs the schedule
+   * as a background promise — so the user can keep using the rest of
+   * the Library while their post is being generated + queued.
+   *
+   * A persistent sonner toast carries the status:
+   *   "Writing post & scheduling…" (loading, persistent)
+   *      ↓
+   *   "Scheduled for X" (success) OR "Schedule failed: msg" (error)
+   *
+   * The fetch promise survives the modal unmount (it lives in a JS
+   * closure, not the React tree), so closing the window during the
+   * 30-60s gen wait doesn't cancel it. The success toast + Library
+   * row badge update both fire whether the modal is still open or not.
+   */
+  function handleSubmit() {
     const whenMs = new Date(scheduledFor).getTime()
     if (isNaN(whenMs)) {
       toast.error('Pick a valid date/time')
@@ -123,61 +138,82 @@ export default function ScheduleModal({
       toast.error('Pick a time at least 1 minute in the future')
       return
     }
+
+    // Snapshot every input the background fetch needs BEFORE we close
+    // the modal — closing unmounts the component and React resets the
+    // useState values, but the closure here keeps these references alive.
+    const socials = [...selectedChannels].map(platform => ({
+      platform,
+      offsetMinutes: offsetOverrides[platform],
+      bodyText: videoTitle.slice(0, 280),
+    }))
+    const localIso = new Date(scheduledFor).toISOString()
+    const localScheduleMode = scheduleMode
+    const localVideoId = videoId
+    const localSiteId = siteId ?? null
+    const localVideoTitle = videoTitle
+
+    // Show a persistent loading toast — survives the modal unmount and
+    // updates in place when the fetch resolves. The id lets us swap
+    // loading → success/error on the SAME toast row so the user sees
+    // continuity rather than a flicker.
+    const toastId = toast.loading(`Writing "${localVideoTitle.slice(0, 40)}${localVideoTitle.length > 40 ? '…' : ''}" & scheduling…`, {
+      duration: Infinity,
+    })
+
+    // Close the modal NOW. Submit state is briefly visible during the
+    // few-ms gap before close — set it for the disabled-button visual
+    // but don't block on it.
     setSubmitting(true)
-    try {
-      // Build the socials array. Channels the user de-selected are
-      // omitted entirely; the offsetMinutes is undefined unless the
-      // user overrode it in Advanced (the route then uses DEFAULT_*).
-      // bodyText defaults to the title — Pro users can edit before
-      // scheduling in a follow-up; v1 ships with title-as-body.
-      const socials = [...selectedChannels].map(platform => ({
-        platform,
-        offsetMinutes: offsetOverrides[platform],
-        bodyText: videoTitle.slice(0, 280),
-      }))
+    onClose()
 
-      // ISO with timezone — pull the user's local offset off the
-      // datetime-local string (which is timezone-naïve) so the server
-      // sees the wall-clock time the user picked.
-      const localIso = new Date(scheduledFor).toISOString()
-
-      const res = await fetch('/api/blog/schedule-publish', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          videoId,
-          siteId: siteId ?? null,
-          scheduleMode,
+    // Fire the fetch and detach. Anything below runs regardless of
+    // whether the modal is still mounted.
+    void (async () => {
+      try {
+        const res = await fetch('/api/blog/schedule-publish', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            videoId: localVideoId,
+            siteId: localSiteId,
+            scheduleMode: localScheduleMode,
+            scheduledFor: localIso,
+            socials,
+            includeImages: true,
+          }),
+        })
+        const json = (await res.json().catch(() => ({}))) as {
+          ok?: boolean
+          error?: string
+          parentScheduleId?: string | null
+          childScheduleIds?: string[]
+          warning?: string
+        }
+        if (!res.ok || !json.ok) {
+          toast.error(json.error || `Schedule failed (${res.status})`, { id: toastId, duration: 8_000 })
+          return
+        }
+        if (json.warning) toast.warning(json.warning)
+        toast.success(`Scheduled for ${new Date(localIso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`, {
+          id: toastId,
+          duration: 6_000,
+        })
+        onScheduled({
+          parentScheduleId: json.parentScheduleId ?? null,
+          childScheduleIds: json.childScheduleIds ?? [],
+          mode: localScheduleMode,
           scheduledFor: localIso,
-          socials,
-          includeImages: true,
-        }),
-      })
-      const json = (await res.json().catch(() => ({}))) as {
-        ok?: boolean
-        error?: string
-        parentScheduleId?: string | null
-        childScheduleIds?: string[]
-        warning?: string
+        })
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Schedule failed', { id: toastId, duration: 8_000 })
+      } finally {
+        // Component might already be unmounted by now (modal closed) —
+        // React 18+ tolerates state writes on unmounted components, so
+        // this is safe even though the value won't be read again.
+        setSubmitting(false)
       }
-      if (!res.ok || !json.ok) {
-        toast.error(json.error || `Schedule failed (${res.status})`)
-        return
-      }
-      if (json.warning) toast.warning(json.warning)
-      toast.success(`Scheduled for ${new Date(localIso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`)
-      onScheduled({
-        parentScheduleId: json.parentScheduleId ?? null,
-        childScheduleIds: json.childScheduleIds ?? [],
-        mode: scheduleMode,
-        scheduledFor: localIso,
-      })
-      onClose()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Schedule failed')
-    } finally {
-      setSubmitting(false)
-    }
+    })()
   }
 
   return (
