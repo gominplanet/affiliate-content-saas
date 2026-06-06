@@ -4027,17 +4027,42 @@ export default function ContentPage() {
               IA shift 2026-06-06.
           */}
           {(horizontalDone.length > 0 || verticalDone.length > 0) && (() => {
-            // Sort by recency. Use publication date as tiebreaker — posts
-            // first, then verticals by tiktok/instagram posted_at.
-            const recent = [...horizontalDone, ...verticalDone].sort((a, b) => {
+            // Apply the Posts-tab search to Recent too (2026-06-07 fix).
+            // Without this, searching for "wag" on the Posts tab would
+            // still show every Recent row because the search only
+            // filtered the older-posts archive below. Search matches the
+            // video title OR the published post title OR the channel.
+            const recentAll = [...horizontalDone, ...verticalDone].sort((a, b) => {
               const ta = new Date(((a.published_at as string) || (a.tiktok_posted_at as string) || (a.instagram_posted_at as string) || 0)).getTime()
               const tb = new Date(((b.published_at as string) || (b.tiktok_posted_at as string) || (b.instagram_posted_at as string) || 0)).getTime()
               return tb - ta
             })
+            const recent = postQuery
+              ? recentAll.filter(v => {
+                  const videoTitle = ((v.title as string) || '').toLowerCase()
+                  const postTitle = ((posts[v.id as string]?.title) || '').toLowerCase()
+                  const channel = ((v.channel_title as string) || '').toLowerCase()
+                  return videoTitle.includes(postQuery) || postTitle.includes(postQuery) || channel.includes(postQuery)
+                })
+              : recentAll
+            if (postQuery && recent.length === 0 && orphanPosts.length === 0) {
+              // Both Recent + Older returned nothing — render a focused
+              // "no match" state here instead of letting the older-list
+              // empty state confuse the user.
+              return (
+                <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2 mb-3">
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">No posts match &ldquo;{postSearch}&rdquo;</p>
+                  <button onClick={() => setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">Clear search</button>
+                </div>
+              )
+            }
+            if (recent.length === 0) return null
             return (
               <div className="flex flex-col gap-3 mb-3">
                 <div className="flex items-baseline justify-between">
-                  <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Recent ({recent.length})</h3>
+                  <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                    Recent ({recent.length}{postQuery && recent.length !== recentAll.length ? ` of ${recentAll.length}` : ''})
+                  </h3>
                   <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Posts with a source video — push, schedule, refresh, edit</p>
                 </div>
                 {recent.map((video) => (
