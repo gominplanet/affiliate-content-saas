@@ -92,12 +92,34 @@ PRODUCT: ${opts.productTitle || 'the reviewed product'}
 ARTICLE SECTIONS (one image sits above each — match the scene to the section):
 ${opts.headings.slice(0, opts.count).map((h, i) => `${i + 1}. ${h}`).join('\n')}
 
-RULES FOR EACH IMAGE PROMPT:
-- A CLEARLY DIFFERENT photo from the others — vary the SETTING/background, the surface, the lighting and time of day, the camera distance AND the angle (e.g. one tight close-up detail, one in-use lifestyle scene, one wide in-situ environment, one flat-lay). No two may read as the same shot with a small tweak.
-- If the product has more than one function or mode, show a DIFFERENT one in each image (e.g. for a water-bottle-with-lantern: one as a bottle in daytime use, one as a glowing lantern at night).
-- A clean, realistic editorial product photo of the EXACT product. No packaging, no boxes.
-- NO text, letters, logos, or watermarks in the image. NO retailer/marketplace names or logos (no "Amazon"/"Prime"/store logos), no brand signage, no price tags — only the product's own physical branding.
+★ HARD-ASSIGNED SHOT PERSPECTIVE PER IMAGE (2026-06-07 rule — non-negotiable):
+Each image gets a SPECIFIC shot perspective below. You MUST honor the
+assignment — do NOT write "Image 1: extreme close-up" then describe a wide
+shot. The perspective is the FRAME, not a hint.
+${Array.from({ length: opts.count }, (_, i) => `  Image ${i + 1}: ${SHOT_PERSPECTIVES[i % SHOT_PERSPECTIVES.length]}`).join('\n')}
+
+ANTI-DUPLICATION RULES (the user has explicitly demanded this):
+- Two images MUST NEVER read as visually similar. If a reader could glance at
+  two images and not immediately tell them apart at a thumbnail size, that's
+  a failure. Different SUBJECT, different SETTING, different SURFACE,
+  different LIGHTING, different ANGLE — at least 3 of those 5 axes must
+  differ between any pair.
+- Specifically: never write two images both as "on a wooden table", both as
+  "in-hand outdoors", both as "flat-lay on white". Each image's
+  surface/setting must be unique across this batch.
+- If the product has more than one function or mode, show a DIFFERENT one in
+  each image (e.g. for a water-bottle-with-lantern: one as a bottle in
+  daytime use, one as a glowing lantern at night).
+
+GENERAL RULES FOR EACH IMAGE PROMPT:
+- A clean, realistic editorial product photo of the EXACT product. No
+  packaging, no boxes.
+- NO text, letters, logos, or watermarks in the image. NO retailer/marketplace
+  names or logos (no "Amazon"/"Prime"/store logos), no brand signage, no
+  price tags — only the product's own physical branding.
 - Under 35 words.
+- Lead the prompt with the assigned shot perspective so the rest of the
+  prompt is consistent with it.
 
 RULES FOR EACH ALT TEXT (this is what goes in <img alt="…"> — image SEO + accessibility):
 - Describe WHAT IS LITERALLY IN THE PHOTO — the subject, the setting, the angle/framing if distinctive. Not a marketing tagline.
