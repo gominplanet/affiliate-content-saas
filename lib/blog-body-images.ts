@@ -24,38 +24,103 @@ export function gutenbergImageBlock(url: string, alt: string, caption?: string):
 }
 
 /**
- * Byte offsets where each heading block starts, in document order.
+ * Headings (as text) that we never want to land an image next to.
+ * These show up inside special UI blocks (Quick Verdict callout, CTA
+ * cards) or at the structural tail of a post (Related reviews,
+ * Frequently Asked Questions, About the reviewer). Matching them
+ * would either drop an image INSIDE a callout box (looks broken) or
+ * AFTER the natural article conclusion (reads like the photo
+ * belongs to the next post). Lowercase + word-boundary compare
+ * against the heading's inner text.
+ */
+const SKIP_HEADING_TEXT = [
+  'quick verdict',
+  'skip if you',
+  'buy if you',
+  'related reviews',
+  'related posts',
+  'related',
+  'frequently asked questions',
+  'faq',
+  'faqs',
+  'about the reviewer',
+  'about the author',
+  'about me',
+  'sources',
+  'references',
+  'disclosure',
+  'affiliate disclosure',
+  'comments',
+]
+
+/**
+ * Byte offsets where each USABLE heading block starts, in document
+ * order. "Usable" means:
+ *   - The heading is an H2 (raw `<h2>` or Gutenberg default level)
+ *     — H3/H4 are sub-elements inside special blocks (Quick Verdict's
+ *     "Skip if you:" / "Buy if you:", spec lists, etc.) and landing
+ *     an image next to them looks broken.
+ *   - The inner text doesn't match SKIP_HEADING_TEXT — that pattern
+ *     keeps images out of Quick Verdict callouts, Related Reviews
+ *     tails, and FAQ blocks that read as "the article is over".
  *
- * Matches BOTH formats the writer can emit:
- *   - Gutenberg block markers: `<!-- wp:heading ...`
- *   - Raw HTML headings: `<h2>`, `<h3>`, `<h4>`
+ * Matches both formats the codebase can produce:
+ *   - Raw HTML: `<h2 class="...">Section title</h2>`   ← writer output
+ *   - Gutenberg block: `<!-- wp:heading --> <h2>...`   ← editor / legacy
+ *     Skips Gutenberg blocks with `"level":3` (or higher) attribute.
  *
- * Why both: the blog generator outputs raw `<h2>` tags (see
- * lib/blog-self-check.ts which strips/inspects `<h2 class="...">`),
- * but the in-body image editor + some legacy paths use Gutenberg
- * blocks. The old version only matched the Gutenberg form, so on
- * raw-HTML posts it returned 0 offsets and insertImagesAtHeadings
- * fell back to appending every image at the end of the post
- * (2026-06-05 bug report — "post made images BUT placed them at
- * the end"). De-duped by offset so a heading that appears as both
- * a comment marker AND the inner `<h2>` tag (some WP themes do
- * this) only counts once.
+ * The 2026-06-05 user report ("image inside Quick Verdict — big no no,
+ * and another after the article") proved that matching all heading
+ * levels + matching tail headings is harmful — every special block
+ * needs to be a no-fly zone.
  */
 export function headingOffsets(content: string): number[] {
   const offsets = new Set<number>()
-  // Gutenberg block markers — when present, they precede the inner
-  // <h2>/<h3> by a handful of chars; using the comment as the anchor
-  // means the inserted image lands ABOVE the whole block (markup +
-  // content) which is the correct visual position.
-  const reBlock = /<!-- wp:heading\b/g
+
+  // Helper — does this heading's inner text match a skip pattern?
+  // Pulls the text inside the next 200 chars after the offset (covers
+  // long class attributes + the actual visible text).
+  const isSkipHeading = (atOffset: number): boolean => {
+    const window = content.slice(atOffset, atOffset + 400)
+    // Extract the inner text of the first <h2>...</h2> in the window.
+    const inner = window.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i)?.[1]
+      // strip nested tags, decode the common entities, normalize whitespace.
+      ?.replace(/<[^>]+>/g, '')
+      ?.replace(/&amp;/g, '&')
+      ?.replace(/&nbsp;/g, ' ')
+      ?.replace(/&#8217;/g, "'")
+      ?.replace(/&[a-z#0-9]+;/gi, '')
+      ?.trim()
+      ?.toLowerCase() ?? ''
+    if (!inner) return false
+    return SKIP_HEADING_TEXT.some(pat => inner === pat || inner.startsWith(pat + ':') || inner.startsWith(pat + ' '))
+  }
+
+  // ── 1. Gutenberg block markers ──────────────────────────────────────────
+  // `<!-- wp:heading -->` (level defaults to 2) or `<!-- wp:heading
+  // {"level":2} -->`. Explicit level 3/4 blocks are skipped.
+  const reBlock = /<!-- wp:heading(?:\s+(\{[^}]*\}))?\s+-->/g
   let m: RegExpExecArray | null
-  while ((m = reBlock.exec(content)) !== null) offsets.add(m.index)
-  // Raw HTML headings — the format the blog writer actually emits.
-  // h2/h3/h4 covered; h1 excluded because the post title isn't in
-  // the body content. Case-insensitive for safety (WP themes
-  // occasionally lowercase tags during round-tripping).
-  const reTag = /<h[234]\b/gi
-  while ((m = reTag.exec(content)) !== null) offsets.add(m.index)
+  while ((m = reBlock.exec(content)) !== null) {
+    const attrsJson = m[1]
+    if (attrsJson) {
+      const levelMatch = attrsJson.match(/"level"\s*:\s*(\d+)/)
+      if (levelMatch && parseInt(levelMatch[1], 10) !== 2) continue
+    }
+    if (isSkipHeading(m.index)) continue
+    offsets.add(m.index)
+  }
+
+  // ── 2. Raw HTML <h2> tags ───────────────────────────────────────────────
+  // The blog writer emits these directly (verified via
+  // lib/blog-self-check.ts which strips `<h2 class="…">` patterns).
+  // Case-insensitive in case a WP theme round-trips with `<H2>`.
+  const reTag = /<h2\b/gi
+  while ((m = reTag.exec(content)) !== null) {
+    if (isSkipHeading(m.index)) continue
+    offsets.add(m.index)
+  }
+
   return [...offsets].sort((a, b) => a - b)
 }
 
