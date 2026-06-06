@@ -2607,6 +2607,11 @@ function ScheduledList({
   onRefresh: () => void
   onCancel: (id: string) => void
 }) {
+  // History filter (2026-06-07 UX fix). The Scheduled tab kept showing
+  // completed rows forever, which made users think a fired schedule was
+  // "stuck". Default to pending-only with a toggle to see history. Same
+  // mental model as Gmail's "Unread"/"All" split.
+  const [showHistory, setShowHistory] = useState(false)
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
@@ -2636,6 +2641,10 @@ function ScheduledList({
     )
   }
 
+  // Apply the pending/all filter BEFORE grouping so a parent that's
+  // already published doesn't show with hidden pending children.
+  const filteredItems = showHistory ? items : items.filter(i => i.status === 'pending' || i.status === 'processing')
+
   // ── Cascade grouping (P1.3 — per-row schedule cascade view) ──────────
   // Visually group child rows under their parent so the user can see the
   // tree at a glance: a kind='blog_publish' parent first, then every
@@ -2644,7 +2653,7 @@ function ScheduledList({
   // Sort the top-level by pending-first, then most recent.
   const childrenByParent = new Map<string, ScheduledItem[]>()
   const topLevel: ScheduledItem[] = []
-  for (const it of items) {
+  for (const it of filteredItems) {
     if (it.parent_id) {
       const arr = childrenByParent.get(it.parent_id) ?? []
       arr.push(it)
@@ -2679,16 +2688,41 @@ function ScheduledList({
     }
   }
 
+  const pendingCount = items.filter(i => i.status === 'pending').length
+  const historyCount = items.length - pendingCount
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-          {items.filter(i => i.status === 'pending').length} pending · {items.length} total
-        </p>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="flex items-center gap-3 text-xs">
+          <p className="text-[#6e6e73] dark:text-[#ebebf0]">
+            {pendingCount} pending{showHistory ? ` · ${items.length} shown` : ` · ${historyCount} in history`}
+          </p>
+          {historyCount > 0 && (
+            <button
+              onClick={() => setShowHistory(s => !s)}
+              className="text-[#7C3AED] hover:underline"
+            >
+              {showHistory ? 'Hide history' : `Show history (${historyCount})`}
+            </button>
+          )}
+        </div>
         <button onClick={onRefresh} className="text-xs text-[#7C3AED] hover:underline inline-flex items-center gap-1">
           <RefreshCw size={11} /> Refresh
         </button>
       </div>
+      {filteredItems.length === 0 && pendingCount === 0 && !showHistory && (
+        <div className="card p-6 text-center">
+          <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">No pending posts.</p>
+          {historyCount > 0 && (
+            <button
+              onClick={() => setShowHistory(true)}
+              className="mt-2 text-xs text-[#7C3AED] hover:underline"
+            >
+              Show {historyCount} from history
+            </button>
+          )}
+        </div>
+      )}
       {sorted.map(({ item, indent }) => {
         // kind='blog_publish' rows have platform=null (they're the WP
         // publish-itself row in draft-flip mode, not a social push).

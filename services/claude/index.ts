@@ -1150,6 +1150,81 @@ ${content}`,
    * publish, letting the caller also re-derive a clean slug. Best-effort: any
    * failure or suspicious result returns the original title unchanged.
    */
+  /**
+   * Title-vs-BODY identity check (added 2026-06-07 after the WagComb
+   * incident — title "WagComb Electric Flea Comb Review" with body
+   * about "Woyamay 4-in-1 flea & tick chews" slipped past every prior
+   * check). Run AFTER body fact-check has finalized the content, so we
+   * can ground the title against whatever the body actually says.
+   *
+   * Returns: a title that matches the body's product, or the original
+   * if it already does. Caller updates WP + DB if the value changed.
+   *
+   * Why this is separate from factCheckTitle:
+   *   - factCheckTitle checks title vs transcript/productResearch — it
+   *     can rubber-stamp a title whose product appears anywhere in the
+   *     transcript even when the BODY ended up about a different one
+   *     (common when the transcript mentions multiple products).
+   *   - This check is grounded only in the final body, so an
+   *     incoherent title/body pair fails fast.
+   */
+  async factCheckTitleVsBody(
+    title: string,
+    bodyHtml: string,
+    ctx?: UsageCtx,
+  ): Promise<string> {
+    const t = (title || '').trim()
+    if (!t || !bodyHtml || bodyHtml.length < 300) return title
+    try {
+      // Strip HTML to plaintext + cap so the model focuses on the actual
+      // product narrative, not Gutenberg block scaffolding.
+      const plain = bodyHtml
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 8000)
+      const message = await this.client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: 'You verify that a blog post title names the SAME product the post body is about. You never invent — you only rewrite the title to match the body when they disagree.',
+        messages: [{
+          role: 'user',
+          content: `Below is a published blog post's TITLE and its BODY (plain text). Verify they describe the SAME product.
+
+CHECK:
+- What product is the BODY actually about? Look at the opening paragraph + every section heading — these reveal the body's true subject.
+- What product does the TITLE name?
+- If the title's product matches the body's product, return the title EXACTLY unchanged.
+- If they're different (e.g. title says "WagComb Electric Flea Comb" but body opens with "We tested Woyamay's flea chews"), rewrite the title so it names the BODY's product. Keep the original title's framing/voice/structure — just swap the product identity. Keep "Review" if it was there.
+
+NEVER:
+- Add a feature the body doesn't claim.
+- Use the word "honest".
+- Output anything except the final title text.
+
+OUTPUT: the final title on a single line. No quotes. No JSON. No explanation.
+
+=== TITLE ===
+${t}
+
+=== BODY (plain text, first ~8000 chars) ===
+${plain}`,
+        }],
+      }, { timeout: 15000 })
+      let out = message.content.filter(b => b.type === 'text').map(b => (b as Anthropic.TextBlock).text).join('').trim()
+      out = out.replace(/^["'\s]+|["'\s]+$/g, '').replace(/\s+/g, ' ').trim()
+      const u = usageFromAnthropic(message)
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_factcheck_title_vs_body', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
+      // Safety: reject obviously broken output.
+      if (!out || out.length < 5 || out.length > 180 || /\n/.test(out)) return title
+      return out
+    } catch {
+      return title
+    }
+  }
+
   async factCheckTitle(
     title: string,
     transcript: string,

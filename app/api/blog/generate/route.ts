@@ -1344,6 +1344,40 @@ async function handleGenerate(request: Request) {
       }
     } catch { /* non-fatal — keep the generated text */ }
 
+    // ── Title-vs-body identity fact-check (2026-06-07 fix) ───────────────────
+    // After the body has settled (above body fact-check may have corrected it),
+    // verify the title still names the SAME product. The original WagComb
+    // incident had title="WagComb Electric Flea Comb" with body about "Woyamay
+    // 4-in-1 chews" — passed both the title-only fact-check (title appeared
+    // somewhere in the transcript) and the body-only fact-check (body matched
+    // the transcript) because each only saw one half of the post. Now we ground
+    // the title against the body directly. If they disagree, update the live WP
+    // post + blog_posts row (slug stays the same so the URL doesn't churn).
+    try {
+      const newTitle = await claude.factCheckTitleVsBody(
+        generated.title,
+        content,
+        { userId: user.id, tier: (wp?.tier as string) ?? null },
+      )
+      const cleaned = scrubBanned((newTitle || '').trim())
+      if (cleaned && cleaned !== generated.title.trim()) {
+        console.warn('[blog-factcheck-title-vs-body] title/body mismatch corrected', {
+          from: generated.title,
+          to: cleaned,
+          postId: savedPost?.id,
+          wpPostId: wpPost.id,
+        })
+        generated.title = cleaned
+        try { await wpService.updatePost(wpPost.id, { title: cleaned }) } catch (err) {
+          console.warn('[blog-factcheck-title-vs-body] WP updatePost failed', err instanceof Error ? err.message : String(err))
+        }
+        if (savedPost?.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { await (supabase as any).from('blog_posts').update({ title: cleaned }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+        }
+      }
+    } catch { /* non-fatal — keep the prior title */ }
+
     let finalContent = content
     // Captured across the image branches; used to upgrade the SEO meta at the end.
     let heroImageUrl: string | null = null
