@@ -28,6 +28,9 @@ import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
 import { maybeDecrypt } from '@/lib/secrets'
+import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 
 // Vercel cron functions run with a generous timeout but we still want
 // to cap the per-tick work — if the batch is huge we'll catch the
@@ -43,7 +46,13 @@ interface ScheduledRow {
   id: string
   user_id: string
   blog_post_id: string
-  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
+  /** 'social' = a social push to a specific platform. 'blog_publish' =
+   *  flip the underlying WP post from status=draft to status=publish
+   *  (only used by the draft-flip schedule mode; wp-native scheduling
+   *  doesn't generate these rows — WP's own cron handles the flip). */
+  kind: 'social' | 'blog_publish'
+  /** Required when kind='social'; null when kind='blog_publish'. */
+  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | null
   body_text: string
   /** Optional chosen destination (multi-account). Null = use the user's
    *  default / legacy integrations credentials. */
@@ -89,13 +98,16 @@ export async function GET(request: Request) {
   const nowIso = new Date().toISOString()
 
   // 1. Atomic claim — flip due+pending rows to 'processing' in one update.
+  // `as any` on the .select() because the supabase-generated types don't
+  // yet know about the `kind` column (added in migration 103); regen
+  // after migration 103 lands to drop the cast.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: claimed, error: claimErr } = await admin
+  const { data: claimed, error: claimErr } = await (admin as any)
     .from('scheduled_posts')
     .update({ status: 'processing', claimed_at: nowIso, last_attempt_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,blog_post_id,platform,body_text,social_account_id')
+    .select('id,user_id,blog_post_id,kind,platform,body_text,social_account_id')
     .limit(MAX_PER_TICK)
 
   if (claimErr) {
@@ -153,15 +165,24 @@ export async function GET(request: Request) {
 }
 
 /**
- * Per-platform publish. Looks up the user's blog post + integration creds
- * via the admin client (no session), then calls the same service code
- * the manual-publish endpoints use.
+ * Per-row dispatch. kind='blog_publish' goes to flipBlogPostToPublished
+ * (PATCHes WP from draft to publish); kind='social' goes to the existing
+ * per-platform publishOne.
  */
 async function publishOne(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
   row: ScheduledRow,
 ): Promise<{ externalId?: string }> {
+  if (row.kind === 'blog_publish') {
+    return flipBlogPostToPublished(admin, row)
+  }
+  // Social path — platform is guaranteed non-null by the kind ↔ platform
+  // DB check constraint (migration 103), but TS can't see that, so
+  // narrow here for the exhaustive switch below.
+  if (!row.platform) {
+    throw new Error(`scheduled_posts row ${row.id}: kind=social but platform is null (DB invariant broken)`)
+  }
   // Pull the blog post + integration creds
   const [postRes, intRes] = await Promise.all([
     admin
@@ -342,4 +363,61 @@ async function publishOne(
       throw new Error(`Unknown platform: ${exhaustive}`)
     }
   }
+}
+
+/**
+ * Handler for kind='blog_publish' rows — flips the underlying WordPress
+ * post from status=draft to status=publish. Only used by the draft-flip
+ * schedule mode; wp-native scheduling lets WP's own cron do this.
+ *
+ * After the flip we fire the deferred publish-time hooks (IndexNow ping)
+ * that the generate route skipped because the post wasn't live yet.
+ * YouTube backlink is intentionally NOT fired here — it would race
+ * against the social cron rows that also just claimed; keeping it
+ * publish-time-only for fresh posts is acceptable.
+ *
+ * The child social rows are NOT touched — they stay pending and fire on
+ * their own scheduled_at (which is scheduledFor + offset, i.e. shortly
+ * after this row runs).
+ */
+async function flipBlogPostToPublished(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  row: ScheduledRow,
+): Promise<{ externalId?: string }> {
+  // Look up the blog post — we need wordpress_post_id + wordpress_site_id
+  // (multi-site: a Pro user's post may live on a non-default WP install).
+  const { data: post } = await admin
+    .from('blog_posts')
+    .select('id,wordpress_post_id,wordpress_url,wordpress_site_id')
+    .eq('id', row.blog_post_id)
+    .maybeSingle()
+  if (!post) throw new Error('Blog post no longer exists')
+  if (!post.wordpress_post_id) {
+    throw new Error('Blog post has no wordpress_post_id — was it ever pushed to WP?')
+  }
+
+  // Resolve the matching WP credentials. Pass wordpress_site_id so the
+  // post that was created on a specific site gets flipped on THAT site
+  // even if the user's default has changed since they scheduled.
+  const creds = await getWordPressCredentials(admin, row.user_id, post.wordpress_site_id)
+  if (!creds) throw new Error('WordPress credentials not found for this user/site')
+
+  const wpService = createWordPressService(
+    creds.wordpress_url,
+    creds.wordpress_username,
+    creds.wordpress_app_password,
+    creds.wordpress_api_token ?? undefined,
+  )
+
+  // The flip itself — single PATCH to /posts/:id with status=publish.
+  // WP accepts this even if the post is in 'draft' or 'pending' status.
+  const updated = await wpService.updatePost(post.wordpress_post_id, { status: 'publish' })
+
+  // Fire the deferred IndexNow ping now that the URL is live.
+  // Fire-and-forget so a slow/rejected ping never fails the cron row.
+  void pingIndexNowForUrl(admin, row.user_id, updated.link ?? post.wordpress_url ?? '', post.wordpress_site_id ?? null)
+    .catch(() => {})
+
+  return { externalId: String(post.wordpress_post_id) }
 }

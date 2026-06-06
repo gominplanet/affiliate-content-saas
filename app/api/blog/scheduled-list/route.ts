@@ -12,10 +12,14 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // `kind` + `parent_id` were added in migration 103. We select them with
+  // an `as any` cast to bypass the supabase-generated types until the
+  // codegen step runs. The UI uses kind='blog_publish' to render those
+  // rows as the "WP publish" entry above their child social rows.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('scheduled_posts')
-    .select('id,blog_post_id,platform,scheduled_at,body_text,status,attempts,error_message,external_id,created_at,blog_posts(title,wordpress_url)')
+    .select('id,blog_post_id,kind,parent_id,platform,scheduled_at,body_text,status,attempts,error_message,external_id,created_at,blog_posts(title,wordpress_url)')
     .eq('user_id', user.id)
     .order('scheduled_at', { ascending: true })
     .limit(100)

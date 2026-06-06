@@ -151,8 +151,55 @@ async function handleGenerate(request: Request) {
      *  to. Omit / null → the user's default site (same behaviour as before
      *  multi-site existed). Single-site users never send this. */
     siteId?: string | null
+    /** Schedule mode — when present, the post is GENERATED now but its WP
+     *  status is NOT 'publish'. See lib/schedule-types.ts for the two modes.
+     *    - 'wp-native' → WP gets status=future + post_date=scheduledFor.
+     *      WordPress's own cron flips it to publish.
+     *    - 'draft-flip' → WP gets status=draft. Our cron flips it later.
+     *  Either mode requires `scheduledFor`. Omitted entirely → immediate
+     *  publish, same as always. */
+    scheduleMode?: 'wp-native' | 'draft-flip'
+    /** ISO 8601 timestamp the post should go live. Required when
+     *  scheduleMode is set. */
+    scheduledFor?: string
   }
   const { videoId, rewriteFeedback, allowEmptyTranscript, siteId } = body
+  const scheduleMode = body.scheduleMode
+  const scheduledForIso = body.scheduledFor
+
+  // Validate scheduling input early — bad input is an immediate 400.
+  if (scheduleMode && !scheduledForIso) {
+    return NextResponse.json(
+      { error: 'scheduledFor is required when scheduleMode is set' },
+      { status: 400 },
+    )
+  }
+  if (scheduleMode && !['wp-native', 'draft-flip'].includes(scheduleMode)) {
+    return NextResponse.json(
+      { error: `scheduleMode must be 'wp-native' or 'draft-flip' (got ${scheduleMode})` },
+      { status: 400 },
+    )
+  }
+  if (scheduledForIso) {
+    const t = new Date(scheduledForIso).getTime()
+    if (isNaN(t)) {
+      return NextResponse.json({ error: 'scheduledFor is not a valid ISO timestamp' }, { status: 400 })
+    }
+    if (t <= Date.now() + 60_000) {
+      return NextResponse.json(
+        { error: 'scheduledFor must be at least 1 minute in the future' },
+        { status: 400 },
+      )
+    }
+  }
+  // Resolve the effective WP status. Default 'publish' (current behaviour).
+  // wp-native scheduling carries the date through. draft-flip leaves date
+  // unset — the post sits as a plain draft until our cron flips it.
+  const wpStatus: 'publish' | 'future' | 'draft' =
+    scheduleMode === 'wp-native' ? 'future' :
+    scheduleMode === 'draft-flip' ? 'draft' :
+    'publish'
+  const isScheduled = scheduleMode !== undefined
   // Default ON when omitted (older callers / bulk triggers) — the Content
   // page sends the explicit per-generation choice.
   const includeImages = body.includeImages !== false
@@ -891,6 +938,11 @@ async function handleGenerate(request: Request) {
   let wpPost
   try {
     if (existingWpPostId) {
+      // Rebuilds preserve the live URL + indexing history — the existing
+      // status is whatever the user already had (publish or otherwise).
+      // We don't override status on rebuilds even when a schedule is
+      // present: scheduling a REGENERATE of a live post would be
+      // surprising. If you need that, use a fresh post.
       const updated = await wpService.updatePost(existingWpPostId, {
         title: generated.title,
         content,
@@ -901,12 +953,20 @@ async function handleGenerate(request: Request) {
       })
       wpPost = updated
     } else {
+      // Fresh post — honor the requested wpStatus. 'future' requires a
+      // `date` field (the scheduled publish time); 'draft' and 'publish'
+      // both ignore it. wpService.createPost passes `date` straight to
+      // the WP REST `date` field, which WP interprets in the site's
+      // timezone — we send ISO 8601 with a Z (UTC) so there's no
+      // ambiguity. The MVP plugin records it in the post's post_date
+      // column and WP's internal cron handles the flip.
       wpPost = await wpService.createPost({
         title: generated.title,
         slug,
         content,
         excerpt: generated.excerpt,
-        status: 'publish',
+        status: wpStatus,
+        ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}),
         tags: tagIds,
         categories: categoryIds,
         comment_status: 'closed',
@@ -924,7 +984,15 @@ async function handleGenerate(request: Request) {
   // Google doesn't participate; the daily GSC sweep covers Google.
   // Multi-site: ping the SPECIFIC site's IndexNow key (each WP install has
   // its own key). Pass effectiveSiteId so a Wine-blog post pings Wine's key.
-  void pingIndexNowForUrl(supabase, user.id, wpPost.link, effectiveSiteId).catch(() => {})
+  // SKIP when scheduled — the URL isn't live yet (status=future or draft).
+  // For wp-native: WP's own cron will publish at the scheduled time; we
+  // don't currently re-ping IndexNow then (a follow-up could subscribe to
+  // WP's transition_post_status hook).
+  // For draft-flip: the cron worker will fire IndexNow when it flips the
+  // post to publish.
+  if (!isScheduled) {
+    void pingIndexNowForUrl(supabase, user.id, wpPost.link, effectiveSiteId).catch(() => {})
+  }
 
   // ── 8.5. Upload YouTube thumbnail as featured image ───────────────────────
   // Skip for rebuilds on legacy WP posts — the creator already has a featured
@@ -1065,21 +1133,29 @@ async function handleGenerate(request: Request) {
     // description so the video drives authority to the post (and vice versa).
     // User-controllable (integrations.yt_backlink_enabled, default true) since
     // it writes to their own channel; needs YouTube OAuth. Fully best-effort.
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: ytRow } = await supabase
-        .from('integrations')
-        .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry,yt_backlink_enabled')
-        .eq('user_id', user.id)
-        .single()
-      if (ytRow?.yt_backlink_enabled !== false && ytRow?.youtube_oauth_access_token && youtubeVideoId && wpPost.link) {
-        const token = await getValidYouTubeToken(ytRow as Record<string, unknown>)
-        const yt = createYouTubeOAuthService(token)
-        const pushed = await yt.appendBlogLinkToDescription(youtubeVideoId, wpPost.link as string)
-        console.log('[blog-backlink]', pushed ? `linked ${youtubeVideoId} → ${wpPost.link}` : 'skipped (already linked or no snippet)')
+    //
+    // SKIP when scheduled — wpPost.link points to the eventual URL, but it
+    // 404s until the post goes live. Linking from YouTube to a 404 would
+    // be worse than no link. For draft-flip the cron will fire this when
+    // it flips the post; for wp-native it's just skipped (future: post-
+    // status-transition webhook from WP could fire it at publish time).
+    if (!isScheduled) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: ytRow } = await supabase
+          .from('integrations')
+          .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry,yt_backlink_enabled')
+          .eq('user_id', user.id)
+          .single()
+        if (ytRow?.yt_backlink_enabled !== false && ytRow?.youtube_oauth_access_token && youtubeVideoId && wpPost.link) {
+          const token = await getValidYouTubeToken(ytRow as Record<string, unknown>)
+          const yt = createYouTubeOAuthService(token)
+          const pushed = await yt.appendBlogLinkToDescription(youtubeVideoId, wpPost.link as string)
+          console.log('[blog-backlink]', pushed ? `linked ${youtubeVideoId} → ${wpPost.link}` : 'skipped (already linked or no snippet)')
+        }
+      } catch (err) {
+        console.warn('[blog-backlink] failed (non-fatal):', err instanceof Error ? err.message : String(err))
       }
-    } catch (err) {
-      console.warn('[blog-backlink] failed (non-fatal):', err instanceof Error ? err.message : String(err))
     }
 
     const ytThumb = `https://img.youtube.com/vi/${youtubeVideoId}/maxresdefault.jpg`
@@ -1558,6 +1634,12 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // Which source supplied the transcript so the UI can surface it
     // (cache / youtube_api / scraper / none).
     transcriptSource,
+    // Schedule echo — the schedule-publish route uses these to wire the
+    // social cascade rows back to this post. Clients can also surface
+    // "Scheduled for X" on the success toast.
+    scheduled: isScheduled
+      ? { mode: scheduleMode, scheduledFor: scheduledForIso ?? null, wpStatus }
+      : null,
   })
 }
 

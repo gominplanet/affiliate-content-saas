@@ -35,7 +35,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Already published or cancelled — nothing to do.' }, { status: 409 })
     }
 
-    return NextResponse.json({ ok: true })
+    // Cascade — cancelling a kind='blog_publish' parent row also cancels
+    // every still-pending social child queued behind it. ON DELETE
+    // CASCADE on parent_id would handle a hard delete, but we keep
+    // the parent row for audit (it just changes status to 'cancelled'),
+    // so the cascade has to be an explicit UPDATE. Best-effort —
+    // failure here doesn't undo the parent cancel.
+    let cascadedChildCount = 0
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: children } = await (supabase as any)
+        .from('scheduled_posts')
+        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+        .eq('parent_id', id)
+        .eq('user_id', user.id)
+        .eq('status', 'pending')
+        .select('id')
+      cascadedChildCount = (children ?? []).length
+    } catch (e) {
+      // Pre-migration-103 databases don't have a parent_id column —
+      // swallow the column-doesn't-exist error so the route still works
+      // for rows scheduled before the migration ran. Drop the try/catch
+      // once the migration has landed everywhere.
+      console.warn('[scheduled-cancel] cascade skipped:', e instanceof Error ? e.message : String(e))
+    }
+
+    return NextResponse.json({ ok: true, cascadedChildCount })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: msg }, { status: 500 })

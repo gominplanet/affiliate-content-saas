@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
@@ -13,12 +13,13 @@ import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
 import { SOCIAL_CAP } from '@/lib/social-cap'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
+import type { SchedulableSocial } from '@/lib/schedule-types'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
 import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload, Search,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload, Search, Calendar,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 import { TikTokDirectModal } from '@/components/TikTokDirectModal'
@@ -37,13 +38,29 @@ const BulkScheduleModal = dynamic(
   () => import('@/components/content/BulkScheduleModal').then(m => ({ default: m.BulkScheduleModal })),
   { ssr: false },
 )
+// ScheduleModal — single-row schedule (blog publish + social cascade).
+// Lazy-loaded for the same reason as the other modals: keep the heavy
+// content page initial JS lean.
+const ScheduleModal = dynamic(
+  () => import('@/components/content/ScheduleModal'),
+  { ssr: false },
+)
 
 // Shape returned by /api/blog/scheduled-list — flat enough that we don't
 // need a separate type module.
+//
+// `kind` differentiates 'social' rows (a queued push to a specific
+// platform) from 'blog_publish' rows (a queued draft-flip on the
+// underlying WP post — only present in draft-flip schedule mode).
+// `platform` is REQUIRED for kind='social' and null for 'blog_publish'.
+// `parent_id` links a social child to its parent blog_publish row so
+// the UI can group cascades visually + cascade-cancel.
 interface ScheduledItem {
   id: string
   blog_post_id: string
-  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram'
+  kind: 'social' | 'blog_publish'
+  parent_id: string | null
+  platform: 'facebook' | 'threads' | 'twitter' | 'linkedin' | 'bluesky' | 'telegram' | null
   scheduled_at: string
   body_text: string
   status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
@@ -1804,6 +1821,23 @@ function VideoCard({
   const [deleting, setDeleting] = useState(false)
   const [fbPosting, setFbPosting] = useState(false)
   const [fbPosted, setFbPosted] = useState(!!post?.facebookPostId)
+  // Schedule modal — only relevant for un-generated rows (post == null);
+  // once a row has a live post, the user uses WP's own "Edit schedule"
+  // workflow instead. Open via the Schedule button next to Publish to all.
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  // Connected social channels for the cascade list. Only the channels
+  // the cron worker can publish to are included (no IG/Pinterest/TikTok
+  // — they use their own direct-publish routes).
+  const connectedChannels = useMemo<ReadonlySet<SchedulableSocial>>(() => {
+    const s = new Set<SchedulableSocial>()
+    if (fbConnected) s.add('facebook')
+    if (threadsConnected) s.add('threads')
+    if (twitterConnected) s.add('twitter')
+    if (linkedInConnected) s.add('linkedin')
+    if (blueskyConnected) s.add('bluesky')
+    if (telegramConnected) s.add('telegram')
+    return s
+  }, [fbConnected, threadsConnected, twitterConnected, linkedInConnected, blueskyConnected, telegramConnected])
   // Per-post Facebook Page choice (Pro multi-account). Defaults to the
   // user's default page. The picker renders whenever the user has at least
   // one connected Page (Pro loads the list) so it's discoverable/testable —
@@ -2078,6 +2112,25 @@ function VideoCard({
                   <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-yellow-300 text-[#1d1d1f]">Pro</span>
                 </Link>
               ))}
+              {/* Schedule — only surfaced when the post hasn't been
+                  generated yet. Opens ScheduleModal which calls
+                  /api/blog/schedule-publish: generates the post NOW (so
+                  the user gets immediate preview + credit is consumed up
+                  front) and queues the WP publish + social cascade for
+                  the chosen time. Mirrors the "Publish to all" pattern —
+                  one button -> cross-channel cascade — with the only
+                  difference being WHEN it fires. */}
+              {!post && (
+                <button
+                  type="button"
+                  onClick={() => setScheduleOpen(true)}
+                  title="Generate now, publish later — pick a date/time and which socials to push"
+                  className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border transition-colors hover:bg-[rgba(124,58,237,0.10)]"
+                  style={{ borderColor: 'var(--border-bright, rgba(255,255,255,0.14))', color: 'var(--text, #F5F5F7)' }}
+                >
+                  <Calendar size={12} /> Schedule
+                </button>
+              )}
               {/* Visit Link or Product — opens the first affiliate / product
                   link found in the video's description (Geniuslink, amzn.to,
                   Amazon URL, or an ASIN-derived link). Lets the creator
@@ -2439,6 +2492,23 @@ function VideoCard({
           )}
         </div>{/* end flex-col wrapper */}
       </div>
+      {/* Schedule modal — rendered at the row root so its z-50 overlay
+          covers the whole viewport. Mounted only when opened so unopened
+          rows pay zero cost. */}
+      <ScheduleModal
+        videoId={id}
+        videoTitle={title}
+        connectedChannels={connectedChannels}
+        open={scheduleOpen}
+        onClose={() => setScheduleOpen(false)}
+        onScheduled={() => {
+          // Surface a hint by clearing the parent's scheduledItems cache
+          // — handled by the parent's onGenerated for now (the generate
+          // route's response already moves this row out of the
+          // ungenerated bucket).
+          setScheduleOpen(false)
+        }}
+      />
       <ConfirmHost />
     </div>
   )
@@ -2446,7 +2516,7 @@ function VideoCard({
 
 // Display label + brand color for each schedulable platform — used by the
 // Scheduled list. Kept in sync with the cron worker's switch statement.
-const PLATFORM_META: Record<ScheduledItem['platform'], { label: string; color: string }> = {
+const PLATFORM_META: Record<NonNullable<ScheduledItem['platform']>, { label: string; color: string }> = {
   facebook: { label: 'Facebook', color: '#1877f2' },
   threads:  { label: 'Threads',  color: '#000000' },
   twitter:  { label: 'X',        color: '#000000' },
@@ -2520,7 +2590,12 @@ function ScheduledList({
         </button>
       </div>
       {sorted.map(item => {
-        const meta = PLATFORM_META[item.platform]
+        // kind='blog_publish' rows have platform=null (they're the WP
+        // publish-itself row in draft-flip mode, not a social push).
+        // Render those with the WordPress brand label + icon stand-in.
+        const meta = item.kind === 'blog_publish'
+          ? { label: 'WordPress', color: '#21759b' }
+          : PLATFORM_META[item.platform ?? 'linkedin']  // fallback impossible — kind=social ensures platform is non-null
         const pill = STATUS_PILL[item.status]
         const when = new Date(item.scheduled_at)
         const dt = when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -2534,7 +2609,9 @@ function ScheduledList({
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{meta.label}</span>
+                <span className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  {item.kind === 'blog_publish' ? 'Publish to WordPress' : meta.label}
+                </span>
                 <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full ${pill.bg} ${pill.fg}`}>
                   {pill.label}
                 </span>

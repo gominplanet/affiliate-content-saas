@@ -1,0 +1,293 @@
+/**
+ * POST /api/blog/schedule-publish
+ *
+ * Orchestrator for "Schedule" on a Library row. Generates the blog post
+ * NOW (so the user gets immediate preview + the credit is consumed up
+ * front), but defers the actual go-live to the chosen timestamp, then
+ * cascades chosen social pushes after.
+ *
+ * Two scheduling modes (see lib/schedule-types.ts):
+ *   - 'wp-native' → WP holds status=future + post_date; WP cron flips it.
+ *   - 'draft-flip' → WP holds status=draft; our cron worker
+ *     (/api/cron/process-scheduled) flips it to publish, then the social
+ *     children fire at their own scheduled_at.
+ *
+ * Flow:
+ *   1. Auth + light validation (the heavy lifting is in /api/blog/generate
+ *      which we invoke internally with scheduleMode + scheduledFor)
+ *   2. Invoke /api/blog/generate to produce the post. The route already
+ *      knows how to honour wpStatus=future/draft + skip the publish-time
+ *      hooks (IndexNow, YouTube backlink) when scheduling.
+ *   3. If draft-flip: insert a kind='blog_publish' parent row in
+ *      scheduled_posts at scheduledFor — cron will flip the WP post.
+ *   4. For each chosen social channel: insert a kind='social' child row
+ *      at scheduledFor + offset, linked to the parent for cascade-cancel.
+ *      (For wp-native: parent_id is null since there's no MVP-side parent
+ *      row — WP handles the publish. Cancelling those falls back to
+ *      cancelling each row individually + a separate WP-side cancel.)
+ *
+ * Body:
+ *   {
+ *     videoId: string                 // youtube_videos.id
+ *     scheduledFor: string             // ISO 8601, future
+ *     scheduleMode: 'wp-native' | 'draft-flip'
+ *     socials: SocialScheduleEntry[]   // pre-composed body per channel
+ *     siteId?: string | null           // multi-site (Pro)
+ *     includeImages?: boolean
+ *   }
+ *
+ * Returns:
+ *   {
+ *     ok: true,
+ *     postId: uuid,                    // blog_posts.id
+ *     wordpressPostId: number,
+ *     wordpressUrl: string,
+ *     parentScheduleId?: uuid,         // present in draft-flip mode
+ *     childScheduleIds: uuid[],        // one per scheduled social
+ *   }
+ *
+ * Errors return 4xx/5xx with { error: string }.
+ */
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { tierAllowsSocial, normalizeTier, type Tier } from '@/lib/tier'
+import type { ScheduleMode, SocialScheduleEntry, SchedulableSocial } from '@/lib/schedule-types'
+import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
+
+const SUPPORTED_SOCIALS: SchedulableSocial[] = ['facebook', 'threads', 'twitter', 'linkedin', 'bluesky', 'telegram']
+const SUPPORTED_MODES: ScheduleMode[] = ['wp-native', 'draft-flip']
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createServerClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const body = (await request.json()) as {
+      videoId?: string
+      scheduledFor?: string
+      scheduleMode?: ScheduleMode
+      socials?: SocialScheduleEntry[]
+      siteId?: string | null
+      includeImages?: boolean
+    }
+
+    const { videoId, scheduledFor, scheduleMode, siteId, includeImages } = body
+    const socials = Array.isArray(body.socials) ? body.socials : []
+
+    // ─── Validate input ─────────────────────────────────────────────────
+    if (!videoId) return NextResponse.json({ error: 'videoId required' }, { status: 400 })
+    if (!scheduledFor) return NextResponse.json({ error: 'scheduledFor required' }, { status: 400 })
+    if (!scheduleMode || !SUPPORTED_MODES.includes(scheduleMode)) {
+      return NextResponse.json(
+        { error: `scheduleMode must be one of ${SUPPORTED_MODES.join(', ')}` },
+        { status: 400 },
+      )
+    }
+    const whenMs = new Date(scheduledFor).getTime()
+    if (isNaN(whenMs)) {
+      return NextResponse.json({ error: 'scheduledFor is not a valid ISO timestamp' }, { status: 400 })
+    }
+    if (whenMs <= Date.now() + 60_000) {
+      return NextResponse.json(
+        { error: 'scheduledFor must be at least 1 minute in the future' },
+        { status: 400 },
+      )
+    }
+    // Tier read — same gate the manual schedule-post + generate routes
+    // use. Picking a specific account-id is a Pro feature; the gate is
+    // applied per-row below.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tierRow } = await supabase
+      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+    const tier = (tierRow?.tier as Tier) ?? 'trial'
+
+    // Validate each social entry now so we can early-error before we
+    // burn a generation credit.
+    for (const s of socials) {
+      if (!s.platform || !SUPPORTED_SOCIALS.includes(s.platform)) {
+        return NextResponse.json(
+          { error: `social.platform must be one of ${SUPPORTED_SOCIALS.join(', ')}` },
+          { status: 400 },
+        )
+      }
+      if (!tierAllowsSocial(tier, s.platform)) {
+        return NextResponse.json(
+          { error: `${s.platform} auto-publish is not available on your plan.` },
+          { status: 403 },
+        )
+      }
+      if (!s.bodyText || !s.bodyText.trim()) {
+        return NextResponse.json(
+          { error: `social.bodyText required for ${s.platform} (lock in the body before scheduling)` },
+          { status: 400 },
+        )
+      }
+    }
+
+    // ─── 1. Invoke /api/blog/generate to produce the post ─────────────────
+    // We forward the request cookies so the inner route sees the same
+    // authenticated user. Next.js absolute URLs require a host header —
+    // pull it off the incoming request.
+    const url = new URL(request.url)
+    const generateUrl = `${url.protocol}//${url.host}/api/blog/generate`
+    const cookieHeader = request.headers.get('cookie') ?? ''
+    const genRes = await fetch(generateUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: cookieHeader },
+      body: JSON.stringify({
+        videoId,
+        siteId: siteId ?? null,
+        includeImages: includeImages !== false,
+        scheduleMode,
+        scheduledFor,
+      }),
+    })
+    const genJson = (await genRes.json().catch(() => ({}))) as {
+      success?: boolean
+      postId?: string
+      wordpressPostId?: number
+      wordpressUrl?: string
+      error?: string
+    }
+    if (!genRes.ok || !genJson.success || !genJson.postId || !genJson.wordpressPostId) {
+      return NextResponse.json(
+        { error: genJson.error || 'Blog generation failed — try again or contact support.' },
+        { status: genRes.status || 500 },
+      )
+    }
+
+    const blogPostId = genJson.postId
+    const wpPostId = genJson.wordpressPostId
+    const wpUrl = genJson.wordpressUrl
+
+    // ─── 2. (draft-flip only) Insert the parent blog_publish row ──────────
+    // For wp-native, WP handles the flip — we skip this and the social
+    // children below have parent_id=null. The user can still
+    // individually cancel each scheduled social; cancelling the WP-side
+    // publish requires going into wp-admin (we may add an explicit
+    // cancel endpoint that PATCHes wp post to draft in a follow-up).
+    let parentScheduleId: string | null = null
+    if (scheduleMode === 'draft-flip') {
+      // The supabase-generated DB types haven't been regenerated against
+      // migration 103 (kind + parent_id columns), so an `as never` cast
+      // bypasses the type rejection while the production DB accepts the
+      // shape. Same pattern as the rest of the codebase's "post-migration,
+      // pre-codegen" inserts. Run `npx supabase gen types` after migration
+      // 103 lands to drop the cast.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: parentRow, error: parentErr } = await (supabase as any)
+        .from('scheduled_posts')
+        .insert({
+          user_id: user.id,
+          blog_post_id: blogPostId,
+          kind: 'blog_publish',
+          platform: null,
+          scheduled_at: new Date(scheduledFor).toISOString(),
+          // body_text is NOT NULL — store the title as a human-readable
+          // label for the Scheduled tab. The cron worker doesn't read it
+          // for blog_publish rows (it just PATCHes the WP post).
+          body_text: `Publish: ${(genJson as { title?: string }).title || 'blog post'}`.slice(0, 500),
+          status: 'pending',
+        })
+        .select('id')
+        .single()
+      if (parentErr || !parentRow) {
+        return NextResponse.json(
+          { error: `Schedule write failed: ${parentErr?.message || 'unknown'}` },
+          { status: 500 },
+        )
+      }
+      parentScheduleId = parentRow.id
+    }
+
+    // ─── 3. Insert child social rows ───────────────────────────────────────
+    // One row per chosen platform at scheduledFor + offset. For Pro
+    // multi-account users we accept a specific socialAccountId; otherwise
+    // it stays null and the cron falls back to the user's default
+    // integrations credentials.
+    const childRows: Array<{
+      user_id: string
+      blog_post_id: string
+      platform: SchedulableSocial
+      scheduled_at: string
+      body_text: string
+      status: 'pending'
+      kind: 'social'
+      parent_id: string | null
+      social_account_id: string | null
+    }> = []
+    const baseMs = new Date(scheduledFor).getTime()
+    for (const s of socials) {
+      const offsetMin = typeof s.offsetMinutes === 'number'
+        ? s.offsetMinutes
+        : DEFAULT_SOCIAL_OFFSETS_MIN[s.platform]
+      const fireAt = new Date(baseMs + offsetMin * 60_000).toISOString()
+
+      // Validate the chosen account-id (Pro only). Anything bogus -> null.
+      let resolvedAccountId: string | null = null
+      if (s.socialAccountId && ['pro', 'admin'].includes(normalizeTier(tier))) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: acct } = await supabase
+          .from('social_accounts')
+          .select('id')
+          .eq('id', s.socialAccountId)
+          .eq('user_id', user.id)
+          .eq('platform', s.platform)
+          .maybeSingle()
+        if (acct?.id) resolvedAccountId = acct.id
+      }
+
+      childRows.push({
+        user_id: user.id,
+        blog_post_id: blogPostId,
+        platform: s.platform,
+        scheduled_at: fireAt,
+        body_text: s.bodyText.trim(),
+        status: 'pending',
+        kind: 'social',
+        parent_id: parentScheduleId,
+        social_account_id: resolvedAccountId,
+      })
+    }
+
+    let childScheduleIds: string[] = []
+    if (childRows.length > 0) {
+      // Same `as any` rationale as the parent insert above — supabase
+      // types pre-date migration 103. Drop after `gen types` runs.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: insertedChildren, error: childErr } = await (supabase as any)
+        .from('scheduled_posts')
+        .insert(childRows)
+        .select('id')
+      if (childErr) {
+        // Don't surface a partial-success — the blog was already
+        // generated. Log and return the parent so the UI can show
+        // "Scheduled (socials failed to queue)".
+        console.error('[schedule-publish] child insert failed', childErr.message)
+        return NextResponse.json({
+          ok: true,
+          postId: blogPostId,
+          wordpressPostId: wpPostId,
+          wordpressUrl: wpUrl,
+          parentScheduleId,
+          childScheduleIds: [],
+          warning: `Blog publish scheduled, but social pushes failed to queue: ${childErr.message}`,
+        })
+      }
+      childScheduleIds = ((insertedChildren ?? []) as Array<{ id: string }>).map(r => r.id)
+    }
+
+    return NextResponse.json({
+      ok: true,
+      postId: blogPostId,
+      wordpressPostId: wpPostId,
+      wordpressUrl: wpUrl,
+      parentScheduleId,
+      childScheduleIds,
+    })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+}
