@@ -621,8 +621,15 @@ function GenerateButton({
         return
       }
       const count = typeof j.count === 'number' ? j.count : 0
+      const similarPairs = typeof j.similarPairsCount === 'number' ? j.similarPairsCount : 0
       setResult((prev) => prev ? { ...prev, bodyImagesCount: count } : prev)
-      toast.success(count > 0 ? `Added ${count} image${count === 1 ? '' : 's'}` : 'Refreshed — but 0 images landed (check WP media upload).')
+      if (count > 0 && similarPairs > 0) {
+        toast.warning(`Added ${count} image${count === 1 ? '' : 's'}, but ${similarPairs} pair${similarPairs === 1 ? '' : 's'} look similar — consider Re-rolling`, { duration: 7000 })
+      } else if (count > 0) {
+        toast.success(`Added ${count} image${count === 1 ? '' : 's'}`)
+      } else {
+        toast.error('Refreshed — but 0 images landed (check WP media upload).')
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Image step failed')
     } finally {

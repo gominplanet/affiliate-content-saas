@@ -1161,6 +1161,93 @@ ${content}`,
    * failure or suspicious result returns the original title unchanged.
    */
   /**
+   * Visual variety check (2026-06-07). After we render N body images
+   * for a post, this walks the SET and asks Haiku-Vision: "are any two
+   * of these images thumbnail-confusable?" Returns a list of similar
+   * pairs (image indices that should be regenerated).
+   *
+   * Cheap — single multimodal Haiku call with all N images inline.
+   * Output is a small JSON {similar_pairs: [[i,j], ...]} — empty means
+   * the set passes. Best-effort: any failure returns no pairs (assume
+   * pass) so we never block image publishing.
+   *
+   * Why this matters: the in-prompt anti-similarity rules can be
+   * ignored by Fal at generation time even when Haiku's per-image
+   * prompts ARE distinct. This check is the last line of defense
+   * before the user notices on the live page.
+   */
+  async checkImageDistinctness(
+    imageUrls: string[],
+    ctx?: UsageCtx,
+  ): Promise<{ similarPairs: Array<[number, number]> }> {
+    if (imageUrls.length < 2) return { similarPairs: [] }
+    try {
+      // Build a multimodal message with each image as a URL block + a
+      // label so Haiku can reference them by index.
+      const content: Array<
+        | { type: 'text'; text: string }
+        | { type: 'image'; source: { type: 'url'; url: string } }
+      > = []
+      for (let i = 0; i < imageUrls.length; i++) {
+        content.push({ type: 'text', text: `Image ${i + 1}:` })
+        content.push({ type: 'image', source: { type: 'url', url: imageUrls[i] } })
+      }
+      content.push({
+        type: 'text',
+        text: `You are inspecting ${imageUrls.length} body images from a single product-review blog post.
+
+For each PAIR of images, decide: would a reader glancing at thumbnail-size versions of these two images mistake them for the same shot? Two images count as "similar" if they share at least 3 of {subject framing, setting, surface, lighting, angle}. Different products + clearly different scenes pass; subtle prop swaps of the same composition fail.
+
+OUTPUT: a single JSON object on one line, no preamble, no markdown fences:
+{"similar_pairs": [[i, j], ...]}
+
+Where i, j are 1-indexed image numbers. Empty array if every pair is distinct enough. Order pairs lowest-first (e.g. [2,3] not [3,2]).`,
+      })
+      const message = await this.client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        system: 'You verify that a set of blog body images is visually distinct enough to publish.',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        messages: [{ role: 'user', content: content as any }],
+      }, { timeout: 20000 })
+      const raw = message.content
+        .filter(b => b.type === 'text')
+        .map(b => (b as Anthropic.TextBlock).text)
+        .join('')
+        .trim()
+      const u = usageFromAnthropic(message)
+      recordUsage({
+        userId: ctx?.userId,
+        tier: ctx?.tier,
+        feature: 'blog_image_distinctness',
+        model: 'claude-haiku-4-5-20251001',
+        input: u.input,
+        output: u.output,
+      })
+      const jsonStart = raw.indexOf('{')
+      const jsonEnd = raw.lastIndexOf('}')
+      if (jsonStart < 0 || jsonEnd <= jsonStart) return { similarPairs: [] }
+      const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as { similar_pairs?: Array<[number, number]> }
+      const pairs = Array.isArray(parsed.similar_pairs) ? parsed.similar_pairs : []
+      // Convert 1-indexed → 0-indexed + validate.
+      const out: Array<[number, number]> = []
+      for (const p of pairs) {
+        if (!Array.isArray(p) || p.length !== 2) continue
+        const [i, j] = p
+        if (typeof i !== 'number' || typeof j !== 'number') continue
+        const zi = i - 1
+        const zj = j - 1
+        if (zi >= 0 && zj >= 0 && zi < imageUrls.length && zj < imageUrls.length && zi !== zj) {
+          out.push([Math.min(zi, zj), Math.max(zi, zj)])
+        }
+      }
+      return { similarPairs: out }
+    } catch {
+      return { similarPairs: [] }
+    }
+  }
+
+  /**
    * Title-vs-BODY identity check (added 2026-06-07 after the WagComb
    * incident — title "WagComb Electric Flea Comb Review" with body
    * about "Woyamay 4-in-1 flea & tick chews" slipped past every prior

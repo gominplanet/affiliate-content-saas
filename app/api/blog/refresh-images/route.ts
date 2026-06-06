@@ -298,6 +298,41 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
   if (uploaded.length === 0) return NextResponse.json({ error: 'Image generation failed — try again in a moment.' }, { status: 502 })
 
+  // ── Visual variety check (2026-06-07 P2.3 fix) ──────────────────────
+  // The hard-assigned shot perspectives in lib/blog-image-prompts make
+  // pre-generation prompts mechanically distinct. But Fal CAN still
+  // produce visually similar outputs (close-up vs three-quarter shots
+  // sometimes land too alike). One Haiku-Vision call verifies the set
+  // and logs warnings. We don't auto-regen here (would double the cost
+  // + latency on every refresh) — the user sees `similarPairs` in the
+  // response and the Vercel log line tells admins how often this fires.
+  let similarPairs: Array<[number, number]> = []
+  if (uploaded.length >= 2) {
+    try {
+      const { createClaudeService } = await import('@/services/claude')
+      const claude = createClaudeService()
+      const result = await claude.checkImageDistinctness(
+        uploaded.map(u => u.url),
+        { userId: user.id, tier },
+      )
+      similarPairs = result.similarPairs
+      if (similarPairs.length > 0) {
+        console.warn('[refresh-images] visual variety check found similar pairs', {
+          postId: post.id,
+          uploaded: uploaded.length,
+          pairs: similarPairs,
+        })
+      } else {
+        console.log('[refresh-images] visual variety check passed', {
+          postId: post.id,
+          uploaded: uploaded.length,
+        })
+      }
+    } catch (e) {
+      console.warn('[refresh-images] visual variety check failed (non-fatal)', e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // Spread images through the body. Prefers usable H2 anchors, falls
   // back to paragraph offsets in the 5%-90% body region with a minimum
   // byte-spacing guard so no two images land back-to-back. Returns
@@ -331,7 +366,14 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   try { await supabase.from('blog_posts').update({ content: finalContent, body_images_count: uploaded.length }).eq('id', post.id) } catch { /* non-fatal */ }
 
-  return NextResponse.json({ ok: true, count: uploaded.length })
+  return NextResponse.json({
+    ok: true,
+    count: uploaded.length,
+    placed: offsets.length,
+    // Surfaced for the Library row's "Re-roll images" toast so the user
+    // sees "added 3 images, but 2 look similar — consider re-rolling".
+    similarPairsCount: similarPairs.length,
+  })
 }
 
 // Lazy import to keep the hot path lean; usage logging must never block.
