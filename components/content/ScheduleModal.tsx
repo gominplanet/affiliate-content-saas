@@ -98,6 +98,12 @@ export default function ScheduleModal({
   const [offsetOverrides, setOffsetOverrides] = useState<Partial<Record<SchedulableSocial, number>>>({})
 
   const [submitting, setSubmitting] = useState(false)
+  // Reset the submitting flag whenever the modal opens. Important: the
+  // dynamic-imported modal stays mounted, so local state persists across
+  // open/close cycles. Without this reset, a previous submit's pending
+  // setSubmitting(false) could race with the next open, leaving the
+  // defensive `submitting` guard locked to hidden.
+  useEffect(() => { if (open) setSubmitting(false) }, [open])
 
   const scheduleMode: ScheduleMode = draftFlip ? 'draft-flip' : 'wp-native'
 
@@ -111,7 +117,12 @@ export default function ScheduleModal({
     return { dt, list }
   }, [scheduledFor, selectedChannels])
 
-  if (!open) return null
+  // Defensive close: hide the modal whenever `submitting` flips on, even
+  // if the parent's onClose() prop hasn't fully propagated through React's
+  // cross-component batching yet. Without this, a slow parent re-render
+  // can leave the modal visibly stuck on "Scheduling…" until the fetch
+  // returns 30-60s later — exactly the bug the user reported.
+  if (!open || submitting) return null
 
   /**
    * Submit handler. Closes the modal IMMEDIATELY then runs the schedule
