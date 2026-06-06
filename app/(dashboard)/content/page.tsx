@@ -22,8 +22,18 @@ import {
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload, Search, Calendar,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
-import { TikTokDirectModal } from '@/components/TikTokDirectModal'
-import { InstagramDirectModal } from '@/components/InstagramDirectModal'
+// Audit perf fix 2026-06-06: lazy-load the vertical-direct modals just
+// like the other rarely-opened modals. They include ShortVideoUpload
+// (tus client, file upload) and bring ~30-50KB into the initial bundle
+// for every Library user even when no one clicks a vertical row.
+const TikTokDirectModal = dynamic(
+  () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
+  { ssr: false },
+)
+const InstagramDirectModal = dynamic(
+  () => import('@/components/InstagramDirectModal').then(m => ({ default: m.InstagramDirectModal })),
+  { ssr: false },
+)
 // Interaction-gated modals are code-split (next/dynamic, client-only) so they
 // stay out of the heavy content-page initial bundle and only load when opened.
 const PinterestPreviewModal = dynamic(
@@ -4068,7 +4078,15 @@ export default function ContentPage() {
                   : <div className="w-full h-full" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-snug" dangerouslySetInnerHTML={{ __html: post.title }} />
+                {/* SECURITY: render WP title as TEXT, not HTML. The WP REST
+                    `title.rendered` field is raw HTML that came from another
+                    WordPress install (Editor role, plugin, or compromised
+                    site) — `dangerouslySetInnerHTML` here was a stored XSS
+                    in the MVP origin. We decode HTML entities (so &amp; →
+                    &) but never execute markup. Fixed 2026-06-06 audit. */}
+                <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] line-clamp-2 leading-snug">
+                  {(post.title || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#8217;/g, "'").replace(/&#8211;/g, '–').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#039;/g, "'")}
+                </p>
                 <div className="flex items-center gap-2 mt-1">
                   {(() => {
                     let slug = ''

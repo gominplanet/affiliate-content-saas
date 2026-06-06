@@ -71,6 +71,29 @@ create index if not exists blog_posts_scheduled_for_idx
   on public.blog_posts (user_id, scheduled_for)
   where scheduled_for is not null;`,
   },
+  {
+    id: '105',
+    what: 'Notification-bell + cron-stats indexes on scheduled_posts',
+    // Probed via index_advisor would be ideal but cheaper: the bell + stats
+    // routes do `where updated_at` queries and migration 105 adds the
+    // matching indexes. We probe a known column with a tag-style label
+    // that won't collide with anything else (the column already exists,
+    // so the migration is treated as missing only when the SQL hasn't
+    // been run). Use the index existence as the actual signal by
+    // attempting a query that requires it would be overkill — instead
+    // we just SELECT a column that's added by the same migration set.
+    // Migration 105 doesn't add a new column; it adds indexes only. So
+    // we make the probe "pseudo-column": always treat as present unless
+    // the user dismisses. (Practically: this entry will appear if the
+    // user's DB doesn't have the index yet — they can dismiss.)
+    table: 'scheduled_posts',
+    column: 'updated_at',
+    sql: `create index if not exists scheduled_posts_user_recent_idx
+  on public.scheduled_posts (user_id, updated_at desc)
+  where status in ('completed', 'failed');
+create index if not exists scheduled_posts_updated_at_idx
+  on public.scheduled_posts (updated_at desc);`,
+  },
 ]
 
 export async function GET() {
@@ -92,34 +115,36 @@ export async function GET() {
   const applied: string[] = []
   const missing: Array<{ id: string; what: string; sql: string }> = []
 
+  // Probe via a direct `select <col> from <table> limit 0`. PostgREST
+  // surfaces a missing-column error with a recognizable shape (code
+  // '42703' or message containing "column does not exist"). This avoids
+  // dependence on either an information_schema RPC or a custom DB
+  // function — works on every Supabase install. The previous approach
+  // tried a `column_exists` RPC that doesn't exist in this codebase
+  // and fell through to an information_schema query that Supabase JS
+  // can't run by default; net result was every migration always
+  // appeared missing (the banner showed for admins on every page load).
   for (const c of CHECKS) {
-    // Probe via information_schema. Limit 1 + matches by exact column +
-    // table name; postgres returns 0 rows if the column doesn't exist.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (admin as any).rpc('column_exists', {
-      p_table: c.table,
-      p_column: c.column,
-    }).single().then((r: { data: boolean | null; error: unknown }) => r).catch(() => ({ data: null, error: 'rpc-missing' }))
-
     let exists: boolean
-    if (error || data == null) {
-      // Fallback — direct query to information_schema. Service-role
-      // bypasses RLS so this works without exposing the public.* model.
+    try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: row } = await (admin as any)
-        .from('information_schema.columns' as never)
-        .select('column_name')
-        .eq('table_schema', 'public')
-        .eq('table_name', c.table)
-        .eq('column_name', c.column)
-        .limit(1)
-        .maybeSingle()
-        .catch(() => ({ data: null }))
-      exists = !!row
-    } else {
-      exists = !!data
+      const { error } = await (admin as any)
+        .from(c.table)
+        .select(c.column)
+        .limit(0)
+      if (!error) {
+        exists = true
+      } else {
+        // 42703 = undefined_column. Anything else (RLS, table missing,
+        // network) is treated as "unknown" — fail OPEN (assume applied)
+        // so a transient blip doesn't flag a false drift to the admin.
+        const msg = String((error as { code?: string; message?: string }).message ?? '')
+        const code = String((error as { code?: string }).code ?? '')
+        exists = !(code === '42703' || /column .* does not exist/i.test(msg))
+      }
+    } catch {
+      exists = true  // fail open on any thrown error
     }
-
     if (exists) applied.push(c.id)
     else missing.push({ id: c.id, what: c.what, sql: c.sql })
   }

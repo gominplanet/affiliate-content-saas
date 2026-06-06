@@ -97,6 +97,19 @@ export async function GET(request: Request) {
   const admin = createAdminClient()
   const nowIso = new Date().toISOString()
 
+  // 0. Stuck-claim recovery (audit 2026-06-06). Rows stuck in 'processing'
+  // for >5 min were claimed by a tick that crashed mid-publish — they
+  // block their slot forever unless an admin manually retries. Flip them
+  // back to 'pending' so the current tick can pick them up. The 5-min
+  // threshold matches /admin/cron's "stuck" definition for consistency.
+  const fiveMinAgo = new Date(Date.now() - 5 * 60_000).toISOString()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (admin as any)
+    .from('scheduled_posts')
+    .update({ status: 'pending', updated_at: nowIso })
+    .eq('status', 'processing')
+    .lt('claimed_at', fiveMinAgo)
+
   // 1. Atomic claim — flip due+pending rows to 'processing' in one update.
   // Schema-agnostic: we DON'T select `kind` here because that column was
   // added in migration 103 and the cron must keep running on databases
@@ -157,7 +170,20 @@ export async function GET(request: Request) {
         .eq('id', row.id)
       return { id: row.id, ok: true, externalId: result.externalId }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const rawMsg = err instanceof Error ? err.message : String(err)
+      // Scrub sensitive substrings before persisting to DB. Provider
+      // error bodies (LinkedIn, Twitter, etc.) routinely echo Bearer
+      // tokens, basic-auth headers, and access_token= params back in
+      // their response payloads. We persist a sanitized version so the
+      // admin dashboard + notification bell don't leak secrets across
+      // tenants. Audit fix 2026-06-06.
+      const msg = rawMsg
+        .replace(/Bearer\s+[A-Za-z0-9._\-]+/gi, 'Bearer [REDACTED]')
+        .replace(/Basic\s+[A-Za-z0-9+/=]+/gi, 'Basic [REDACTED]')
+        .replace(/access_token=[^&\s"]+/gi, 'access_token=[REDACTED]')
+        .replace(/refresh_token=[^&\s"]+/gi, 'refresh_token=[REDACTED]')
+        .replace(/"access_token"\s*:\s*"[^"]+"/gi, '"access_token":"[REDACTED]"')
+        .replace(/"refresh_token"\s*:\s*"[^"]+"/gi, '"refresh_token":"[REDACTED]"')
       console.error('[cron/process-scheduled] publish failed', { id: row.id, platform: row.platform, error: msg })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await admin

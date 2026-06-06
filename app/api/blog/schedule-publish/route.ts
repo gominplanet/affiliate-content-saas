@@ -127,10 +127,14 @@ export async function POST(request: Request) {
 
     // ─── 1. Invoke /api/blog/generate to produce the post ─────────────────
     // We forward the request cookies so the inner route sees the same
-    // authenticated user. Next.js absolute URLs require a host header —
-    // pull it off the incoming request.
-    const url = new URL(request.url)
-    const generateUrl = `${url.protocol}//${url.host}/api/blog/generate`
+    // authenticated user. Audit fix 2026-06-06: build the URL from the
+    // env-configured app origin (NEXT_PUBLIC_APP_URL) when available so
+    // a spoofed Host: header from a misconfigured front-end can't pivot
+    // the internal fetch. Falls back to the request URL host in dev.
+    const fallbackUrl = new URL(request.url)
+    const trustedOrigin = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '') ||
+      `${fallbackUrl.protocol}//${fallbackUrl.host}`
+    const generateUrl = `${trustedOrigin}/api/blog/generate`
     const cookieHeader = request.headers.get('cookie') ?? ''
     const genRes = await fetch(generateUrl, {
       method: 'POST',
@@ -221,6 +225,18 @@ export async function POST(request: Request) {
             const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token ?? undefined)
             await wp.updatePost(wpPostId, { status: 'future', date: new Date(scheduledFor).toISOString() })
             draftFlipDegradedToWpNative = true
+            // Audit fix 2026-06-06: update blog_posts.schedule_mode to
+            // reflect what actually happened. We TOLD the generate route
+            // 'draft-flip' but the live state is wp-native — without
+            // this update, the Library badge + cancel-schedule path
+            // would behave inconsistently with what WP is doing.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any)
+              .from('blog_posts')
+              .update({ schedule_mode: 'wp-native' })
+              .eq('id', blogPostId)
+              .eq('user_id', user.id)
+              .catch(() => { /* non-fatal */ })
           }
         } catch (degradeErr) {
           console.error('[schedule-publish] degrade-to-wp-native failed:', degradeErr instanceof Error ? degradeErr.message : String(degradeErr))
@@ -255,6 +271,27 @@ export async function POST(request: Request) {
       parent_id: string | null
       social_account_id: string | null
     }> = []
+    // Audit perf fix 2026-06-06: batch the social_account_id lookups
+    // instead of one-await-per-platform (was a 500-900ms N+1 for a Pro
+    // user picking accounts on 6 channels).
+    const accountIdsRequested = socials
+      .map(s => s.socialAccountId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    const allowedAccountIds = new Set<string>()
+    if (accountIdsRequested.length > 0 && ['pro', 'admin'].includes(normalizeTier(tier))) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: accts } = await supabase
+        .from('social_accounts')
+        .select('id,platform')
+        .in('id', accountIdsRequested)
+        .eq('user_id', user.id)
+      for (const a of (accts ?? []) as Array<{ id: string; platform: string }>) {
+        // Composite key id|platform so we don't accept a Twitter id for a
+        // LinkedIn slot.
+        allowedAccountIds.add(`${a.id}|${a.platform}`)
+      }
+    }
+
     const baseMs = new Date(scheduledFor).getTime()
     for (const s of socials) {
       const offsetMin = typeof s.offsetMinutes === 'number'
@@ -262,18 +299,10 @@ export async function POST(request: Request) {
         : DEFAULT_SOCIAL_OFFSETS_MIN[s.platform]
       const fireAt = new Date(baseMs + offsetMin * 60_000).toISOString()
 
-      // Validate the chosen account-id (Pro only). Anything bogus -> null.
+      // Use the pre-batched account allowlist.
       let resolvedAccountId: string | null = null
-      if (s.socialAccountId && ['pro', 'admin'].includes(normalizeTier(tier))) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: acct } = await supabase
-          .from('social_accounts')
-          .select('id')
-          .eq('id', s.socialAccountId)
-          .eq('user_id', user.id)
-          .eq('platform', s.platform)
-          .maybeSingle()
-        if (acct?.id) resolvedAccountId = acct.id
+      if (s.socialAccountId && allowedAccountIds.has(`${s.socialAccountId}|${s.platform}`)) {
+        resolvedAccountId = s.socialAccountId
       }
 
       childRows.push({

@@ -96,6 +96,23 @@ export async function POST(request: Request) {
       }
     }
 
+    // Batched social_account_id lookup (audit perf fix 2026-06-06).
+    const accountIdsRequested = socials
+      .map(s => s.socialAccountId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    const allowedAccountIds = new Set<string>()
+    if (accountIdsRequested.length > 0 && ['pro', 'admin'].includes(normalizeTier(tier))) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: accts } = await supabase
+        .from('social_accounts')
+        .select('id,platform')
+        .in('id', accountIdsRequested)
+        .eq('user_id', user.id)
+      for (const a of (accts ?? []) as Array<{ id: string; platform: string }>) {
+        allowedAccountIds.add(`${a.id}|${a.platform}`)
+      }
+    }
+
     const baseMs = new Date(scheduledFor).getTime()
     const childRows = []
     for (const s of socials) {
@@ -104,16 +121,8 @@ export async function POST(request: Request) {
         : DEFAULT_SOCIAL_OFFSETS_MIN[s.platform]
       const fireAt = new Date(baseMs + offsetMin * 60_000).toISOString()
       let resolvedAccountId: string | null = null
-      if (s.socialAccountId && ['pro', 'admin'].includes(normalizeTier(tier))) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: acct } = await supabase
-          .from('social_accounts')
-          .select('id')
-          .eq('id', s.socialAccountId)
-          .eq('user_id', user.id)
-          .eq('platform', s.platform)
-          .maybeSingle()
-        if (acct?.id) resolvedAccountId = acct.id
+      if (s.socialAccountId && allowedAccountIds.has(`${s.socialAccountId}|${s.platform}`)) {
+        resolvedAccountId = s.socialAccountId
       }
       childRows.push({
         user_id: user.id,
