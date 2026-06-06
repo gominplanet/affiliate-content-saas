@@ -96,6 +96,72 @@ interface ReadinessCheck {
   videosReady: boolean
 }
 
+/**
+ * Small paginator used by the Posts tab to chunk the Recent + Older
+ * lists into 20-card pages. Renders Prev / Next + a compact page-number
+ * strip that elides the middle when there are many pages — "1 · 2 3 4 5
+ * · 12" — so the bar stays one row even on small libraries that have
+ * grown past ~10 pages.
+ *
+ * Pure UI — no data fetching. The parent owns page state.
+ * 2026-06-07.
+ */
+function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
+  if (totalPages <= 1) return null
+  // Build the list of page numbers to actually render. Always show
+  // first + last; show 2 neighbors around the current page; insert
+  // "…" gaps where we skip.
+  const visible: Array<number | 'gap'> = []
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= page - 2 && i <= page + 2)) {
+      visible.push(i)
+    } else if (visible[visible.length - 1] !== 'gap') {
+      visible.push('gap')
+    }
+  }
+  const btn = 'min-w-[28px] h-7 px-2 rounded-md text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+  return (
+    <div className="flex items-center justify-center gap-1 py-2 mt-1 select-none">
+      <button
+        type="button"
+        onClick={() => onChange(page - 1)}
+        disabled={page <= 1}
+        aria-label="Previous page"
+        className={`${btn} border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 hover:text-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7]`}
+      >
+        ← Prev
+      </button>
+      {visible.map((p, i) =>
+        p === 'gap' ? (
+          <span key={`gap-${i}`} className="px-1 text-xs text-[#86868b]">…</span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange(p)}
+            aria-current={p === page ? 'page' : undefined}
+            className={`${btn} ${p === page
+              ? 'bg-[#7C3AED] text-white border border-[#7C3AED]'
+              : 'border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 hover:text-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7]'
+            }`}
+          >
+            {p}
+          </button>
+        ),
+      )}
+      <button
+        type="button"
+        onClick={() => onChange(page + 1)}
+        disabled={page >= totalPages}
+        aria-label="Next page"
+        className={`${btn} border border-gray-200 dark:border-white/10 hover:border-[#7C3AED]/40 hover:text-[#7C3AED] text-[#1d1d1f] dark:text-[#f5f5f7]`}
+      >
+        Next →
+      </button>
+    </div>
+  )
+}
+
 function SetupGate({ checks }: { checks: ReadinessCheck }) {
   return (
     <div className="max-w-lg">
@@ -2893,6 +2959,14 @@ export default function ContentPage() {
   const [selectedPostIds, setSelectedPostIds] = useState<Set<number>>(new Set())
   // Search box for the Posts tab — filters the published list by title.
   const [postSearch, setPostSearch] = useState('')
+  // Pagination — Posts tab. Render-only optimization: the full set still
+  // loads, we just slice what hits the DOM. Before this, 127 VideoCards
+  // mounted on every Posts-tab visit (4000+ DOM nodes once you count
+  // their buttons + dropdowns + social pills) and the tab took ~1.5s
+  // to become interactive. 2026-06-07.
+  const [recentPage, setRecentPage] = useState(1)
+  const [olderPage, setOlderPage] = useState(1)
+  const POSTS_PER_PAGE = 20
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkRewriting, setBulkRewriting] = useState(false)
   const [bulkRewriteProgress, setBulkRewriteProgress] = useState<{ done: number; total: number } | null>(null)
@@ -2922,6 +2996,14 @@ export default function ContentPage() {
   const [showHidden, setShowHidden] = useState(false)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
+
+  // Reset pagination when the Posts-tab search changes — otherwise the
+  // user can be sitting on page 4 of "all posts", type a query that
+  // returns 8 matches, and see an empty page.
+  useEffect(() => {
+    setRecentPage(1)
+    setOlderPage(1)
+  }, [postSearch])
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -4124,15 +4206,28 @@ export default function ContentPage() {
               )
             }
             if (recent.length === 0) return null
+            // Paginate the Recent list so we don't dump 100+ VideoCards
+            // into the DOM on first render. Slice in-place; search +
+            // selection still operate on the full set above.
+            const recentTotalPages = Math.max(1, Math.ceil(recent.length / POSTS_PER_PAGE))
+            const safeRecentPage = Math.min(recentPage, recentTotalPages)
+            const recentStart = (safeRecentPage - 1) * POSTS_PER_PAGE
+            const recentEnd = Math.min(recentStart + POSTS_PER_PAGE, recent.length)
+            const recentSliced = recent.slice(recentStart, recentEnd)
             return (
               <div className="flex flex-col gap-3 mb-3">
                 <div className="flex items-baseline justify-between">
                   <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
                     Recent ({recent.length}{postQuery && recent.length !== recentAll.length ? ` of ${recentAll.length}` : ''})
+                    {recentTotalPages > 1 && (
+                      <span className="ml-2 text-[11px] font-normal text-[#86868b] dark:text-[#8e8e93]">
+                        showing {recentStart + 1}–{recentEnd}
+                      </span>
+                    )}
                   </h3>
                   <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Posts with a source video — push, schedule, refresh, edit</p>
                 </div>
-                {recent.map((video) => (
+                {recentSliced.map((video) => (
                   <VideoCard
                     key={video.id as string}
                     video={video}
@@ -4169,6 +4264,19 @@ export default function ContentPage() {
                     onPinPreview={setPinPreview}
                   />
                 ))}
+                {recentTotalPages > 1 && (
+                  <Pagination
+                    page={safeRecentPage}
+                    totalPages={recentTotalPages}
+                    onChange={(p) => {
+                      setRecentPage(p)
+                      // Scroll to top of section on page change so the
+                      // user lands on the new rows, not at the previous
+                      // scroll offset (which is usually deep in the list).
+                      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                  />
+                )}
                 <div className="border-t border-[#e5e5ea] dark:border-white/10 mt-1" />
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
                   Older posts archive ({allBlogPosts.length} total — includes ones with no matching YouTube video)
@@ -4191,7 +4299,21 @@ export default function ContentPage() {
               <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">No posts match &ldquo;{postSearch}&rdquo;</p>
               <button onClick={() => setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">Clear search</button>
             </div>
-          ) : filteredPosts.map(post => (
+          ) : (() => {
+            // Paginate the Older archive too — same logic as Recent.
+            const olderTotalPages = Math.max(1, Math.ceil(filteredPosts.length / POSTS_PER_PAGE))
+            const safeOlderPage = Math.min(olderPage, olderTotalPages)
+            const olderStart = (safeOlderPage - 1) * POSTS_PER_PAGE
+            const olderEnd = Math.min(olderStart + POSTS_PER_PAGE, filteredPosts.length)
+            const olderSliced = filteredPosts.slice(olderStart, olderEnd)
+            return (
+              <>
+                {olderTotalPages > 1 && (
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 mb-1">
+                    Showing {olderStart + 1}–{olderEnd} of {filteredPosts.length}
+                  </p>
+                )}
+                {olderSliced.map(post => (
             <div key={post.id} className={`card p-4 flex items-center gap-3 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#7C3AED]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
               <input
                 type="checkbox"
@@ -4281,7 +4403,20 @@ export default function ContentPage() {
                 </button>
               </div>
             </div>
-          ))}
+                ))}
+                {olderTotalPages > 1 && (
+                  <Pagination
+                    page={safeOlderPage}
+                    totalPages={olderTotalPages}
+                    onChange={(p) => {
+                      setOlderPage(p)
+                      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+                    }}
+                  />
+                )}
+              </>
+            )
+          })()}
         </div>
       ) : !allReady ? (
         <SetupGate checks={checks!} />
