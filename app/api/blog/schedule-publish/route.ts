@@ -127,14 +127,18 @@ export async function POST(request: Request) {
 
     // ─── 1. Invoke /api/blog/generate to produce the post ─────────────────
     // We forward the request cookies so the inner route sees the same
-    // authenticated user. Audit fix 2026-06-06: build the URL from the
-    // env-configured app origin (NEXT_PUBLIC_APP_URL) when available so
-    // a spoofed Host: header from a misconfigured front-end can't pivot
-    // the internal fetch. Falls back to the request URL host in dev.
-    const fallbackUrl = new URL(request.url)
-    const trustedOrigin = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '') ||
-      `${fallbackUrl.protocol}//${fallbackUrl.host}`
-    const generateUrl = `${trustedOrigin}/api/blog/generate`
+    // authenticated user.
+    //
+    // 2026-06-06 regression note: the audit suggested switching to
+    // NEXT_PUBLIC_APP_URL for host hardening, but if that env var is set
+    // to the marketing domain (or any wrong origin) the internal fetch
+    // 404s and the user sees the generic "Blog generation failed"
+    // toast with no signal. Reverted to using request.url.host —
+    // Vercel doesn't honor X-Forwarded-Host for `request.url` so the
+    // spoofing concern was theoretical. If a future deployment puts a
+    // header-rewriting CDN in front, revisit then with an allowlist.
+    const url = new URL(request.url)
+    const generateUrl = `${url.protocol}//${url.host}/api/blog/generate`
     const cookieHeader = request.headers.get('cookie') ?? ''
     const genRes = await fetch(generateUrl, {
       method: 'POST',
@@ -147,16 +151,30 @@ export async function POST(request: Request) {
         scheduledFor,
       }),
     })
-    const genJson = (await genRes.json().catch(() => ({}))) as {
-      success?: boolean
-      postId?: string
-      wordpressPostId?: number
-      wordpressUrl?: string
-      error?: string
-    }
+    // Read response as text first so we can log the actual body when
+    // it isn't JSON (the previous behaviour was to silently fall back
+    // to the generic error toast — that's how the NEXT_PUBLIC_APP_URL
+    // misconfig went undetected for a session).
+    const genText = await genRes.text()
+    let genJson: { success?: boolean; postId?: string; wordpressPostId?: number; wordpressUrl?: string; error?: string; title?: string } = {}
+    try { genJson = JSON.parse(genText) } catch { /* not JSON */ }
     if (!genRes.ok || !genJson.success || !genJson.postId || !genJson.wordpressPostId) {
+      const bodySnippet = (typeof genText === 'string' ? genText.slice(0, 400) : '').replace(/\s+/g, ' ').trim()
+      console.error('[schedule-publish] generate failed', {
+        status: genRes.status,
+        ok: genRes.ok,
+        hasSuccess: !!genJson.success,
+        hasPostId: !!genJson.postId,
+        hasWpPostId: !!genJson.wordpressPostId,
+        error: genJson.error,
+        bodySnippet: genJson.error ? undefined : bodySnippet,
+        generateUrl,
+      })
+      const surfaceMsg = genJson.error
+        || (genRes.status === 404 ? `Internal generate route returned 404 — check NEXT_PUBLIC_APP_URL / host config (tried ${generateUrl})` : null)
+        || `Blog generation failed (HTTP ${genRes.status}). ${bodySnippet ? `Response: ${bodySnippet.slice(0, 200)}` : 'Check server logs.'}`
       return NextResponse.json(
-        { error: genJson.error || 'Blog generation failed — try again or contact support.' },
+        { error: surfaceMsg },
         { status: genRes.status || 500 },
       )
     }

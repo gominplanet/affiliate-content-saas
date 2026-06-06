@@ -1110,22 +1110,72 @@ async function handleGenerate(request: Request) {
   // supabase-generated types haven't been regenerated yet, so an `as any`
   // cast on the table reference bypasses the strict shape check. Drop the
   // cast after `npx supabase gen types` runs.
+  //
+  // Defensive retry 2026-06-07: if the DB doesn't have migration 104 yet,
+  // the insert fails with "column does not exist" on scheduled_for /
+  // schedule_mode. Retry once without those keys so the schedule still
+  // works (the post gets generated, the Library badge just won't appear
+  // until the migration is run + page reloads).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const stripScheduleKeys = (p: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { scheduled_for, schedule_mode, ...rest } = p
+    return rest
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const isMissingColumn104 = (err: any) =>
+    err && typeof err.message === 'string' && /column .* (scheduled_for|schedule_mode).* does not exist/i.test(err.message)
   if (ep?.id) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    let { data, error: upErr } = await (supabase as any)
       .from('blog_posts')
       .update(blogPayload)
       .eq('id', ep.id)
       .select()
       .single()
+    if (upErr && isMissingColumn104(upErr)) {
+      console.warn('[blog-generate] migration 104 not applied, retrying update without scheduled_for/schedule_mode')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const retry = await (supabase as any)
+        .from('blog_posts')
+        .update(stripScheduleKeys(blogPayload))
+        .eq('id', ep.id)
+        .select()
+        .single()
+      data = retry.data
+      upErr = retry.error
+    }
+    if (upErr) {
+      console.error('[blog-generate] blog_posts update failed', upErr.message)
+      await logFailure(supabase, user.id, videoId, 'blog_generation', `blog_posts update: ${upErr.message}`)
+      return NextResponse.json({ error: `Failed to save post record: ${upErr.message}` }, { status: 500 })
+    }
     savedPost = data
   } else {
+    // Insert with the same defensive retry as the update branch above —
+    // gracefully degrade if migration 104 isn't applied yet.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    let { data, error: insErr } = await (supabase as any)
       .from('blog_posts')
       .insert(blogPayload)
       .select()
       .single()
+    if (insErr && isMissingColumn104(insErr)) {
+      console.warn('[blog-generate] migration 104 not applied, retrying insert without scheduled_for/schedule_mode')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const retry = await (supabase as any)
+        .from('blog_posts')
+        .insert(stripScheduleKeys(blogPayload))
+        .select()
+        .single()
+      data = retry.data
+      insErr = retry.error
+    }
+    if (insErr) {
+      console.error('[blog-generate] blog_posts insert failed', insErr.message)
+      await logFailure(supabase, user.id, videoId, 'blog_generation', `blog_posts insert: ${insErr.message}`)
+      return NextResponse.json({ error: `Failed to save post record: ${insErr.message}` }, { status: 500 })
+    }
     savedPost = data
   }
 
