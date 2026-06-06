@@ -38,6 +38,13 @@ const BulkScheduleModal = dynamic(
   () => import('@/components/content/BulkScheduleModal').then(m => ({ default: m.BulkScheduleModal })),
   { ssr: false },
 )
+// Bulk-schedule the GENERATION + cascade for N ungenerated videos — the
+// content-calendar use case. Different from BulkScheduleModal (which
+// queues social pushes for already-live posts).
+const BulkScheduleVideosModal = dynamic(
+  () => import('@/components/content/BulkScheduleVideosModal'),
+  { ssr: false },
+)
 // ScheduleModal — single-row schedule (blog publish + social cascade).
 // Lazy-loaded for the same reason as the other modals: keep the heavy
 // content page initial JS lean.
@@ -2831,13 +2838,18 @@ export default function ContentPage() {
   const [backfilling, setBackfilling] = useState(false)
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set())
   const [bulkGenerating, setBulkGenerating] = useState(false)
+  // Bulk Schedule Videos — generate + schedule for un-generated videos
+  // (content calendar use case). Different from `bulkScheduleOpen` below
+  // which schedules SOCIAL pushes for already-live posts.
+  const [bulkScheduleVideosOpen, setBulkScheduleVideosOpen] = useState(false)
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<{ done: number; total: number } | null>(null)
   // Bulk Set Category — inline picker shown when the user clicks the
   // "Set category" button in the action bar.
   const [bulkCategoryOpen, setBulkCategoryOpen] = useState(false)
   const [bulkCategoryApplying, setBulkCategoryApplying] = useState(false)
   const [bulkCategoryProgress, setBulkCategoryProgress] = useState<{ done: number; total: number } | null>(null)
-  // Bulk Schedule — modal opens with date picker + platform multi-select
+  // Bulk Schedule — modal opens with date picker + platform multi-select.
+  // (Schedules SOCIAL pushes for the selected ALREADY-LIVE posts.)
   const [bulkScheduleOpen, setBulkScheduleOpen] = useState(false)
   // Library filters/sort (applied to the current videos tab — horizontal or vertical)
   const [videoSort, setVideoSort] = useState<'newest' | 'oldest' | 'views' | 'title'>('newest')
@@ -4275,6 +4287,16 @@ export default function ContentPage() {
                         }
                       </button>
                     )}
+                    {ungenerated.length > 0 && (
+                      <button
+                        onClick={() => setBulkScheduleVideosOpen(true)}
+                        disabled={bulkBusy}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-[#7C3AED]/40 text-[#7C3AED] rounded-lg hover:bg-[#7C3AED]/5 disabled:opacity-60 transition-colors"
+                        title="Schedule generation + social cascade for each selected video at staggered times"
+                      >
+                        <Calendar size={11} /> Bulk schedule {ungenerated.length}
+                      </button>
+                    )}
                     {/* Set Category — works on all selected, generated or not.
                         Inline picker so it stays on-page (no modal needed). */}
                     <div className="relative">
@@ -4526,6 +4548,44 @@ export default function ContentPage() {
 
       {/* Bulk Schedule modal — only the videos that have a published post
           are passed in, because scheduling requires an existing blog_posts.id. */}
+      {/* Bulk schedule UN-GENERATED videos — full generate + cascade per
+          video at staggered times. Content-calendar feature for the
+          backlog. See components/content/BulkScheduleVideosModal.tsx. */}
+      {bulkScheduleVideosOpen && (() => {
+        const eligible = visibleVideos
+          .filter(v => selectedVideoIds.has(v.id as string) && !posts[v.id as string])
+          .map(v => ({ id: v.id as string, title: v.title as string }))
+        const connectedSet = new Set<SchedulableSocial>()
+        if (fbConnected) connectedSet.add('facebook')
+        if (threadsConnected) connectedSet.add('threads')
+        if (twitterConnected) connectedSet.add('twitter')
+        if (linkedInConnected) connectedSet.add('linkedin')
+        if (blueskyConnected) connectedSet.add('bluesky')
+        if (telegramConnected) connectedSet.add('telegram')
+        return (
+          <BulkScheduleVideosModal
+            videos={eligible}
+            connectedChannels={connectedSet}
+            open={bulkScheduleVideosOpen}
+            onClose={() => setBulkScheduleVideosOpen(false)}
+            onDone={({ successCount, videoIds }) => {
+              if (successCount > 0) {
+                // Move successfully scheduled videos out of selection so
+                // the user sees the kanban transition naturally on close.
+                setSelectedVideoIds(prev => {
+                  const next = new Set(prev)
+                  for (const id of videoIds) next.delete(id)
+                  return next
+                })
+                // Refresh the Scheduled tab next time it opens.
+                setScheduledItems(null)
+              }
+              setBulkScheduleVideosOpen(false)
+            }}
+          />
+        )
+      })()}
+
       {bulkScheduleOpen && (() => {
         const eligible = visibleVideos
           .filter(v => selectedVideoIds.has(v.id as string) && posts[v.id as string]?.postId)
