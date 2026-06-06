@@ -11,39 +11,56 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect('/login')
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await supabase
+  const { data: intRow } = await (supabase as any)
     .from('integrations')
-    .select('wordpress_url, tier')
+    .select('wordpress_url, tier, wp_post_count, wp_post_count_updated_at')
     .eq('user_id', user.id)
     .maybeSingle()
 
   const wpSiteUrl = intRow?.wordpress_url || null
   const tier = (intRow?.tier as string | null) || 'trial'
 
-  // Buying Guides feature gate: the round-up format only earns its keep
-  // on a wide catalogue (diverse picks, multiple clusters, viable
-  // "Best for X" splits). Below 500 published posts the output reads
-  // thin, so hide the entry entirely until the user crosses that
-  // threshold on their LIVE blog. Admins always see it for testing.
+  // Buying Guides feature gate (500-post threshold). The round-up
+  // format only earns its keep on a wide catalogue.
   //
-  // Count source: WP REST X-WP-Total header (the truth on the live
-  // blog — many users have posts that predate MVP). Cached 5 min via
-  // Next's fetch cache so we don't hit WP on every dashboard render.
-  // Fail-open as "not unlocked" if the call times out.
+  // Audit perf fix 2026-06-07: read the count from the cached
+  // integrations.wp_post_count column (refreshed nightly by
+  // /api/cron/refresh-wp-post-counts). The previous implementation
+  // hit WordPress on every non-admin dashboard navigation — 300ms-
+  // 2.5s per route change with the layout blocked behind it. Big
+  // win.
+  //
+  // Fallback: if no cached value yet (brand new user, migration 106
+  // not applied, cache >24h stale), do a single live fetch — same
+  // path as before. Fail-open as "not unlocked" on timeout.
   let showBuyingGuides = tier === 'admin'
-  if (!showBuyingGuides && wpSiteUrl) {
-    try {
-      const wpBase = wpSiteUrl.replace(/\/+$/, '')
-      const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=1&_fields=id`, {
-        signal: AbortSignal.timeout(2500),
-        headers: { Accept: 'application/json' },
-        next: { revalidate: 300 },
-      })
-      if (res.ok) {
-        const total = parseInt(res.headers.get('x-wp-total') || '0', 10)
-        showBuyingGuides = total >= 500
-      }
-    } catch { /* timeout / network error — leave gated */ }
+  if (!showBuyingGuides) {
+    const cachedCount = intRow?.wp_post_count as number | null | undefined
+    const cachedAt = intRow?.wp_post_count_updated_at as string | null | undefined
+    const cacheAgeHours = cachedAt
+      ? (Date.now() - new Date(cachedAt).getTime()) / (1000 * 60 * 60)
+      : Infinity
+    if (typeof cachedCount === 'number' && cacheAgeHours < 24) {
+      // Fresh cache — instant decision, no WP fetch.
+      showBuyingGuides = cachedCount >= 500
+    } else if (wpSiteUrl) {
+      // Stale or missing — one-time live fetch as fallback. Same as
+      // the legacy path so users with new accounts / first dashboard
+      // load still get the gate. The cron will populate the cache for
+      // next time.
+      try {
+        const wpBase = wpSiteUrl.replace(/\/+$/, '')
+        const res = await fetch(`${wpBase}/wp-json/wp/v2/posts?per_page=1&_fields=id`, {
+          signal: AbortSignal.timeout(2500),
+          headers: { Accept: 'application/json' },
+          next: { revalidate: 300 },
+        })
+        if (res.ok) {
+          const total = parseInt(res.headers.get('x-wp-total') || '0', 10)
+          showBuyingGuides = total >= 500
+        }
+      } catch { /* timeout / network error — leave gated */ }
+    }
   }
 
   // Deals Hub gate: Studio + Pro + Admin only. Unlike Buying Guides, there's

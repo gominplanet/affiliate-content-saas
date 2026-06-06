@@ -72,6 +72,16 @@ create index if not exists blog_posts_scheduled_for_idx
   where scheduled_for is not null;`,
   },
   {
+    id: '106',
+    what: 'WP post-count cache on integrations',
+    table: 'integrations',
+    column: 'wp_post_count',
+    sql: `alter table public.integrations
+  add column if not exists wp_post_count int;
+alter table public.integrations
+  add column if not exists wp_post_count_updated_at timestamptz;`,
+  },
+  {
     id: '105',
     what: 'Notification-bell + cron-stats indexes on scheduled_posts',
     // Probed via index_advisor would be ideal but cheaper: the bell + stats
