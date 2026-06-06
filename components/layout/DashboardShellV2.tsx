@@ -40,6 +40,7 @@ import {
   Share2, UserSquare, Lightbulb, Globe,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import NotificationBell from './NotificationBell'
 
 interface NavItemDef {
   href: string
@@ -633,24 +634,11 @@ export default function DashboardShellV2({
               </kbd>
             </Link>
 
-            {/* Notification bell. Real notifications wiring comes later;
-                the dot indicates one of: pending guide approvals, deal
-                end imminent, etc. Placeholder for now. */}
-            <button
-              className="relative p-1.5 rounded-lg transition-colors"
-              style={{ color: 'var(--text-soft)' }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
-                e.currentTarget.style.color = 'var(--text)'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent'
-                e.currentTarget.style.color = 'var(--text-soft)'
-              }}
-              title="Notifications"
-            >
-              <Bell size={14} />
-            </button>
+            {/* Notification bell — last 7 days of scheduled-post results
+                (completed / failed). Driven by /api/notifications which
+                queries scheduled_posts updated_at desc. Polling 60s.
+                See components/layout/NotificationBell.tsx. */}
+            <NotificationBell />
           </div>
         </div>
 

@@ -48,7 +48,8 @@ const CHANNEL_OPTIONS: Array<{ key: SchedulableSocial; label: string }> = [
 ]
 
 export interface ScheduleModalProps {
-  /** youtube_videos.id — the source video to generate the post FROM. */
+  /** youtube_videos.id — the source video to generate the post FROM.
+   *  Required in NEW-post mode (existingPostId not set). */
   videoId: string
   /** Video title for the modal header. */
   videoTitle: string
@@ -57,6 +58,12 @@ export interface ScheduleModalProps {
   connectedChannels: ReadonlySet<SchedulableSocial>
   /** Multi-site (Pro): wordpress_sites.id the post should land on. */
   siteId?: string | null
+  /** CASCADE-ONLY MODE — when set, the modal skips generation entirely
+   *  and just queues social pushes for this already-live post. The
+   *  date/time + channel checkboxes work the same; under the hood we
+   *  POST to /api/blog/schedule-cascade-only instead of
+   *  /api/blog/schedule-publish. The "Save as draft" toggle hides. */
+  existingPostId?: string | null
   /** Open/close control. Owned by the parent (the row). */
   open: boolean
   onClose: () => void
@@ -83,8 +90,9 @@ function defaultScheduleIso(): string {
 }
 
 export default function ScheduleModal({
-  videoId, videoTitle, connectedChannels, siteId, open, onClose, onScheduled,
+  videoId, videoTitle, connectedChannels, siteId, existingPostId, open, onClose, onScheduled,
 }: ScheduleModalProps) {
+  const cascadeOnly = !!existingPostId
   const [scheduledFor, setScheduledFor] = useState<string>(() => defaultScheduleIso())
   const [draftFlip, setDraftFlip] = useState(false)
   // Default to all CONNECTED channels selected — every channel the user
@@ -171,10 +179,14 @@ export default function ScheduleModal({
     // Show a persistent loading toast — survives the modal unmount and
     // updates in place when the fetch resolves. The id lets us swap
     // loading → success/error on the SAME toast row so the user sees
-    // continuity rather than a flicker.
-    const toastId = toast.loading(`Writing "${localVideoTitle.slice(0, 40)}${localVideoTitle.length > 40 ? '…' : ''}" & scheduling…`, {
-      duration: Infinity,
-    })
+    // continuity rather than a flicker. Wording differs between cascade-
+    // only (no generation, ~1s) and full schedule (gen + queue, ~30-60s).
+    const toastId = toast.loading(
+      cascadeOnly
+        ? `Scheduling social cascade for "${localVideoTitle.slice(0, 40)}${localVideoTitle.length > 40 ? '…' : ''}"…`
+        : `Writing "${localVideoTitle.slice(0, 40)}${localVideoTitle.length > 40 ? '…' : ''}" & scheduling…`,
+      { duration: Infinity },
+    )
 
     // Close the modal NOW. Submit state is briefly visible during the
     // few-ms gap before close — set it for the disabled-button visual
@@ -184,19 +196,24 @@ export default function ScheduleModal({
 
     // Fire the fetch and detach. Anything below runs regardless of
     // whether the modal is still mounted.
+    const localExistingPostId = existingPostId
     void (async () => {
       try {
-        const res = await fetch('/api/blog/schedule-publish', {
+        const endpoint = cascadeOnly ? '/api/blog/schedule-cascade-only' : '/api/blog/schedule-publish'
+        const payload = cascadeOnly
+          ? { postId: localExistingPostId, scheduledFor: localIso, socials }
+          : {
+              videoId: localVideoId,
+              siteId: localSiteId,
+              scheduleMode: localScheduleMode,
+              scheduledFor: localIso,
+              socials,
+              includeImages: true,
+            }
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            videoId: localVideoId,
-            siteId: localSiteId,
-            scheduleMode: localScheduleMode,
-            scheduledFor: localIso,
-            socials,
-            includeImages: true,
-          }),
+          body: JSON.stringify(payload),
         })
         const json = (await res.json().catch(() => ({}))) as {
           ok?: boolean
@@ -248,7 +265,9 @@ export default function ScheduleModal({
         <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))' }}>
           <div className="flex items-center gap-2">
             <Calendar size={18} className="text-[#7C3AED]" />
-            <h2 id="schedule-modal-title" className="text-lg font-semibold">Schedule post</h2>
+            <h2 id="schedule-modal-title" className="text-lg font-semibold">
+              {cascadeOnly ? 'Schedule social cascade' : 'Schedule post'}
+            </h2>
           </div>
           <button onClick={onClose} className="opacity-60 hover:opacity-100 transition-opacity" aria-label="Close">
             <X size={18} />
@@ -282,23 +301,33 @@ export default function ScheduleModal({
             </p>
           </div>
 
-          {/* Draft-flip toggle */}
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={draftFlip}
-              onChange={(e) => setDraftFlip(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded accent-[#7C3AED]"
-            />
-            <div>
-              <p className="text-sm font-medium">Save as draft until then so I can edit before it goes live</p>
-              <p className="text-[12px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>
-                {draftFlip
-                  ? 'WordPress holds the post as a draft. MVP flips it to publish at the chosen time.'
-                  : 'WordPress holds the post as scheduled (status=future) and publishes it natively at the chosen time. Most reliable.'}
-              </p>
+          {/* Draft-flip toggle — only relevant for fresh-post mode. In
+              cascade-only mode the post is ALREADY live, so there's
+              nothing to delay; only the social cascade is queued. */}
+          {!cascadeOnly && (
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={draftFlip}
+                onChange={(e) => setDraftFlip(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded accent-[#7C3AED]"
+              />
+              <div>
+                <p className="text-sm font-medium">Save as draft until then so I can edit before it goes live</p>
+                <p className="text-[12px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>
+                  {draftFlip
+                    ? 'WordPress holds the post as a draft. MVP flips it to publish at the chosen time.'
+                    : 'WordPress holds the post as scheduled (status=future) and publishes it natively at the chosen time. Most reliable.'}
+                </p>
+              </div>
+            </label>
+          )}
+          {cascadeOnly && (
+            <div className="rounded-lg border border-[#7C3AED]/30 bg-[#7C3AED]/5 p-3 text-xs">
+              <p className="font-medium" style={{ color: 'var(--text, #F5F5F7)' }}>This post is already live.</p>
+              <p style={{ color: 'var(--text-faint, rgba(255,255,255,0.6))' }}>Only the social cascade gets queued — no generation, no WP status change.</p>
             </div>
-          </label>
+          )}
 
           {/* Social cascade */}
           <div>

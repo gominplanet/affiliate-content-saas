@@ -2139,25 +2139,26 @@ function VideoCard({
                   <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-yellow-300 text-[#1d1d1f]">Pro</span>
                 </Link>
               ))}
-              {/* Schedule — only surfaced when the post hasn't been
-                  generated yet AND isn't already queued. Opens
-                  ScheduleModal which calls /api/blog/schedule-publish:
-                  generates the post NOW (so the user gets immediate
-                  preview + credit is consumed up front) and queues the
-                  WP publish + social cascade for the chosen time.
-                  Mirrors the "Publish to all" pattern — one button →
-                  cross-channel cascade — with the only difference being
-                  WHEN it fires. Hidden when isScheduledPending so the
-                  user can't double-schedule the same row. */}
-              {!post && !isScheduledPending && (
+              {/* Schedule — opens the ScheduleModal in one of two modes:
+                    - FRESH (no post yet, no schedule pending): generates
+                      the post + queues a cascade via /api/blog/schedule-publish
+                    - CASCADE-ONLY (post already live): queues only social
+                      pushes via /api/blog/schedule-cascade-only. This is
+                      the "amplify a live post later" + "retry a failed
+                      social cascade" path.
+                  Hidden when a schedule is already pending so the user
+                  can't double-queue while waiting for go-live. */}
+              {!isScheduledPending && (
                 <button
                   type="button"
                   onClick={() => setScheduleOpen(true)}
-                  title="Generate now, publish later — pick a date/time and which socials to push"
+                  title={post
+                    ? 'Schedule a social cascade for this already-live post'
+                    : 'Generate now, publish later — pick a date/time and which socials to push'}
                   className="inline-flex items-center gap-2 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap border transition-colors hover:bg-[rgba(124,58,237,0.10)]"
                   style={{ borderColor: 'var(--border-bright, rgba(255,255,255,0.14))', color: 'var(--text, #F5F5F7)' }}
                 >
-                  <Calendar size={12} /> Schedule
+                  <Calendar size={12} /> {post ? 'Schedule socials' : 'Schedule'}
                 </button>
               )}
               {/* Visit Link or Product — opens the first affiliate / product
@@ -2528,6 +2529,7 @@ function VideoCard({
         videoId={id}
         videoTitle={title}
         connectedChannels={connectedChannels}
+        existingPostId={post?.postId ?? null}
         open={scheduleOpen}
         onClose={() => setScheduleOpen(false)}
         onScheduled={(result) => {
@@ -2617,13 +2619,48 @@ function ScheduledList({
     )
   }
 
-  // Sort: pending first (oldest-due at top), then everything else by most recent.
-  const sorted = [...items].sort((a, b) => {
+  // ── Cascade grouping (P1.3 — per-row schedule cascade view) ──────────
+  // Visually group child rows under their parent so the user can see the
+  // tree at a glance: a kind='blog_publish' parent first, then every
+  // kind='social' row whose parent_id points at it indented below.
+  // Standalone rows (no parent_id, no children) stay flat at top-level.
+  // Sort the top-level by pending-first, then most recent.
+  const childrenByParent = new Map<string, ScheduledItem[]>()
+  const topLevel: ScheduledItem[] = []
+  for (const it of items) {
+    if (it.parent_id) {
+      const arr = childrenByParent.get(it.parent_id) ?? []
+      arr.push(it)
+      childrenByParent.set(it.parent_id, arr)
+    } else {
+      topLevel.push(it)
+    }
+  }
+  // Sort top-level: pending first (oldest-due at top), then by recent.
+  const sortedTopLevel = topLevel.sort((a, b) => {
     const aPending = a.status === 'pending' ? 0 : 1
     const bPending = b.status === 'pending' ? 0 : 1
     if (aPending !== bPending) return aPending - bPending
     return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()
   })
+  // Build the flat-with-indent render list: each top-level row followed
+  // by its children (sorted by scheduled_at ascending so the cascade
+  // reads chronologically — parent at t, child1 at t+5min, etc.).
+  const sorted: Array<{ item: ScheduledItem; indent: boolean }> = []
+  for (const tl of sortedTopLevel) {
+    sorted.push({ item: tl, indent: false })
+    const kids = childrenByParent.get(tl.id) ?? []
+    kids.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())
+    for (const k of kids) sorted.push({ item: k, indent: true })
+  }
+  // Orphan children — children whose parent isn't in the items array
+  // (could happen if the parent expired off the 100-row limit). Show at
+  // the bottom so they're not lost.
+  for (const [parentId, kids] of childrenByParent.entries()) {
+    if (!topLevel.find(t => t.id === parentId)) {
+      for (const k of kids) sorted.push({ item: k, indent: false })
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -2635,7 +2672,7 @@ function ScheduledList({
           <RefreshCw size={11} /> Refresh
         </button>
       </div>
-      {sorted.map(item => {
+      {sorted.map(({ item, indent }) => {
         // kind='blog_publish' rows have platform=null (they're the WP
         // publish-itself row in draft-flip mode, not a social push).
         // Render those with the WordPress brand label + icon stand-in.
@@ -2646,7 +2683,11 @@ function ScheduledList({
         const when = new Date(item.scheduled_at)
         const dt = when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
         return (
-          <div key={item.id} className="card p-4 flex items-start gap-3">
+          <div
+            key={item.id}
+            className={`card p-4 flex items-start gap-3 ${indent ? 'ml-8 border-l-2 border-l-[#7C3AED]/40' : ''}`}
+            title={indent ? 'Child of the parent above — fires after the parent publishes' : undefined}
+          >
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white text-xs font-bold"
               style={{ background: meta.color }}
