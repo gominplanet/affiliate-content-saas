@@ -575,7 +575,7 @@ function GenerateButton({
   /** YouTube native id — lets the extension grab real HD frames for the
    *  in-article photos (retouched by AI). Optional. */
   youtubeVideoId?: string
-  existingPost?: { url: string; title: string; postId?: string; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null } | null
+  existingPost?: { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null } | null
   /** Drives whether the Rewrite button shows at all (Pro/Admin only). */
   userTier: Tier
   onDone: (url: string, title: string, postId: string) => void
@@ -584,6 +584,38 @@ function GenerateButton({
   const [stepIdx, setStepIdx] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState(existingPost || null)
+  // In-line "Add images" action on already-published rows. Was previously
+  // only available on the older-posts simple list; rich VideoCard rows
+  // had no path to retry image gen, so a post with 🖼 ! (failed images)
+  // was stuck unless the user manually clicked Rewrite (Pro, one-shot).
+  // 2026-06-07 fix.
+  const [addingImages, setAddingImages] = useState(false)
+  async function addImagesNow() {
+    if (!result || !existingPost?.wpPostId) {
+      toast.error('Missing post id — refresh the page and try again')
+      return
+    }
+    setAddingImages(true)
+    try {
+      const res = await fetch('/api/blog/refresh-images', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wordpressPostId: existingPost.wpPostId }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(j.error || `Couldn't add images (${res.status}).`)
+        return
+      }
+      const count = typeof j.count === 'number' ? j.count : 0
+      setResult((prev) => prev ? { ...prev, bodyImagesCount: count } : prev)
+      toast.success(count > 0 ? `Added ${count} image${count === 1 ? '' : 's'}` : 'Refreshed — but 0 images landed (check WP media upload).')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Image step failed')
+    } finally {
+      setAddingImages(false)
+    }
+  }
   // Rewrite modal — opens when a Pro user hits the Rewrite button on a
   // published post. Captures the "what's missing" feedback before
   // firing the regeneration so the second draft is actually different.
@@ -799,6 +831,25 @@ function GenerateButton({
           <span className="inline-flex items-center gap-0.5 text-[#ff9500]" title="‘Include photos’ was on but no in-article images made it in. Try ‘Refresh images’ on the post, or check your WordPress media upload (Hostinger WAF on POST /wp-json/wp/v2/media is the usual cause).">
             <span aria-hidden>🖼</span><span className="text-[10px] font-semibold">!</span>
           </span>
+        )}
+        {/* "Add images" — visible on EVERY published row (not just rows
+            with 🖼 ! warning) so the user can also re-roll images on
+            posts that already have some. wpPostId on existingPost is
+            populated for every row that came from the Library load. */}
+        {existingPost?.wpPostId && (
+          <button
+            onClick={addImagesNow}
+            disabled={addingImages}
+            className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#34c759] transition-colors disabled:opacity-60"
+            title={result.bodyImagesCount && result.bodyImagesCount > 0
+              ? 'Regenerate in-article images (replaces any existing ones)'
+              : 'Generate in-article images for this post'}
+          >
+            {addingImages
+              ? <><Loader2 size={11} className="animate-spin" /> Adding…</>
+              : <><Wand2 size={11} /> {result.bodyImagesCount && result.bodyImagesCount > 0 ? 'Re-roll images' : 'Add images'}</>
+            }
+          </button>
         )}
         {/* Rewrite is Pro-only and one-shot per post. Non-Pro users
             see no button — they manually edit the post in WordPress. */}
