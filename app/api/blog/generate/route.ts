@@ -1212,11 +1212,15 @@ async function handleGenerate(request: Request) {
         }))
         heroImageUrl = uploaded[0]?.url ?? heroImageUrl
         if (uploaded.length > 0) {
+          // Cycle through returned slots if more images than distinct
+          // placements — see refresh-images for the full rationale (the
+          // old fallback `slots[i] ?? (i + 1)` clamped past the heading
+          // range and stacked images at one slot).
           const slots = autoPlacementIndices(content, uploaded.length)
           finalContent = insertImagesAtHeadings(
             content,
             uploaded.map((img, i) => ({
-              beforeHeadingIndex: slots[i] ?? (i + 1),
+              beforeHeadingIndex: slots.length > 0 ? slots[i % slots.length] : i,
               block: gutenbergImageBlock(img.url, img.alt),
             })),
           )
@@ -1486,11 +1490,13 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
             try { await logFailure(supabase, user.id, videoId, 'blog_body_images', `0/${slots.length} images. falProduct=${!!falProductImageUrl}. frames=${frameRefs.length}. firstError=${firstImgError || 'none'}`) } catch { /* non-fatal */ }
           }
           if (uploaded.length > 0) {
+            // Cycle slots when count > distinct placements. See the earlier
+            // user-images branch (~line 1215) for the fix rationale.
             const placementSlots = autoPlacementIndices(content, uploaded.length)
             finalContent = insertImagesAtHeadings(
               content,
               uploaded.map((img, i) => ({
-                beforeHeadingIndex: placementSlots[i] ?? (i + 1),
+                beforeHeadingIndex: placementSlots.length > 0 ? placementSlots[i % placementSlots.length] : i,
                 block: gutenbergImageBlock(img.url, img.alt),
               })),
             )

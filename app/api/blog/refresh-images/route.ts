@@ -298,9 +298,13 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
   if (uploaded.length === 0) return NextResponse.json({ error: 'Image generation failed — try again in a moment.' }, { status: 502 })
 
+  // Cycle through the returned slots if we have more images than distinct
+  // placements (autoPlacementIndices returns up to count, may be fewer on
+  // short posts). The OLD fallback `slots[i] ?? (i + 1)` clamped beyond
+  // the heading range and stacked images at one slot — fixed 2026-06-05.
   const slots = autoPlacementIndices(stripped, uploaded.length)
   const finalContent = insertImagesAtHeadings(stripped, uploaded.map((img, i) => ({
-    beforeHeadingIndex: slots[i] ?? (i + 1),
+    beforeHeadingIndex: slots.length > 0 ? slots[i % slots.length] : i,
     block: gutenbergImageBlock(img.url, img.alt),
   })))
 
