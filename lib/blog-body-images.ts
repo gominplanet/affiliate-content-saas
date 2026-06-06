@@ -124,6 +124,131 @@ export function headingOffsets(content: string): number[] {
   return [...offsets].sort((a, b) => a - b)
 }
 
+/**
+ * Byte offsets where each Gutenberg/raw paragraph block STARTS, in
+ * document order. Used as fallback insertion points when there aren't
+ * enough usable H2 headings to spread `count` images without clustering.
+ *
+ * Matches:
+ *   - Raw HTML: `<p>` at the start of an element (not inside an
+ *     attribute value)
+ *   - Gutenberg block: `<!-- wp:paragraph ...`
+ *
+ * Used by pickBodyImageOffsets() to break the "all images cluster at
+ * the one usable heading" failure mode reported 2026-06-05.
+ */
+export function paragraphOffsets(content: string): number[] {
+  const offsets = new Set<number>()
+  // Gutenberg block markers — preferred anchor when present because the
+  // image lands above the whole block (markup + content).
+  const reBlock = /<!-- wp:paragraph\b/g
+  let m: RegExpExecArray | null
+  while ((m = reBlock.exec(content)) !== null) offsets.add(m.index)
+  // Raw <p> tags — what the writer actually emits.
+  const reTag = /<p\b/gi
+  while ((m = reTag.exec(content)) !== null) offsets.add(m.index)
+  return [...offsets].sort((a, b) => a - b)
+}
+
+/**
+ * Pick up to `count` byte offsets to insert images at, spread through
+ * the body of the post. Headings (filtered H2s) are preferred — they
+ * read as "image introducing the next section." When the post doesn't
+ * have enough usable headings, paragraph boundaries fill the gap so
+ * images don't cluster at a single anchor.
+ *
+ * Greedy nearest-to-ideal-position picker with a minimum-separation
+ * guard:
+ *   1. Compute an ideal x byte-position for each image (evenly spaced
+ *      through the body, with a 10% head and 15% tail margin so
+ *      images don't crowd the intro / conclusion / related-posts).
+ *   2. For each ideal position, pick the unused break offset closest
+ *      to it that's also at least MIN_SEPARATION bytes from any
+ *      already-picked offset.
+ *
+ * Returns the picked offsets in document order. May return fewer than
+ * `count` when the body has very few break points (callers should
+ * silently drop the orphan images — better than placing them on top
+ * of one another).
+ */
+export function pickBodyImageOffsets(content: string, count: number): number[] {
+  if (count <= 0 || content.length === 0) return []
+
+  const headings = headingOffsets(content)
+  const paragraphs = paragraphOffsets(content)
+  const allBreaks = [...new Set([...headings, ...paragraphs])].sort((a, b) => a - b)
+  if (allBreaks.length === 0) return []
+
+  // Body region — skip first 10% (intro) and last 15% (FAQ / related /
+  // about). If filtering leaves too few, expand to use everything.
+  const bodyStart = Math.floor(content.length * 0.10)
+  const bodyEnd = Math.floor(content.length * 0.85)
+  let pool = allBreaks.filter(o => o >= bodyStart && o <= bodyEnd)
+  if (pool.length < count) pool = allBreaks
+
+  const minOffset = pool[0]
+  const maxOffset = pool[pool.length - 1]
+  const span = Math.max(1, maxOffset - minOffset)
+  // Minimum byte gap between picks so images aren't visually back-to-back.
+  // span / (count * 2) means images get ~half the available room between
+  // them — generous enough to feel spread out, tight enough to allow
+  // tight posts to still place all images.
+  const minSeparation = Math.floor(span / Math.max(2, count * 2))
+
+  const picked: number[] = []
+  for (let i = 0; i < count; i++) {
+    const idealPos = count === 1
+      ? minOffset + Math.floor(span * 0.45)
+      : minOffset + Math.floor((i / (count - 1)) * span)
+    let best = -1
+    let bestDist = Infinity
+    for (const o of pool) {
+      if (picked.includes(o)) continue
+      if (picked.some(p => Math.abs(o - p) < minSeparation)) continue
+      const dist = Math.abs(o - idealPos)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = o
+      }
+    }
+    if (best < 0) {
+      // No candidate respects min-separation — relax the constraint for
+      // this one pick so we don't silently drop an image, but only if
+      // there's still an unused offset.
+      for (const o of pool) {
+        if (picked.includes(o)) continue
+        const dist = Math.abs(o - idealPos)
+        if (dist < bestDist) { bestDist = dist; best = o }
+      }
+    }
+    if (best >= 0) picked.push(best)
+  }
+  return picked.sort((a, b) => a - b)
+}
+
+/**
+ * Insert blocks (pre-built HTML) at the given byte offsets in `content`.
+ * Iterates back-to-front so earlier offsets remain valid as later ones
+ * splice in. `offsets[i]` pairs with `blocks[i]`; extra blocks beyond
+ * offsets are silently dropped to avoid clustering (the picker's job
+ * is to return enough offsets — this function trusts that contract).
+ */
+export function insertImagesAtOffsets(
+  content: string,
+  offsets: number[],
+  blocks: string[],
+): string {
+  if (offsets.length === 0) return content
+  const pairs = offsets
+    .slice(0, blocks.length)
+    .map((at, i) => ({ at, block: blocks[i] }))
+    .filter(p => p.block != null)
+    .sort((a, b) => b.at - a.at)
+  let out = content
+  for (const p of pairs) out = out.slice(0, p.at) + p.block + out.slice(p.at)
+  return out
+}
+
 export interface BodyImagePlacement {
   /** Insert the block immediately before this heading (0-based index into
    *  headingOffsets). Out-of-range indices are clamped / appended. */

@@ -17,7 +17,7 @@ import { verifyProductMatch } from '@/lib/product-image'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { normalizeTier, allowedBlogImages, tierHas } from '@/lib/tier'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
-import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
+import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { SHOT_PERSPECTIVES, sectionHeadings, generateBodyImagePrompts } from '@/lib/blog-image-prompts'
 import { fal } from '@fal-ai/client'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
@@ -298,15 +298,19 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
   if (uploaded.length === 0) return NextResponse.json({ error: 'Image generation failed — try again in a moment.' }, { status: 502 })
 
-  // Cycle through the returned slots if we have more images than distinct
-  // placements (autoPlacementIndices returns up to count, may be fewer on
-  // short posts). The OLD fallback `slots[i] ?? (i + 1)` clamped beyond
-  // the heading range and stacked images at one slot — fixed 2026-06-05.
-  const slots = autoPlacementIndices(stripped, uploaded.length)
-  const finalContent = insertImagesAtHeadings(stripped, uploaded.map((img, i) => ({
-    beforeHeadingIndex: slots.length > 0 ? slots[i % slots.length] : i,
-    block: gutenbergImageBlock(img.url, img.alt),
-  })))
+  // Spread images through the body — prefers H2 headings, falls back to
+  // paragraph boundaries when there aren't enough usable headings to
+  // avoid clustering. Minimum-separation guard prevents back-to-back
+  // images even when the picker is short on candidates. Old cycle-by-
+  // modulo approach (slots[i % slots.length]) put both images at the
+  // same heading when the post had only 1 eligible H2 — fixed
+  // 2026-06-05 with pickBodyImageOffsets + insertImagesAtOffsets.
+  const offsets = pickBodyImageOffsets(stripped, uploaded.length)
+  const finalContent = insertImagesAtOffsets(
+    stripped,
+    offsets,
+    uploaded.map(img => gutenbergImageBlock(img.url, img.alt)),
+  )
 
   try { await wpService.updatePost(wordpressPostId, { content: finalContent }) }
   catch (err) { return NextResponse.json({ error: `WordPress update failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 }) }

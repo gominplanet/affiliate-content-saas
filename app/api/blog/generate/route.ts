@@ -18,7 +18,7 @@ import { verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
-import { gutenbergImageBlock, insertImagesAtHeadings, autoPlacementIndices } from '@/lib/blog-body-images'
+import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
@@ -1212,17 +1212,15 @@ async function handleGenerate(request: Request) {
         }))
         heroImageUrl = uploaded[0]?.url ?? heroImageUrl
         if (uploaded.length > 0) {
-          // Cycle through returned slots if more images than distinct
-          // placements — see refresh-images for the full rationale (the
-          // old fallback `slots[i] ?? (i + 1)` clamped past the heading
-          // range and stacked images at one slot).
-          const slots = autoPlacementIndices(content, uploaded.length)
-          finalContent = insertImagesAtHeadings(
+          // Spread images via the offset picker — falls back to paragraph
+          // boundaries when there aren't enough usable H2s + enforces a
+          // minimum byte distance between picks so no two images land
+          // back-to-back. See lib/blog-body-images.ts pickBodyImageOffsets.
+          const offsets = pickBodyImageOffsets(content, uploaded.length)
+          finalContent = insertImagesAtOffsets(
             content,
-            uploaded.map((img, i) => ({
-              beforeHeadingIndex: slots.length > 0 ? slots[i % slots.length] : i,
-              block: gutenbergImageBlock(img.url, img.alt),
-            })),
+            offsets,
+            uploaded.map(img => gutenbergImageBlock(img.url, img.alt)),
           )
           try { await wpService.updatePost(wpPost.id, { content: finalContent }) } catch { /* keep text-only post */ }
           if (savedPost?.id) {
@@ -1490,15 +1488,14 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
             try { await logFailure(supabase, user.id, videoId, 'blog_body_images', `0/${slots.length} images. falProduct=${!!falProductImageUrl}. frames=${frameRefs.length}. firstError=${firstImgError || 'none'}`) } catch { /* non-fatal */ }
           }
           if (uploaded.length > 0) {
-            // Cycle slots when count > distinct placements. See the earlier
-            // user-images branch (~line 1215) for the fix rationale.
-            const placementSlots = autoPlacementIndices(content, uploaded.length)
-            finalContent = insertImagesAtHeadings(
+            // See the user-images branch (~line 1215) for the picker
+            // rationale — falls back to paragraph boundaries + enforces
+            // minimum separation so images don't cluster.
+            const placementOffsets = pickBodyImageOffsets(content, uploaded.length)
+            finalContent = insertImagesAtOffsets(
               content,
-              uploaded.map((img, i) => ({
-                beforeHeadingIndex: placementSlots.length > 0 ? placementSlots[i % placementSlots.length] : i,
-                block: gutenbergImageBlock(img.url, img.alt),
-              })),
+              placementOffsets,
+              uploaded.map(img => gutenbergImageBlock(img.url, img.alt)),
             )
             // Push the image-enriched body into the live WP post + our DB.
             // updatePost with only `content` leaves the featured image / tags
