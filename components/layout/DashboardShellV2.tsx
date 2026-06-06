@@ -37,7 +37,7 @@ import {
   Flame, GraduationCap, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
-  Share2, UserSquare, Lightbulb,
+  Share2, UserSquare, Lightbulb, Globe,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -173,6 +173,15 @@ export default function DashboardShellV2({
   // top-to-bottom: see your dashboard -> set things up -> start creating.
   // The old Manage group folded into Today (Library is a "where am I
   // now" surface, same as Dashboard).
+  // Build the WP-site shortcut URLs once so the group definition stays
+  // declarative. Both external links — open in a new tab and don't
+  // prefetch. Guarded by wpSiteUrl below so the whole group disappears
+  // for users who haven't connected WordPress yet (avoids a dead nav
+  // entry that does nothing).
+  const wpBase = wpSiteUrl ? wpSiteUrl.replace(/\/+$/, '') : null
+  const wpAdminHref = wpBase ? `${wpBase}/wp-admin` : ''
+  const wpVisitHref = wpBase || ''
+
   const NAV_GROUPS: NavGroupDef[] = [
     {
       label: 'Today',
@@ -186,6 +195,22 @@ export default function DashboardShellV2({
         { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm' },
       ],
     },
+    // Your Blog — direct shortcuts into the live WordPress site the user
+    // is actually creating content FOR. Sits between Today (in-MVP
+    // dashboard) and Set up (one-time configuration) so the daily loop
+    // reads naturally: glance at Today -> open your live blog or wp-admin
+    // -> jump into Set up / Create. Mirrors the topbar's "WP Admin"
+    // button but in a discoverable left-nav location. Both items are
+    // external (open in new tab), so they get the ExternalLink glyph +
+    // target=_blank wiring. Whole group is gated on a connected site —
+    // hidden entirely for users who haven't run Blog Set Up yet.
+    ...(wpBase ? [{
+      label: 'Your Blog',
+      items: [
+        { href: wpVisitHref, icon: <Globe size={15} />, label: 'Visit Blog', external: true },
+        { href: wpAdminHref, icon: <Settings size={15} />, label: 'WP Admin', external: true },
+      ],
+    }] : []),
     {
       // The onboarding spine. Every item here is a "you only do this
       // once (or rarely)" surface — point a new user at this group and
