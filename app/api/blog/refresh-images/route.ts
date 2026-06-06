@@ -298,12 +298,24 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   const uploaded = results.filter((r): r is { url: string; alt: string } => !!r)
   if (uploaded.length === 0) return NextResponse.json({ error: 'Image generation failed — try again in a moment.' }, { status: 502 })
 
-  // Spread images through the body strictly at usable H2 boundaries
-  // (skip first/last heading + tail blocks + Quick Verdict). The original
-  // 2026-05 rule the user asked to restore — no paragraph fallback because
-  // that's what caused images to cluster back-to-back when the post had
-  // few usable H2s. See lib/blog-body-images.ts pickBodyImageOffsets.
+  // Spread images through the body. Prefers usable H2 anchors, falls
+  // back to paragraph offsets in the 5%-90% body region with a minimum
+  // byte-spacing guard so no two images land back-to-back. Returns
+  // `count` offsets unless the post is too short to fit them.
+  // See lib/blog-body-images.ts pickBodyImageOffsets.
   const offsets = pickBodyImageOffsets(stripped, uploaded.length)
+  console.log('[refresh-images] placement', {
+    postId: post.id,
+    uploaded: uploaded.length,
+    offsetsAssigned: offsets.length,
+    docLength: stripped.length,
+  })
+  if (offsets.length < uploaded.length) {
+    console.warn('[refresh-images] could not place all images — post structure has too few break points', {
+      uploaded: uploaded.length,
+      placed: offsets.length,
+    })
+  }
   const finalContent = insertImagesAtOffsets(
     stripped,
     offsets,

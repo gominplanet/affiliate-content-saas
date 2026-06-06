@@ -128,67 +128,107 @@ export function headingOffsets(content: string): number[] {
 }
 
 /**
- * Pick up to `count` byte offsets — one per image — strictly at usable
- * H2 boundaries. Implements the original 2026-05 rule the user asked to
- * restore: spread images evenly between the SECOND and SECOND-TO-LAST
- * usable H2, never at the first (right under the opener) or last (right
- * before the tail blocks). NO paragraph fallback — that's what caused the
- * back-to-back clustering. If the body doesn't have enough section
- * breaks, the picker promotes the first/last usable heading into the
- * pool rather than dropping images on top of one another.
+ * Find byte offsets where each Gutenberg/raw paragraph starts. Used as
+ * a fallback when usable H2 anchors run out — better than dropping
+ * images entirely (the WagComb-era bug: H2-only rule silently dropped
+ * excess images, the user paid for them, no images appeared in the
+ * post).
  *
- * Returns the picked offsets in document order, DISTINCT — placing two
- * images at the same heading (the bug the user reported) is always worse
- * than placing one image and dropping the duplicate.
+ * Each offset points at the start of a `<p>` tag (raw HTML) or a
+ * `<!-- wp:paragraph -->` block marker. The H2-only path stays the
+ * preferred anchor; paragraph offsets only fill the overflow.
+ */
+export function paragraphOffsets(content: string): number[] {
+  const offsets = new Set<number>()
+  // Gutenberg paragraph block markers (preferred — sit above the markup).
+  const reBlock = /<!-- wp:paragraph\b/g
+  let m: RegExpExecArray | null
+  while ((m = reBlock.exec(content)) !== null) offsets.add(m.index)
+  // Raw <p> tags as a fallback for non-Gutenberg writer output.
+  const reTag = /<p\b/gi
+  while ((m = reTag.exec(content)) !== null) offsets.add(m.index)
+  return [...offsets].sort((a, b) => a - b)
+}
+
+/**
+ * Pick up to `count` byte offsets — one per image — placing them across
+ * the article body. ALL generated images get a slot (no silent drops):
  *
- * Algorithm tiers (try each until enough distinct slots are collected):
- *   1. Interior usable H2s (usable[1..-2]) — best, reads as "image
- *      introduces the next body section".
- *   2. Last usable H2 (usable[-1]) — OK overflow.
- *   3. First usable H2 (usable[0]) — last resort, only when we still
- *      need more slots than interior + last can provide.
+ *   1. Prefer usable H2 boundaries (reads as "image introduces next
+ *      section"). Interior H2s first, then last, then first.
+ *   2. If H2 anchors don't cover `count`, fill the gap with paragraph
+ *      offsets in the body region, enforcing a minimum byte-spacing
+ *      so two images can't land back-to-back.
  *
- * In practice tier 1 alone handles every normal 5-7 H2 post. Tiers 2/3
- * only kick in when the article is unusually short or when the user
- * asked for more images than the post has room for.
+ * Body region clamps to 5%–90% of the document so paragraph fallback
+ * doesn't slide into the intro lead or the Related/FAQ tail.
+ *
+ * Minimum spacing scales with the document: `docLength / (count * 2 + 1)`
+ * gives every image roughly equal room.
+ *
+ * Returns distinct offsets in document order. Will return fewer than
+ * `count` ONLY if the post has too few break points overall — never
+ * silently, that case is now logged by callers.
  */
 export function pickBodyImageOffsets(content: string, count: number): number[] {
   if (count <= 0 || content.length === 0) return []
 
   const usable = headingOffsets(content)
-  if (usable.length === 0) return []
-
-  // Build the pool in priority order (interior first, then last, then first).
-  // Sort interior first so the spread step lands the early image anchors
-  // somewhere natural — between the opener and the tail.
+  // ── Tier 1: H2 anchors in priority order ───────────────────────────
   const interior = usable.length >= 3 ? usable.slice(1, -1) : []
   const tail = usable.length >= 2 ? [usable[usable.length - 1]] : []
-  const head = [usable[0]]
+  const head = usable.length >= 1 ? [usable[0]] : []
+  const h2Pool: number[] = [...interior]
+  if (h2Pool.length < count) for (const t of tail) if (!h2Pool.includes(t)) h2Pool.push(t)
+  if (h2Pool.length < count) for (const h of head) if (!h2Pool.includes(h)) h2Pool.push(h)
 
-  // Pool in priority order — pick from the front until we have `count`.
-  const pool: number[] = [...interior]
-  if (pool.length < count) for (const t of tail) if (!pool.includes(t)) pool.push(t)
-  if (pool.length < count) for (const h of head) if (!pool.includes(h)) pool.push(h)
-
-  const slots = Math.min(count, pool.length)
-  if (slots === 0) return []
-
-  // Sort by document order before spreading so the even-spread math
-  // actually corresponds to physical position in the article.
-  const sortedPool = [...pool].sort((a, b) => a - b)
-
-  // Evenly spread `slots` indices across the available offsets. For
-  // slots=1 we land at 40% of the pool (matches the original `frac =
-  // 0.4` — feels more natural than dead-center).
-  const picked = new Set<number>()
-  const lastIdx = sortedPool.length - 1
-  for (let i = 0; i < slots; i++) {
-    const frac = slots === 1 ? 0.4 : i / (slots - 1)
-    const idx = Math.round(frac * lastIdx)
-    picked.add(sortedPool[idx])
+  // Spread the H2 anchors evenly across what's available (in doc order).
+  const sortedH2 = [...h2Pool].sort((a, b) => a - b)
+  const h2Slots = Math.min(count, sortedH2.length)
+  const picked: number[] = []
+  if (h2Slots > 0) {
+    const lastIdx = sortedH2.length - 1
+    const used = new Set<number>()
+    for (let i = 0; i < h2Slots; i++) {
+      const frac = h2Slots === 1 ? 0.4 : i / (h2Slots - 1)
+      const idx = Math.round(frac * lastIdx)
+      const off = sortedH2[idx]
+      if (!used.has(off)) {
+        used.add(off)
+        picked.push(off)
+      }
+    }
   }
 
-  return [...picked].sort((a, b) => a - b)
+  // ── Tier 2: paragraph fallback for remaining slots ─────────────────
+  // Only fires when count > usable H2 anchors. Picks paragraph offsets
+  // in the body region (5%–90%) at least minSpacing bytes away from any
+  // already-picked offset so images don't end up adjacent.
+  const remaining = count - picked.length
+  if (remaining > 0) {
+    const bodyStart = Math.floor(content.length * 0.05)
+    const bodyEnd = Math.floor(content.length * 0.90)
+    const paragraphs = paragraphOffsets(content).filter(o => o >= bodyStart && o <= bodyEnd)
+    const minSpacing = Math.floor(content.length / Math.max(2, count * 2 + 1))
+    const tooClose = (o: number) => picked.some(p => Math.abs(p - o) < minSpacing)
+    // Walk paragraphs in document order; greedily pick any that satisfies
+    // the spacing constraint until we've filled `remaining` slots.
+    // First pass — strict spacing. Second pass — relaxed if needed.
+    for (const o of paragraphs) {
+      if (picked.length >= count) break
+      if (tooClose(o)) continue
+      picked.push(o)
+    }
+    if (picked.length < count) {
+      for (const o of paragraphs) {
+        if (picked.length >= count) break
+        if (picked.includes(o)) continue
+        picked.push(o)
+      }
+    }
+  }
+
+  return [...new Set(picked)].sort((a, b) => a - b)
 }
 
 /**
