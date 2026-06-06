@@ -341,6 +341,7 @@ export default function DashboardShellV2({
         { href: '/admin/users', icon: <UserCog size={15} />, label: 'Users (admin)' },
         { href: '/admin/failures', icon: <AlertTriangle size={15} />, label: 'Failures' },
         { href: '/admin/cron', icon: <Activity size={15} />, label: 'Cron health' },
+        { href: '/admin/title-audit', icon: <AlertTriangle size={15} />, label: 'Title audit' },
         { href: '/admin/costs', icon: <DollarSign size={15} />, label: 'AI Cost (admin)' },
         { href: '/admin/blog-quality', icon: <Activity size={15} />, label: 'Blog Quality' },
         { href: '/admin/template-performance', icon: <BarChart3 size={15} />, label: 'Template Performance' },
