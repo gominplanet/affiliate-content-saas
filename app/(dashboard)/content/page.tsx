@@ -2849,6 +2849,10 @@ export default function ContentPage() {
         'published_at','selected_category','product_url',
         'duration_seconds','view_count','is_vertical',
         'instagram_video_url','instagram_image_url','instagram_story_image_url',
+        // Vertical-kanban (2026-06-06): tiktok_posted_at + instagram_posted_at
+        // drive the "vertical video moved to Posts tab" filter. Migrations
+        // 082 + 083 stamp these the moment a direct push succeeds.
+        'tiktok_posted_at','instagram_posted_at',
         'created_at','updated_at',
       ].join(',')
       const all: Record<string, unknown>[] = []
@@ -3654,8 +3658,26 @@ export default function ContentPage() {
   // is null, default to horizontal (the existing behavior pre-migration).
   const horizontalVideos = visibleVideos.filter(v => v.is_vertical !== true)
   const verticalVideos = visibleVideos.filter(v => v.is_vertical === true)
+  // ── Kanban filters (2026-06-06 IA shift) ────────────────────────────────
+  // The Library reads as a workflow now: a video lives in "Horizontal
+  // Videos" / "Vertical Videos" until it gets touched (post generated or
+  // social push succeeded), then graduates to "Posts". This way the TODO
+  // tabs only show what's actually waiting on the user, and "Posts" is
+  // the working surface for everything in flight or done.
+  //   - Horizontal Videos = videos.is_vertical=false AND no blog post yet
+  //   - Vertical Videos   = videos.is_vertical=true AND not yet pushed to
+  //                         TikTok or Instagram (tiktok_posted_at +
+  //                         instagram_posted_at both null)
+  //   - Posts             = videos that DON'T match either filter above,
+  //                         plus orphan blog posts (no source video)
+  const horizontalTodo = horizontalVideos.filter(v => !posts[v.id as string])
+  const verticalTodo = verticalVideos.filter(v => !v.tiktok_posted_at && !v.instagram_posted_at)
+  // Generated horizontal videos go in Posts. Touched verticals go in Posts.
+  // Union for the Posts tab's rich VideoCard render.
+  const horizontalDone = horizontalVideos.filter(v => !!posts[v.id as string])
+  const verticalDone = verticalVideos.filter(v => !!v.tiktok_posted_at || !!v.instagram_posted_at)
   // Which set the current tab shows. Vertical tab gets Shorts only.
-  const currentTabVideos = activeTab === 'vertical' ? verticalVideos : horizontalVideos
+  const currentTabVideos = activeTab === 'vertical' ? verticalTodo : horizontalTodo
   const generatedCount = Object.keys(posts).length
 
   // Unique channel list, derived from the current tab's videos — drives the
@@ -3888,6 +3910,74 @@ export default function ContentPage() {
               )}
             </div>
           )}
+
+          {/* ── Recent activity (kanban) ──────────────────────────────────
+              Rich VideoCard rows for every video that's been "touched":
+                - Horizontal: a blog post exists (live or scheduled)
+                - Vertical: TikTok or Instagram push succeeded
+              This is what the user sees as "in flight or done" — the
+              workspace for socials, schedule edits, and re-pushes. The
+              flat WP-post list below stays as a searchable archive for
+              older posts whose source video may no longer be present.
+              IA shift 2026-06-06.
+          */}
+          {(horizontalDone.length > 0 || verticalDone.length > 0) && (() => {
+            // Sort by recency. Use publication date as tiebreaker — posts
+            // first, then verticals by tiktok/instagram posted_at.
+            const recent = [...horizontalDone, ...verticalDone].sort((a, b) => {
+              const ta = new Date(((a.published_at as string) || (a.tiktok_posted_at as string) || (a.instagram_posted_at as string) || 0)).getTime()
+              const tb = new Date(((b.published_at as string) || (b.tiktok_posted_at as string) || (b.instagram_posted_at as string) || 0)).getTime()
+              return tb - ta
+            })
+            return (
+              <div className="flex flex-col gap-3 mb-3">
+                <div className="flex items-baseline justify-between">
+                  <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Recent ({recent.length})</h3>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Posts with a source video — push, schedule, refresh, edit</p>
+                </div>
+                {recent.map((video) => (
+                  <VideoCard
+                    key={video.id as string}
+                    video={video}
+                    post={posts[video.id as string] || null}
+                    wpSiteUrl={wpSiteUrl}
+                    fbConnected={fbConnected}
+                    pinterestConnected={pinterestConnected}
+                    threadsConnected={threadsConnected}
+                    linkedInConnected={linkedInConnected}
+                    twitterConnected={twitterConnected}
+                    blueskyConnected={blueskyConnected}
+                    telegramConnected={telegramConnected}
+                    instagramConnected={instagramConnected}
+                    tiktokConnected={tiktokConnected}
+                    fbAccounts={fbAccounts}
+                    igAccounts={igAccounts}
+                    userTier={userTier}
+                    brandNiches={brandNiches}
+                    customCategories={customCategories}
+                    brandDisclaimer={brandDisclaimer}
+                    brandFacebookGroups={brandFacebookGroups}
+                    onCustomCategoryAdded={setCustomCategories}
+                    onGenerated={(vid, url, title, postId) => setPosts((prev) => ({ ...prev, [vid]: { url, title, postId } }))}
+                    onDismiss={() => dismissVideo(video.id as string)}
+                    onDelete={(postId) => {
+                      setPosts((prev) => {
+                        const next = { ...prev }
+                        const vid = video.id as string
+                        if (next[vid]?.postId === postId) delete next[vid]
+                        return next
+                      })
+                    }}
+                    onPinPreview={setPinPreview}
+                  />
+                ))}
+                <div className="border-t border-[#e5e5ea] dark:border-white/10 mt-1" />
+                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+                  Older posts archive ({allBlogPosts.length} total — includes ones with no matching YouTube video)
+                </p>
+              </div>
+            )
+          })()}
 
           {postsLoading ? (
             <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
