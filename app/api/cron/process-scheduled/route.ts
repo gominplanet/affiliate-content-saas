@@ -98,25 +98,39 @@ export async function GET(request: Request) {
   const nowIso = new Date().toISOString()
 
   // 1. Atomic claim — flip due+pending rows to 'processing' in one update.
-  // `as any` on the .select() because the supabase-generated types don't
-  // yet know about the `kind` column (added in migration 103); regen
-  // after migration 103 lands to drop the cast.
+  // Schema-agnostic: we DON'T select `kind` here because that column was
+  // added in migration 103 and the cron must keep running on databases
+  // where migration 103 hasn't been applied yet. Instead we synthesize
+  // kind from `platform`: rows where platform is null are blog_publish
+  // (only possible post-migration-103); rows with a platform are social
+  // (works on every schema version).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: claimed, error: claimErr } = await (admin as any)
     .from('scheduled_posts')
     .update({ status: 'processing', claimed_at: nowIso, last_attempt_at: nowIso })
     .eq('status', 'pending')
     .lte('scheduled_at', nowIso)
-    .select('id,user_id,blog_post_id,kind,platform,body_text,social_account_id')
+    .select('id,user_id,blog_post_id,platform,body_text,social_account_id')
     .limit(MAX_PER_TICK)
 
   if (claimErr) {
     return NextResponse.json({ error: `Claim failed: ${claimErr.message}` }, { status: 500 })
   }
 
-  // claimed comes back with platform typed as `string` (RPC return shape);
-  // narrow to the ScheduledRow discriminated union at the boundary.
-  const rows: ScheduledRow[] = (claimed ?? []) as ScheduledRow[]
+  // claimed comes back with platform typed as `string | null`. Synthesize
+  // `kind` based on the platform — rows with platform=null are blog_publish
+  // rows (the parent in draft-flip mode), rows with a platform are social
+  // pushes. Works whether or not migration 103 has been applied.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows: ScheduledRow[] = ((claimed ?? []) as Array<Record<string, unknown>>).map(r => ({
+    id: r.id as string,
+    user_id: r.user_id as string,
+    blog_post_id: r.blog_post_id as string,
+    platform: (r.platform as ScheduledRow['platform']) ?? null,
+    body_text: (r.body_text as string) ?? '',
+    social_account_id: (r.social_account_id as string | null | undefined) ?? null,
+    kind: r.platform == null ? 'blog_publish' : 'social',
+  }))
   if (rows.length === 0) {
     return NextResponse.json({ ok: true, processed: 0 })
   }

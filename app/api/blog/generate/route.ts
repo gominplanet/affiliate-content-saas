@@ -1009,9 +1009,19 @@ async function handleGenerate(request: Request) {
         const fallback = `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`
         media = await wpService.uploadImageFromUrl(fallback, `${youtubeVideoId}.jpg`)
       }
+      // CRITICAL: preserve the WP status from createPost. When the post was
+      // created as 'future' (wp-native scheduling) or 'draft' (draft-flip),
+      // hardcoding 'publish' here would force the post live immediately,
+      // breaking the schedule. Only flip to 'publish' for non-scheduled
+      // posts (where wpStatus is 'publish' anyway). For 'future' status,
+      // re-send `date` so WordPress doesn't reset the scheduled timestamp
+      // — REST PATCH without a date on a future post can drift the
+      // post_date to "now" on some WP versions.
       await wpService.updatePost(wpPost.id, {
         title: generated.title, slug, content, excerpt: generated.excerpt,
-        status: 'publish', tags: tagIds, featured_media: media.id,
+        status: wpStatus,
+        ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}),
+        tags: tagIds, featured_media: media.id,
       })
     } catch { /* non-fatal — post is already published without thumbnail */ }
   }

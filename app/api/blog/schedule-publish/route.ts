@@ -160,6 +160,7 @@ export async function POST(request: Request) {
     const blogPostId = genJson.postId
     const wpPostId = genJson.wordpressPostId
     const wpUrl = genJson.wordpressUrl
+    console.log('[schedule-publish] generate ok', { blogPostId, wpPostId, scheduleMode, scheduledFor, socialCount: socials.length })
 
     // ─── 2. (draft-flip only) Insert the parent blog_publish row ──────────
     // For wp-native, WP handles the flip — we skip this and the social
@@ -168,9 +169,10 @@ export async function POST(request: Request) {
     // publish requires going into wp-admin (we may add an explicit
     // cancel endpoint that PATCHes wp post to draft in a follow-up).
     let parentScheduleId: string | null = null
+    let draftFlipDegradedToWpNative = false
     if (scheduleMode === 'draft-flip') {
       // The supabase-generated DB types haven't been regenerated against
-      // migration 103 (kind + parent_id columns), so an `as never` cast
+      // migration 103 (kind + parent_id columns), so an `as any` cast
       // bypasses the type rejection while the production DB accepts the
       // shape. Same pattern as the rest of the codebase's "post-migration,
       // pre-codegen" inserts. Run `npx supabase gen types` after migration
@@ -192,13 +194,49 @@ export async function POST(request: Request) {
         })
         .select('id')
         .single()
-      if (parentErr || !parentRow) {
+
+      const parentMissingColumn =
+        parentErr &&
+        typeof parentErr.message === 'string' &&
+        /column .* does not exist|does not exist|unknown column/i.test(parentErr.message)
+
+      if (parentErr && parentMissingColumn) {
+        // Migration 103 not applied yet — we can't write a kind='blog_publish'
+        // row, so our cron has no way to flip the WP post from draft to
+        // publish at the scheduled time. Degrade gracefully: PATCH the WP
+        // post from 'draft' to 'future' with the chosen date, so WordPress's
+        // own cron handles publish. We lose the "edit before live" window
+        // (the post was created as draft, but flipping to future still
+        // allows manual edits via wp-admin), but the post WILL go live at
+        // the scheduled time and the social cascade still works.
+        console.warn('[schedule-publish] migration 103 not detected — degrading draft-flip to wp-native')
+        try {
+          // Resolve creds + flip WP status.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { getWordPressCredentials } = await import('@/lib/wordpress-sites')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { createWordPressService } = await import('@/services/wordpress')
+          const creds = await getWordPressCredentials(supabase, user.id, siteId ?? null)
+          if (creds) {
+            const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token ?? undefined)
+            await wp.updatePost(wpPostId, { status: 'future', date: new Date(scheduledFor).toISOString() })
+            draftFlipDegradedToWpNative = true
+          }
+        } catch (degradeErr) {
+          console.error('[schedule-publish] degrade-to-wp-native failed:', degradeErr instanceof Error ? degradeErr.message : String(degradeErr))
+          return NextResponse.json(
+            { error: `Schedule write failed (migration 103 not applied): ${parentErr.message}. Run migration 103 in Supabase, or use "Save as draft" off (wp-native mode).` },
+            { status: 500 },
+          )
+        }
+      } else if (parentErr || !parentRow) {
         return NextResponse.json(
           { error: `Schedule write failed: ${parentErr?.message || 'unknown'}` },
           { status: 500 },
         )
+      } else {
+        parentScheduleId = parentRow.id
       }
-      parentScheduleId = parentRow.id
     }
 
     // ─── 3. Insert child social rows ───────────────────────────────────────
@@ -253,29 +291,62 @@ export async function POST(request: Request) {
 
     let childScheduleIds: string[] = []
     if (childRows.length > 0) {
-      // Same `as any` rationale as the parent insert above — supabase
-      // types pre-date migration 103. Drop after `gen types` runs.
+      // Defensive insert: first try with kind + parent_id (migration 103
+      // schema). If that fails because either column doesn't exist
+      // (migration not applied yet on the target DB), retry WITHOUT them
+      // so social pushes still queue and the cron still publishes them
+      // — the parent draft-flip just won't have its tree linked for
+      // cascade-cancel. Better than silently dropping every push.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: insertedChildren, error: childErr } = await (supabase as any)
+      let { data: insertedChildren, error: childErr } = await (supabase as any)
         .from('scheduled_posts')
         .insert(childRows)
         .select('id')
+
+      const looksLikeMissingColumn =
+        childErr &&
+        typeof childErr.message === 'string' &&
+        /column .* does not exist|does not exist|unknown column/i.test(childErr.message)
+
+      if (childErr && looksLikeMissingColumn) {
+        console.warn('[schedule-publish] migration 103 not detected, retrying with legacy schema:', childErr.message)
+        const legacyRows = childRows.map(r => ({
+          user_id: r.user_id,
+          blog_post_id: r.blog_post_id,
+          platform: r.platform,
+          scheduled_at: r.scheduled_at,
+          body_text: r.body_text,
+          status: r.status,
+          social_account_id: r.social_account_id,
+        }))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const retry = await (supabase as any)
+          .from('scheduled_posts')
+          .insert(legacyRows)
+          .select('id')
+        insertedChildren = retry.data
+        childErr = retry.error
+      }
+
       if (childErr) {
-        // Don't surface a partial-success — the blog was already
-        // generated. Log and return the parent so the UI can show
-        // "Scheduled (socials failed to queue)".
-        console.error('[schedule-publish] child insert failed', childErr.message)
-        return NextResponse.json({
-          ok: true,
-          postId: blogPostId,
-          wordpressPostId: wpPostId,
-          wordpressUrl: wpUrl,
-          parentScheduleId,
-          childScheduleIds: [],
-          warning: `Blog publish scheduled, but social pushes failed to queue: ${childErr.message}`,
-        })
+        // Hard 500 — the user paid for a generation and we couldn't
+        // queue the cascade. Surface the underlying error so the user
+        // (or support) can act. The blog post is in WordPress already;
+        // they can push manually from the Library row.
+        console.error('[schedule-publish] child insert failed (hard):', childErr.message)
+        return NextResponse.json(
+          {
+            error: `Blog generated, but social pushes failed to queue. Cause: ${childErr.message}. The blog post is in WordPress — you can push to socials manually from the Library row once it goes live.`,
+            postId: blogPostId,
+            wordpressPostId: wpPostId,
+            wordpressUrl: wpUrl,
+            parentScheduleId,
+          },
+          { status: 500 },
+        )
       }
       childScheduleIds = ((insertedChildren ?? []) as Array<{ id: string }>).map(r => r.id)
+      console.log('[schedule-publish] queued children', { count: childScheduleIds.length, childScheduleIds, parentScheduleId })
     }
 
     return NextResponse.json({
