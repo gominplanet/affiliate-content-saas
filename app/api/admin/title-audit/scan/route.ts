@@ -21,6 +21,11 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 
+// Give the route headroom — 20 parallel Haiku calls usually finish in
+// ~2-4s, but slow ones can take 10s+. The default 10s Vercel timeout
+// would 504 the scan call mid-flight on a bad day. 2026-06-07.
+export const maxDuration = 60
+
 interface Mismatch {
   postId: string
   videoId: string | null
@@ -64,38 +69,47 @@ export async function POST(request: Request) {
     if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
 
     const claude = createClaudeService()
-    const mismatches: Mismatch[] = []
 
-    for (const p of (posts ?? []) as Array<{ id: string; video_id: string | null; title: string; content: string; wordpress_post_id: number | null; wordpress_url: string }>) {
-      if (!p.title || !p.content || p.content.length < 300) continue
-      try {
-        const newTitle = await claude.factCheckTitleVsBody(p.title, p.content, {
-          userId: user.id,
-          tier: 'admin',
-        })
-        const cleaned = (newTitle || '').trim()
-        if (!cleaned || cleaned === p.title.trim()) continue
-        // Build a short body preview for the UI.
-        const preview = p.content
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&amp;/g, '&')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 240)
-        mismatches.push({
-          postId: p.id,
-          videoId: p.video_id,
-          oldTitle: p.title,
-          newTitle: cleaned,
-          wordpressPostId: p.wordpress_post_id,
-          wordpressUrl: p.wordpress_url,
-          preview,
-        })
-      } catch {
-        // Skip rows where the check throws — non-fatal for the batch.
-      }
-    }
+    // Parallelize the per-post Haiku checks. The previous serial loop
+    // took ~1-2s per post × 25 = 25-50s per scan call. Promise.all
+    // collapses that to the slowest single check (~2-3s) since Haiku
+    // tolerates 20-50 concurrent requests easily. Cuts a 126-post
+    // scan from ~3-5 minutes down to <30 seconds. 2026-06-07.
+    type PostRow = { id: string; video_id: string | null; title: string; content: string; wordpress_post_id: number | null; wordpress_url: string }
+    const results = await Promise.all(
+      ((posts ?? []) as PostRow[]).map(async (p): Promise<Mismatch | null> => {
+        if (!p.title || !p.content || p.content.length < 300) return null
+        try {
+          const newTitle = await claude.factCheckTitleVsBody(p.title, p.content, {
+            userId: user.id,
+            tier: 'admin',
+          })
+          const cleaned = (newTitle || '').trim()
+          if (!cleaned || cleaned === p.title.trim()) return null
+          // Build a short body preview for the UI.
+          const preview = p.content
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 240)
+          return {
+            postId: p.id,
+            videoId: p.video_id,
+            oldTitle: p.title,
+            newTitle: cleaned,
+            wordpressPostId: p.wordpress_post_id,
+            wordpressUrl: p.wordpress_url,
+            preview,
+          }
+        } catch {
+          // Skip rows where the check throws — non-fatal for the batch.
+          return null
+        }
+      }),
+    )
+    const mismatches: Mismatch[] = results.filter((m): m is Mismatch => m !== null)
 
     return NextResponse.json({
       mismatches,

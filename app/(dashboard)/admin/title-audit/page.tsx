@@ -59,7 +59,10 @@ export default function TitleAuditPage() {
         const res = await fetch('/api/admin/title-audit/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 20, offset }),
+          // 40-post batches — the scan endpoint now parallelizes the
+          // Haiku checks so a batch finishes in ~3-5s regardless of size.
+          // Larger batches = fewer round-trips.
+          body: JSON.stringify({ limit: 40, offset }),
         })
         if (!res.ok) {
           const j = await res.json().catch(() => ({}))
@@ -247,7 +250,7 @@ export default function TitleAuditPage() {
         <div className="mt-8 card p-6 text-center">
           <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7]">Click <strong>Run scan</strong> to walk your archive.</p>
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-1">
-            Each post costs one Haiku call (~$0.0001). For 126 posts: roughly $0.013 + ~3 minutes.
+            Each post costs one Haiku call (~$0.0001). For 126 posts: roughly $0.013 + ~20 seconds (parallel scan).
           </p>
         </div>
       )}
