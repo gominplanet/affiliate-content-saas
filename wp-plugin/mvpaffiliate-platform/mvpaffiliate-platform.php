@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.42
+ * Version: 1.0.43
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.42');
+define('MVP_AFFILIATE_VERSION', '1.0.43');
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()
@@ -1592,35 +1592,59 @@ add_action('wp_footer', function () {
     $backend             = 'https://www.mvpaffiliate.io';
     ?>
 <style id="mvp-pf-css">
+  /* Two modes — see the JS below for how we toggle between them.
+     2026-06-07: was a big bottom-center pill that competed with the
+     orange sticky Amazon CTA — user feedback "too intrusive". Now we
+     try to drop the button INSIDE the theme's sticky header next to
+     the search icon, and only fall back to a small floating icon
+     when that injection can't find an obvious anchor. */
+
+  /* Default (fallback) — small floating circular icon in the top-right.
+     Set far enough from the top to clear most sticky headers. Much
+     less intrusive than the old bottom-center pill. */
   .mvp-pf-fab {
-    /* Bottom-center, floating ABOVE the sticky Amazon CTA bar (z-index
-       9999) so it visually sits between the "Reviewed in this post"
-       eyebrow on the left and the orange Amazon button on the right.
-       Pages without the sticky CTA still get a friendly bottom-center
-       pill — nothing else competes for that spot. */
-    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-    z-index: 10000;
+    position: fixed; top: 80px; right: 16px;
+    z-index: 9998;
+    width: 36px; height: 36px;
     background: #7C3AED; color: #fff; border: 0; border-radius: 999px;
-    padding: 10px 16px 10px 12px; font: 600 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    box-shadow: 0 12px 30px rgba(124,58,237,.35); cursor: pointer; display: inline-flex;
-    align-items: center; gap: 8px; white-space: nowrap;
+    font: 600 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    box-shadow: 0 6px 16px rgba(124,58,237,.30); cursor: pointer; display: inline-flex;
+    align-items: center; justify-content: center; padding: 0;
+    transition: transform .12s ease, box-shadow .12s ease;
   }
   .mvp-pf-fab .mvp-pf-spark {
-    width: 20px; height: 20px; border-radius: 999px; background: rgba(255,255,255,.18);
-    display: inline-flex; align-items: center; justify-content: center; font-size: 13px;
+    width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px;
   }
-  .mvp-pf-fab:hover { transform: translateX(-50%) translateY(-1px); }
-  /* On small screens the sticky CTA bar gets dense — keep the pill
-     compact so it still fits between the title and the orange CTA. */
+  /* Label is hidden in icon mode; revealed only when the button has
+     been injected as a pill into the header (mvp-pf-fab--inline). */
+  .mvp-pf-fab #mvp-pf-fab-label { display: none; }
+  .mvp-pf-fab:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.40); }
+
+  /* Injected variant — sits inside the host theme's header next to the
+     search icon. Drops the fixed positioning and matches a normal
+     header-icon-button footprint. */
+  .mvp-pf-fab--inline {
+    position: static; top: auto; right: auto;
+    width: auto; height: auto;
+    padding: 6px 12px 6px 10px; gap: 6px;
+    border-radius: 999px;
+    box-shadow: 0 2px 6px rgba(124,58,237,.20);
+    vertical-align: middle; margin: 0 4px;
+  }
+  .mvp-pf-fab--inline #mvp-pf-fab-label { display: inline; font-size: 12px; }
+  .mvp-pf-fab--inline .mvp-pf-spark { background: rgba(255,255,255,.18); border-radius: 999px; width: 18px; height: 18px; }
+  .mvp-pf-fab--inline:hover { transform: none; }
   @media (max-width: 600px) {
-    .mvp-pf-fab { padding: 8px 12px 8px 10px; font-size: 12px; }
-    .mvp-pf-fab .mvp-pf-spark { width: 16px; height: 16px; font-size: 11px; }
+    /* On phones the header is dense — drop the label so it stays an icon. */
+    .mvp-pf-fab--inline { padding: 6px; gap: 0; }
+    .mvp-pf-fab--inline #mvp-pf-fab-label { display: none; }
   }
+
   .mvp-pf-panel {
-    /* Anchored to the FAB (bottom-center). Pops UP from above the pill
-       so the user reads top-to-bottom: header -> input -> results, with
-       the pill they just clicked at the bottom. */
-    position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+    /* In both fallback (top-right icon) and inline (header icon) modes
+       the panel pops DOWN from the icon. Anchored top-right so it
+       never collides with the bottom sticky Amazon CTA. */
+    position: fixed; top: 124px; right: 16px;
     z-index: 10001;
     width: 360px; max-width: calc(100vw - 32px); max-height: 70vh; overflow: auto;
     background: #fff; color: #1d1d1f; border: 1px solid #e5e5e7; border-radius: 14px;
@@ -1711,6 +1735,58 @@ add_action('wp_footer', function () {
   var SITE = '<?php echo $site_url; ?>';
   var API  = '<?php echo $backend; ?>/api/blog/product-finder';
   var brandKnown = false;
+
+  // Try to drop the button INTO the theme's sticky header next to the
+  // search icon. If we can find a recognizable search-toggle anchor,
+  // we switch the FAB into "inline pill" mode and remove its floating
+  // position. Otherwise it stays in the default small top-right icon
+  // (fallback) — still much less intrusive than the old bottom-center
+  // pill that competed with the sticky Amazon CTA bar. 2026-06-07.
+  function tryInjectIntoHeader() {
+    // Selectors ordered most-specific (Kadence sticky) → most-generic
+    // (any header element that looks like a search trigger). First
+    // match wins and we stop.
+    var candidates = [
+      // Kadence sticky header search trigger (the user's theme):
+      '.kadence-sticky-header-inner .kadence-header-search-toggle',
+      '.kadence-sticky-header-inner [class*="search-toggle"]',
+      '.kadence-sticky-header-inner [class*="header-search"]',
+      // Kadence non-sticky header (so the button still gets a home
+      // when the sticky variant isn't enabled):
+      '.site-header .kadence-header-search-toggle',
+      '.kadence-header-search-toggle',
+      // Generic — most themes name search toggles something like this:
+      '.header-search-toggle',
+      '.search-toggle-open',
+      '.menu-item-search',
+      'header [class*="search-toggle"]',
+      'header [class*="header-search"]',
+      'nav [class*="search-toggle"]',
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      var anchor = document.querySelector(candidates[i]);
+      if (anchor && anchor.parentNode) {
+        // Found a search icon — drop the FAB right after it as a
+        // sibling. Move it instead of cloning so the existing click
+        // listeners + panel id wiring keeps working.
+        anchor.parentNode.insertBefore(fab, anchor.nextSibling);
+        fab.classList.add('mvp-pf-fab--inline');
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Headers sometimes render after DOMContentLoaded (Kadence's sticky
+  // header is JS-mounted). Try immediately, then re-try a few times to
+  // catch late-mounted headers. If still not found we leave the FAB
+  // in floating-icon fallback mode.
+  var attempts = 0;
+  (function tryLater() {
+    if (tryInjectIntoHeader()) return;
+    attempts++;
+    if (attempts < 6) setTimeout(tryLater, 300);
+  })();
 
   fab.addEventListener('click', function () {
     panel.classList.toggle('mvp-pf-hidden');
