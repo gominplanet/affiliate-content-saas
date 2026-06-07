@@ -137,6 +137,28 @@ export default function AdminCronPage() {
     }
   }
 
+  // Bulk-retry a set of rows in one call. Used by "Retry all stuck" +
+  // "Retry all failed" — saves you clicking through 10-20 rows after
+  // a network blip caused a batched failure. 2026-06-07.
+  async function retryBulk(ids: string[], label: string) {
+    if (ids.length === 0) return
+    const tId = toast.loading(`Re-queueing ${ids.length} ${label}…`)
+    try {
+      const res = await fetch('/api/admin/cron-retry-bulk', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || `Failed (${res.status})`)
+      const updated = typeof j.updated === 'number' ? j.updated : ids.length
+      toast.success(`${updated} of ${ids.length} ${label} re-queued`, { id: tId })
+      load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e), { id: tId })
+    }
+  }
+
   return (
     <div>
       <PageHero
@@ -214,10 +236,19 @@ export default function AdminCronPage() {
       {/* ── Stuck rows ────────────────────────────────────────────────── */}
       {stats && stats.stuck.length > 0 && (
         <div className="mt-6">
-          <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2 flex items-center gap-2">
-            <Clock size={14} className="text-[#ff9500]" />
-            Stuck in processing &gt;5 min ({stats.stuck.length})
-          </h2>
+          <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              <Clock size={14} className="text-[#ff9500]" />
+              Stuck in processing &gt;5 min ({stats.stuck.length})
+            </h2>
+            <button
+              onClick={() => retryBulk(stats.stuck.map(r => r.id), 'stuck rows')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#ff9500] text-white hover:bg-[#ff9500]/90 transition-colors"
+              title={`Flip all ${stats.stuck.length} stuck rows back to pending`}
+            >
+              <RefreshCw size={11} /> Retry all stuck ({stats.stuck.length})
+            </button>
+          </div>
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-2">
             These rows were claimed by a cron tick that never wrote back a completed/failed status. Likely the tick errored or timed out. Use Retry to flip them back to pending.
           </p>
@@ -228,10 +259,19 @@ export default function AdminCronPage() {
       {/* ── Recent failures ───────────────────────────────────────────── */}
       {stats && stats.recentFailures.length > 0 && (
         <div className="mt-6">
-          <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2 flex items-center gap-2">
-            <AlertTriangle size={14} className="text-[#ff3b30]" />
-            Recent failures ({stats.recentFailures.length})
-          </h2>
+          <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              <AlertTriangle size={14} className="text-[#ff3b30]" />
+              Recent failures ({stats.recentFailures.length})
+            </h2>
+            <button
+              onClick={() => retryBulk(stats.recentFailures.map(r => r.id), 'failed rows')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#ff3b30] text-white hover:bg-[#ff3b30]/90 transition-colors"
+              title={`Flip all ${stats.recentFailures.length} failed rows back to pending — useful after a network blip caused a batched failure`}
+            >
+              <RefreshCw size={11} /> Retry all failed ({stats.recentFailures.length})
+            </button>
+          </div>
           <RowsTable rows={stats.recentFailures} onRetry={retryRow} />
         </div>
       )}

@@ -100,6 +100,11 @@ export const TIERS = {
     socials: [] as readonly Social[],
     multiAccountSocial: false,
     publishAll: false,
+    /** Cascade-only schedules per month — distinct blog_posts you can
+     *  queue a "social cascade for already-live post" against. Per-post
+     *  re-schedules don't count again. Null = unlimited. The
+     *  schedule-cascade-only route enforces this server-side (2026-06-07). */
+    cascadeOnlySchedulesPerMonth: 5 as number | null,
     /** Power-user / Pro-only gates. */
     campaigns: false,
     apiAccess: false,
@@ -153,6 +158,7 @@ export const TIERS = {
     socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads'] as readonly Social[],
     multiAccountSocial: false,
     publishAll: false,
+    cascadeOnlySchedulesPerMonth: 30 as number | null,
     campaigns: false,
     apiAccess: false,
     whiteLabel: false,
@@ -201,6 +207,7 @@ export const TIERS = {
     socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads', 'instagram', 'telegram'] as readonly Social[],
     multiAccountSocial: false,
     publishAll: false,
+    cascadeOnlySchedulesPerMonth: null as number | null,
     campaigns: false,
     apiAccess: false,
     whiteLabel: false,
@@ -252,6 +259,7 @@ export const TIERS = {
     /** Multi-account social: per-post FB Page / IG account picker. */
     multiAccountSocial: true,
     publishAll: true,
+    cascadeOnlySchedulesPerMonth: null as number | null,
     campaigns: true,
     /** API access + White-label HIDDEN from nav for now. The features
      *  exist; the nav links are commented out in DashboardShellV2 until
@@ -296,6 +304,7 @@ export const TIERS = {
     socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram', 'tiktok'] as readonly Social[],
     multiAccountSocial: true,
     publishAll: true,
+    cascadeOnlySchedulesPerMonth: null as number | null,
     campaigns: true,
     apiAccess: true,
     whiteLabel: true,

@@ -25,7 +25,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { tierAllowsSocial, normalizeTier, type Tier } from '@/lib/tier'
+import { tierAllowsSocial, normalizeTier, TIERS, type Tier } from '@/lib/tier'
 import type { SocialScheduleEntry, SchedulableSocial } from '@/lib/schedule-types'
 import { DEFAULT_SOCIAL_OFFSETS_MIN } from '@/lib/schedule-types'
 
@@ -73,6 +73,64 @@ export async function POST(request: Request) {
     const { data: tierRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
     const tier = (tierRow?.tier as Tier) ?? 'trial'
+
+    // ── Per-month cascade-only cap ────────────────────────────────────────
+    // Counts DISTINCT blog_post_ids the user has cascade-only-scheduled
+    // this calendar month (kind='social' AND parent_id IS NULL). Re-cascading
+    // the SAME post doesn't double-count — we exclude `postId` itself. Trial
+    // gets 5/month, Creator 30/month, Studio+/Pro/Admin unlimited (null).
+    // Defensive — wraps the query so a pre-migration-103 db (where kind +
+    // parent_id don't exist) silently skips the cap rather than 500-ing.
+    // 2026-06-07 anti-abuse for the free trial.
+    const cap = TIERS[normalizeTier(tier)].cascadeOnlySchedulesPerMonth ?? null
+    if (cap !== null) {
+      const now = new Date()
+      const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: prevRows, error: prevErr } = await (supabase as any)
+          .from('scheduled_posts')
+          .select('blog_post_id')
+          .eq('user_id', user.id)
+          .eq('kind', 'social')
+          .is('parent_id', null)
+          .gte('created_at', startOfMonth)
+          .limit(2000)
+        if (!prevErr && Array.isArray(prevRows)) {
+          const distinctIds = new Set<string>(
+            prevRows
+              .map((r: { blog_post_id?: string }) => r.blog_post_id ?? '')
+              .filter(Boolean),
+          )
+          // The user is re-cascading THIS post — don't make them burn a slot
+          // they already burned.
+          distinctIds.delete(postId)
+          if (distinctIds.size >= cap) {
+            return NextResponse.json(
+              {
+                error:
+                  `Cascade-only schedule cap reached: ${distinctIds.size}/${cap} posts this month on ${tier}. ` +
+                  `Upgrade Creator or higher to lift the cap.`,
+                limitReached: true,
+                cap: 'cascade-only-schedules',
+                currentTier: tier,
+                upgrade: tier === 'trial'
+                  ? { tier: 'creator', label: 'Creator', limit: 30 }
+                  : tier === 'creator'
+                  ? { tier: 'studio', label: 'Studio', limit: null }
+                  : null,
+              },
+              { status: 403 },
+            )
+          }
+        }
+      } catch (e) {
+        // Pre-migration-103 schema — kind/parent_id columns absent. Don't
+        // block the user, just log so we know the cap isn't being enforced
+        // until migrations land.
+        console.warn('[schedule-cascade-only] cap check skipped (migration 103?):', e)
+      }
+    }
 
     // Validate each social entry up front.
     for (const s of socials) {
