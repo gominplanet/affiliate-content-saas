@@ -1,16 +1,21 @@
 /**
- * POST /api/admin/title-audit/apply
+ * POST /api/tools/title-audit/apply
  *
  * Applies a corrected title to a single post (WP + blog_posts).
  * Body: { postId: string, newTitle: string }
  *
  * Slug stays unchanged — preserves any existing inbound links / RSS
  * subscribers. Only the displayed H1 + post_title field gets updated.
+ *
+ * Access: Creator+ (trial blocked). Only updates the caller's own
+ * post (filtered by user_id) so users can't touch each other's
+ * content. Opened from admin-only 2026-06-07.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
+import { normalizeTier, type Tier } from '@/lib/tier'
 
 export async function POST(request: Request) {
   try {
@@ -21,8 +26,12 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await supabase
       .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
-    if (tierRow?.tier !== 'admin') {
-      return NextResponse.json({ error: 'Admin only' }, { status: 403 })
+    const tier = normalizeTier((tierRow?.tier as Tier) ?? 'trial')
+    if (tier === 'trial') {
+      return NextResponse.json(
+        { error: 'Upgrade to Creator or higher to apply title fixes.' },
+        { status: 403 },
+      )
     }
 
     const { postId, newTitle } = await request.json() as { postId?: string; newTitle?: string }

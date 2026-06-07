@@ -1,11 +1,12 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential. No copying, redistribution, reverse-engineering, or reuse. See LICENSE.
 //
-// /admin/title-audit — catch the WagComb-class title hallucinations
-// already published in production. Today's factCheckTitleVsBody runs
-// at generation time but doesn't auto-fix posts created before the
-// fix. This page walks the entire blog_posts archive, identifies
-// mismatches, and lets the admin one-click apply each correction
-// (or bulk-apply all).
+// /tools/title-audit — catch WagComb-class title hallucinations already
+// published in production. factCheckTitleVsBody runs at generation time
+// but doesn't retroactively fix posts created before that check shipped.
+// This page walks the user's entire blog_posts archive, identifies
+// mismatches, and lets them one-click apply each correction (or
+// bulk-apply all). Moved from /admin to /tools 2026-06-07 — opened to
+// Creator+ since title hallucinations hurt the user's site, not ours.
 'use client'
 
 import { useState } from 'react'
@@ -56,7 +57,7 @@ export default function TitleAuditPage() {
     let scanned = 0
     try {
       while (true) {
-        const res = await fetch('/api/admin/title-audit/scan', {
+        const res = await fetch('/api/tools/title-audit/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           // 40-post batches — the scan endpoint now parallelizes the
@@ -100,7 +101,7 @@ export default function TitleAuditPage() {
     }
     setApplying(prev => new Set(prev).add(m.postId))
     try {
-      const res = await fetch('/api/admin/title-audit/apply', {
+      const res = await fetch('/api/tools/title-audit/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId: m.postId, newTitle: finalTitle }),

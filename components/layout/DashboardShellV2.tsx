@@ -155,6 +155,9 @@ export default function DashboardShellV2({
   }, [collapsed])
 
   const isAdmin = tier === 'admin'
+  // Paid tiers (everyone except trial). Used to gate Creator+ features
+  // like the Title/body audit that live in the user-facing sidebar.
+  const isPaid = tier !== 'trial'
 
   // Admin "view as tier" dropdown state. Sourced from localStorage so the
   // sidebar reflects whichever tier the admin is currently previewing.
@@ -272,6 +275,12 @@ export default function DashboardShellV2({
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
         { href: '/analytics', icon: <TrendingUp size={15} />, label: 'Analytics' },
+        // Title audit — scan the user's archive for title/body product
+        // mismatches (the WagComb-class hallucination). Creator+ only —
+        // trial blocked because they have ≤5 lifetime posts. Lives under
+        // Grow because catching wrong titles is a content-quality move,
+        // adjacent to SEO. Moved from /admin to /tools 2026-06-07.
+        { href: '/tools/title-audit', icon: <AlertTriangle size={15} />, label: 'Title audit', gate: isPaid },
       ],
     },
     {
@@ -341,7 +350,9 @@ export default function DashboardShellV2({
         { href: '/admin/users', icon: <UserCog size={15} />, label: 'Users (admin)' },
         { href: '/admin/failures', icon: <AlertTriangle size={15} />, label: 'Failures' },
         { href: '/admin/cron', icon: <Activity size={15} />, label: 'Cron health' },
-        { href: '/admin/title-audit', icon: <AlertTriangle size={15} />, label: 'Title audit' },
+        // Title audit moved to /tools/title-audit and is now Creator+ accessible.
+        // Admins still reach it via that route (the new gate allows trial+ paid;
+        // admins are 'paid' in this taxonomy). No admin entry needed here. */
         { href: '/admin/costs', icon: <DollarSign size={15} />, label: 'AI Cost (admin)' },
         { href: '/admin/blog-quality', icon: <Activity size={15} />, label: 'Blog Quality' },
         { href: '/admin/template-performance', icon: <BarChart3 size={15} />, label: 'Template Performance' },
