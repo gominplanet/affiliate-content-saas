@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
 import { toast } from 'sonner'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
@@ -1866,7 +1866,11 @@ function InstagramPublishModalShell({ onClose, children }: { onClose: () => void
 }
 
 // ── Video card ────────────────────────────────────────────────────────────────
-function VideoCard({
+// React.memo wraps the impl so a parent re-render (toast, modal open,
+// search keystroke, a sibling row's loading state) doesn't bubble down
+// to every card. A card now only re-renders when ITS OWN props change.
+// Big snappiness win on the 20-card paginated Posts tab. 2026-06-07.
+const VideoCard = memo(function VideoCardImpl({
   video, post, wpSiteUrl, fbConnected, pinterestConnected, threadsConnected, linkedInConnected, twitterConnected, blueskyConnected, telegramConnected, instagramConnected, tiktokConnected, fbAccounts, igAccounts, userTier, brandNiches, customCategories, brandDisclaimer, brandFacebookGroups, failedSchedulePlatforms, onCustomCategoryAdded,
   onGenerated, onDismiss, onDelete, onPinPreview,
 }: {
@@ -2171,7 +2175,12 @@ function VideoCard({
     <div className="card p-4 flex gap-4 items-start">
       {thumb && (
         <div className="w-28 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100" style={{ height: '72px' }}>
-          <img src={thumb} alt={title} className="w-full h-full object-cover" />
+          {/* loading="lazy" — only fetch the YouTube thumbnail when this
+              card actually scrolls into view. Cuts initial bandwidth on
+              the Posts tab from ~20 thumbs/page to ~4-5 (the ones above
+              the fold). decoding="async" lets the browser skip the main
+              thread for image decoding. 2026-06-07 perf pass. */}
+          <img src={thumb} alt={title} className="w-full h-full object-cover" loading="lazy" decoding="async" />
         </div>
       )}
       <div className="flex-1 min-w-0">
@@ -2654,7 +2663,7 @@ function VideoCard({
       <ConfirmHost />
     </div>
   )
-}
+})
 
 // Display label + brand color for each schedulable platform — used by the
 // Scheduled list. Kept in sync with the cron worker's switch statement.
@@ -4323,7 +4332,7 @@ export default function ContentPage() {
               />
               <div className="w-24 h-14 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-[#2c2c2e]">
                 {post.thumbnail
-                  ? <img src={post.thumbnail} alt="" className="w-full h-full object-cover" />
+                  ? <img src={post.thumbnail} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   : <div className="w-full h-full" />}
               </div>
               <div className="flex-1 min-w-0">
