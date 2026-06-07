@@ -166,6 +166,32 @@ export function paragraphOffsets(content: string): number[] {
 }
 
 /**
+ * Find the byte ranges of every `<!-- wp:html --> ... <!-- /wp:html -->`
+ * Gutenberg block in `content`. These wrap custom-HTML callouts the
+ * writer emits — Quick Verdict (which uses <h3>, not <h2>, so the H2
+ * scan misses it), Scorecard, Related Reviews carousel, custom CTAs.
+ *
+ * An image dropped INSIDE one of these blocks renders inside the
+ * callout box (looks broken). 2026-06-07: this was the user's report
+ * of an image inside the Quick Verdict shower mirror box.
+ */
+function htmlBlockRanges(content: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = []
+  const reOpen = /<!-- wp:html(?:\s+\{[^}]*\})?\s+-->/g
+  let m: RegExpExecArray | null
+  while ((m = reOpen.exec(content)) !== null) {
+    const start = m.index
+    const closeIdx = content.indexOf('<!-- /wp:html -->', m.index + m[0].length)
+    if (closeIdx !== -1) {
+      // End of the block = position of the closing comment + its own
+      // length, so the range fully contains the wrapper.
+      ranges.push([start, closeIdx + '<!-- /wp:html -->'.length])
+    }
+  }
+  return ranges
+}
+
+/**
  * Find ALL H2 offsets in `content` with a `skip` flag for each — used
  * to compute excluded ranges (paragraphs INSIDE Quick Verdict / FAQ /
  * Related shouldn't be valid image anchors).
@@ -228,12 +254,20 @@ export function pickBodyImageOffsets(content: string, count: number): number[] {
   const bodyStart = Math.floor(content.length * 0.10)
   const bodyEnd = Math.floor(content.length * 0.88)
 
-  // ── Excluded ranges: any H2 flagged as a skip-heading (Quick
-  //    Verdict, Related, FAQ, etc.) and everything UNTIL the next H2.
-  //    Paragraphs inside these ranges aren't valid anchors — would
-  //    drop an image inside a callout box or in the tail blocks.
+  // ── Excluded ranges: two sources combined.
+  //    (a) Every `<!-- wp:html --> ... <!-- /wp:html -->` block. These
+  //        wrap Quick Verdict (which uses <h3>, not <h2>), Scorecard,
+  //        Related Reviews carousel, custom CTAs. An image inside
+  //        any of these renders broken/inside a callout.
+  //    (b) Any H2 flagged as a skip-heading (Related Reviews title,
+  //        FAQ section title, etc. — for posts that use heading-based
+  //        tails instead of HTML blocks). The range extends to the
+  //        next H2 (or end of doc).
+  //    2026-06-07: the user reported an image landing inside the
+  //    Quick Verdict box — Quick Verdict is in (a), not (b), so the
+  //    H2-only exclusion alone wasn't enough.
+  const excludedRanges: Array<[number, number]> = [...htmlBlockRanges(content)]
   const headings = allH2Anchors(content)
-  const excludedRanges: Array<[number, number]> = []
   for (let i = 0; i < headings.length; i++) {
     const h = headings[i]
     if (h.skip) {
