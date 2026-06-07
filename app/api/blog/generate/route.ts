@@ -1487,9 +1487,23 @@ async function handleGenerate(request: Request) {
             }
           }
 
-          // Image count scales ~1 per 500 words, clamped to the tier ceiling.
+          // Image count — user's per-brand preference (0..4) wins; falls
+          // back to word-scaled tier default. 2026-06-07: surfaced in
+          // Brand Profile so users can set "always 2" / "never any" etc.
           const words = bodyWordCount(content)
-          const imageCount = allowedBlogImages(tier, words)
+          const userImageCount = (brand as { blog_image_count?: number | null } | null)?.blog_image_count ?? null
+          const imageCount = allowedBlogImages(tier, words, userImageCount)
+          if (imageCount === 0) {
+            // User wants no in-body images — throw a sentinel that the
+            // surrounding try/catch swallows. Logs the intent + writes
+            // body_images_count=0 so the diagnostic badge is correct.
+            console.log('[generate] skipping in-body images — user preference set to 0', { userId: user.id })
+            if (savedPost?.id) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              try { await supabase.from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+            }
+            throw new Error('__skip_in_body_images__')
+          }
           const slots = await generateBodyImagePrompts({
             count: imageCount,
             productTitle: productTitleForPrompts,
@@ -1711,12 +1725,19 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
           }
         }
       } catch (e) {
-        // The published text post stands — but log what blew up so we can see
-        // it instead of staring at "no images" with zero signal.
-        console.warn('[blog-images] AI-generation branch threw:', e instanceof Error ? e.message : String(e))
-        if (savedPost?.id) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          try { await supabase.from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+        // Sentinel "user set 0 images" — already handled above (count
+        // written, log emitted). Swallow quietly so we don't log a
+        // misleading "branch threw" line for an intentional opt-out.
+        if (e instanceof Error && e.message === '__skip_in_body_images__') {
+          // intentional skip — no further action needed
+        } else {
+          // The published text post stands — but log what blew up so we can see
+          // it instead of staring at "no images" with zero signal.
+          console.warn('[blog-images] AI-generation branch threw:', e instanceof Error ? e.message : String(e))
+          if (savedPost?.id) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            try { await supabase.from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+          }
         }
       }
     }

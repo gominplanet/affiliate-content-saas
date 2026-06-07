@@ -104,6 +104,15 @@ alter table public.integrations
 create index if not exists scheduled_posts_updated_at_idx
   on public.scheduled_posts (updated_at desc);`,
   },
+  {
+    id: '107',
+    what: 'User-set in-article image count on brand_profiles',
+    table: 'brand_profiles',
+    column: 'blog_image_count',
+    sql: `alter table public.brand_profiles
+  add column if not exists blog_image_count int
+    check (blog_image_count is null or (blog_image_count >= 0 and blog_image_count <= 4));`,
+  },
 ]
 
 export async function GET() {

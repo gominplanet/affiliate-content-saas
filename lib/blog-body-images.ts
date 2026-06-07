@@ -166,119 +166,129 @@ export function paragraphOffsets(content: string): number[] {
 }
 
 /**
+ * Find ALL H2 offsets in `content` with a `skip` flag for each — used
+ * to compute excluded ranges (paragraphs INSIDE Quick Verdict / FAQ /
+ * Related shouldn't be valid image anchors).
+ */
+function allH2Anchors(content: string): Array<{ offset: number; skip: boolean }> {
+  const isSkipHere = (atOffset: number): boolean => {
+    const window = content.slice(atOffset, atOffset + 400)
+    const inner = window.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i)?.[1]
+      ?.replace(/<[^>]+>/g, '')
+      ?.replace(/&amp;/g, '&')
+      ?.replace(/&nbsp;/g, ' ')
+      ?.replace(/&#8217;/g, "'")
+      ?.replace(/&[a-z#0-9]+;/gi, '')
+      ?.trim()
+      ?.toLowerCase() ?? ''
+    if (!inner) return false
+    return SKIP_HEADING_TEXT.some(pat => inner === pat || inner.startsWith(pat + ':') || inner.startsWith(pat + ' '))
+  }
+  const all: Array<{ offset: number; skip: boolean }> = []
+  const reBlock = /<!-- wp:heading(?:\s+(\{[^}]*\}))?\s+-->/g
+  let m: RegExpExecArray | null
+  while ((m = reBlock.exec(content)) !== null) {
+    const attrs = m[1]
+    if (attrs) {
+      const lv = attrs.match(/"level"\s*:\s*(\d+)/)
+      if (lv && parseInt(lv[1], 10) !== 2) continue
+    }
+    all.push({ offset: m.index, skip: isSkipHere(m.index) })
+  }
+  const reTag = /<h2\b/gi
+  while ((m = reTag.exec(content)) !== null) {
+    all.push({ offset: m.index, skip: isSkipHere(m.index) })
+  }
+  return all.sort((a, b) => a.offset - b.offset)
+}
+
+/**
  * Pick up to `count` byte offsets — one per image — placing them across
- * the article body. ALL generated images get a slot (no silent drops):
+ * the article body. The 2026-06-07 rewrite follows the user's rules:
  *
- *   1. Prefer usable H2 boundaries (reads as "image introduces next
- *      section"). Interior H2s first, then last, then first.
- *   2. If H2 anchors don't cover `count`, fill the gap with paragraph
- *      offsets in the body region, enforcing a minimum byte-spacing
- *      so two images can't land back-to-back.
+ *   - Images can land before ANY paragraph (not just H2 boundaries).
+ *   - Never at the start of the article (skip the first 10% of the body).
+ *   - Never at the end (skip the last 12%).
+ *   - Never inside Quick Verdict / Related / FAQ / Disclosure callouts —
+ *     paragraphs inside those skip-heading sections are excluded.
+ *   - Never back-to-back: every pick is at least 1200 bytes (~one
+ *     paragraph) from any other pick.
+ *   - Spread evenly across the eligible paragraphs.
  *
- * Body region clamps to 5%–90% of the document so paragraph fallback
- * doesn't slide into the intro lead or the Related/FAQ tail.
- *
- * Minimum spacing scales with the document: `docLength / (count * 2 + 1)`
- * gives every image roughly equal room.
- *
- * Returns distinct offsets in document order. Will return fewer than
- * `count` ONLY if the post has too few break points overall — never
- * silently, that case is now logged by callers.
+ * If the post can't fit `count` images with proper spacing, returns
+ * FEWER — quality > density. Logs which picks got dropped so we can
+ * see it in Vercel logs.
  */
 export function pickBodyImageOffsets(content: string, count: number): number[] {
   if (count <= 0 || content.length === 0) return []
 
-  const usable = headingOffsets(content)
-  // ── Tier 1: H2 anchors in priority order ───────────────────────────
-  const interior = usable.length >= 3 ? usable.slice(1, -1) : []
-  const tail = usable.length >= 2 ? [usable[usable.length - 1]] : []
-  const head = usable.length >= 1 ? [usable[0]] : []
-  const h2Pool: number[] = [...interior]
-  if (h2Pool.length < count) for (const t of tail) if (!h2Pool.includes(t)) h2Pool.push(t)
-  if (h2Pool.length < count) for (const h of head) if (!h2Pool.includes(h)) h2Pool.push(h)
+  // ── Body region: exclude intro hero (first 10%) and tail blocks
+  //    (last 12%). Belt-and-braces against "image at the very start"
+  //    and "image at the very end" — the user's hard rules.
+  const bodyStart = Math.floor(content.length * 0.10)
+  const bodyEnd = Math.floor(content.length * 0.88)
 
-  // Spread the H2 anchors evenly across what's available (in doc order).
-  const sortedH2 = [...h2Pool].sort((a, b) => a - b)
-  const h2Slots = Math.min(count, sortedH2.length)
-  const picked: number[] = []
-  if (h2Slots > 0) {
-    const lastIdx = sortedH2.length - 1
-    const used = new Set<number>()
-    for (let i = 0; i < h2Slots; i++) {
-      const frac = h2Slots === 1 ? 0.4 : i / (h2Slots - 1)
-      const idx = Math.round(frac * lastIdx)
-      const off = sortedH2[idx]
-      if (!used.has(off)) {
-        used.add(off)
-        picked.push(off)
-      }
+  // ── Excluded ranges: any H2 flagged as a skip-heading (Quick
+  //    Verdict, Related, FAQ, etc.) and everything UNTIL the next H2.
+  //    Paragraphs inside these ranges aren't valid anchors — would
+  //    drop an image inside a callout box or in the tail blocks.
+  const headings = allH2Anchors(content)
+  const excludedRanges: Array<[number, number]> = []
+  for (let i = 0; i < headings.length; i++) {
+    const h = headings[i]
+    if (h.skip) {
+      const next = headings[i + 1]?.offset ?? content.length
+      excludedRanges.push([h.offset, next])
     }
   }
+  const isInExcluded = (o: number) => excludedRanges.some(([s, e]) => o >= s && o <= e)
 
-  // ── Tier 2: paragraph fallback for remaining slots ─────────────────
-  // Only fires when count > usable H2 anchors. Picks paragraph offsets
-  // in the body region (5%–90%) at least minSpacing bytes away from any
-  // already-picked offset so images don't end up adjacent.
-  const remaining = count - picked.length
-  if (remaining > 0) {
-    const bodyStart = Math.floor(content.length * 0.05)
-    const bodyEnd = Math.floor(content.length * 0.90)
-    const paragraphs = paragraphOffsets(content).filter(o => o >= bodyStart && o <= bodyEnd)
-    const minSpacing = Math.floor(content.length / Math.max(2, count * 2 + 1))
-    const tooClose = (o: number) => picked.some(p => Math.abs(p - o) < minSpacing)
-    // Walk paragraphs in document order; greedily pick any that satisfies
-    // the spacing constraint until we've filled `remaining` slots.
-    // First pass — strict spacing. Second pass — relaxed if needed.
-    for (const o of paragraphs) {
-      if (picked.length >= count) break
-      if (tooClose(o)) continue
-      picked.push(o)
-    }
-    if (picked.length < count) {
-      // Second pass — relax the spacing but NEVER allow back-to-back.
-      // Defines "back-to-back" as <1200 bytes (≈200 words / one mid-
-      // length paragraph). Even when the post has too few break points
-      // to fill `count`, we'd rather return fewer images than land
-      // two side-by-side. The user can re-roll if they want more
-      // density. 2026-06-07: SigenStor back-to-back fix.
-      const HARD_FLOOR = 1200
-      const relaxed = Math.max(HARD_FLOOR, Math.floor(minSpacing / 2))
-      const stillTooClose = (o: number) => picked.some(p => Math.abs(p - o) < relaxed)
-      for (const o of paragraphs) {
-        if (picked.length >= count) break
-        if (picked.includes(o)) continue
-        if (stillTooClose(o)) continue
-        picked.push(o)
-      }
-    }
+  // ── Eligible paragraph anchors: in body region, not in any
+  //    excluded skip-heading range. paragraphOffsets() already dedupes
+  //    Gutenberg-marker / `<p>`-tag pairs into single anchors.
+  const eligible = paragraphOffsets(content).filter(o =>
+    o >= bodyStart && o <= bodyEnd && !isInExcluded(o),
+  )
+
+  if (eligible.length === 0) {
+    console.warn('[pickBodyImageOffsets] no eligible paragraph anchors', {
+      contentLength: content.length,
+      requested: count,
+      bodyStart, bodyEnd,
+      excludedRangeCount: excludedRanges.length,
+    })
+    return []
   }
 
-  // ── Belt-and-braces final spacing guard ────────────────────────────
-  // No matter how picks got assembled (Tier 1 H2s, Tier 2 first pass,
-  // Tier 2 second pass), drop any offset that ends up within
-  // ABSOLUTE_FLOOR bytes of an earlier pick. Sized at one full image
-  // block (~600 bytes) + one short paragraph (~600 bytes), so two
-  // images can NEVER render adjacent in the rendered HTML — even if a
-  // Gutenberg block I didn't anticipate (e.g. wp:html / wp:html-comparison
-  // / wp:table) has tag attributes that my dedupe regex missed.
-  // 2026-06-07: shipped initially as Tier 2-only spacing, but the
-  // SigenStor post landed 2 images 307 bytes apart in the rendered
-  // HTML despite my earlier fix. Logging will confirm the picker
-  // path, but the guarantee here is the final word.
+  // ── Spread `count` picks evenly across eligible anchors. With one
+  //    eligible anchor and count=3 you get 1 pick. With 20 eligible
+  //    and count=3 you get 3 picks at fractions 0, 0.5, 1.
+  const picks: number[] = []
+  const lastIdx = eligible.length - 1
+  for (let i = 0; i < count; i++) {
+    const frac = count === 1 ? 0.5 : i / (count - 1)
+    const idx = Math.round(frac * lastIdx)
+    const off = eligible[idx]
+    if (!picks.includes(off)) picks.push(off)
+  }
+
+  // ── Belt-and-braces final pass: drop any pick within 1200 bytes
+  //    (~one paragraph) of an earlier pick. Quality > density —
+  //    user can re-roll if they want more images. Logs drops so we
+  //    can see in Vercel when posts have too-tight structure.
   const ABSOLUTE_FLOOR = 1200
-  const sortedPicks = [...new Set(picked)].sort((a, b) => a - b)
+  const sortedPicks = [...new Set(picks)].sort((a, b) => a - b)
   const finalOffsets: number[] = []
   for (const o of sortedPicks) {
     if (finalOffsets.every(p => Math.abs(p - o) >= ABSOLUTE_FLOOR)) {
       finalOffsets.push(o)
     }
   }
-  if (finalOffsets.length < sortedPicks.length) {
-    // We dropped some picks for being too close. Caller logs whether
-    // count was met. Quality > clustering — the user can re-roll.
-    console.warn('[pickBodyImageOffsets] dropped picks for adjacency', {
+  if (finalOffsets.length < count) {
+    console.warn('[pickBodyImageOffsets] returning fewer than requested', {
       contentLength: content.length,
       requested: count,
+      eligible: eligible.length,
       picked: sortedPicks,
       kept: finalOffsets,
     })

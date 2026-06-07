@@ -314,13 +314,28 @@ export const TIERS = {
   },
 } as const
 
-/** In-body blog image ceiling for a post, scaled ~1 per 500 words and
- *  clamped to the tier's blogImagesPerPost. Single source of truth for
- *  the blog generator's image count. */
-export function allowedBlogImages(tier: Tier, wordCount: number): number {
+/** In-body blog image ceiling for a post. Single source of truth for
+ *  the blog generator's image count.
+ *
+ *  - If the user set `brand_profiles.blog_image_count` explicitly
+ *    (0..4), respect it — clamped to the tier ceiling so a Trial user
+ *    can't pick 4. Including 0 (no in-body images at all).
+ *  - Otherwise fall back to the legacy word-count-scaled default
+ *    (~1 image per 1500 words, min 2, clamped to tier ceiling).
+ *
+ *  Added userPreference parameter 2026-06-07. */
+export function allowedBlogImages(
+  tier: Tier,
+  wordCount: number,
+  userPreference?: number | null,
+): number {
   const ceiling = TIERS[normalizeTier(tier)].blogImagesPerPost
-  // A review reads best with ~2 photos; only a very long post earns a 3rd
-  // (~1 image per 1500 words). Keeps single reviews from getting cluttered.
+  if (typeof userPreference === 'number' && userPreference >= 0) {
+    // User has an explicit preference — respect it, clamped to tier
+    // ceiling. 0 is valid and means "no in-body images".
+    return Math.min(ceiling, userPreference)
+  }
+  // Legacy default — word-count scaled, min 2, clamped to tier ceiling.
   const byLength = Math.round(wordCount / 1500)
   return Math.max(2, Math.min(ceiling, byLength))
 }

@@ -166,7 +166,21 @@ export async function POST(request: Request) {
   // Strip the existing body images so we don't duplicate, then regenerate.
   const stripped = (post.content as string).replace(/<!-- wp:image[\s\S]*?<!-- \/wp:image -->\s*/g, '')
   const words = stripped.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length
-  const count = Math.max(1, allowedBlogImages(tier, words))
+  // Read the user's per-brand image-count preference (0..4, null = default).
+  // null = legacy word-scaled default. 0 = skip image gen entirely.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: brand } = await supabase
+    .from('brand_profiles').select('blog_image_count').eq('user_id', user.id).maybeSingle()
+  const userImageCount = (brand as { blog_image_count?: number | null } | null)?.blog_image_count ?? null
+  const requested = allowedBlogImages(tier, words, userImageCount)
+  // 0 is a valid user choice ("never want images") — skip the whole
+  // gen + upload + insert dance and return success early so the user
+  // doesn't burn FAL credits.
+  if (requested === 0) {
+    console.log('[refresh-images] skipping — user preference set to 0 images', { userId: user.id, postId: post.id })
+    return NextResponse.json({ ok: true, count: 0, message: 'Image count set to 0 in Brand Profile.' })
+  }
+  const count = Math.max(1, requested)
   const altBase = productTitle || (post.title as string) || 'product'
 
   // Distinct per-image scene prompts (shared with blog generation) so the

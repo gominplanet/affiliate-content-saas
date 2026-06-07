@@ -108,6 +108,11 @@ interface BrandData {
   tone: string[]
   post_length: string
   cta_style: string
+  /** Per-brand override for the in-article image count (0..4). Null =
+   *  legacy default (word-scaled, tier-capped). Set in Brand Profile;
+   *  used by /api/blog/generate + /api/blog/refresh-images via the
+   *  3rd argument to allowedBlogImages. 2026-06-07. */
+  blog_image_count: number | null
   affiliate_disclaimer: string
   primary_color: string
   secondary_color: string
@@ -194,6 +199,9 @@ const DEFAULT: BrandData = {
   tone: [],
   post_length: 'medium',
   cta_style: 'soft_recommendation',
+  // Null = use the tier-default (word-scaled). Existing users keep
+  // legacy behavior until they explicitly pick a number.
+  blog_image_count: null,
   affiliate_disclaimer: 'This post contains affiliate links. I may earn a commission at no extra cost to you.',
   primary_color: '#7C3AED',
   secondary_color: '#34c759',
@@ -241,6 +249,10 @@ export default function BrandPage() {
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
+  // User's tier — drives the dropdown options for "Images per article"
+  // (Trial 0-2, Creator/Studio 0-3, Pro/Admin 0-4). Loaded alongside
+  // the Geniuslink + Amazon-tag fields from `integrations` below. 2026-06-07.
+  const [userTier, setUserTier] = useState<string>('trial')
 
   async function purgeCache() {
     setPurging(true)
@@ -272,7 +284,7 @@ export default function BrandPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
-      .select('geniuslink_api_key, geniuslink_api_secret, amazon_associates_tag')
+      .select('geniuslink_api_key, geniuslink_api_secret, amazon_associates_tag, tier')
       .eq('user_id', user.id)
       .maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -281,6 +293,7 @@ export default function BrandPage() {
           setGeniuslinkKey(intRow.geniuslink_api_key ?? '')
           setGeniuslinkSecret(intRow.geniuslink_api_secret ?? '')
           setAmazonAssociatesTag(intRow.amazon_associates_tag ?? '')
+          if (typeof intRow.tier === 'string') setUserTier(intRow.tier)
         }
       })
 
@@ -300,6 +313,9 @@ export default function BrandPage() {
         tone: row.tone ?? [],
         post_length: row.post_length ?? 'medium',
         cta_style: row.cta_style ?? 'soft_recommendation',
+        // blog_image_count is nullable in DB; null = "use tier default".
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        blog_image_count: typeof (row as any).blog_image_count === 'number' ? (row as any).blog_image_count : null,
         affiliate_disclaimer: row.affiliate_disclaimer ?? DEFAULT.affiliate_disclaimer,
         primary_color: row.primary_color ?? '#7C3AED',
         secondary_color: row.secondary_color ?? '#34c759',
@@ -1235,6 +1251,51 @@ export default function BrandPage() {
                   <option value="long">Long (1,500–2,500 words)</option>
                   <option value="deep">Deep-dive (2,500+ words)</option>
                 </select>
+              </div>
+              {/* Images per article — user override of the word-scaled
+                  default. Options shown match the tier ceiling:
+                    Trial      → 0, 1, 2
+                    Creator    → 0, 1, 2, 3
+                    Studio     → 0, 1, 2, 3
+                    Pro/Admin  → 0, 1, 2, 3, 4
+                  Hard rules enforced server-side: no back-to-back, no at
+                  start, no at end. Picking 0 skips image gen entirely
+                  (saves Re-roll cost). 2026-06-07. */}
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
+                  Images per article
+                  <InfoTip>How many AI photos drop inside each post body. They&rsquo;re always spaced through the article — never side-by-side, never at the very start or end. Pick &ldquo;0&rdquo; if you prefer text-only posts. &ldquo;Default&rdquo; uses the tier&rsquo;s word-scaled count (~1 per 1500 words).</InfoTip>
+                </label>
+                {(() => {
+                  // Tier ceiling derived inline to avoid bundling the full
+                  // TIERS config into the client. Mirrors lib/tier.ts
+                  // blogImagesPerPost. Capped at 4 in the UI per the
+                  // 2026-06-07 product call.
+                  const tierCap = userTier === 'trial' ? 2
+                    : userTier === 'creator' ? 3
+                    : userTier === 'studio' ? 3
+                    : userTier === 'pro' ? 4
+                    : userTier === 'admin' ? 4
+                    : 2
+                  const options: Array<number | 'default'> = ['default']
+                  for (let i = 0; i <= tierCap; i++) options.push(i)
+                  return (
+                    <select
+                      value={data.blog_image_count === null ? 'default' : String(data.blog_image_count)}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        set('blog_image_count', v === 'default' ? null : parseInt(v, 10))
+                      }}
+                      className="input-field text-xs"
+                    >
+                      {options.map((o) =>
+                        o === 'default'
+                          ? <option key="default" value="default">Default (auto, word-scaled)</option>
+                          : <option key={o} value={String(o)}>{o === 0 ? '0 — text only, no images' : `${o} image${o === 1 ? '' : 's'} per post`}</option>
+                      )}
+                    </select>
+                  )
+                })()}
               </div>
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1.5">
