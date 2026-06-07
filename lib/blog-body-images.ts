@@ -253,7 +253,37 @@ export function pickBodyImageOffsets(content: string, count: number): number[] {
     }
   }
 
-  return [...new Set(picked)].sort((a, b) => a - b)
+  // ── Belt-and-braces final spacing guard ────────────────────────────
+  // No matter how picks got assembled (Tier 1 H2s, Tier 2 first pass,
+  // Tier 2 second pass), drop any offset that ends up within
+  // ABSOLUTE_FLOOR bytes of an earlier pick. Sized at one full image
+  // block (~600 bytes) + one short paragraph (~600 bytes), so two
+  // images can NEVER render adjacent in the rendered HTML — even if a
+  // Gutenberg block I didn't anticipate (e.g. wp:html / wp:html-comparison
+  // / wp:table) has tag attributes that my dedupe regex missed.
+  // 2026-06-07: shipped initially as Tier 2-only spacing, but the
+  // SigenStor post landed 2 images 307 bytes apart in the rendered
+  // HTML despite my earlier fix. Logging will confirm the picker
+  // path, but the guarantee here is the final word.
+  const ABSOLUTE_FLOOR = 1200
+  const sortedPicks = [...new Set(picked)].sort((a, b) => a - b)
+  const finalOffsets: number[] = []
+  for (const o of sortedPicks) {
+    if (finalOffsets.every(p => Math.abs(p - o) >= ABSOLUTE_FLOOR)) {
+      finalOffsets.push(o)
+    }
+  }
+  if (finalOffsets.length < sortedPicks.length) {
+    // We dropped some picks for being too close. Caller logs whether
+    // count was met. Quality > clustering — the user can re-roll.
+    console.warn('[pickBodyImageOffsets] dropped picks for adjacency', {
+      contentLength: content.length,
+      requested: count,
+      picked: sortedPicks,
+      kept: finalOffsets,
+    })
+  }
+  return finalOffsets
 }
 
 /**
