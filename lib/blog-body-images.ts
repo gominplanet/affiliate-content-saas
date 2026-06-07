@@ -147,7 +147,22 @@ export function paragraphOffsets(content: string): number[] {
   // Raw <p> tags as a fallback for non-Gutenberg writer output.
   const reTag = /<p\b/gi
   while ((m = reTag.exec(content)) !== null) offsets.add(m.index)
-  return [...offsets].sort((a, b) => a - b)
+  // Dedupe nearby anchor pairs. A Gutenberg paragraph is normally
+  // emitted as `<!-- wp:paragraph -->\n<p>…</p>` — that's TWO matches
+  // (block marker + tag), typically <60 bytes apart, both pointing at
+  // the SAME paragraph. Without dedupe, a fallback pass could land two
+  // images at "different" offsets that are actually the same paragraph.
+  // We keep the earlier of each cluster (the block marker if present —
+  // inserting BEFORE the marker keeps Gutenberg structure intact).
+  // 2026-06-07: this was the SigenStor back-to-back bug.
+  const sorted = [...offsets].sort((a, b) => a - b)
+  const deduped: number[] = []
+  for (const o of sorted) {
+    if (deduped.length === 0 || o - deduped[deduped.length - 1] > 80) {
+      deduped.push(o)
+    }
+  }
+  return deduped
 }
 
 /**
@@ -220,9 +235,19 @@ export function pickBodyImageOffsets(content: string, count: number): number[] {
       picked.push(o)
     }
     if (picked.length < count) {
+      // Second pass — relax the spacing but NEVER allow back-to-back.
+      // Defines "back-to-back" as <1200 bytes (≈200 words / one mid-
+      // length paragraph). Even when the post has too few break points
+      // to fill `count`, we'd rather return fewer images than land
+      // two side-by-side. The user can re-roll if they want more
+      // density. 2026-06-07: SigenStor back-to-back fix.
+      const HARD_FLOOR = 1200
+      const relaxed = Math.max(HARD_FLOOR, Math.floor(minSpacing / 2))
+      const stillTooClose = (o: number) => picked.some(p => Math.abs(p - o) < relaxed)
       for (const o of paragraphs) {
         if (picked.length >= count) break
         if (picked.includes(o)) continue
+        if (stillTooClose(o)) continue
         picked.push(o)
       }
     }
