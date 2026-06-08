@@ -1,27 +1,54 @@
 // © 2026 Gominplanet / MVP Affiliate — proprietary & confidential.
 //
-// bakeSimpleHeadline — composites the Gemini-spec thumbnail elements:
-// neon border, person cutout, and headline text onto an NB Pro base.
+// bakeSimpleHeadline — Gemini-spec thumbnail composite with razor-sharp
+// typography. Uses opentype.js to convert text characters to SVG <path>
+// elements at build time, then Resvg renders those paths with TRUE
+// paint-order: stroke fill (no font matching, no WOFF parsing, no
+// silent failures). Same approach Gemini's handoff described — vector
+// paths + paint-order = crisp outlines that read pro at any scale.
 //
-// Architecture (2026-06-08, after the Resvg-text bug):
-//   - Border + cutout = raw SVG → Resvg (no text, just shapes — works)
-//   - Headline text   = Satori → resvg via renderDesignerOverlay
-//                       (Satori converts text glyphs to <path> elements
-//                        BEFORE Resvg sees them, sidestepping Resvg's
-//                        unreliable font-family resolution)
-//   - Final composite = sharp layers base → border → cutout → text
+// Why text-to-path (and not Resvg <text> + fontFiles):
+//   - Resvg's text rendering with custom .woff files is unreliable in
+//     serverless: silent failures when family name doesn't match, no
+//     errors, just empty PNGs. We hit this three times.
+//   - opentype.js loads the .woff/.ttf, parses glyph data, and exposes
+//     getPath(text, x, y, size) → an SVG <path> with EXACT character
+//     shapes. Resvg never has to do font work.
+//   - paint-order: stroke fill applied to <path> = a true vector
+//     stroke around each glyph, sharp at any resolution. The Gemini
+//     "razor crispness" we couldn't get with text-shadow tricks.
 //
-// Why we went through several text-rendering attempts:
-//   1. Sharp + raw SVG: needed OS-level fontconfig (no Vercel)
-//   2. Resvg + raw SVG with font-family: 'BakeDisplay' alias — font lookup failed
-//   3. Resvg + inline attributes with font-family: 'Anton' — still silent fail,
-//      probably WOFF parser issue or family-name mismatch in serverless
-//   4. CURRENT: Satori-rendered text overlay on transparent base, composited
-//      with sharp. Satori embeds Anton glyphs as SVG <path> elements at
-//      Satori-output time, so Resvg never has to do font matching.
+// Why opentype.js loads the font ONCE and we cache the parsed font in
+// module scope: parsing takes ~50ms cold; cached lookups are ~0ms.
 import { Resvg } from '@resvg/resvg-js'
 import sharp from 'sharp'
-import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
+import opentype, { type Font, type Path as OpentypePath } from 'opentype.js'
+import { readFileSync, existsSync } from 'node:fs'
+import path from 'node:path'
+
+const ANTON_REL = '@fontsource/anton/files/anton-latin-400-normal.woff'
+
+// Parsed Anton font cached in module scope — survives warm Lambda
+// invocations so we pay the parse cost ~once per cold start.
+let cachedFont: Font | null = null
+
+function loadAntonFont(): Font {
+  if (cachedFont) return cachedFont
+  const candidates = [
+    path.join(process.cwd(), 'node_modules', ANTON_REL),
+    path.join(process.cwd(), '..', 'node_modules', ANTON_REL),
+  ]
+  for (const p of candidates) {
+    if (!existsSync(p)) continue
+    const buffer = readFileSync(p)
+    // opentype.parse takes an ArrayBuffer-like; Buffer's underlying
+    // ArrayBuffer slice gives us exactly that.
+    const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
+    cachedFont = opentype.parse(ab as ArrayBuffer)
+    return cachedFont
+  }
+  throw new Error(`Anton font not found at: ${candidates.join(' OR ')}`)
+}
 
 export interface ThumbCopyForBake {
   line1: string
@@ -32,36 +59,71 @@ export interface ThumbCopyForBake {
 export interface BakeOptions {
   width?: number
   height?: number
-  /** Which corner the headline anchors in. Pass 'upper-right' when the
-   *  product sits on the LEFT of the frame. Default upper-left. */
   anchor?: 'upper-left' | 'upper-right'
-  /** Optional foreground PNG (e.g. rembg cutout of the creator). When
-   *  provided, it's composited OVER the neon border so the subject
-   *  "breaks out of the frame" — head/shoulders sit in front of the
-   *  border line. Must match the base image dimensions exactly. */
   personCutoutPng?: Buffer
-  /** Telemetry for the renderDesignerOverlay text step. */
-  userId: string
-  tier: string | null
 }
 
 export interface BakeResult {
   png: Buffer
   width: number
   height: number
-  /** Set when a step failed and `png` is a fallback. */
   renderError?: string
 }
 
 /**
- * Bake the headline + border + cutout onto the base. Never throws —
- * surfaces failures via renderError so the caller can ship the base
- * if any step breaks.
+ * Convert a single line of text into an array of {pathData, isEmphasis}
+ * chunks, anchored at (x, y). Each chunk corresponds to a run of text
+ * that needs one colour — runs containing the emphasis word are flagged
+ * isEmphasis=true so the SVG renders them yellow.
+ *
+ * Returns the SVG <path> snippets ready to splice into the parent SVG,
+ * plus the total advance width so the caller can centre/right-align.
  */
+function lineToPaths(font: Font, line: string, emphasis: string, fontSize: number, startX: number, baselineY: number, anchor: 'start' | 'end'): { paths: string; totalWidth: number } {
+  const upper = line.toUpperCase()
+  const upperEmphasis = emphasis.toUpperCase().trim()
+
+  // Build a [text, isEmphasis] segment list by splitting the line at
+  // the first whole-word match of the emphasis. If the emphasis word
+  // isn't in the line, the whole line is one non-emphasis segment.
+  const segments: Array<{ text: string; isEmphasis: boolean }> = []
+  if (upperEmphasis && upper.includes(upperEmphasis)) {
+    const idx = upper.indexOf(upperEmphasis)
+    if (idx > 0) segments.push({ text: upper.slice(0, idx), isEmphasis: false })
+    segments.push({ text: upperEmphasis, isEmphasis: true })
+    const tail = upper.slice(idx + upperEmphasis.length)
+    if (tail) segments.push({ text: tail, isEmphasis: false })
+  } else {
+    segments.push({ text: upper, isEmphasis: false })
+  }
+
+  // First pass: measure each segment's advance width so we can position
+  // them precisely on the baseline.
+  const segWidths = segments.map(s => font.getAdvanceWidth(s.text, fontSize))
+  const totalWidth = segWidths.reduce((a, b) => a + b, 0)
+
+  // If anchor='end' the line ends at startX (right-aligned); shift the
+  // origin LEFT by totalWidth.
+  let pen = anchor === 'end' ? startX - totalWidth : startX
+  let pathsOut = ''
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]
+    const p: OpentypePath = font.getPath(seg.text, pen, baselineY, fontSize)
+    const d = p.toPathData(2)
+    // Each glyph chunk is one <path>. The fill colour is the only
+    // difference between emphasis and non-emphasis runs; stroke +
+    // paint-order are inherited from the <g> wrapper for consistency.
+    const fill = seg.isEmphasis ? '#FFE034' : '#FFFFFF'
+    pathsOut += `<path d="${d}" fill="${fill}"/>`
+    pen += segWidths[i]
+  }
+  return { paths: pathsOut, totalWidth }
+}
+
 export async function bakeSimpleHeadline(
   baseImage: Buffer,
   copy: ThumbCopyForBake,
-  opts: BakeOptions,
+  opts: BakeOptions = {},
 ): Promise<BakeResult> {
   let width = opts.width ?? 1280
   let height = opts.height ?? 720
@@ -72,7 +134,7 @@ export async function bakeSimpleHeadline(
 
   const scaleBase = Math.max(360, Math.min(width, height * 16 / 9))
 
-  // ── 1. Neon border SVG (cyan→magenta gradient + blurred glow) ──────────
+  // ── 1. Neon border SVG ──────────────────────────────────────────────────
   const borderInset = Math.round(scaleBase * 0.028)
   const borderRadius = Math.round(scaleBase * 0.026)
   const borderSharpWidth = Math.round(scaleBase * 0.006)
@@ -98,54 +160,82 @@ export async function bakeSimpleHeadline(
         fill="none" stroke="url(#neon)" stroke-width="${borderSharpWidth}"/>
 </svg>`
 
+  // ── 2. Headline text as opentype-rendered SVG paths ─────────────────────
+  // Position the headline column. Anchor 'upper-left' = text aligns to
+  // canvas-left side; 'upper-right' mirrors.
+  const fontSizeLine1 = Math.round(scaleBase * 0.115)
+  const fontSizeLine2 = Math.round(scaleBase * 0.095)
+  const strokeWidth = Math.round(scaleBase * 0.018)
+  const anchor = opts.anchor ?? 'upper-left'
+  const padX = Math.round(width * 0.062)
+  const startX = anchor === 'upper-left' ? padX : width - padX
+  const svgAnchor: 'start' | 'end' = anchor === 'upper-left' ? 'start' : 'end'
+  const baselineLine1 = Math.round(height * 0.22)
+  const baselineLine2 = baselineLine1 + Math.round(fontSizeLine2 * 1.05)
+
+  let textSvg: string | null = null
   try {
-    // ── 2. Render the border (shapes only — Resvg handles these fine) ────
+    const font = loadAntonFont()
+    const line1 = lineToPaths(font, copy.line1, copy.emphasisWord, fontSizeLine1, startX, baselineLine1, svgAnchor)
+    const line2 = lineToPaths(font, copy.line2, copy.emphasisWord, fontSizeLine2, startX, baselineLine2, svgAnchor)
+
+    // Wrap both lines in a <g> with the rotation + stroke + paint-order.
+    // Setting stroke/paint-order on the group means every child <path>
+    // inherits the SAME outline treatment without us having to repeat
+    // it on each one.
+    //
+    // The rotation pivot uses startX + baselineLine1 — the visual top-left
+    // of the headline column. For right-anchored we pivot at startX (the
+    // right edge of the column).
+    textSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="ds" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="${Math.round(scaleBase * 0.008)}" stdDeviation="${Math.round(scaleBase * 0.004)}" flood-color="#000" flood-opacity="0.65"/>
+    </filter>
+  </defs>
+  <g transform="rotate(-3, ${startX}, ${baselineLine1})"
+     stroke="#000000"
+     stroke-width="${strokeWidth}"
+     stroke-linejoin="round"
+     stroke-linecap="round"
+     paint-order="stroke fill"
+     filter="url(#ds)">
+    ${line1.paths}
+    ${line2.paths}
+  </g>
+</svg>`
+  } catch (err) {
+    console.warn('[simple-bake] opentype text render failed:', err instanceof Error ? err.message : String(err))
+    // Carry on with no text — caller still gets a thumbnail with border + cutout.
+  }
+
+  try {
     const borderResvg = new Resvg(borderSvg, {
       fitTo: { mode: 'width', value: width },
       background: 'rgba(0,0,0,0)',
     })
     const borderPng = borderResvg.render().asPng()
 
-    // ── 3. Render the text via Satori path (renderDesignerOverlay) ───────
-    // The dual-color-stack template produces: line1 white, line2 in accent
-    // (yellow) colour. We pass a TRANSPARENT base so the result is just
-    // the text on transparent background, ready to composite as a layer.
-    // forceContent skips the Satori path's internal Haiku decomposition,
-    // so the rendered text is exactly our 4-angle ThumbCopy.
-    const transparentBase = await sharp({
-      create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
-    }).png().toBuffer()
-    const transparentBaseDataUri = `data:image/png;base64,${transparentBase.toString('base64')}`
+    let textPng: Buffer | null = null
+    if (textSvg) {
+      const textResvg = new Resvg(textSvg, {
+        fitTo: { mode: 'width', value: width },
+        background: 'rgba(0,0,0,0)',
+      })
+      textPng = textResvg.render().asPng()
+    }
 
-    // Subject side derives from anchor: text on upper-LEFT means subject
-    // on the RIGHT and vice versa. renderDesignerOverlay reads subjectSide
-    // to decide which half of the canvas holds the text column.
-    const subjectSide: 'left' | 'right' = (opts.anchor ?? 'upper-left') === 'upper-left' ? 'right' : 'left'
-
-    const overlayResult = await renderDesignerOverlay({
-      baseImageUrl: transparentBaseDataUri,
-      headline: `${copy.line1} ${copy.line2}`,         // unused — forceContent below wins
-      forceTemplateId: 'dual-color-stack',
-      forceContent: {
-        leading: copy.line1,
-        punch: copy.line2,
-      },
-      subjectSide,
-      verticalAnchor: 'top',
-      userId: opts.userId,
-      tier: opts.tier,
-    })
-    const textPng = overlayResult.png
-
-    // ── 4. Composite stack ────────────────────────────────────────────────
-    //   base image → border → (optional) person cutout → text overlay
+    // Composite stack: base → border → (optional cutout) → text
     const compositeLayers: sharp.OverlayOptions[] = [
       { input: borderPng, top: 0, left: 0 },
     ]
     if (opts.personCutoutPng) {
       compositeLayers.push({ input: opts.personCutoutPng, top: 0, left: 0 })
     }
-    compositeLayers.push({ input: textPng, top: 0, left: 0 })
+    if (textPng) {
+      compositeLayers.push({ input: textPng, top: 0, left: 0 })
+    }
 
     const final = await sharp(baseImage)
       .composite(compositeLayers)
