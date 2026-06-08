@@ -287,32 +287,43 @@ async function generateHook(videoTitle: string): Promise<string> {
   return flatCopy(c)
 }
 
+// System prompt sets the model's PERMANENT identity for every copy call.
+// Copied near-verbatim from the user's Gemini handoff (2026-06-08) — the
+// "data-driven YouTube Growth Engineer" role + "CRITICAL COGNITIVE
+// CONSTRAINTS" framing gave their successful Gemini run its discipline.
+// Putting these rules in a system prompt (not the user message) makes them
+// non-negotiable to the model — user-message rules read as suggestions
+// the model can soften under task pressure.
+const THUMBNAIL_COPY_SYSTEM_PROMPT = `You are a data-driven YouTube Growth Engineer. Your sole job is to generate ultra-short, high-contrast text overlays for video thumbnails.
+
+CRITICAL COGNITIVE CONSTRAINTS:
+1. DESIGN BUDGET LIMITS: Line 1 must be under 15 characters. Line 2 must be under 20 characters. If text runs longer, it fails mobile glanceability.
+2. NO LITERAL TITLES: Never use the product's actual model name or dry technical labels (no "FOOT PEEL MASK", "OIL DIFFUSER", "MONEY COUNTER", brand names). Use emotional placeholders: "THIS HACK", "THE SECRET", "VIRAL TRICK", "THIS THING".
+3. EMBED PSYCHOLOGICAL TRIGGERS: Every generation must strictly commit to ONE of four click-through profiles:
+   - NEGATION: Interrupt regular user habits ("NEVER USE / CANDLES AGAIN!").
+   - CURIOSITY_GAP: Intentionally hide the main subject ("THE *ONE* THING / NOBODY TELLS YOU!").
+   - SKEPTIC: Challenge the product's financial or functional value upfront ("WASTE OF / MONEY?!").
+   - VALUE_DISRUPTION: Contrast it against a completely different premium lifestyle luxury ("CHEAPER THAN / YOUR LATTE!").
+4. SEMANTIC TAGGING: Isolate exactly ONE high-impact emphasis word per variation. Output it explicitly as emphasisWord so the styling layer can paint it Yellow (#FFE034) while the rest renders white.
+5. ALL CAPS. Use punctuation (! ?) only when it adds emotional weight.
+6. BANNED WORDS (never use): amazing, incredible, insane, honest, "watch this", "check this", "review of".
+7. NEVER make health, medical, or results claims ("cures", "weight loss", "results in 7 days", "before/after").
+
+OUTPUT FORMAT: Return a strictly structured JSON block with: angle, line1, line2, emphasisWord. No prose, no preamble, no markdown fences — just the JSON object.`
+
 async function generateThumbCopy(videoTitle: string, angle: CtrAngle): Promise<ThumbCopy> {
   const anthropic = createAnthropicClient()
   try {
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 200,
+      system: THUMBNAIL_COPY_SYSTEM_PROMPT,
       messages: [{
         role: 'user',
-        content: `Generate thumbnail copy for this YouTube video using the ${angle} psychological angle.
+        content: `VIDEO: "${videoTitle}"
+ANGLE TO USE: ${angle}
 
-VIDEO TITLE: "${videoTitle}"
-
-ANGLE — ${angle}: ${ANGLE_DEFS[angle]}
-
-STRICT RULES:
-- Line 1: under 15 characters. Hard cap. Count them.
-- Line 2: under 20 characters. Hard cap. Count them.
-- ALL CAPS. Use punctuation (! ?) ONLY when it adds emotional weight.
-- NEVER name the product literally ("foot peel mask", "diffuser", "money counter"). Use categorical pronouns: "THIS HACK", "VIRAL TOOL", "THE TRICK", "THIS THING".
-- BANNED words: ${BANNED_COPY_TERMS.join(', ')}.
-- NEVER make health/medical/results claims ("cures", "weight loss", "results in 7 days").
-- Pick ONE word (or short 2-word phrase) from line1+line2 as emphasisWord — the part that carries the click weight. It will render in yellow.
-- Don't preview the product. Provoke a click.
-
-Return ONLY this JSON object, no prose:
-{ "angle": "${angle}", "line1": "...", "line2": "...", "emphasisWord": "..." }`,
+Generate the thumbnail copy now. Output the JSON object only.`,
       }],
     }))
     recordAnthropicUsage(msg, {
