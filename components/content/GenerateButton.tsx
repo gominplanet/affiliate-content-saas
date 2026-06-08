@@ -226,49 +226,68 @@ export function GenerateButton({
       // after every post. Skipped when the user uploaded their own
       // images (those flow through a different, fast branch that does
       // complete inside after()).
+      // Image gen runs as a fire-and-forget background task. Image
+      // generation legitimately takes 1-3 minutes (multiple fal calls,
+      // Vision picks, WP uploads). Blocking the UI on it was the
+      // "spinner hangs forever" bug the user reported — they saw the
+      // post go live, no image, "Adding product photos…" stuck.
+      //
+      // New flow: flip the GenerateButton to 'done' immediately. The
+      // image work runs in the background and lands a toast when it
+      // either succeeds or fails. The user can keep doing other
+      // things — no blocking. 2026-06-08.
       if (includeImages && userImages.length === 0 && data.wordpressPostId) {
-        setStepIdx(GEN_STEPS.length - 1) // "Adding product photos…"
-        try {
-          const imgRes = await fetch('/api/blog/refresh-images', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wordpressPostId: data.wordpressPostId }),
-          })
-          const imgData: Record<string, unknown> = await imgRes.json().catch(() => ({}))
-          if (imgRes.ok && typeof imgData.count === 'number') {
-            const count = imgData.count
-            // Reflect the count on the badge straight away so the user
-            // sees "🖼 N" without a Content-page reload.
-            setResult((prev) => prev ? { ...prev, bodyImagesCount: count } : prev)
-            // Surface what actually happened — silent is the bug. 2026-06-08:
-            // user reported "every time I click Include photos, no images";
-            // root cause was a server-side pref overriding their checkbox.
-            // Even when the count is fine, a toast tells them image gen
-            // succeeded so they don't refresh and wonder.
-            if (count > 0) {
-              toast.success(`Added ${count} in-article image${count === 1 ? '' : 's'}`, { duration: 4000 })
-            } else {
-              toast.warning(
-                'Post created — image gen returned 0 images. ' +
-                `Open the post or check Brand Profile → "Images per article".`,
-                { duration: 8000 },
-              )
+        const wpPostId = data.wordpressPostId
+        toast.loading('Generating in-article images… (1-3 minutes — you can keep working)', {
+          id: `img-gen-${wpPostId}`,
+          duration: Infinity,  // dismissed by the success/fail toast below
+        })
+        // Intentionally NOT awaited — fire-and-forget. Errors land in
+        // the .catch below; the function returns immediately.
+        ;(async () => {
+          try {
+            const imgRes = await fetch('/api/blog/refresh-images', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ wordpressPostId: wpPostId }),
+            })
+            const imgData: Record<string, unknown> = await imgRes.json().catch(() => ({}))
+            if (imgRes.ok && typeof imgData.count === 'number') {
+              const count = imgData.count
+              // Reflect the count on the badge so the user sees "🖼 N"
+              // without a Content-page reload.
+              setResult((prev) => prev ? { ...prev, bodyImagesCount: count } : prev)
+              if (count > 0) {
+                toast.success(`Added ${count} in-article image${count === 1 ? '' : 's'}`, {
+                  id: `img-gen-${wpPostId}`,
+                  duration: 5000,
+                })
+              } else {
+                toast.warning(
+                  'Image gen returned 0 images. Check Brand Profile → "Images per article", or click Images on the post row to retry.',
+                  { id: `img-gen-${wpPostId}`, duration: 10000 },
+                )
+              }
+            } else if (!imgRes.ok) {
+              const msg = (imgData.error as string | undefined) || `Couldn't add in-article images (${imgRes.status}).`
+              toast.error(`${msg} Click Images on the post row to retry.`, {
+                id: `img-gen-${wpPostId}`,
+                duration: 10000,
+              })
             }
-          } else if (!imgRes.ok) {
-            // Surface the auto-trigger failure as a toast instead of
-            // silently swallowing it.
-            const msg = (imgData.error as string | undefined) || `Couldn't add in-article images (${imgRes.status}).`
-            toast.error(`${msg} Click Images on the post row to retry.`, { duration: 8000 })
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : 'Image step failed.'
+            toast.error(`${msg} Click Images on the post row to retry.`, {
+              id: `img-gen-${wpPostId}`,
+              duration: 10000,
+            })
           }
-        } catch (e) {
-          // Non-fatal — the post is already published — but tell the user
-          // so they know to click Images manually instead of thinking the
-          // toggle was ignored. Network errors / aborts land here.
-          const msg = e instanceof Error ? e.message : 'Image step failed.'
-          toast.error(`${msg} Click Images on the post row to retry.`, { duration: 8000 })
-        }
+        })()
       }
 
+      // Flip to 'done' immediately — the post is up, the user can
+      // move on. Image gen (if requested) keeps running in the
+      // background per the IIFE above.
       setStatus('done')
       onDone(data.wordpressUrl as string, data.title as string, data.postId as string)
     } catch (err: unknown) {
