@@ -219,6 +219,15 @@ export function GenerateButton({
           if (e instanceof DOMException && e.name === 'AbortError') {
             throw new Error('Generation took too long (>4 min) and was cancelled. The post may have published anyway — refresh the page to check. If it didn\'t, retry; if it keeps timing out, check Vercel logs or your WordPress site.')
           }
+          // "Failed to fetch" — browser-level TypeError thrown when the
+          // connection drops BEFORE any HTTP response (Vercel killed the
+          // function at maxDuration, ISP hiccup, server crash). The
+          // post may have published on the server even though we never
+          // saw the response, so the action is the same as the abort:
+          // refresh and check before retrying.
+          if (e instanceof TypeError && /failed to fetch|networkerror|load failed/i.test(e.message)) {
+            throw new Error('Lost connection to the server before getting a response. The post may have published anyway — refresh the page to check. If it didn\'t land, retry; if it keeps failing, the WordPress site or Vercel function may be down.')
+          }
           throw e
         } finally {
           clearTimeout(abortTimer)
