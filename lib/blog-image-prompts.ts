@@ -121,6 +121,33 @@ GENERAL RULES FOR EACH IMAGE PROMPT:
 - Lead the prompt with the assigned shot perspective so the rest of the
   prompt is consistent with it.
 
+★ NO AI-LOOKING PEOPLE (2026-06-07 rule — non-negotiable):
+The image generators produce uncanny-valley "AI bodybuilder", "AI fitness
+model", "AI mom in kitchen" results when a person is the subject. The
+result looks like AI slop and tanks reader trust. STRICT bans:
+  - NEVER prompt for a "model", "person", "athlete", "fitness model",
+    "woman in the kitchen", "man in the gym", etc. as the subject.
+  - WEARABLE products (clothing, watches, jewelry, hats, shoes, bags,
+    accessories): show the product FLAT-LAID on a clean surface,
+    folded, hanging on a hanger, draped on furniture, or arranged in
+    a styled still-life. NEVER on a person's body.
+  - When a human is genuinely required to show scale or use (rare),
+    show ONLY a partial view from elbow down — hands holding the
+    product, fingers operating a button, a lap with the product
+    resting on it. NEVER a torso, NEVER a face, NEVER a full body.
+  - Default to product-only or product-in-environment compositions.
+    A glass of water next to a phone case beats a "lifestyle person".
+
+  Examples (do this):
+  - "Flat-lay of the rash guard folded on a wooden bench beside swim goggles, soft window light"
+  - "Close-up of the moisturizer jar tipped on its side on a marble vanity, a cotton round nearby"
+  - "Three-quarter view of the headphones on a desk beside an open laptop, warm afternoon light"
+
+  Examples (NEVER do this):
+  - "A muscular man wearing the compression shirt in a gym"
+  - "A woman applying the cream to her face"
+  - "An athlete training with the resistance bands"
+
 RULES FOR EACH ALT TEXT (this is what goes in <img alt="…"> — image SEO + accessibility):
 - Describe WHAT IS LITERALLY IN THE PHOTO — the subject, the setting, the angle/framing if distinctive. Not a marketing tagline.
 - Include the product name naturally (don't keyword-stuff). If the product name is long, use the short form.
