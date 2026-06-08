@@ -1649,13 +1649,18 @@ function VideoStudioCard({ video, userTier, playlists }: {
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
                   <button
                     onClick={() => {
-                      // Open the headline-decision modal first; fire the
-                      // title-options fetch in parallel so the 5 product-
-                      // specific options are ready by the time the user
-                      // looks at the modal.
-                      setHeadlinePromptChoice(customHeadline.trim() ? 'custom' : 0)
-                      setHeadlinePromptOpen(true)
-                      void loadTitleOptions()
+                      // Skip the headline-picker modal (2026-06-08): the
+                      // new 4-angle copy framework generates 5 variants
+                      // with 5 distinct psychological hooks (NEGATION,
+                      // CURIOSITY_GAP, SKEPTIC, VALUE_DISRUPTION rotated)
+                      // baked into the images directly. Picking copy
+                      // from flat strings BEFORE seeing the rendered
+                      // thumbnail was guessing — now the user picks the
+                      // winner from the actual images. customHeadline
+                      // input below still works as an explicit override
+                      // when the user has a specific line in mind.
+                      const locked = customHeadline.trim()
+                      void generateThumbnail(locked ? { lockedHeadline: locked } : undefined)
                     }}
                     disabled={generatingThumbnail}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60 transition-opacity hover:opacity-90"
