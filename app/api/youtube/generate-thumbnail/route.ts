@@ -13,7 +13,7 @@ import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
-import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
@@ -904,10 +904,24 @@ export async function POST(request: Request) {
           // model drift to a different-looking person. Fall back to the frame
           // only when no face photos are available.
           const identityRefs = faceRefs.length > 0 ? faceRefs : (frameRef ? [frameRef] : [])
-          const refs = [...identityRefs, ...productRefs]
+          // ── Style references (2026-06-08, "Gemini-style" thumbnail upgrade) ──
+          // 3-5 curated thumbnail examples passed as input images so the model
+          // matches the visual language (cinematic blue/orange lighting, bold
+          // dual-tone text with thick outlines, reviewer+product composition).
+          // Single biggest CTR-quality lever — without these, Nano Banana Pro
+          // defaults to its own "sterile product shot" average. Silently no-ops
+          // if no refs are uploaded yet at /public/thumbnail-style-refs/.
+          // ORDER MATTERS in NB Pro: face → product → style refs. The face
+          // anchors identity, the product anchors form, the style refs teach
+          // composition + look.
+          const appBase = process.env.NEXT_PUBLIC_APP_URL
+            || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+            || (request.headers.get('origin'))
+          const styleRefs = await rehostStyleRefs(appBase, 4)
+          const refs = [...identityRefs, ...productRefs, ...styleRefs]
           // Breadcrumb: if NB still falls through after this, the compose returned
           // nothing despite having references — surfaced via faceDebug below.
-          LAST_NB_FALLTHROUGH = `NB entered with refs=${refs.length} (face=${faceRefs.length}, product=${productRefs.length}, frame=${frameRef ? 1 : 0}) — compose returned no image`
+          LAST_NB_FALLTHROUGH = `NB entered with refs=${refs.length} (face=${faceRefs.length}, product=${productRefs.length}, style=${styleRefs.length}, frame=${frameRef ? 1 : 0}) — compose returned no image`
 
           // ── COMPOSED thumbnail (always): recompose into a designed, high-CTR
           //    "creator-review" thumbnail — host large + expressive on one side,
@@ -950,25 +964,62 @@ export async function POST(request: Request) {
             : nProducts === 1
               ? `The FINAL reference image is the PRODUCT being reviewed — render the ACTUAL PRODUCT ITEM ITSELF, matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep the brand mark and product name on the bottle/box/device so viewers immediately recognise the product). CRITICAL: if that reference is retail PACKAGING, a box, a poly-bag or a marketing/A+ Content infographic (overlay headlines like "Ultimate ___", checkmark badges, callout circles, comparison panels, feature-highlight pills, arrows pointing at parts), depict the REAL unpackaged product (in use or as a clean hero object) — NOT the box, NOT the infographic — and do NOT reproduce ANY printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkmarks, checkboxes, callout pills). Do NOT copy the reference's composition, layout, framing, or staging — use it ONLY to learn what the product physically looks like. The product's OWN brand/label/name STAYS; all marketing collateral goes. Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.${compositionDirective}`
               : `The FINAL ${nProducts} reference images are PRODUCT photos supplied by the creator — they may be DIFFERENT angles of the same product, OR DIFFERENT products being compared. Render ALL ${nProducts} of them visibly in the thumbnail, each matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep brand marks and product names on bottles/boxes/devices so viewers immediately recognise the products). CRITICAL: if any reference is retail PACKAGING, a box, a poly-bag or a marketing/A+ Content infographic (overlay headlines, checkmark badges, callout circles, comparison panels, feature-highlight pills), depict the REAL unpackaged product — NOT the box, NOT the infographic — and do NOT reproduce ANY printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkmarks, checkboxes, callout pills). Do NOT copy the references' composition, layout, framing, or staging — use them ONLY to learn what the products physically look like. The products' OWN brand/label/name STAYS; all marketing collateral goes. Use these reference images ONLY for the products; do NOT take any person, face, hands or body from them.${compositionDirective}`
+          // Cinematic color-pair pool — Gemini's winning thumbnail used "rich
+          // blue and orange" lighting, which is the classic teal/orange cinema
+          // grade. We rotate across variants so a 3-thumb batch isn't all the
+          // same palette. EACH pair is a {rim, accent} duo — rim light separates
+          // the creator from background, accent light glows around the product.
+          const COLOR_PAIRS = [
+            { rim: 'rich blue', accent: 'warm orange', overall: 'cinematic teal-and-orange' },
+            { rim: 'deep magenta', accent: 'electric cyan', overall: 'neon-noir' },
+            { rim: 'cool indigo', accent: 'golden amber', overall: 'high-end editorial' },
+          ]
+          // Energetic facial expressions that DON'T trigger "AI bodybuilder /
+          // AI influencer" failure mode. The Gemini winner used "wide-eyed
+          // smile, pointing finger" — direct gaze + decisive action.
+          const EXPRESSIONS = [
+            'wide-eyed and smiling, mouth slightly open in genuine surprise, eyebrows raised',
+            'eyes locked on the camera with a delighted grin, head tilted just slightly',
+            'a confident half-smile with one eyebrow raised, looking like they just discovered something',
+          ]
+          // Action verbs — what the creator is DOING with the product. Direct
+          // interaction is the highest CTR signal we have. We always pick one;
+          // never let the creator stand passively next to the product.
+          const ACTIONS = [
+            'right index finger pointing directly at the product',
+            'one hand gesturing toward the product as if presenting it',
+            'holding the product up just below their chin, looking at the camera',
+          ]
+          // Style-ref aware clause: when we have curated reference thumbnails,
+          // explicitly tell the model to mimic their visual gestalt. This is
+          // what made the Gemini-handoff output land — the model treats the
+          // refs as the style anchor, not the prompt.
+          const styleRefClause = styleRefs.length > 0
+            ? `STYLE REFERENCE: the LAST ${styleRefs.length} reference image${styleRefs.length === 1 ? '' : 's'} ${styleRefs.length === 1 ? 'is an EXAMPLE' : 'are EXAMPLES'} of the exact YouTube thumbnail style we want — match ${styleRefs.length === 1 ? 'its' : 'their'} composition (creator on one side + product hero on the other), lighting punch (rich rim-light + warm accent glow), text styling (bold blocky all-caps with thick outlines + a single contrasting accent colour), and overall visual energy. Use them ONLY for style; do NOT copy the people, products, or text content from these refs — only the LOOK.`
+            : ''
           const buildComposed = (i: number, withText: boolean): string => {
             const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
             const productSide = hostSide === 'LEFT' ? 'RIGHT' : 'LEFT'
+            const palette = COLOR_PAIRS[i % COLOR_PAIRS.length]
+            const expression = EXPRESSIONS[i % EXPRESSIONS.length]
+            const action = ACTIONS[i % ACTIONS.length]
             const headlineClause = withText
-              ? `HEADLINE: bake the text EXACTLY "${hooks[i % hooks.length]}" as ${TITLE_STYLES[i % TITLE_STYLES.length]}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words.`
+              ? `HEADLINE: bake the text EXACTLY "${hooks[i % hooks.length]}" as ${TITLE_STYLES[i % TITLE_STYLES.length]}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words. Add a prominent ${palette.accent.includes('orange') ? 'yellow' : 'white'} arrow with a thick black outline pointing from the headline to the product so the eye is guided from text → product.`
               : `HEADLINE SPACE: leave a generous CLEAN, uncluttered area across the TOP (especially the ${productSide === 'LEFT' ? 'upper-left' : 'upper-right'}) for a headline to be added afterwards. Render ABSOLUTELY NO text, letters, words, numbers or captions anywhere in the image.`
             // 3C — Composition swaps between single-product (host one side,
             // product the other) and multi-product (host smaller, products
             // arranged on the opposite side per the composition note when
             // given, or a sensible default arrangement when not).
             const compositionLine = nProducts >= 2
-              ? `COMPOSITION: Put the creator on the ${hostSide} side, framed chest-up, energetic and expressive (excited, surprised or delighted), looking toward the camera. Render ALL ${nProducts} products visibly and large on the ${productSide} side of the frame, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so they pop. ${compositionNote ? `Arrange them per the creator's direction above ("${compositionNote}").` : 'Arrange them in a clean, balanced layout (side-by-side, stacked, or a small grid) so each product is clearly recognisable at thumbnail size.'} Every product must be unobscured and identifiable.`
-              : `COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, with an energetic, expressive reaction (excited, surprised or delighted), looking toward the camera — ideally holding or gesturing toward the product. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with premium rim-lighting and a subtle glow/halo so it pops.`
+              ? `COMPOSITION: Put the creator on the ${hostSide} side, framed chest-up, ${expression}, ${action.replace('the product', 'the products')}. Render ALL ${nProducts} products visibly and large on the ${productSide} side of the frame, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting so they pop. ${compositionNote ? `Arrange them per the creator's direction above ("${compositionNote}").` : 'Arrange them in a clean, balanced layout (side-by-side, stacked, or a small grid) so each product is clearly recognisable at thumbnail size.'} Every product must be unobscured and identifiable.`
+              : `COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, ${expression}, with ${action}. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow (warm light wrapping the product) and premium rim-lighting so it pops.`
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
 ${identityClause}
 ${outfitNote}
 ${productRefClause}
+${styleRefClause}
 ${compositionLine}
-BACKGROUND: reimagine a MOODY, cinematic scene that fits the video "${videoTitle}" — richer and HIGHER-CONTRAST (deeper tones, dramatic directional lighting, a soft vignette around the edges and especially BEHIND the creator). Do NOT make it a flat, bright, white or airy room. Add subtle rim/edge light separating the creator from the background so the cut-out edge blends cleanly into the scene with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes.
+BACKGROUND: a ${palette.overall} cinematic scene that fits the video "${videoTitle}" — a dramatic blend of ${palette.rim} rim-light behind the creator and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. Do NOT make it a flat, bright, white or airy room. The rim light must visibly separate the creator from the background so the cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes.
 ${headlineClause}
 ${NO_BRAND_IMAGE_CLAUSE}
 Ultra-sharp, professional, photorealistic.`

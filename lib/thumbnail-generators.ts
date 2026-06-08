@@ -65,6 +65,51 @@ export async function rehostAll(urls: string[]): Promise<string[]> {
   return out.filter((u): u is string => !!u)
 }
 
+// ── Style reference thumbnails ──────────────────────────────────────────────
+// Curated YouTube-thumbnail style references passed as input images to Nano
+// Banana Pro so the model learns the visual language we want (cinematic
+// blue/orange lighting, bold dual-tone text with thick black outlines,
+// reviewer-left + product-right composition, arrow callouts). Drop in 3-5
+// .jpg files at the paths below — the system silently no-ops on any file
+// that doesn't exist, so the route still works before they're uploaded.
+//
+// Why this matters: Gemini-style multimodal models tune their output to
+// match the gestalt of all input images, not just the prompt. Without
+// style refs the model defaults to its own "what a thumbnail looks like"
+// average, which is sterile-studio-product-shot. With 3+ style refs it
+// matches the punch + composition of the references. This is the single
+// largest CTR-quality lever in the pipeline.
+//
+// File naming convention: thumbnail-style-refs/{1,2,3,4,5}.jpg in /public.
+// We try up to 5; any 404s are skipped. Recommended count is 3-4.
+const STYLE_REF_FILENAMES = ['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg']
+
+/**
+ * Fetch the curated style-reference thumbnails from /public, re-host them to
+ * fal, and return up to `max` fal URLs in declaration order. Silently skips
+ * any file that 404s, so the route works whether the user has shipped 0, 3,
+ * or 5 references — quality just improves as more refs land.
+ *
+ * `appBaseUrl` should be the absolute origin of the running app
+ * (NEXT_PUBLIC_APP_URL, VERCEL_URL, or the request origin). Without it we
+ * can't fetch from /public, so we return [].
+ */
+export async function rehostStyleRefs(appBaseUrl: string | null | undefined, max = 5): Promise<string[]> {
+  if (!appBaseUrl) return []
+  const base = appBaseUrl.replace(/\/+$/, '')
+  const urls = STYLE_REF_FILENAMES.slice(0, max).map(f => `${base}/thumbnail-style-refs/${f}`)
+  const out: string[] = []
+  for (const u of urls) {
+    try {
+      const res = await fetch(u, { headers: { 'User-Agent': BROWSER_UA }, signal: AbortSignal.timeout(10_000) })
+      if (!res.ok) continue          // 404 = file not uploaded yet, skip
+      const url = await fal.storage.upload(await res.blob())
+      if (url) out.push(url)
+    } catch { /* network hiccup, skip this ref */ }
+  }
+  return out
+}
+
 /**
  * Force-moody post-process. A deterministic, server-side cinematic grade applied
  * to a FINISHED thumbnail: a slight darken + saturation lift, a contrast bump,
