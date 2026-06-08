@@ -70,22 +70,26 @@ export async function POST(request: Request) {
       ? (thumbResult.reason instanceof Error ? thumbResult.reason.message : 'Thumbnail upload failed')
       : null
 
-    // Record applied_at on the youtube_videos row so the YouTube Co-Pilot
-    // "🚀 Pushed via Co-Pilot" tab can identify videos we shipped through
-    // our system. Only on metadata-update success (results[0]) — a failed
-    // thumbnail upload still counts since the title/description landed.
+    // Record push for the YouTube Co-Pilot "🚀 Pushed via Co-Pilot" tab.
+    // Only on metadata-update success (results[0]) — a failed thumbnail
+    // upload still counts since the title/description landed.
+    //
+    // 2026-06-08: writes to youtube_copilot_pushes (migration 109), NOT
+    // youtube_videos. The earlier attempt wrote to youtube_videos but that
+    // table has NOT NULL columns that aren't populated until /api/youtube/sync
+    // runs, so the INSERT silently failed for users who never sync.
     if (results[0].status === 'fulfilled') {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any)
-          .from('youtube_videos')
+          .from('youtube_copilot_pushes')
           .upsert({
             user_id: user.id,
             youtube_video_id: videoId,
-            youtube_metadata_applied_at: new Date().toISOString(),
+            pushed_at: new Date().toISOString(),
           }, { onConflict: 'user_id,youtube_video_id' })
       } catch (err) {
-        console.warn('[yt-update-metadata] failed to record applied_at:', err instanceof Error ? err.message : String(err))
+        console.warn('[yt-update-metadata] failed to record copilot push:', err instanceof Error ? err.message : String(err))
       }
     }
 

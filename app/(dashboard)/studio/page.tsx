@@ -40,7 +40,7 @@ interface DraftVideo {
 //                      that still needs metadata
 //   - shipped:         WE pushed metadata to YouTube via /api/youtube/apply
 //                      or update-metadata — authoritative "done" signal,
-//                      backed by youtube_videos.youtube_metadata_applied_at
+//                      backed by the youtube_copilot_pushes table (mig 109)
 //   - done:            HEURISTIC — description contains a Geniuslink /
 //                      Amazon affiliate URL. Catches videos completed via
 //                      other tools or manual edits (not by Co-Pilot).

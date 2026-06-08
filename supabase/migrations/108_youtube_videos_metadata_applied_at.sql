@@ -1,23 +1,18 @@
 -- © 2026 Gominplanet / MVP Affiliate
 --
--- Track when a user pushes Co-Pilot-generated metadata BACK to YouTube via
--- our /api/youtube/apply or /api/youtube/update-metadata routes. Powers the
--- "🚀 Pushed via Co-Pilot" tab on the YouTube Co-Pilot page so the user can
--- see at a glance which videos they've already shipped through our system
--- vs. which are still TODO.
+-- SUPERSEDED by migration 109. Originally intended to add a
+-- `youtube_metadata_applied_at` column to public.youtube_videos for
+-- tracking Co-Pilot pushes — but that table has 4 NOT NULL columns
+-- (channel_id, channel_title, title, published_at) that aren't populated
+-- until /api/youtube/sync runs. For Co-Pilot users who never sync, the
+-- upsert from the apply route would silently fail the INSERT branch.
 --
--- This is AUTHORITATIVE — different from the existing "✅ Done" tab which
--- is heuristic (description contains an affiliate link). The new column is
--- a real timestamp written only when WE successfully push to YouTube.
+-- The replacement (migration 109) creates a dedicated tracking table
+-- youtube_copilot_pushes with only the fields we need.
 --
--- Mirrors the pattern of tiktok_posted_at (migration 082) + instagram_posted_at
--- (migration 083).
+-- This migration is now a no-op. Safe to leave applied if it was already
+-- run (the unused nullable column is harmless); also safe to skip on
+-- fresh environments.
 
-alter table public.youtube_videos
-  add column if not exists youtube_metadata_applied_at timestamptz;
-
--- Index for fast "shipped videos for this user" queries (the drafts API
--- needs to bulk-join applied state for ~25-500 videos per page load).
-create index if not exists youtube_videos_user_applied_idx
-  on public.youtube_videos (user_id, youtube_metadata_applied_at desc)
-  where youtube_metadata_applied_at is not null;
+-- intentional no-op
+select 1 where false;

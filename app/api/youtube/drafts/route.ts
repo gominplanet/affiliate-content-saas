@@ -97,39 +97,45 @@ export async function GET(request: Request) {
       cursor = page.nextPageToken
     }
 
-    // ── Enrich with Co-Pilot apply state (2026-06-08) ────────────────────
-    // Look up which of these videos the user has already pushed metadata
-    // for via /api/youtube/apply or /api/youtube/update-metadata. Powers
-    // the "🚀 Pushed via Co-Pilot" tab on the Co-Pilot page. Best-effort
-    // — if the lookup fails we just return drafts without the badge.
+    // ── Enrich with Co-Pilot push state (2026-06-08) ─────────────────────
+    // Look up which of these videos the user has pushed via Co-Pilot
+    // (/api/youtube/apply or /api/youtube/update-metadata). Powers the
+    // "🚀 Pushed via Co-Pilot" tab. Best-effort — if the lookup fails we
+    // just return drafts without the badge.
+    //
+    // Reads from youtube_copilot_pushes (migration 109). The earlier
+    // attempt joined against youtube_videos.youtube_metadata_applied_at
+    // but the write side couldn't populate that column for users who
+    // never run /api/youtube/sync (the table has NOT NULL columns that
+    // would block the INSERT branch of the upsert).
     const videoIds = drafts.map(d => d.youtubeVideoId).filter(Boolean)
     const appliedMap: Record<string, string> = {}
     if (videoIds.length > 0) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: applied } = await (supabase as any)
-          .from('youtube_videos')
-          .select('youtube_video_id, youtube_metadata_applied_at')
+          .from('youtube_copilot_pushes')
+          .select('youtube_video_id, pushed_at')
           .eq('user_id', user.id)
           .in('youtube_video_id', videoIds)
-          .not('youtube_metadata_applied_at', 'is', null)
         if (Array.isArray(applied)) {
           for (const row of applied) {
-            if (row.youtube_video_id && row.youtube_metadata_applied_at) {
-              appliedMap[row.youtube_video_id as string] = row.youtube_metadata_applied_at as string
+            if (row.youtube_video_id && row.pushed_at) {
+              appliedMap[row.youtube_video_id as string] = row.pushed_at as string
             }
           }
         }
       } catch (err) {
-        console.warn('[yt-drafts] applied-at lookup failed (non-fatal):', err instanceof Error ? err.message : String(err))
+        console.warn('[yt-drafts] copilot-push lookup failed (non-fatal):', err instanceof Error ? err.message : String(err))
       }
     }
 
     const enriched = drafts.map(d => ({
       ...d,
-      // ISO timestamp when we last pushed metadata to YouTube for this video,
-      // or null if we never have. The client uses this to classify into the
-      // "Pushed via Co-Pilot" tab.
+      // ISO timestamp when we last pushed metadata to YouTube for this video
+      // via Co-Pilot, or null if never. Client uses this to classify into the
+      // "🚀 Pushed via Co-Pilot" tab. Field name kept as metadataAppliedAt
+      // for client compatibility (the studio page already reads this key).
       metadataAppliedAt: appliedMap[d.youtubeVideoId] ?? null,
     }))
 
