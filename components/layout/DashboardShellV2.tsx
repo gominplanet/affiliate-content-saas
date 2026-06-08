@@ -37,7 +37,7 @@ import {
   Flame, GraduationCap, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
-  Share2, UserSquare, Lightbulb, Globe,
+  Share2, UserSquare, Lightbulb,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
@@ -182,9 +182,11 @@ export default function DashboardShellV2({
   // prefetch. Guarded by wpSiteUrl below so the whole group disappears
   // for users who haven't connected WordPress yet (avoids a dead nav
   // entry that does nothing).
-  const wpBase = wpSiteUrl ? wpSiteUrl.replace(/\/+$/, '') : null
-  const wpAdminHref = wpBase ? `${wpBase}/wp-admin` : ''
-  const wpVisitHref = wpBase || ''
+  // wpBase / wpVisitHref / wpAdminHref were used by the now-removed
+  // "Your Blog" sidebar group. The topbar uses `wpSiteUrl` directly
+  // (computes the wp-admin suffix inline) so we no longer need the
+  // pre-computed locals. Kept this comment so the deletion is
+  // explained. 2026-06-08.
 
   const NAV_GROUPS: NavGroupDef[] = [
     {
@@ -199,22 +201,10 @@ export default function DashboardShellV2({
         { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm' },
       ],
     },
-    // Your Blog — direct shortcuts into the live WordPress site the user
-    // is actually creating content FOR. Sits between Today (in-MVP
-    // dashboard) and Set up (one-time configuration) so the daily loop
-    // reads naturally: glance at Today -> open your live blog or wp-admin
-    // -> jump into Set up / Create. Mirrors the topbar's "WP Admin"
-    // button but in a discoverable left-nav location. Both items are
-    // external (open in new tab), so they get the ExternalLink glyph +
-    // target=_blank wiring. Whole group is gated on a connected site —
-    // hidden entirely for users who haven't run Blog Set Up yet.
-    ...(wpBase ? [{
-      label: 'Your Blog',
-      items: [
-        { href: wpVisitHref, icon: <Globe size={15} />, label: 'Visit Blog', external: true },
-        { href: wpAdminHref, icon: <Settings size={15} />, label: 'WP Admin', external: true },
-      ],
-    }] : []),
+    // "Your Blog" sidebar group removed 2026-06-08 — the two
+    // shortcuts (Visit Blog / WP Admin) now live as paired buttons
+    // in the topbar to the left of the theme toggle. Same site-gated
+    // visibility (hidden until Blog Set Up runs).
     {
       // The onboarding spine. Every item here is a "you only do this
       // once (or rarely)" surface — point a new user at this group and
@@ -583,22 +573,45 @@ export default function DashboardShellV2({
             {/* WP admin shortcut — links straight into wp-admin if a site
                 is connected. */}
             {wpSiteUrl && (
-              <a
-                href={`${wpSiteUrl.replace(/\/+$/, '')}/wp-admin`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
-                style={{
-                  backgroundColor: 'var(--surface)',
-                  borderColor: 'var(--border)',
-                  color: 'var(--text-soft)',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
-                title="Open WordPress admin in a new tab"
-              >
-                WP Admin <ExternalLink size={11} />
-              </a>
+              <>
+                {/* Visit Blog — opens the LIVE WordPress site in a new
+                    tab. Paired with WP Admin so both topbar shortcuts
+                    are right next to each other. The old sidebar
+                    "Your Blog" group was removed 2026-06-08 — these
+                    two buttons replace it. */}
+                <a
+                  href={wpSiteUrl.replace(/\/+$/, '')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                  style={{
+                    backgroundColor: 'var(--surface)',
+                    borderColor: 'var(--border)',
+                    color: 'var(--text-soft)',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
+                  title="Open your live blog in a new tab"
+                >
+                  Visit Blog <ExternalLink size={11} />
+                </a>
+                <a
+                  href={`${wpSiteUrl.replace(/\/+$/, '')}/wp-admin`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors"
+                  style={{
+                    backgroundColor: 'var(--surface)',
+                    borderColor: 'var(--border)',
+                    color: 'var(--text-soft)',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
+                  title="Open WordPress admin in a new tab"
+                >
+                  WP Admin <ExternalLink size={11} />
+                </a>
+              </>
             )}
 
             {/* Theme toggle */}
