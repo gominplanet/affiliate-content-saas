@@ -87,7 +87,7 @@ export default function DesignerTextTestPage() {
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Designer Text Overlay — Playground</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Paste a base image URL (a clean thumbnail with no text), provide a headline, and the picker will choose
           a designer template + render it on top. Use the dropdown to force a specific template for comparison.
         </p>
@@ -97,7 +97,7 @@ export default function DesignerTextTestPage() {
         {/* INPUTS */}
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">
               Base image URL
             </label>
             <input
@@ -110,7 +110,7 @@ export default function DesignerTextTestPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">
               Headline (what you want on the thumbnail)
             </label>
             <input
@@ -123,7 +123,7 @@ export default function DesignerTextTestPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">
               Product / topic context (optional, helps picker)
             </label>
             <input
@@ -137,7 +137,7 @@ export default function DesignerTextTestPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">
                 Force template
               </label>
               <select
@@ -151,7 +151,7 @@ export default function DesignerTextTestPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">
                 Subject side (text goes opposite)
               </label>
               <select

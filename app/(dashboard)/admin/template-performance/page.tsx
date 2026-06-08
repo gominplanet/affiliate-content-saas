@@ -97,7 +97,7 @@ export default async function TemplatePerformancePage() {
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Template Performance</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Designer text overlay usage over the last <b>{sampleWindow}</b>. {totalRenders.toLocaleString()} total
           renders across {stats.filter(s => s.count > 0).length} active templates ({stats.filter(s => s.count === 0).length} unused).
         </p>
@@ -105,8 +105,8 @@ export default async function TemplatePerformancePage() {
 
       {totalRenders === 0 ? (
         <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center bg-gray-50">
-          <p className="text-sm text-gray-600 mb-2">No template renders in the last {sampleWindow}.</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">No template renders in the last {sampleWindow}.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             Telemetry kicks in when users generate thumbnails via the YouTube Co-Pilot on the
             wantClean path. Visit <Link href="/admin/designer-text" className="text-[#7C3AED] hover:underline">/admin/designer-text</Link> to
             exercise the system manually.
@@ -122,11 +122,11 @@ export default async function TemplatePerformancePage() {
                 <div className="flex items-baseline justify-between gap-3 mb-2">
                   <div className="min-w-0">
                     <div className="font-semibold text-sm">{s.label}</div>
-                    <code className="text-xs text-gray-500">{s.id}</code>
+                    <code className="text-xs text-gray-500 dark:text-gray-400">{s.id}</code>
                   </div>
                   <div className="text-right shrink-0">
                     <div className="font-mono text-sm font-semibold">{s.count.toLocaleString()}</div>
-                    <div className="text-xs text-gray-500">{share}% · {s.uniqueUsers} users</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{share}% · {s.uniqueUsers} users</div>
                   </div>
                 </div>
                 {/* Histogram bar — width is THIS row's % of the leader. */}
@@ -140,7 +140,7 @@ export default async function TemplatePerformancePage() {
                   />
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="text-xs text-gray-500 line-clamp-1 flex-1">{s.whenToUse}</p>
+                  <p className="text-xs text-gray-500 line-clamp-1 flex-1 dark:text-gray-400">{s.whenToUse}</p>
                   {s.lastUsed && (
                     <span className="text-xs text-gray-400 shrink-0">
                       last {new Date(s.lastUsed).toLocaleDateString()}

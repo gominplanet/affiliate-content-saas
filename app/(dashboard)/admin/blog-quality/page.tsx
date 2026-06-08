@@ -214,7 +214,7 @@ export default async function BlogQualityPage() {
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Blog Quality</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Post-generation self-check telemetry — last 90 days across <b>{d.totalPosts.toLocaleString()}</b> posts.
           Tracks the 9-item audit-rule hardening shipped June 2026.
         </p>
@@ -222,8 +222,8 @@ export default async function BlogQualityPage() {
 
       {d.totalPosts === 0 ? (
         <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center bg-gray-50">
-          <p className="text-sm text-gray-600 mb-2">No self-check telemetry yet.</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-sm text-gray-600 mb-2 dark:text-gray-400">No self-check telemetry yet.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             Generate a blog post (any user). The self-check pass writes to
             blog_quality_checks; rows appear here on the next refresh.
           </p>
@@ -260,12 +260,12 @@ export default async function BlogQualityPage() {
           {/* Trend — last 12 weeks */}
           <div className="border rounded-xl p-5">
             <div className="flex items-baseline justify-between mb-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Weekly trend</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Weekly trend</h2>
               <span className="text-xs text-gray-400">Last {d.weeks.length} weeks</span>
             </div>
             <div className="grid grid-cols-2 gap-6">
               <div>
-                <p className="text-xs text-gray-500 mb-2">Avg violations / post</p>
+                <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">Avg violations / post</p>
                 <div className="space-y-1.5">
                   {d.weeks.map(w => (
                     <div key={`v-${w.weekStart}`} className="flex items-center gap-2">
@@ -279,13 +279,13 @@ export default async function BlogQualityPage() {
                           }}
                         />
                       </div>
-                      <span className="text-xs text-gray-600 w-12 text-right font-mono">{w.avgViolations.toFixed(2)}</span>
+                      <span className="text-xs text-gray-600 w-12 text-right font-mono dark:text-gray-400">{w.avgViolations.toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-2">Avg numbers / post · target ≥3</p>
+                <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">Avg numbers / post · target ≥3</p>
                 <div className="space-y-1.5">
                   {d.weeks.map(w => (
                     <div key={`n-${w.weekStart}`} className="flex items-center gap-2">
@@ -299,7 +299,7 @@ export default async function BlogQualityPage() {
                           }}
                         />
                       </div>
-                      <span className="text-xs text-gray-600 w-12 text-right font-mono">{w.avgNumbers.toFixed(1)}</span>
+                      <span className="text-xs text-gray-600 w-12 text-right font-mono dark:text-gray-400">{w.avgNumbers.toFixed(1)}</span>
                     </div>
                   ))}
                 </div>
@@ -309,11 +309,11 @@ export default async function BlogQualityPage() {
 
           {/* Top patterns */}
           <div className="border rounded-xl p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3 dark:text-gray-400">
               Top leaking patterns
             </h2>
             {d.topPatterns.length === 0 ? (
-              <p className="text-sm text-gray-500">No patterns logged yet.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">No patterns logged yet.</p>
             ) : (
               <div className="space-y-3">
                 {d.topPatterns.map(p => {
@@ -324,7 +324,7 @@ export default async function BlogQualityPage() {
                         <code className="text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{p.pattern}</code>
                         <div className="text-right shrink-0">
                           <span className="font-mono text-xs font-semibold">{p.count.toLocaleString()}</span>
-                          <span className="text-[11px] text-gray-500 ml-1">· {p.share.toFixed(0)}%</span>
+                          <span className="text-[11px] text-gray-500 ml-1 dark:text-gray-400">· {p.share.toFixed(0)}%</span>
                         </div>
                       </div>
                       <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
@@ -338,7 +338,7 @@ export default async function BlogQualityPage() {
                 })}
               </div>
             )}
-            <p className="text-xs text-gray-500 mt-4">
+            <p className="text-xs text-gray-500 mt-4 dark:text-gray-400">
               Bar shows count relative to the top pattern. % is share of all violations. The pattern
               at the top is where the next prompt-tightening pass should focus.
             </p>
@@ -347,7 +347,7 @@ export default async function BlogQualityPage() {
           {/* Recent flagged */}
           {d.recentFlagged.length > 0 && (
             <div className="border rounded-xl p-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3 dark:text-gray-400">
                 Recent flagged posts
               </h2>
               <ul className="divide-y">
@@ -360,13 +360,13 @@ export default async function BlogQualityPage() {
                             {r.blog_post_title || r.blog_post_url}
                           </Link>
                         ) : (
-                          <span className="text-gray-500 italic">(post link unavailable)</span>
+                          <span className="text-gray-500 italic dark:text-gray-400">(post link unavailable)</span>
                         )}
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
+                      <div className="text-xs text-gray-500 mt-0.5 dark:text-gray-400">
                         {new Date(r.created_at).toLocaleDateString()} · {r.violations_found} flagged
                         {r.fixes_applied < r.violations_found && (
-                          <span className="text-amber-600"> ({r.violations_found - r.fixes_applied} paraphrase-miss)</span>
+                          <span className="text-amber-600 dark:text-amber-400"> ({r.violations_found - r.fixes_applied} paraphrase-miss)</span>
                         )}
                         {' · '}
                         <span className={r.numbers_detected < 3 ? 'text-[#ff3b30]' : ''}>{r.numbers_detected} number{r.numbers_detected === 1 ? '' : 's'}</span>
@@ -374,7 +374,7 @@ export default async function BlogQualityPage() {
                       {r.violation_patterns.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {r.violation_patterns.map((p, i) => (
-                            <code key={i} className="text-[10px] bg-gray-100 dark:bg-white/5 text-gray-600 px-1.5 py-0.5 rounded">{p}</code>
+                            <code key={i} className="text-[10px] bg-gray-100 dark:bg-white/5 text-gray-600 px-1.5 py-0.5 rounded dark:text-gray-400">{p}</code>
                           ))}
                         </div>
                       )}
@@ -402,9 +402,9 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
   const color = accent === 'green' ? '#34c759' : accent === 'amber' ? '#FFC200' : accent === 'red' ? '#ff3b30' : '#1d1d1f'
   return (
     <div className="border rounded-xl p-4 bg-white dark:bg-[#1c1c1e]">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1">{label}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1 dark:text-gray-400">{label}</p>
       <p className="text-2xl font-bold leading-tight" style={{ color }}>{value}</p>
-      <p className="text-xs text-gray-500 mt-1">{sub}</p>
+      <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{sub}</p>
     </div>
   )
 }

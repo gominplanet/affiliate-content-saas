@@ -246,7 +246,7 @@ export default function AgencyPage() {
   }
 
   if (loading) {
-    return <div className="max-w-3xl mx-auto p-8 text-sm text-gray-500">Loading…</div>
+    return <div className="max-w-3xl mx-auto p-8 text-sm text-gray-500 dark:text-gray-400">Loading…</div>
   }
 
   // Defensive fallback: previewTier says Pro/Admin but the API
@@ -282,14 +282,14 @@ export default function AgencyPage() {
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Users size={22} /> Virtual Assistants
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">
           Invite VAs or contractors with scoped permissions. They get their own login on your
           single Pro subscription. <b>{seatsCopy}</b>.
         </p>
       </div>
 
       {/* Roll-out banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 dark:text-amber-200">
         <b>Phase 1 — invites + roster:</b> VAs can accept and appear in your team list. Full
         resource sharing (content library, integrations) rolls out in Phase 2 — we'll email
         when it's live. VAs already CANNOT access: brand profile, blog customization,
@@ -298,7 +298,7 @@ export default function AgencyPage() {
 
       {/* Invite form */}
       <div className="border rounded-xl p-5 space-y-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
           Invite a Virtual Assistant
         </h2>
         <div className="space-y-3">
@@ -333,10 +333,10 @@ export default function AgencyPage() {
 
           {/* Permissions grid */}
           <div className="border border-gray-200 rounded-lg p-3 space-y-2">
-            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider dark:text-gray-300">
               What this VA can do
             </p>
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">
               VAs can NEVER access: billing, brand profile, integrations, WordPress settings,
               blog customization, API keys, or this page. Those are owner-only.
             </p>
@@ -354,7 +354,7 @@ export default function AgencyPage() {
                     />
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">{meta.label}</span>
-                      <span className="block text-[11px] text-gray-500 leading-tight">{meta.help}</span>
+                      <span className="block text-[11px] text-gray-500 leading-tight dark:text-gray-400">{meta.help}</span>
                     </span>
                   </label>
                 )
@@ -371,7 +371,7 @@ export default function AgencyPage() {
             <Plus size={14} /> {inviting ? 'Sending…' : 'Send invite'}
           </button>
           {!canInvite && (
-            <p className="text-xs text-amber-700">
+            <p className="text-xs text-amber-700 dark:text-amber-400">
               All seats used. Revoke a VA or cancel a pending invite to add someone new.
             </p>
           )}
@@ -380,11 +380,11 @@ export default function AgencyPage() {
 
       {/* Active VAs */}
       <div className="border rounded-xl p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3 dark:text-gray-400">
           Active VAs ({state.members.length})
         </h2>
         {state.members.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             No active VAs yet. Invite someone above — they'll appear here once they accept.
           </p>
         ) : (
@@ -397,11 +397,11 @@ export default function AgencyPage() {
                 <li key={m.id} className="py-3">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                      {m.role === 'admin' ? <Shield size={16} className="text-amber-600" /> : <UserIcon size={16} className="text-gray-500" />}
+                      {m.role === 'admin' ? <Shield size={16} className="text-amber-600 dark:text-amber-400" /> : <UserIcon size={16} className="text-gray-500 dark:text-gray-400" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-mono text-gray-500 truncate">{m.member_user_id.slice(0, 8)}…</div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-sm font-mono text-gray-500 truncate dark:text-gray-400">{m.member_user_id.slice(0, 8)}…</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
                         {m.role === 'admin' ? 'Admin' : 'Member'} · joined {new Date(m.created_at).toLocaleDateString()}
                         {' · '}
                         <button
@@ -449,7 +449,7 @@ export default function AgencyPage() {
                         </button>
                         <button
                           onClick={() => { setEditingMemberId(null); setMemberDraftPerms(null) }}
-                          className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 rounded inline-flex items-center gap-1"
+                          className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 rounded inline-flex items-center gap-1 dark:text-gray-400 dark:hover:text-gray-100"
                         >
                           <XIcon size={11} /> Cancel
                         </button>
@@ -465,11 +465,11 @@ export default function AgencyPage() {
 
       {/* Pending invites */}
       <div className="border rounded-xl p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-3 dark:text-gray-400">
           Pending invites ({state.invites.length})
         </h2>
         {state.invites.length === 0 ? (
-          <p className="text-sm text-gray-500">No pending invites.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No pending invites.</p>
         ) : (
           <ul className="divide-y">
             {state.invites.map(inv => {
@@ -478,15 +478,15 @@ export default function AgencyPage() {
               return (
                 <li key={inv.id} className="py-3 flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-                    <Mail size={16} className="text-gray-500" />
+                    <Mail size={16} className="text-gray-500 dark:text-gray-400" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold truncate">{inv.email}</div>
-                    <div className="text-xs text-gray-500 inline-flex items-center gap-1.5">
+                    <div className="text-xs text-gray-500 inline-flex items-center gap-1.5 dark:text-gray-400">
                       <Clock size={11} /> Sent {new Date(inv.created_at).toLocaleDateString()} ·{' '}
                       {inv.role === 'admin' ? 'Admin' : 'Member'} · {grantedCount} permission{grantedCount === 1 ? '' : 's'}
                     </div>
-                    {inv.note && <div className="text-xs text-gray-500 italic mt-0.5">"{inv.note}"</div>}
+                    {inv.note && <div className="text-xs text-gray-500 italic mt-0.5 dark:text-gray-400">"{inv.note}"</div>}
                   </div>
                   <button
                     onClick={() => void handleRevokeInvite(inv.id, inv.email)}
