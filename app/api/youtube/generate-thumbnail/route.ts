@@ -1268,10 +1268,41 @@ Ultra-sharp, professional, photorealistic.`
 
                   // verticalAnchor is informative but the bake currently
                   // always anchors top — mirror Gemini's reference layout.
-                  // Future polish: respect verticalAnchor='bottom' too.
                   void verticalAnchor
 
-                  const result = await bakeSimpleHeadline(baseBuf, variantCopy, { anchor })
+                  // ── Person cutout for the "break the frame" effect ────
+                  // Run rembg on the NB Pro composition to get a transparent
+                  // PNG of just the creator. We then composite this OVER
+                  // the neon border (in bakeSimpleHeadline), so the
+                  // creator's head/shoulders sit IN FRONT of the border
+                  // line — the look user pointed out from Gemini's
+                  // reference (model extending above/beyond the frame).
+                  // Best-effort: if rembg fails, the bake still ships with
+                  // the border simply drawn ON TOP of the creator.
+                  let personCutoutPng: Buffer | undefined
+                  try {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const rembg = await fal.subscribe('fal-ai/imageutils/rembg' as any, {
+                      input: { image_url: cleanUrl },
+                      pollInterval: 2000,
+                    })
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const cutUrl = (rembg.data as any)?.image?.url as string | undefined
+                    if (cutUrl) {
+                      const cutRes = await fetch(cutUrl, { signal: AbortSignal.timeout(15000) })
+                      if (cutRes.ok) {
+                        personCutoutPng = Buffer.from(await cutRes.arrayBuffer())
+                        recordUsage({
+                          userId: TELEMETRY.userId, tier: TELEMETRY.tier,
+                          feature: 'yt_thumb_break_frame_cutout', model: 'fal-rembg', images: 1,
+                        })
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('[simple-bake] rembg cutout failed (non-fatal):', e instanceof Error ? e.message : String(e))
+                  }
+
+                  const result = await bakeSimpleHeadline(baseBuf, variantCopy, { anchor, personCutoutPng })
                   if (result.renderError) {
                     console.warn('[simple-bake] variant', i, 'rendered bare base:', result.renderError)
                   }

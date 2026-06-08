@@ -62,6 +62,11 @@ export interface BakeOptions {
   /** Which corner the headline anchors in. Pass 'upper-right' when the
    *  product sits on the LEFT of the frame. Default upper-left. */
   anchor?: 'upper-left' | 'upper-right'
+  /** Optional foreground PNG (e.g. rembg cutout of the creator). When
+   *  provided, it's composited OVER the neon border so the subject
+   *  "breaks out of the frame" — head/shoulders sit in front of the
+   *  border line. Must match the base image dimensions exactly. */
+  personCutoutPng?: Buffer
 }
 
 export interface BakeResult {
@@ -138,46 +143,20 @@ export async function bakeSimpleHeadline(
   const yLine2 = yLine1 + fontSizeLine2 + Math.round(scaleBase * 0.022)
   const textAnchor = anchor === 'upper-left' ? 'start' : 'end'
 
-  // ── Neon glow border frame (2026-06-08, per user pick) ──────────────────
-  // Cyan→magenta→cyan gradient stroke around the canvas perimeter with a
-  // wider blurred copy underneath for the actual "neon glow" effect. Matches
-  // the look in Gemini's "FINALLY RELAXING! / (Goodbye Stress)" reference.
-  // The border sits 3% in from the canvas edges with rounded 28px corners.
-  // Renders BEFORE the text so the headline sits cleanly on top of it.
+  // ── Neon glow border frame ──────────────────────────────────────────────
+  // Cyan→magenta gradient stroke around the canvas perimeter with a wider
+  // blurred copy underneath for the actual "neon glow" effect. The border
+  // is rendered as its own SVG so it can be composited UNDER the rembg
+  // person cutout — the creator's head/shoulders then sit IN FRONT of the
+  // border, "breaking out of the frame" exactly like Gemini's reference.
   const borderInset = Math.round(scaleBase * 0.028)
   const borderRadius = Math.round(scaleBase * 0.026)
   const borderSharpWidth = Math.round(scaleBase * 0.006)
   const borderGlowWidth = Math.round(scaleBase * 0.025)
 
-  // ── Diamond sparkle decoration (bottom-right corner) ────────────────────
-  // Small 4-pointed star, white with subtle glow, anchored ~6% from the
-  // bottom-right corner. Cheap polish — adds the "designed" feel Gemini's
-  // reference has without competing with the headline or product.
-  const sparkleSize = Math.round(scaleBase * 0.028)
-  const sparkleCx = width - Math.round(width * 0.06)
-  const sparkleCy = height - Math.round(height * 0.085)
-  // 4-point star path centred on (0,0), drawn at sparkleSize. Points along
-  // the cardinal axes with concave curves between to give it the "diamond
-  // sparkle" silhouette rather than a sharp diamond.
-  const s = sparkleSize
-  const sQ = Math.round(s * 0.18)  // control-point distance for the curves
-  const sparklePath = `M 0 -${s} Q ${sQ} -${sQ} ${s} 0 Q ${sQ} ${sQ} 0 ${s} Q -${sQ} ${sQ} -${s} 0 Q -${sQ} -${sQ} 0 -${s} Z`
-
-  // The actual SVG. Key properties for Gemini-quality text:
-  //   - paint-order: stroke fill         → outline behind glyph, full letter weight
-  //   - stroke-linejoin: round           → smooth corners on bold serif terminals
-  //   - stroke-linecap: round            → smooth at letter ends
-  //   - font-family: 'BakeDisplay'       → matches the @font-face we resolve from
-  //                                        the Anton font buffer at render time
-  //   - transform: rotate(-3 ...)        → viral slant Gemini called out
-  //   - drop-shadow filter               → lifts the text off the background so
-  //                                        it pops on any base image
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+  const borderSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <filter id="ds" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="${Math.round(scaleBase * 0.008)}" stdDeviation="${Math.round(scaleBase * 0.004)}" flood-color="#000" flood-opacity="0.6"/>
-    </filter>
     <linearGradient id="neon" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#00E5FF"/>
       <stop offset="50%" stop-color="#FF00E5"/>
@@ -186,11 +165,7 @@ export async function bakeSimpleHeadline(
     <filter id="neonBlur" x="-20%" y="-20%" width="140%" height="140%">
       <feGaussianBlur stdDeviation="${Math.round(scaleBase * 0.008)}"/>
     </filter>
-    <filter id="sparkleGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="${Math.round(scaleBase * 0.004)}"/>
-    </filter>
   </defs>
-  <!-- Neon border: blurred glow underneath + sharp gradient stroke on top -->
   <rect x="${borderInset}" y="${borderInset}" width="${width - borderInset * 2}" height="${height - borderInset * 2}"
         rx="${borderRadius}" ry="${borderRadius}"
         fill="none" stroke="url(#neon)" stroke-width="${borderGlowWidth}"
@@ -198,14 +173,25 @@ export async function bakeSimpleHeadline(
   <rect x="${borderInset}" y="${borderInset}" width="${width - borderInset * 2}" height="${height - borderInset * 2}"
         rx="${borderRadius}" ry="${borderRadius}"
         fill="none" stroke="url(#neon)" stroke-width="${borderSharpWidth}"/>
-  <!-- Diamond sparkle in the bottom-right corner -->
-  <g transform="translate(${sparkleCx}, ${sparkleCy})">
-    <path d="${sparklePath}" fill="#FFFFFF" filter="url(#sparkleGlow)" opacity="0.7"/>
-    <path d="${sparklePath}" fill="#FFFFFF"/>
-  </g>
+</svg>`
+
+  // ── Headline SVG (separate from the border so the cutout can layer between
+  //    them). Critical for text rendering: font-family is 'Anton' — that's
+  //    the actual family name embedded in the @fontsource/anton .woff file.
+  //    Earlier versions used 'BakeDisplay' which resolved to NOTHING and
+  //    silently fell back to system fonts (none exist in Vercel) → text
+  //    disappeared entirely. Lesson learnt: font-family in CSS must match
+  //    the name baked into the font file, not an alias.
+  const textSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="ds" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="${Math.round(scaleBase * 0.008)}" stdDeviation="${Math.round(scaleBase * 0.004)}" flood-color="#000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
   <style>
     .h {
-      font-family: 'BakeDisplay';
+      font-family: 'Anton';
       font-weight: 400;
       fill: #FFFFFF;
       stroke: #000000;
@@ -224,25 +210,53 @@ export async function bakeSimpleHeadline(
 
   try {
     // Resolve Anton's filesystem path from node_modules. Resvg's font option
-    // takes file paths via `fontFiles`; the CSS font-family 'BakeDisplay'
-    // inside the SVG matches the defaultFontFamily we configure here.
+    // takes file paths via `fontFiles`. font-family in the SVG CSS must
+    // EXACTLY match the family name embedded in the .woff file — the
+    // @fontsource/anton package exports the family as 'Anton'. Using any
+    // other name (we previously had 'BakeDisplay') silently breaks text
+    // rendering because Resvg can't find a match.
     const antonPath = resolveAntonPath()
     if (!antonPath) throw new Error('Anton font path could not be resolved')
 
-    const resvg = new Resvg(svg, {
+    // Render the BORDER pass first — no font needed, just shapes. We
+    // composite it BEFORE the person cutout so the creator sits in front.
+    const borderResvg = new Resvg(borderSvg, {
+      fitTo: { mode: 'width', value: width },
+      background: 'rgba(0,0,0,0)',
+    })
+    const borderPng = borderResvg.render().asPng()
+
+    // Render the TEXT pass second. Anton is loaded explicitly; system
+    // fonts are disabled so we get a clean error (not tofu boxes) if the
+    // .woff fails to load.
+    const textResvg = new Resvg(textSvg, {
       fitTo: { mode: 'width', value: width },
       font: {
         fontFiles: [antonPath],
-        defaultFontFamily: 'BakeDisplay',
-        loadSystemFonts: false, // explicit — we ONLY want Anton, no system fallback
+        defaultFontFamily: 'Anton',
+        loadSystemFonts: false,
       },
       background: 'rgba(0,0,0,0)',
     })
-    const overlayPng = resvg.render().asPng()
+    const textPng = textResvg.render().asPng()
 
-    // Composite the Resvg-rendered text overlay onto the base image.
+    // Build the composite stack:
+    //   1. base image                                  — the NB Pro scene
+    //   2. neon border SVG                             — drawn ON the base
+    //   3. (optional) person cutout PNG                — overlays the border
+    //      so the creator's head/shoulders appear in front of the border
+    //      line — the "break out of the frame" Gemini look
+    //   4. headline text SVG                           — always on top
+    const compositeLayers: sharp.OverlayOptions[] = [
+      { input: borderPng, top: 0, left: 0 },
+    ]
+    if (opts.personCutoutPng) {
+      compositeLayers.push({ input: opts.personCutoutPng, top: 0, left: 0 })
+    }
+    compositeLayers.push({ input: textPng, top: 0, left: 0 })
+
     const final = await sharp(baseImage)
-      .composite([{ input: overlayPng, top: 0, left: 0 }])
+      .composite(compositeLayers)
       .jpeg({ quality: 92 })
       .toBuffer()
 
