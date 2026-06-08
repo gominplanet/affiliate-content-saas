@@ -175,13 +175,17 @@ export async function bakeSimpleHeadline(
         fill="none" stroke="url(#neon)" stroke-width="${borderSharpWidth}"/>
 </svg>`
 
-  // ── Headline SVG (separate from the border so the cutout can layer between
-  //    them). Critical for text rendering: font-family is 'Anton' — that's
-  //    the actual family name embedded in the @fontsource/anton .woff file.
-  //    Earlier versions used 'BakeDisplay' which resolved to NOTHING and
-  //    silently fell back to system fonts (none exist in Vercel) → text
-  //    disappeared entirely. Lesson learnt: font-family in CSS must match
-  //    the name baked into the font file, not an alias.
+  // ── Headline SVG ────────────────────────────────────────────────────────
+  // CRITICAL: Resvg's CSS / <style> support is unreliable — when a <text>
+  // element references a `class="h"` rule in a <style> block, Resvg often
+  // ignores it entirely and renders nothing (which is exactly what we saw
+  // in the 24eb53a screenshot: border visible, text invisible). The fix
+  // is to inline every style as an SVG PRESENTATION ATTRIBUTE on the
+  // <text> element itself — these Resvg always honours.
+  //
+  // font-family is 'Anton', which is the actual family name embedded in
+  // the @fontsource/anton .woff file (NOT an alias). Anything else
+  // silently fails to resolve.
   const textSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -189,22 +193,17 @@ export async function bakeSimpleHeadline(
       <feDropShadow dx="0" dy="${Math.round(scaleBase * 0.008)}" stdDeviation="${Math.round(scaleBase * 0.004)}" flood-color="#000" flood-opacity="0.6"/>
     </filter>
   </defs>
-  <style>
-    .h {
-      font-family: 'Anton';
-      font-weight: 400;
-      fill: #FFFFFF;
-      stroke: #000000;
-      stroke-width: ${strokeWidth}px;
-      stroke-linejoin: round;
-      stroke-linecap: round;
-      paint-order: stroke fill;
-      letter-spacing: -1px;
-    }
-  </style>
   <g transform="rotate(-3, ${x}, ${yLine1})" filter="url(#ds)">
-    <text x="${x}" y="${yLine1}" class="h" font-size="${fontSizeLine1}" text-anchor="${textAnchor}">${line1}</text>
-    <text x="${x}" y="${yLine2}" class="h" font-size="${fontSizeLine2}" text-anchor="${textAnchor}">${line2}</text>
+    <text x="${x}" y="${yLine1}"
+          font-family="Anton" font-size="${fontSizeLine1}" font-weight="400"
+          fill="#FFFFFF" stroke="#000000" stroke-width="${strokeWidth}"
+          stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill"
+          text-anchor="${textAnchor}">${line1}</text>
+    <text x="${x}" y="${yLine2}"
+          font-family="Anton" font-size="${fontSizeLine2}" font-weight="400"
+          fill="#FFFFFF" stroke="#000000" stroke-width="${strokeWidth}"
+          stroke-linejoin="round" stroke-linecap="round" paint-order="stroke fill"
+          text-anchor="${textAnchor}">${line2}</text>
   </g>
 </svg>`
 
