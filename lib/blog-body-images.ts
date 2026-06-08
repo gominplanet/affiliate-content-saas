@@ -166,26 +166,89 @@ export function paragraphOffsets(content: string): number[] {
 }
 
 /**
- * Find the byte ranges of every `<!-- wp:html --> ... <!-- /wp:html -->`
- * Gutenberg block in `content`. These wrap custom-HTML callouts the
- * writer emits — Quick Verdict (which uses <h3>, not <h2>, so the H2
- * scan misses it), Scorecard, Related Reviews carousel, custom CTAs.
+ * Find the byte ranges of all "callout" blocks the writer emits. Two
+ * detection paths:
  *
- * An image dropped INSIDE one of these blocks renders inside the
- * callout box (looks broken). 2026-06-07: this was the user's report
- * of an image inside the Quick Verdict shower mirror box.
+ *   1. `<!-- wp:html --> ... <!-- /wp:html -->` markers when present
+ *      (Gutenberg-wrapped HTML).
+ *   2. Raw `<div class="gr-*">...</div>` containers — Quick Verdict
+ *      (`gr-verdict-box`), Scorecard (`gr-scorecard`), Related
+ *      Reviews (`gr-related`), Video embed (`gr-video-container`),
+ *      etc. The writer often emits these as raw HTML in the body
+ *      WITHOUT Gutenberg markers, so the marker-only check misses
+ *      them.
+ *
+ * For raw-div detection we track nested `<div>` / `</div>` depth so
+ * the matching close is found correctly even when the block contains
+ * sub-divs (the verdict box has Buy/Skip columns inside it). Anything
+ * inside these ranges is an invalid image anchor — would drop the
+ * image inside a callout box (broken).
+ *
+ * 2026-06-07: shipped initial wp:html-marker version, but the user
+ * reported an image landing INSIDE the Quick Verdict. Tracked it back
+ * to raw `<div class="gr-verdict-box">` markup with no Gutenberg
+ * wrapper. This rewrite adds class-based detection.
  */
-function htmlBlockRanges(content: string): Array<[number, number]> {
+const CALLOUT_CLASSES = [
+  'gr-verdict-box',    // Quick Verdict — the primary case
+  'gr-scorecard',      // Scorecard / star ratings under the verdict
+  'gr-related',        // Related Reviews carousel
+  'gr-video-container',// Embedded YouTube player
+  'gr-faq',            // FAQ section
+  'gr-disclosure',     // Affiliate disclosure box
+  'gr-pros-cons',      // Pros / Cons table
+  'gr-cta',            // CTA callout
+  'mvp-sticky-cta',    // Floating Amazon CTA (plugin-rendered, but safer to dodge)
+  'gr-author',         // Author bio block
+] as const
+
+function calloutBlockRanges(content: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = []
+  // (a) Gutenberg-wrapped HTML blocks.
   const reOpen = /<!-- wp:html(?:\s+\{[^}]*\})?\s+-->/g
   let m: RegExpExecArray | null
   while ((m = reOpen.exec(content)) !== null) {
     const start = m.index
     const closeIdx = content.indexOf('<!-- /wp:html -->', m.index + m[0].length)
     if (closeIdx !== -1) {
-      // End of the block = position of the closing comment + its own
-      // length, so the range fully contains the wrapper.
       ranges.push([start, closeIdx + '<!-- /wp:html -->'.length])
+    }
+  }
+  // (b) Raw `<div class="...gr-*...">` callout containers. For each
+  //     match, walk forward and balance `<div>` / `</div>` to find
+  //     the matching close. Bail if depth doesn't balance within 50k
+  //     bytes (malformed markup) — we'd rather miss a range than
+  //     hang the picker on a runaway loop.
+  for (const cls of CALLOUT_CLASSES) {
+    // Match `<div class="...gr-verdict-box...">` — class attr value
+    // may contain other class names too. Single OR double quotes.
+    const re = new RegExp(`<div\\b[^>]*class\\s*=\\s*["'][^"']*\\b${cls}\\b[^"']*["'][^>]*>`, 'gi')
+    let m2: RegExpExecArray | null
+    while ((m2 = re.exec(content)) !== null) {
+      const start = m2.index
+      const afterOpen = m2.index + m2[0].length
+      // Balance `<div ...>` / `</div>` starting at depth 1.
+      let depth = 1
+      let pos = afterOpen
+      const MAX_SCAN = Math.min(content.length, afterOpen + 50_000)
+      const reDiv = /<\/?div\b[^>]*>/gi
+      reDiv.lastIndex = afterOpen
+      let dm: RegExpExecArray | null
+      while ((dm = reDiv.exec(content)) !== null && dm.index < MAX_SCAN) {
+        if (dm[0].startsWith('</')) {
+          depth--
+          if (depth === 0) { pos = dm.index + dm[0].length; break }
+        } else {
+          depth++
+        }
+      }
+      if (depth === 0) {
+        ranges.push([start, pos])
+      } else {
+        // Malformed / depth didn't balance — treat the next 4 KB as
+        // excluded so we still dodge the visible part of the block.
+        ranges.push([start, Math.min(content.length, afterOpen + 4_000)])
+      }
     }
   }
   return ranges
@@ -255,18 +318,19 @@ export function pickBodyImageOffsets(content: string, count: number): number[] {
   const bodyEnd = Math.floor(content.length * 0.88)
 
   // ── Excluded ranges: two sources combined.
-  //    (a) Every `<!-- wp:html --> ... <!-- /wp:html -->` block. These
-  //        wrap Quick Verdict (which uses <h3>, not <h2>), Scorecard,
-  //        Related Reviews carousel, custom CTAs. An image inside
-  //        any of these renders broken/inside a callout.
+  //    (a) Every callout block — `<!-- wp:html -->` Gutenberg blocks
+  //        AND raw `<div class="gr-*">…</div>` containers (Quick
+  //        Verdict, Scorecard, Related, Video container, etc.). The
+  //        helper tracks nested div depth so it handles the verdict
+  //        box's Buy/Skip sub-cols correctly.
   //    (b) Any H2 flagged as a skip-heading (Related Reviews title,
   //        FAQ section title, etc. — for posts that use heading-based
   //        tails instead of HTML blocks). The range extends to the
   //        next H2 (or end of doc).
-  //    2026-06-07: the user reported an image landing inside the
-  //    Quick Verdict box — Quick Verdict is in (a), not (b), so the
-  //    H2-only exclusion alone wasn't enough.
-  const excludedRanges: Array<[number, number]> = [...htmlBlockRanges(content)]
+  //    2026-06-07: user reported an image landing INSIDE the Quick
+  //    Verdict box (twice). First fix relied on wp:html markers which
+  //    the writer doesn't emit for raw divs. Now we class-detect.
+  const excludedRanges: Array<[number, number]> = [...calloutBlockRanges(content)]
   const headings = allH2Anchors(content)
   for (let i = 0; i < headings.length; i++) {
     const h = headings[i]
