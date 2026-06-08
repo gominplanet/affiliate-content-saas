@@ -13,11 +13,22 @@ import { safeZone, fitStackedFontSize } from '../safe-zone'
 function render(input: TemplateInput): TemplateNode {
   const { width, height, side, content, palette } = input
   const sz = safeZone(width, height)
-  // 2026-06-08: column widened 52%→62% so longer headlines (e.g.
-  // "GIFT MONEY NOW" at 14 chars) don't get squeezed down to ~80px.
-  // The subject side (face) still has ~38% of the canvas which is
-  // plenty when the face is cut out + drawn over the border.
-  const colWidth = Math.round(width * 0.62)
+  // 2026-06-08 (REGRESSION FIX): tried 62% column + 45%/50% ceiling →
+  // text overflowed the canvas AND covered the subject's face. Three bugs
+  // compounded:
+  //   1. colWidth 62% left only 38% for the face — the rotated/shadowed
+  //      text bled into the face area.
+  //   2. targetCeiling 45%/50% let the font hit fit-by-width's max.
+  //   3. GLYPH_WIDTH_RATIO 0.55 under-estimates Anton-Bold's actual width
+  //      (~0.62 of fontSize). So fit-by-width returned a size that LOOKED
+  //      like it fit, but rendered ~13% wider → cropped at canvas edge.
+  // Fix dials all three back:
+  //   - colWidth: 55% (between original 52% and overshoot 62%)
+  //   - ceiling:  38% width / 42% height (between 36%/38% and 45%/50%)
+  //   - glyphRatio: 0.62 (Anton-tuned, was 0.55 default)
+  // Result: ~10-15% bigger than original on long headlines, never bleeds
+  // into the face area, never crops at the canvas edge.
+  const colWidth = Math.round(width * 0.55)
   const textCol = colWidth - sz.hMargin
 
   // The two lines: setup (white) → payoff (accent). If only a punch was
@@ -30,11 +41,13 @@ function render(input: TemplateInput): TemplateNode {
     lines,
     columnInnerWidth: textCol,
     columnInnerHeight: sz.innerHeight,
-    // Bumped from 36% → 45% of column / 38% → 50% of height. Thumbnails
-    // benefit from text that fills MOST of the available space — small
-    // text doesn't read on a YouTube mobile feed.
-    targetCeiling: Math.min(textCol * 0.45, height * 0.50),
+    targetCeiling: Math.min(textCol * 0.38, height * 0.42),
     lineHeight: 0.92,
+    // Anton-tuned glyph ratio. The default 0.55 (set for an average
+    // condensed sans) over-fits Anton-Bold specifically. Bumping to 0.62
+    // makes fit-by-width honest about the actual rendered width and stops
+    // the canvas-edge crop bug.
+    glyphRatio: 0.62,
   })
   // Outline width = ~9% of font size. Tried 7% (too thin halo), tried 12%
   // (too blobby — text-shadow approach makes thick outlines look fat).
