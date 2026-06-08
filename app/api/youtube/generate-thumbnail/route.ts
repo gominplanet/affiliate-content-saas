@@ -209,88 +209,146 @@ Return ONLY the prompt.`,
   return (msg.content[0] as { type: string; text: string }).text.trim()
 }
 
-// ── Claude Haiku: viral, general thumbnail title ──────────────────────────────
-async function generateHook(videoTitle: string): Promise<string> {
-  const anthropic = createAnthropicClient()
-  const msg = await withAnthropicRetry(() => anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 40,
-    messages: [{
-      role: 'user',
-      content: `Write ONE viral, poppy YouTube thumbnail title for this video. It must be GENERAL, intriguing and FUN — built on curiosity, tension, contrast, emotion, or mystery — NOT a product-specific claim.
-
-VIDEO: "${videoTitle}"
-
-STRICT RULES (breaking any = bad title):
-- 2 OR 3 WORDS MAXIMUM. Hard ceiling. A 4-word title is a fail. Big poppy thumbnails (think vidIQ / MrBeast / Smart Toaster) live on 2–3 huge words, not phrases.
-- Every word must EARN its slot — no filler, no articles ("a", "the"), no connectors ("is", "was", "it").
-- NEVER mention results or outcomes (no "results", "before/after", "after X days").
-- NEVER make a health, medical, or benefit claim (no "cures", "gone", "weight loss", "hair growth", "cellulite", "detox", etc.).
-- NEVER boast about testing for a time period.
-- No spammy hype words (AMAZING, INSANE, INCREDIBLE). NEVER use the word HONEST.
-- Relatable — makes ANYONE curious even if they've never seen the product.
-
-STYLE TO MATCH (write a FRESH one in this spirit, do not copy verbatim — count the words!):
-"GAME OVER" · "WORTH IT?" · "DON'T BUY" · "MUST HAVE" · "GAME CHANGER" · "MIND BLOWN" · "TOO GOOD" · "NEW FAVE" · "HIDDEN GEM" · "REAL DEAL" · "PURE GENIUS" · "FINALLY!" · "NEED THIS" · "OH WOW" · "BIG MISTAKE" · "LIFE CHANGING" · "ACTUALLY WORKS" · "TOTALLY OBSESSED" · "BEST EVER"
-
-Return ONLY the title text — no quotes, no preamble.`,
-    }],
-  }))
-  recordAnthropicUsage(msg, {
-    userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-    feature: 'yt_thumb_hook', model: 'claude-haiku-4-5-20251001',
-  })
-  return (msg.content[0] as { type: string; text: string }).text.trim().toUpperCase()
+// ── Thumbnail copy framework (2026-06-08) ──────────────────────────────────
+// Structured 2-line thumbnail copy with a tagged emphasis word. Replaces the
+// old "single 2-3 word string" hooks that were producing literal descriptions
+// like "WATCH THIS / FOOT PEEL MASK" — high text visibility, zero click
+// psychology. The 4-angle framework is from a Gemini-handoff doc the user
+// validated against their own thumbnail wins:
+//   - NEGATION: tell the viewer to STOP doing something normal
+//   - CURIOSITY_GAP: hint at a secret nobody mentions
+//   - SKEPTIC: validate the viewer's "is this BS?" suspicion
+//   - VALUE_DISRUPTION: compare cost/value to a much pricier alternative
+// Per-variant rotation cycles through angles so a 3-thumb batch covers 3
+// distinct emotional buttons instead of three rephrasings of the same idea.
+type CtrAngle = 'NEGATION' | 'CURIOSITY_GAP' | 'SKEPTIC' | 'VALUE_DISRUPTION'
+interface ThumbCopy {
+  angle: CtrAngle
+  /** Top line. Hard cap 15 chars. */
+  line1: string
+  /** Bottom line. Hard cap 20 chars. */
+  line2: string
+  /** The ONE word (or short phrase) inside line1+line2 to render in YELLOW.
+   *  Lets the baked prompt + canvas overlay both pick out the same highlight
+   *  without guessing. Falls back to the most loaded word if the model
+   *  returned junk. */
+  emphasisWord: string
 }
 
-// ── Claude Haiku: N DISTINCT viral thumbnail titles (one per variant) ─────────
-// When the user asks for 2–3 variants we want different headline COPY on each,
-// not just restyled versions of the same line. One call returns a JSON array of
-// distinct hooks. Falls back to repeating a single hook on any parse failure.
-async function generateHooks(videoTitle: string, count: number): Promise<string[]> {
-  const n = Math.max(1, Math.min(10, Math.floor(count)))
-  if (n === 1) return [await generateHook(videoTitle)]
+/** Flatten to a single "LINE1 LINE2" string for legacy callers (overlay
+ *  draw, response payload, picker UI). Strips Gemini-style * markers. */
+function flatCopy(c: ThumbCopy | string | null | undefined): string {
+  if (!c) return ''
+  if (typeof c === 'string') return c
+  return `${c.line1} ${c.line2}`.replace(/\*/g, '').trim()
+}
+
+const ANGLE_DEFS: Record<CtrAngle, string> = {
+  NEGATION: 'Tell the viewer to STOP doing something normal/wasteful that the product replaces. Examples: "NEVER USE | CANDLES AGAIN!" · "STOP BUYING | THESE FOREVER" · "QUIT WASTING | MONEY ON THIS". Emphasis word is usually "NEVER" / "STOP" / "QUIT".',
+  CURIOSITY_GAP: 'Hint at a secret, an unspoken truth, or a singular missing piece of info. Examples: "THE *ONE* THING | NOBODY TELLS YOU" · "WHY EVERYONE | IS WRONG" · "THE SECRET | THEY HIDE". Emphasis word is usually "ONE" / "SECRET" / "WHY".',
+  SKEPTIC: 'Attack the product up front to spike drama and force the click to see if it\'s vindicated. Examples: "WASTE OF | MONEY?!" · "BIGGEST SCAM | OF 2026?" · "DON\'T BELIEVE | THE HYPE". Emphasis word is usually "WASTE" / "SCAM" / "DON\'T".',
+  VALUE_DISRUPTION: 'Compare the item to a much pricier/different category to make it look like an insane life-hack. Examples: "CHEAPER THAN | YOUR LATTE!" · "BEATS A $300 | GADGET?" · "$20 vs $200 | NO CONTEST". Emphasis word is usually "CHEAPER" / "BEATS" / the dollar amount.',
+}
+
+const BANNED_COPY_TERMS = [
+  // Hype words that read as AI / scammy
+  'amazing', 'incredible', 'insane',
+  // User rule: never the word HONEST
+  'honest',
+  // Generic literal descriptions that aren't hooks
+  'watch this', 'check this', 'look at this', 'review of',
+]
+
+/**
+ * Parse one Haiku JSON response into a clean ThumbCopy. Tolerates the model
+ * occasionally returning code fences, extra prose, or fields with extra
+ * whitespace. Falls back to a NEGATION default on total junk so the caller
+ * never has to handle null.
+ */
+function parseOneCopy(raw: string, fallbackAngle: CtrAngle): ThumbCopy {
+  const text = raw.trim()
+  const objMatch = text.match(/\{[\s\S]*\}/)
+  if (objMatch) {
+    try {
+      const o = JSON.parse(objMatch[0]) as Partial<ThumbCopy>
+      const angle = (o.angle as CtrAngle) || fallbackAngle
+      const line1 = String(o.line1 || '').trim().toUpperCase().slice(0, 16)
+      const line2 = String(o.line2 || '').trim().toUpperCase().slice(0, 22)
+      const emphasis = String(o.emphasisWord || '').trim().toUpperCase()
+      if (line1 && line2) return { angle, line1, line2, emphasisWord: emphasis || line1.split(' ')[0] }
+    } catch { /* fall through */ }
+  }
+  return { angle: fallbackAngle, line1: 'WORTH IT?', line2: 'WATCH FIRST', emphasisWord: 'WORTH' }
+}
+
+// ── Claude Haiku: single ThumbCopy (kept for callers that want just one) ────
+async function generateHook(videoTitle: string): Promise<string> {
+  const c = await generateThumbCopy(videoTitle, 'NEGATION')
+  return flatCopy(c)
+}
+
+async function generateThumbCopy(videoTitle: string, angle: CtrAngle): Promise<ThumbCopy> {
+  const anthropic = createAnthropicClient()
   try {
-    const anthropic = createAnthropicClient()
     const msg = await withAnthropicRetry(() => anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 160,
+      max_tokens: 200,
       messages: [{
         role: 'user',
-        content: `Write ${n} DISTINCT viral YouTube thumbnail titles for this video. Each must be GENERAL, intriguing and FUN — built on curiosity, tension, contrast, emotion or mystery — NOT a product-specific claim. They must be DIFFERENT from each other (different angle/emotion/structure), not rewordings of one idea.
+        content: `Generate thumbnail copy for this YouTube video using the ${angle} psychological angle.
 
-VIDEO: "${videoTitle}"
+VIDEO TITLE: "${videoTitle}"
 
-STRICT RULES for EACH title (breaking any = bad):
-- 2 OR 3 WORDS MAXIMUM per title. Hard ceiling. A 4-word title is a fail. Big poppy thumbnails (vidIQ / MrBeast / Smart Toaster) live on 2–3 huge words, not phrases.
-- Every word EARNS its slot — no filler, no articles ("a", "the"), no connectors ("is", "was", "it").
-- NEVER mention results/outcomes. NEVER a health/medical/benefit claim. NEVER boast about testing for a time period.
-- No spammy hype words (AMAZING, INSANE, INCREDIBLE). NEVER use the word HONEST.
-- Relatable — makes ANYONE curious even if they've never seen the product.
+ANGLE — ${angle}: ${ANGLE_DEFS[angle]}
 
-STYLE (write FRESH ones in this spirit, do not copy verbatim — count the words!):
-"GAME OVER" · "WORTH IT?" · "DON'T BUY" · "MUST HAVE" · "GAME CHANGER" · "MIND BLOWN" · "TOO GOOD" · "NEW FAVE" · "HIDDEN GEM" · "REAL DEAL" · "PURE GENIUS" · "FINALLY!" · "NEED THIS" · "OH WOW" · "BIG MISTAKE" · "LIFE CHANGING" · "ACTUALLY WORKS" · "BEST EVER"
+STRICT RULES:
+- Line 1: under 15 characters. Hard cap. Count them.
+- Line 2: under 20 characters. Hard cap. Count them.
+- ALL CAPS. Use punctuation (! ?) ONLY when it adds emotional weight.
+- NEVER name the product literally ("foot peel mask", "diffuser", "money counter"). Use categorical pronouns: "THIS HACK", "VIRAL TOOL", "THE TRICK", "THIS THING".
+- BANNED words: ${BANNED_COPY_TERMS.join(', ')}.
+- NEVER make health/medical/results claims ("cures", "weight loss", "results in 7 days").
+- Pick ONE word (or short 2-word phrase) from line1+line2 as emphasisWord — the part that carries the click weight. It will render in yellow.
+- Don't preview the product. Provoke a click.
 
-Return ONLY a JSON array of exactly ${n} strings.`,
+Return ONLY this JSON object, no prose:
+{ "angle": "${angle}", "line1": "...", "line2": "...", "emphasisWord": "..." }`,
       }],
     }))
     recordAnthropicUsage(msg, {
       userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-      feature: 'yt_thumb_hooks', model: 'claude-haiku-4-5-20251001',
+      feature: 'yt_thumb_copy_v2', model: 'claude-haiku-4-5-20251001',
     })
-    const text = ((msg.content[0] as { type: string; text: string }).text || '').trim()
-    const m = text.match(/\[[\s\S]*\]/)
-    if (m) {
-      const arr = JSON.parse(m[0]) as unknown[]
-      const hooks = arr.map(h => String(h || '').trim().toUpperCase()).filter(Boolean)
-      if (hooks.length > 0) {
-        // Pad to n by cycling if the model returned fewer than asked.
-        return Array.from({ length: n }, (_, i) => hooks[i % hooks.length])
-      }
-    }
-  } catch { /* fall through to single-hook repeat */ }
-  const one = await generateHook(videoTitle)
-  return Array.from({ length: n }, () => one)
+    return parseOneCopy((msg.content[0] as { type: string; text: string }).text || '', angle)
+  } catch {
+    return parseOneCopy('', angle)
+  }
+}
+
+// Order angles are rotated through when we need N variants. NEGATION first
+// because it's the highest-tested click pattern; CURIOSITY_GAP next because
+// it works on every category. SKEPTIC + VALUE_DISRUPTION cover follow-ups.
+const ANGLE_ROTATION: CtrAngle[] = ['NEGATION', 'CURIOSITY_GAP', 'SKEPTIC', 'VALUE_DISRUPTION']
+
+async function generateThumbCopies(videoTitle: string, count: number): Promise<ThumbCopy[]> {
+  const n = Math.max(1, Math.min(10, Math.floor(count)))
+  // Fan out across angles in parallel — each call is a separate JSON-shape
+  // generation, easier and more reliable than asking Haiku to return an
+  // array of mixed-angle objects in one go.
+  const out = await Promise.all(
+    Array.from({ length: n }, (_, i) => generateThumbCopy(videoTitle, ANGLE_ROTATION[i % ANGLE_ROTATION.length])),
+  )
+  return out
+}
+
+// Backward-compat shim: a few overlay-path callers still want flat strings
+// for canvas drawing. They get the same 4-angle psychology behind the scenes
+// — just flattened. New consumers should call generateThumbCopies and read
+// .line1/.line2/.emphasisWord directly so the yellow highlight + line break
+// both ride along.
+async function generateHooks(videoTitle: string, count: number): Promise<string[]> {
+  const copies = await generateThumbCopies(videoTitle, count)
+  return copies.map(flatCopy)
 }
 
 // (generatePersonScenePrompt removed 2026-05-22 with the flux-lora retirement —
@@ -829,10 +887,29 @@ export async function POST(request: Request) {
           // they want; on the clean (overlay) path it's re-drawn client-side on
           // the text-free image instantly — no regeneration. A locked custom
           // headline collapses to a single option.
-          const titleOptions = lockedHeadline ? [lockedHeadline] : await generateHooks(videoTitle, 5)
-          // `hooks` drives per-variant text (incl. baked). With variantCount=1 it's
-          // just the first option; the full set rides along as titleOptions.
-          const hooks = titleOptions
+          // FIVE distinct structured copies — different angle per index (NEGATION,
+          // CURIOSITY_GAP, SKEPTIC, VALUE_DISRUPTION, then back to NEGATION).
+          // When the user supplied a locked custom headline, collapse to a single
+          // ThumbCopy with the headline split across two lines for visual layout.
+          const splitLocked = (h: string): ThumbCopy => {
+            const words = h.trim().split(/\s+/)
+            const half = Math.ceil(words.length / 2)
+            return {
+              angle: 'NEGATION',
+              line1: words.slice(0, half).join(' ').toUpperCase().slice(0, 16),
+              line2: words.slice(half).join(' ').toUpperCase().slice(0, 22) || words.slice(0, half).join(' ').toUpperCase(),
+              emphasisWord: words[0]?.toUpperCase() || '',
+            }
+          }
+          const copyVariants: ThumbCopy[] = lockedHeadline
+            ? [splitLocked(lockedHeadline)]
+            : await generateThumbCopies(videoTitle, 5)
+          // Flattened single-string forms for legacy consumers (overlay
+          // canvas draw, picker UI, response payload).
+          const titleOptions = copyVariants.map(flatCopy)
+          // `hooks` is the per-variant ThumbCopy[] — drives the baked-text
+          // prompt with full line1/line2/emphasisWord structure.
+          const hooks: ThumbCopy[] = copyVariants
           // Representative hook for the response payload + variant scoring.
           const overlayHookNB = titleOptions[0]
 
@@ -1003,8 +1080,19 @@ export async function POST(request: Request) {
             const palette = COLOR_PAIRS[i % COLOR_PAIRS.length]
             const expression = EXPRESSIONS[i % EXPRESSIONS.length]
             const action = ACTIONS[i % ACTIONS.length]
+            // Structured 2-line headline with explicit emphasis word in YELLOW.
+            // Bakes the click-psychology framework directly into the prompt:
+            // line1 + line2 stack vertically, emphasisWord renders in #FFE034
+            // yellow while the rest stays white — same look as the user's
+            // winning Gemini "I'M NEVER USING A CANDLE AGAIN!" example.
+            const c = hooks[i % hooks.length]
             const headlineClause = withText
-              ? `HEADLINE: bake the text EXACTLY "${hooks[i % hooks.length]}" as ${TITLE_STYLES[i % TITLE_STYLES.length]}. Place it in the open area clearly away from the face and the product. Spell it EXACTLY ONCE, letter-for-letter, with NO repeated or duplicated words. Add a prominent ${palette.accent.includes('orange') ? 'yellow' : 'white'} arrow with a thick black outline pointing from the headline to the product so the eye is guided from text → product.`
+              ? `HEADLINE (BAKE INTO THE IMAGE EXACTLY): Two stacked lines of large bold blocky CONDENSED ALL-CAPS sans-serif text (Impact / Anton style) with a thick solid black outline and hard drop shadow.
+   Line 1 (top): "${c.line1}"
+   Line 2 (below): "${c.line2}"
+   The word "${c.emphasisWord}" must render in BRIGHT YELLOW (#FFE034); ALL OTHER words render in PURE WHITE.
+   Place both lines together in the open area clearly away from the face and the product (upper-${productSide === 'LEFT' ? 'right' : 'left'} corner works best). Spell every word EXACTLY ONCE — NO repeated words, NO duplicated text anywhere else in the image. Do NOT add any other text, captions, or labels.
+   Add a prominent ${palette.accent.includes('orange') ? 'YELLOW' : 'WHITE'} arrow with a thick black outline pointing from the headline DOWN AND ACROSS to the product so the eye is guided from text → product.`
               : `HEADLINE SPACE: leave a generous CLEAN, uncluttered area across the TOP (especially the ${productSide === 'LEFT' ? 'upper-left' : 'upper-right'}) for a headline to be added afterwards. Render ABSOLUTELY NO text, letters, words, numbers or captions anywhere in the image.`
             // 3C — Composition swaps between single-product (host one side,
             // product the other) and multi-product (host smaller, products
@@ -1103,7 +1191,7 @@ Ultra-sharp, professional, photorealistic.`
                   // Find which original index this ranked URL came from so
                   // we use the matching per-variant headline.
                   const origIdx = Math.max(0, nbUrls.indexOf(cleanUrl))
-                  const variantHook = hooks[origIdx] ?? overlayHookNB
+                  const variantHook = flatCopy(hooks[origIdx]) || overlayHookNB
 
                   // VISION-DETECT the safe text zone instead of assuming the
                   // host is always on the variant-index-parity side. Nano
@@ -1179,7 +1267,7 @@ Ultra-sharp, professional, photorealistic.`
               // Per-variant titles + placements, aligned to rank.urls order so
               // the client overlays the matching headline + corner on each
               // variant (the host side — and so the clear corner — rotates).
-              overlayHooks: rank.urls.map(u => hooks[Math.max(0, nbUrls.indexOf(u))] ?? overlayHookNB),
+              overlayHooks: rank.urls.map(u => flatCopy(hooks[Math.max(0, nbUrls.indexOf(u))]) || overlayHookNB),
               textPositions: wantClean && !designerApplied ? textPositions : undefined,
               // Diagnostic: which designer template each variant used. Null
               // entries = render fell back to the clean image for that slot.
