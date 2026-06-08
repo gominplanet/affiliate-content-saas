@@ -15,7 +15,10 @@ import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
-import { bakeSimpleHeadline } from '@/lib/thumbnail-simple-bake'
+// bakeSimpleHeadline (lib/thumbnail-simple-bake.ts) is kept in the codebase
+// as a future raw-SVG path. Currently unused — the live thumbnail bake
+// goes through the Satori-based renderDesignerOverlay above because Vercel's
+// Linux runtime lacks the display fonts sharp+libvips would need.
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
@@ -1208,49 +1211,60 @@ Ultra-sharp, professional, photorealistic.`
               const designerResults = await Promise.all(rank.urls.map(async (cleanUrl, i) => {
                 try {
                   // Find which original index this ranked URL came from so
-                  // the bake uses the matching per-variant structured copy.
+                  // the overlay uses the matching per-variant structured copy.
                   const origIdx = Math.max(0, nbUrls.indexOf(cleanUrl))
                   const variantCopy = hooks[origIdx]
                   if (!variantCopy) throw new Error(`no copy for variant ${origIdx}`)
 
                   // VISION-DETECT where the subject actually lives so the
-                  // bake lands in the FREE corner. The clean-path NB prompt
+                  // text lands in the FREE corner. The clean-path NB prompt
                   // reserves a corner already, but the model occasionally
                   // composes the subject differently than asked — vision
-                  // ground-truth keeps the bake out of the face/product.
+                  // ground-truth keeps the overlay out of the face/product.
                   const zone = await analyzeTextZone(cleanUrl, { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
                   const subjectSide: 'left' | 'right' = zone?.subjectSide === 'left'
                     ? 'left'
                     : zone?.subjectSide === 'right'
                       ? 'right'
                       : (zone?.position.includes('left') ? 'right' : 'left')
-                  // Text always goes on the OPPOSITE side of the subject.
-                  const anchor: 'upper-left' | 'upper-right' = subjectSide === 'left' ? 'upper-right' : 'upper-left'
+                  const verticalAnchor: 'top' | 'bottom' = zone?.position?.startsWith('bottom') ? 'bottom' : 'top'
 
-                  // Pull the base image bytes so sharp can composite. We
-                  // re-host the FINAL composited result back to fal storage
-                  // so the client gets a URL instead of a 5MB data URI.
-                  const baseRes = await fetch(cleanUrl, { signal: AbortSignal.timeout(15000) })
-                  if (!baseRes.ok) throw new Error(`base fetch ${baseRes.status}`)
-                  const baseBuf = Buffer.from(await baseRes.arrayBuffer())
-
-                  const result = await bakeSimpleHeadline(baseBuf, variantCopy, { anchor })
-                  if (result.renderError) {
-                    console.warn('[simple-bake] variant', i, 'rendered bare base:', result.renderError)
-                  }
-
-                  const dataUri = `data:image/jpeg;base64,${result.png.toString('base64')}`
+                  // 2026-06-08: force the dual-color-stack template + feed
+                  // our pre-decomposed ThumbCopy via forceContent. Bypasses
+                  // the picker's internal Haiku call (which was producing
+                  // worse copy than our 4-angle ThumbCopy engine — e.g.
+                  // turning "NEVER USE / CANDLES AGAIN!" into "STRAIGHT TO
+                  // CRIMPED"). Now the rendered text is EXACTLY what the
+                  // 4-angle engine generated: line1 (leading) in white,
+                  // line2 (punch) in yellow — matches Gemini's reference.
+                  const result = await renderDesignerOverlay({
+                    baseImageUrl: cleanUrl,
+                    headline: `${variantCopy.line1} ${variantCopy.line2}`, // unused when forceContent is set
+                    forceTemplateId: 'dual-color-stack',
+                    forceContent: {
+                      leading: variantCopy.line1,
+                      punch: variantCopy.line2,
+                    },
+                    productContext: productTitle || null,
+                    subjectSide,
+                    verticalAnchor,
+                    userId: String(TELEMETRY.userId ?? ''),
+                    tier: TELEMETRY.tier,
+                  })
+                  // Re-host the composited PNG to fal so the client gets a
+                  // URL (not a 5MB data URI). rehostToFal accepts data URIs.
+                  const dataUri = `data:image/png;base64,${result.png.toString('base64')}`
                   const hosted = await rehostToFal(dataUri)
                   if (!hosted) throw new Error('rehostToFal returned null')
                   recordUsage({
                     userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-                    feature: 'yt_thumb_simple_bake',
-                    model: 'simple-bake-svg',
+                    feature: 'yt_thumb_designer_overlay',
+                    model: `designer-text:${result.picked.templateId}`,
                     images: 1,
                   })
-                  return { url: hosted, templateId: 'simple-bake' }
+                  return { url: hosted, templateId: result.picked.templateId }
                 } catch (e) {
-                  console.warn('[simple-bake] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
+                  console.warn('[designer-overlay] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
                   return { url: cleanUrl, templateId: null }
                 }
               }))
