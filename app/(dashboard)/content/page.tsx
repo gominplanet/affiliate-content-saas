@@ -1514,7 +1514,7 @@ export default function ContentPage() {
   const supabase = createBrowserClient()
   const { confirm, ConfirmHost } = useConfirm()
   const [videos, setVideos] = useState<Record<string, unknown>[]>([])
-  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
+  const [posts, setPosts] = useState<Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; /** Real WP/DB publish timestamp — used to sort the Recent section by blog publish date instead of video publish date. 2026-06-07. */ publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }>>({})
   // Per-post map of platforms whose MOST RECENT scheduled push failed.
   // Drives the ⚠ warning next to the social pill in VideoCard. Filled
   // by load() from scheduled_posts. 2026-06-07 UX fix — previously the
@@ -1733,7 +1733,7 @@ export default function ContentPage() {
       // regenerated yet — same pattern as other post-migration selects
       // in the codebase. Drop after `gen types` runs.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,scheduled_for,schedule_mode,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
+      (sb.from('blog_posts') as any).select('id,video_id,wordpress_url,title,wordpress_post_id,body_images_count,scheduled_for,schedule_mode,published_at,created_at,facebook_post_id,pinterest_pin_id,threads_post_id,linkedin_post_id,twitter_post_id,bluesky_post_uri,telegram_message_id,instagram_reel_id,instagram_story_id').eq('user_id', user.id).eq('status', 'published'),
       // Which posts still exist (published) on the live WP site — to reconcile
       // away phantoms (deleted/trashed posts still linger in blog_posts).
       fetch('/api/blog/live-post-ids').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -1806,7 +1806,7 @@ export default function ContentPage() {
       seoByPostId.set(r.post_id, { indexed, coverage: r.coverage_state })
     }
 
-    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
+    const postMap: Record<string, { url: string; title: string; postId?: string; wpPostId?: number; indexed?: boolean | null; coverage?: string | null; bodyImagesCount?: number | null; scheduledFor?: string | null; scheduleMode?: string | null; publishedAt?: string | null; facebookPostId?: string; pinterestPinId?: string; threadsPostId?: string; linkedInPostId?: string; twitterPostId?: string; blueskyPostUri?: string; telegramMessageId?: string; instagramReelId?: string; instagramStoryId?: string }> = {}
     for (const p of blogPosts as Record<string, unknown>[] ?? []) {
       if (liveIds && p.wordpress_post_id != null && !liveIds.has(p.wordpress_post_id as number)) continue  // deleted/trashed in WordPress
       if (p.video_id && p.wordpress_url) {
@@ -1832,6 +1832,10 @@ export default function ContentPage() {
           // are already queued.
           scheduledFor: (p.scheduled_for as string | null | undefined) ?? null,
           scheduleMode: (p.schedule_mode as string | null | undefined) ?? null,
+          // Real publish timestamp — used by the Recent section sort so
+          // newest-published lands first. Falls back to created_at for
+          // pre-2026-06 posts where published_at was never written.
+          publishedAt: (p.published_at as string | null | undefined) ?? (p.created_at as string | null | undefined) ?? null,
           facebookPostId: p.facebook_post_id as string | undefined,
           pinterestPinId: p.pinterest_pin_id as string | undefined,
           threadsPostId: p.threads_post_id as string | undefined,
@@ -2823,11 +2827,23 @@ export default function ContentPage() {
             // still show every Recent row because the search only
             // filtered the older-posts archive below. Search matches the
             // video title OR the published post title OR the channel.
-            const recentAll = [...horizontalDone, ...verticalDone].sort((a, b) => {
-              const ta = new Date(((a.published_at as string) || (a.tiktok_posted_at as string) || (a.instagram_posted_at as string) || 0)).getTime()
-              const tb = new Date(((b.published_at as string) || (b.tiktok_posted_at as string) || (b.instagram_posted_at as string) || 0)).getTime()
-              return tb - ta
-            })
+            // Sort by BLOG PUBLISH date (newest first) — the date the
+            // post went live on WordPress, not the YouTube video date.
+            // Falls back to vertical-channel post times, then to the
+            // video's own published_at as a last resort. 2026-06-07 per
+            // user request: "posts should also be by default in order
+            // of actual posting blog posts."
+            const sortKey = (v: Record<string, unknown>): number => {
+              const post = posts[v.id as string]
+              if (post?.publishedAt) {
+                const t = new Date(post.publishedAt).getTime()
+                if (!isNaN(t)) return t
+              }
+              const fallback = (v.tiktok_posted_at as string) || (v.instagram_posted_at as string) || (v.published_at as string) || ''
+              const t = new Date(fallback || 0).getTime()
+              return isNaN(t) ? 0 : t
+            }
+            const recentAll = [...horizontalDone, ...verticalDone].sort((a, b) => sortKey(b) - sortKey(a))
             const recent = postQuery
               ? recentAll.filter(v => {
                   const videoTitle = ((v.title as string) || '').toLowerCase()
