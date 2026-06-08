@@ -136,33 +136,42 @@ async function titleStrategistAgent(
     : ''
   const raw = await runAgent(anthropic, {
     model: 'claude-sonnet-4-6',
-    maxTokens: 600,
+    maxTokens: 700,
     feature: 'yt_meta_title_strategist',
-    system: 'You are a viral YouTube title strategist. You write titles that dominate search and maximise click-through rate. Return ONLY valid JSON.',
+    system: 'You are a viral YouTube title strategist. You write titles that dominate search and maximise click-through rate. Your titles READ LIKE A REAL CREATOR WROTE THEM ABOUT THIS SPECIFIC PRODUCT — never templated, never generic. Return ONLY valid JSON.',
     user: `Write 5 viral YouTube title options for this ${isProduct ? 'product review' : 'video (not a product review — it is general content)'}.
 
 ${isProduct ? 'PRODUCT' : 'VIDEO CONTEXT'}: ${productContext}
 ORIGINAL TITLE: "${videoTitle}"
 ${isProduct ? 'TARGET BUYER' : 'TARGET VIEWER'}: ${productAnalysis.targetBuyer}
-${isProduct ? 'TOP BENEFITS' : 'KEY TAKEAWAYS'}: ${productAnalysis.topBenefits.join(', ')}
-${isProduct ? 'PAIN POINTS' : 'VIEWER QUESTIONS'}: ${productAnalysis.painPoints.join(', ')}
+${isProduct ? 'TOP BENEFITS' : 'KEY TAKEAWAYS'}: ${productAnalysis.topBenefits.join(' • ')}
+${isProduct ? 'PAIN POINTS' : 'VIEWER QUESTIONS'}: ${productAnalysis.painPoints.join(' • ')}
 TONE: ${tone}
 
-TITLE RULES:
-${isProduct
-  ? `- Lead with a power hook — choose from: "Worth It?", "Before You Buy", "I Tested", "Don't Buy Until...", "Is It Worth It?", "Real Talk:", "Watch This First", "We Tried It"
-- Include the exact product name people search for`
-  : `- Lead with a curiosity / story hook — choose from: "How I…", "Here's What Happened When…", "I Tried…", "Watch This First", "The Truth About…", "Why I…", "What Nobody Tells You About…"
-- Make the topic of the video unmissable in the title`}
-- NEVER use the word "honest" anywhere in the title
-- Add an emotional trigger or specific outcome
-- Under 100 characters
+CORE PRINCIPLES (do not violate):
+1. EACH title must be GROUNDED in a SPECIFIC benefit, pain point, or moment from the analysis above. Quote a real number, a real result, a real before/after — never generic "Honest Review" filler.
+2. EACH of the 5 alternatives must use a STRUCTURALLY DIFFERENT opening. If alt #1 starts with "I Tested…", #2 cannot start with "I Tried…" or "I Tested…". If #1 is a question, #2 must be a statement. The 5 titles together should read as 5 distinct creators wrote them.
+3. NO TEMPLATED HOOKS. The following openings are BANNED across all 5 outputs because they've been overused: "Worth It?", "Before You Buy", "Don't Buy Until", "Real Talk", "Watch This First", "Is It Worth It?", "I Tested … for 30 Days", "The Truth About…", "What Nobody Tells You", "Here's What Happened When".
+4. NEVER use the word "honest" anywhere.
+
+ALLOWED ANGLES (mix across the 5 — never use the same angle twice):
+- Specific-result hook: lead with a number/outcome from the analysis ("I Slept 8 Hours After Years of Insomnia — Here's What Did It")
+- Counter-intuitive setup: contradict an assumption ("This $30 Diffuser Replaced My $200 Sleep Routine")
+- Surprised-curiosity: a thing the creator didn't expect ("I Was Wrong About Aromatherapy Until I Tried This")
+- Direct-benefit headline: state the payoff plainly ("Cortisol Manager Cut My Stress in Half — Here's How")
+- Comparative / vs: contrast with an alternative ("Ashwagandha Tea vs Cortisol Manager — Which Actually Works?")
+- Question grounded in the pain point: ("Can a Supplement Really Fix Stress-Induced Insomnia?")
+- Story snapshot: ("The Week I Switched to Cortisol Manager — and Stopped Waking at 3 AM")
+- Skeptic-to-believer arc: ("I Didn't Buy The Hype About Cortisol Manager. Then Week 3 Happened.")
+
+${isProduct ? '- Include the product name once where it lands naturally — never wedge it in if it ruins the flow.' : '- Make the video topic unmissable in the title.'}
+- Under 100 characters each
 - No ASIN, no hashtags, no emojis
 
 Return JSON:
 {
-  "best": "the single strongest title",
-  "alternatives": ["4 other strong options"]
+  "best": "the single strongest title — the one most likely to drive clicks",
+  "alternatives": ["4 OTHER strong titles, each STRUCTURALLY DIFFERENT from each other and from 'best'"]
 }${voiceAnchor}`,
   })
   return parseJSON(raw, { best: videoTitle, alternatives: [] })
