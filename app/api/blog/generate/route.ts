@@ -1487,17 +1487,36 @@ async function handleGenerate(request: Request) {
             }
           }
 
-          // Image count — user's per-brand preference (0..4) wins; falls
-          // back to word-scaled tier default. 2026-06-07: surfaced in
-          // Brand Profile so users can set "always 2" / "never any" etc.
+          // Image count resolution. Two inputs:
+          //   - includeImages (this request) = user TICKED the "Include
+          //     photos" checkbox on THIS generation. Authoritative for
+          //     this single post.
+          //   - brand.blog_image_count = persistent default they set in
+          //     Brand Profile.
+          //
+          // We're inside the `else if (includeImages)` branch, so the
+          // user explicitly opted in for THIS post. If their Brand
+          // Profile pref is 0 (or null), fall through to the word-scaled
+          // default — never let the persisted "0" silently override
+          // the explicit checkbox. 2026-06-08: user reported "every
+          // time I click Include photos, no images" — root cause was
+          // brand pref of 0 silently winning.
           const words = bodyWordCount(content)
-          const userImageCount = (brand as { blog_image_count?: number | null } | null)?.blog_image_count ?? null
+          const rawPref = (brand as { blog_image_count?: number | null } | null)?.blog_image_count
+          // Per-post checkbox override: treat 0 / null the same — use
+          // the word-scaled default. Only honor 1..4 from brand pref.
+          const userImageCount = typeof rawPref === 'number' && rawPref > 0 ? rawPref : null
           const imageCount = allowedBlogImages(tier, words, userImageCount)
+          console.log('[generate] in-body image count resolved', {
+            userId: user.id,
+            includeImages: true,
+            brandPref: rawPref ?? null,
+            resolvedCount: imageCount,
+          })
           if (imageCount === 0) {
-            // User wants no in-body images — throw a sentinel that the
-            // surrounding try/catch swallows. Logs the intent + writes
-            // body_images_count=0 so the diagnostic badge is correct.
-            console.log('[generate] skipping in-body images — user preference set to 0', { userId: user.id })
+            // Should be impossible given the override above, but kept
+            // as a tripwire — surface clearly in logs.
+            console.warn('[generate] image count resolved to 0 despite includeImages=true', { userId: user.id })
             if (savedPost?.id) {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               try { await supabase.from('blog_posts').update({ body_images_count: 0 }).eq('id', savedPost.id) } catch { /* non-fatal */ }

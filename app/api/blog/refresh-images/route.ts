@@ -166,20 +166,23 @@ export async function POST(request: Request) {
   // Strip the existing body images so we don't duplicate, then regenerate.
   const stripped = (post.content as string).replace(/<!-- wp:image[\s\S]*?<!-- \/wp:image -->\s*/g, '')
   const words = stripped.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length
-  // Read the user's per-brand image-count preference (0..4, null = default).
-  // null = legacy word-scaled default. 0 = skip image gen entirely.
+  // The user hitting Refresh / Re-roll Images / the auto-trigger
+  // after generation has EXPLICITLY opted into images for this call.
+  // Their Brand Profile "0 — text only" pref applies to the default
+  // path (initial generation without the checkbox), NOT to this
+  // route. If they explicitly invoke refresh, give them images.
+  // Honor 1..4 from brand pref so they get their preferred count;
+  // 0 / null falls through to word-scaled default. 2026-06-08 fix
+  // for "every time I click Include photos, no images" report.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: brand } = await supabase
     .from('brand_profiles').select('blog_image_count').eq('user_id', user.id).maybeSingle()
-  const userImageCount = (brand as { blog_image_count?: number | null } | null)?.blog_image_count ?? null
+  const rawPref = (brand as { blog_image_count?: number | null } | null)?.blog_image_count
+  const userImageCount = typeof rawPref === 'number' && rawPref > 0 ? rawPref : null
   const requested = allowedBlogImages(tier, words, userImageCount)
-  // 0 is a valid user choice ("never want images") — skip the whole
-  // gen + upload + insert dance and return success early so the user
-  // doesn't burn FAL credits.
-  if (requested === 0) {
-    console.log('[refresh-images] skipping — user preference set to 0 images', { userId: user.id, postId: post.id })
-    return NextResponse.json({ ok: true, count: 0, message: 'Image count set to 0 in Brand Profile.' })
-  }
+  console.log('[refresh-images] count resolved', {
+    userId: user.id, postId: post.id, brandPref: rawPref ?? null, resolvedCount: requested,
+  })
   const count = Math.max(1, requested)
   const altBase = productTitle || (post.title as string) || 'product'
 

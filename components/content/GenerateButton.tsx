@@ -240,21 +240,32 @@ export function GenerateButton({
             // Reflect the count on the badge straight away so the user
             // sees "🖼 N" without a Content-page reload.
             setResult((prev) => prev ? { ...prev, bodyImagesCount: count } : prev)
+            // Surface what actually happened — silent is the bug. 2026-06-08:
+            // user reported "every time I click Include photos, no images";
+            // root cause was a server-side pref overriding their checkbox.
+            // Even when the count is fine, a toast tells them image gen
+            // succeeded so they don't refresh and wonder.
+            if (count > 0) {
+              toast.success(`Added ${count} in-article image${count === 1 ? '' : 's'}`, { duration: 4000 })
+            } else {
+              toast.warning(
+                'Post created — image gen returned 0 images. ' +
+                `Open the post or check Brand Profile → "Images per article".`,
+                { duration: 8000 },
+              )
+            }
           } else if (!imgRes.ok) {
             // Surface the auto-trigger failure as a toast instead of
-            // silently swallowing it — 2026-06-05 user report of "ticked
-            // Include images but got none" was an auto-trigger failure
-            // we never told them about. The post itself is fine; the
-            // user can still hit Images manually to retry.
+            // silently swallowing it.
             const msg = (imgData.error as string | undefined) || `Couldn't add in-article images (${imgRes.status}).`
-            toast.error(`${msg} Click Images on the post row to retry.`, { duration: 6000 })
+            toast.error(`${msg} Click Images on the post row to retry.`, { duration: 8000 })
           }
         } catch (e) {
           // Non-fatal — the post is already published — but tell the user
           // so they know to click Images manually instead of thinking the
           // toggle was ignored. Network errors / aborts land here.
           const msg = e instanceof Error ? e.message : 'Image step failed.'
-          toast.error(`${msg} Click Images on the post row to retry.`, { duration: 6000 })
+          toast.error(`${msg} Click Images on the post row to retry.`, { duration: 8000 })
         }
       }
 
