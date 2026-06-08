@@ -1319,7 +1319,7 @@ function VideoStudioCard({ video, userTier, playlists }: {
           {/* Geniuslink warning */}
           {geniuslinkUsed === false && geniuslinkError && (
             <div className="mx-5 mb-3 px-3 py-2 rounded-lg bg-[#ff9500]/10 border border-[#ff9500]/20 text-xs text-[#ff9500]">
-              ⚠️ Geniuslink not used — {geniuslinkError}. Go to <strong>Site &amp; Integrations</strong> to add your credentials.
+              ⚠️ Geniuslink not used — {geniuslinkError}. Go to <strong>Brand Profile → Affiliate Link Routing</strong> to add or update your credentials.
             </div>
           )}
 
@@ -2440,7 +2440,7 @@ export default function StudioPage() {
         <div className="card p-4 mb-6 flex items-center gap-3 border border-[#ff9500]/30 bg-[#ff9500]/5">
           <AlertCircle size={16} className="text-[#ff9500] flex-shrink-0" />
           <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex-1">
-            <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink not connected.</strong> We&apos;ll fall back to plain US Amazon links, which means you only earn on .com traffic. Add your Geniuslink API key in <a href="/setup?tab=integrations" className="text-[#7C3AED] hover:underline">Site &amp; Integrations</a> to geo-route every click to the right Amazon storefront.
+            <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Geniuslink not connected.</strong> We&apos;ll fall back to plain US Amazon links, which means you only earn on .com traffic. Add your Geniuslink API key in <a href="/brand" className="text-[#7C3AED] hover:underline">Brand Profile → Affiliate Link Routing</a> to geo-route every click to the right Amazon storefront.
           </p>
         </div>
       )}

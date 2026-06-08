@@ -443,7 +443,7 @@ export async function POST(request: Request) {
           geniuslinkError = `Geniuslink call failed: ${geniuslinkError}. Used your Amazon Associates tag as fallback.`
         }
       } else if (!geniuslinkUsed && !intRow?.amazon_associates_tag) {
-        geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Site & Integrations'
+        geniuslinkError = geniuslinkError || 'No affiliate link configured — add Geniuslink or Amazon Associates tag in Brand Profile → Affiliate Link Routing'
       }
     } else if (storeUrl) {
       // Non-Amazon direct store / brand link the creator put in the
