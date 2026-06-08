@@ -1056,32 +1056,46 @@ export async function POST(request: Request) {
             : nProducts === 1
               ? `The FINAL reference image is the PRODUCT being reviewed — render the ACTUAL PRODUCT ITEM ITSELF, matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep the brand mark and product name on the bottle/box/device so viewers immediately recognise the product). CRITICAL: if that reference is retail PACKAGING, a box, a poly-bag or a marketing/A+ Content infographic (overlay headlines like "Ultimate ___", checkmark badges, callout circles, comparison panels, feature-highlight pills, arrows pointing at parts), depict the REAL unpackaged product (in use or as a clean hero object) — NOT the box, NOT the infographic — and do NOT reproduce ANY printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkmarks, checkboxes, callout pills). Do NOT copy the reference's composition, layout, framing, or staging — use it ONLY to learn what the product physically looks like. The product's OWN brand/label/name STAYS; all marketing collateral goes. Use that final image ONLY for the product; do NOT take any person, face, hands or body from it.${compositionDirective}`
               : `The FINAL ${nProducts} reference images are PRODUCT photos supplied by the creator — they may be DIFFERENT angles of the same product, OR DIFFERENT products being compared. Render ALL ${nProducts} of them visibly in the thumbnail, each matching its true shape, colour, materials AND its own branding/label/name physically printed on it (keep brand marks and product names on bottles/boxes/devices so viewers immediately recognise the products). CRITICAL: if any reference is retail PACKAGING, a box, a poly-bag or a marketing/A+ Content infographic (overlay headlines, checkmark badges, callout circles, comparison panels, feature-highlight pills), depict the REAL unpackaged product — NOT the box, NOT the infographic — and do NOT reproduce ANY printed MARKETING copy from it (feature lists, claims, percentages, ratings, warranty/award badges, size charts, checkmarks, checkboxes, callout pills). Do NOT copy the references' composition, layout, framing, or staging — use them ONLY to learn what the products physically look like. The products' OWN brand/label/name STAYS; all marketing collateral goes. Use these reference images ONLY for the products; do NOT take any person, face, hands or body from them.${compositionDirective}`
-          // Cinematic color-pair pool — Gemini's winning thumbnail used "rich
-          // blue and orange" lighting, which is the classic teal/orange cinema
-          // grade. We rotate across variants so a 3-thumb batch isn't all the
-          // same palette. EACH pair is a {rim, accent} duo — rim light separates
-          // the creator from background, accent light glows around the product.
-          const COLOR_PAIRS = [
-            { rim: 'rich blue', accent: 'warm orange', overall: 'cinematic teal-and-orange' },
-            { rim: 'deep magenta', accent: 'electric cyan', overall: 'neon-noir' },
-            { rim: 'cool indigo', accent: 'golden amber', overall: 'high-end editorial' },
-          ]
-          // Energetic facial expressions that DON'T trigger "AI bodybuilder /
-          // AI influencer" failure mode. The Gemini winner used "wide-eyed
-          // smile, pointing finger" — direct gaze + decisive action.
-          const EXPRESSIONS = [
-            'wide-eyed and smiling, mouth slightly open in genuine surprise, eyebrows raised',
-            'eyes locked on the camera with a delighted grin, head tilted just slightly',
-            'a confident half-smile with one eyebrow raised, looking like they just discovered something',
-          ]
-          // Action verbs — what the creator is DOING with the product. Direct
-          // interaction is the highest CTR signal we have. We always pick one;
-          // never let the creator stand passively next to the product.
-          const ACTIONS = [
-            'right index finger pointing directly at the product',
-            'one hand gesturing toward the product as if presenting it',
-            'holding the product up just below their chin, looking at the camera',
-          ]
+          // ── ANGLE → SCENE framing (2026-06-08, from Gemini handoff #2) ────
+          // Per-angle scene preset. Each psychological hook benefits from a
+          // matching visual treatment: a NEGATION ("NEVER USE CANDLES AGAIN!")
+          // reads strongest with a bright happy-discovery scene; a SKEPTIC
+          // ("WASTE OF MONEY?!") reads strongest with a moody critical scene.
+          // The previous rotation (palette/expression/action by VARIANT INDEX)
+          // produced disconnected combos like a SKEPTIC headline over a bright
+          // editorial scene. Mapping by ANGLE keeps the emotional pitch
+          // coherent across copy + image.
+          const FRAMING_MAP: Record<CtrAngle, {
+            environment: string
+            expression: string
+            action: string
+            lighting: { rim: string; accent: string; overall: string }
+          }> = {
+            NEGATION: {
+              environment: 'a clean, bright modern living-room background with daylight pouring in and a softly-blurred minimalist interior',
+              expression: 'a wide-eyed delighted grin, mouth slightly open like they just made a discovery they want to share',
+              action: 'open-palm gesturing toward the product as if presenting it',
+              lighting: { rim: 'cool soft daylight', accent: 'warm honey', overall: 'bright airy editorial' },
+            },
+            CURIOSITY_GAP: {
+              environment: 'a moody dimly-lit modern bedroom or den, soft cinematic atmosphere with subtle background bokeh',
+              expression: 'an intense, almost deadpan serious expression staring directly into the camera with urgency, eyebrows slightly raised',
+              action: 'one finger pressed to lips OR holding the product up just below the chin like a secret about to be told',
+              lighting: { rim: 'rich blue', accent: 'warm orange', overall: 'cinematic teal-and-orange' },
+            },
+            SKEPTIC: {
+              environment: 'a slightly cluttered home-office desk at sunset, warm cinematic background light filtering through a window',
+              expression: 'a skeptical, slightly confused frown with one eyebrow raised, head tilted just slightly, lips pursed',
+              action: 'one hand scratching the chin or pointing dubiously at the product as if questioning it',
+              lighting: { rim: 'cool teal', accent: 'warm sunset gold', overall: 'moody cinematic golden-hour' },
+            },
+            VALUE_DISRUPTION: {
+              environment: 'a premium clean kitchen or studio countertop, luxurious high-end commercial aesthetic, soft white-grey background',
+              expression: 'a confident knowing smirk, head slightly cocked, authoritative high-energy vibe',
+              action: 'a single decisive index finger pointing straight at the product',
+              lighting: { rim: 'deep magenta', accent: 'electric cyan', overall: 'high-end editorial neon-pop' },
+            },
+          }
           // Style-ref aware clause: when we have curated reference thumbnails,
           // explicitly tell the model to mimic their visual gestalt. This is
           // what made the Gemini-handoff output land — the model treats the
@@ -1092,9 +1106,15 @@ export async function POST(request: Request) {
           const buildComposed = (i: number, withText: boolean): string => {
             const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
             const productSide = hostSide === 'LEFT' ? 'RIGHT' : 'LEFT'
-            const palette = COLOR_PAIRS[i % COLOR_PAIRS.length]
-            const expression = EXPRESSIONS[i % EXPRESSIONS.length]
-            const action = ACTIONS[i % ACTIONS.length]
+            // Scene is now driven by the variant's psychological ANGLE, not
+            // its index — keeps SKEPTIC copy on a SKEPTIC scene, NEGATION on
+            // a discovery scene, etc. Falls back to CURIOSITY_GAP if the
+            // angle is unrecognised (shouldn't happen — ThumbCopy is typed).
+            const variantCopy = hooks[i % hooks.length]
+            const frame = FRAMING_MAP[variantCopy.angle] ?? FRAMING_MAP.CURIOSITY_GAP
+            const palette = frame.lighting
+            const expression = frame.expression
+            const action = frame.action
             // Headline phrasing copied from the user's winning Gemini-handoff
             // prompt VERBATIM — natural-language description, not a structured
             // template. The earlier "emphasisWord must be yellow, all others
@@ -1130,7 +1150,7 @@ ${productRefClause}
 ${styleRefClause}
 ${compositionLine}
 ${headlineClause}
-BACKGROUND: a ${palette.overall} cinematic scene that fits the video "${videoTitle}" — a dramatic blend of ${palette.rim} rim-light behind the creator and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. Do NOT make it a flat, bright, white or airy room. The rim light must visibly separate the creator from the background so the cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes.
+BACKGROUND: ${frame.environment}, graded as ${palette.overall} cinematic — a dramatic blend of ${palette.rim} rim-light behind the creator and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. The rim light must visibly separate the creator from the background so the cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes. Loosely fits the video "${videoTitle}" without literally illustrating the title.
 The ONLY text in the image is the headline described above (plus the arrow). NO retailer logos (especially "Amazon"/"Prime"), NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
 Ultra-sharp, professional, photorealistic.`
           }
