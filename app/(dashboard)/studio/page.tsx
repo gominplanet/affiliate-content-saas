@@ -1666,10 +1666,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       : <><Sparkles size={12} /> {thumbnailUrl ? 'Regenerate' : 'Generate Thumbnail'}</>}
                   </button>
 
-                  {/* Upload your own — skips AI, uses the user's file as-is. */}
+                  {/* Upload your own — skips AI, uses the user's file as-is.
+                      Border + text colors via Tailwind so the button
+                      reads correctly in dark mode (was hardcoded
+                      borderColor + color in inline style which left
+                      the label as near-black on dark bg). 2026-06-07. */}
                   <label
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer disabled:opacity-60 transition-opacity hover:bg-gray-50 dark:hover:bg-white/5"
-                    style={{ borderColor: '#d2d2d7', color: '#1d1d1f' }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#d2d2d7] dark:border-white/15 text-[#1d1d1f] dark:text-[#f5f5f7] bg-white dark:bg-[#1c1c1e] cursor-pointer disabled:opacity-60 transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
                     title="Use your own thumbnail (JPG/PNG, ≤ 2 MB, 1280×720 recommended)"
                   >
                     <input
