@@ -70,6 +70,25 @@ export async function POST(request: Request) {
       ? (thumbResult.reason instanceof Error ? thumbResult.reason.message : 'Thumbnail upload failed')
       : null
 
+    // Record applied_at on the youtube_videos row so the YouTube Co-Pilot
+    // "🚀 Pushed via Co-Pilot" tab can identify videos we shipped through
+    // our system. Only on metadata-update success (results[0]) — a failed
+    // thumbnail upload still counts since the title/description landed.
+    if (results[0].status === 'fulfilled') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('youtube_videos')
+          .upsert({
+            user_id: user.id,
+            youtube_video_id: videoId,
+            youtube_metadata_applied_at: new Date().toISOString(),
+          }, { onConflict: 'user_id,youtube_video_id' })
+      } catch (err) {
+        console.warn('[yt-update-metadata] failed to record applied_at:', err instanceof Error ? err.message : String(err))
+      }
+    }
+
     return NextResponse.json({ ok: true, ...(thumbWarning ? { thumbnailWarning: thumbWarning } : {}) })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

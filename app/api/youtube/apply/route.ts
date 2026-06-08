@@ -165,6 +165,27 @@ export async function POST(request: NextRequest) {
       warnings.push('Playlist add failed: ' + (results[2].reason instanceof Error ? results[2].reason.message : String(results[2].reason)))
     }
 
+    // Record that we successfully pushed metadata for this video. Powers
+    // the "🚀 Pushed via Co-Pilot" tab on the YouTube Co-Pilot page so the
+    // user can see which videos they've already shipped through our system.
+    // Best-effort: even if the metadata update succeeded on YouTube, a DB
+    // hiccup here shouldn't fail the user's request — they just won't see
+    // the badge until they reapply.
+    if (results[0].status === 'fulfilled') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('youtube_videos')
+          .upsert({
+            user_id: user.id,
+            youtube_video_id: body.videoId,
+            youtube_metadata_applied_at: new Date().toISOString(),
+          }, { onConflict: 'user_id,youtube_video_id' })
+      } catch (err) {
+        console.warn('[yt-apply] failed to record applied_at:', err instanceof Error ? err.message : String(err))
+      }
+    }
+
     return NextResponse.json({ ok: warnings.length === 0, warnings })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

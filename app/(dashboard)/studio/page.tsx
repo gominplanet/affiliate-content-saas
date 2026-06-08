@@ -26,19 +26,27 @@ interface DraftVideo {
   status: 'private' | 'unlisted' | 'public'
   publishedAt: string
   detectedAsin: string | null
+  /** ISO timestamp when the user pushed metadata for this video to YouTube
+   *  via /api/youtube/apply or /api/youtube/update-metadata. null if we
+   *  haven't shipped this one yet. Powers the "Pushed via Co-Pilot" tab. */
+  metadataAppliedAt?: string | null
 }
 
 // ── Tab classification (2026-06-08) ────────────────────────────────────────
-// Three workflow buckets the YouTube Co-Pilot surfaces:
+// FOUR workflow buckets the YouTube Co-Pilot surfaces:
 //   - todo-product:    has an ASIN/Amazon signal in title or description,
 //                      but no affiliate link yet → ready to generate metadata
 //   - todo-no-product: no product signal anywhere → general/topic content
 //                      that still needs metadata
-//   - done:            description already contains an affiliate / Geniuslink
-//                      URL → already processed, skip
+//   - shipped:         WE pushed metadata to YouTube via /api/youtube/apply
+//                      or update-metadata — authoritative "done" signal,
+//                      backed by youtube_videos.youtube_metadata_applied_at
+//   - done:            HEURISTIC — description contains a Geniuslink /
+//                      Amazon affiliate URL. Catches videos completed via
+//                      other tools or manual edits (not by Co-Pilot).
 // Per user spec 2026-06-08. Classification runs CLIENT-side off the existing
 // drafts payload so the user can tweak rules without redeploying the API.
-type VideoTab = 'todo-product' | 'todo-no-product' | 'done'
+type VideoTab = 'todo-product' | 'todo-no-product' | 'shipped' | 'done'
 
 // ASIN format on Amazon: 10 alphanumerics, almost always starting with B0.
 // We allow the broader 10-alphanum pattern but anchor on word boundaries so
@@ -51,12 +59,16 @@ const AFFILIATE_LINK_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/[^\s]*(?:[?
 // URLs and any of the affiliate shapes above.
 const AMAZON_PRESENCE_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/)/i
 
-function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin'>): VideoTab {
+function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt'>): VideoTab {
   const title = v.title || ''
   const desc = v.description || ''
 
-  // DONE wins first: if the affiliate link is in description, we've already
-  // shipped that video — no matter what's in the title.
+  // SHIPPED wins first: if we pushed metadata via Co-Pilot, that's the
+  // authoritative signal — overrides every other heuristic.
+  if (v.metadataAppliedAt) return 'shipped'
+
+  // DONE second: heuristic match — description has an affiliate link but
+  // we don't have a Co-Pilot record. Means user completed it elsewhere.
   if (AFFILIATE_LINK_RE.test(desc)) return 'done'
 
   // Product signal: ASIN in title (either via our pre-extracted field or a
@@ -2309,13 +2321,14 @@ export default function StudioPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('') // post-debounce value driving the fetch
 
-  // Bucket the current drafts list into the 3 workflow tabs. Recomputes
+  // Bucket the current drafts list into the 4 workflow tabs. Recomputes
   // whenever drafts change — cheap (just regex per video). Search bypasses
   // tab filtering: search results show across all categories.
   const tabbed = useMemo(() => {
     const buckets: Record<VideoTab, DraftVideo[]> = {
       'todo-product': [],
       'todo-no-product': [],
+      'shipped': [],
       'done': [],
     }
     for (const v of drafts) buckets[classifyVideo(v)].push(v)
@@ -2566,7 +2579,8 @@ export default function StudioPage() {
               {([
                 { id: 'todo-product' as const, label: '🛒 With product', sub: 'ASIN or Amazon link · no affiliate yet' },
                 { id: 'todo-no-product' as const, label: '✍️ No product', sub: 'General / topic videos' },
-                { id: 'done' as const, label: '✅ Done', sub: 'Affiliate link in description' },
+                { id: 'shipped' as const, label: '🚀 Pushed via Co-Pilot', sub: 'You applied metadata via MVP — authoritative' },
+                { id: 'done' as const, label: '✅ Done elsewhere', sub: 'Description has an affiliate link but not via MVP' },
               ]).map(t => {
                 const count = tabbed[t.id].length
                 const active = activeTab === t.id
@@ -2636,12 +2650,15 @@ export default function StudioPage() {
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
                     {activeTab === 'todo-product' && 'No videos with a product waiting'}
                     {activeTab === 'todo-no-product' && 'No general videos waiting'}
-                    {activeTab === 'done' && 'Nothing finished yet'}
+                    {activeTab === 'shipped' && 'Nothing pushed via Co-Pilot yet'}
+                    {activeTab === 'done' && 'No videos completed outside Co-Pilot'}
                   </p>
                   <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">
-                    {activeTab === 'done'
-                      ? <>Generate metadata on a video and apply it — once the description has an affiliate link, it lands here.</>
-                      : <>Switch tabs above to see your other videos.</>}
+                    {activeTab === 'shipped'
+                      ? <>Generate metadata on a video and click <strong>Apply to YouTube</strong> — once we successfully push it, the video lands here.</>
+                      : activeTab === 'done'
+                        ? <>Videos with an Amazon/Geniuslink in the description but no Co-Pilot push record land here — usually from another tool or manual edits.</>
+                        : <>Switch tabs above to see your other videos.</>}
                   </p>
                 </>
               ) : (

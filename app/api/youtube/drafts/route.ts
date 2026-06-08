@@ -97,8 +97,44 @@ export async function GET(request: Request) {
       cursor = page.nextPageToken
     }
 
+    // ── Enrich with Co-Pilot apply state (2026-06-08) ────────────────────
+    // Look up which of these videos the user has already pushed metadata
+    // for via /api/youtube/apply or /api/youtube/update-metadata. Powers
+    // the "🚀 Pushed via Co-Pilot" tab on the Co-Pilot page. Best-effort
+    // — if the lookup fails we just return drafts without the badge.
+    const videoIds = drafts.map(d => d.youtubeVideoId).filter(Boolean)
+    const appliedMap: Record<string, string> = {}
+    if (videoIds.length > 0) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: applied } = await (supabase as any)
+          .from('youtube_videos')
+          .select('youtube_video_id, youtube_metadata_applied_at')
+          .eq('user_id', user.id)
+          .in('youtube_video_id', videoIds)
+          .not('youtube_metadata_applied_at', 'is', null)
+        if (Array.isArray(applied)) {
+          for (const row of applied) {
+            if (row.youtube_video_id && row.youtube_metadata_applied_at) {
+              appliedMap[row.youtube_video_id as string] = row.youtube_metadata_applied_at as string
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[yt-drafts] applied-at lookup failed (non-fatal):', err instanceof Error ? err.message : String(err))
+      }
+    }
+
+    const enriched = drafts.map(d => ({
+      ...d,
+      // ISO timestamp when we last pushed metadata to YouTube for this video,
+      // or null if we never have. The client uses this to classify into the
+      // "Pushed via Co-Pilot" tab.
+      metadataAppliedAt: appliedMap[d.youtubeVideoId] ?? null,
+    }))
+
     return NextResponse.json({
-      drafts,
+      drafts: enriched,
       nextPageToken: cursor,
       pagesScanned,
       // Useful for telemetry + debugging the "I'm missing drafts" thread.
