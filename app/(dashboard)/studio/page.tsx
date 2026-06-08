@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -26,6 +26,47 @@ interface DraftVideo {
   status: 'private' | 'unlisted' | 'public'
   publishedAt: string
   detectedAsin: string | null
+}
+
+// ── Tab classification (2026-06-08) ────────────────────────────────────────
+// Three workflow buckets the YouTube Co-Pilot surfaces:
+//   - todo-product:    has an ASIN/Amazon signal in title or description,
+//                      but no affiliate link yet → ready to generate metadata
+//   - todo-no-product: no product signal anywhere → general/topic content
+//                      that still needs metadata
+//   - done:            description already contains an affiliate / Geniuslink
+//                      URL → already processed, skip
+// Per user spec 2026-06-08. Classification runs CLIENT-side off the existing
+// drafts payload so the user can tweak rules without redeploying the API.
+type VideoTab = 'todo-product' | 'todo-no-product' | 'done'
+
+// ASIN format on Amazon: 10 alphanumerics, almost always starting with B0.
+// We allow the broader 10-alphanum pattern but anchor on word boundaries so
+// random letters in a title don't false-match.
+const ASIN_RE = /\b(B0[A-Z0-9]{8})\b/i
+// "Affiliate link" detector for the DONE bucket. Per user (2026-06-08):
+// strictly an Amazon or Geniuslink-shaped URL.
+const AFFILIATE_LINK_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/[^\s]*(?:[?&]tag=|\/dp\/))/i
+// "Any Amazon presence" for the no-product cutoff. Catches both raw amazon
+// URLs and any of the affiliate shapes above.
+const AMAZON_PRESENCE_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/)/i
+
+function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin'>): VideoTab {
+  const title = v.title || ''
+  const desc = v.description || ''
+
+  // DONE wins first: if the affiliate link is in description, we've already
+  // shipped that video — no matter what's in the title.
+  if (AFFILIATE_LINK_RE.test(desc)) return 'done'
+
+  // Product signal: ASIN in title (either via our pre-extracted field or a
+  // freshly regex'd match), OR any Amazon URL in the description even
+  // without an affiliate tag (user may have pasted a plain link).
+  const hasAsin = !!v.detectedAsin || ASIN_RE.test(title)
+  const hasAmazonAnywhere = AMAZON_PRESENCE_RE.test(title) || AMAZON_PRESENCE_RE.test(desc)
+  if (hasAsin || hasAmazonAnywhere) return 'todo-product'
+
+  return 'todo-no-product'
 }
 
 interface GeneratedMetadata {
@@ -2257,12 +2298,30 @@ export default function StudioPage() {
   // (i.e. true YouTube Studio drafts). The user can flip this if they
   // want to re-do metadata on an already-public video.
   const [includePublished, setIncludePublished] = useState(false)
+  // Active workflow tab. Defaults to 'todo-product' since that's the highest-
+  // value bucket (product videos = affiliate $$). Switches between three
+  // mutually-exclusive views of the same drafts list.
+  const [activeTab, setActiveTab] = useState<VideoTab>('todo-product')
   // Server-side search across the user's entire channel (not just the
   // currently-loaded uploads-playlist page). Debounced 350ms below so we
   // don't hammer YouTube's search endpoint on every keystroke — that one
   // costs ~100x more quota than the default listing.
   const [searchQuery, setSearchQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('') // post-debounce value driving the fetch
+
+  // Bucket the current drafts list into the 3 workflow tabs. Recomputes
+  // whenever drafts change — cheap (just regex per video). Search bypasses
+  // tab filtering: search results show across all categories.
+  const tabbed = useMemo(() => {
+    const buckets: Record<VideoTab, DraftVideo[]> = {
+      'todo-product': [],
+      'todo-no-product': [],
+      'done': [],
+    }
+    for (const v of drafts) buckets[classifyVideo(v)].push(v)
+    return buckets
+  }, [drafts])
+  const visibleDrafts = activeQuery ? drafts : tabbed[activeTab]
 
   /** load() handles three modes:
    *    - Initial / refresh / new search: replaces the drafts list. (append=false, no pageToken)
@@ -2499,11 +2558,46 @@ export default function StudioPage() {
             />
           </div>
 
+          {/* Workflow tabs — hidden during search since search results
+              span all categories. Tab counts update live as drafts load
+              via the "Load more" button. */}
+          {!activeQuery && drafts.length > 0 && (
+            <div className="flex items-center gap-1 mb-3 border-b border-gray-200 dark:border-white/10">
+              {([
+                { id: 'todo-product' as const, label: '🛒 With product', sub: 'ASIN or Amazon link · no affiliate yet' },
+                { id: 'todo-no-product' as const, label: '✍️ No product', sub: 'General / topic videos' },
+                { id: 'done' as const, label: '✅ Done', sub: 'Affiliate link in description' },
+              ]).map(t => {
+                const count = tabbed[t.id].length
+                const active = activeTab === t.id
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                      active
+                        ? 'border-[#7C3AED] text-[#7C3AED]'
+                        : 'border-transparent text-[#86868b] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
+                    }`}
+                    title={t.sub}
+                  >
+                    <span>{t.label}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                      active
+                        ? 'bg-[#7C3AED] text-white'
+                        : 'bg-gray-100 dark:bg-white/10 text-[#86868b] dark:text-[#8e8e93]'
+                    }`}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
               {activeQuery
                 ? `Search · ${drafts.length} result${drafts.length !== 1 ? 's' : ''} for "${activeQuery}"`
-                : `${drafts.length} ${includePublished ? 'video' : 'draft'}${drafts.length !== 1 ? 's' : ''}${nextPageToken ? ' (more available)' : ' (all loaded)'}`}
+                : `${visibleDrafts.length} of ${drafts.length} ${includePublished ? 'video' : 'draft'}${drafts.length !== 1 ? 's' : ''} in this tab${nextPageToken ? ' · more available' : ' · all loaded'}`}
             </p>
             <div className="flex items-center gap-3">
               {/* "Include published videos" toggle — default OFF so Co-Pilot only
@@ -2527,13 +2621,28 @@ export default function StudioPage() {
             </div>
           </div>
 
-          {drafts.length === 0 ? (
+          {visibleDrafts.length === 0 ? (
             <div className="card p-8 text-center">
               <Youtube size={28} className="mx-auto text-[#86868b] dark:text-[#8e8e93] mb-3" />
               {activeQuery ? (
                 <>
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No videos matched &quot;{activeQuery}&quot;</p>
                   <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">Try a different title fragment, or clear the search to see your most recent uploads.</p>
+                </>
+              ) : drafts.length > 0 ? (
+                // Drafts loaded but the active tab is empty — tell the user
+                // which tab to switch to OR that they're all done.
+                <>
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+                    {activeTab === 'todo-product' && 'No videos with a product waiting'}
+                    {activeTab === 'todo-no-product' && 'No general videos waiting'}
+                    {activeTab === 'done' && 'Nothing finished yet'}
+                  </p>
+                  <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">
+                    {activeTab === 'done'
+                      ? <>Generate metadata on a video and apply it — once the description has an affiliate link, it lands here.</>
+                      : <>Switch tabs above to see your other videos.</>}
+                  </p>
                 </>
               ) : (
                 <>
@@ -2551,7 +2660,7 @@ export default function StudioPage() {
           ) : (
             <>
               <div className="flex flex-col gap-4">
-                {drafts.map(video => (
+                {visibleDrafts.map(video => (
                   <VideoStudioCard key={video.youtubeVideoId} video={video} userTier={userTier} playlists={playlists} />
                 ))}
               </div>
