@@ -1080,20 +1080,19 @@ export async function POST(request: Request) {
             const palette = COLOR_PAIRS[i % COLOR_PAIRS.length]
             const expression = EXPRESSIONS[i % EXPRESSIONS.length]
             const action = ACTIONS[i % ACTIONS.length]
-            // Structured 2-line headline with explicit emphasis word in YELLOW.
-            // Bakes the click-psychology framework directly into the prompt:
-            // line1 + line2 stack vertically, emphasisWord renders in #FFE034
-            // yellow while the rest stays white — same look as the user's
-            // winning Gemini "I'M NEVER USING A CANDLE AGAIN!" example.
+            // Headline phrasing copied from the user's winning Gemini-handoff
+            // prompt VERBATIM — natural-language description, not a structured
+            // template. The earlier "emphasisWord must be yellow, all others
+            // white" was too prescriptive: the model ignored it and made
+            // EVERYTHING yellow. Gemini's pattern ("white and yellow text
+            // reads: …") lets the model pick the colour mix naturally and
+            // produces the bold white + yellow-accent look we want. The arrow
+            // gets a SPECIFIC target on the product so it doesn't render as a
+            // floating squiggle.
             const c = hooks[i % hooks.length]
             const headlineClause = withText
-              ? `HEADLINE (BAKE INTO THE IMAGE EXACTLY): Two stacked lines of large bold blocky CONDENSED ALL-CAPS sans-serif text (Impact / Anton style) with a thick solid black outline and hard drop shadow.
-   Line 1 (top): "${c.line1}"
-   Line 2 (below): "${c.line2}"
-   The word "${c.emphasisWord}" must render in BRIGHT YELLOW (#FFE034); ALL OTHER words render in PURE WHITE.
-   Place both lines together in the open area clearly away from the face and the product (upper-${productSide === 'LEFT' ? 'right' : 'left'} corner works best). Spell every word EXACTLY ONCE — NO repeated words, NO duplicated text anywhere else in the image. Do NOT add any other text, captions, or labels.
-   Add a prominent ${palette.accent.includes('orange') ? 'YELLOW' : 'WHITE'} arrow with a thick black outline pointing from the headline DOWN AND ACROSS to the product so the eye is guided from text → product.`
-              : `HEADLINE SPACE: leave a generous CLEAN, uncluttered area across the TOP (especially the ${productSide === 'LEFT' ? 'upper-left' : 'upper-right'}) for a headline to be added afterwards. Render ABSOLUTELY NO text, letters, words, numbers or captions anywhere in the image.`
+              ? `At the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner of the frame, large, bold, blocky white and yellow text with heavy black outlines reads: "${c.line1}". Directly below it, smaller but still bold white and yellow text reads: "${c.line2}". A prominent yellow arrow with a thick black outline points from the text to the product. Text and graphics are baked directly into the image composition — no other text, captions, or labels anywhere in the image.`
+              : `Leave a generous clean, uncluttered area at the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner for a headline to be added afterwards. Render absolutely no text, letters, words, numbers or captions anywhere in the image.`
             // 3C — Composition swaps between single-product (host one side,
             // product the other) and multi-product (host smaller, products
             // arranged on the opposite side per the composition note when
@@ -1101,15 +1100,23 @@ export async function POST(request: Request) {
             const compositionLine = nProducts >= 2
               ? `COMPOSITION: Put the creator on the ${hostSide} side, framed chest-up, ${expression}, ${action.replace('the product', 'the products')}. Render ALL ${nProducts} products visibly and large on the ${productSide} side of the frame, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting so they pop. ${compositionNote ? `Arrange them per the creator's direction above ("${compositionNote}").` : 'Arrange them in a clean, balanced layout (side-by-side, stacked, or a small grid) so each product is clearly recognisable at thumbnail size.'} Every product must be unobscured and identifiable.`
               : `COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, ${expression}, with ${action}. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow (warm light wrapping the product) and premium rim-lighting so it pops.`
+            // ── Prompt assembly (order matters for text rendering) ──────────
+            // The headline used to live near the END of the prompt, AFTER the
+            // brand-guard clause that says "no extraneous text". The model was
+            // interpreting that conflict by shrinking/skipping the headline.
+            // 2026-06-08 fix: move headline IMMEDIATELY after composition (so
+            // the model places it while the scene is fresh in mind), then
+            // append a HEADLINE-AWARE brand guard that explicitly exempts the
+            // intentional headline + arrow as the ONLY allowed text.
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
 ${identityClause}
 ${outfitNote}
 ${productRefClause}
 ${styleRefClause}
 ${compositionLine}
-BACKGROUND: a ${palette.overall} cinematic scene that fits the video "${videoTitle}" — a dramatic blend of ${palette.rim} rim-light behind the creator and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. Do NOT make it a flat, bright, white or airy room. The rim light must visibly separate the creator from the background so the cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes.
 ${headlineClause}
-${NO_BRAND_IMAGE_CLAUSE}
+BACKGROUND: a ${palette.overall} cinematic scene that fits the video "${videoTitle}" — a dramatic blend of ${palette.rim} rim-light behind the creator and ${palette.accent} glow around the product, deep contrast, soft vignette around the edges. Do NOT make it a flat, bright, white or airy room. The rim light must visibly separate the creator from the background so the cut-out edge blends cleanly with NO visible halo or outline. Soft background bokeh and depth; vivid and eye-catching at small sizes.
+The ONLY text in the image is the headline described above (plus the arrow). NO retailer logos (especially "Amazon"/"Prime"), NO invented brand names, NO marketing copy or feature lists from product packaging, NO price tags, watermarks, ©/™/® symbols, or any extra signage anywhere in the background or on surfaces. The product's own physical branding on its body/bottle/box IS kept intact (it's the item being reviewed).
 Ultra-sharp, professional, photorealistic.`
           }
 
