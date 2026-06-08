@@ -876,8 +876,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
           customHeadline: headline,
           variantCount,
           // "Your Face" — lock the host's likeness from their uploaded photos.
-          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto') ? selectedFaceModelId : undefined,
+          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto' && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           faceAuto: selectedFaceModelId === 'auto' || undefined,
+          // 'no-human' → product-only thumbnail, no face composition at all.
+          noHuman: selectedFaceModelId === 'no-human' || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           uploadedPhotoUrl: uploadedPhotoUrl || undefined,
           cleanupPrompt: cleanupPrompt.trim() || undefined,
@@ -939,8 +941,10 @@ function VideoStudioCard({ video, userTier, playlists }: {
           style: 'lifestyle',
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
-          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto') ? selectedFaceModelId : undefined,
+          faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto' && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           faceAuto: selectedFaceModelId === 'auto' || undefined,
+          // 'no-human' → product-only thumbnail, no face composition at all.
+          noHuman: selectedFaceModelId === 'no-human' || undefined,
           styleReferenceUrl: styleReferenceUrl || undefined,
           // 3C — Carry the user's uploaded product photos + composition note
           // through the auto-thumbnail path too (post-metadata fire-and-forget).
@@ -1716,6 +1720,14 @@ function VideoStudioCard({ video, userTier, playlists }: {
                       title="Don't lock a face — use the video frame's host as-is"
                     >
                       Off
+                    </button>
+                    <button
+                      onClick={() => setSelectedFaceModelId('no-human')}
+                      disabled={generatingThumbnail}
+                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === 'no-human' ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
+                      title="Product-only thumbnail — no creator face, no human at all. Best for unboxings or comparison shots."
+                    >
+                      Product only
                     </button>
                     {faceModels.map(fm => (
                       <button

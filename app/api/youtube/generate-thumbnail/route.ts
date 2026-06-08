@@ -631,6 +631,7 @@ export async function POST(request: Request) {
       styleReferenceUrl,
       faceModelId,
       faceAuto,
+      noHuman,
       videoDescription,
       uploadedPhotoUrl,
       cleanupPrompt,
@@ -694,6 +695,12 @@ export async function POST(request: Request) {
        *  user's ready face models and vision-matches the video frame to pick
        *  the right person automatically (e.g. Seb vs Michelle). */
       faceAuto?: boolean
+      /** When true: PRODUCT-ONLY thumbnail. No face, no human, no body parts
+       *  composited or generated. The route skips face-ref loading entirely
+       *  and the NB Pro prompt is rewritten to center the product hero with
+       *  zero human elements. Best for unboxings, comparison shots, or
+       *  branding-focused thumbnails where the product itself is the star. */
+      noHuman?: boolean
       /** "Upload your own photo" flow — a public URL to a photo the user
        *  took of THEMSELVES with the product. We send it through Kontext to
        *  clean it up / re-render it into a polished thumbnail scene, then
@@ -953,8 +960,14 @@ export async function POST(request: Request) {
           // Thumbnails want PUNCH: lead with an "excited" anchor (cached
           // separately from the neutral one) so the composited face carries
           // high-CTR energy instead of a calm headshot expression.
+          // Product-only mode (2026-06-08): user picked "Product only" in
+          // the face selector. Skip face-ref loading entirely; the prompt
+          // (compositionLine below) detects the empty faceRefs and switches
+          // to a no-human composition centered on the product hero.
           let faceRefs: string[] = []
-          if (faceModel?.source_images?.length) {
+          if (noHuman) {
+            console.log('[thumb] noHuman mode — skipping face references')
+          } else if (faceModel?.source_images?.length) {
             // ── Identity reference priority ───────────────────────────────────
             // 1. STARRED Photobooth shots for THIS face (clean, studio-lit,
             //    same person, ideal Nano Banana input). When present, we use
@@ -1123,8 +1136,16 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
           // explicitly tell the model to mimic their visual gestalt. This is
           // what made the Gemini-handoff output land — the model treats the
           // refs as the style anchor, not the prompt.
+          // 2026-06-08 fix for duplicate-text bug: the style refs all have
+          // headline text baked into them. NB Pro was copying that text
+          // verbatim onto the output (producing "BULK TEACHER GIFTS" etc.)
+          // which then got OVERLAID with our designer text — double text.
+          // Wording now AGGRESSIVELY forbids reproducing any text from the
+          // refs: use them for LAYOUT and LIGHTING only, never for content.
           const styleRefClause = styleRefs.length > 0
-            ? `STYLE REFERENCE: the LAST ${styleRefs.length} reference image${styleRefs.length === 1 ? '' : 's'} ${styleRefs.length === 1 ? 'is an EXAMPLE' : 'are EXAMPLES'} of the exact YouTube thumbnail style we want — match ${styleRefs.length === 1 ? 'its' : 'their'} composition (creator on one side + product hero on the other), lighting punch (rich rim-light + warm accent glow), text styling (bold blocky all-caps with thick outlines + a single contrasting accent colour), and overall visual energy. Use them ONLY for style; do NOT copy the people, products, or text content from these refs — only the LOOK.`
+            ? `STYLE REFERENCE (composition + lighting ONLY): the LAST ${styleRefs.length} reference image${styleRefs.length === 1 ? '' : 's'} show${styleRefs.length === 1 ? 's' : ''} the EXACT layout style we want — creator on one side, product hero on the other, rich rim-light + warm accent glow.
+   ★ CRITICAL — DO NOT COPY TEXT: those reference images contain headline text. You must NOT render ANY of that text in the output. You must NOT invent your own headline text either. Render the image COMPLETELY TEXT-FREE. The headline gets composited on TOP later as a separate layer — your only job is the IMAGE underneath.
+   Use the references ONLY for: composition (left/right split), lighting (blue rim + orange accent glow), and overall visual energy. Do NOT copy: the people in the refs, the products in the refs, the colour schemes verbatim, and ABSOLUTELY NOT the text.`
             : ''
           const buildComposed = (i: number, withText: boolean): string => {
             const hostSide = i % 2 === 0 ? 'LEFT' : 'RIGHT'
@@ -1150,14 +1171,20 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             const c = hooks[i % hooks.length]
             const headlineClause = withText
               ? `At the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner of the frame, large, bold, blocky white and yellow text with heavy black outlines reads: "${c.line1}". Directly below it, smaller but still bold white and yellow text reads: "${c.line2}". A prominent yellow arrow with a thick black outline points from the text to the product. Text and graphics are baked directly into the image composition — no other text, captions, or labels anywhere in the image.`
-              : `Leave a generous clean, uncluttered area at the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner for a headline to be added afterwards. Render absolutely no text, letters, words, numbers or captions anywhere in the image.`
+              : `★ ABSOLUTELY ZERO TEXT in the rendered image. NO words, NO letters, NO captions, NO headlines, NO labels, NO banner text, NO logos, NO arrows with text, NO badges with text. The image must be PURELY VISUAL — face + product + scene only. Even if the style references contain text, DO NOT REPRODUCE IT. The headline is composited as a SEPARATE LAYER afterwards — your output must be 100% clean of any glyph or character. Leave a generous uncluttered area at the upper-${productSide === 'LEFT' ? 'right' : 'left'} corner with simple background colour where text will be added afterwards by a different system.`
             // 3C — Composition swaps between single-product (host one side,
             // product the other) and multi-product (host smaller, products
             // arranged on the opposite side per the composition note when
             // given, or a sensible default arrangement when not).
-            const compositionLine = nProducts >= 2
-              ? `COMPOSITION: Put the creator on the ${hostSide} side, framed chest-up, ${expression}, ${action.replace('the product', 'the products')}. Render ALL ${nProducts} products visibly and large on the ${productSide} side of the frame, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting so they pop. ${compositionNote ? `Arrange them per the creator's direction above ("${compositionNote}").` : 'Arrange them in a clean, balanced layout (side-by-side, stacked, or a small grid) so each product is clearly recognisable at thumbnail size.'} Every product must be unobscured and identifiable.`
-              : `COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, ${expression}, with ${action}. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow (warm light wrapping the product) and premium rim-lighting so it pops.`
+            // PRODUCT-ONLY composition (2026-06-08) — when noHuman is true,
+            // we render the product CENTERED with no human elements anywhere
+            // in the frame. Background gets more atmosphere since there's no
+            // creator to balance against.
+            const compositionLine = noHuman
+              ? `COMPOSITION (PRODUCT ONLY — NO HUMAN): The product is the HERO, centered or slightly off-center in the frame. Render it LARGE, dramatically lit, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting. ABSOLUTELY NO PEOPLE in the image — no faces, no hands, no arms, no body parts, no silhouettes, no reflections of people. The product stands alone as the sole subject. Multiple-angle shots OK if it adds drama (one main + a smaller secondary angle floating behind), but the focus is unmistakably on the product itself.`
+              : nProducts >= 2
+                ? `COMPOSITION: Put the creator on the ${hostSide} side, framed chest-up, ${expression}, ${action.replace('the product', 'the products')}. Render ALL ${nProducts} products visibly and large on the ${productSide} side of the frame, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow and premium rim-lighting so they pop. ${compositionNote ? `Arrange them per the creator's direction above ("${compositionNote}").` : 'Arrange them in a clean, balanced layout (side-by-side, stacked, or a small grid) so each product is clearly recognisable at thumbnail size.'} Every product must be unobscured and identifiable.`
+                : `COMPOSITION: Put the creator LARGE on the ${hostSide} side, framed chest-up, ${expression}, with ${action}. Render the PRODUCT large and hero on the ${productSide} side, crisp and photorealistic, lifted off the background with a ${palette.accent} accent glow (warm light wrapping the product) and premium rim-lighting so it pops.`
             // ── Prompt assembly (order matters for text rendering) ──────────
             // The headline used to live near the END of the prompt, AFTER the
             // brand-guard clause that says "no extraneous text". The model was
@@ -1166,10 +1193,10 @@ The viewer must look at the rendered thumbnail and INSTANTLY recognise this as t
             // the model places it while the scene is fresh in mind), then
             // append a HEADLINE-AWARE brand guard that explicitly exempts the
             // intentional headline + arrow as the ONLY allowed text.
+            // When noHuman, skip identity + outfit (no human to describe).
+            const humanClauses = noHuman ? '' : `${identityClause}\n${outfitNote}\n`
             return `Create a vibrant, high-CTR YouTube thumbnail (16:9) in the polished style of top product-review channels — a DESIGNED composite, not a touched-up screengrab.
-${identityClause}
-${outfitNote}
-${productRefClause}
+${humanClauses}${productRefClause}
 ${styleRefClause}
 ${compositionLine}
 ${headlineClause}
@@ -1300,7 +1327,11 @@ Ultra-sharp, professional, photorealistic.`
                   // Best-effort: if rembg fails, the bake still ships with
                   // the border simply drawn ON TOP of the creator.
                   let personCutoutPng: Buffer | undefined
-                  try {
+                  // Skip rembg when there's no human in the image (product-only
+                  // mode). Saves a fal call and avoids a confused cutout of
+                  // background elements that the rembg model picks up when
+                  // there's no real subject to extract.
+                  if (!noHuman) try {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const rembg = await fal.subscribe('fal-ai/imageutils/rembg' as any, {
                       input: { image_url: cleanUrl },
