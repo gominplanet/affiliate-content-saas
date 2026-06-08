@@ -15,6 +15,7 @@ import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
+import { bakeSimpleHeadline } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
@@ -1207,59 +1208,49 @@ Ultra-sharp, professional, photorealistic.`
               const designerResults = await Promise.all(rank.urls.map(async (cleanUrl, i) => {
                 try {
                   // Find which original index this ranked URL came from so
-                  // we use the matching per-variant headline.
+                  // the bake uses the matching per-variant structured copy.
                   const origIdx = Math.max(0, nbUrls.indexOf(cleanUrl))
-                  const variantHook = flatCopy(hooks[origIdx]) || overlayHookNB
+                  const variantCopy = hooks[origIdx]
+                  if (!variantCopy) throw new Error(`no copy for variant ${origIdx}`)
 
-                  // VISION-DETECT the safe text zone instead of assuming the
-                  // host is always on the variant-index-parity side. Nano
-                  // Banana can put face + product on the same side, in
-                  // which case the hardcoded subjectSide buries the text
-                  // ON TOP OF the product. analyzeTextZone returns where
-                  // the main subject actually lives in THIS specific image
-                  // — so the designer overlay text always lands in the
-                  // free corner.
+                  // VISION-DETECT where the subject actually lives so the
+                  // bake lands in the FREE corner. The clean-path NB prompt
+                  // reserves a corner already, but the model occasionally
+                  // composes the subject differently than asked — vision
+                  // ground-truth keeps the bake out of the face/product.
                   const zone = await analyzeTextZone(cleanUrl, { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
-                  // Map the vision result onto the designer's left/right side.
-                  // "center" means subject fills both halves — pick the side
-                  // with less weight (analyzeTextZone's position hints at it).
                   const subjectSide: 'left' | 'right' = zone?.subjectSide === 'left'
                     ? 'left'
                     : zone?.subjectSide === 'right'
                       ? 'right'
                       : (zone?.position.includes('left') ? 'right' : 'left')
-                  // Vertical anchor — derived from the safe text-zone position.
-                  // If vision says top-* is safe → anchor text to top. If
-                  // bottom-* → anchor bottom. Default to 'top' because face +
-                  // product on YouTube thumbnails usually occupy centre/lower
-                  // and top anchoring keeps the half-canvas text column out
-                  // of the dominant subject.
-                  const verticalAnchor: 'top' | 'bottom' = zone?.position?.startsWith('bottom') ? 'bottom' : 'top'
+                  // Text always goes on the OPPOSITE side of the subject.
+                  const anchor: 'upper-left' | 'upper-right' = subjectSide === 'left' ? 'upper-right' : 'upper-left'
 
-                  const result = await renderDesignerOverlay({
-                    baseImageUrl: cleanUrl,
-                    headline: variantHook,
-                    productContext: productTitle || null,
-                    subjectSide,
-                    verticalAnchor,
-                    randomize: true,
-                    userId: String(TELEMETRY.userId ?? ''),
-                    tier: TELEMETRY.tier,
-                  })
-                  // Re-host the composited PNG to fal so the client gets a
-                  // URL (not a 5MB data URI). rehostToFal accepts data URIs.
-                  const dataUri = `data:image/png;base64,${result.png.toString('base64')}`
+                  // Pull the base image bytes so sharp can composite. We
+                  // re-host the FINAL composited result back to fal storage
+                  // so the client gets a URL instead of a 5MB data URI.
+                  const baseRes = await fetch(cleanUrl, { signal: AbortSignal.timeout(15000) })
+                  if (!baseRes.ok) throw new Error(`base fetch ${baseRes.status}`)
+                  const baseBuf = Buffer.from(await baseRes.arrayBuffer())
+
+                  const result = await bakeSimpleHeadline(baseBuf, variantCopy, { anchor })
+                  if (result.renderError) {
+                    console.warn('[simple-bake] variant', i, 'rendered bare base:', result.renderError)
+                  }
+
+                  const dataUri = `data:image/jpeg;base64,${result.png.toString('base64')}`
                   const hosted = await rehostToFal(dataUri)
                   if (!hosted) throw new Error('rehostToFal returned null')
                   recordUsage({
                     userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-                    feature: 'yt_thumb_designer_overlay',
-                    model: `designer-text:${result.picked.templateId}`,
+                    feature: 'yt_thumb_simple_bake',
+                    model: 'simple-bake-svg',
                     images: 1,
                   })
-                  return { url: hosted, templateId: result.picked.templateId }
+                  return { url: hosted, templateId: 'simple-bake' }
                 } catch (e) {
-                  console.warn('[designer-overlay] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
+                  console.warn('[simple-bake] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
                   return { url: cleanUrl, templateId: null }
                 }
               }))
