@@ -33,7 +33,28 @@ import { errText } from '@/lib/err-text'
 // ── Generation status ───────────────────────────────────────────────────
 type GenStatus = 'idle' | 'generating' | 'done' | 'error'
 
-const GEN_STEPS = ['Reading transcript…', 'Generating blog post…', 'Publishing to WordPress…', 'Adding product photos…']
+// Cosmetic step indicator while /api/blog/generate is in flight. The image
+// step is intentionally NOT here — image generation runs fire-and-forget
+// AFTER this fetch returns (see the IIFE in generate() below), so the
+// spinner used to lie by sitting on "Adding product photos…" for minutes
+// while the route was still doing transcript/body/WP work.
+//
+// The last three entries (>27s) are the truth: large posts legitimately
+// take 1-3 minutes of body generation + WP publish before the response
+// ships. The "Still working…" entries reassure the user without claiming
+// progress we can't observe from the client.
+const GEN_STEPS = [
+  'Reading transcript…',
+  'Writing the blog post…',
+  'Publishing to WordPress…',
+  'Still working — large posts can take a couple minutes…',
+  'Almost there — finalising the post…',
+]
+// Hard client-side abort if the route hasn't returned in this many ms. The
+// server's maxDuration is 300s; we abort just before that so the user gets
+// a clean, actionable error instead of a Vercel-killed connection that
+// shows as "TypeError: fetch failed". 270s ≈ 4.5 minutes.
+const GENERATE_ABORT_MS = 270_000
 
 export function GenerateButton({
   videoId, existingPost, userTier, onDone,
@@ -114,7 +135,11 @@ export function GenerateButton({
 
   useEffect(() => {
     if (status !== 'generating') return
-    const interval = setInterval(() => setStepIdx((i) => (i < GEN_STEPS.length - 1 ? i + 1 : i)), 9000)
+    // 25s per step ≈ matches the realistic generate timeline (read 25s,
+    // write 25–60s, publish 5–20s, then the two "still working" captions
+    // cover the long tail). Bumped from 9s — 9s burned through the whole
+    // list in 36s and then sat on the last caption indefinitely.
+    const interval = setInterval(() => setStepIdx((i) => (i < GEN_STEPS.length - 1 ? i + 1 : i)), 25000)
     return () => clearInterval(interval)
   }, [status])
 
@@ -166,20 +191,38 @@ export function GenerateButton({
       // server-side (lib/youtube-storyboards) — same "real frames" benefit,
       // zero browser tabs, no extension required.
       const callGenerate = async (allowEmptyTranscript = false) => {
-        const r = await fetch('/api/blog/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            videoId,
-            includeImages,
-            ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
-            ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
-            ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
-          }),
-        })
-        let d: Record<string, unknown> = {}
-        try { d = await r.json() } catch { throw new Error(`Server error (${r.status}) — check Vercel logs`) }
-        return { res: r, data: d }
+        // Hard client-side abort so a stuck server doesn't leave the user
+        // staring at a spinner forever. The server's maxDuration is 300s;
+        // we abort just before that with a useful error message.
+        const ctrl = new AbortController()
+        const abortTimer = setTimeout(() => ctrl.abort(), GENERATE_ABORT_MS)
+        try {
+          const r = await fetch('/api/blog/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              videoId,
+              includeImages,
+              ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
+              ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
+              ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
+            }),
+            signal: ctrl.signal,
+          })
+          let d: Record<string, unknown> = {}
+          try { d = await r.json() } catch { throw new Error(`Server error (${r.status}) — check Vercel logs`) }
+          return { res: r, data: d }
+        } catch (e) {
+          // DOMException name 'AbortError' = our abort fired. Rewrite the
+          // message so the user sees something they can act on, not a
+          // bare "The user aborted a request."
+          if (e instanceof DOMException && e.name === 'AbortError') {
+            throw new Error('Generation took too long (>4 min) and was cancelled. The post may have published anyway — refresh the page to check. If it didn\'t, retry; if it keeps timing out, check Vercel logs or your WordPress site.')
+          }
+          throw e
+        } finally {
+          clearTimeout(abortTimer)
+        }
       }
       let { res, data } = await callGenerate(false)
       // If the gate fires, give the user a one-click "generate anyway" with

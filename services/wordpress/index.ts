@@ -346,6 +346,13 @@ export class WordPressService {
           ...authHeaders,
           ...(options.headers as Record<string, string> || {}),
         },
+        // 45s per attempt. Without this, a stuck Hostinger WAF / overloaded
+        // shared host can hang the whole blog/generate route for the full
+        // 300s maxDuration. With the 401-retry path that's effectively
+        // unbounded — and "Generate post" sits at the spinner for 5+ min
+        // before Vercel kills the function (the exact bug user reported
+        // 2026-06-08). Caller-supplied signal still composes via any.
+        signal: AbortSignal.timeout(45_000),
       })
 
     let res = await run(buildHeaders())
@@ -545,7 +552,17 @@ export class WordPressService {
     }
 
     const run = (h: Record<string, string>, nonce?: { nonce: string }) =>
-      fetch(buildUrl(nonce), { method: 'POST', headers: h, body: buffer as BodyInit })
+      fetch(buildUrl(nonce), {
+        method: 'POST',
+        headers: h,
+        body: buffer as BodyInit,
+        // 90s per attempt — looser than request() because we're shipping
+        // up to a few MB of binary, and shared-host PHP can take real time
+        // to write through to disk. Still bounded so a stuck WAF can't
+        // hang generate() forever (same 2026-06-08 bug). With the
+        // 401-retry path the worst case is ~3 * 90s = 4.5 min.
+        signal: AbortSignal.timeout(90_000),
+      })
 
     let res = await run(buildHeaders())
     if (res.status === 401 || res.status === 403) {
@@ -575,7 +592,12 @@ export class WordPressService {
   }
 
   async uploadImageFromUrl(imageUrl: string, filename: string): Promise<WPMediaResponse> {
-    const imgRes = await fetch(imageUrl)
+    // 30s timeout on the source-side fetch (YouTube thumb / fal CDN /
+    // Supabase Storage URL). Without it, a slow upstream pinned the whole
+    // /api/blog/generate route at its 300s max for 2026-06-08-reported
+    // hangs. With it, a stuck source fails cleanly and the caller's
+    // try/catch can fall back (e.g. maxres → hqdefault YT thumb).
+    const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) })
     if (!imgRes.ok) throw new Error(`Failed to fetch image from URL: ${imageUrl}`)
     const buffer = Buffer.from(await imgRes.arrayBuffer())
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
