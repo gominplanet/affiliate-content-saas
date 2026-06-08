@@ -82,6 +82,13 @@ export interface BakeResult {
   width: number
   height: number
   renderError?: string
+  /** Which text renderer actually produced the output. Surfaced in the
+   *  API response so we can see from the browser which path ran without
+   *  Vercel function logs. */
+  bakePath?: 'opentype' | 'satori' | 'none'
+  /** Diagnostic explaining why opentype didn't run (path missing, parse
+   *  failure, empty PNG output, etc.). Surfaced in API response. */
+  opentypeError?: string
 }
 
 /**
@@ -188,6 +195,7 @@ export async function bakeSimpleHeadline(
   const baselineLine2 = baselineLine1 + Math.round(fontSizeLine2 * 1.05)
 
   let textSvg: string | null = null
+  let opentypeErrorMessage: string | undefined
   try {
     const font = loadAntonFont()
     const line1 = lineToPaths(font, copy.line1, copy.emphasisWord, fontSizeLine1, startX, baselineLine1, svgAnchor)
@@ -220,8 +228,8 @@ export async function bakeSimpleHeadline(
   </g>
 </svg>`
   } catch (err) {
-    console.warn('[simple-bake] opentype text render failed:', err instanceof Error ? err.message : String(err))
-    // Carry on with no text — caller still gets a thumbnail with border + cutout.
+    opentypeErrorMessage = err instanceof Error ? err.message : String(err)
+    console.warn('[simple-bake] opentype text render failed:', opentypeErrorMessage)
   }
 
   try {
@@ -232,12 +240,8 @@ export async function bakeSimpleHeadline(
     const borderPng = borderResvg.render().asPng()
 
     // ── Text rendering with two-stage fallback ──────────────────────────
-    // Try opentype.js path first (crisp paint-order: stroke fill). If that
-    // fails for any reason (TTF not bundled, parse error, etc.), fall back
-    // to the Satori-based renderDesignerOverlay which is BATTLE-TESTED in
-    // production — slightly softer text-shadow outline but text ALWAYS
-    // appears. User-facing guarantee: text shows up, even if opentype dies.
     let textPng: Buffer | null = null
+    let bakePath: 'opentype' | 'satori' | 'none' = 'none'
     if (textSvg) {
       try {
         const textResvg = new Resvg(textSvg, {
@@ -245,28 +249,24 @@ export async function bakeSimpleHeadline(
           background: 'rgba(0,0,0,0)',
         })
         textPng = textResvg.render().asPng()
-        // Sanity check: an "empty" PNG from Resvg with no rendered glyphs
-        // is typically very small. If we got something tiny, treat it as
-        // a silent failure and fall through to Satori.
         if (textPng.byteLength < 2000) {
-          console.warn('[simple-bake] opentype Resvg output suspiciously small:', textPng.byteLength, 'bytes — falling back to Satori')
+          opentypeErrorMessage = `Resvg output too small (${textPng.byteLength}B) — silent font failure`
+          console.warn('[simple-bake]', opentypeErrorMessage)
           textPng = null
         } else {
+          bakePath = 'opentype'
           console.log('[simple-bake] opentype text rendered ok:', textPng.byteLength, 'bytes')
         }
       } catch (err) {
-        console.warn('[simple-bake] opentype Resvg render failed:', err instanceof Error ? err.message : String(err))
+        opentypeErrorMessage = `Resvg render exception: ${err instanceof Error ? err.message : String(err)}`
+        console.warn('[simple-bake] opentype Resvg render failed:', opentypeErrorMessage)
         textPng = null
       }
     }
 
     if (!textPng) {
-      // Satori fallback: renderDesignerOverlay with a transparent base
-      // returns a PNG with just the text on transparent background.
-      // forceTemplateId='dual-color-stack' + forceContent ensures our
-      // exact ThumbCopy lines render (no second Haiku decomposition).
       try {
-        console.log('[simple-bake] falling back to Satori text rendering')
+        console.log('[simple-bake] falling back to Satori text rendering. opentype reason:', opentypeErrorMessage ?? 'unknown')
         const transparentBase = await sharp({
           create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
         }).png().toBuffer()
@@ -284,12 +284,12 @@ export async function bakeSimpleHeadline(
           tier: opts.tier ?? null,
         })
         textPng = overlayResult.png
+        bakePath = 'satori'
       } catch (err) {
         console.warn('[simple-bake] Satori fallback ALSO failed:', err instanceof Error ? err.message : String(err))
       }
     }
 
-    // Composite stack: base → border → (optional cutout) → text
     const compositeLayers: sharp.OverlayOptions[] = [
       { input: borderPng, top: 0, left: 0 },
     ]
@@ -305,7 +305,7 @@ export async function bakeSimpleHeadline(
       .jpeg({ quality: 92 })
       .toBuffer()
 
-    return { png: final, width, height, renderError: undefined }
+    return { png: final, width, height, renderError: undefined, bakePath, opentypeError: opentypeErrorMessage }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.warn('[simple-bake] composite failed, returning bare base:', message)

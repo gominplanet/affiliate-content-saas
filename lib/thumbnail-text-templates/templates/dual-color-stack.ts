@@ -29,11 +29,11 @@ function render(input: TemplateInput): TemplateNode {
     targetCeiling: Math.min(textCol * 0.36, height * 0.38),
     lineHeight: 0.92,
   })
-  // Outline width = ~12% of font size to match Gemini's reference stroke
-  // ratio (14px @ 85px font = 16%). Bumped from 7% which was reading as
-  // a thin halo against complex backgrounds. Floor at 12px so small
-  // thumbnails still have visible outline.
-  const outlineW = Math.max(12, Math.round(fontSize * 0.12))
+  // Outline width = ~9% of font size. Tried 7% (too thin halo), tried 12%
+  // (too blobby — text-shadow approach makes thick outlines look fat).
+  // 9% is the sweet spot for the text-shadow ring approach: visible
+  // against busy backgrounds but doesn't blob the letterforms.
+  const outlineW = Math.max(10, Math.round(fontSize * 0.09))
 
   const lineNodes: TemplateNode[] = lines.map((text, i) => ({
     type: 'div',
