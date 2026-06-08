@@ -25,6 +25,7 @@ import sharp from 'sharp'
 import opentype, { type Font, type Path as OpentypePath } from 'opentype.js'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
+import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
 
 // Anton TTF lives at /lib/fonts/Anton-Regular.ttf in the repo. We use TTF
 // (not the @fontsource WOFF) because opentype.js's WOFF support requires
@@ -69,6 +70,11 @@ export interface BakeOptions {
   height?: number
   anchor?: 'upper-left' | 'upper-right'
   personCutoutPng?: Buffer
+  /** For the Satori-based text fallback (renderDesignerOverlay) when
+   *  opentype.js fails. Optional but recommended — without it the
+   *  fallback's telemetry won't link to a user. */
+  userId?: string
+  tier?: string | null
 }
 
 export interface BakeResult {
@@ -225,13 +231,62 @@ export async function bakeSimpleHeadline(
     })
     const borderPng = borderResvg.render().asPng()
 
+    // ── Text rendering with two-stage fallback ──────────────────────────
+    // Try opentype.js path first (crisp paint-order: stroke fill). If that
+    // fails for any reason (TTF not bundled, parse error, etc.), fall back
+    // to the Satori-based renderDesignerOverlay which is BATTLE-TESTED in
+    // production — slightly softer text-shadow outline but text ALWAYS
+    // appears. User-facing guarantee: text shows up, even if opentype dies.
     let textPng: Buffer | null = null
     if (textSvg) {
-      const textResvg = new Resvg(textSvg, {
-        fitTo: { mode: 'width', value: width },
-        background: 'rgba(0,0,0,0)',
-      })
-      textPng = textResvg.render().asPng()
+      try {
+        const textResvg = new Resvg(textSvg, {
+          fitTo: { mode: 'width', value: width },
+          background: 'rgba(0,0,0,0)',
+        })
+        textPng = textResvg.render().asPng()
+        // Sanity check: an "empty" PNG from Resvg with no rendered glyphs
+        // is typically very small. If we got something tiny, treat it as
+        // a silent failure and fall through to Satori.
+        if (textPng.byteLength < 2000) {
+          console.warn('[simple-bake] opentype Resvg output suspiciously small:', textPng.byteLength, 'bytes — falling back to Satori')
+          textPng = null
+        } else {
+          console.log('[simple-bake] opentype text rendered ok:', textPng.byteLength, 'bytes')
+        }
+      } catch (err) {
+        console.warn('[simple-bake] opentype Resvg render failed:', err instanceof Error ? err.message : String(err))
+        textPng = null
+      }
+    }
+
+    if (!textPng) {
+      // Satori fallback: renderDesignerOverlay with a transparent base
+      // returns a PNG with just the text on transparent background.
+      // forceTemplateId='dual-color-stack' + forceContent ensures our
+      // exact ThumbCopy lines render (no second Haiku decomposition).
+      try {
+        console.log('[simple-bake] falling back to Satori text rendering')
+        const transparentBase = await sharp({
+          create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+        }).png().toBuffer()
+        const transparentBaseDataUri = `data:image/png;base64,${transparentBase.toString('base64')}`
+        const subjectSide: 'left' | 'right' = (opts.anchor ?? 'upper-left') === 'upper-left' ? 'right' : 'left'
+
+        const overlayResult = await renderDesignerOverlay({
+          baseImageUrl: transparentBaseDataUri,
+          headline: `${copy.line1} ${copy.line2}`,
+          forceTemplateId: 'dual-color-stack',
+          forceContent: { leading: copy.line1, punch: copy.line2 },
+          subjectSide,
+          verticalAnchor: 'top',
+          userId: opts.userId ?? '',
+          tier: opts.tier ?? null,
+        })
+        textPng = overlayResult.png
+      } catch (err) {
+        console.warn('[simple-bake] Satori fallback ALSO failed:', err instanceof Error ? err.message : String(err))
+      }
     }
 
     // Composite stack: base → border → (optional cutout) → text

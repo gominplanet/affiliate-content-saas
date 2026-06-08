@@ -1325,6 +1325,8 @@ Ultra-sharp, professional, photorealistic.`
                   const result = await bakeSimpleHeadline(baseBuf, variantCopy, {
                     anchor,
                     personCutoutPng,
+                    userId: String(TELEMETRY.userId ?? ''),
+                    tier: TELEMETRY.tier,
                   })
                   if (result.renderError) {
                     console.warn('[simple-bake] variant', i, 'rendered bare base:', result.renderError)
