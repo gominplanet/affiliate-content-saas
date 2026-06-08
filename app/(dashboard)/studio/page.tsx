@@ -132,10 +132,14 @@ const defaultProSettings: ProPublishSettings = {
   scheduleMode: 'now',
 }
 
-function VideoStudioCard({ video, userTier, playlists }: {
+function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   video: DraftVideo
   userTier: Tier
   playlists: Array<{ id: string; title: string }>
+  /** Fires AFTER a successful Apply to YouTube so the parent can refresh
+   *  the drafts list — the just-pushed video moves into the "🚀 Pushed
+   *  via Co-Pilot" tab automatically without the user clicking Refresh. */
+  onApplied?: () => void
 }) {
   const isPro = userTier === 'pro' || userTier === 'admin'
   const { confirm, ConfirmHost } = useConfirm()
@@ -551,6 +555,12 @@ function VideoStudioCard({ video, userTier, playlists }: {
         // the card returns to the list view for the next video. Skip the
         // collapse when there's a warning — the user needs to see the detail.
         if (!hasWarning) setTimeout(() => setExpanded(false), 1500)
+        // Refresh the parent's drafts list so this video moves into the
+        // "🚀 Pushed via Co-Pilot" tab automatically. Fire on success even
+        // when there's a warning — the push happened, the classification
+        // should update. Small delay matches the auto-collapse so the list
+        // re-renders right as the card returns to the row view.
+        if (onApplied) setTimeout(onApplied, hasWarning ? 0 : 1600)
         return
       }
 
@@ -571,10 +581,13 @@ function VideoStudioCard({ video, userTier, playlists }: {
       setApplied(true)
       if (data.thumbnailWarning) {
         setApplyError(`Metadata applied ✓ — thumbnail not uploaded: ${data.thumbnailWarning}`)
+        // Metadata still landed → still belongs in 🚀 Pushed.
+        if (onApplied) setTimeout(onApplied, 0)
       } else {
         // Clean success → auto-collapse so the user can move on to the next
         // video in the list. Same UX pattern as the Pro path above.
         setTimeout(() => setExpanded(false), 1500)
+        if (onApplied) setTimeout(onApplied, 1600)
       }
     } catch (err) {
       setApplyError(err instanceof Error ? err.message : 'Failed to apply to YouTube')
@@ -2341,11 +2354,16 @@ export default function StudioPage() {
    *    - Load more: appends to the existing list. (append=true, pageToken=current cursor)
    *  Dedup is by youtubeVideoId — YouTube occasionally returns the same item
    *  on adjacent pages during edits, and we don't want it to flash twice.
+   *
+   *  `silent: true` skips the loading-spinner toggle. Used by the post-apply
+   *  refresh so the list updates in place instead of flashing empty for a
+   *  beat — the user just pushed a video, they don't want to see a spinner.
    */
-  const load = useCallback(async (opts?: { pageToken?: string; query?: string; append?: boolean; includePublished?: boolean }) => {
+  const load = useCallback(async (opts?: { pageToken?: string; query?: string; append?: boolean; includePublished?: boolean; silent?: boolean }) => {
     const append = opts?.append === true
+    const silent = opts?.silent === true
     if (append) setLoadingMore(true)
-    else setLoading(true)
+    else if (!silent) setLoading(true)
     setError(null)
 
     const pageToken = opts?.pageToken
@@ -2397,7 +2415,7 @@ export default function StudioPage() {
       setNextPageToken(data.nextPageToken)
     }
     if (append) setLoadingMore(false)
-    else setLoading(false)
+    else if (!silent) setLoading(false)
   }, [supabase])
 
   // Debounce search input → fetch when the user pauses typing. Empty query
@@ -2678,7 +2696,13 @@ export default function StudioPage() {
             <>
               <div className="flex flex-col gap-4">
                 {visibleDrafts.map(video => (
-                  <VideoStudioCard key={video.youtubeVideoId} video={video} userTier={userTier} playlists={playlists} />
+                  <VideoStudioCard
+                    key={video.youtubeVideoId}
+                    video={video}
+                    userTier={userTier}
+                    playlists={playlists}
+                    onApplied={() => void load({ query: activeQuery, includePublished, silent: true })}
+                  />
                 ))}
               </div>
 
