@@ -120,6 +120,28 @@ export interface BakeResult {
 }
 
 /**
+ * Find the largest fontSize where `text` renders within `maxWidth` using
+ * the supplied font. Uses opentype's own advance-width metrics (the same
+ * ones lineToPaths uses to position glyphs), so the fit is EXACT — no
+ * glyphRatio estimate, no off-by-13%-overflow.
+ *
+ * Returns the ceiling when it already fits; otherwise scales linearly
+ * from ceiling × (maxWidth / actualWidth). Linear scaling works because
+ * font advance widths are linear in size at a fixed family/weight.
+ *
+ * Floor (`minSize`) prevents pathological inputs (50-char headlines) from
+ * shrinking to unreadable — caller can decide to regenerate copy or accept
+ * mild overflow at the floor.
+ */
+function fitFontToWidth(font: Font, text: string, ceilSize: number, maxWidth: number, minSize: number): number {
+  if (!text || maxWidth <= 0) return ceilSize
+  const widthAtCeil = font.getAdvanceWidth(text.toUpperCase(), ceilSize)
+  if (widthAtCeil <= maxWidth) return ceilSize
+  const scaled = Math.floor(ceilSize * (maxWidth / widthAtCeil))
+  return Math.max(minSize, scaled)
+}
+
+/**
  * Convert a single line of text into an array of {pathData, isEmphasis}
  * chunks, anchored at (x, y). Each chunk corresponds to a run of text
  * that needs one colour — runs containing the emphasis word are flagged
@@ -212,20 +234,45 @@ export async function bakeSimpleHeadline(
   // ── 2. Headline text as opentype-rendered SVG paths ─────────────────────
   // Position the headline column. Anchor 'upper-left' = text aligns to
   // canvas-left side; 'upper-right' mirrors.
-  const fontSizeLine1 = Math.round(scaleBase * 0.115)
-  const fontSizeLine2 = Math.round(scaleBase * 0.095)
+  //
+  // 2026-06-08 REGRESSION FIX: previously the opentype path had NO width
+  // constraint — fontSizeLine1/2 were fixed at 11.5%/9.5% of scaleBase and
+  // glyphs just extended freely from startX. For a long headline like
+  // "BUY SINGLE GIFTS AGAIN" the text rendered ~1500px wide on a 1280px
+  // canvas, overflowed the right edge, AND covered the subject area on
+  // the same side as startX. The Satori fallback path handled this via
+  // column-based flex layout, but the opentype primary path didn't.
+  //
+  // Fix: cap each line's actual rendered width to colMaxWidth (55% of
+  // canvas, matching the Satori dual-color-stack column). Use opentype's
+  // own font.getAdvanceWidth() to MEASURE the line at the desired size,
+  // then proportionally scale fontSize down if it exceeds colMaxWidth.
+  // Result: long headlines auto-fit; short headlines stay big.
   const strokeWidth = Math.round(scaleBase * 0.018)
   const anchor = opts.anchor ?? 'upper-left'
   const padX = Math.round(width * 0.062)
   const startX = anchor === 'upper-left' ? padX : width - padX
   const svgAnchor: 'start' | 'end' = anchor === 'upper-left' ? 'start' : 'end'
-  const baselineLine1 = Math.round(height * 0.22)
-  const baselineLine2 = baselineLine1 + Math.round(fontSizeLine2 * 1.05)
+  // The column the text MUST fit inside, matching the Satori template's 55%
+  // column. Leaves the opposite ~45% of the canvas clear for the subject
+  // (face or product) so text can never bleed into it.
+  const colMaxWidth = Math.round(width * 0.55) - padX
 
   let textSvg: string | null = null
   let opentypeErrorMessage: string | undefined
   try {
     const font = loadAntonFont()
+
+    // Auto-fit each line individually: start at the ceiling size, measure,
+    // shrink to fit colMaxWidth. floor at 60% of ceiling so a 50-char line
+    // doesn't render microscopic — at that point the headline is too long
+    // for the format and should be regenerated.
+    const ceilLine1 = Math.round(scaleBase * 0.115)
+    const ceilLine2 = Math.round(scaleBase * 0.095)
+    const fontSizeLine1 = fitFontToWidth(font, copy.line1, ceilLine1, colMaxWidth, Math.round(ceilLine1 * 0.6))
+    const fontSizeLine2 = fitFontToWidth(font, copy.line2, ceilLine2, colMaxWidth, Math.round(ceilLine2 * 0.6))
+    const baselineLine1 = Math.round(height * 0.22)
+    const baselineLine2 = baselineLine1 + Math.round(fontSizeLine2 * 1.05)
     const line1 = lineToPaths(font, copy.line1, copy.emphasisWord, fontSizeLine1, startX, baselineLine1, svgAnchor)
     const line2 = lineToPaths(font, copy.line2, copy.emphasisWord, fontSizeLine2, startX, baselineLine2, svgAnchor)
 

@@ -1297,11 +1297,27 @@ Ultra-sharp, professional, photorealistic.`
                   // composes the subject differently than asked — vision
                   // ground-truth keeps the overlay out of the face/product.
                   const zone = await analyzeTextZone(cleanUrl, { ctx: { userId: TELEMETRY.userId, tier: TELEMETRY.tier } })
-                  const subjectSide: 'left' | 'right' = zone?.subjectSide === 'left'
-                    ? 'left'
-                    : zone?.subjectSide === 'right'
-                      ? 'right'
-                      : (zone?.position.includes('left') ? 'right' : 'left')
+
+                  // 2026-06-08: FACE-FIRST side detection. The faceBox is
+                  // ground-truth (vision drew a literal bounding box around
+                  // the face) so if it exists, USE IT — face center < 0.5
+                  // means face is on the LEFT, text MUST go on the right.
+                  // subjectSide can be muddled (vision says "center" when
+                  // there's a face + product on opposite sides) and the
+                  // position-includes-left heuristic can flip wrong, which
+                  // is how text ended up on TOP of the face in the
+                  // "NEVER BUY SINGLE GIFTS AGAIN" regression. Prefer the
+                  // box; fall through to subjectSide; last resort the
+                  // position heuristic.
+                  let subjectSide: 'left' | 'right'
+                  if (zone?.faceBox) {
+                    const faceCenterX = zone.faceBox.x + zone.faceBox.w / 2
+                    subjectSide = faceCenterX < 0.5 ? 'left' : 'right'
+                  } else if (zone?.subjectSide === 'left' || zone?.subjectSide === 'right') {
+                    subjectSide = zone.subjectSide
+                  } else {
+                    subjectSide = zone?.position?.includes('left') ? 'right' : 'left'
+                  }
                   const verticalAnchor: 'top' | 'bottom' = zone?.position?.startsWith('bottom') ? 'bottom' : 'top'
 
                   // 2026-06-08: bake via Resvg + raw SVG with paint-order:
