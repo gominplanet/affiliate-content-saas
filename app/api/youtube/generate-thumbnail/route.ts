@@ -1274,6 +1274,11 @@ Ultra-sharp, professional, photorealistic.`
             // in the image and adding another typography layer would
             // double-print the text.
             let designerTemplateIds: Array<string | null> = []
+            // Diagnostic state surfaced in the API response so the user can
+            // see (from browser DevTools) whether opentype is succeeding +
+            // why it's failing if not — no Vercel logs needed.
+            let lastBakePath: string | null = null
+            let lastOpentypeError: string | null = null
             let finalUrls: string[] = rank.urls
             let designerApplied = false
             if (wantClean) {
@@ -1388,6 +1393,23 @@ Ultra-sharp, professional, photorealistic.`
               }))
               finalUrls = designerResults.map(r => r.url)
               designerTemplateIds = designerResults.map(r => r.templateId)
+              // Collect opentype diagnostics across variants so the response
+              // can surface which renderer ran + why opentype failed (if it
+              // did). Keeps the data we need to debug the silent-fail bug.
+              const firstWithError = designerResults.find(r => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                return (r as any).opentypeError
+              })
+              if (firstWithError) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                lastOpentypeError = (firstWithError as any).opentypeError as string
+              }
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const firstWithPath = designerResults.find(r => (r as any).bakePath)
+              if (firstWithPath) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                lastBakePath = (firstWithPath as any).bakePath as string
+              }
             }
             return NextResponse.json({
               ok: true,
@@ -1416,6 +1438,11 @@ Ultra-sharp, professional, photorealistic.`
               // simple-bake:satori = softer text-shadow fallback (means
               // opentype failed). Check browser network tab to see which.
               designerTemplateIds: designerApplied ? designerTemplateIds : undefined,
+              // Top-level diagnostic for the bake. bakePath tells you which
+              // renderer ran ('opentype' = razor-sharp, 'satori' = softer
+              // fallback). opentypeError explains why opentype was skipped.
+              bakePath: lastBakePath,
+              opentypeError: lastOpentypeError,
               headlineLocked: !!lockedHeadline,
               prompt: nbPrompt,
               styleBriefApplied: false,
