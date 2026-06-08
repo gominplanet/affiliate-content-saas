@@ -67,6 +67,18 @@ function render(input: TemplateInput): TemplateNode {
             justifyContent: input.verticalAnchor === 'bottom' ? 'flex-end' : input.verticalAnchor === 'center' ? 'center' : 'flex-start',
             alignItems: side === 'left' ? 'flex-start' : 'flex-end',
             textAlign: side === 'left' ? 'left' : 'right',
+            // -3° tilt = Gemini's "viral aesthetic energy" handoff (2026-06-08).
+            // A small slant on the headline column is a high-CTR signal that
+            // separates designed thumbnails from "templated" ones — the eye
+            // reads it as more dynamic without sacrificing legibility. The
+            // template renders cleanly without rotation too (Satori handles
+            // the transform via CSS; resvg honours it during rasterisation).
+            transform: 'rotate(-3deg)',
+            // transformOrigin anchors the rotation to the corner where the
+            // text actually sits — left-side text rotates around its top-left,
+            // right-side text rotates around its top-right. Without this the
+            // default origin (centre) pushes the text off-canvas.
+            transformOrigin: side === 'left' ? 'top left' : 'top right',
           },
           children: lineNodes,
         },
