@@ -976,7 +976,11 @@ export async function POST(request: Request) {
                 getThumbnailFaceRef(supabase, user.id, { faceId: faceModel.id, sourceImages: faceModel.source_images, expression: 'excited', tier }),
                 new Promise<null>(res => setTimeout(() => res(null), 120_000)),
               ])
-              const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 2 : 5)
+              // Pass MORE reference photos so NB Pro has multiple angles to
+              // lock identity to — earlier 2-photo cap was producing loose
+              // likeness averages because the model had too little to anchor
+              // on. Bumped to 4/7 (2026-06-08, user fix for face drift).
+              const rawRefs = await rehostFacePhotos(supabase, faceModel.source_images, primaryFace ? 4 : 7)
               faceRefs = primaryFace ? [primaryFace, ...rawRefs] : rawRefs
             }
           }
@@ -1038,10 +1042,26 @@ export async function POST(request: Request) {
           // the user's face-model photos we tell the model to fuse ALL of them
           // for a much stronger likeness lock.
           const nIdentity = identityRefs.length
-          const skinFidelity = `Match their skin and APPARENT AGE EXACTLY as in the reference photos: do NOT add wrinkles, fine lines, age spots, blemishes, skin roughness or extra texture, and do NOT make them look older, weathered or harsher — but do NOT de-age or plastic-smooth them either. Their complexion, skin tone and age must look natural, healthy and flattering, faithful to the photos.`
+          // 2026-06-08: tightened skin + identity language after user
+          // reported face resemblance was "a little off". The previous
+          // copy let NB Pro do a loose-likeness average — adding
+          // PHOTO-IDENTICAL and a per-feature checklist forces a much
+          // tighter match. Critical to preserve real identity markers:
+          // unique facial geometry, asymmetries, the actual texture of
+          // the skin (NOT smoothed), eye colour, hair colour + length
+          // exactly as in the references.
+          const skinFidelity = `Reproduce their skin and APPARENT AGE EXACTLY as in the reference photos — keep the real skin texture, natural pores, the exact freckles/marks/asymmetries that appear in the reference. Do NOT plastic-smooth or beauty-filter the face. Do NOT de-age or age them. Do NOT invent new wrinkles, blemishes or marks that aren't in the references. The face must read as THIS person photographed in good light — not an idealised AI version of them.`
           const identityClause = faceRefs.length > 0
-            ? `The ${nIdentity} reference image(s) are real photos of the SAME video creator. Reproduce their EXACT face and identity from these photos — bone structure, features, eye shape, nose, jaw, age, ETHNICITY, skin tone, hair and build. The person MUST be unmistakably THIS exact human — never substitute, invent, or generate a different-looking, different-ethnicity or different-gender person. ${skinFidelity}`
-            : `REFERENCE IMAGE 1 is a still from the creator's OWN video — the person in it is the REAL host. Reproduce their EXACT face and identity: same features, age, ETHNICITY, skin tone, gender, hair and build. The person MUST be unmistakably that same individual — under NO circumstances invent, substitute, or generate a different-looking or different-ethnicity person. ${skinFidelity}`
+            ? `★ IDENTITY LOCK (highest priority — NEVER violate): The ${nIdentity} reference image(s) are real photos of the SAME video creator. The rendered face MUST be a PHOTO-IDENTICAL match to that exact human. Lock these specific identity markers from the references:
+   – Exact bone structure (cheekbone height, jaw width, chin shape, brow ridge)
+   – Exact eye shape, eye colour, eyelid fold, and the spacing between the eyes
+   – Exact nose shape (bridge, tip, nostrils)
+   – Exact mouth shape, lip thickness, and resting expression
+   – Exact hair colour, texture, length and style
+   – Exact ethnicity, skin tone and apparent age (do not lighten / darken / age / de-age)
+   – Any distinguishing features visible in the references (freckles, moles, asymmetries, glasses)
+The viewer must look at the rendered thumbnail and INSTANTLY recognise this as the SAME PERSON from the references — not "looks similar to", not "in their family", but the SAME individual. Under NO circumstances substitute, average, idealise, or invent a different person. If you cannot match the reference exactly, render the face slightly smaller and looser rather than confidently rendering the wrong person. ${skinFidelity}`
+            : `★ IDENTITY LOCK (highest priority — NEVER violate): REFERENCE IMAGE 1 is a still from the creator's OWN video. The person in it IS the real host. The rendered face MUST be a PHOTO-IDENTICAL match to that exact human — same bone structure, same eye shape and colour, same nose, same mouth, same hair colour/texture/length, same ethnicity, same skin tone, same apparent age, same distinguishing features (freckles, moles, asymmetries, glasses). The viewer must INSTANTLY recognise this as the SAME PERSON from the reference. Under NO circumstances substitute, average, idealise, or invent a different person. ${skinFidelity}`
           // Vary the OUTFIT — the reference photos are for the FACE only, not the
           // wardrobe, so thumbnails don't always show the same shirt.
           const outfitNote = `WARDROBE: use the reference photos ONLY for the face and identity — dress the creator in a FRESH, natural, casual everyday outfit (e.g. a plain tee, casual shirt, polo or light sweater) that suits the scene. Do NOT copy the exact clothing, top or colour shown in the reference photos; vary it.`
