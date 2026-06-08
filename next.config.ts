@@ -23,8 +23,12 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/admin/designer-text-test': ['./node_modules/@fontsource/**/files/*.woff'],
     // Live YouTube thumbnail flow uses the designer overlay too — needs the
-    // same font files bundled or Satori errors on missing glyphs.
-    '/api/youtube/generate-thumbnail': ['./node_modules/@fontsource/**/files/*.woff'],
+    // same font files bundled or Satori errors on missing glyphs. Also needs
+    // the bundled Anton TTF (lib/fonts/) for opentype.js text-to-path bake.
+    '/api/youtube/generate-thumbnail': [
+      './node_modules/@fontsource/**/files/*.woff',
+      './lib/fonts/*.ttf',
+    ],
   },
   // Tree-shake big barrel packages (lucide-react is imported in ~38 files);
   // only the icons actually used get bundled. Near-zero risk, big bundle win.

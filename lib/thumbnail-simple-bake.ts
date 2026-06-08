@@ -26,28 +26,36 @@ import opentype, { type Font, type Path as OpentypePath } from 'opentype.js'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 
-const ANTON_REL = '@fontsource/anton/files/anton-latin-400-normal.woff'
-
-// Parsed Anton font cached in module scope — survives warm Lambda
-// invocations so we pay the parse cost ~once per cold start.
+// Anton TTF lives at /lib/fonts/Anton-Regular.ttf in the repo. We use TTF
+// (not the @fontsource WOFF) because opentype.js's WOFF support requires
+// inflate decompression which is unreliable in Vercel's serverless runtime
+// — it silently returns an unparseable font, font.getPath() yields empty
+// paths, and the bake produces a blank text layer. TTF is opentype.js's
+// native format and works deterministically.
+//
+// The .ttf is committed to the repo so Vercel's static-file bundler always
+// ships it with the function (no path resolution surprises). Same lookup
+// strategy as fonts.ts (process.cwd() base + walk up one directory for
+// workspace hoisting).
 let cachedFont: Font | null = null
 
 function loadAntonFont(): Font {
   if (cachedFont) return cachedFont
   const candidates = [
-    path.join(process.cwd(), 'node_modules', ANTON_REL),
-    path.join(process.cwd(), '..', 'node_modules', ANTON_REL),
+    path.join(process.cwd(), 'lib', 'fonts', 'Anton-Regular.ttf'),
+    path.join(process.cwd(), '..', 'lib', 'fonts', 'Anton-Regular.ttf'),
   ]
   for (const p of candidates) {
     if (!existsSync(p)) continue
     const buffer = readFileSync(p)
     // opentype.parse takes an ArrayBuffer-like; Buffer's underlying
-    // ArrayBuffer slice gives us exactly that.
+    // ArrayBuffer slice gives us exactly that without copying.
     const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
     cachedFont = opentype.parse(ab as ArrayBuffer)
+    console.log('[simple-bake] Anton TTF loaded from', p, '— numGlyphs:', cachedFont.glyphs.length)
     return cachedFont
   }
-  throw new Error(`Anton font not found at: ${candidates.join(' OR ')}`)
+  throw new Error(`Anton TTF not found. Tried: ${candidates.join(' OR ')}`)
 }
 
 export interface ThumbCopyForBake {
