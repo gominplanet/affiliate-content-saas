@@ -1372,7 +1372,15 @@ Ultra-sharp, professional, photorealistic.`
                     model: 'simple-bake-resvg',
                     images: 1,
                   })
-                  return { url: hosted, templateId: 'simple-bake' }
+                  // Surface bake diagnostics so we can SEE in the browser
+                  // network tab whether opentype is succeeding or falling
+                  // back to Satori, plus the reason if opentype failed.
+                  return {
+                    url: hosted,
+                    templateId: `simple-bake:${result.bakePath ?? 'unknown'}`,
+                    bakePath: result.bakePath,
+                    opentypeError: result.opentypeError,
+                  }
                 } catch (e) {
                   console.warn('[designer-overlay] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
                   return { url: cleanUrl, templateId: null }
@@ -1404,6 +1412,9 @@ Ultra-sharp, professional, photorealistic.`
               textPositions: wantClean && !designerApplied ? textPositions : undefined,
               // Diagnostic: which designer template each variant used. Null
               // entries = render fell back to the clean image for that slot.
+              // simple-bake:opentype = crisp paint-order:stroke fill path.
+              // simple-bake:satori = softer text-shadow fallback (means
+              // opentype failed). Check browser network tab to see which.
               designerTemplateIds: designerApplied ? designerTemplateIds : undefined,
               headlineLocked: !!lockedHeadline,
               prompt: nbPrompt,

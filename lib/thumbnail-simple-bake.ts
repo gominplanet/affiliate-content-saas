@@ -42,15 +42,18 @@ let cachedFont: Font | null = null
 
 function loadAntonFont(): Font {
   if (cachedFont) return cachedFont
+  // /public/fonts/ is ALWAYS bundled with Next.js (static assets get auto-
+  // copied to the function output without needing outputFileTracingIncludes).
+  // /lib/fonts/ is a fallback for local dev or other bundlers.
   const candidates = [
+    path.join(process.cwd(), 'public', 'fonts', 'Anton-Regular.ttf'),
     path.join(process.cwd(), 'lib', 'fonts', 'Anton-Regular.ttf'),
+    path.join(process.cwd(), '..', 'public', 'fonts', 'Anton-Regular.ttf'),
     path.join(process.cwd(), '..', 'lib', 'fonts', 'Anton-Regular.ttf'),
   ]
   for (const p of candidates) {
     if (!existsSync(p)) continue
     const buffer = readFileSync(p)
-    // opentype.parse takes an ArrayBuffer-like; Buffer's underlying
-    // ArrayBuffer slice gives us exactly that without copying.
     const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
     cachedFont = opentype.parse(ab as ArrayBuffer)
     console.log('[simple-bake] Anton TTF loaded from', p, '— numGlyphs:', cachedFont.glyphs.length)

@@ -13,7 +13,11 @@ import { safeZone, fitStackedFontSize } from '../safe-zone'
 function render(input: TemplateInput): TemplateNode {
   const { width, height, side, content, palette } = input
   const sz = safeZone(width, height)
-  const colWidth = Math.round(width * 0.52)
+  // 2026-06-08: column widened 52%→62% so longer headlines (e.g.
+  // "GIFT MONEY NOW" at 14 chars) don't get squeezed down to ~80px.
+  // The subject side (face) still has ~38% of the canvas which is
+  // plenty when the face is cut out + drawn over the border.
+  const colWidth = Math.round(width * 0.62)
   const textCol = colWidth - sz.hMargin
 
   // The two lines: setup (white) → payoff (accent). If only a punch was
@@ -26,7 +30,10 @@ function render(input: TemplateInput): TemplateNode {
     lines,
     columnInnerWidth: textCol,
     columnInnerHeight: sz.innerHeight,
-    targetCeiling: Math.min(textCol * 0.36, height * 0.38),
+    // Bumped from 36% → 45% of column / 38% → 50% of height. Thumbnails
+    // benefit from text that fills MOST of the available space — small
+    // text doesn't read on a YouTube mobile feed.
+    targetCeiling: Math.min(textCol * 0.45, height * 0.50),
     lineHeight: 0.92,
   })
   // Outline width = ~9% of font size. Tried 7% (too thin halo), tried 12%
