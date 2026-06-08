@@ -22,10 +22,34 @@
 // module scope: parsing takes ~50ms cold; cached lookups are ~0ms.
 import { Resvg } from '@resvg/resvg-js'
 import sharp from 'sharp'
-import opentype, { type Font, type Path as OpentypePath } from 'opentype.js'
+// opentype.js is a CommonJS module. Next.js's serverless bundler wraps CJS
+// modules differently across runtimes — sometimes the default import works
+// (`import opentype from 'opentype.js'` → opentype.parse is callable),
+// sometimes it doesn't (opentype is undefined and we get
+// "Cannot read properties of undefined (reading 'parse')" at runtime).
+// Using namespace import + a runtime defaulting layer covers BOTH shapes:
+//   - ESM-style:  ns.parse is the function
+//   - CJS-wrapped: ns.default.parse is the function (via __esModule)
+import * as opentypeNs from 'opentype.js'
+import type { Font, Path as OpentypePath } from 'opentype.js'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
+
+// Resolve opentype.parse across both module shapes. Memoised so the
+// interop check runs once per cold start.
+let _opentypeParse: ((buf: ArrayBuffer) => Font) | null = null
+function getOpentypeParse(): (buf: ArrayBuffer) => Font {
+  if (_opentypeParse) return _opentypeParse
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ns = opentypeNs as any
+  if (typeof ns.parse === 'function') { _opentypeParse = ns.parse.bind(ns); return _opentypeParse! }
+  if (ns.default && typeof ns.default.parse === 'function') {
+    _opentypeParse = ns.default.parse.bind(ns.default)
+    return _opentypeParse!
+  }
+  throw new Error('opentype.js loaded but neither .parse nor .default.parse is a function — module shape: ' + Object.keys(ns).join(','))
+}
 
 // Anton TTF lives at /lib/fonts/Anton-Regular.ttf in the repo. We use TTF
 // (not the @fontsource WOFF) because opentype.js's WOFF support requires
@@ -51,11 +75,12 @@ function loadAntonFont(): Font {
     path.join(process.cwd(), '..', 'public', 'fonts', 'Anton-Regular.ttf'),
     path.join(process.cwd(), '..', 'lib', 'fonts', 'Anton-Regular.ttf'),
   ]
+  const parse = getOpentypeParse()
   for (const p of candidates) {
     if (!existsSync(p)) continue
     const buffer = readFileSync(p)
     const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
-    cachedFont = opentype.parse(ab as ArrayBuffer)
+    cachedFont = parse(ab as ArrayBuffer)
     console.log('[simple-bake] Anton TTF loaded from', p, '— numGlyphs:', cachedFont.glyphs.length)
     return cachedFont
   }
