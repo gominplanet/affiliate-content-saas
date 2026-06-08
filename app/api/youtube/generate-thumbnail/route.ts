@@ -14,11 +14,14 @@ import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbn
 import { type TextPosition } from '@/lib/thumbnail-textzone'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, rehostToFal, rehostFacePhotos, rehostStyleRefs, applyMoodyGrade, NANO_BANANA_COST_MODEL, NANO_BANANA_PRO_COST_MODEL, IDEOGRAM_COST_MODEL } from '@/lib/thumbnail-generators'
+// renderDesignerOverlay (Satori-based, template-driven) was the previous
+// clean-path renderer. Now superseded by bakeSimpleHeadline which uses
+// Resvg directly with raw SVG + paint-order: stroke fill for razor-sharp
+// vector outlines (the Satori path used 8-direction text-shadow tricks
+// that produced soft/blurry edges). Kept around as a fallback option for
+// admin/preview surfaces that may still reference it.
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
-// bakeSimpleHeadline (lib/thumbnail-simple-bake.ts) is kept in the codebase
-// as a future raw-SVG path. Currently unused — the live thumbnail bake
-// goes through the Satori-based renderDesignerOverlay above because Vercel's
-// Linux runtime lacks the display fonts sharp+libvips would need.
+import { bakeSimpleHeadline } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
@@ -1249,40 +1252,40 @@ Ultra-sharp, professional, photorealistic.`
                       : (zone?.position.includes('left') ? 'right' : 'left')
                   const verticalAnchor: 'top' | 'bottom' = zone?.position?.startsWith('bottom') ? 'bottom' : 'top'
 
-                  // 2026-06-08: force the dual-color-stack template + feed
-                  // our pre-decomposed ThumbCopy via forceContent. Bypasses
-                  // the picker's internal Haiku call (which was producing
-                  // worse copy than our 4-angle ThumbCopy engine — e.g.
-                  // turning "NEVER USE / CANDLES AGAIN!" into "STRAIGHT TO
-                  // CRIMPED"). Now the rendered text is EXACTLY what the
-                  // 4-angle engine generated: line1 (leading) in white,
-                  // line2 (punch) in yellow — matches Gemini's reference.
-                  const result = await renderDesignerOverlay({
-                    baseImageUrl: cleanUrl,
-                    headline: `${variantCopy.line1} ${variantCopy.line2}`, // unused when forceContent is set
-                    forceTemplateId: 'dual-color-stack',
-                    forceContent: {
-                      leading: variantCopy.line1,
-                      punch: variantCopy.line2,
-                    },
-                    productContext: productTitle || null,
-                    subjectSide,
-                    verticalAnchor,
-                    userId: String(TELEMETRY.userId ?? ''),
-                    tier: TELEMETRY.tier,
-                  })
-                  // Re-host the composited PNG to fal so the client gets a
-                  // URL (not a 5MB data URI). rehostToFal accepts data URIs.
-                  const dataUri = `data:image/png;base64,${result.png.toString('base64')}`
+                  // 2026-06-08: bake via Resvg + raw SVG with paint-order:
+                  // stroke fill — produces SHARP vector outlines around each
+                  // glyph instead of the Satori path's 8-direction text-shadow
+                  // (which read as soft/blurry compared to Gemini's reference).
+                  // Anton font loaded explicitly from the @fontsource buffer.
+                  // Anchor flips to opposite side of the subject.
+                  const anchor: 'upper-left' | 'upper-right' = subjectSide === 'left' ? 'upper-right' : 'upper-left'
+
+                  // Pull the base image bytes — Resvg needs them as a Buffer
+                  // for the sharp composite step.
+                  const baseRes = await fetch(cleanUrl, { signal: AbortSignal.timeout(15000) })
+                  if (!baseRes.ok) throw new Error(`base fetch ${baseRes.status}`)
+                  const baseBuf = Buffer.from(await baseRes.arrayBuffer())
+
+                  // verticalAnchor is informative but the bake currently
+                  // always anchors top — mirror Gemini's reference layout.
+                  // Future polish: respect verticalAnchor='bottom' too.
+                  void verticalAnchor
+
+                  const result = await bakeSimpleHeadline(baseBuf, variantCopy, { anchor })
+                  if (result.renderError) {
+                    console.warn('[simple-bake] variant', i, 'rendered bare base:', result.renderError)
+                  }
+
+                  const dataUri = `data:image/jpeg;base64,${result.png.toString('base64')}`
                   const hosted = await rehostToFal(dataUri)
                   if (!hosted) throw new Error('rehostToFal returned null')
                   recordUsage({
                     userId: TELEMETRY.userId, tier: TELEMETRY.tier,
-                    feature: 'yt_thumb_designer_overlay',
-                    model: `designer-text:${result.picked.templateId}`,
+                    feature: 'yt_thumb_simple_bake',
+                    model: 'simple-bake-resvg',
                     images: 1,
                   })
-                  return { url: hosted, templateId: result.picked.templateId }
+                  return { url: hosted, templateId: 'simple-bake' }
                 } catch (e) {
                   console.warn('[designer-overlay] variant fell back to clean image', i, e instanceof Error ? e.message : String(e))
                   return { url: cleanUrl, templateId: null }
