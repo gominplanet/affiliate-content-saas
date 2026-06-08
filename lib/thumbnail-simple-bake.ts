@@ -138,6 +138,31 @@ export async function bakeSimpleHeadline(
   const yLine2 = yLine1 + fontSizeLine2 + Math.round(scaleBase * 0.022)
   const textAnchor = anchor === 'upper-left' ? 'start' : 'end'
 
+  // ── Neon glow border frame (2026-06-08, per user pick) ──────────────────
+  // Cyan→magenta→cyan gradient stroke around the canvas perimeter with a
+  // wider blurred copy underneath for the actual "neon glow" effect. Matches
+  // the look in Gemini's "FINALLY RELAXING! / (Goodbye Stress)" reference.
+  // The border sits 3% in from the canvas edges with rounded 28px corners.
+  // Renders BEFORE the text so the headline sits cleanly on top of it.
+  const borderInset = Math.round(scaleBase * 0.028)
+  const borderRadius = Math.round(scaleBase * 0.026)
+  const borderSharpWidth = Math.round(scaleBase * 0.006)
+  const borderGlowWidth = Math.round(scaleBase * 0.025)
+
+  // ── Diamond sparkle decoration (bottom-right corner) ────────────────────
+  // Small 4-pointed star, white with subtle glow, anchored ~6% from the
+  // bottom-right corner. Cheap polish — adds the "designed" feel Gemini's
+  // reference has without competing with the headline or product.
+  const sparkleSize = Math.round(scaleBase * 0.028)
+  const sparkleCx = width - Math.round(width * 0.06)
+  const sparkleCy = height - Math.round(height * 0.085)
+  // 4-point star path centred on (0,0), drawn at sparkleSize. Points along
+  // the cardinal axes with concave curves between to give it the "diamond
+  // sparkle" silhouette rather than a sharp diamond.
+  const s = sparkleSize
+  const sQ = Math.round(s * 0.18)  // control-point distance for the curves
+  const sparklePath = `M 0 -${s} Q ${sQ} -${sQ} ${s} 0 Q ${sQ} ${sQ} 0 ${s} Q -${sQ} ${sQ} -${s} 0 Q -${sQ} -${sQ} 0 -${s} Z`
+
   // The actual SVG. Key properties for Gemini-quality text:
   //   - paint-order: stroke fill         → outline behind glyph, full letter weight
   //   - stroke-linejoin: round           → smooth corners on bold serif terminals
@@ -153,7 +178,31 @@ export async function bakeSimpleHeadline(
     <filter id="ds" x="-20%" y="-20%" width="140%" height="140%">
       <feDropShadow dx="0" dy="${Math.round(scaleBase * 0.008)}" stdDeviation="${Math.round(scaleBase * 0.004)}" flood-color="#000" flood-opacity="0.6"/>
     </filter>
+    <linearGradient id="neon" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5FF"/>
+      <stop offset="50%" stop-color="#FF00E5"/>
+      <stop offset="100%" stop-color="#00E5FF"/>
+    </linearGradient>
+    <filter id="neonBlur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="${Math.round(scaleBase * 0.008)}"/>
+    </filter>
+    <filter id="sparkleGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="${Math.round(scaleBase * 0.004)}"/>
+    </filter>
   </defs>
+  <!-- Neon border: blurred glow underneath + sharp gradient stroke on top -->
+  <rect x="${borderInset}" y="${borderInset}" width="${width - borderInset * 2}" height="${height - borderInset * 2}"
+        rx="${borderRadius}" ry="${borderRadius}"
+        fill="none" stroke="url(#neon)" stroke-width="${borderGlowWidth}"
+        filter="url(#neonBlur)" opacity="0.75"/>
+  <rect x="${borderInset}" y="${borderInset}" width="${width - borderInset * 2}" height="${height - borderInset * 2}"
+        rx="${borderRadius}" ry="${borderRadius}"
+        fill="none" stroke="url(#neon)" stroke-width="${borderSharpWidth}"/>
+  <!-- Diamond sparkle in the bottom-right corner -->
+  <g transform="translate(${sparkleCx}, ${sparkleCy})">
+    <path d="${sparklePath}" fill="#FFFFFF" filter="url(#sparkleGlow)" opacity="0.7"/>
+    <path d="${sparklePath}" fill="#FFFFFF"/>
+  </g>
   <style>
     .h {
       font-family: 'BakeDisplay';
