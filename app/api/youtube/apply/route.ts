@@ -29,6 +29,7 @@ import {
   getValidYouTubeToken,
 } from '@/services/youtube'
 import { tierAllowsPublishAll, type Tier } from '@/lib/tier'
+import { resolveThumbnailInput } from '@/lib/youtube-thumbnail-input'
 
 export const maxDuration = 60
 
@@ -104,12 +105,23 @@ export async function POST(request: NextRequest) {
         }),
       )
     }
+    // Normalize the thumbnail input via the shared resolver — handles
+    // both `data:image/...;base64,...` URIs (user-uploaded files) AND
+    // `https://...` URLs (AI-generated thumbnails uploaded to fal/
+    // Supabase Storage). Until 2026-06-07 this regex-matched only data
+    // URIs and silently skipped HTTPS URLs — the user reported their
+    // generated thumbnail never landed on YouTube. The resolver throws
+    // on a recognized-but-broken URL (fetch failure, oversized) so the
+    // warning surfaces; null = unrecognized format, warn separately.
     if (body.thumbnailDataUri) {
-      const m = body.thumbnailDataUri.match(/^data:([^;]+);base64,(.+)$/)
-      if (m) {
-        const buf = Buffer.from(m[2], 'base64')
-        tasks.push(yt.uploadThumbnail(body.videoId, buf, m[1]))
-      }
+      const userInput = body.thumbnailDataUri  // closure-capture so the catch sees it
+      tasks.push((async () => {
+        const resolved = await resolveThumbnailInput(userInput)
+        if (!resolved) {
+          throw new Error(`Thumbnail input wasn't a data URI or HTTPS URL: ${userInput.slice(0, 80)}`)
+        }
+        await yt.uploadThumbnail(body.videoId, resolved.buffer, resolved.mimeType)
+      })())
     }
 
     // 2. Status update (privacy, made-for-kids, paid promotion, altered

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeOAuthService, getValidYouTubeToken } from '@/services/youtube'
+import { resolveThumbnailInput } from '@/lib/youtube-thumbnail-input'
 
 export async function POST(request: Request) {
   try {
@@ -48,14 +49,19 @@ export async function POST(request: Request) {
       yt.updateVideoMetadata(videoId, { title, description, tags }),
     ]
 
+    // Normalize the thumbnail input — supports both `data:image/...`
+    // URIs (uploaded files) and HTTPS URLs (AI-generated thumbnails
+    // hosted on fal/Supabase). Until 2026-06-07 the regex-only path
+    // silently skipped HTTPS URLs, which is why generated thumbnails
+    // never landed on YouTube.
     if (thumbnailDataUri) {
-      // data:[mimeType];base64,[data]
-      const match = thumbnailDataUri.match(/^data:([^;]+);base64,(.+)$/)
-      if (match) {
-        const mimeType = match[1]  // e.g. 'image/jpeg'
-        const imageBuffer = Buffer.from(match[2], 'base64')
-        tasks.push(yt.uploadThumbnail(videoId, imageBuffer, mimeType))
-      }
+      tasks.push((async () => {
+        const resolved = await resolveThumbnailInput(thumbnailDataUri)
+        if (!resolved) {
+          throw new Error(`Thumbnail input wasn't a data URI or HTTPS URL: ${thumbnailDataUri.slice(0, 80)}`)
+        }
+        await yt.uploadThumbnail(videoId, resolved.buffer, resolved.mimeType)
+      })())
     }
 
     const results = await Promise.allSettled(tasks)
