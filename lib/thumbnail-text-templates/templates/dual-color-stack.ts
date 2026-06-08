@@ -29,7 +29,11 @@ function render(input: TemplateInput): TemplateNode {
     targetCeiling: Math.min(textCol * 0.36, height * 0.38),
     lineHeight: 0.92,
   })
-  const outlineW = Math.max(8, Math.round(fontSize * 0.07))
+  // Outline width = ~12% of font size to match Gemini's reference stroke
+  // ratio (14px @ 85px font = 16%). Bumped from 7% which was reading as
+  // a thin halo against complex backgrounds. Floor at 12px so small
+  // thumbnails still have visible outline.
+  const outlineW = Math.max(12, Math.round(fontSize * 0.12))
 
   const lineNodes: TemplateNode[] = lines.map((text, i) => ({
     type: 'div',
@@ -87,14 +91,34 @@ function render(input: TemplateInput): TemplateNode {
   }
 }
 
+// Faux-stroke around the glyphs via text-shadow. Satori doesn't expose
+// SVG's paint-order: stroke fill, so we simulate it: many opaque
+// shadows around the perimeter PLUS a half-radius inner ring to fill
+// any gaps between the cardinals. The denser ring is what makes the
+// outline read as a real vector stroke instead of 8 soft shadows.
+//
+// 2026-06-08: bumped from 8→24 directions and added the inner ring
+// after user said the previous outline looked soft vs. Gemini's
+// reference. Dropped the rgba drop-shadow component that was adding
+// noticeable blur — the heavier solid stroke handles depth on its own.
 function outline(width: number, color: string): string {
   const w = Math.max(1, Math.round(width))
   const offsets: Array<[number, number]> = []
-  for (let i = 0; i < 8; i++) {
-    const a = (i * Math.PI) / 4
+  // Outer ring: 24 directions at full radius for smooth perimeter coverage.
+  const outerSteps = 24
+  for (let i = 0; i < outerSteps; i++) {
+    const a = (i * Math.PI * 2) / outerSteps
     offsets.push([Math.round(Math.cos(a) * w), Math.round(Math.sin(a) * w)])
   }
-  return [...offsets.map(([x, y]) => `${x}px ${y}px 0 ${color}`), `${Math.round(w * 0.4)}px ${Math.round(w * 0.6)}px 0 rgba(0,0,0,0.55)`].join(', ')
+  // Inner ring: 12 directions at half radius to fill gaps inside the
+  // outer ring (where straight diagonals leave triangular holes).
+  const innerSteps = 12
+  const wHalf = Math.round(w * 0.5)
+  for (let i = 0; i < innerSteps; i++) {
+    const a = (i * Math.PI * 2) / innerSteps
+    offsets.push([Math.round(Math.cos(a) * wHalf), Math.round(Math.sin(a) * wHalf)])
+  }
+  return offsets.map(([x, y]) => `${x}px ${y}px 0 ${color}`).join(', ')
 }
 
 export const dualColorStack: Template = {
