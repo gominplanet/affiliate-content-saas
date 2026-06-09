@@ -1890,6 +1890,36 @@ export default function ContentPage() {
 
   useEffect(() => { load() }, [load])
 
+  // ── Active-tab-aware refresh + auto-refresh on visibility ────────────────
+  // Why both: each tab loads from a different source. `load()` reloads
+  // videos from Supabase; `loadWpPosts()` reloads published posts from
+  // WordPress; `loadScheduled()` reloads scheduled items. The Refresh
+  // button used to only call `load()`, so clicking it while on the Posts
+  // tab silently did nothing visible — 151 posts in, 151 posts out. Now
+  // it fans out per active tab so the visible data actually updates.
+  //
+  // Auto-refresh on visibilitychange (debounced 30s) covers the common
+  // "I left this tab open, scheduled a post elsewhere, came back" case
+  // without burning the API on every quick alt-tab.
+  const refreshActiveTabRef = useRef<() => void>(() => {})
+  const lastAutoRefreshRef = useRef<number>(0)
+  refreshActiveTabRef.current = () => {
+    load() // always reload underlying videos — drives the Horizontal/Vertical tabs
+    if (activeTab === 'posts' && !postsLoading) loadWpPosts()
+    if (activeTab === 'scheduled' && !scheduledLoading) loadScheduled()
+  }
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState !== 'visible') return
+      const now = Date.now()
+      if (now - lastAutoRefreshRef.current < 30_000) return // 30s throttle
+      lastAutoRefreshRef.current = now
+      refreshActiveTabRef.current()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   // Listen for "mvp-schedule-applied" — emitted by ScheduleModal after a
   // successful schedule. Merges the schedule fields into the parent's
   // posts state so the Library row's "Scheduled · X" badge appears
@@ -2677,19 +2707,20 @@ export default function ContentPage() {
                 {syncing ? `Syncing${syncProgress ? ` (${syncProgress.pulled})` : ''}…` : 'Sync videos'}
               </Button>
             )}
-            {/* Refresh — re-runs the Library load() so a scheduled post
-                that fired while the page was open jumps to Posts/Recent
-                without a full reload. 2026-06-07 UX fix. */}
+            {/* Refresh — re-runs the loader for whichever tab is active
+                (videos, Posts, or Scheduled). 2026-06-09: was previously
+                only reloading videos, which silently did nothing when the
+                user was on the Posts/Scheduled tab. */}
             <Button
               variant="secondary"
               size="sm"
-              onClick={load}
-              loading={loading}
-              disabled={loading}
-              leftIcon={!loading ? <RefreshCw size={14} /> : undefined}
-              title="Reload videos + posts from the database"
+              onClick={() => refreshActiveTabRef.current()}
+              loading={loading || postsLoading || scheduledLoading}
+              disabled={loading || postsLoading || scheduledLoading}
+              leftIcon={!(loading || postsLoading || scheduledLoading) ? <RefreshCw size={14} /> : undefined}
+              title="Reload the active tab from the database / WordPress"
             >
-              {loading ? 'Refreshing…' : 'Refresh'}
+              {(loading || postsLoading || scheduledLoading) ? 'Refreshing…' : 'Refresh'}
             </Button>
           </div>
         }
@@ -2711,8 +2742,13 @@ export default function ContentPage() {
             key={key}
             onClick={() => {
               setActiveTab(key)
-              if (key === 'posts' && !postsLoaded && !postsLoading) loadWpPosts()
-              if (key === 'scheduled' && !scheduledItems && !scheduledLoading) loadScheduled()
+              // 2026-06-09: drop the "only on first click" gate. Each tab
+              // click now re-fetches its data source so a user who, e.g.,
+              // schedules a post in another tab and switches back sees the
+              // updated count immediately. `postsLoading`/`scheduledLoading`
+              // still prevent overlapping in-flight requests.
+              if (key === 'posts' && !postsLoading) loadWpPosts()
+              if (key === 'scheduled' && !scheduledLoading) loadScheduled()
             }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === key
