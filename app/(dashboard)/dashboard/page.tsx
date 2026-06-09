@@ -33,6 +33,7 @@ import {
   PlaySquare, ArrowRight, FileText, Layers, Gauge,
   Facebook, ExternalLink, Sparkles, PenLine, Image as ImageIcon,
   Scale, Wand2, ArrowUpRight, BadgePercent, Eye, Clock,
+  Compass,
 } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
@@ -272,6 +273,31 @@ export default async function DashboardPage() {
             Join <ExternalLink size={11} />
           </span>
         </a>
+
+        {/* Pro capabilities tour banner — a single, persistent link to the
+            full "what you can do today" page. Sits next to the community
+            link so a new user sees both the social entry point and the
+            capability tour on day one. Purple-tinted to read as a
+            first-class brand surface, not a "yet another upsell" stripe. */}
+        <Link
+          href="/pro-tour"
+          className="rounded-2xl border p-4 flex items-center gap-3 transition-colors hover:scale-[1.005]"
+          style={{
+            backgroundColor: 'rgba(124, 58, 237, 0.06)',
+            borderColor: 'rgba(124, 58, 237, 0.25)',
+          }}
+        >
+          <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(124, 58, 237, 0.18)' }}>
+            <Compass size={18} className="text-[#7C3AED]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>See everything Pro can do for you</p>
+            <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>The full capabilities tour — every Pro feature live today, in one read.</p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white flex-shrink-0" style={{ background: '#7C3AED' }}>
+            Read the tour <ArrowRight size={11} />
+          </span>
+        </Link>
 
         <SetupChecklist />
         <ChannelStats />
