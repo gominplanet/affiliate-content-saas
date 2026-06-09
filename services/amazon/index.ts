@@ -368,6 +368,10 @@ export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVer
 
   // Carousel-video signals, in rough order of how reliable each is.
   // Tolerant of whitespace + quote-style variations.
+  // 2026-06-09 v2: added .mp4 / .m3u8 URL fallback, ASMVideoUrl,
+  // altVideoId, videoBlockId, video-block hyphenated, thumbVideo /
+  // mainVideo, and a-video-* attrs — after the v1 patterns missed
+  // every solar product on a 44-candidate scan.
   const patterns: RegExp[] = [
     /"mediaTypeCount"\s*:\s*\{[^}]*"video"\s*:\s*[1-9]/,      // explicit count
     /"videoUrl"\s*:\s*"https?:\/\//i,                          // canonical URL
@@ -378,6 +382,17 @@ export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVer
     /id\s*=\s*["']videoBlock["']/,                             // legacy block
     /class\s*=\s*["'][^"']*vse-video-player/i,                 // VSE player wrapper
     /"isVideo"\s*:\s*true/i,                                   // per-asset flag
+    /"videoBlockId"\s*:/i,                                     // gallery video block ID
+    /video-block/i,                                            // hyphenated class
+    /a-video-(?:url|format|type)/i,                            // Amazon-prefixed attrs
+    /"thumbVideo"\s*:/i,                                       // thumb-attached video
+    /"mainVideo"\s*:/i,                                        // main slot video
+    /"altVideoId"\s*:\s*"/i,                                   // alt-slot video id
+    /"ASMVideoUrl"\s*:/i,                                      // Amazon Standard Media
+    // Broadest fallback: any .mp4 / .m3u8 URL anywhere in the head.
+    // Carousel videos are almost always one of these formats; A+
+    // content videos live further down the page so this is safe.
+    /https?:[^"' ]+\.(?:mp4|m3u8|mov|webm)(?:\?[^"' ]*)?/i,
   ]
   for (const p of patterns) {
     if (p.test(head)) return 'has-video'
