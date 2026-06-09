@@ -72,6 +72,17 @@ export default function CreatorCampaignsAdminPage() {
   const [minCommission, setMinCommission] = useState(15)
   const [minDaysLeft, setMinDaysLeft] = useState(90)
   const [minBudget, setMinBudget] = useState(1000)
+  // What thresholds the CURRENT catalog was actually imported with.
+  // Distinct from the input state above — those are what the user is
+  // about to type for the NEXT upload. Persisted on successful import
+  // so the stats card can say "this catalog used 120% / 120d / $1000"
+  // instead of leaving the admin guessing.
+  const [lastAppliedFilters, setLastAppliedFilters] = useState<{
+    minCommission: number
+    minDaysLeft: number
+    minBudget: number
+    importedAt: string
+  } | null>(null)
   // Load saved filter values once on mount.
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -82,6 +93,10 @@ export default function CreatorCampaignsAdminPage() {
       if (typeof v.minCommission === 'number') setMinCommission(v.minCommission)
       if (typeof v.minDaysLeft === 'number') setMinDaysLeft(v.minDaysLeft)
       if (typeof v.minBudget === 'number') setMinBudget(v.minBudget)
+    } catch { /* corrupt JSON / no storage — ignore */ }
+    try {
+      const last = window.localStorage.getItem('mvp-cc-last-applied')
+      if (last) setLastAppliedFilters(JSON.parse(last))
     } catch { /* corrupt JSON / no storage — ignore */ }
   }, [])
   // Persist on each change. Cheap, no debounce needed (3 number inputs).
@@ -391,6 +406,21 @@ export default function CreatorCampaignsAdminPage() {
           (finalizeFailed ? ' — click "Retry cleanup" below to finish the post-import steps.' : ''),
       })
 
+      // Persist what filters this catalog used so the stats card can
+      // show "this catalog was filtered to 120% / 120d / $1000" and the
+      // admin doesn't have to guess from the input boxes (which may
+      // hold values they typed AFTER the upload).
+      if (!finalizeFailed) {
+        const last = {
+          minCommission, minDaysLeft, minBudget,
+          importedAt: batchStart,
+        }
+        setLastAppliedFilters(last)
+        try {
+          window.localStorage.setItem('mvp-cc-last-applied', JSON.stringify(last))
+        } catch { /* quota / disabled — non-fatal */ }
+      }
+
       await loadStats()
     } catch (e) {
       setResult({ ok: false, message: toErrorString(e) })
@@ -453,7 +483,13 @@ export default function CreatorCampaignsAdminPage() {
           <div className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] truncate">
             {lastImport}
           </div>
-          <div className="text-xs text-[#86868b] mt-1">Most recent import_at</div>
+          {lastAppliedFilters ? (
+            <div className="text-xs text-[#7C3AED] mt-1 font-medium">
+              Filters applied: ≥{lastAppliedFilters.minCommission}% · ≥{lastAppliedFilters.minDaysLeft}d · ≥${lastAppliedFilters.minBudget.toLocaleString()}
+            </div>
+          ) : (
+            <div className="text-xs text-[#86868b] mt-1">Most recent import_at</div>
+          )}
         </div>
       </div>
 
