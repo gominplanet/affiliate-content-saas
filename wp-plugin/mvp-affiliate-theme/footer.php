@@ -49,7 +49,20 @@ $disclaimer = trim($profile['affiliateDisclaimer'] ?? '');
   <div class="mvp-container mvp-footer-grid">
 
     <?php
-    $cats = get_categories(['number' => 6, 'orderby' => 'count', 'order' => 'DESC']);
+    // 2026-06-09: bumped from 6 → 15, added hide_empty + exclude
+    // Uncategorized. The hard cap of 6 was cutting off legitimate
+    // categories the top nav was already showing (e.g. Travel &
+    // Luggage). 15 covers any realistic niche set without sprawling
+    // the footer visually; the list flexes vertically if a site
+    // genuinely has more categories.
+    $uncat_id = (int) get_option('default_category', 0);
+    $cats = get_categories([
+        'number'     => 15,
+        'orderby'    => 'count',
+        'order'      => 'DESC',
+        'hide_empty' => true,
+        'exclude'    => $uncat_id ? [$uncat_id] : [],
+    ]);
     if (!empty($cats)): ?>
     <div class="mvp-footer-col">
       <h3 class="mvp-footer-heading">Categories</h3>
