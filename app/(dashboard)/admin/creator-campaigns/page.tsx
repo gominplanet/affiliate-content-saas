@@ -395,7 +395,13 @@ export default function CreatorCampaignsAdminPage() {
       // finalize step fails, the admin can rerun JUST that step
       // without re-uploading the whole zip.
       setLastBatchStart(batchStart)
-      const BATCH = 2000
+      // 2026-06-09: down from 2000 → 1000. The 2000-row batches sometimes
+      // tipped over the import-batch route's per-call budget on a busy
+      // Supabase instance, causing 20 of ~22 chunks to fail in a single
+      // run. Halving the batch size doubles the round-trips but cuts the
+      // per-call work proportionally, so each batch finishes well inside
+      // the route's timeout. ~85 batches at ~3-5s each = ~5-7 min total.
+      const BATCH = 1000
       let totalUpserted = 0
       const totalFailures: Array<{ start: number; end: number; error: string }> = []
       for (let i = 0; i < deduped.length; i += BATCH) {
