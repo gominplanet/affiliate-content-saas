@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.45
+ * Version: 1.0.46
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -418,14 +418,18 @@ add_filter('the_content', function ($content) {
     if (!$subtitle) $subtitle = 'A short monthly email with the products I tested + actually liked. No spam.';
     if (!$button)   $button   = 'Subscribe';
 
-    ob_start();
-    mvp_affiliate_render_newsletter_form([
+    // 2026-06-08 BUG FIX: mvp_affiliate_render_newsletter_form RETURNS its
+    // HTML (it uses its own ob_start/ob_get_clean internally — see line
+    // 2976). The previous code here wrapped the call in another ob_start
+    // expecting it to ECHO, so the outer buffer was always empty, $form was
+    // always '', and the early-return below silently dropped the inline
+    // form on every post. Direct assignment makes the form render.
+    $form = mvp_affiliate_render_newsletter_form([
         'user_id'  => $nl['userId'],
         'title'    => $title,
         'subtitle' => $subtitle,
         'button'   => $button,
     ]);
-    $form = ob_get_clean();
     if (!$form) return $content;
 
     // Wrap so we can scope margin to inline placement (denser than sidebar/footer)
