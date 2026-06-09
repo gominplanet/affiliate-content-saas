@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import Link from 'next/link'
-import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2 } from 'lucide-react'
+import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2, Youtube, Globe } from 'lucide-react'
 
 interface AnalyticsPost {
   postId: string
@@ -13,10 +13,18 @@ interface AnalyticsPost {
   clicks: number
 }
 
+interface SourceGroup {
+  name: string
+  kind: 'youtube' | 'blog'
+  clicks: number
+  linkCount: number
+}
+
 interface AnalyticsResponse {
   connected: boolean
   totals: { clicks: number; posts: number; topClicks: number }
   posts: AnalyticsPost[]
+  groups: SourceGroup[]
   error?: string
 }
 
@@ -183,6 +191,60 @@ export default function AnalyticsPage() {
           bg="bg-[#ff9500]/8"
         />
       </div>
+
+      {/* Clicks by source — per-Geniuslink-group breakdown. Lets the user
+          see at a glance whether YouTube descriptions or blog posts are
+          driving the traffic. Shipped 2026-06-09 alongside the MVP-YOUTUBE
+          vs site-domain grouping in services/geniuslink. */}
+      {data!.groups && data!.groups.length > 0 && (() => {
+        const groupMax = Math.max(...data!.groups.map(g => g.clicks), 1)
+        return (
+          <div className="card p-5 mb-6">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Clicks by source</p>
+              <span className="text-xs text-[#86868b] dark:text-[#8e8e93]">YouTube vs blogs · last 30 days</span>
+            </div>
+            <div className="flex flex-col gap-3">
+              {data!.groups.map((g) => {
+                const Icon = g.kind === 'youtube' ? Youtube : Globe
+                const iconColor = g.kind === 'youtube' ? 'text-[#ff3b30]' : 'text-[#7C3AED]'
+                const iconBg = g.kind === 'youtube' ? 'bg-[#ff3b30]/8' : 'bg-[#7C3AED]/8'
+                const barFill = g.kind === 'youtube'
+                  ? 'bg-gradient-to-r from-[#ff3b30] to-[#ff9500]'
+                  : 'bg-gradient-to-r from-[#7C3AED] to-[#5856d6]'
+                const sharePct = (g.clicks / groupMax) * 100
+                return (
+                  <div key={`${g.kind}-${g.name}`} className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center flex-shrink-0`}>
+                      <Icon size={16} className={iconColor} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                        <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] truncate">
+                          {g.name}
+                          <span className="text-[10px] text-[#86868b] dark:text-[#8e8e93] font-normal ml-1.5">
+                            · {g.linkCount} {g.linkCount === 1 ? 'link' : 'links'}
+                          </span>
+                        </p>
+                        <span className="text-sm font-semibold tabular-nums text-[#1d1d1f] dark:text-[#f5f5f7] flex-shrink-0">
+                          {g.clicks.toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/5 overflow-hidden">
+                        <div className={`h-full rounded-full ${barFill}`} style={{ width: `${Math.max(sharePct, 1)}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-4 leading-relaxed">
+              YouTube clicks come from links in your video descriptions (MVP-YOUTUBE Geniuslink group).
+              Blog clicks come from links inside published posts (each blog routes to its own group).
+            </p>
+          </div>
+        )
+      })()}
 
       {/* Top performing posts */}
       <div className="card p-5">

@@ -698,10 +698,19 @@ export async function POST(request: Request) {
     // push tracking bug — only /api/youtube/sync populates that table). The
     // voice-anchor loop then never learns from their metadata generations.
     // Use .select() to detect 0-rows and warn so we know if this regresses.
+    // Extract the geni.us shortcode from the YT-side Geniuslink so the
+    // /analytics page can attribute YouTube-description clicks to the
+    // MVP-YOUTUBE group. Falls back to null when the user has no
+    // Geniuslink keys (affiliateUrl is the raw Amazon URL in that case).
+    const ytGeniuslinkCode = affiliateUrl.match(/https?:\/\/(?:www\.)?geni\.us\/([A-Za-z0-9]+)/)?.[1] ?? null
+
     if (youtubeVideoId) {
       try {
+        // Cast through `any` because the regenerated DB types lag
+        // migration 114 (which added geniuslink_yt_code). Same pattern
+        // as the per-site Geniuslink group write in lib/geniuslink-group.ts.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: updated, error: updErr } = await supabase
+        const { data: updated, error: updErr } = await (supabase as any)
           .from('youtube_videos')
           .update({
             generated_title: titleResult.best,
@@ -709,6 +718,9 @@ export async function POST(request: Request) {
             generated_pinned_comment: engagementResult.pinnedComment,
             generated_tags: seoData.tags,
             metadata_generated_at: new Date().toISOString(),
+            // Only write when we actually got a code — preserves any prior
+            // code if this generation fell back to the raw Amazon URL.
+            ...(ytGeniuslinkCode ? { geniuslink_yt_code: ytGeniuslinkCode } : {}),
           })
           .eq('user_id', user.id)
           .eq('youtube_video_id', youtubeVideoId)
