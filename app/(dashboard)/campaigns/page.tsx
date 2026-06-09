@@ -377,17 +377,29 @@ function CampaignsInner() {
       setCatalogFreshAt((data.lastRefresh as string | null) ?? null)
       setImpPhase('ready')
       const refreshIso = (data.lastRefresh as string | null) ?? null
-      // When the carousel-video filter is on, surface how many candidates
-      // were dropped so users understand a "Top 10 returned 7" result isn't
-      // a bug — it's the filter doing its job.
-      const carouselNote: string = data.carouselVideoFilter
-        ? ` · carousel-video filter dropped ${data.carouselVideoFilter.skipped} candidate${data.carouselVideoFilter.skipped === 1 ? '' : 's'} that didn't qualify`
+      // When the carousel-video filter is on, surface the per-verdict
+      // breakdown so a zero-result search is actionable — the user can
+      // tell whether Amazon blocked the scrape (bot-challenge) vs.
+      // products genuinely lack videos.
+      const cv = data.carouselVideoFilter as null | {
+        probed: number; kept: number; noVideo: number; botChallenge: number; fetchFailed: number
+      }
+      const carouselNote = cv
+        ? ` · carousel-video probe: ${cv.kept} had video, ${cv.noVideo} didn't, ${cv.botChallenge} blocked by Amazon, ${cv.fetchFailed} fetch errors (out of ${cv.probed} probed)`
         : ''
+      // Diagnostic 0-match message — tell the user EXACTLY what the
+      // breakdown looked like so they know whether to retry, broaden
+      // the keyword, or just untick the filter.
+      const zeroCarouselMsg = cv
+        ? cv.botChallenge + cv.fetchFailed > cv.noVideo
+          ? `Amazon blocked ${cv.botChallenge + cv.fetchFailed}/${cv.probed} of our probes (bot challenge or network error). The filter can't tell which of those products actually have videos. Retry in a few minutes — Amazon's bot detection is rate-limit-based, not a permanent block.`
+          : `Of ${cv.probed} candidates scanned, NONE had a carousel video. Try a broader keyword, raise the queue cap (so we probe more candidates), or untick the carousel-video filter.`
+        : 'No matches passed the carousel-video filter — try unticking it or broadening your keyword.'
       setImpMsg(
         matches.length === 0
           ? (refreshIso
               ? (impCarouselVideo
-                  ? 'No matches passed the carousel-video filter — try untcking it or broadening your keyword. Most search niches have a 30-50% hit rate, so a 0-match result usually means a narrow keyword + small candidate pool.'
+                  ? zeroCarouselMsg
                   : 'No matches with these filters. Try widening: lower the commission, shorter days-left, or untick the budget toggle.')
               : 'The catalog hasn\'t been imported yet. Check back in a few hours or ping support.')
           : `${matches.length.toLocaleString()} matches ready to queue (from a shared catalog of ${data.uniqueAsins.toLocaleString()} unique products)${carouselNote}.`,

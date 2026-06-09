@@ -302,9 +302,32 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
 // separate `aplus-...` block) or "Customer videos" (in the reviews
 // section) — both are out of carousel scope. The substring search is
 // anchored to the imageBlock section to avoid false positives.
+export type CarouselVideoVerdict =
+  | 'has-video'
+  | 'no-video'
+  | 'fetch-failed'      // network error or non-200
+  | 'bot-challenge'     // Amazon served the bot-check page, can't tell
+
 export async function hasCarouselVideo(asin: string): Promise<boolean> {
+  return (await probeCarouselVideo(asin)) === 'has-video'
+}
+
+/** Returns the full verdict for a single ASIN so callers can distinguish
+ *  "product has no video" from "Amazon blocked us, we don't know". The
+ *  boolean wrapper above maps the latter to false so legacy callers keep
+ *  their old behavior. 2026-06-09: expanded patterns + UA rotation +
+ *  bot-challenge sniffing after the first pass returned 0 matches on
+ *  every keyword (Amazon was serving challenge pages from Vercel IPs). */
+export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVerdict> {
   const url = `https://www.amazon.com/dp/${asin}`
-  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  // Rotate UA per ASIN to defeat per-UA rate limiting. Deterministic on
+  // ASIN so retries land on the same UA + responses are reproducible.
+  const UAS = [
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  ]
+  const ua = UAS[(asin.charCodeAt(0) + asin.charCodeAt(asin.length - 1)) % UAS.length]
   let html = ''
   try {
     const res = await fetch(url, {
@@ -312,25 +335,52 @@ export async function hasCarouselVideo(asin: string): Promise<boolean> {
         'User-Agent': ua,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
         'Cache-Control': 'no-cache',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'DNT': '1',
       },
-      // 6s ceiling. A blocked / slow page costs more than skipping the
-      // result — callers downgrade to "couldn't verify, exclude" rather
-      // than waiting forever.
-      signal: AbortSignal.timeout(6000),
+      // 8s ceiling. Slightly more generous than the previous 6s — Amazon's
+      // edge is sometimes slow + the cost of a false 'fetch-failed' is
+      // higher than a slow probe (we lose otherwise-good candidates).
+      signal: AbortSignal.timeout(8000),
     })
-    if (!res.ok) return false
+    if (!res.ok) return 'fetch-failed'
     html = await res.text()
   } catch {
-    return false
+    return 'fetch-failed'
   }
-  // Strip A+ content + reviews to avoid false positives from non-carousel
-  // videos. The imageBlock JSON island lives in the first ~80KB of the
-  // page, well above the aplus-/reviews regions.
-  const head = html.slice(0, 120_000)
-  if (/"videoUrl"\s*:\s*"https?:\/\//.test(head)) return true
-  if (/"videos"\s*:\s*\[\s*\{/.test(head)) return true
-  if (/data-video-url=["']https?:\/\//.test(head)) return true
-  if (/id=["']videoBlock["']/.test(head)) return true
-  return false
+  // Bot-challenge sniff: Amazon's challenge page is tiny and lacks the
+  // product chrome. If we got NONE of these markers we're staring at
+  // a challenge, not a real product page — flag it so the caller can
+  // distinguish that from "page is real but has no video".
+  const isProductPage = /id="productTitle"|landingImage|imageGalleryData|"hiRes"/i.test(html)
+  if (!isProductPage) return 'bot-challenge'
+
+  // Look at the first 150KB — covers the imageBlock JSON island + the
+  // gallery thumbnails, well above A+ content and customer reviews
+  // (where false-positive videos live).
+  const head = html.slice(0, 150_000)
+
+  // Carousel-video signals, in rough order of how reliable each is.
+  // Tolerant of whitespace + quote-style variations.
+  const patterns: RegExp[] = [
+    /"mediaTypeCount"\s*:\s*\{[^}]*"video"\s*:\s*[1-9]/,      // explicit count
+    /"videoUrl"\s*:\s*"https?:\/\//i,                          // canonical URL
+    /"videoUrl"\s*:\s*"\/\//i,                                 // protocol-relative
+    /"videos"\s*:\s*\[\s*\{/,                                  // videos array (objects)
+    /"videos"\s*:\s*\[\s*"/,                                   // array-of-urls form
+    /data-video-url\s*=\s*["']https?:\/\//i,                   // rendered attr
+    /id\s*=\s*["']videoBlock["']/,                             // legacy block
+    /class\s*=\s*["'][^"']*vse-video-player/i,                 // VSE player wrapper
+    /"isVideo"\s*:\s*true/i,                                   // per-asset flag
+  ]
+  for (const p of patterns) {
+    if (p.test(head)) return 'has-video'
+  }
+  return 'no-video'
 }

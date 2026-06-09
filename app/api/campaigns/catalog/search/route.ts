@@ -21,7 +21,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { hasCarouselVideo } from '@/services/amazon'
+import { probeCarouselVideo } from '@/services/amazon'
 
 export const dynamic = 'force-dynamic'
 // When the carousel-video filter is on, we run up to ~30 parallel Amazon
@@ -110,24 +110,27 @@ export async function GET(request: Request) {
     .sort((a, b) => (b.commission ?? 0) - (a.commission ?? 0))
 
   let kept = sortedCandidates
-  let carouselSkipped = 0
+  // Per-verdict counters so the UI can distinguish "Amazon blocked us"
+  // (bot-challenge / fetch-failed) from "the products genuinely have no
+  // carousel video" (no-video). Critical for debugging zero-result
+  // searches — previously the user couldn't tell whether the filter was
+  // overly strict or whether the scrape was being blocked entirely.
+  const counts = { hasVideo: 0, noVideo: 0, botChallenge: 0, fetchFailed: 0 }
   if (requireCarouselVideo) {
-    // Walk the candidates in commission-descending order, scraping in
-    // chunks of 10 in parallel. Stop as soon as we've collected `limit`
-    // survivors — saves a lot of Amazon requests when the first chunk
-    // already fills the queue cap.
     const survivors: typeof sortedCandidates = []
     const CHUNK = 10
-    let probedTotal = 0
     for (let i = 0; i < sortedCandidates.length && survivors.length < limit; i += CHUNK) {
       const batch = sortedCandidates.slice(i, i + CHUNK)
-      const verdicts = await Promise.all(batch.map(r => hasCarouselVideo(r.asin)))
-      verdicts.forEach((hasVid, idx) => {
-        if (hasVid) survivors.push(batch[idx])
+      const verdicts = await Promise.all(batch.map(r => probeCarouselVideo(r.asin)))
+      verdicts.forEach((v, idx) => {
+        switch (v) {
+          case 'has-video':     counts.hasVideo++;     survivors.push(batch[idx]); break
+          case 'no-video':      counts.noVideo++;      break
+          case 'bot-challenge': counts.botChallenge++; break
+          case 'fetch-failed':  counts.fetchFailed++;  break
+        }
       })
-      probedTotal += batch.length
     }
-    carouselSkipped = probedTotal - survivors.length
     kept = survivors
   }
 
@@ -162,11 +165,18 @@ export async function GET(request: Request) {
     totalScanned: rows.length,
     uniqueAsins: byAsin.size,
     lastRefresh: freshness?.imported_at ?? null,
-    // Surface the carousel-video filter result so the UI can say
-    // "X of Y candidates had a carousel video" when the user hits the
-    // filter without enough results to fill the queue cap.
+    // Surface the carousel-video filter result so the UI can explain
+    // a low/zero match count. Breaks down by verdict so the user can
+    // tell "Amazon blocked our scrape" from "the products genuinely
+    // have no video".
     carouselVideoFilter: requireCarouselVideo
-      ? { skipped: carouselSkipped, kept: final.length }
+      ? {
+          probed: counts.hasVideo + counts.noVideo + counts.botChallenge + counts.fetchFailed,
+          kept: counts.hasVideo,
+          noVideo: counts.noVideo,
+          botChallenge: counts.botChallenge,
+          fetchFailed: counts.fetchFailed,
+        }
       : null,
   })
 }
