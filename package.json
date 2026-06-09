@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test:thumbnails": "tsx scripts/test-thumbnail-headlines.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
@@ -54,6 +55,7 @@
     "eslint-config-next": "15.1.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }
