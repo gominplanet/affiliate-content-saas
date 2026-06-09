@@ -20,6 +20,11 @@
 //
 // Add a new case here whenever you ship a thumbnail whose headline looks
 // pathological in production — that's the regression-prevention loop.
+//
+// 2026-06-08: wired into `npm run build` (package.json) so Vercel deploys
+// fail when any case overflows. If you ever need to ship without the
+// gate (emergency rollback, etc.), run `next build` directly — but the
+// default path always runs the smoke test first.
 
 import { bakeSimpleHeadline } from '../lib/thumbnail-simple-bake'
 import sharp from 'sharp'
