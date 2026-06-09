@@ -686,10 +686,13 @@ async function handleGenerate(request: Request) {
     await logFailure(supabase, user.id, videoId, 'blog_generation', rawMsg)
     // Translate low-level stream/network errors (undici "terminated",
     // "fetch failed", socket resets, timeouts) into something a user can
-    // act on instead of a cryptic one-word error.
-    const transient = /terminated|fetch failed|socket|ECONNRESET|aborted|network|timeout|overloaded|52\d|50[23]/i.test(rawMsg)
+    // act on instead of a cryptic one-word error. Also catches bare
+    // "Internal Server Error" / HTTP 500 surfaces from upstream APIs
+    // (Amazon scraper, WP REST, etc.) — those are almost always transient
+    // and a retry usually works.
+    const transient = /terminated|fetch failed|socket|ECONNRESET|aborted|network|timeout|overloaded|internal server error|^\s*5\d{2}\s*$|52\d|50[023]/i.test(rawMsg)
     const msg = transient
-      ? 'The AI connection dropped partway through generating this post. This is usually temporary — please hit Retry.'
+      ? 'A network step in generation timed out or returned an error (usually Amazon scrape, Claude, or WordPress). This is almost always temporary — hit Retry. Raw: ' + rawMsg.slice(0, 120)
       : rawMsg
     return NextResponse.json({ error: msg }, { status: 500 })
   }
