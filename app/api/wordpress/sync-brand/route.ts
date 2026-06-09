@@ -10,11 +10,16 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): brand sync pushes the owner's brand_profiles
+  // values to the owner's WP site. /brand UI is route-blocked for VAs but
+  // the auto-sync triggered by other surfaces still routes through here.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const body = await request.json() as {
     authorName?: string
@@ -51,7 +56,7 @@ export async function POST(request: Request) {
   } = body
 
   // Multi-site: target the specific site if siteId provided; default site otherwise.
-  const site = await getWordPressCredentials(supabase, user.id, body.siteId)
+  const site = await getWordPressCredentials(supabase, ownerId, body.siteId)
   if (!site) {
     return NextResponse.json({ ok: true, wordpress: 'not_connected' })
   }
@@ -64,7 +69,7 @@ export async function POST(request: Request) {
   const { data: brandRow } = await supabase
     .from('brand_profiles')
     .select('header_banner_url, logo_url')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .single()
   const storedBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
   const storedLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null

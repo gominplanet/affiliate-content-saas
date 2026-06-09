@@ -288,15 +288,17 @@ export default function AgencyPage() {
         </p>
       </div>
 
-      {/* Roll-out banner — 2026-06-09: bg-amber-50 stayed cream in dark
-          mode while text-amber-200 was also light, producing light-on-
-          light. Now uses paired light + dark Tailwind variants so the
-          banner is readable in both themes. */}
-      <div className="bg-amber-50 dark:bg-amber-900/25 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3 text-xs text-amber-900 dark:text-amber-100">
-        <b>Phase 1 — invites + roster:</b> VAs can accept and appear in your team list. Full
-        resource sharing (content library, integrations) rolls out in Phase 2 — we&apos;ll email
-        when it&apos;s live. VAs already CANNOT access: brand profile, blog customization,
-        integrations, WordPress settings, billing, or this page.
+      {/* Roll-out banner — 2026-06-09 Phase 2 live: resource sharing now
+          extends across the major routes (Library, blog generation, YT
+          Co-Pilot, SEO dashboard, Brainstorm, Collaborations, WP sites,
+          LEARN profile, face/style libraries). VAs see your workspace
+          everywhere they generate. Write-restricted pages (brand,
+          billing, integrations setup) remain blocked. */}
+      <div className="bg-emerald-50 dark:bg-emerald-900/25 border border-emerald-200 dark:border-emerald-500/30 rounded-lg p-3 text-xs text-emerald-900 dark:text-emerald-100">
+        <b>Phase 2 live — full workspace sharing:</b> VAs you invite now see your videos, posts,
+        WordPress sites, brand voice, Geniuslink tracking, face library, and everything else
+        they need to ship content. Usage caps + AI cost still bill against your single Pro plan.
+        VAs CANNOT access: brand profile editor, billing, integrations setup, or this page.
       </div>
 
       {/* Invite form */}

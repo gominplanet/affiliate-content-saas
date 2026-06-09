@@ -2,17 +2,20 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function GET() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): customizations belong to the owner's WP.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await supabase
     .from('integrations')
     .select('blog_customizations')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .single()
 
   return NextResponse.json(data?.blog_customizations ?? {})
@@ -20,8 +23,9 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const body = await req.json() as Record<string, unknown> & { siteId?: string | null }
   // Strip siteId from the saved customizations — it's a routing param, not
@@ -36,13 +40,13 @@ export async function POST(req: Request) {
   const { error: dbError } = await supabase
     .from('integrations')
     .update({ blog_customizations: customizations as never })
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
 
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 })
 
   // Push to WordPress — multi-site: target the specific site if siteId
   // provided; default site otherwise.
-  const site = await getWordPressCredentials(supabase, user.id, siteId)
+  const site = await getWordPressCredentials(supabase, ownerId, siteId)
 
   if (site) {
     const wpBase = site.wordpress_url.replace(/\/$/, '')
@@ -92,7 +96,7 @@ export async function POST(req: Request) {
       const { data: brandRow } = await supabase
         .from('brand_profiles')
         .select('header_banner_url, logo_url')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .single()
       const storedBannerUrl = (brandRow?.header_banner_url as string | null)?.trim() || null
       const storedLogoUrl = (brandRow?.logo_url as string | null)?.trim() || null
@@ -119,13 +123,13 @@ export async function POST(req: Request) {
         supabase
           .from('newsletter_settings')
           .select('enabled,sender_name,cta_title,cta_subtitle,cta_button,cta_bullet_1,cta_bullet_2,cta_bullet_3,homepage_placement,sidebar_placement')
-          .eq('user_id', user.id)
+          .eq('user_id', ownerId)
           .maybeSingle(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         supabase
           .from('newsletter_subscribers')
           .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
+          .eq('user_id', ownerId)
           .eq('status', 'active'),
       ])
       const nlEnabled = !!nlRow?.enabled
@@ -160,7 +164,10 @@ export async function POST(req: Request) {
         // `newsletter.senderName` powers the form's H3 title when present.
         newsletter: {
           enabled: nlEnabled,
-          userId: user.id,
+          // Theme reads this to know whose form to render. Owner-side so
+          // the embed targets the right Resend audience (subscribers
+          // table is owner-keyed).
+          userId: ownerId,
           senderName: nlSenderName,
           // Per-placement CTA overrides. Null/undefined → theme falls
           // back to its own default copy.

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { tryWpProxy } from '@/lib/wp-proxy'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 /**
  * Purge cache on a WordPress site. Multi-site: accepts `siteId` to target a
@@ -12,8 +13,10 @@ import { tryWpProxy } from '@/lib/wp-proxy'
  */
 export async function POST(req: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): purge owner's site cache.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const body = await req.json().catch(() => ({})) as { siteId?: string | null }
 
@@ -22,10 +25,10 @@ export async function POST(req: Request) {
   const { data: intRow } = await supabase
     .from('integrations')
     .select('blog_customizations')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .single()
 
-  const site = await getWordPressCredentials(supabase, user.id, body.siteId)
+  const site = await getWordPressCredentials(supabase, ownerId, body.siteId)
   if (!site) {
     return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
   }
