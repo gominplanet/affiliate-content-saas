@@ -65,27 +65,50 @@ async function runFinalize(request: Request): Promise<NextResponse> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = admin as any
 
-  // ── Step 1: stale-row delete ──────────────────────────────────────────
+  // ── Step 1: stale-row delete (chunked in TypeScript) ──────────────────
   // Anything with imported_at older than batchStart wasn't in this
   // import — prune it.
   //
-  // 2026-06-09: routed through delete_stale_creator_campaigns(...) RPC
-  // (migration 115) instead of a single bulk DELETE. The bulk version
-  // worked fine until catalogs hit ~600K rows, at which point Supabase
-  // would cancel the statement at its default per-statement timeout
-  // and the user saw "Cleanup failed: canceling statement due to
-  // statement timeout". The RPC loops over 25k-row chunks internally
-  // so each individual DELETE stays well under that ceiling.
+  // 2026-06-09 v2: the migration-115 RPC approach was the right shape
+  // but the wrong layer. SET LOCAL statement_timeout INSIDE a PL/pgSQL
+  // function doesn't override the per-call statement_timeout that
+  // PostgREST applies to the OUTER `SELECT my_func()` call — that one
+  // is already running when SET LOCAL fires. So a function that
+  // internally takes 75s still gets killed at the role's
+  // statement_timeout.
+  //
+  // The reliable fix is to chunk in TypeScript instead. Each
+  // individual SELECT + DELETE is small (5k ids) and finishes in ~1-2s,
+  // well under any timeout. We loop until we've drained the stale set
+  // or hit our 250s soft budget (leaves ~50s for the canonical RPC).
   const t0 = Date.now()
-  let staleDeleted: number | null = null
+  const STALE_DELETE_BUDGET_MS = 250_000
+  const STALE_DELETE_CHUNK = 5000
+  let staleDeleted = 0
   let cleanupError: string | null = null
   try {
-    const { data, error } = await sb.rpc('delete_stale_creator_campaigns', {
-      p_batch_start: batchStart,
-      p_chunk_size: 25000,
-    })
-    if (error) cleanupError = error.message
-    else if (typeof data === 'number') staleDeleted = data
+    let loops = 0
+    while (true) {
+      if (Date.now() - t0 > STALE_DELETE_BUDGET_MS) {
+        cleanupError = `Hit time budget (${STALE_DELETE_BUDGET_MS / 1000}s) after ${staleDeleted.toLocaleString()} rows. Click "Retry cleanup" to continue from where we stopped.`
+        break
+      }
+      loops++
+      const { data: victims, error: selErr } = await sb
+        .from('creator_connections_catalog')
+        .select('id')
+        .lt('imported_at', batchStart)
+        .limit(STALE_DELETE_CHUNK)
+      if (selErr) { cleanupError = `Select chunk #${loops}: ${selErr.message}`; break }
+      if (!victims || victims.length === 0) break
+      const ids = (victims as Array<{ id: string }>).map(v => v.id)
+      const { error: delErr } = await sb
+        .from('creator_connections_catalog')
+        .delete()
+        .in('id', ids)
+      if (delErr) { cleanupError = `Delete chunk #${loops}: ${delErr.message}`; break }
+      staleDeleted += ids.length
+    }
   } catch (e) {
     cleanupError = e instanceof Error ? e.message : 'unknown delete error'
   }
@@ -95,15 +118,30 @@ async function runFinalize(request: Request): Promise<NextResponse> {
   // One row per ASIN, highest commission. Search RPC queries WHERE
   // is_canonical = true, so this is what makes new rows actually
   // findable + drops ASINs that no longer have any actionable row.
+  //
+  // 2026-06-09: SKIP this step when stale cleanup failed or didn't
+  // finish. Two reasons:
+  //   1. The canonical RPC reads the whole catalog — if there are still
+  //      hundreds of thousands of stale rows lingering, it'll process
+  //      them too and waste budget. Better to drain stale first.
+  //   2. The user clicks "Retry cleanup" to make progress — running
+  //      canonical inside a partially-completed cleanup adds noise to
+  //      the error message that obscures the real status.
+  // Once cleanup reports staleDeleted with no error, the NEXT retry
+  // will run canonical with a clean slate (no stale rows visible).
   let canonicalCount: number | null = null
   let canonicalError: string | null = null
-  try {
-    const { data: canonical, error: canonErr } = await sb
-      .rpc('recompute_canonical_creator_campaigns')
-    if (canonErr) canonicalError = canonErr.message
-    else if (typeof canonical === 'number') canonicalCount = canonical
-  } catch (e) {
-    canonicalError = e instanceof Error ? e.message : 'unknown RPC error'
+  if (cleanupError) {
+    canonicalError = 'Skipped (stale cleanup not finished — click Retry cleanup again to continue, then canonical will run).'
+  } else {
+    try {
+      const { data: canonical, error: canonErr } = await sb
+        .rpc('recompute_canonical_creator_campaigns')
+      if (canonErr) canonicalError = canonErr.message
+      else if (typeof canonical === 'number') canonicalCount = canonical
+    } catch (e) {
+      canonicalError = e instanceof Error ? e.message : 'unknown RPC error'
+    }
   }
   const t2 = Date.now()
 
