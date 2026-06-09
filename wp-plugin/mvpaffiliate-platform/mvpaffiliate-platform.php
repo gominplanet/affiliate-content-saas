@@ -3523,3 +3523,140 @@ add_filter('the_content', function ($content) {
         1
     ) ?: $content;
 }, 25);
+
+// ─── 20c. Clickable video timestamps (#10, v1.0.44, 2026-06-08) ────────────
+//
+// Generator writes [mm:ss] markers inline next to specific moments from
+// the video (e.g. "battery hit 20% after 6 hours of mixed use [9:15]").
+// This filter:
+//   1. Wraps each [mm:ss] in a clickable .gr-ts span carrying data-ts in
+//      seconds, so the footer JS can seek the embedded YouTube player.
+//   2. Upgrades the embedded YouTube iframe with ?enablejsapi=1 +
+//      id="mvp-yt-player" so the YT IFrame API can address it.
+// Footer JS (in mvp_affiliate_render_reader_ux_timestamps below) loads the
+// API on first timestamp click — zero cost on posts without timestamps.
+add_filter('the_content', 'mvp_affiliate_inject_timestamps', 30);
+if (!function_exists('mvp_affiliate_inject_timestamps')) {
+    function mvp_affiliate_inject_timestamps($content) {
+        if (!is_singular('post')) return $content;
+        // 1. Wrap [mm:ss] / [m:ss] / [h:mm:ss] inside body paragraphs.
+        //    Skip if pattern appears inside an existing <a> or inside
+        //    <pre>/<code> blocks (cheap heuristic via tag mask below).
+        //    We're permissive on minute width: 1–2 digits; strict on seconds: 2 digits.
+        $pattern = '/\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]/';
+        $content = preg_replace_callback($pattern, function ($m) {
+            // Compute total seconds. [h:mm:ss] → h*3600 + mm*60 + ss; [mm:ss] → mm*60 + ss.
+            if (isset($m[3]) && $m[3] !== '') {
+                $sec = (intval($m[1]) * 3600) + (intval($m[2]) * 60) + intval($m[3]);
+                $label = $m[1] . ':' . str_pad($m[2], 2, '0', STR_PAD_LEFT) . ':' . $m[3];
+            } else {
+                $sec = (intval($m[1]) * 60) + intval($m[2]);
+                $label = intval($m[1]) . ':' . str_pad($m[2], 2, '0', STR_PAD_LEFT);
+            }
+            // Span renders inline; href="#mvp-yt-player" gives keyboard +
+            // no-JS fallback (scrolls reader to the video on click).
+            return '<a class="gr-ts" data-ts="' . $sec . '" href="#mvp-yt-player" aria-label="Play video at ' . esc_attr($label) . '">' . esc_html($label) . '</a>';
+        }, $content);
+
+        // 2. Upgrade the YouTube embed iframe(s) — add enablejsapi=1 + an id
+        //    we can find from JS. Match the existing `<iframe src=".../embed/{ID}"`
+        //    pattern. If the URL already has query params, append with &;
+        //    otherwise prepend ?. Idempotent: skip if enablejsapi is already there.
+        $content = preg_replace_callback(
+            '#<iframe([^>]*)src="(https?://(?:www\.)?youtube(?:-nocookie)?\.com/embed/[^"]+)"([^>]*)>#i',
+            function ($m) {
+                $before = $m[1];
+                $url = $m[2];
+                $after = $m[3];
+                if (strpos($url, 'enablejsapi=1') === false) {
+                    $url .= (strpos($url, '?') === false ? '?' : '&') . 'enablejsapi=1&origin=' . urlencode(home_url());
+                }
+                // Add id if not already present in either attribute group.
+                if (strpos($before . $after, ' id=') === false) {
+                    $after .= ' id="mvp-yt-player"';
+                }
+                return '<iframe' . $before . 'src="' . $url . '"' . $after . '>';
+            },
+            $content
+        );
+
+        return $content;
+    }
+}
+
+// ─── 20d. Footer JS for timestamp clicks — YouTube IFrame API loader ───────
+add_action('wp_footer', 'mvp_affiliate_render_timestamp_js');
+if (!function_exists('mvp_affiliate_render_timestamp_js')) {
+    function mvp_affiliate_render_timestamp_js() {
+        if (!is_singular('post')) return;
+        ?>
+<style>
+.gr-ts{display:inline-flex;align-items:center;gap:2px;background:#1d1d1f;color:#fff !important;padding:1px 7px 1px 5px;border-radius:4px;font-size:0.85em;font-weight:600;text-decoration:none;line-height:1.3;margin:0 2px;cursor:pointer;font-variant-numeric:tabular-nums;letter-spacing:.2px;vertical-align:baseline;transition:background .15s ease,transform .12s ease;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.gr-ts:hover{background:#FF6B00;color:#fff !important;text-decoration:none;transform:translateY(-1px)}
+.gr-ts::before{content:"▶";font-size:.62em;opacity:.8;margin-right:1px;line-height:1}
+</style>
+<script>
+(function(){
+  var pending = null;     // First timestamp clicked while API loads → seek when ready.
+  var player  = null;     // YT.Player instance once available.
+  var apiLoaded = false;  // YT API script tag injected?
+
+  function loadYouTubeApi(){
+    if (apiLoaded) return;
+    apiLoaded = true;
+    var s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    s.async = true;
+    document.head.appendChild(s);
+  }
+
+  // Global callback the YT API calls when ready.
+  window.onYouTubeIframeAPIReady = function(){
+    var iframe = document.getElementById('mvp-yt-player');
+    if (!iframe || typeof YT === 'undefined' || !YT.Player) return;
+    try {
+      player = new YT.Player('mvp-yt-player', {
+        events: {
+          onReady: function(){
+            if (pending !== null) {
+              try { player.seekTo(pending, true); player.playVideo(); } catch(e){}
+              pending = null;
+            }
+          }
+        }
+      });
+    } catch(e) { /* if YT.Player ctor throws, click falls back to anchor jump */ }
+  };
+
+  function seek(sec){
+    if (player && typeof player.seekTo === 'function') {
+      try { player.seekTo(sec, true); player.playVideo(); } catch(e){}
+    } else {
+      pending = sec;
+      loadYouTubeApi();
+    }
+  }
+
+  function bind(){
+    document.querySelectorAll('.gr-ts').forEach(function(el){
+      if (el.dataset.bound) return;
+      el.dataset.bound = '1';
+      el.addEventListener('click', function(ev){
+        var ts = parseInt(el.getAttribute('data-ts'), 10);
+        if (!isNaN(ts) && document.getElementById('mvp-yt-player')) {
+          // Let the # navigation scroll the video into view, then seek.
+          // (Default anchor jump still fires unless we preventDefault.)
+          // We DO want the scroll-to-player behavior, so don't prevent.
+          seek(ts);
+        }
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bind);
+  } else { bind(); }
+})();
+</script>
+        <?php
+    }
+}

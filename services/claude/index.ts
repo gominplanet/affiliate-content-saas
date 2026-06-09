@@ -270,6 +270,34 @@ CRITICAL RULES — FOLLOW STRICTLY
    current price", "see today's price at the link", "current pricing is on the
    product page". This applies even if a price appears in the PRODUCT INFO — omit it.
 
+10b. CLICKABLE VIDEO TIMESTAMPS — OPTIONAL, 2–4 per post when natural.
+
+   Annotate concrete moments from the video with `[mm:ss]` (or `[m:ss]`)
+   timestamps. The MVP plugin converts these into clickable links that
+   seek the embedded YouTube player to that exact moment — same UX as
+   Wirecutter / Tom's Guide rarely match, an "obviously a real review"
+   signal.
+
+   WHEN to add a timestamp (only when you actually have one from the
+   transcript — if the transcript doesn't include timestamps, skip
+   this entire feature):
+     • A specific test moment: "I dropped it from waist height [4:32]
+       and the screen cracked at the corner."
+     • A real measurement: "Battery hit 20% after 6 hours of mixed use
+       [9:15]."
+     • A direct quote of yourself: "When I said 'this is the worst zip
+       I've ever fought' [2:47] I meant it."
+
+   WHEN NOT to add a timestamp:
+     • Generic claims, FAQ answers, opener, scorecard, verdict box.
+     • If you're guessing — only annotate moments where the transcript
+       actually provides the timestamp.
+
+   FORMAT — exactly `[mm:ss]` with square brackets, inside body
+   paragraphs, after the sentence the timestamp anchors. Use `[m:ss]`
+   for moments under 10 min (single-digit minute is fine). Don't
+   invent timestamps to look thorough — 0 is better than fabricated.
+
 11. CONCRETE NUMBERS — REQUIRED, AT LEAST THREE per post.
    The audit found posts trending toward vague qualifiers ("heated up fast", "lasted
    a long time", "the cable's long enough", "compact"). These read as AI-generated
