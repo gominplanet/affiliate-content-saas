@@ -1,6 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
@@ -129,8 +130,13 @@ export async function POST(request: Request) {
 
 async function handleGenerate(request: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2: resolve the effective owner so a VA's generation
+  // reads + writes under the OWNER's user_id (their workspace), while
+  // usage caps + generation tracking still bill the caller (the VA).
+  // For account owners, ownerId === user.id and behavior is unchanged.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { user, ownerId } = auth
 
   const body = (await request.json()) as {
     videoId?: string
@@ -228,7 +234,7 @@ async function handleGenerate(request: Request) {
   const { data: existingForLimit } = await supabase
     .from('blog_posts')
     .select('id, rewrite_count, wordpress_post_id, slug, wordpress_site_id')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .eq('video_id', videoId)
     .limit(1)
     .maybeSingle()
@@ -255,7 +261,7 @@ async function handleGenerate(request: Request) {
     const { data: intRow } = await supabase
       .from('integrations')
       .select('tier')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .single()
     const tier = normalizeTier(intRow?.tier)
     if (tier !== 'pro' && tier !== 'admin') {
@@ -320,9 +326,9 @@ async function handleGenerate(request: Request) {
     { data: brand },
     { data: integration },
   ] = await Promise.all([
-    supabase.from('youtube_videos').select('*').eq('user_id', user.id).eq('id', videoId).maybeSingle(),
-    supabase.from('brand_profiles').select('*').eq('user_id', user.id).maybeSingle(),
-    supabase.from('integrations').select('*').eq('user_id', user.id).maybeSingle(),
+    supabase.from('youtube_videos').select('*').eq('user_id', ownerId).eq('id', videoId).maybeSingle(),
+    supabase.from('brand_profiles').select('*').eq('user_id', ownerId).maybeSingle(),
+    supabase.from('integrations').select('*').eq('user_id', ownerId).maybeSingle(),
   ])
 
   if (videoErr || !video) {
@@ -349,7 +355,7 @@ async function handleGenerate(request: Request) {
   // wordpress_sites hasn't been backfilled yet, so single-site users see
   // no behaviour change.
   const effectiveSiteId = siteId ?? existingSiteId
-  const site = await getWordPressCredentials(supabase, user.id, effectiveSiteId)
+  const site = await getWordPressCredentials(supabase, ownerId, effectiveSiteId)
   if (!site) {
     return NextResponse.json(
       { error: 'WordPress not connected. Add your WordPress credentials in Settings.' },
@@ -620,7 +626,7 @@ async function handleGenerate(request: Request) {
   const { data: feedbackRows } = await supabase
     .from('blog_posts')
     .select('last_rewrite_feedback,published_at')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .not('last_rewrite_feedback', 'is', null)
     .order('published_at', { ascending: false })
     .limit(8)
@@ -639,7 +645,7 @@ async function handleGenerate(request: Request) {
   const { data: priorRows } = await supabase
     .from('blog_posts')
     .select('title,content,video_id')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .eq('status', 'published')
     .neq('video_id', videoId)
     .order('published_at', { ascending: false })
@@ -664,7 +670,7 @@ async function handleGenerate(request: Request) {
   const { data: linkRows } = await supabase
     .from('blog_posts')
     .select('title,wordpress_url,seo_keyword,post_type,content')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .eq('status', 'published')
     .neq('video_id', videoId)
     .not('wordpress_url', 'is', null)
@@ -1078,7 +1084,7 @@ async function handleGenerate(request: Request) {
   // For draft-flip: the cron worker will fire IndexNow when it flips the
   // post to publish.
   if (!isScheduled) {
-    void pingIndexNowForUrl(supabase, user.id, wpPost.link, effectiveSiteId).catch(() => {})
+    void pingIndexNowForUrl(supabase, ownerId, wpPost.link, effectiveSiteId).catch(() => {})
   }
 
   // ── 8.5. Upload YouTube thumbnail as featured image ───────────────────────
@@ -1118,7 +1124,7 @@ async function handleGenerate(request: Request) {
   const { data: existingPost } = await supabase
     .from('blog_posts')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .eq('video_id', videoId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -1139,7 +1145,7 @@ async function handleGenerate(request: Request) {
   )
 
   const blogPayload = {
-    user_id: user.id,
+    user_id: ownerId,
     video_id: videoId,
     title: generated.title,
     slug,
@@ -1289,7 +1295,7 @@ async function handleGenerate(request: Request) {
   // suggestions (never overwrites manual entries). Debounced 6h so a
   // burst of publishes doesn't hammer Haiku. No await — request keeps
   // moving so the user's blog-publish flow stays fast.
-  void maybeEvolveLearnProfile(supabase, { userId: user.id, tier: (wp?.tier as string) ?? null })
+  void maybeEvolveLearnProfile(supabase, { userId: ownerId, tier: (wp?.tier as string) ?? null })
 
   // ── 10. Body images + cache purge — DEFERRED to after the response ────────
   // The text post is already published (correct links) and saved, so the user
@@ -1315,7 +1321,7 @@ async function handleGenerate(request: Request) {
         const { data: ytRow } = await supabase
           .from('integrations')
           .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry,yt_backlink_enabled')
-          .eq('user_id', user.id)
+          .eq('user_id', ownerId)
           .single()
         if (ytRow?.yt_backlink_enabled !== false && ytRow?.youtube_oauth_access_token && youtubeVideoId && wpPost.link) {
           const token = await getValidYouTubeToken(ytRow as Record<string, unknown>)
