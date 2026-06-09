@@ -454,9 +454,35 @@ async function handleGenerate(request: Request) {
     const directProductUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
     if (directProductUrl) {
       if (/(?:geni\.us|\bgnz\.)/i.test(directProductUrl)) {
-        // Already a Geniuslink (could point anywhere) — keep it as-is.
-        destination = directProductUrl
-        alreadyGeniuslink = true
+        // Geniuslink found in the description. Two paths:
+        //
+        // (a) User has their own Geniuslink keys connected. UNWRAP it to
+        //     the underlying destination so we can RE-WRAP under the
+        //     per-site group. Critical for tracking: the existing
+        //     geni.us link likely came from MVP's YouTube Co-Pilot
+        //     (MVP-YOUTUBE group) — reusing it on the blog would lump
+        //     blog clicks into the YouTube bucket and defeat per-source
+        //     attribution. Unwrapping + re-wrapping creates a NEW link
+        //     in the site's own group with the same final destination.
+        //
+        // (b) No Geniuslink keys connected. Can't re-wrap, so keep as-is
+        //     (still drives traffic to the product, just no MVP routing).
+        if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
+          const finalUrl = await resolveTrueDestination(directProductUrl)
+          const asinFromFinal = finalUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1]
+          if (asinFromFinal) {
+            asinOverride = asinFromFinal.toUpperCase()
+            destination = `https://www.amazon.com/dp/${asinOverride}`
+          } else {
+            // Geniuslink resolved to a non-Amazon URL — use that as the
+            // raw destination so the new wrapper still points to the
+            // same product.
+            destination = finalUrl
+          }
+        } else {
+          destination = directProductUrl
+          alreadyGeniuslink = true
+        }
       } else if (/(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i.test(directProductUrl)) {
         // A short link — LOOK IT UP before assuming. If it lands on an
         // Amazon product, treat it as Amazon (extract the ASIN); otherwise
