@@ -609,10 +609,33 @@ function CampaignsInner() {
     })
   }
 
-  const allSelected = !!items && items.length > 0 && selected.size === items.length
+  // 2026-06-09: split the queue by origin so the CC tab and the EPC tab
+  // show ONLY their own queued campaigns. The discriminator is
+  // cc_campaign_id — /api/campaigns/import (the .zip importer) writes it,
+  // /api/campaigns/ingest (the Chrome extension) leaves it null. Older
+  // rows from before this split also show on the CC tab as a safe default
+  // (they were either created via the importer or look like CC content
+  // anyway since the extension flow is recent).
+  const visibleItems = useMemo(() => {
+    if (!items) return null
+    return items.filter(c => (tab === 'cc'
+      ? !!c.cc_campaign_id   // CC tab: only rows the importer tagged
+      : !c.cc_campaign_id    // EPC tab: rows the extension queued
+    ))
+  }, [items, tab])
+
+  const allSelected = !!visibleItems && visibleItems.length > 0 && visibleItems.every(c => selected.has(c.id))
 
   function toggleSelectAll() {
-    setSelected(allSelected ? new Set() : new Set((items ?? []).map(c => c.id)))
+    // Toggle only within the active tab's visible set; selections on the
+    // other tab are preserved so switching tabs doesn't lose context.
+    setSelected(prev => {
+      const next = new Set(prev)
+      const vis = visibleItems ?? []
+      if (allSelected) vis.forEach(c => next.delete(c.id))
+      else vis.forEach(c => next.add(c.id))
+      return next
+    })
   }
 
   async function deleteSelected() {
@@ -852,14 +875,16 @@ function CampaignsInner() {
       {/* Section header — names the cumulative queue clearly so users
           don't confuse "I just queued 10" with "my list has 100".
           2026-06-09 — added after a user reported the 10-vs-100 surprise. */}
-      {items && items.length > 0 && tab === 'cc' && (
+      {visibleItems && visibleItems.length > 0 && (
         <div className="flex items-baseline justify-between gap-3 mb-2 max-w-3xl flex-wrap">
           <div className="flex items-baseline gap-2 flex-wrap">
             <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-              Your queue
+              {tab === 'cc' ? 'Your Creator Connections queue' : 'Your EPC queue'}
             </h2>
             <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-              {items.length} campaign{items.length === 1 ? '' : 's'} accumulated across all searches — type a new keyword + Search catalog to add more, or clear what you don&apos;t want below.
+              {visibleItems.length} campaign{visibleItems.length === 1 ? '' : 's'} {tab === 'cc'
+                ? 'accumulated across all searches — type a new keyword + Search catalog to add more, or clear what you don’t want below.'
+                : 'scouted via the browser extension on the EPC side. Use the extension to add more, or clear what you don’t want below.'}
             </span>
           </div>
         </div>
@@ -867,7 +892,7 @@ function CampaignsInner() {
 
       {/* Bulk-accept helper: copy every Campaign Id for Amazon's
           "Submit accepted campaigns" box. */}
-      {items && items.length > 0 && (
+      {visibleItems && visibleItems.length > 0 && (
         <div className="flex items-center justify-between gap-3 mb-3 max-w-3xl">
           <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
             {ccIds.length > 0 ? (
@@ -903,8 +928,8 @@ function CampaignsInner() {
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-3 max-w-3xl">{verifyResult}</p>
       )}
 
-      {/* Select-all + bulk delete */}
-      {items && items.length > 0 && (
+      {/* Select-all + bulk delete — scoped to the active tab */}
+      {visibleItems && visibleItems.length > 0 && (
         <div className="flex items-center gap-4 mb-2 max-w-3xl">
           <label className="inline-flex items-center gap-2 text-xs font-medium text-[#86868b] dark:text-[#8e8e93] cursor-pointer">
             <input
@@ -913,7 +938,7 @@ function CampaignsInner() {
               onChange={toggleSelectAll}
               className="accent-[#7C3AED]"
             />
-            {allSelected ? 'Clear selection' : `Select all (${items.length})`}
+            {allSelected ? 'Clear selection' : `Select all (${visibleItems.length})`}
           </label>
           {selected.size > 0 && (
             <button
@@ -929,19 +954,25 @@ function CampaignsInner() {
         </div>
       )}
 
-      {/* Campaign list */}
+      {/* Campaign list — filtered to the active tab's origin */}
       {items === null ? (
         <div className="flex items-center gap-2 text-sm text-[#86868b] py-8 justify-center">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
-      ) : items.length === 0 ? (
+      ) : !visibleItems || visibleItems.length === 0 ? (
         <div className="card p-8 max-w-md text-center">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No campaign posts yet</p>
-          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Paste an ASIN above to create your first one.</p>
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
+            {tab === 'cc' ? 'No Creator Connections campaigns yet' : 'No EPC campaigns yet'}
+          </p>
+          <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+            {tab === 'cc'
+              ? 'Search the shared catalog above to queue your first one.'
+              : 'Scout EPC campaigns with the browser extension above to queue your first one.'}
+          </p>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {items.map(c => {
+          {visibleItems.map(c => {
             const pill = STATUS[c.status]
             const expired = c.ends_at && new Date(c.ends_at) < new Date()
             return (
