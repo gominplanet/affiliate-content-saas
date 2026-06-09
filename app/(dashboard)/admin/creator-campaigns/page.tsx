@@ -238,6 +238,22 @@ export default function CreatorCampaignsAdminPage() {
       const now = Date.now()
       const rows: Row[] = []
       let scannedTotal = 0
+      // Per-reason drop counters. Used to produce a SPECIFIC error
+      // message when the filters drop everything ("100% dropped for
+      // commission < 120%") instead of the misleading generic "check
+      // column headers" — the column headers are almost never the
+      // culprit; the thresholds usually are.
+      const drops = {
+        noAsin: 0,
+        noCampaignId: 0,
+        commission: 0,
+        daysLeft: 0,
+        budget: 0,
+        slots: 0,
+      }
+      // Track the max commission % we saw so we can hint at a sane
+      // upper bound when the user's threshold rules everything out.
+      let maxCommissionSeen = 0
       for (let c = 0; c < csvs.length; c++) {
         const entry = csvs[c]
         setProgress(`Parsing ${c + 1}/${csvs.length} (${entry.name})…`)
@@ -268,9 +284,9 @@ export default function CreatorCampaignsAdminPage() {
           scannedTotal++
           const asinRaw = cols[idx.asin] ?? ''
           const asin = (asinRaw.match(/[A-Z0-9]{10}/) || [])[0] || ''
-          if (!asin) return true
+          if (!asin) { drops.noAsin++; return true }
           const campaignId = idx.cid != null ? (cols[idx.cid] ?? '').trim() : ''
-          if (!campaignId) return true
+          if (!campaignId) { drops.noCampaignId++; return true }
           const name = (cols[idx.name] ?? '').trim() || null
           const brand = (cols[idx.brand] ?? '').trim() || null
           const comm = parseFloat((cols[idx.comm] ?? '').replace(/[^\d.]/g, ''))
@@ -304,12 +320,13 @@ export default function CreatorCampaignsAdminPage() {
           // 30-50k actionable rows, which is what the search RPC + the
           // canonical recompute can chew through without breaking a
           // sweat on Supabase's per-tier IO budget.
-          if ((commission ?? 0) < minCommission) return true
-          if (daysLeft !== null && daysLeft < minDaysLeft) return true
+          if ((commission ?? 0) > maxCommissionSeen) maxCommissionSeen = commission ?? 0
+          if ((commission ?? 0) < minCommission) { drops.commission++; return true }
+          if (daysLeft !== null && daysLeft < minDaysLeft) { drops.daysLeft++; return true }
           // Days-left null means Amazon didn't ship an end date — keep
           // those rows (the boost might just be open-ended).
-          if (budgetRemain < minBudget) return true
-          if (slots <= 0) return true
+          if (budgetRemain < minBudget) { drops.budget++; return true }
+          if (slots <= 0) { drops.slots++; return true }
           rows.push({
             asin,
             campaign_id: campaignId,
@@ -339,7 +356,31 @@ export default function CreatorCampaignsAdminPage() {
       })
 
       if (deduped.length === 0) {
-        throw new Error(`Parsed ${scannedTotal.toLocaleString()} rows but found 0 actionable ones (commission > 0, budget + slots remaining, not expired). Check the column headers.`)
+        // Specific, actionable error. Most-frequent drop reason first so
+        // the user sees what to fix at a glance. The "check the column
+        // headers" advice is almost never the real problem — it's the
+        // thresholds 99% of the time.
+        const reasons: Array<{ count: number; reason: string }> = [
+          { count: drops.commission, reason: `commission < ${minCommission}%` },
+          { count: drops.daysLeft, reason: `days remaining < ${minDaysLeft}` },
+          { count: drops.budget, reason: `budget < $${minBudget.toLocaleString()}` },
+          { count: drops.slots, reason: 'no slots remaining' },
+          { count: drops.noAsin, reason: 'no ASIN in row' },
+          { count: drops.noCampaignId, reason: 'no Campaign ID' },
+        ].filter(r => r.count > 0).sort((a, b) => b.count - a.count)
+        const breakdown = reasons
+          .map(r => `${r.count.toLocaleString()} for ${r.reason}`)
+          .join(' · ')
+        // Hint at a realistic commission ceiling. Amazon Creator
+        // Connections rarely exceeds 20-30% — flag when the user's
+        // threshold beats the actual max in their export by 2x+.
+        const tooHighHint =
+          minCommission > maxCommissionSeen && maxCommissionSeen > 0
+            ? ` The highest commission % in this export was ${maxCommissionSeen.toFixed(1)}% — your threshold of ${minCommission}% is above EVERY row. Try lowering it to 10-20% (use the Aggressive preset).`
+            : ''
+        throw new Error(
+          `Parsed ${scannedTotal.toLocaleString()} rows but 0 survived your filters. Drop breakdown: ${breakdown}.${tooHighHint}`,
+        )
       }
 
       // ── Stream to the server in 2k-row batches ────────────────────────
