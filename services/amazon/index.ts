@@ -305,8 +305,9 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
 export type CarouselVideoVerdict =
   | 'has-video'
   | 'no-video'
-  | 'fetch-failed'      // network error or non-200
-  | 'bot-challenge'     // Amazon served the bot-check page, can't tell
+  | 'fetch-failed'      // network error
+  | 'bot-challenge'     // 200 OK but the body lacks product markers (challenge page)
+  | 'not-found'         // 404 on every attempt — likely delisted OR IP-level 404 block
 
 export async function hasCarouselVideo(asin: string): Promise<boolean> {
   return (await probeCarouselVideo(asin)) === 'has-video'
@@ -341,7 +342,9 @@ export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVer
     'DNT': '1',
   }
 
-  const fetchOnce = async (url: string, ua: string, referer: string | null): Promise<string | null> => {
+  // Return both the body AND the status so the caller can distinguish
+  // 404 (likely delisted) from generic non-2xx (network / bot-block).
+  const fetchOnce = async (url: string, ua: string, referer: string | null): Promise<{ html: string | null; status: number }> => {
     try {
       const res = await fetch(url, {
         headers: {
@@ -352,10 +355,14 @@ export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVer
         },
         signal: AbortSignal.timeout(8000),
       })
-      if (!res.ok) return null
-      return await res.text()
+      // 404 is informative on its own (likely delisted) — pass it back so
+      // the caller can return 'not-found' instead of falling through to
+      // 'bot-challenge'.
+      if (res.status === 404) return { html: null, status: 404 }
+      if (!res.ok) return { html: null, status: res.status }
+      return { html: await res.text(), status: res.status }
     } catch {
-      return null
+      return { html: null, status: 0 }
     }
   }
 
@@ -369,17 +376,25 @@ export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVer
   const desktopUrl = `https://www.amazon.com/dp/${asin}`
   const mobileUrl = `https://www.amazon.com/gp/aw/d/${asin}`
 
-  let html = await fetchOnce(desktopUrl, UAS[0], null)
-  if (html == null) return 'fetch-failed'
-  if (!isReal(html)) {
-    const retry = await fetchOnce(desktopUrl, UAS[1], 'https://www.google.com/')
-    if (retry != null && isReal(retry)) html = retry
+  const r1 = await fetchOnce(desktopUrl, UAS[0], null)
+  let html = r1.html
+  let any404 = r1.status === 404
+  if (html == null || !isReal(html)) {
+    const r2 = await fetchOnce(desktopUrl, UAS[1], 'https://www.google.com/')
+    if (r2.status === 404) any404 = true
+    if (r2.html != null && isReal(r2.html)) html = r2.html
     else {
-      const mobileRetry = await fetchOnce(mobileUrl, UAS[2], 'https://www.google.com/')
-      if (mobileRetry != null && isReal(mobileRetry)) html = mobileRetry
+      const r3 = await fetchOnce(mobileUrl, UAS[2], 'https://www.google.com/')
+      if (r3.status === 404) any404 = true
+      if (r3.html != null && isReal(r3.html)) html = r3.html
     }
   }
-  if (!isReal(html)) return 'bot-challenge'
+  // All 3 attempts came back with a real product page? Continue.
+  // All 3 attempts came back 404? The ASIN is genuinely (or apparently)
+  // delisted — distinct from a bot challenge.
+  if (html == null || !isReal(html)) {
+    return any404 && !html ? 'not-found' : 'bot-challenge'
+  }
 
   // Look at the first 150KB — covers the imageBlock JSON island + the
   // gallery thumbnails, well above A+ content and customer reviews

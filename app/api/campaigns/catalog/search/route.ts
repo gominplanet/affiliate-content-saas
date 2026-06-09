@@ -115,7 +115,7 @@ export async function GET(request: Request) {
   // carousel video" (no-video). Critical for debugging zero-result
   // searches — previously the user couldn't tell whether the filter was
   // overly strict or whether the scrape was being blocked entirely.
-  const counts = { hasVideo: 0, noVideo: 0, botChallenge: 0, fetchFailed: 0 }
+  const counts = { hasVideo: 0, noVideo: 0, botChallenge: 0, fetchFailed: 0, notFound: 0 }
   if (requireCarouselVideo) {
     const survivors: typeof sortedCandidates = []
     const CHUNK = 10
@@ -128,6 +128,7 @@ export async function GET(request: Request) {
           case 'no-video':      counts.noVideo++;      break
           case 'bot-challenge': counts.botChallenge++; break
           case 'fetch-failed':  counts.fetchFailed++;  break
+          case 'not-found':     counts.notFound++;     break
         }
       })
     }
@@ -171,11 +172,12 @@ export async function GET(request: Request) {
     // have no video".
     carouselVideoFilter: requireCarouselVideo
       ? {
-          probed: counts.hasVideo + counts.noVideo + counts.botChallenge + counts.fetchFailed,
+          probed: counts.hasVideo + counts.noVideo + counts.botChallenge + counts.fetchFailed + counts.notFound,
           kept: counts.hasVideo,
           noVideo: counts.noVideo,
           botChallenge: counts.botChallenge,
           fetchFailed: counts.fetchFailed,
+          notFound: counts.notFound,
         }
       : null,
   })
