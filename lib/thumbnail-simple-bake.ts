@@ -264,13 +264,20 @@ export async function bakeSimpleHeadline(
     const font = loadAntonFont()
 
     // Auto-fit each line individually: start at the ceiling size, measure,
-    // shrink to fit colMaxWidth. floor at 60% of ceiling so a 50-char line
-    // doesn't render microscopic — at that point the headline is too long
-    // for the format and should be regenerated.
+    // shrink to fit colMaxWidth.
+    //
+    // 2026-06-08: previous floor was 60% of ceiling (88px on a 1280 canvas).
+    // For a 17-char headline like "NEVER CHEAP AGAIN" the math needed ~57px
+    // to fit the 55% column — but the 88px floor clamped it and the text
+    // overflowed the canvas. Dropped the floor to an ABSOLUTE 50px which is
+    // still readable on a YouTube thumbnail mobile feed and lets headlines
+    // up to ~20 chars (line1) / ~25 chars (line2) fit cleanly. Beyond that,
+    // the copy generator should produce shorter copy, not floor the size.
+    const MIN_FONT_PX = 50
     const ceilLine1 = Math.round(scaleBase * 0.115)
     const ceilLine2 = Math.round(scaleBase * 0.095)
-    const fontSizeLine1 = fitFontToWidth(font, copy.line1, ceilLine1, colMaxWidth, Math.round(ceilLine1 * 0.6))
-    const fontSizeLine2 = fitFontToWidth(font, copy.line2, ceilLine2, colMaxWidth, Math.round(ceilLine2 * 0.6))
+    const fontSizeLine1 = fitFontToWidth(font, copy.line1, ceilLine1, colMaxWidth, MIN_FONT_PX)
+    const fontSizeLine2 = fitFontToWidth(font, copy.line2, ceilLine2, colMaxWidth, MIN_FONT_PX)
     const baselineLine1 = Math.round(height * 0.22)
     const baselineLine2 = baselineLine1 + Math.round(fontSizeLine2 * 1.05)
     const line1 = lineToPaths(font, copy.line1, copy.emphasisWord, fontSizeLine1, startX, baselineLine1, svgAnchor)
