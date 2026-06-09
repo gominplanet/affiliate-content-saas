@@ -161,7 +161,7 @@ const FONT_THEMES = [
   {
     key: 'editorial',
     name: 'Editorial',
-    description: 'Wirecutter-style. Serif headlines, sans body.',
+    description: 'Premium editorial. Serif headlines, sans body.',
     heading: '"Charter", Georgia, serif',
     body: '-apple-system, "Inter", sans-serif',
   },
@@ -1334,9 +1334,9 @@ export default function BrandPage() {
                 />
               </div>
               {/* 2026-06-08 (#14): opt-in "What we'd improve" block — adds a
-                   Wirecutter-style manufacturer-facing critique section to
-                   every generated post. Spans full width so the description
-                   fits cleanly on its own line. */}
+                   manufacturer-facing critique section to every generated
+                   post. Spans full width so the description fits cleanly on
+                   its own line. */}
               <div className="md:col-span-2">
                 <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-[#e5e5e7] dark:border-[#3a3a3c] hover:border-[#FF6B00] hover:bg-orange-50/30 dark:hover:bg-orange-950/10 transition-colors">
                   <input
@@ -1348,10 +1348,10 @@ export default function BrandPage() {
                   <div className="flex-1">
                     <div className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
                       Include a &quot;What we&apos;d improve&quot; section
-                      <InfoTip>Adds a Wirecutter-style manufacturer-facing critique block to every review — 1-3 concrete things the brand should fix in the next version. Different from Cons (consumer friction). Reads more critical, so it&apos;s opt-in. The AI grounds every point in the transcript / product info — never invents flaws.</InfoTip>
+                      <InfoTip>Adds a dedicated section to every review that addresses the manufacturer directly — 1–3 specific design, build, or packaging things the brand should fix in the next version. Distinct from the Cons list (which covers consumer-facing friction). This block reads as polite critique addressed to the maker, which builds editorial credibility but lands more critical in tone — so it&apos;s opt-in. The AI grounds every point in the actual transcript or product info; it will never invent a flaw to fill the section.</InfoTip>
                     </div>
                     <div className="text-[11px] text-[#6e6e73] dark:text-[#a8a8ad] mt-0.5 leading-snug">
-                      Adds a &quot;Flaws but not deal breakers&quot; block between the body and FAQ. Editorial credibility boost — but only turn on if your voice can carry the extra critique.
+                      Adds a 3-bullet &quot;what could be better&quot; block between the body and FAQ. Editorial credibility boost — but only turn on if your voice can carry the extra critique.
                     </div>
                   </div>
                 </label>
