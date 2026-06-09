@@ -216,6 +216,27 @@ export async function POST(request: Request) {
       setting: scrubBanned(generated.imagePrompts.setting),
     }
 
+    // ── Hallucination guard (parity with blog/generate, 2026-06-09) ─────────
+    // Campaign posts have NO YouTube transcript (ASIN-only flow) — the ONLY
+    // source of truth is the scraped Amazon product info packed into
+    // research.brief. Both helpers tolerate an empty transcript via their
+    // "(no transcript provided)" fallback so we pass an empty string and
+    // route everything through productResearch.
+    //
+    // Runs BEFORE WP publish (unlike blog/generate which runs post-publish)
+    // because the campaigns route is much shorter — no SEO meta race, no
+    // streaming response. We can afford one synchronous pair of Haiku
+    // calls before createPost, which means we publish the clean version
+    // once instead of patching after.
+    try {
+      const checked = await claude.factCheckProductClaims(generated.content, '', research.brief, { userId: user.id, tier })
+      if (checked && checked !== generated.content) generated.content = scrubBanned(checked)
+    } catch { /* non-fatal — keep the generated text */ }
+    try {
+      const guarded = await claude.citationGuard(generated.content, '', research.brief, { userId: user.id, tier })
+      if (guarded && guarded !== generated.content) generated.content = scrubBanned(guarded)
+    } catch { /* non-fatal — keep the prior text */ }
+
     const slug = generated.slug ? slugify(generated.slug) : slugify(generated.title)
 
     // ── 5. Publish to WordPress ─────────────────────────────────────────────

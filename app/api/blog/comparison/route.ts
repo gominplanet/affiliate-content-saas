@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { createAnthropicClient } from '@/lib/anthropic'
+import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
@@ -548,6 +549,53 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.
   void pingIndexNowForUrl(supabase, ownerId, wpPost.link, siteId).catch(() => {})
 
+  // ── Hallucination guard passes (parity with blog/generate, 2026-06-09) ─────
+  // Multi-product comparison posts have the SAME hallucination risk as a
+  // single-product review — Sonnet can invent specs, accessory lists, or
+  // "multi-function" claims for any of the N products. We run both layers
+  // here too:
+  //   1. factCheckProductClaims — broad pass, catches identity + price + spec
+  //      lies. Strips prices, validates product identity.
+  //   2. citationGuard — narrow pass, strips cite-or-omit classes (numeric
+  //      specs, model numbers, materials, certs, accessory lists, 2-in-1
+  //      identity claims) that the first pass might have left.
+  //
+  // Source budget concatenates all transcripts + descriptions across the
+  // products. Same per-source slicing as the helpers expect (transcript +
+  // productResearch are passed as concatenated strings). Best-effort: any
+  // failure leaves the original body. Both helpers have internal length +
+  // affiliate-link safety guards.
+  let bodyAfterChecks = body
+  try {
+    const claudeSvc = createClaudeService()
+    // Concatenate per-product transcripts with a separator so the model can
+    // tell them apart. Same for productResearch (descriptions + bullets).
+    const combinedTranscript = resolved
+      .map(p => `── ${p.productName} ──\n${(p.transcript || '').slice(0, 4500)}`)
+      .join('\n\n')
+      .slice(0, 18000)
+    const combinedResearch = resolved
+      .map(p => `── ${p.productName} ──\nDescription: ${(p.description || '').slice(0, 600)}\nBullets:\n${(p.bullets || []).slice(0, 10).join('\n')}`)
+      .join('\n\n')
+      .slice(0, 2500)
+
+    try {
+      const checked = await claudeSvc.factCheckProductClaims(bodyAfterChecks, combinedTranscript, combinedResearch, { userId: user.id, tier })
+      if (checked && checked !== bodyAfterChecks) bodyAfterChecks = scrub(checked)
+    } catch { /* non-fatal */ }
+
+    try {
+      const guarded = await claudeSvc.citationGuard(bodyAfterChecks, combinedTranscript, combinedResearch, { userId: user.id, tier })
+      if (guarded && guarded !== bodyAfterChecks) bodyAfterChecks = scrub(guarded)
+    } catch { /* non-fatal */ }
+
+    // Only push the corrected text back to WordPress if something actually
+    // changed — avoids an unnecessary WP write on the (common) clean pass.
+    if (bodyAfterChecks !== body) {
+      try { await wpService.updatePost(wpPost.id, { content: bodyAfterChecks }) } catch { /* keep prior text */ }
+    }
+  } catch { /* non-fatal — published post stands */ }
+
   // ── Save blog_posts row (post_type distinguishes it; counts as 1 post) ──────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await supabase.from('blog_posts').insert({
@@ -555,7 +603,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     video_id: resolved[0].videoId,
     title,
     slug,
-    content: body,
+    content: bodyAfterChecks,
     excerpt: scrub(parsed.meta_description),
     status: 'published',
     post_type: mode,
