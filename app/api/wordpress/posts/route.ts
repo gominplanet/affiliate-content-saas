@@ -9,10 +9,11 @@ export async function GET(req: Request) {
   try {
     const supabase = await createServerClient()
     // 2026-06-09 Phase 2 (VA): resource reads use ownerId so VAs see the
-    // owner's WordPress posts + blog_posts mapping table.
-    const auth = await getAuthAndOwner(supabase)
-    if (auth.error) return auth.error
-    const { ownerId } = auth
+    // owner's WordPress posts + blog_posts mapping table. Renamed to
+    // `authCtx` because the WP Basic Auth header below also wants `auth`.
+    const authCtx = await getAuthAndOwner(supabase)
+    if (authCtx.error) return authCtx.error
+    const { ownerId } = authCtx
 
     // Multi-site: ?siteId=<uuid> targets a specific site; omitted → default.
     // Used by /attach-video modal — Pro multi-site users pick which site's
