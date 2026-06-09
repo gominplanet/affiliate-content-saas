@@ -21,6 +21,7 @@ import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { asinFromAmazonUrl } from '@/lib/product-link'
 import { isValidAsin } from '@/services/amazon'
 import { resolveAffiliateUrl, resolveTrueDestination } from '@/lib/affiliate-resolve'
+import { resolveGeniuslinkGroupId } from '@/lib/geniuslink-group'
 
 export const maxDuration = 300
 
@@ -72,14 +73,17 @@ export async function POST(request: Request) {
     // per site, not once per post (could be hundreds in a bulk fix).
     // user.id captured here to avoid TS losing narrowing inside the closure.
     const userId = user.id
-    const siteCache = new Map<string, { wpService: ReturnType<typeof createWordPressService>; ownSite: string } | null>()
+    const siteCache = new Map<string, { wpService: ReturnType<typeof createWordPressService>; ownSite: string; siteId: string | null } | null>()
     async function siteFor(postSiteId: string | null | undefined) {
       const key = postSiteId ?? '__default__'
       if (siteCache.has(key)) return siteCache.get(key)!
       const s = await getWordPressCredentials(supabase, userId, postSiteId ?? null)
       if (!s) { siteCache.set(key, null); return null }
       const svc = createWordPressService(s.wordpress_url, s.wordpress_username, s.wordpress_app_password, s.wordpress_api_token || undefined)
-      const entry = { wpService: svc, ownSite: s.wordpress_url }
+      // site_id === 'legacy' means the user has not been migrated to
+      // wordpress_sites yet — no group cache row exists, so skip the
+      // Geniuslink group lookup for this post.
+      const entry = { wpService: svc, ownSite: s.wordpress_url, siteId: s.site_id === 'legacy' ? null : s.site_id }
       siteCache.set(key, entry)
       return entry
     }
@@ -154,16 +158,16 @@ export async function POST(request: Request) {
       if (!videoId) return null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let { data } = await supabase
-        .from('youtube_videos').select('id,title,description,product_url')
+        .from('youtube_videos').select('id,title,description,product_url,youtube_video_id')
         .eq('user_id', user.id).eq('id', videoId).maybeSingle()
       if (!data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = await supabase
-          .from('youtube_videos').select('id,title,description,product_url')
+          .from('youtube_videos').select('id,title,description,product_url,youtube_video_id')
           .eq('user_id', user.id).eq('youtube_video_id', videoId).maybeSingle()
         data = r.data
       }
-      return data as { id: string; title: string; description: string; product_url: string | null } | null
+      return data as { id: string; title: string; description: string; product_url: string | null; youtube_video_id: string | null } | null
     }
 
     // The link currently used by the post (stored on the video, else first
@@ -205,6 +209,9 @@ export async function POST(request: Request) {
           // back to the default site when wordpress_site_id is null (legacy
           // pre-Phase-3 row).
           const postSite = await siteFor((post as PostRow & { wordpress_site_id?: string | null }).wordpress_site_id)
+          // 2026-06-09: pass videoId (ascsubtag) + per-site group context so
+          // the repaired link inherits the same per-blog + per-video tracking
+          // a fresh generation gets.
           const { affiliateUrl } = await resolveAffiliateUrl({
             title: video.title || post.title || '',
             description: video.description || '',
@@ -215,6 +222,16 @@ export async function POST(request: Request) {
             geniuslinkApiKey: wp?.geniuslink_api_key,
             geniuslinkApiSecret: wp?.geniuslink_api_secret,
             unwrapSourceLinks: true,
+            videoId: video.youtube_video_id,
+            geniuslinkGroupId: postSite?.siteId
+              ? await resolveGeniuslinkGroupId({
+                  supabase,
+                  siteId: postSite.siteId,
+                  siteUrl: postSite.ownSite,
+                  apiKey: wp?.geniuslink_api_key,
+                  apiSecret: wp?.geniuslink_api_secret,
+                })
+              : null,
           })
           if (!affiliateUrl || affiliateUrl === oldUrl || badAmazonAsin(affiliateUrl)) {
             unresolved.push(post.title || post.slug || post.id)

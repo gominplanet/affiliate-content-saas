@@ -1,5 +1,18 @@
 const GENIUSLINK_API = 'https://api.geni.us'
 
+/** Optional per-link overrides. When omitted, behavior matches the legacy
+ *  single-group path (look up the default YouTube Links group every time). */
+export interface CreateLinkOpts {
+  /** Specific Geniuslink group ID to drop this link into. If provided,
+   *  skips the list-groups round-trip — caller is expected to have already
+   *  resolved + cached the ID (see lib/geniuslink-group.ts). */
+  groupId?: number
+  /** Override the note attached to the link. Defaults to `label` (the
+   *  product/post title). Pass a richer string like
+   *  "{post-slug} | {site-domain}" for filterable dashboard entries. */
+  note?: string
+}
+
 export class GeniuslinkService {
   constructor(private apiKey: string, private apiSecret: string) {}
 
@@ -11,45 +24,100 @@ export class GeniuslinkService {
     }
   }
 
-  // Fetch the YouTube Links group ID (or first enabled group as fallback)
-  private async getDefaultGroupId(): Promise<number> {
+  /** All enabled groups on the account. Used to find or auto-create a
+   *  per-site group named after the blog domain. */
+  async listGroups(): Promise<Array<{ Id: number; Name: string; Enabled: number }>> {
     const res = await fetch(`${GENIUSLINK_API}/v1/groups/list`, {
       headers: this.authHeaders,
     })
     const text = await res.text()
     if (!res.ok) throw new Error(`Geniuslink groups error ${res.status}: ${text.slice(0, 200)}`)
-
     const data = JSON.parse(text) as { Groups?: Array<{ Id: number; Name: string; Enabled: number }> }
-    const groups = (data.Groups ?? []).filter(g => g.Enabled === 1)
-    if (!groups.length) throw new Error('Geniuslink: no enabled groups found on this account')
+    return (data.Groups ?? []).filter(g => g.Enabled === 1)
+  }
 
+  // Fetch the YouTube Links group ID (or first enabled group as fallback)
+  private async getDefaultGroupId(): Promise<number> {
+    const groups = await this.listGroups()
+    if (!groups.length) throw new Error('Geniuslink: no enabled groups found on this account')
     // Prefer the YouTube Links group, otherwise use the first enabled group
     const youtubeGroup = groups.find(g => /youtube/i.test(g.Name))
     return (youtubeGroup ?? groups[0]).Id
   }
 
+  /** Find a group by exact (case-insensitive) name. Returns null if absent. */
+  async findGroupIdByName(name: string): Promise<number | null> {
+    const groups = await this.listGroups()
+    const target = name.trim().toLowerCase()
+    const match = groups.find(g => (g.Name ?? '').trim().toLowerCase() === target)
+    return match ? match.Id : null
+  }
+
+  /** Create a new group on the account. Tries known endpoint variants in
+   *  order because Geniuslink doesn't publish a stable create endpoint —
+   *  some accounts respond on /v1/groups/add, others on /v3/groups. Returns
+   *  null when both fail so callers can fall back to the default group
+   *  + log a "please create the group manually" hint. */
+  async createGroup(name: string): Promise<number | null> {
+    const cleanName = name.trim().slice(0, 80)
+    if (!cleanName) return null
+
+    const attempts: Array<{ url: string; method: 'POST'; body?: string; query?: string }> = [
+      // v1 add — body form-encoded
+      { url: `${GENIUSLINK_API}/v1/groups/add`, method: 'POST', query: new URLSearchParams({ name: cleanName, enabled: '1' }).toString() },
+      // v3 RESTful — JSON body
+      { url: `${GENIUSLINK_API}/v3/groups`, method: 'POST', body: JSON.stringify({ Name: cleanName, Enabled: 1 }) },
+    ]
+
+    for (const attempt of attempts) {
+      try {
+        const url = attempt.query ? `${attempt.url}?${attempt.query}` : attempt.url
+        const headers: Record<string, string> = { ...this.authHeaders }
+        if (attempt.body) headers['Content-Type'] = 'application/json'
+        const res = await fetch(url, { method: attempt.method, headers, body: attempt.body })
+        if (!res.ok) continue
+        const data = await res.json().catch(() => null) as Record<string, unknown> | null
+        if (!data) continue
+        // Different shapes: { Id }, { id }, { Group: { Id } }, { group: { id } }
+        const id = (data.Id ?? data.id ?? (data.Group as { Id?: number })?.Id ?? (data.group as { id?: number })?.id) as number | undefined
+        if (typeof id === 'number') return id
+      } catch { /* try next */ }
+    }
+    return null
+  }
+
+  /** Find or create a group with this name. Returns null on hard failure so
+   *  the caller falls back to the default group + can warn the user. */
+  async getOrCreateGroupId(name: string): Promise<number | null> {
+    const existing = await this.findGroupIdByName(name).catch(() => null)
+    if (existing) return existing
+    return this.createGroup(name)
+  }
+
   /** Backwards-compat wrapper that returns just the URL. Prefer
    *  `createAsinLinkWithCode` so you can persist the code for analytics. */
-  async createAsinLink(asin: string, label: string): Promise<string> {
-    const { url } = await this.createAsinLinkWithCode(asin, label)
+  async createAsinLink(asin: string, label: string, opts: CreateLinkOpts = {}): Promise<string> {
+    const { url } = await this.createAsinLinkWithCode(asin, label, opts)
     return url
   }
 
-  async createAsinLinkWithCode(asin: string, label: string): Promise<{ url: string; code: string | null }> {
-    return this.createLinkWithCode(`https://www.amazon.com/dp/${asin}`, label)
+  async createAsinLinkWithCode(asin: string, label: string, opts: CreateLinkOpts = {}): Promise<{ url: string; code: string | null }> {
+    return this.createLinkWithCode(`https://www.amazon.com/dp/${asin}`, label, opts)
   }
 
   /** Wrap ANY destination URL (store, brand site, Amazon, anything) into a
    *  Geniuslink. Geniuslink is NOT Amazon-only -- it redirects/tracks any
    *  destination. Returns just the short URL. */
-  async createLink(destinationUrl: string, label: string): Promise<string> {
-    const { url } = await this.createLinkWithCode(destinationUrl, label)
+  async createLink(destinationUrl: string, label: string, opts: CreateLinkOpts = {}): Promise<string> {
+    const { url } = await this.createLinkWithCode(destinationUrl, label, opts)
     return url
   }
 
   /** Wrap any destination URL and return the short URL + code (for analytics). */
-  async createLinkWithCode(destination: string, label: string): Promise<{ url: string; code: string | null }> {
-    const groupId = await this.getDefaultGroupId()
+  async createLinkWithCode(destination: string, label: string, opts: CreateLinkOpts = {}): Promise<{ url: string; code: string | null }> {
+    // Caller-resolved group wins; otherwise fall back to the default
+    // (cached lookup of YouTube Links / first enabled group).
+    const groupId = opts.groupId ?? (await this.getDefaultGroupId())
 
     // Sanitize the note. Geniuslink's API returns a generic 500 with an
     // ASP.NET HTML error page when the note contains characters their
@@ -57,7 +125,10 @@ export class GeniuslinkService {
     // strings). Strip control chars + non-ASCII, replace shell/URL
     // trouble chars with spaces, collapse whitespace, cap at 80.
     // 2026-06-07: this was the root cause of a user-visible 500.
-    const safeNote = label
+    // 2026-06-09: now also accepts an opts.note override so callers can
+    // pass a richer dashboard label (e.g. "post-slug | site.com").
+    const rawNote = opts.note ?? label
+    const safeNote = rawNote
       // eslint-disable-next-line no-control-regex
       .replace(/[\u0000-\u001F\u007F]/g, '')          // strip ASCII control chars
       .replace(/[^\u0020-\u007E]/g, '')                // strip non-ASCII

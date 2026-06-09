@@ -13,6 +13,7 @@ import { selfCheckBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
 import { extractAsin } from '@/services/amazon'
 import { verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
@@ -488,12 +489,44 @@ async function handleGenerate(request: Request) {
   // creator's link is already a Geniuslink, keep it. Else fall back to the
   // Amazon Associates tag (Amazon only) or the raw URL.
   if (destination) {
+    // 2026-06-09: TRACKING ENHANCEMENT
+    //   1. Per-blog grouping — resolve (and auto-create) a Geniuslink group
+    //      named after the site's domain so the user's dashboard shows
+    //      clicks segmented by blog instead of all jumbled into "YouTube
+    //      Links". Cached on wordpress_sites.geniuslink_group_id.
+    //   2. Per-post Amazon attribution — append ascsubtag={videoId} so the
+    //      user sees EARNINGS broken down per video in the Amazon
+    //      Associates Tracking Report. Rides through the Geniuslink
+    //      redirect; safe no-op on non-Amazon destinations.
+    //   3. Richer Geniuslink note ("{videoId} | {domain}") so the
+    //      dashboard's link list is filterable per post.
+    const linkVideoId = youtubeVideoIdForTranscript || null
+    const linkDomain = groupNameForSiteUrl(site.wordpress_url || '') || ''
+    const linkNote = linkVideoId && linkDomain
+      ? `${linkVideoId} | ${linkDomain}`
+      : (linkVideoId || rawTitle)
+    const destinationWithSubtag = appendAmazonSubtag(destination, linkVideoId)
+
     if (alreadyGeniuslink) {
       affiliateUrlOverride = destination
     } else if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
+      // Resolve the per-site group (creates it on first use, caches the
+      // ID on the row). null → fall back to the default group, no regression.
+      const groupId = effectiveSiteId
+        ? await resolveGeniuslinkGroupId({
+            supabase,
+            siteId: effectiveSiteId,
+            siteUrl: site.wordpress_url,
+            apiKey: wp.geniuslink_api_key,
+            apiSecret: wp.geniuslink_api_secret,
+          })
+        : null
       try {
         const genius = createGeniuslinkService(wp.geniuslink_api_key, wp.geniuslink_api_secret)
-        const wrapped = await genius.createLink(destination, rawTitle)
+        const wrapped = await genius.createLink(destinationWithSubtag, rawTitle, {
+          groupId: groupId ?? undefined,
+          note: linkNote,
+        })
         // GUARDRAIL: a misconfigured/duplicate Geniuslink can resolve to an
         // UNRELATED destination (e.g. the account's default Hostinger promo
         // link) instead of this product. Verify the created link actually
@@ -506,16 +539,16 @@ async function handleGenerate(request: Request) {
         } else {
           console.warn(`[blog/generate] Geniuslink ${wrapped} resolved to "${trueDest}", not the intended product "${destination}" — falling back to the raw product URL.`)
           affiliateUrlOverride = (asinOverride && wp?.amazon_associates_tag)
-            ? `https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`
-            : destination
+            ? appendAmazonSubtag(`https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`, linkVideoId)
+            : destinationWithSubtag
         }
       } catch {
-        affiliateUrlOverride = destination
+        affiliateUrlOverride = destinationWithSubtag
       }
     } else if (asinOverride && wp?.amazon_associates_tag) {
-      affiliateUrlOverride = `https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`
+      affiliateUrlOverride = appendAmazonSubtag(`https://www.amazon.com/dp/${asinOverride}?tag=${wp.amazon_associates_tag}`, linkVideoId)
     } else {
-      affiliateUrlOverride = destination
+      affiliateUrlOverride = destinationWithSubtag
     }
   }
 

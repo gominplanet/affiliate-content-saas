@@ -13,6 +13,7 @@ import { firstProductUrl, resolveFinalUrl, asinFromAmazonUrl } from '@/lib/produ
 import { extractAsin, isValidAsin } from '@/services/amazon'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { appendAmazonSubtag } from '@/lib/geniuslink-group'
 
 const GENIUSLINK = /(?:geni\.us|\bgnz\.)/i
 const SHORTENERS = /(?:amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly)/i
@@ -61,6 +62,20 @@ export interface AffiliateResolveOpts {
    *  discard junk Amazon pages (bad ASINs) so product discovery can run.
    *  Generation leaves a source Geniuslink as-is. */
   unwrapSourceLinks?: boolean
+  /** YouTube video ID used as Amazon's ascsubtag — gives the user per-post
+   *  earnings attribution in the Amazon Associates Tracking Report. Rides
+   *  through Geniuslink's redirect. 11 chars, well under Amazon's 16-char
+   *  cap. Pass when known; null/undefined keeps the URL un-subtagged. */
+  videoId?: string | null
+  /** Pre-resolved Geniuslink group ID for this site (see
+   *  lib/geniuslink-group.ts). When provided, the wrapped link lands in
+   *  this group so the dashboard shows clicks segmented by blog. When
+   *  null/undefined, Geniuslink falls back to its default group. */
+  geniuslinkGroupId?: number | null
+  /** Note to attach to the Geniuslink entry — defaults to the title. Pass
+   *  a richer string (e.g. "{post-slug} | {site-domain}") for filterable
+   *  rows in Geniuslink's link list. */
+  geniuslinkNote?: string | null
 }
 
 export interface AffiliateResolveResult {
@@ -78,7 +93,11 @@ export interface AffiliateResolveResult {
  * Then wrap with the user's Geniuslink (verified) or Amazon Associates tag.
  */
 export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<AffiliateResolveResult> {
-  const { title, description, ownSite, userId, tier, amazonTag, geniuslinkApiKey, geniuslinkApiSecret, unwrapSourceLinks } = opts
+  const {
+    title, description, ownSite, userId, tier, amazonTag,
+    geniuslinkApiKey, geniuslinkApiSecret, unwrapSourceLinks,
+    videoId, geniuslinkGroupId, geniuslinkNote,
+  } = opts
 
   let asin: string | null = null
   let destination: string | null = null
@@ -127,24 +146,34 @@ export async function resolveAffiliateUrl(opts: AffiliateResolveOpts): Promise<A
   if (asin) destination = `https://www.amazon.com/dp/${asin}`
   if (!destination) return { affiliateUrl: null, asin, destination: null }
 
+  // Append Amazon's ascsubtag so the user sees per-video earnings in
+  // their Amazon Associates dashboard. Rides through Geniuslink's
+  // redirect; safe no-op for non-Amazon destinations.
+  const subtaggedDestination = appendAmazonSubtag(destination, videoId)
+
   // ── Step 2 — turn the destination into the user's affiliate URL ──────────
   const tagFallback = (): string =>
-    asin && amazonTag ? `https://www.amazon.com/dp/${asin}?tag=${amazonTag}` : destination!
+    asin && amazonTag
+      ? appendAmazonSubtag(`https://www.amazon.com/dp/${asin}?tag=${amazonTag}`, videoId)
+      : subtaggedDestination
 
   let affiliateUrl: string
   if (geniuslinkApiKey && geniuslinkApiSecret) {
     try {
       const genius = createGeniuslinkService(geniuslinkApiKey, geniuslinkApiSecret)
-      const wrapped = await genius.createLink(destination, title)
+      const wrapped = await genius.createLink(subtaggedDestination, title, {
+        groupId: geniuslinkGroupId ?? undefined,
+        note: geniuslinkNote ?? undefined,
+      })
       const trueDest = await resolveTrueDestination(wrapped)
       affiliateUrl = pointsToIntendedProduct(destination, trueDest, !!asin) ? wrapped : tagFallback()
     } catch {
       affiliateUrl = tagFallback()
     }
   } else if (asin && amazonTag) {
-    affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=${amazonTag}`
+    affiliateUrl = appendAmazonSubtag(`https://www.amazon.com/dp/${asin}?tag=${amazonTag}`, videoId)
   } else {
-    affiliateUrl = destination
+    affiliateUrl = subtaggedDestination
   }
 
   return { affiliateUrl, asin, destination }

@@ -4,6 +4,8 @@ import { fetchAmazonProduct } from '@/services/amazon'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { resolveProductLink } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
+import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
+import { getDefaultSite } from '@/lib/wordpress-sites'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -438,12 +440,37 @@ export async function POST(request: Request) {
         product = { asin: trimmedAsin, title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null }
       }
 
-      affiliateUrl = `https://www.amazon.com/dp/${trimmedAsin}`
+      // 2026-06-09: Per-blog grouping + per-video Amazon attribution.
+      // The YT metadata path doesn't strictly belong to a site (the link
+      // goes in the YouTube description, not a blog post), so we route
+      // through the user's DEFAULT site. That keeps all of THIS creator's
+      // YouTube-description links in one bucket named after their main
+      // blog domain — and per-post earnings still attribute via
+      // ascsubtag={youtubeVideoId}.
+      const defaultSite = await getDefaultSite(supabase, user.id)
+      const linkDomain = defaultSite?.url ? (groupNameForSiteUrl(defaultSite.url) || '') : ''
+      const linkNote = youtubeVideoId && linkDomain
+        ? `${youtubeVideoId} | ${linkDomain}`
+        : (youtubeVideoId || product.title || videoTitle)
+      const subtaggedDest = appendAmazonSubtag(`https://www.amazon.com/dp/${trimmedAsin}`, youtubeVideoId)
+      affiliateUrl = subtaggedDest
 
       if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+        const groupId = defaultSite
+          ? await resolveGeniuslinkGroupId({
+              supabase,
+              siteId: defaultSite.id,
+              siteUrl: defaultSite.url,
+              apiKey: intRow.geniuslink_api_key,
+              apiSecret: intRow.geniuslink_api_secret,
+            })
+          : null
         try {
           const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-          affiliateUrl = await genius.createAsinLink(trimmedAsin, product.title || videoTitle)
+          affiliateUrl = await genius.createLink(subtaggedDest, product.title || videoTitle, {
+            groupId: groupId ?? undefined,
+            note: linkNote,
+          })
           geniuslinkUsed = true
         } catch (err) {
           geniuslinkError = err instanceof Error ? err.message : String(err)
@@ -451,7 +478,10 @@ export async function POST(request: Request) {
         }
       }
       if (!geniuslinkUsed && intRow?.amazon_associates_tag) {
-        affiliateUrl = `https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`
+        affiliateUrl = appendAmazonSubtag(
+          `https://www.amazon.com/dp/${trimmedAsin}?tag=${intRow.amazon_associates_tag}`,
+          youtubeVideoId,
+        )
         // Keep the Geniuslink error visible — fallback to Associates is
         // safe revenue-wise but the user should still know their geni.us
         // link wasn't built so they can investigate (expired keys, group
@@ -471,9 +501,26 @@ export async function POST(request: Request) {
         affiliateUrl = storeUrl
         geniuslinkUsed = true
       } else if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
+        const defaultSite = await getDefaultSite(supabase, user.id)
+        const linkDomain = defaultSite?.url ? (groupNameForSiteUrl(defaultSite.url) || '') : ''
+        const linkNote = youtubeVideoId && linkDomain
+          ? `${youtubeVideoId} | ${linkDomain}`
+          : (youtubeVideoId || videoTitle)
+        const groupId = defaultSite
+          ? await resolveGeniuslinkGroupId({
+              supabase,
+              siteId: defaultSite.id,
+              siteUrl: defaultSite.url,
+              apiKey: intRow.geniuslink_api_key,
+              apiSecret: intRow.geniuslink_api_secret,
+            })
+          : null
         try {
           const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-          affiliateUrl = await genius.createLink(storeUrl, videoTitle)
+          affiliateUrl = await genius.createLink(storeUrl, videoTitle, {
+            groupId: groupId ?? undefined,
+            note: linkNote,
+          })
           geniuslinkUsed = true
         } catch (err) {
           geniuslinkError = err instanceof Error ? err.message : String(err)
