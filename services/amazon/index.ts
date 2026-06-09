@@ -396,10 +396,13 @@ export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVer
     return any404 && !html ? 'not-found' : 'bot-challenge'
   }
 
-  // Look at the first 150KB — covers the imageBlock JSON island + the
-  // gallery thumbnails, well above A+ content and customer reviews
-  // (where false-positive videos live).
-  const head = html.slice(0, 150_000)
+  // 2026-06-09 v4: scan up to 500KB instead of 150KB. Diagnostic on
+  // B08731J1L4 proved that for many products the imageBlock / videoBlock
+  // / colorImages JSON islands live at byte ~320K — well past the v3
+  // 150KB window. A+ content + customer reviews live further down
+  // (~700K+), so 500K is a safe ceiling that catches the gallery
+  // without picking up A+ videos as false positives.
+  const head = html.slice(0, 500_000)
 
   // Carousel-video signals, in rough order of how reliable each is.
   // Tolerant of whitespace + quote-style variations.
@@ -424,9 +427,15 @@ export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVer
     /"mainVideo"\s*:/i,                                        // main slot video
     /"altVideoId"\s*:\s*"/i,                                   // alt-slot video id
     /"ASMVideoUrl"\s*:/i,                                      // Amazon Standard Media
+    // 2026-06-09 v4: definitive Amazon-side signals discovered via
+    // B08731J1L4 diagnostic. These two cover every carousel video MVP
+    // has tested so far.
+    /vse-vms-transcoding-artifact/i,                           // Amazon's internal video CDN host
+    /"videoBlock"\s*:/i,                                       // gallery JSON key (no Id suffix)
     // Broadest fallback: any .mp4 / .m3u8 URL anywhere in the head.
     // Carousel videos are almost always one of these formats; A+
-    // content videos live further down the page so this is safe.
+    // content videos live further down the page (>700KB), so the
+    // 500KB scan window above keeps this safe.
     /https?:[^"' ]+\.(?:mp4|m3u8|mov|webm)(?:\?[^"' ]*)?/i,
   ]
   for (const p of patterns) {
