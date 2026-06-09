@@ -537,11 +537,22 @@ async function handleGenerate(request: Request) {
       affiliateUrlOverride = destination
     } else if (wp?.geniuslink_api_key && wp?.geniuslink_api_secret) {
       // Resolve the per-site group (creates it on first use, caches the
-      // ID on the row). null → fall back to the default group, no regression.
-      const groupId = effectiveSiteId
+      // ID on the row).
+      //
+      // 2026-06-09 BUG FIX: was using `effectiveSiteId` here, which is
+      // null on fresh generations where the caller didn't pick a site
+      // in the UI. Result: the resolver was skipped, groupId stayed
+      // null, the wrap call fell back to getDefaultGroupId() which
+      // matches /youtube/i and returns MVP-YOUTUBE. Every blog link
+      // landed in the YouTube bucket. Use `site.site_id` instead —
+      // `getWordPressCredentials` always returns a non-null site, so
+      // its id is reliable. Skip resolution only for 'legacy' (pre-
+      // multi-site users with no wordpress_sites row).
+      const resolvedSiteId = site.site_id !== 'legacy' ? site.site_id : null
+      const groupId = resolvedSiteId
         ? await resolveGeniuslinkGroupId({
             supabase,
-            siteId: effectiveSiteId,
+            siteId: resolvedSiteId,
             siteUrl: site.wordpress_url,
             apiKey: wp.geniuslink_api_key,
             apiSecret: wp.geniuslink_api_secret,

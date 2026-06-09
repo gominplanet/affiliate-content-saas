@@ -41,13 +41,37 @@ export class GeniuslinkService {
     return (data.Groups ?? []).filter(g => g.Enabled === 1)
   }
 
-  // Fetch the YouTube Links group ID (or first enabled group as fallback)
+  // Fetch a sensible default group ID for create-link callers that
+  // don't pass an explicit groupId.
+  //
+  // 2026-06-09 BUG FIX: the previous version preferred any group whose
+  // name matched /youtube/i. That worked when "YouTube Links" was the
+  // only such group — but now we ship MVP-YOUTUBE as the dedicated YT
+  // Co-Pilot bucket. /youtube/i matches MVP-YOUTUBE too, so EVERY
+  // create-link call without an explicit groupId (which includes every
+  // blog generation where the per-site group resolver returned null —
+  // e.g. uncached, name-match miss, network hiccup) landed in
+  // MVP-YOUTUBE. Result: blog clicks attributed to YouTube traffic.
+  //
+  // New rule: EXPLICITLY skip MVP-YOUTUBE (the per-user YT bucket).
+  // Prefer a non-YouTube group, then "YouTube Links" (the historical
+  // default), and only fall back to the first enabled group if none
+  // of those exist.
   private async getDefaultGroupId(): Promise<number> {
     const groups = await this.listGroups()
     if (!groups.length) throw new Error('Geniuslink: no enabled groups found on this account')
-    // Prefer the YouTube Links group, otherwise use the first enabled group
-    const youtubeGroup = groups.find(g => /youtube/i.test(g.Name))
-    return (youtubeGroup ?? groups[0]).Id
+    const isMvpYoutube = (g: { Name: string }) => /^mvp-youtube$/i.test((g.Name ?? '').trim())
+    // 1) Anything that isn't MVP-YOUTUBE.
+    const nonMvpYt = groups.find(g => !isMvpYoutube(g))
+    if (nonMvpYt) {
+      // Prefer the literal "YouTube Links" group when present (historical
+      // default before we introduced MVP-YOUTUBE).
+      const youtubeLinks = groups.find(g => /^youtube\s*links$/i.test((g.Name ?? '').trim()))
+      if (youtubeLinks && !isMvpYoutube(youtubeLinks)) return youtubeLinks.Id
+      return nonMvpYt.Id
+    }
+    // Account literally only has MVP-YOUTUBE → no choice but to use it.
+    return groups[0].Id
   }
 
   /** Find a group by exact (case-insensitive) name. Returns null if absent. */
