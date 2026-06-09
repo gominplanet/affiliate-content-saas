@@ -319,47 +319,67 @@ export async function hasCarouselVideo(asin: string): Promise<boolean> {
  *  bot-challenge sniffing after the first pass returned 0 matches on
  *  every keyword (Amazon was serving challenge pages from Vercel IPs). */
 export async function probeCarouselVideo(asin: string): Promise<CarouselVideoVerdict> {
-  const url = `https://www.amazon.com/dp/${asin}`
-  // Rotate UA per ASIN to defeat per-UA rate limiting. Deterministic on
-  // ASIN so retries land on the same UA + responses are reproducible.
+  // 2026-06-09 v3: copy the working retry pattern from fetchAmazonProduct.
+  // Amazon's edge serves a tiny (~5KB) bot-challenge page on the first
+  // hit from Vercel IPs, but a second attempt with a different UA + a
+  // Google Referer usually lands on the real product page. Without this
+  // the v2 probe was returning verdict='bot-challenge' for 100% of ASINs.
   const UAS = [
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   ]
-  const ua = UAS[(asin.charCodeAt(0) + asin.charCodeAt(asin.length - 1)) % UAS.length]
-  let html = ''
-  try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': ua,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'no-cache',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-        'DNT': '1',
-      },
-      // 8s ceiling. Slightly more generous than the previous 6s — Amazon's
-      // edge is sometimes slow + the cost of a false 'fetch-failed' is
-      // higher than a slow probe (we lose otherwise-good candidates).
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) return 'fetch-failed'
-    html = await res.text()
-  } catch {
-    return 'fetch-failed'
+  const baseHeaders = {
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
+    'DNT': '1',
   }
-  // Bot-challenge sniff: Amazon's challenge page is tiny and lacks the
-  // product chrome. If we got NONE of these markers we're staring at
-  // a challenge, not a real product page — flag it so the caller can
-  // distinguish that from "page is real but has no video".
-  const isProductPage = /id="productTitle"|landingImage|imageGalleryData|"hiRes"/i.test(html)
-  if (!isProductPage) return 'bot-challenge'
+
+  const fetchOnce = async (url: string, ua: string, referer: string | null): Promise<string | null> => {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          ...baseHeaders,
+          'User-Agent': ua,
+          'Sec-Fetch-Site': referer ? 'cross-site' : 'none',
+          ...(referer ? { Referer: referer } : {}),
+        },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!res.ok) return null
+      return await res.text()
+    } catch {
+      return null
+    }
+  }
+
+  const isReal = (html: string) =>
+    /id="productTitle"|landingImage|imageGalleryData|"hiRes"/i.test(html)
+
+  // Attempt order (each ~1.5s, total worst case ~6s):
+  //   1. Desktop URL, UA[0]                      → first hit
+  //   2. Desktop URL, UA[1], Google referer      → usually unblocks
+  //   3. Mobile URL, UA[2]                       → different edge, last resort
+  const desktopUrl = `https://www.amazon.com/dp/${asin}`
+  const mobileUrl = `https://www.amazon.com/gp/aw/d/${asin}`
+
+  let html = await fetchOnce(desktopUrl, UAS[0], null)
+  if (html == null) return 'fetch-failed'
+  if (!isReal(html)) {
+    const retry = await fetchOnce(desktopUrl, UAS[1], 'https://www.google.com/')
+    if (retry != null && isReal(retry)) html = retry
+    else {
+      const mobileRetry = await fetchOnce(mobileUrl, UAS[2], 'https://www.google.com/')
+      if (mobileRetry != null && isReal(mobileRetry)) html = mobileRetry
+    }
+  }
+  if (!isReal(html)) return 'bot-challenge'
 
   // Look at the first 150KB — covers the imageBlock JSON island + the
   // gallery thumbnails, well above A+ content and customer reviews

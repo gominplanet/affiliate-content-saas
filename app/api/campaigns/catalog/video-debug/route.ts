@@ -57,34 +57,66 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Invalid ASIN (must be 10 chars A-Z0-9).' }, { status: 400 })
   }
 
-  const url = `https://www.amazon.com/dp/${asin}`
-  const ua = UAS[asin.charCodeAt(0) % UAS.length]
+  const desktopUrl = `https://www.amazon.com/dp/${asin}`
+  const mobileUrl = `https://www.amazon.com/gp/aw/d/${asin}`
   const t0 = Date.now()
+
+  // Same retry chain as services/amazon.probeCarouselVideo:
+  //   1. Desktop / UA[0] / no Referer
+  //   2. Desktop / UA[1] / Google Referer  (defeats first-touch block)
+  //   3. Mobile  / UA[1] / Google Referer  (different edge)
+  // Track which attempt actually returned the real product page.
+  const attempts: Array<{ label: string; url: string; ua: string; referer: string | null }> = [
+    { label: 'desktop/UA0', url: desktopUrl, ua: UAS[0], referer: null },
+    { label: 'desktop/UA1/google', url: desktopUrl, ua: UAS[1], referer: 'https://www.google.com/' },
+    { label: 'mobile/UA1/google', url: mobileUrl, ua: UAS[1], referer: 'https://www.google.com/' },
+  ]
+  const tries: Array<{ label: string; status: number; bytes: number; ms: number; isProduct: boolean }> = []
 
   let status = 0
   let html = ''
   let fetchErr: string | null = null
-  try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': ua,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'no-cache',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-        'DNT': '1',
-      },
-      signal: AbortSignal.timeout(10_000),
-    })
-    status = res.status
-    html = await res.text()
-  } catch (e) {
-    fetchErr = e instanceof Error ? e.message : String(e)
+  let winningAttempt = ''
+  let usedUrl = desktopUrl
+  for (const a of attempts) {
+    const ta = Date.now()
+    try {
+      const res = await fetch(a.url, {
+        headers: {
+          'User-Agent': a.ua,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Cache-Control': 'no-cache',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': a.referer ? 'cross-site' : 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'DNT': '1',
+          ...(a.referer ? { Referer: a.referer } : {}),
+        },
+        signal: AbortSignal.timeout(10_000),
+      })
+      status = res.status
+      const body = await res.text()
+      const isProduct = /id="productTitle"|landingImage|imageGalleryData|"hiRes"/i.test(body)
+      tries.push({ label: a.label, status: res.status, bytes: body.length, ms: Date.now() - ta, isProduct })
+      if (isProduct) {
+        html = body
+        winningAttempt = a.label
+        usedUrl = a.url
+        break
+      } else if (!html) {
+        // Keep the first response we got, in case all attempts fail
+        // — at least the user sees one full response in the snippet.
+        html = body
+        usedUrl = a.url
+      }
+    } catch (e) {
+      tries.push({ label: a.label, status: 0, bytes: 0, ms: Date.now() - ta, isProduct: false })
+      if (!fetchErr) fetchErr = e instanceof Error ? e.message : String(e)
+    }
   }
 
   const ms = Date.now() - t0
@@ -125,7 +157,9 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     asin,
-    url,
+    url: usedUrl,
+    attemptChain: tries,
+    winningAttempt,
     fetch: { status, ms, ok: !fetchErr, error: fetchErr, html_bytes: html.length },
     isProductPage,
     productMarkers,
