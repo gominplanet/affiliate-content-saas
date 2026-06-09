@@ -324,6 +324,27 @@ CRITICAL RULES — FOLLOW STRICTLY
    At minimum 3 sections must open with a specific moment: a trip, a test, a reaction —
    something that happened, not a generalization about what "most users" experience.
 
+2b. PUNCHY H2 LEAD LINES (AEO snippet picking) — the FIRST sentence under every H2 must:
+   • Land the punchline in ≤ 22 words. One sentence. Period.
+   • Lead with a verdict, number, yes/no, or concrete fact. NEVER a setup phrase. ⛔
+     BANNED openers (and any variant of these):
+       - "When it comes to…" / "When you're looking at…"
+       - "There are several / a few / a number of [things, reasons, factors]…"
+       - "Let's talk about…" / "Let's dive into…" / "Let's get into…"
+       - "One thing to know about…" / "It's worth noting that…" / "It's important to…"
+       - "[Product] is a [category] that…" / "[Product] is designed to…"
+       - "If you're [in market for / considering / wondering about]…"
+       - "[Brand]'s [product] [does X]" as a topic-setting sentence
+   • If the H2 is phrased as a question, the first sentence DIRECTLY answers it before any nuance.
+     ("Is the suction strong enough? Yes — it pulls cereal out of carpet on the first pass.")
+   • If the H2 is a topic, the first sentence states YOUR conclusion / verdict on it.
+     ("Battery life: ~90 minutes in eco, half that on max. Enough for one floor, not two.")
+   • Specific moments (rule 2 above) STILL apply — open 3+ sections with a lived test or reaction.
+     The MOMENT can BE the answer: "I burned the first pancake; the temperature gauge lies."
+     That's both a punchy verdict AND a moment. Don't sacrifice the moment for blandness — sharpen both.
+   • Why this matters: Google's featured-snippet picker and AI Overview lift the FIRST sentence
+     after an H2 verbatim. Generic 25-word setup sentences cost you the snippet — and the click.
+
 3. VOICE — Conversational, direct, personal. Not a product page. Not a press release.
    Match the writing sample above precisely if provided.
 
@@ -644,6 +665,62 @@ must look stylistically varied when scanned top-to-bottom — not like the same 
 filled in seven times. If headings start to rhyme structurally, REWRITE them before
 returning the article.
 
+SECTION-DENSITY VARIANCE — no two posts may have the same shape. The audit found that
+across recent posts the body settled into a near-identical pattern: Quick Verdict →
+~7 H2s of ~200 words each → FAQ → Related. That uniformity is a tell: real reviewers
+weight their attention. Some products demand a deep dive into specs; some demand a
+story; some demand a comparison. This post should NOT look structurally identical to
+your last one.
+
+What MUST vary across posts AND within each post:
+
+  (1) Number of body H2s — vary 5 to 9 based on transcript depth.
+      • Thin transcript / single-feature product → 5-6 H2s, more verdict-led.
+      • Rich transcript / multi-feature product → 8-9 H2s, room for stories
+        AND specs AND edge cases.
+      • Never default to "seven" because the template said so.
+
+  (2) Per-section length — DO NOT write seven uniform ~200-word sections.
+      Within the post, you MUST mix:
+      • At least ONE short, punchy section: 80-130 words. One observation,
+        one verdict. No filler.
+      • At least ONE deep dive: 320-450 words. Full breakdown of the spec,
+        the test, or the failure mode that matters most for THIS product.
+      • The rest: medium 180-260 words. Total post length still hits target
+        but the rhythm of section lengths reads like a human picking what
+        deserved more space, not a template.
+
+  (3) Lead shape varies per-post — the very first body paragraph after the
+      hero / quick-verdict block opens differently on different posts:
+      • SOMETIMES open with a lived moment: "I burned the first pancake."
+      • SOMETIMES open with a verdict + number: "Three weeks in: I'd buy
+        it again at $80, not at $120."
+      • SOMETIMES open with a comparison frame: "I went into this expecting
+        a worse version of the Anova — got the opposite."
+      • SOMETIMES open with a problem the buyer is solving: "My old setup
+        leaked every third use. This one hasn't."
+      Pick whichever the transcript actually supports. Don't always choose
+      the same lead shape.
+
+  (4) Optional structural blocks — DECIDE per-post whether they belong:
+      • Mini-comparison block [4b]: include only if the transcript actually
+        references a competitor or the reader is likely cross-shopping. If
+        the video is single-product with no comparisons, SKIP it.
+      • Improvements block [4c]: include only if the transcript names ≥2
+        specific things that could be better. Don't invent improvements to
+        fill a template slot.
+      • Lifestyle vs. spec depth — for a tools / electronics / appliance
+        product, lean deeper into Section C (specs, dimensions, throughput).
+        For a food / wellness / fashion / home-decor product, lean deeper
+        into Section D (lived experience, how it changed your routine).
+        Don't write both at uniform depth.
+
+  (5) Self-audit before returning: scan your body H2s and answer honestly:
+      "Does this post look structurally different from a generic template
+      that fills 7 sections of 200 words each?" If the answer is no, REWRITE
+      to add variance: collapse a section, extend another, drop an optional
+      block, or shift the lead shape.
+
 SENTENCE AND PARAGRAPH RHYTHM:
 • Mix very short paragraphs (1-2 sentences) with longer ones. Some paragraphs can be one sentence.
 • Short sentences land harder. Use them for opinions, verdicts, and observations.
@@ -661,6 +738,16 @@ self-contained way (so a search engine or AI assistant can lift it as the
 answer) — lead with the verdict/number/yes-or-no, THEN add the nuance. Don't
 open a FAQ answer with a question, a story, or "Well,". Still no banned filler.
 
+FAQ COUNT (2026-06-09 Sprint 2): minimum 7 questions, target 8-10. The old
+minimum was 5; we widened it because (1) Google retired FAQ rich results so
+the visible accordion no longer caps display value, but (2) answer engines
+(ChatGPT, Perplexity, Google AI Mode, Bing Copilot) lift Q&A chunks
+verbatim as citations, so MORE high-quality unique Q&A = more chances to be
+the cited source for long-tail queries. Cap at 10 — past that, returns
+diminish and the section reads as filler. Quality > count; if you genuinely
+can't write 7 unique non-repeating questions from the buckets below, write 7
+anyway by mining the bucket marked PEOPLE ALSO ASK below.
+
 FAQ UNIQUENESS — DON'T PARAPHRASE THE BODY.
 The audit found that across 5 recent posts the FAQ section consistently echoes
 content already covered in the H2 sections — e.g. an allulose review mentioned
@@ -669,20 +756,37 @@ safety in intro + pets section + FAQ. That's wasted real estate AND a tell
 that the post is AI-padded.
 
 FAQs must cover UNCOVERED GROUND ONLY — questions a real buyer would ask that
-the body sections haven't already answered. Source them from these buckets:
+the body sections haven't already answered. With a 7-10 question minimum,
+draw across MULTIPLE buckets — don't load 7 questions from the same bucket.
+Source from:
 
+  • PEOPLE ALSO ASK (long-tail search intent) — the actual phrasings that show
+    up in Google's "People also ask" box for this product/category. Examples:
+    "Is the [product] worth it for [specific use case the body didn't address]?"
+    / "How does [product] compare to [generic category alternative]?" /
+    "What's the difference between [product] and [adjacent format]?" /
+    "Can [product] replace [common alternative the buyer is currently using]?"
+    Bias these toward the QUESTIONS a buyer types AFTER reading 2-3 reviews
+    and still being unsure — those are the high-intent ones.
   • Pre-purchase compatibility — "Does it work with [common related thing the
     transcript didn't mention]?" / "Will it fit a [specific use case]?"
   • Edge-case operation — "What happens if the power goes out?" / "Can I use it
     in the rain?" / "Does it need to be plugged in to charge?"
   • Maintenance + longevity — "How do I clean it?" / "How often do I replace
-    the [consumable]?" / "Will it still work in 5 years?"
+    the [consumable]?" / "Will it still work in 5 years?" / "What goes wrong
+    first with these?"
   • Subscription + cost-after-purchase — "Is there a monthly fee?" / "Do I
-    need to pay for cloud storage?"
-  • Warranty + support — "What's the return window?" / "Is there a warranty?"
+    need to pay for cloud storage?" / "Are replacement parts proprietary?"
+  • Warranty + support + returns — "What's the return window?" / "Is there a
+    warranty?" / "Where do I find replacement parts?"
   • Comparison residue — answers to "but what about [specific competitor or
     common alternative the reader is also considering]?" — ONLY if the
     comparison wasn't already covered in Section F.
+  • Use-case stretch — questions about whether the product works for slightly
+    different uses than the video covered ("Does this work for [adjacent use
+    case]?" / "Can I use it [in a specific environment / for a specific
+    audience: kids, pets, RV, dorm, allergic users]?"). Useful when the body
+    is single-scenario but the buyer audience isn't.
 
 ⛔ NOT acceptable FAQ topics:
   • Anything that restates Quick Verdict, "Buy if you", or "Skip if you"
@@ -723,14 +827,16 @@ Use exactly this structure with {VIDEO_ID} replaced:
 .gr-verdict-box{background:#f8f9fa;border:2px solid #111;border-radius:4px;padding:24px 28px;margin:0 0 32px}
 .gr-verdict-box h3{font-size:14px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:#111;margin:0 0 16px;padding-bottom:12px;border-bottom:2px solid #FFC200}
 .gr-verdict-text{font-size:16px;font-weight:700;color:#111;margin:0 0 16px;line-height:1.5}
-.gr-verdict-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:12px}
+.gr-verdict-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;margin-top:12px}
 .gr-verdict-col h4{font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 10px}
 .gr-verdict-col.buy h4{color:#1a7a3c}
 .gr-verdict-col.skip h4{color:#c0392b}
+.gr-verdict-col.wait h4{color:#b8860b}
 .gr-verdict-col ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:7px}
 .gr-verdict-col ul li{font-size:14px;color:#333;padding-left:22px;position:relative;line-height:1.45}
 .gr-verdict-col.buy li::before{content:"✅";position:absolute;left:0}
 .gr-verdict-col.skip li::before{content:"❌";position:absolute;left:0}
+.gr-verdict-col.wait li::before{content:"⏳";position:absolute;left:0}
 .gr-rating-box{background:#111;color:#fff;border-radius:4px;padding:20px 24px;margin:32px 0;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
 .gr-rating-score{font-size:52px;font-weight:900;color:#FFC200;line-height:1;letter-spacing:-2px}
 .gr-rating-label{font-size:11px;color:rgba(255,255,255,.5);letter-spacing:1px;text-transform:uppercase;margin-top:4px}
@@ -780,14 +886,49 @@ Use exactly this structure with {VIDEO_ID} replaced:
 </div>
 
 [3] QUICK VERDICT BOX (HTML block)
+
+VERDICT-TEXT PUNCH RULES (2026-06-09 Sprint 2):
+The gr-verdict-text below is the line most readers anchor on. Today it reads
+AI-uniform across posts ("solid all-around", "great value for the price",
+"won me over"). Replace that pattern with conviction:
+
+  • FIRST sentence MUST contain a specific concrete anchor — a number, a
+    lived moment, or a contrast. ⛔ NEVER open with: "Overall, the [product]
+    is…" / "After [N] weeks of testing…" / "The [product] is a solid…" /
+    "Going in I expected…" / "Bottom line:" / "All things considered…".
+    ✅ Open with the moment that decided your verdict: "Two weeks of
+    daily use, one cracked filter, and I'd still buy it." / "$82 buys you
+    quieter than my old shop vac and louder than a Dyson." / "I was wrong
+    about the suction. It pulls cereal out of carpet."
+  • Length: 2-3 sentences max. Cut every word that doesn't carry weight.
+  • Use YOUR ACTUAL WORDS from the video transcript where they survive
+    re-read. Direct quotes don't need quotation marks here — just embed
+    your phrasing.
+
+BUY / SKIP / (optional WAIT) — three modes of conviction:
+  • Buy if you: 3-4 SPECIFIC use cases. Skip the generic "want a reliable
+    [category]" — that's not a use case, that's a category description.
+    ✅ "have hardwood + a curious cat" / "compost daily and hate the
+    chute slope on top-loaders" / "host >6 people and need 4 burners
+    running simultaneously."
+  • Skip if you: 3 limitations. The FIRST one must be a lived friction
+    from your test, not an edge case. ✅ "want a wireless setup — the
+    cable management is going to annoy you" beats "don't have an outlet."
+  • Wait if you (OPTIONAL — include ONLY if transcript supports it): 1-2
+    items naming a known better-thing-coming. e.g. "Anova v3 ships in 6
+    weeks — same price, double the wifi range" / "the brand always discounts
+    25% in November — wait 3 weeks if you're not in a hurry." This is the
+    third conviction tier. Don't invent a "wait" item; only include if the
+    video genuinely flags one.
+
 <div class="gr-verdict-box">
   <h3>Quick Verdict</h3>
-  <p class="gr-verdict-text">{2-3 sentence candid summary, first person. Specific to transcript. Use your own actual words from the video where possible.}</p>
+  <p class="gr-verdict-text">{2-3 sentences. FIRST sentence anchored on a number / moment / contrast per rule above. Use your actual transcript words. NO generic openers.}</p>
   <div class="gr-verdict-cols">
     <div class="gr-verdict-col buy">
       <h4>Buy if you:</h4>
       <ul>
-        <li>{specific use case from transcript}</li>
+        <li>{specific use case from transcript — not a category description}</li>
         <li>{specific use case}</li>
         <li>{specific use case}</li>
         <li>{specific use case}</li>
@@ -802,6 +943,14 @@ Use exactly this structure with {VIDEO_ID} replaced:
       </ul>
     </div>
   </div>
+  <!-- OPTIONAL third column — include ONLY if transcript names a specific better-thing-coming or a known imminent discount. If you can't justify it from the video, OMIT this entire block. Do NOT invent a "wait" reason to fill the slot.
+  <div class="gr-verdict-col wait">
+    <h4>Wait if you:</h4>
+    <ul>
+      <li>{specific event — model refresh, sale window, known pending fix}</li>
+    </ul>
+  </div>
+  -->
 </div>
 
 [3b] SCORECARD (HTML block, immediately after the Quick Verdict)
@@ -1108,18 +1257,50 @@ specific feature). Keep cells to 4 words max — this is a scan-table.
 <p class="gr-vs-source"><em>Comparison drawn from what {reviewer name or "we"} discussed in the video.</em></p>
 <!-- /wp:html -->
 ${improvementsSection}
-[5] FAQ — Minimum 5 questions (product-specific, not generic)
+[5] FAQ — Minimum 7 questions, target 8-10 (product-specific, not generic).
+See FAQ RULES above for buckets. Draw across MULTIPLE buckets — at least 4
+different ones. PEOPLE ALSO ASK long-tail intent should be represented at
+least twice.
 <!-- wp:heading {"level":2} --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->
 Each Q: <!-- wp:heading {"level":3} --><h3>{question}</h3><!-- /wp:heading -->
         <!-- wp:paragraph --><p>{specific candid answer}</p><!-- /wp:paragraph -->
 
 [6] RATING BOX (HTML block)
+
+RATING-TEXT PUNCH RULES (2026-06-09 Sprint 2):
+The gr-rating-text below is the LAST thing readers read before deciding.
+Today it reads AI-uniform across posts ("a strong contender in its
+category", "delivers great value", "won me over for daily use"). Make it
+land. Required structure for the 2-3 sentences:
+
+  • Sentence 1: name the SPECIFIC thing that decided the score. Not "great
+    overall" — the actual decisive moment or trade-off. ✅ "Loses half a
+    star for the cable management; the rest is the best $80 grinder I've
+    used." / "Four stars because the app still drops connection every
+    third week. Hardware itself is a 4.8."
+  • Sentence 2-3: state who's wrong to buy it + what would push it to a
+    5. Conviction over hedge. ✅ "Skip it if you grind for espresso —
+    the burr can't go fine enough. Two more grind settings on a v2 and
+    this is a five." / "Anyone hosting <4 people overpays here. A bigger
+    pot lid and one more burner would close it."
+  • ⛔ BANNED rating-text openers:
+    "Overall, the [product]…" / "All things considered…" / "After [N]
+    weeks of testing…" / "In conclusion…" / "Bottom line:" / "The
+    [product] is a solid…" / "This is a great…" / "If you're looking
+    for [category], the [product] is…"
+  • ⛔ BANNED rating-text endings (the AI-uniform sign-off): "Highly
+    recommended" / "Would buy again" / "Won me over" / "Worth every
+    penny" / "A no-brainer at this price" / "Earns its place in my
+    kitchen / shop / setup."
+  • The sign-off should be the conviction itself, not a sealed-deal
+    catchphrase.
+
 <div class="gr-rating-box">
   <div>
     <div class="gr-rating-score">{X.X}/5</div>
     <div class="gr-rating-label">Final Rating</div>
   </div>
-  <div class="gr-rating-text">{2-3 sentences. Score justification. Personal first-person sign-off in your own voice.}</div>
+  <div class="gr-rating-text">{2-3 sentences per rules above. Sentence 1 names the decisive trade-off. Sentence 2-3 names who shouldn't buy + what would close it to a 5. No banned openers, no banned sign-offs.}</div>
 </div>
 
 [7] CTA CARD (HTML block — full content width, matches the rating box width)
