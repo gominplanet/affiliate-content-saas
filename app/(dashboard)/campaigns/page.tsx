@@ -430,7 +430,12 @@ function CampaignsInner() {
             ? ` · prices looked up on all ${d.enriched}`
             : ` · prices on ${d.enriched}/${d.inserted}${d.enrich_failed ? ` (${d.enrich_failed} skipped: Amazon throttled or no price listed)` : ''}`
           : ''
-      setImpMsg(`Queued ${d.inserted}. ${d.skipped} already in your queue${enrichNote}.`)
+      // 2026-06-09: include the cumulative queue total so users don't get
+      // confused when "Queued 10" produces a 100-item list (they queued
+      // 90 from prior searches). The list below is the full accumulated
+      // queue, not just this search's results.
+      const queueTotal = (items?.length ?? 0) + d.inserted
+      setImpMsg(`Added ${d.inserted} new campaign${d.inserted === 1 ? '' : 's'} to your queue${d.skipped > 0 ? ` (${d.skipped} already there)` : ''}${enrichNote}. Total in queue: ${queueTotal}.`)
       setImpMatches([])
       setImpPhase('idle')
       await load()
@@ -736,6 +741,22 @@ function CampaignsInner() {
           </p>
         )}
       </div>
+      )}
+
+      {/* Section header — names the cumulative queue clearly so users
+          don't confuse "I just queued 10" with "my list has 100".
+          2026-06-09 — added after a user reported the 10-vs-100 surprise. */}
+      {items && items.length > 0 && tab === 'cc' && (
+        <div className="flex items-baseline justify-between gap-3 mb-2 max-w-3xl flex-wrap">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+              Your queue
+            </h2>
+            <span className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
+              {items.length} campaign{items.length === 1 ? '' : 's'} accumulated across all searches — type a new keyword + Search catalog to add more, or clear what you don&apos;t want below.
+            </span>
+          </div>
+        </div>
       )}
 
       {/* Bulk-accept helper: copy every Campaign Id for Amazon's
