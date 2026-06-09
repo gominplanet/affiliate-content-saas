@@ -151,9 +151,36 @@ export async function GET(request: Request) {
 
   // Greppable: every URL ending in .mp4 or .m3u8 anywhere in the page.
   // Captures even patterns we don't have explicit rules for.
+  // 2026-06-09 v3: scan the WHOLE page now, not just head. For some
+  // products the imageBlock JSON island lives later than 200KB.
   const mediaUrls = Array.from(
-    head.matchAll(/https?:[^"' >]+\.(?:mp4|m3u8|mov|webm)(?:\?[^"' >]*)?/gi),
+    html.matchAll(/https?:[^"' >]+\.(?:mp4|m3u8|mov|webm)(?:\?[^"' >]*)?/gi),
   ).map(m => m[0]).slice(0, 10)
+
+  // Every place the literal word "video" appears in the HTML, with a
+  // bit of context — first 12 hits. If the product DOES have a video
+  // but my patterns are wrong, this will surface the actual structure
+  // Amazon embeds (key name, surrounding JSON shape, etc.).
+  const videoMentions: Array<{ offset: number; context: string }> = []
+  const videoRegex = /video/gi
+  for (const m of html.matchAll(videoRegex)) {
+    if (videoMentions.length >= 12) break
+    if (m.index == null) continue
+    const start = Math.max(0, m.index - 80)
+    const end = Math.min(html.length, m.index + 100)
+    videoMentions.push({
+      offset: m.index,
+      context: html.slice(start, end).replace(/\s+/g, ' '),
+    })
+  }
+
+  // Position of common gallery / image-block keys ANYWHERE in the page.
+  // Tells us whether the structure lives outside the first 200KB.
+  const galleryKeyPositions: Record<string, number> = {}
+  for (const key of ['imageBlock', 'imageGalleryData', 'colorImages', 'productImageGallery', 'dpProductImageGallery', 'videoBlock', 'mainVideo']) {
+    const idx = html.indexOf(key)
+    if (idx >= 0) galleryKeyPositions[key] = idx
+  }
 
   return NextResponse.json({
     asin,
@@ -166,6 +193,8 @@ export async function GET(request: Request) {
     verdict,
     patterns: { matched, missed },
     mediaUrlsFound: mediaUrls,
+    videoMentions,
+    galleryKeyPositions,
     // First 1000 chars of the imageBlock data island — if present, this
     // is where carousel videos would live. Greppable raw evidence.
     imageBlockExcerpt:
