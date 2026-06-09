@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.50
+ * Version: 1.0.51
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3712,15 +3712,16 @@ if (!function_exists('mvp_affiliate_render_timestamp_js')) {
 // ─── 20e. Legacy CTA copy rewrite (v1.0.49+, 2026-06-09) ──────────────────
 //
 // 2026-06-08/09: the AI prompt + price-strip injector switched to the new
-// "Get Yours Today..." and "Get the best price..." voice. New posts ship
-// with the new copy, but existing posts have the old strings baked into
-// their stored content in WordPress — regenerating every one is tedious.
-// This filter rewrites legacy copy at render time so old posts match the
-// new branding without touching the post bodies.
+// "Get the best price..." voice. New posts ship with the new copy, but
+// existing posts have older strings baked into their stored content in
+// WordPress — regenerating every one is tedious. This filter rewrites
+// legacy copy at render time so old posts match the new branding without
+// touching the post bodies.
 //
 // Surfaces handled:
 //   - .gr-cta-btn         (end-of-post + mid-article yellow CTA card)
-//     Old: "Find Out More →"  →  "Get Yours Today on Amazon|Here →"
+//     Old: "Find Out More →" or "Get Yours Today on Amazon|Here →"
+//     New: "Get the best price on Amazon|today →"
 //   - .gr-price-strip-btn (inline blue/orange CTA strip under verdict)
 //     Old: "Check Today's Price on Amazon ..." / "Get The Best Price Today"
 //     New: "Get the best price on Amazon ..." / "Get the best price today"
@@ -3731,11 +3732,17 @@ if (!function_exists('mvp_affiliate_render_timestamp_js')) {
 //
 // Idempotent: if a post already has new copy, the regex doesn't match
 // and the content passes through unchanged.
+//
+// 2026-06-09 (v1.0.51): yellow .gr-cta-btn voice unified with the price
+// strip — now rewrites "Get Yours Today..." (the previous attempt) too,
+// and widened Amazon detection so Geniuslink (geni.us) products no
+// longer fall through to the "Here" variant.
 add_filter('the_content', 'mvp_affiliate_rewrite_legacy_cta', 35);
 if (!function_exists('mvp_affiliate_rewrite_legacy_cta')) {
     function mvp_affiliate_rewrite_legacy_cta($content) {
         if (!is_singular('post')) return $content;
-        $has_old_yellow = stripos($content, 'find out more') !== false;
+        $has_old_yellow = (stripos($content, 'find out more') !== false)
+                        || (stripos($content, 'Get Yours Today') !== false);
         $has_old_strip  = (stripos($content, "Check Today's Price on Amazon") !== false)
                         || (stripos($content, 'Get The Best Price Today') !== false)
                         || (preg_match('/Get [^<]+ — Best Price Today/i', $content) === 1);
@@ -3748,11 +3755,13 @@ if (!function_exists('mvp_affiliate_rewrite_legacy_cta')) {
                 function ($m) {
                     $attrs = $m[1];
                     $inner = $m[2];
-                    if (stripos($inner, 'find out more') === false) return $m[0];
+                    $is_legacy = (stripos($inner, 'find out more') !== false)
+                              || (stripos($inner, 'Get Yours Today') !== false);
+                    if (!$is_legacy) return $m[0];
                     $href = '';
                     if (preg_match('/\bhref="([^"]*)"/i', $attrs, $hm)) $href = $hm[1];
-                    $is_amazon = (bool) preg_match('/amazon\.|amzn\.to|geni\.us/i', $href);
-                    $new_text  = $is_amazon ? 'Get Yours Today on Amazon →' : 'Get Yours Today Here →';
+                    $is_amazon = (bool) preg_match('/amazon\.[a-z.]+\b|\bamzn\.to\b|\bgeni\.us\b|\ba\.co\b/i', $href);
+                    $new_text  = $is_amazon ? 'Get the best price on Amazon →' : 'Get the best price today →';
                     return '<a' . $attrs . '>' . $new_text . '</a>';
                 },
                 $content

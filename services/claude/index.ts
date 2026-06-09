@@ -102,7 +102,7 @@ function buildSystemPrompt(
   /** Whether the resolved affiliate destination is Amazon. Drives the CTA
    *  button/eyebrow copy and the default disclaimer. Defaults to true so
    *  the Amazon-product path is unchanged; non-Amazon (direct store/brand
-   *  links) get neutral "Get Yours Today Here" copy instead of "...on Amazon". */
+   *  links) get neutral "Get the best price today" copy instead of "...on Amazon". */
   isAmazon: boolean = true,
 ): string {
   const authorLine = brand.author_name
@@ -145,15 +145,17 @@ function buildSystemPrompt(
 
   // CTA card copy — only say "Amazon" when the product is actually on
   // Amazon. For a creator's direct store/brand link, a generic label
-  // ("Get Yours Today Here") avoids sending readers to a non-existent
+  // ("Get the best price today") avoids sending readers to a non-existent
   // Amazon listing.
   //
   // 2026-06-08: button copy changed from "Find Out More" → "Get Yours Today
   // Here / on Amazon" — more action-oriented, higher CTR than the
-  // research-y "Find out more" framing. Same change applies to both the
-  // mid-article CTA [4] and the end-of-post CTA [7] (they share ${ctaButton}).
+  // research-y "Find out more" framing.
+  // 2026-06-09: unified with the price-strip voice → "Get the best price..."
+  // (matches commit 9ffd01d). Same change applies to both the mid-article
+  // CTA [4] and the end-of-post CTA [7] (they share ${ctaButton}).
   const ctaEyebrow = isAmazon ? 'Get it now' : 'Learn more'
-  const ctaButton  = isAmazon ? 'Get Yours Today on Amazon →' : 'Get Yours Today Here →'
+  const ctaButton  = isAmazon ? 'Get the best price on Amazon →' : 'Get the best price today →'
 
   // The LEARN voice profile — the writer's own taste/style training.
   // High priority: it encodes what THIS user finds fake vs trustworthy.
@@ -1668,9 +1670,18 @@ ${t}`,
       voiceProfile = await this.extractVoiceProfile(video.transcript, video.title)
     }
 
-    // CTA copy follows the destination: Amazon ASIN/URL → "Get Yours Today
-    // on Amazon"; a direct store/brand link → neutral "Get Yours Today Here".
-    const ctaIsAmazon = !!asin || /^https?:\/\/(www\.)?amazon\.[a-z.]+\//i.test(affiliateUrl)
+    // CTA copy follows the destination: Amazon ASIN/URL → "Get the best
+    // price on Amazon"; a direct store/brand link → neutral "Get the best
+    // price today".
+    //
+    // 2026-06-09: widened the Amazon detection to include Geniuslink
+    // (geni.us) and Amazon shortlinks (amzn.to/a.co). Most users link
+    // products via Geniuslink, which is an Amazon redirector — the old
+    // narrow regex only matched `amazon.{tld}/` and mis-tagged every
+    // Geniuslink as "non-Amazon", producing the wrong CTA variant.
+    const ctaIsAmazon =
+      !!asin ||
+      /amazon\.[a-z.]+\b|\bamzn\.to\b|\bgeni\.us\b|\ba\.co\b/i.test(affiliateUrl)
     const systemPrompt = buildSystemPrompt(brand, voiceProfile || undefined, ctaIsAmazon)
 
     const feedbackBlock = rewriteFeedback?.trim()
