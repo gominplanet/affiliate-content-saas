@@ -670,6 +670,15 @@ async function handleGenerate(request: Request) {
         // Falls back to false when the column is missing so the toggle is
         // opt-in by default.
         include_improvements_section: !!(brand as Record<string, unknown>).include_improvements_section,
+        // 2026-06-09: per-brand section toggles (migration 111). Each
+        // defaults to true when the column is missing OR when the value
+        // is explicitly true — only an explicit false disables the section.
+        // This preserves existing behavior for users who haven't yet
+        // opted any sections out.
+        include_quick_verdict: (brand as Record<string, unknown>).include_quick_verdict !== false,
+        include_pros_cons:     (brand as Record<string, unknown>).include_pros_cons !== false,
+        include_scorecard:     (brand as Record<string, unknown>).include_scorecard !== false,
+        include_faq:           (brand as Record<string, unknown>).include_faq !== false,
       },
       {
         videoId: v.youtube_video_id as string,

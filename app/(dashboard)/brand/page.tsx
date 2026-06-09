@@ -118,6 +118,13 @@ interface BrandData {
    *  critique distinct from the consumer-facing Cons. Opt-in because it
    *  reads more critical and not all creators want it on by default. */
   include_improvements_section: boolean
+  /** 2026-06-09: per-brand section toggles. All default true to preserve
+   *  existing behavior. Untick to keep that section out of every post —
+   *  useful for "pure narrative" video-review style. */
+  include_quick_verdict: boolean
+  include_pros_cons:     boolean
+  include_scorecard:     boolean
+  include_faq:           boolean
   affiliate_disclaimer: string
   primary_color: string
   secondary_color: string
@@ -205,6 +212,10 @@ const DEFAULT: BrandData = {
   post_length: 'medium',
   cta_style: 'soft_recommendation',
   include_improvements_section: false,
+  include_quick_verdict: true,
+  include_pros_cons: true,
+  include_scorecard: true,
+  include_faq: true,
   // Null = use the tier-default (word-scaled). Existing users keep
   // legacy behavior until they explicitly pick a number.
   blog_image_count: null,
@@ -321,6 +332,14 @@ export default function BrandPage() {
         cta_style: row.cta_style ?? 'soft_recommendation',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         include_improvements_section: !!(row as any).include_improvements_section,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        include_quick_verdict: (row as any).include_quick_verdict !== false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        include_pros_cons:     (row as any).include_pros_cons !== false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        include_scorecard:     (row as any).include_scorecard !== false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        include_faq:           (row as any).include_faq !== false,
         // blog_image_count is nullable in DB; null = "use tier default".
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         blog_image_count: typeof (row as any).blog_image_count === 'number' ? (row as any).blog_image_count : null,
@@ -1332,6 +1351,38 @@ export default function BrandPage() {
                   onChange={(e) => set('affiliate_disclaimer', e.target.value)}
                   className="input-field resize-none text-xs"
                 />
+              </div>
+              {/* 2026-06-09: per-brand section toggles. Default all ON;
+                   creators who want a pure transcript-driven narrative can
+                   untick any of these to drop that block from every post. */}
+              <div className="md:col-span-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-[#6e6e73] dark:text-[#a8a8ad] mb-2">
+                  Post sections
+                </div>
+                <div className="text-[11px] text-[#6e6e73] dark:text-[#a8a8ad] mb-3 leading-snug">
+                  Each block below appears in every generated post by default. Untick any you don&apos;t want — useful if you prefer a pure narrative review driven by your video transcript with no structured add-ons.
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {([
+                    { key: 'include_quick_verdict', label: 'Quick Verdict box', desc: '2-3 sentence Buy-if / Skip-if summary at the top' },
+                    { key: 'include_pros_cons',     label: 'Pros & Cons lists', desc: 'Two H2 lists styled as a green/red hero box at the top' },
+                    { key: 'include_scorecard',     label: 'Scorecard + rating', desc: 'Overall 1-5 + Value / Quality / Ease / Durability bars' },
+                    { key: 'include_faq',           label: 'FAQ section',       desc: 'Minimum 5 product-specific Q&A pairs at the bottom' },
+                  ] as const).map(opt => (
+                    <label key={opt.key} className="flex items-start gap-2.5 cursor-pointer p-2.5 rounded-lg border border-[#e5e5e7] dark:border-[#3a3a3c] hover:border-[#7C3AED] hover:bg-purple-50/30 dark:hover:bg-purple-950/10 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={data[opt.key]}
+                        onChange={(e) => set(opt.key, e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-[#86868b] text-[#7C3AED] focus:ring-[#7C3AED]"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">{opt.label}</div>
+                        <div className="text-[10px] text-[#6e6e73] dark:text-[#a8a8ad] mt-0.5 leading-snug">{opt.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
               </div>
               {/* 2026-06-08 (#14): opt-in "What we'd improve" block — adds a
                    manufacturer-facing critique section to every generated

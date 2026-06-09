@@ -27,6 +27,15 @@ export interface BrandProfile {
    *  When true, the generator adds a manufacturer-facing critique block
    *  between the body and FAQ. Defaults to false — opt-in. */
   include_improvements_section?: boolean
+  /** 2026-06-09: section toggles for the four "add-on" blocks. All default
+   *  TRUE in the DB (migration 111). A creator who wants a pure narrative
+   *  review can untick any of these in Brand Profile and that block won't
+   *  appear in newly-generated posts. The body sections (hook → mechanics
+   *  → performance → friction → fit → advice) are always present. */
+  include_quick_verdict?: boolean
+  include_pros_cons?: boolean
+  include_scorecard?: boolean
+  include_faq?: boolean
 }
 
 export interface VideoInput {
@@ -150,6 +159,67 @@ function buildSystemPrompt(
   // High priority: it encodes what THIS user finds fake vs trustworthy.
   const learnSection = learnProfileToPrompt(brand.learn_profile)
 
+  // 2026-06-09: per-brand section toggles. Each defaults to true (existing
+  // behavior preserved). When false, the AI is told to OMIT that section
+  // entirely — used by creators who want a pure transcript-driven narrative
+  // review without the structured add-on blocks.
+  //
+  // Default to true so undefined / missing column = current behavior.
+  const sec = {
+    quickVerdict: brand.include_quick_verdict !== false,
+    prosCons:     brand.include_pros_cons !== false,
+    scorecard:    brand.include_scorecard !== false,
+    faq:          brand.include_faq !== false,
+  }
+  const disabledSections: string[] = []
+  if (!sec.quickVerdict) disabledSections.push('• Section [3] QUICK VERDICT BOX — OMIT the entire <div class="gr-verdict-box"> block. No Buy-if / Skip-if. The hook opener handles the framing.')
+  if (!sec.scorecard)    disabledSections.push('• Section [3b] SCORECARD — OMIT the entire <div class="gr-scorecard"> block (no overall score, no subscores, no Best-for badges). ALSO OMIT [6] RATING BOX at the end — both are rating UI and they go together.')
+  if (!sec.prosCons)     disabledSections.push('• PROS & CONS H2 lists — DO NOT emit <h2>Pros</h2><ul>… or <h2>Cons</h2><ul>… anywhere. Skip the structured pros/cons block. The body sections still carry observations naturally.')
+  if (!sec.faq)          disabledSections.push('• Section [5] FAQ — OMIT the "Frequently Asked Questions" H2 and all its Q&A pairs entirely.')
+  const sectionsConfig = disabledSections.length > 0 ? `
+═══════════════════════════════════════
+POST SECTIONS CONFIG (creator preferences — OBEY)
+═══════════════════════════════════════
+This creator has opted out of the following sections. Do NOT emit them for
+this post. Every other section in the prompt below remains required.
+
+${disabledSections.join('\n')}
+
+Reasoning: these creators prefer a pure transcript-driven narrative
+without structured add-on blocks. Skipping them is correct, not lazy.
+` : ''
+
+  // 2026-06-09: explicit Pros/Cons emit instruction, ONLY when enabled.
+  // Previously the prompt had no explicit instruction and the WP plugin's
+  // pros/cons hero quietly never activated. Now the AI emits the H2 lists
+  // when the toggle is on, and the plugin picks them up.
+  const prosConsBlock = sec.prosCons ? `
+
+[4d] PROS & CONS LISTS — emit after the body (Section G) and before any
+later block ([4b] mini-comparison / [4c] improvements / [5] FAQ).
+
+  ⚠️ CRITICAL — these come from the REVIEWER, not the brand:
+    • Every Pro must be something the reviewer demonstrated or stated
+      positively in the transcript. No "features the brand markets".
+    • Every Con must be a real friction the reviewer voiced or showed.
+      If the transcript surfaces a flaw the brand doesn't acknowledge,
+      keep it prominent. Don't sanitize.
+    • If the brand listing claims something the reviewer didn't validate,
+      do NOT include it as a Pro. Brand bullet points are not evidence.
+
+<!-- wp:heading --><h2>Pros</h2><!-- /wp:heading -->
+<!-- wp:list --><ul>
+  <li>{Specific upside the reviewer demonstrated or stated — 3-5 items}</li>
+  <li>…</li>
+</ul><!-- /wp:list -->
+
+<!-- wp:heading --><h2>Cons</h2><!-- /wp:heading -->
+<!-- wp:list --><ul>
+  <li>{Specific downside the reviewer voiced or showed — 2-4 items}</li>
+  <li>…</li>
+</ul><!-- /wp:list -->
+` : ''
+
   // 2026-06-08 (#14, opt-in): "What we'd improve" block. The Wirecutter
   // pattern — manufacturer-facing critique that sits between Cons (consumer
   // friction) and the FAQ. Adds editorial credibility but reads more
@@ -214,6 +284,7 @@ ${writingGuidance}
 ${avoidLine}
 ${learnSection}
 ${voiceSection}
+${sectionsConfig}
 ═══════════════════════════════════════
 CRITICAL RULES — FOLLOW STRICTLY
 ═══════════════════════════════════════
@@ -221,10 +292,30 @@ CRITICAL RULES — FOLLOW STRICTLY
 0. NEVER USE "HONEST" — Banned everywhere: title, body, verdict, FAQ, CTAs, image prompts.
    Includes: "honest review", "to be honest", "honestly speaking". Delete on sight.
 
-1. TRANSCRIPT FIRST — The post reflects what was actually said and shown. YOUR
-   specific experience, real results, personal opinions, and exact details from the video
-   are woven throughout (you ARE the person in the video). A reader who watched should
-   recognize every section.
+1. TRANSCRIPT IS LAW — The VIDEO TRANSCRIPT is the SINGLE SOURCE OF TRUTH for this
+   review. Every fact, opinion, rating, pro, con, verdict, and recommendation MUST
+   come from what the reviewer actually said + showed on camera. You ARE that reviewer
+   — write in first person, in their voice, only about things THEY experienced.
+
+   PRODUCT INFO from Amazon listings, the manufacturer's site, or any other source is
+   SECONDARY — usable ONLY to fill in static specs that the reviewer didn't mention
+   (dimensions, weight, capacity, model number, included accessories, warranty length,
+   port count, battery mAh). Treat it like an appendix the reviewer didn't need to
+   recite on camera.
+
+   HARD RULES on brand vs transcript:
+     • If brand info contradicts the transcript → DROP the brand claim. Transcript wins.
+     • If the brand listing markets a feature the reviewer didn't validate → DO NOT
+       amplify it. Mention only if the reviewer mentioned it.
+     • If the transcript is critical of something the brand markets positively → keep
+       the criticism. Don't soften it with a marketing line.
+     • If the transcript shows a flaw the brand doesn't acknowledge → keep the flaw
+       prominent.
+     • Pros, Cons, Verdict, Scorecard — these come from what the REVIEWER said and
+       demonstrated, NEVER from the brand's bullet points.
+
+   A reader who watched the video should recognize EVERY section and never see a claim
+   the reviewer didn't make. "But the brand says…" is not a valid source on its own.
 
 2. NEVER GENERIC — No filler. No "many people find that…" or "experts say…". Every
    claim references the transcript, a real spec, or a concrete scenario you actually lived in the video.
@@ -982,7 +1073,7 @@ unknown, leave that spec out.
 
   Section G: <!-- wp:heading {"level":3} --> H3 — Advice for buyers
     Honest retrospective. Setup tips. Mistakes to avoid.
-
+${prosConsBlock}
 [4b] INLINE MINI-COMPARISON (2026-06-08, OPTIONAL) — IF and only IF the
 transcript explicitly names at least TWO specific alternative products by
 brand and model (e.g. "We had the Osprey Farpoint 40 before this", "This
