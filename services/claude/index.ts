@@ -692,6 +692,24 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
       <span class="gr-sc-sub-num">{Y.Y}</span>
     </div>
   </div>
+  {{!-- BEST-FOR BADGES (2026-06-08, OPTIONAL, 1-3 max) — small chip row
+       inside the scorecard that names the product's strongest fit(s).
+       Same pattern PCMag / TechRadar / Tom's Guide use to give scanners
+       an at-a-glance positioning read. ONLY include badges that are
+       GENUINELY supported by the transcript — don't invent fits to fill
+       the row. If nothing fits cleanly, OMIT the .gr-best-for-tags div
+       entirely. Pick 1-3 from this curated list (concrete + searchable,
+       not vague like "Most people"):
+         Budget · Premium · Beginners · Pros · Heavy use ·
+         Travel · Daily carry · Small spaces · Large families ·
+         Kids · Seniors · Pets · Outdoors · Indoor only ·
+         Gift · DIY · First-time buyers · Replacement upgrade · Light packers
+       Each badge is ONE OR TWO words. Render as: --}}
+  <div class="gr-best-for-tags">
+    <span class="gr-best-for-tag">{Tag 1}</span>
+    {{-- optional --}}<span class="gr-best-for-tag">{Tag 2}</span>
+    {{-- optional --}}<span class="gr-best-for-tag">{Tag 3}</span>
+  </div>
 </div>
 <!-- /wp:html -->
 

@@ -613,12 +613,28 @@ a.mvp-ad-slot-filled:hover {
 .mvp-byline {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   font-size: 13px;
   color: var(--mvp-text-dim);
 }
 .mvp-byline-author { color: var(--mvp-text-muted); font-weight: 500; }
 .mvp-byline-dot { color: var(--mvp-border-strong); }
+/* 2026-06-08 (v1.4.18): updated + read-time chips next to the date. The
+   chips read as one continuous byline ("By Michelle · Jun 6, 2026 · Updated
+   today · 11 min read"). Updated chip uses a subtle accent color so the
+   freshness signal stands out without screaming. */
+.mvp-byline-updated {
+  display: inline-flex;
+  align-items: center;
+  color: #15803d;
+  font-weight: 600;
+}
+.mvp-byline-readtime {
+  display: inline-flex;
+  align-items: center;
+  color: var(--mvp-text-muted);
+}
 
 /* ─── Category cards (Browse by Category section) ────────────────────────── */
 .mvp-section-categories { background: var(--mvp-bg-soft); }

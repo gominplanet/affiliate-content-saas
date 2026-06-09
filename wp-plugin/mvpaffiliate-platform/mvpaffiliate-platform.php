@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.43
+ * Version: 1.0.44
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3273,3 +3273,202 @@ if (!function_exists('mvp_affiliate_render_sticky_cta')) {
         <?php
     }
 }
+
+// ─── 20. Reader UX upgrades (v1.0.44, 2026-06-08) ──────────────────────────
+//
+// Four small but high-leverage reader-UX additions, ALL injected via
+// wp_footer so they have zero impact on the article HTML the generator
+// produces:
+//
+//   A. Reading progress bar  — thin colored line across the top of the
+//      viewport that fills as the reader scrolls. Same signal Wirecutter
+//      / NYT use to make long-form feel digestible.
+//   B. FAQ accordion          — finds the "Frequently Asked Questions" H2
+//      and collapses each following H3 + paragraph into a tap-to-expand
+//      pair. Content stays in the DOM (SEO-safe) — only CSS hides it.
+//   C. Jump-to-verdict pill   — mobile-only floating button that appears
+//      after the reader scrolls past the verdict box and lets them jump
+//      back with one tap. Complements the sticky TOC.
+//   D. Best-for badges        — CSS hooks for the `.gr-best-for-tags`
+//      container the generator emits inside the verdict box. The badges
+//      themselves are added in the generator prompt (commit pair: WP + AI).
+//
+// All four are scoped to single-post pages only.
+add_action('wp_footer', 'mvp_affiliate_render_reader_ux');
+if (!function_exists('mvp_affiliate_render_reader_ux')) {
+    function mvp_affiliate_render_reader_ux() {
+        if (!is_singular('post')) return;
+        ?>
+<style>
+/* A. Reading progress bar — thin fixed bar at very top of viewport */
+#mvp-progress{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,#FFC200,#FF6B00);z-index:9998;transition:width 60ms linear;pointer-events:none}
+@media(prefers-reduced-motion:reduce){#mvp-progress{transition:none}}
+
+/* B. FAQ accordion — collapsed-by-default tap-to-expand. Each FAQ Q is the
+   H3 that follows the "Frequently Asked Questions" H2; A is the next P (or
+   subsequent siblings until the next H3). JS wraps them into .mvp-faq-item
+   divs with a button and a body. */
+.mvp-faq-item{border-bottom:1px solid #e5e5e7;margin:0}
+.mvp-faq-item:first-of-type{border-top:1px solid #e5e5e7}
+.mvp-faq-q{width:100%;text-align:left;background:none;border:none;padding:18px 36px 18px 0;font-size:17px;font-weight:700;color:#1d1d1f;cursor:pointer;display:flex;align-items:center;justify-content:space-between;position:relative;font-family:inherit;line-height:1.4}
+.mvp-faq-q:hover{color:#FF6B00}
+.mvp-faq-q::after{content:"";flex-shrink:0;width:12px;height:12px;margin-left:16px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .2s ease}
+.mvp-faq-item.is-open .mvp-faq-q::after{transform:rotate(-135deg)}
+.mvp-faq-a{max-height:0;overflow:hidden;transition:max-height .3s ease;color:#3a3a3c;font-size:16px;line-height:1.65}
+.mvp-faq-item.is-open .mvp-faq-a{max-height:2000px;padding:0 0 18px}
+.mvp-faq-a > *:first-child{margin-top:0}
+.mvp-faq-a > *:last-child{margin-bottom:0}
+@media(prefers-reduced-motion:reduce){.mvp-faq-a{transition:none}}
+
+/* C. Jump-to-verdict pill — mobile only, floating bottom-left so it
+   doesn't conflict with the sticky CTA on the right. */
+#mvp-jump-verdict{position:fixed;bottom:80px;left:14px;background:#1d1d1f;color:#fff;border:none;border-radius:999px;padding:11px 18px;font-size:13px;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.25);cursor:pointer;display:none;align-items:center;gap:8px;z-index:9997;font-family:inherit;text-decoration:none}
+#mvp-jump-verdict:hover{background:#000;color:#fff;text-decoration:none}
+#mvp-jump-verdict svg{flex-shrink:0}
+@media(min-width:769px){#mvp-jump-verdict{display:none !important}}
+
+/* D. Best-for badges — chips inside the verdict box. The generator emits
+   <div class="gr-best-for-tags"><span class="gr-best-for-tag">Budget</span>…</div>
+   when applicable (1-3 badges). */
+.gr-best-for-tags{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 0;padding-top:14px;border-top:1px solid #e5e5e7}
+.gr-best-for-tag{display:inline-flex;align-items:center;gap:5px;background:#fff8e1;color:#9a6400;border:1px solid #ffd54f;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;line-height:1.4}
+.gr-best-for-tag::before{content:"";display:inline-block;width:6px;height:6px;background:currentColor;border-radius:50%}
+</style>
+
+<!-- A. Reading progress bar -->
+<div id="mvp-progress" aria-hidden="true"></div>
+
+<!-- C. Jump-to-verdict floating pill (mobile) -->
+<a id="mvp-jump-verdict" href="#mvp-verdict-anchor" aria-label="Jump to verdict">
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+  Verdict
+</a>
+
+<script>
+(function(){
+  // A. Progress bar — recompute on scroll, throttled via rAF.
+  var bar = document.getElementById('mvp-progress');
+  if (bar) {
+    var ticking = false;
+    function update(){
+      var h = document.documentElement;
+      var max = (h.scrollHeight - h.clientHeight) || 1;
+      var pct = Math.min(100, Math.max(0, (h.scrollTop / max) * 100));
+      bar.style.width = pct + '%';
+      ticking = false;
+    }
+    window.addEventListener('scroll', function(){
+      if (!ticking) { window.requestAnimationFrame(update); ticking = true; }
+    }, { passive: true });
+    update();
+  }
+
+  // B. FAQ accordion — find "Frequently Asked Questions" H2 (case-insensitive
+  // match on heading text), then walk forward through siblings collapsing
+  // each H3 + everything before the next H3 into a .mvp-faq-item.
+  function buildFAQ(){
+    var heads = document.querySelectorAll('article h2, .entry-content h2, .mvp-single-body h2, .post-content h2');
+    var faqHeader = null;
+    for (var i = 0; i < heads.length; i++) {
+      if (/^\s*frequently asked questions\s*$/i.test(heads[i].textContent || '')) {
+        faqHeader = heads[i]; break;
+      }
+    }
+    if (!faqHeader) return;
+    var node = faqHeader.nextElementSibling;
+    while (node) {
+      // Stop at the next H2 (e.g. Related Reviews section).
+      if (node.tagName === 'H2') break;
+      if (node.tagName === 'H3') {
+        // Collect this Q's answer = every sibling up to the next H3/H2.
+        var q = node;
+        var body = [];
+        var next = q.nextElementSibling;
+        while (next && next.tagName !== 'H3' && next.tagName !== 'H2') {
+          body.push(next);
+          next = next.nextElementSibling;
+        }
+        // Wrap into an accordion item, inserted in q's position.
+        var item = document.createElement('div');
+        item.className = 'mvp-faq-item';
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mvp-faq-q';
+        btn.setAttribute('aria-expanded', 'false');
+        btn.textContent = q.textContent || '';
+        var ans = document.createElement('div');
+        ans.className = 'mvp-faq-a';
+        for (var j = 0; j < body.length; j++) ans.appendChild(body[j]);
+        item.appendChild(btn);
+        item.appendChild(ans);
+        q.parentNode.insertBefore(item, q);
+        q.parentNode.removeChild(q);
+        btn.addEventListener('click', function(){
+          var parent = this.parentNode;
+          var open = parent.classList.toggle('is-open');
+          this.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        node = next;
+        continue;
+      }
+      node = node.nextElementSibling;
+    }
+  }
+  // Wait for DOM ready (in case article body renders after wp_footer fires)
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', buildFAQ);
+  } else {
+    buildFAQ();
+  }
+
+  // C. Jump-to-verdict pill — show only AFTER the reader scrolls past the
+  // verdict box, hide when they're already inside it.
+  var pill = document.getElementById('mvp-jump-verdict');
+  if (pill) {
+    var verdict = null;
+    function findVerdict(){
+      verdict = document.getElementById('mvp-verdict-anchor')
+        || document.querySelector('.gr-scorecard')
+        || document.querySelector('.gr-verdict-box');
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', findVerdict);
+    } else { findVerdict(); }
+    var pillTicking = false;
+    function pillUpdate(){
+      if (!verdict) { pillTicking = false; return; }
+      var rect = verdict.getBoundingClientRect();
+      // Show only after the verdict has scrolled OFF the top, AND when the
+      // reader is at least 600px past it (so the pill doesn't flicker for
+      // micro-scrolls right at the boundary).
+      var scrolledPast = rect.bottom < -200;
+      pill.style.display = scrolledPast ? 'inline-flex' : 'none';
+      pillTicking = false;
+    }
+    window.addEventListener('scroll', function(){
+      if (!pillTicking) { window.requestAnimationFrame(pillUpdate); pillTicking = true; }
+    }, { passive: true });
+  }
+})();
+</script>
+        <?php
+    }
+}
+
+// ─── 20b. Add an anchor to the verdict box so the jump-pill knows where to go ─
+// The generator emits `<div class="gr-verdict-box">` but doesn't include an
+// id. Rather than re-prompt the AI, we filter the content and prepend an
+// invisible anchor div right before the verdict box.
+add_filter('the_content', function ($content) {
+    if (!is_singular('post')) return $content;
+    if (strpos($content, 'id="mvp-verdict-anchor"') !== false) return $content; // already added
+    $anchor = '<div id="mvp-verdict-anchor" aria-hidden="true" style="position:relative;top:-80px"></div>';
+    // Insert immediately before the first gr-verdict-box. If no verdict box,
+    // pass through unchanged.
+    return preg_replace(
+        '/(<div class="gr-verdict-box")/i',
+        $anchor . '$1',
+        $content,
+        1
+    ) ?: $content;
+}, 25);
