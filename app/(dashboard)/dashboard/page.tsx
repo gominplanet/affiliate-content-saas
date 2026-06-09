@@ -29,11 +29,11 @@ import NewsBanner from '@/components/dashboard/NewsBanner'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
+import ProTourBanner from '@/components/dashboard/ProTourBanner'
 import {
   PlaySquare, ArrowRight, FileText, Layers, Gauge,
   Facebook, ExternalLink, Sparkles, PenLine, Image as ImageIcon,
   Scale, Wand2, ArrowUpRight, BadgePercent, Eye, Clock,
-  Compass,
 } from 'lucide-react'
 import Link from 'next/link'
 import { TIERS, billingWindow, type Tier } from '@/lib/tier'
@@ -214,38 +214,11 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        {/* Pro capabilities tour — TOP placement, full-bleed gradient so it
-            reads as a brand-first surface, not a tinted utility row. Lives
-            BEFORE every other banner so it's the first informational element
-            a creator sees on dashboard load. White on purple gives the visual
-            weight the prior subtle 6% tint was missing. */}
-        <Link
-          href="/pro-tour"
-          className="block rounded-2xl border p-5 sm:p-6 transition-transform hover:scale-[1.005]"
-          style={{
-            background: 'linear-gradient(135deg, #7C3AED 0%, #9D6BFF 55%, #C084FC 100%)',
-            borderColor: 'rgba(124, 58, 237, 0.45)',
-            boxShadow: '0 8px 32px -8px rgba(124, 58, 237, 0.55)',
-          }}
-        >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255, 255, 255, 0.18)' }}>
-              <Compass size={22} className="text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white">
-                  Capabilities tour
-                </span>
-              </div>
-              <p className="text-[16px] sm:text-[17px] font-bold text-white">See everything Pro can do for you</p>
-              <p className="text-[13px] mt-1 text-white/85">The full tour of every Pro feature live today — generation engine, SEO, newsletter, brand deals, multi-site, VAs, white-label, and more.</p>
-            </div>
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold bg-white text-[#7C3AED] flex-shrink-0">
-              Read the tour <ArrowRight size={13} />
-            </span>
-          </div>
-        </Link>
+        {/* Pro capabilities tour — TOP placement, full-bleed gradient.
+            Extracted to a client component so it can be dismissed
+            ("don't show again") via localStorage. Component decides
+            whether to render at all; we just slot it here. */}
+        <ProTourBanner />
 
         {/* ── Banners + welcome (preserved functional widgets) ──────── */}
         <NewsBanner />
