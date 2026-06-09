@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.46
+ * Version: 1.0.47
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -435,8 +435,25 @@ add_filter('the_content', function ($content) {
     // Wrap so we can scope margin to inline placement (denser than sidebar/footer)
     $form = '<div style="margin:32px 0">' . $form . '</div>';
 
-    // Walk paragraphs and inject after the Nth </p>
-    $parts = preg_split('/(<\/p>)/i', $content, -1, PREG_SPLIT_DELIM_CAPTURE);
+    // 2026-06-08 FIX: count paragraphs starting from the FIRST <h2> in the
+    // content. Earlier code scanned the full content, which meant the
+    // author block (3 inline <p> tags), pros/cons hero, and any other
+    // pre-body prepended content all counted as paragraphs — so "After
+    // paragraph 3" actually fired at the END of the author block, right at
+    // the top of the article. Splitting at the first <h2> isolates the
+    // body section (the AI emits the hook opener as the first H2 — see
+    // services/claude prompt §4-A) and counts only its <p> tags.
+    $body_start = stripos($content, '<h2');
+    if ($body_start === false) {
+        // No H2 found — post might be unusually structured. Fall back to
+        // scanning the whole content (same as the previous behavior).
+        $body_start = 0;
+    }
+    $prefix = substr($content, 0, $body_start);
+    $body   = substr($content, $body_start);
+
+    // Walk body paragraphs and inject after the Nth </p>
+    $parts = preg_split('/(<\/p>)/i', $body, -1, PREG_SPLIT_DELIM_CAPTURE);
     $output = '';
     $para_count = 0;
     $inserted = false;
@@ -450,10 +467,10 @@ add_filter('the_content', function ($content) {
             }
         }
     }
-    // If post had fewer paragraphs than the threshold, append at end so the
-    // form still has a chance to convert.
+    // If the body had fewer paragraphs than the threshold, append at the
+    // end of the body (still before the FAQ) so the form has a shot.
     if (!$inserted) $output .= $form;
-    return $output;
+    return $prefix . $output;
 }, 8);
 
 // ─── 7b. Reviewer Trust Block (top of every single post) ──────────────────────
