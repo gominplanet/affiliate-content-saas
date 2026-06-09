@@ -245,8 +245,15 @@ function CampaignsInner() {
 
   // ── Amazon CC export (.zip) importer ───────────────────────────────
   const [impKw, setImpKw] = useState('')
-  const [impMinComm, setImpMinComm] = useState(10)
-  const [impMinDays, setImpMinDays] = useState(120)
+  // 2026-06-09: removed Min commission / Min days / Need-budget INPUTS
+  // from the UI but kept their state vars so runCatalogSearch's signature
+  // doesn't change. The admin already pre-filters the catalog at import
+  // time (e.g. ≥20% / ≥120d / ≥$1,000), so applying loose floors here
+  // (0 / 0 / true) just means "search the whole pre-filtered set". Users
+  // only see keyword + queue cap, which is enough — the catalog itself
+  // IS the focused recommendation.
+  const [impMinComm, setImpMinComm] = useState(0)
+  const [impMinDays, setImpMinDays] = useState(0)
   // Price bounds — both optional. NaN (empty input) means "no bound on
   // that side", which the search route translates to a null param the
   // RPC reads as "any price". Default to NaN so a stock search behaves
@@ -652,10 +659,10 @@ function CampaignsInner() {
           <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Search Amazon Creator Connections</p>
         </div>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
-          Pick your filters and hit <strong>Search catalog</strong> — we pull the matching campaigns from
-          the centralized Amazon Creator Connections weekly export. Keyword matches the campaign &amp;
-          brand name (e.g. &quot;vacuum&quot;). Leave it blank to pull everything that fits the other
-          filters.
+          MVP runs Amazon&apos;s ~600k-row weekly export through its focused sifter and keeps only the
+          <strong> top ~10% of campaigns</strong> — high commission, healthy budget + slots, runway
+          long enough to be worth posting about. Type a keyword to narrow further (e.g.
+          &quot;vacuum&quot;) or leave it blank to pull straight from the recommended pool.
         </p>
         <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed mb-3">
           <strong>Why fewer queue than match:</strong> Amazon lists the same product under many separate
@@ -663,47 +670,27 @@ function CampaignsInner() {
           one campaign per product (the highest commission) so you don&apos;t get duplicate posts.
         </p>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <div>
             <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Brand / campaign keyword</label>
             <input value={impKw} onChange={e => setImpKw(e.target.value)} placeholder="e.g. vacuum (optional)" className="input-field text-sm w-full" />
           </div>
           <div>
-            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Min commission %</label>
-            <input type="number" value={impMinComm} onChange={e => setImpMinComm(parseFloat(e.target.value))} className="input-field text-sm w-full" />
-          </div>
-          <div>
-            <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Min days left</label>
-            <input type="number" value={impMinDays} onChange={e => setImpMinDays(parseFloat(e.target.value))} className="input-field text-sm w-full" />
-          </div>
-          <div>
             <label className="block text-[11px] font-medium text-[#6e6e73] dark:text-[#ebebf0] mb-1">Queue cap</label>
-            {/* 100 ceiling per user request 2026-06-05: a single creator
-                queueing more than 100 campaigns at once tends to bloat
-                their library with low-attention posts (and burns the
-                shared catalog → blog generation quota fast). Top 100
-                is the hard cap. If we ever raise it, also bump the
-                server-side MAX in /api/campaigns/import. */}
+            {/* 2026-06-09: trimmed from Top 10/20/50/100 → Top 10/20/30/40/50.
+                The pre-filtered catalog is already the "top 10%" recommendation,
+                so Top 100 made the queue too loose; Top 50 is the hard ceiling
+                now. If we ever raise it, also bump the server-side MAX in
+                /api/campaigns/import. */}
             <select value={impCap} onChange={e => setImpCap(parseInt(e.target.value, 10))} className="input-field text-sm w-full">
               <option value={10}>Top 10</option>
               <option value={20}>Top 20</option>
+              <option value={30}>Top 30</option>
+              <option value={40}>Top 40</option>
               <option value={50}>Top 50</option>
-              <option value={100}>Top 100</option>
             </select>
           </div>
-          {/* Price range filters were live here briefly, but Amazon's
-              Creator Connections weekly export does NOT ship a price
-              column — so the catalog has nothing to filter on and the
-              inputs only confused users. The schema, RPC params, and
-              wiring all stay in place so this row can come back in 30
-              seconds once price-lookup-at-queue-time lands (we already
-              have services/amazon.fetchAmazonProduct on tap for the
-              Deals Hub). Hidden, not deleted. */}
         </div>
-        <label className="flex items-center gap-2 text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3">
-          <input type="checkbox" checked={impNeedBudget} onChange={e => setImpNeedBudget(e.target.checked)} />
-          Only campaigns with budget &amp; open slots remaining
-        </label>
 
         <div className="flex items-center gap-3 flex-wrap">
           <button
