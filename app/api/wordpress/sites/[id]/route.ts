@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { removeSite, setDefaultSite } from '@/lib/wordpress-sites'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -14,8 +15,10 @@ interface RouteCtx {
 
 export async function PATCH(req: Request, ctx: RouteCtx) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): mutations target owner's wordpress_sites row.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const { id } = await ctx.params
   const body = await req.json().catch(() => ({})) as {
@@ -26,7 +29,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
   // makeDefault wins over label change when both are sent — the user
   // clicked "set as default" or "rename", not both in one request.
   if (body.makeDefault === true) {
-    const result = await setDefaultSite(supabase, user.id, id)
+    const result = await setDefaultSite(supabase, ownerId, id)
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
     return NextResponse.json({ ok: true })
   }
@@ -39,7 +42,7 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
     const { error } = await supabase
       .from('wordpress_sites')
       .update({ label })
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .eq('id', id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
@@ -50,11 +53,12 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
 
 export async function DELETE(_req: Request, ctx: RouteCtx) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const { id } = await ctx.params
-  const result = await removeSite(supabase, user.id, id)
+  const result = await removeSite(supabase, ownerId, id)
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
   return NextResponse.json({ ok: true })
 }

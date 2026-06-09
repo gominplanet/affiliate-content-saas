@@ -17,6 +17,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { WP_VERSIONS } from '@/lib/wp-versions'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { maybeEncrypt } from '@/lib/secrets'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 function gt(a: string | null, b: string): boolean {
   if (!a) return false
@@ -31,15 +32,18 @@ function gt(a: string | null, b: string): boolean {
 
 export async function GET(req: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): poll the owner's site status — VA's banner
+  // matches owner's "update available" state.
+  const authCtx = await getAuthAndOwner(supabase)
+  if (authCtx.error) return authCtx.error
+  const { ownerId } = authCtx
 
   // Multi-site: accepts ?siteId=<uuid> to check a specific site; omitted
   // → user's default site (the dashboard's primary "Update available" banner).
   // A per-site loop UI can call this N times with different siteIds.
   const url = new URL(req.url)
   const siteId = url.searchParams.get('siteId')
-  const site = await getWordPressCredentials(supabase, user.id, siteId)
+  const site = await getWordPressCredentials(supabase, ownerId, siteId)
   if (!site) {
     return NextResponse.json({ connected: false })
   }
@@ -90,7 +94,7 @@ export async function GET(req: Request) {
         const { data: existing } = await sb
           .from('wordpress_sites')
           .select('id, api_token')
-          .eq('user_id', user.id)
+          .eq('user_id', ownerId)
           .eq('url', site.wordpress_url)
           .maybeSingle()
         // Two independent updates — run in parallel.
@@ -109,7 +113,7 @@ export async function GET(req: Request) {
           sb
             .from('integrations')
             .update({ wordpress_api_token: maybeEncrypt(s.proxy_secret) })
-            .eq('user_id', user.id)
+            .eq('user_id', ownerId)
         )
         if (updates.length) await Promise.all(updates)
       } catch { /* non-fatal — proxy will be retried next status check */ }

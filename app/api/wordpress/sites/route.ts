@@ -17,22 +17,26 @@ import {
   canAddSite,
 } from '@/lib/wordpress-sites'
 import { normalizeTier } from '@/lib/tier'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function GET() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): WP sites list + cap belongs to the owner —
+  // sites are the owner's, not the VA's.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // Tier + current cap usage so the UI can render "3 of 5 sites" and
   // gate the "+ Add another" button without a second round trip.
   const { data: integ } = await supabase
     .from('integrations')
     .select('tier')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .maybeSingle()
   const tier = normalizeTier(integ?.tier)
-  const sites = await listSites(supabase, user.id)
-  const cap = await canAddSite(supabase, user.id, tier)
+  const sites = await listSites(supabase, ownerId)
+  const cap = await canAddSite(supabase, ownerId, tier)
 
   return NextResponse.json({
     sites,
@@ -69,8 +73,9 @@ function decodeConnectionToken(raw: string): { url: string; username: string; pa
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const body = await req.json().catch(() => ({})) as {
     label?: string
@@ -120,11 +125,11 @@ export async function POST(req: Request) {
   const { data: integ } = await supabase
     .from('integrations')
     .select('tier')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .maybeSingle()
   const tier = normalizeTier(integ?.tier)
 
-  const result = await addSite(supabase, user.id, tier, {
+  const result = await addSite(supabase, ownerId, tier, {
     label: body.label || '',
     url: body.url,
     username: body.username,

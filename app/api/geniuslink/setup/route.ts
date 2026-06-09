@@ -34,6 +34,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { listSites } from '@/lib/wordpress-sites'
 import { groupNameForSiteUrl, YOUTUBE_COPILOT_GROUP_NAME } from '@/lib/geniuslink-group'
+import { getOwnerUserId } from '@/lib/agency'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -73,17 +74,20 @@ async function build(write: boolean): Promise<SetupResponse> {
   if (!user) {
     return { ok: false, hasCredentials: false, manualCreateUrl: GENIUSLINK_DASHBOARD, targets: [] }
   }
+  // 2026-06-09 Phase 2 (VA): Geniuslink wiring is per-workspace — VAs
+  // setting up groups operate on the owner's integrations + sites.
+  const ownerId = await getOwnerUserId(user.id)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await supabase
     .from('integrations')
     .select('geniuslink_api_key, geniuslink_api_secret, geniuslink_youtube_group_id')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .maybeSingle() as unknown as { data: { geniuslink_api_key: string | null; geniuslink_api_secret: string | null; geniuslink_youtube_group_id: number | null } | null }
 
   const apiKey = intRow?.geniuslink_api_key ?? null
   const apiSecret = intRow?.geniuslink_api_secret ?? null
-  const sites = await listSites(supabase, user.id)
+  const sites = await listSites(supabase, ownerId)
 
   // Build the target list before doing any work — used by both the
   // "no credentials" early return AND the resolve loop.
@@ -211,10 +215,15 @@ async function build(write: boolean): Promise<SetupResponse> {
 async function persistGroupId(supabase: any, target: TargetReport, groupId: number): Promise<void> {
   try {
     if (target.kind === 'youtube') {
+      // Resolve owner again — persistGroupId doesn't carry the build()
+      // closure. Still cheap: getOwnerUserId returns input directly when
+      // no agency membership exists.
+      const callerId = (await supabase.auth.getUser()).data.user!.id
+      const ownerId = await getOwnerUserId(callerId)
       await supabase
         .from('integrations')
         .update({ geniuslink_youtube_group_id: groupId })
-        .eq('user_id', (await supabase.auth.getUser()).data.user.id)
+        .eq('user_id', ownerId)
     } else if (target.kind === 'site' && target.siteId) {
       await supabase
         .from('wordpress_sites')
