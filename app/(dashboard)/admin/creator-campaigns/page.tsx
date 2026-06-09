@@ -431,9 +431,18 @@ export default function CreatorCampaignsAdminPage() {
       setProgress(`Upserted ${totalUpserted.toLocaleString()} rows · Now pruning stale rows + refreshing search index (up to ~2 min)…`)
       const finalizeResult = await runFinalize(batchStart)
 
-      const staleNote = typeof finalizeResult.stale_deleted === 'number'
-        ? ` · ${finalizeResult.stale_deleted.toLocaleString()} stale rows pruned`
-        : (finalizeResult.stale_cleanup_error ? ` · cleanup error: ${finalizeResult.stale_cleanup_error}` : '')
+      // Show BOTH the row count AND any cleanup error when both are
+      // present — previous version hid the error whenever a count came
+      // back, so users saw "0 stale rows pruned" without learning that
+      // the loop had failed mid-iteration. 2026-06-09.
+      const stalePieces: string[] = []
+      if (typeof finalizeResult.stale_deleted === 'number') {
+        stalePieces.push(`${finalizeResult.stale_deleted.toLocaleString()} stale rows pruned`)
+      }
+      if (finalizeResult.stale_cleanup_error) {
+        stalePieces.push(`cleanup error: ${finalizeResult.stale_cleanup_error}`)
+      }
+      const staleNote = stalePieces.length ? ` · ${stalePieces.join(' · ')}` : ''
       const canonicalNote = typeof finalizeResult.canonical_count === 'number'
         ? ` · ${finalizeResult.canonical_count.toLocaleString()} unique products searchable`
         : (finalizeResult.canonical_error ? ` · canonical refresh error: ${finalizeResult.canonical_error}` : '')
