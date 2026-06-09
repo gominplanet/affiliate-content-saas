@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.49
+ * Version: 1.0.50
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3254,7 +3254,9 @@ if (!function_exists('mvp_affiliate_render_sticky_cta')) {
         if (!$url) return;
 
         $is_amazon = (bool) preg_match('/amazon\\.|amzn\\.to|geni\\.us/i', $url);
-        $cta_text  = $is_amazon ? "Check Today's Price on Amazon →" : "Get The Best Price Today →";
+        // 2026-06-09: aligned to the new "Get the best price..." voice
+        // (was "Check Today's Price on Amazon" / "Get The Best Price Today").
+        $cta_text  = $is_amazon ? "Get the best price on Amazon →" : "Get the best price today →";
         $title     = $post->post_title;
         // Trim long titles so they don't overflow on mobile
         if (mb_strlen($title) > 48) $title = mb_substr($title, 0, 45) . '…';
@@ -3707,46 +3709,100 @@ if (!function_exists('mvp_affiliate_render_timestamp_js')) {
     }
 }
 
-// ─── 20e. Legacy CTA copy rewrite (v1.0.49, 2026-06-09) ───────────────────
+// ─── 20e. Legacy CTA copy rewrite (v1.0.49+, 2026-06-09) ──────────────────
 //
-// 2026-06-08: the AI prompt switched the end-of-post / mid-article CTA
-// button copy from "Find Out More →" to "Get Yours Today (on Amazon|Here) →".
-// New posts ship with the new copy, but existing posts have "Find Out More"
-// baked into their stored content in WordPress — regenerating every one is
-// tedious. This filter rewrites the legacy copy at render time so old posts
-// match the new branding without touching the post bodies.
+// 2026-06-08/09: the AI prompt + price-strip injector switched to the new
+// "Get Yours Today..." and "Get the best price..." voice. New posts ship
+// with the new copy, but existing posts have the old strings baked into
+// their stored content in WordPress — regenerating every one is tedious.
+// This filter rewrites legacy copy at render time so old posts match the
+// new branding without touching the post bodies.
 //
-// Scope: only the .gr-cta-btn anchor (the big yellow Buy button at the end
-// of the post and the mid-article copy). The mobile sticky bar uses
-// different copy and is untouched.
+// Surfaces handled:
+//   - .gr-cta-btn         (end-of-post + mid-article yellow CTA card)
+//     Old: "Find Out More →"  →  "Get Yours Today on Amazon|Here →"
+//   - .gr-price-strip-btn (inline blue/orange CTA strip under verdict)
+//     Old: "Check Today's Price on Amazon ..." / "Get The Best Price Today"
+//     New: "Get the best price on Amazon ..." / "Get the best price today"
 //
-// Idempotent: if a post already has the new copy ("Get Yours Today"),
-// the regex doesn't match and the content passes through unchanged.
+// The mobile sticky bar is NOT a baked-into-content surface — its text
+// comes from PHP at render time, so it updates automatically when the
+// plugin updates (no rewrite needed there).
+//
+// Idempotent: if a post already has new copy, the regex doesn't match
+// and the content passes through unchanged.
 add_filter('the_content', 'mvp_affiliate_rewrite_legacy_cta', 35);
 if (!function_exists('mvp_affiliate_rewrite_legacy_cta')) {
     function mvp_affiliate_rewrite_legacy_cta($content) {
         if (!is_singular('post')) return $content;
-        if (stripos($content, 'find out more') === false) return $content; // fast path
+        $has_old_yellow = stripos($content, 'find out more') !== false;
+        $has_old_strip  = (stripos($content, "Check Today's Price on Amazon") !== false)
+                        || (stripos($content, 'Get The Best Price Today') !== false)
+                        || (preg_match('/Get [^<]+ — Best Price Today/i', $content) === 1);
+        if (!$has_old_yellow && !$has_old_strip) return $content; // fast path
 
-        return preg_replace_callback(
-            '#<a([^>]*\bclass="gr-cta-btn"[^>]*)>(.*?)</a>#is',
-            function ($m) {
-                $attrs = $m[1];
-                $inner = $m[2];
-                if (stripos($inner, 'find out more') === false) return $m[0];
+        // ── End-of-post + mid-article yellow CTA card (.gr-cta-btn) ─────────
+        if ($has_old_yellow) {
+            $content = preg_replace_callback(
+                '#<a([^>]*\bclass="gr-cta-btn"[^>]*)>(.*?)</a>#is',
+                function ($m) {
+                    $attrs = $m[1];
+                    $inner = $m[2];
+                    if (stripos($inner, 'find out more') === false) return $m[0];
+                    $href = '';
+                    if (preg_match('/\bhref="([^"]*)"/i', $attrs, $hm)) $href = $hm[1];
+                    $is_amazon = (bool) preg_match('/amazon\.|amzn\.to|geni\.us/i', $href);
+                    $new_text  = $is_amazon ? 'Get Yours Today on Amazon →' : 'Get Yours Today Here →';
+                    return '<a' . $attrs . '>' . $new_text . '</a>';
+                },
+                $content
+            ) ?: $content;
+        }
 
-                // Extract href from the attribute soup. Order of attributes
-                // varies between mid-article and end-of-post CTAs.
-                $href = '';
-                if (preg_match('/\bhref="([^"]*)"/i', $attrs, $hm)) {
-                    $href = $hm[1];
-                }
-                $is_amazon = (bool) preg_match('/amazon\.|amzn\.to|geni\.us/i', $href);
-                $new_text  = $is_amazon ? 'Get Yours Today on Amazon →' : 'Get Yours Today Here →';
+        // ── Inline price-strip CTA (.gr-price-strip-btn) ───────────────────
+        if ($has_old_strip) {
+            $content = preg_replace_callback(
+                '#<a([^>]*\bclass="gr-price-strip-btn"[^>]*)>(.*?)</a>#is',
+                function ($m) {
+                    $attrs = $m[1];
+                    $inner = $m[2];
+                    $is_legacy =
+                        stripos($inner, "Check Today's Price on Amazon") !== false
+                        || stripos($inner, 'Get The Best Price Today') !== false
+                        || preg_match('/Get [^<]+ — Best Price Today/i', $inner) === 1;
+                    if (!$is_legacy) return $m[0];
 
-                return '<a' . $attrs . '>' . $new_text . '</a>';
-            },
-            $content
-        ) ?: $content;
+                    $href = '';
+                    if (preg_match('/\bhref="([^"]*)"/i', $attrs, $hm)) $href = $hm[1];
+                    $is_amazon = (bool) preg_match('/amazon\.|amzn\.to|geni\.us/i', $href);
+
+                    // Try to preserve productName from the legacy label so
+                    // we don't lose the SEO-friendly product-specific copy.
+                    // Patterns:
+                    //   "Check Today's Price on Amazon for {NAME} →"
+                    //   "Get {NAME} — Best Price Today →"
+                    $product_name = '';
+                    if (preg_match('/Check Today\'s Price on Amazon for (.+?)\s*→/i', $inner, $pm)) {
+                        $product_name = trim(strip_tags($pm[1]));
+                    } elseif (preg_match('/Get (.+?)\s*—\s*Best Price Today/i', $inner, $pm)) {
+                        $product_name = trim(strip_tags($pm[1]));
+                    }
+
+                    if ($is_amazon) {
+                        $new_text = $product_name
+                            ? '🛒 Get the best price on Amazon for ' . esc_html($product_name) . ' →'
+                            : '🛒 Get the best price on Amazon →';
+                    } else {
+                        $new_text = $product_name
+                            ? '🔗 Get the best price today for ' . esc_html($product_name) . ' →'
+                            : '🔗 Get the best price today →';
+                    }
+                    return '<a' . $attrs . '>' . $new_text . '</a>';
+                },
+                $content
+            ) ?: $content;
+        }
+
+        return $content;
     }
 }

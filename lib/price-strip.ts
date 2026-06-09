@@ -38,13 +38,18 @@ export function renderPriceStrip(opts: PriceStripOptions): string {
   const productName = (opts.productName || '').trim()
 
   // Copy + colors branch on Amazon vs. direct brand.
+  // 2026-06-09: aligned to the new "Get the best price..." voice (replaces
+  // the older "Check Today's Price on Amazon" / "Get The Best Price Today"
+  // wording). Same logic as the .gr-cta-btn change at 576d9df. Existing
+  // posts retain their old copy until rewritten by the WP plugin's legacy
+  // CTA filter (gr-price-strip-btn case).
   const buttonLabel = opts.isAmazon
     ? productName
-      ? `🛒 Check Today's Price on Amazon for ${productName} →`
-      : `🛒 Check Today's Price on Amazon →`
+      ? `🛒 Get the best price on Amazon for ${productName} →`
+      : `🛒 Get the best price on Amazon →`
     : productName
-      ? `🔗 Get ${productName} — Best Price Today →`
-      : `🔗 Get The Best Price Today →`
+      ? `🔗 Get the best price today for ${productName} →`
+      : `🔗 Get the best price today →`
 
   const disclaimer = opts.isAmazon
     ? 'Clicking takes you to Amazon. As an Amazon Associate we earn from qualifying purchases — pricing and availability subject to change.'
