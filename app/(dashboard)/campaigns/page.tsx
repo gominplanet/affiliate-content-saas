@@ -261,6 +261,11 @@ function CampaignsInner() {
   const [impMinPrice, setImpMinPrice] = useState<number>(NaN)
   const [impMaxPrice, setImpMaxPrice] = useState<number>(NaN)
   const [impNeedBudget, setImpNeedBudget] = useState(true)
+  // When ticked, the search route does a per-ASIN Amazon scrape and
+  // keeps only products whose top image carousel has at least one
+  // video — gives the in-article image generator a real frame to grab
+  // from. Adds ~5-20s to the search depending on hit rate.
+  const [impCarouselVideo, setImpCarouselVideo] = useState(false)
   // Hard ceiling 100 per user request 2026-06-05. Default to 50 so
   // a fresh page-load doesn't suggest "Top 100" as the implicit
   // recommendation — users can opt up if they need more.
@@ -354,6 +359,7 @@ function CampaignsInner() {
         keyword: impKw.trim(),
         minCommission: String(isNaN(impMinComm) ? 0 : impMinComm),
         minDays: String(isNaN(impMinDays) ? 0 : impMinDays),
+        ...(impCarouselVideo ? { requireCarouselVideo: '1' } : {}),
         // Only attach price params when the user actually typed a
         // number. Sending an empty string leaves the RPC to default
         // those bounds to null = "no bound" rather than = 0.
@@ -371,12 +377,20 @@ function CampaignsInner() {
       setCatalogFreshAt((data.lastRefresh as string | null) ?? null)
       setImpPhase('ready')
       const refreshIso = (data.lastRefresh as string | null) ?? null
+      // When the carousel-video filter is on, surface how many candidates
+      // were dropped so users understand a "Top 10 returned 7" result isn't
+      // a bug — it's the filter doing its job.
+      const carouselNote: string = data.carouselVideoFilter
+        ? ` · carousel-video filter dropped ${data.carouselVideoFilter.skipped} candidate${data.carouselVideoFilter.skipped === 1 ? '' : 's'} that didn't qualify`
+        : ''
       setImpMsg(
         matches.length === 0
           ? (refreshIso
-              ? 'No matches with these filters. Try widening: lower the commission, shorter days-left, or untick the budget toggle.'
+              ? (impCarouselVideo
+                  ? 'No matches passed the carousel-video filter — try untcking it or broadening your keyword. Most search niches have a 30-50% hit rate, so a 0-match result usually means a narrow keyword + small candidate pool.'
+                  : 'No matches with these filters. Try widening: lower the commission, shorter days-left, or untick the budget toggle.')
               : 'The catalog hasn\'t been imported yet. Check back in a few hours or ping support.')
-          : `${matches.length.toLocaleString()} matches ready to queue (from a shared catalog of ${data.uniqueAsins.toLocaleString()} unique products).`,
+          : `${matches.length.toLocaleString()} matches ready to queue (from a shared catalog of ${data.uniqueAsins.toLocaleString()} unique products)${carouselNote}.`,
       )
     } catch (e) {
       // Catalog timeouts come back as "canceling statement due to
@@ -696,6 +710,24 @@ function CampaignsInner() {
             </select>
           </div>
         </div>
+        {/* Optional: deeper-dive carousel-video filter. Adds 5-20s to the
+            search depending on hit rate but guarantees every queued product
+            has at least one carousel video the in-article image generator
+            can use as a real-frame reference. */}
+        <label className="flex items-start gap-2 mb-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={impCarouselVideo}
+            onChange={e => setImpCarouselVideo(e.target.checked)}
+            className="accent-[#7C3AED] mt-0.5 flex-shrink-0"
+          />
+          <span className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed group-hover:text-[#1d1d1f] dark:group-hover:text-[#f5f5f7] transition-colors">
+            <strong>Carousel video only</strong> — checks each Amazon product page and keeps
+            only products with at least one video in the top image carousel. Slower (adds 5-20s)
+            but every queued product is guaranteed to have a real-frame video reference for
+            in-article image generation.
+          </span>
+        </label>
 
         <div className="flex items-center gap-3 flex-wrap">
           <button

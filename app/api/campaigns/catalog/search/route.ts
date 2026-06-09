@@ -21,8 +21,15 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { hasCarouselVideo } from '@/services/amazon'
 
 export const dynamic = 'force-dynamic'
+// When the carousel-video filter is on, we run up to ~30 parallel Amazon
+// scrapes per request (3x oversample × 10 concurrency). Each scrape is
+// capped at 6s but the whole pass can take 15-25s on a cold catalog.
+// 60s ceiling gives plenty of headroom + matches what /api/campaigns/import
+// uses for its own Amazon enrichment step.
+export const maxDuration = 60
 
 interface RpcRow {
   asin: string
@@ -53,13 +60,24 @@ export async function GET(request: Request) {
   const maxPriceRaw = searchParams.get('maxPrice')
   const minPrice = minPriceRaw && !isNaN(Number(minPriceRaw)) ? Number(minPriceRaw) : null
   const maxPrice = maxPriceRaw && !isNaN(Number(maxPriceRaw)) ? Number(maxPriceRaw) : null
+  // When set, the route post-filters the RPC results to only ASINs whose
+  // Amazon product page has at least one video in the top image carousel.
+  // Costs ~30 parallel scrapes worst-case per request, hence the bumped
+  // maxDuration above.
+  const requireCarouselVideo = searchParams.get('requireCarouselVideo') === '1'
 
   // Since the RPC now returns one canonical row per ASIN (migration
   // 098 added is_canonical), the route-side dedupe is no-op work.
   // Overfetch stays at 2x as cheap insurance in case a future RPC
   // refactor reintroduces duplicates — Postgres barely notices the
   // extra few hundred rows on the canonical subset.
-  const overfetch = Math.max(limit * 2, 200)
+  // When the carousel-video filter is on, oversample MORE (5x) to give
+  // the filter enough candidates to fill the user's queue cap — empirical
+  // hit rate is ~30-50% for products with carousel video, so 5x leaves
+  // headroom even on stricter niches.
+  const overfetch = requireCarouselVideo
+    ? Math.max(limit * 5, 200)
+    : Math.max(limit * 2, 200)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await supabase.rpc('search_creator_campaigns', {
@@ -85,8 +103,35 @@ export async function GET(request: Request) {
       byAsin.set(r.asin, r)
     }
   }
-  const final = [...byAsin.values()]
+  // Sort by commission, but DON'T slice to `limit` yet when the
+  // carousel-video filter is on — the filter drops 50-70% of candidates,
+  // so we need the full oversampled pool to fill the user's queue cap.
+  const sortedCandidates = [...byAsin.values()]
     .sort((a, b) => (b.commission ?? 0) - (a.commission ?? 0))
+
+  let kept = sortedCandidates
+  let carouselSkipped = 0
+  if (requireCarouselVideo) {
+    // Walk the candidates in commission-descending order, scraping in
+    // chunks of 10 in parallel. Stop as soon as we've collected `limit`
+    // survivors — saves a lot of Amazon requests when the first chunk
+    // already fills the queue cap.
+    const survivors: typeof sortedCandidates = []
+    const CHUNK = 10
+    let probedTotal = 0
+    for (let i = 0; i < sortedCandidates.length && survivors.length < limit; i += CHUNK) {
+      const batch = sortedCandidates.slice(i, i + CHUNK)
+      const verdicts = await Promise.all(batch.map(r => hasCarouselVideo(r.asin)))
+      verdicts.forEach((hasVid, idx) => {
+        if (hasVid) survivors.push(batch[idx])
+      })
+      probedTotal += batch.length
+    }
+    carouselSkipped = probedTotal - survivors.length
+    kept = survivors
+  }
+
+  const final = kept
     .slice(0, limit)
     .map(r => ({
       asin: r.asin,
@@ -117,5 +162,11 @@ export async function GET(request: Request) {
     totalScanned: rows.length,
     uniqueAsins: byAsin.size,
     lastRefresh: freshness?.imported_at ?? null,
+    // Surface the carousel-video filter result so the UI can say
+    // "X of Y candidates had a carousel video" when the user hits the
+    // filter without enough results to fill the queue cap.
+    carouselVideoFilter: requireCarouselVideo
+      ? { skipped: carouselSkipped, kept: final.length }
+      : null,
   })
 }

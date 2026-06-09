@@ -283,3 +283,54 @@ export async function fetchAmazonProduct(asin: string): Promise<AmazonProduct> {
     discountPct,
   }
 }
+
+// ── Carousel-video probe ─────────────────────────────────────────────────────
+// Returns true when the product's IMAGE CAROUSEL (the main gallery at the
+// top of the product page) contains at least one video. Used by the
+// /campaigns search to let users pre-filter to "products with a video the
+// AI can grab a frame from" before queueing.
+//
+// Detection strategy: Amazon's image gallery is configured by an embedded
+// JS island near the top of the page. Products with carousel videos have
+// one of these signals:
+//   - "videoUrl": "..."          ← canonical key in imageGalleryData / colorImages
+//   - "videos":[{               ← array form when multiple videos exist
+//   - data-video-url="..."       ← rendered into the thumbnail nav
+//   - "videoBlock"               ← legacy gallery shape, still in use
+//
+// We DON'T match A+ content videos (those live further down the page in a
+// separate `aplus-...` block) or "Customer videos" (in the reviews
+// section) — both are out of carousel scope. The substring search is
+// anchored to the imageBlock section to avoid false positives.
+export async function hasCarouselVideo(asin: string): Promise<boolean> {
+  const url = `https://www.amazon.com/dp/${asin}`
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  let html = ''
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': ua,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+      },
+      // 6s ceiling. A blocked / slow page costs more than skipping the
+      // result — callers downgrade to "couldn't verify, exclude" rather
+      // than waiting forever.
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) return false
+    html = await res.text()
+  } catch {
+    return false
+  }
+  // Strip A+ content + reviews to avoid false positives from non-carousel
+  // videos. The imageBlock JSON island lives in the first ~80KB of the
+  // page, well above the aplus-/reviews regions.
+  const head = html.slice(0, 120_000)
+  if (/"videoUrl"\s*:\s*"https?:\/\//.test(head)) return true
+  if (/"videos"\s*:\s*\[\s*\{/.test(head)) return true
+  if (/data-video-url=["']https?:\/\//.test(head)) return true
+  if (/id=["']videoBlock["']/.test(head)) return true
+  return false
+}
