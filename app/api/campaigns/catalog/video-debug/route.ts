@@ -15,6 +15,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { probeCarouselVideo } from '@/services/amazon'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 15
@@ -39,6 +40,12 @@ const PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   { label: 'mainVideo', pattern: /"mainVideo"\s*:/i },
   { label: 'altVideoId', pattern: /"altVideoId"\s*:\s*"/i },
   { label: 'ASMVideoUrl (Amazon Standard Media)', pattern: /"ASMVideoUrl"\s*:/i },
+  // v4 patterns synced from services/amazon.probeCarouselVideo (commit 55e887b).
+  // The high-confidence vse-vms-transcoding-artifact pattern is what
+  // actually fixes this debug endpoint's verdict for B08731J1L4 —
+  // mediaUrlsFound already shows those URLs in the response.
+  { label: 'vse-vms-transcoding-artifact (Amazon VSE CDN host)', pattern: /vse-vms-transcoding-artifact/i },
+  { label: '"videoBlock": (JSON key, no Id suffix)', pattern: /"videoBlock"\s*:/i },
 ]
 
 const UAS = [
@@ -130,12 +137,12 @@ export async function GET(request: Request) {
   const verdict =
     fetchErr ? 'fetch-failed' :
     !isProductPage ? 'bot-challenge' :
-    PATTERNS.some(p => p.pattern.test(html.slice(0, 200_000))) ? 'has-video' :
+    PATTERNS.some(p => p.pattern.test(html.slice(0, 500_000))) ? 'has-video' :
     'no-video'
 
   // For each pattern, surface a short snippet AROUND the first match so
   // we can see what context Amazon embeds it in.
-  const head = html.slice(0, 200_000)
+  const head = html.slice(0, 500_000)
   const matched: Array<{ label: string; snippet: string }> = []
   const missed: string[] = []
   for (const p of PATTERNS) {
@@ -182,11 +189,23 @@ export async function GET(request: Request) {
     if (idx >= 0) galleryKeyPositions[key] = idx
   }
 
+  // Cross-check: call the actual probeCarouselVideo from services/amazon
+  // and report what THAT returns. If this differs from the manual verdict
+  // computed above, we have a drift between the debug endpoint's patterns
+  // and the live probe's patterns and should resync.
+  let realProbeVerdict: string | null = null
+  try {
+    realProbeVerdict = await probeCarouselVideo(asin)
+  } catch (e) {
+    realProbeVerdict = `error: ${e instanceof Error ? e.message : String(e)}`
+  }
+
   return NextResponse.json({
     asin,
     url: usedUrl,
     attemptChain: tries,
     winningAttempt,
+    realProbeVerdict,
     fetch: { status, ms, ok: !fetchErr, error: fetchErr, html_bytes: html.length },
     isProductPage,
     productMarkers,
