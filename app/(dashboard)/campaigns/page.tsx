@@ -382,17 +382,29 @@ function CampaignsInner() {
       // tell whether Amazon blocked the scrape (bot-challenge) vs.
       // products genuinely lack videos.
       const cv = data.carouselVideoFilter as null | {
-        probed: number; kept: number; noVideo: number; botChallenge: number; fetchFailed: number
+        probed: number; kept: number; noVideo: number; botChallenge: number; fetchFailed: number; notFound: number
       }
       const carouselNote = cv
-        ? ` · carousel-video probe: ${cv.kept} had video, ${cv.noVideo} didn't, ${cv.botChallenge} blocked by Amazon, ${cv.fetchFailed} fetch errors (out of ${cv.probed} probed)`
+        ? ` · carousel-video probe: ${cv.kept} had video, ${cv.noVideo} didn't, ${cv.notFound ?? 0} delisted, ${cv.botChallenge} blocked, ${cv.fetchFailed} fetch errors (out of ${cv.probed} probed)`
         : ''
-      // Diagnostic 0-match message — tell the user EXACTLY what the
-      // breakdown looked like so they know whether to retry, broaden
-      // the keyword, or just untick the filter.
+      // Diagnostic 0-match message — tell the user EXACTLY what dominated
+      // the result so they know what to fix. Order matters: blocked > delisted
+      // > genuinely no-video; the dominant verdict drives the suggestion.
+      const dominant = cv
+        ? (() => {
+            const n: Record<string, number> = {
+              blocked: cv.botChallenge + cv.fetchFailed,
+              delisted: cv.notFound ?? 0,
+              noVideo: cv.noVideo,
+            }
+            return Object.keys(n).reduce((a, b) => (n[b] > n[a] ? b : a), 'noVideo')
+          })()
+        : 'noVideo'
       const zeroCarouselMsg = cv
-        ? cv.botChallenge + cv.fetchFailed > cv.noVideo
+        ? dominant === 'blocked'
           ? `Amazon blocked ${cv.botChallenge + cv.fetchFailed}/${cv.probed} of our probes (bot challenge or network error). The filter can't tell which of those products actually have videos. Retry in a few minutes — Amazon's bot detection is rate-limit-based, not a permanent block.`
+          : dominant === 'delisted'
+          ? `${cv.notFound}/${cv.probed} candidates returned 404 — they were delisted from Amazon since the last catalog import. Re-import the weekly export to drop the stale ASINs, then retry.`
           : `Of ${cv.probed} candidates scanned, NONE had a carousel video. Try a broader keyword, raise the queue cap (so we probe more candidates), or untick the carousel-video filter.`
         : 'No matches passed the carousel-video filter — try unticking it or broadening your keyword.'
       setImpMsg(
