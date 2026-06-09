@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.48
+ * Version: 1.0.49
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3704,5 +3704,49 @@ if (!function_exists('mvp_affiliate_render_timestamp_js')) {
 })();
 </script>
         <?php
+    }
+}
+
+// ─── 20e. Legacy CTA copy rewrite (v1.0.49, 2026-06-09) ───────────────────
+//
+// 2026-06-08: the AI prompt switched the end-of-post / mid-article CTA
+// button copy from "Find Out More →" to "Get Yours Today (on Amazon|Here) →".
+// New posts ship with the new copy, but existing posts have "Find Out More"
+// baked into their stored content in WordPress — regenerating every one is
+// tedious. This filter rewrites the legacy copy at render time so old posts
+// match the new branding without touching the post bodies.
+//
+// Scope: only the .gr-cta-btn anchor (the big yellow Buy button at the end
+// of the post and the mid-article copy). The mobile sticky bar uses
+// different copy and is untouched.
+//
+// Idempotent: if a post already has the new copy ("Get Yours Today"),
+// the regex doesn't match and the content passes through unchanged.
+add_filter('the_content', 'mvp_affiliate_rewrite_legacy_cta', 35);
+if (!function_exists('mvp_affiliate_rewrite_legacy_cta')) {
+    function mvp_affiliate_rewrite_legacy_cta($content) {
+        if (!is_singular('post')) return $content;
+        if (stripos($content, 'find out more') === false) return $content; // fast path
+
+        return preg_replace_callback(
+            '#<a([^>]*\bclass="gr-cta-btn"[^>]*)>(.*?)</a>#is',
+            function ($m) {
+                $attrs = $m[1];
+                $inner = $m[2];
+                if (stripos($inner, 'find out more') === false) return $m[0];
+
+                // Extract href from the attribute soup. Order of attributes
+                // varies between mid-article and end-of-post CTAs.
+                $href = '';
+                if (preg_match('/\bhref="([^"]*)"/i', $attrs, $hm)) {
+                    $href = $hm[1];
+                }
+                $is_amazon = (bool) preg_match('/amazon\.|amzn\.to|geni\.us/i', $href);
+                $new_text  = $is_amazon ? 'Get Yours Today on Amazon →' : 'Get Yours Today Here →';
+
+                return '<a' . $attrs . '>' . $new_text . '</a>';
+            },
+            $content
+        ) ?: $content;
     }
 }
