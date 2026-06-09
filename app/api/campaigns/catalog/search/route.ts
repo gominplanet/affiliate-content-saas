@@ -21,6 +21,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { probeCarouselVideo } from '@/services/amazon'
 
 export const dynamic = 'force-dynamic'
@@ -116,6 +117,11 @@ export async function GET(request: Request) {
   // searches — previously the user couldn't tell whether the filter was
   // overly strict or whether the scrape was being blocked entirely.
   const counts = { hasVideo: 0, noVideo: 0, botChallenge: 0, fetchFailed: 0, notFound: 0 }
+  // ASINs that returned 404 on Amazon — we'll prune them from the
+  // shared catalog after responding so future searches don't waste
+  // probe budget on the same dead products. Self-healing: over time
+  // the catalog gets cleaner without any admin intervention.
+  const deadAsins: string[] = []
   if (requireCarouselVideo) {
     const survivors: typeof sortedCandidates = []
     const CHUNK = 10
@@ -128,11 +134,38 @@ export async function GET(request: Request) {
           case 'no-video':      counts.noVideo++;      break
           case 'bot-challenge': counts.botChallenge++; break
           case 'fetch-failed':  counts.fetchFailed++;  break
-          case 'not-found':     counts.notFound++;     break
+          case 'not-found':
+            counts.notFound++
+            deadAsins.push(batch[idx].asin)
+            break
         }
       })
     }
     kept = survivors
+  }
+
+  // Fire-and-forget prune of confirmed-dead ASINs. Uses the admin
+  // client because the catalog has no DELETE RLS for regular users
+  // (it's an admin-managed shared table). Failure is non-fatal — the
+  // next search will probe the same ASINs again and try to prune
+  // them once more, so eventual consistency is fine.
+  if (deadAsins.length > 0) {
+    try {
+      const admin = createAdminClient()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(admin as any)
+        .from('creator_connections_catalog')
+        .delete()
+        .in('asin', deadAsins)
+        .then(({ error, count }: { error: unknown; count: number | null }) => {
+          if (error) console.error('[campaigns/search] dead-asin prune failed:', error)
+          else console.log(`[campaigns/search] pruned ${count ?? deadAsins.length} dead ASIN rows from catalog`)
+        }, (err: unknown) => {
+          console.error('[campaigns/search] dead-asin prune threw:', err)
+        })
+    } catch (e) {
+      console.error('[campaigns/search] could not start dead-asin prune:', e)
+    }
   }
 
   const final = kept
@@ -178,6 +211,10 @@ export async function GET(request: Request) {
           botChallenge: counts.botChallenge,
           fetchFailed: counts.fetchFailed,
           notFound: counts.notFound,
+          // Number of dead ASINs we just pruned from the catalog so the
+          // next search doesn't see them. Self-healing signal — the UI
+          // can show "catalog cleaned of N dead products".
+          prunedFromCatalog: deadAsins.length,
         }
       : null,
   })

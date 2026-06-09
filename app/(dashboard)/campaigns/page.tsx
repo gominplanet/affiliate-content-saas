@@ -382,10 +382,13 @@ function CampaignsInner() {
       // tell whether Amazon blocked the scrape (bot-challenge) vs.
       // products genuinely lack videos.
       const cv = data.carouselVideoFilter as null | {
-        probed: number; kept: number; noVideo: number; botChallenge: number; fetchFailed: number; notFound: number
+        probed: number; kept: number; noVideo: number; botChallenge: number; fetchFailed: number; notFound: number; prunedFromCatalog?: number
       }
+      const prunedTail = cv && cv.prunedFromCatalog
+        ? ` · auto-pruned ${cv.prunedFromCatalog} dead product${cv.prunedFromCatalog === 1 ? '' : 's'} from the catalog`
+        : ''
       const carouselNote = cv
-        ? ` · carousel-video probe: ${cv.kept} had video, ${cv.noVideo} didn't, ${cv.notFound ?? 0} delisted, ${cv.botChallenge} blocked, ${cv.fetchFailed} fetch errors (out of ${cv.probed} probed)`
+        ? ` · carousel-video probe: ${cv.kept} had video, ${cv.noVideo} didn't, ${cv.notFound ?? 0} delisted, ${cv.botChallenge} blocked, ${cv.fetchFailed} fetch errors (out of ${cv.probed} probed)${prunedTail}`
         : ''
       // Diagnostic 0-match message — tell the user EXACTLY what dominated
       // the result so they know what to fix. Order matters: blocked > delisted
