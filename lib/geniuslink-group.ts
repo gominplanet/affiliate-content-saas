@@ -30,13 +30,29 @@ import type { Database } from '@/lib/types/database'
 
 type Client = SupabaseClient<Database>
 
-/** The canonical group name for a site = its lowercased hostname (no
- *  protocol, no path, no trailing slash, no www). Matches what users
- *  typically name groups manually ("gominreviews.com"). */
+/** The canonical group name for a site = its lowercased hostname with
+ *  the TLD stripped (Geniuslink's group-name validator rejects dots).
+ *  `gominreviews.com` → `gominreviews`, `blog.gominplanet.io` →
+ *  `blog-gominplanet` — dots in any remaining subdomain segments are
+ *  converted to hyphens so the name stays single-token + readable.
+ *
+ *  2026-06-09: confirmed Geniuslink rejects "gominreviews.com" with a
+ *  validation error; stripping the TLD + dot-conversion fixes it and
+ *  keeps the group obviously tied to the blog. */
 export function groupNameForSiteUrl(siteUrl: string): string | null {
   try {
     const host = new URL(siteUrl).hostname.toLowerCase().replace(/^www\./, '')
-    return host || null
+    if (!host) return null
+    // Strip everything from the LAST dot onwards (the TLD). For
+    // multi-part TLDs like .co.uk this leaves one extra dotted segment,
+    // which the next line converts to a hyphen — still distinct from
+    // a sibling .com domain.
+    const noTld = host.replace(/\.[^.]+$/, '')
+    // Convert remaining dots to hyphens for readability ("blog.x" → "blog-x").
+    const cleaned = noTld.replace(/\./g, '-')
+    // Final safety: drop anything Geniuslink might still reject
+    // (whitespace, slashes, etc.). Keep alnum + hyphen + underscore.
+    return cleaned.replace(/[^a-z0-9_-]/g, '') || null
   } catch {
     return null
   }
