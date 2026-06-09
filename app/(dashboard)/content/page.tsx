@@ -2485,14 +2485,19 @@ export default function ContentPage() {
    * broken (e.g. a title word was mistaken for an ASIN → dead Amazon page)
    * and surfaces old→new in a modal. Nothing is written yet.
    */
-  async function previewFixAffiliate() {
+  // Track which mode triggered the preview so the apply step + UI copy
+  // can show the right wording ("Fix" vs "Re-route to per-site groups").
+  // 2026-06-09 — added when the regroup mode landed on the route.
+  const [affMode, setAffMode] = useState<'broken' | 'regroup'>('broken')
+  async function previewFixAffiliate(mode: 'broken' | 'regroup' = 'broken') {
+    setAffMode(mode)
     setAffPreviewLoading(true)
     setFixCatResult(null)
     try {
       const res = await fetch('/api/blog/fix-affiliate-links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dryRun: true }),
+        body: JSON.stringify({ dryRun: true, mode }),
       })
       const data = await res.json()
       if (data.error) {
@@ -2524,7 +2529,7 @@ export default function ContentPage() {
       const res = await fetch('/api/blog/fix-affiliate-links', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fixes }),
+        body: JSON.stringify({ fixes, mode: affMode }),
       })
       const data = await res.json()
       if (data.error) {
@@ -2688,12 +2693,22 @@ export default function ContentPage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={previewFixAffiliate}
-              loading={affPreviewLoading}
+              onClick={() => previewFixAffiliate('broken')}
+              loading={affPreviewLoading && affMode === 'broken'}
               disabled={affPreviewLoading || affApplying}
               title="Scan published posts for broken affiliate links and repair them"
             >
-              {affPreviewLoading ? 'Scanning links…' : 'Fix Affiliate Links'}
+              {affPreviewLoading && affMode === 'broken' ? 'Scanning links…' : 'Fix Affiliate Links'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => previewFixAffiliate('regroup')}
+              loading={affPreviewLoading && affMode === 'regroup'}
+              disabled={affPreviewLoading || affApplying}
+              title="Re-wrap every geni.us link in your published posts so it routes through the per-site Geniuslink group (e.g. gominreviews) instead of MVP-YOUTUBE. Use this once after the per-site group routing fix to clean up legacy links."
+            >
+              {affPreviewLoading && affMode === 'regroup' ? 'Scanning links…' : 'Re-route Geniuslinks'}
             </Button>
             {(activeTab === 'horizontal' || activeTab === 'vertical') && (
               <Button
@@ -3467,9 +3482,13 @@ export default function ContentPage() {
           <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-white/10">
               <div>
-                <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Fix affiliate links</h3>
+                <h3 className="text-base font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
+                  {affMode === 'regroup' ? 'Re-route Geniuslinks to per-site groups' : 'Fix affiliate links'}
+                </h3>
                 <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-                  {affPreview.length} post{affPreview.length !== 1 ? 's' : ''} have a broken buy link. Uncheck any you don&apos;t want to change — nothing&apos;s saved yet.
+                  {affMode === 'regroup'
+                    ? `${affPreview.length} post${affPreview.length !== 1 ? 's' : ''} carry a geni.us link that will be re-wrapped in the correct per-site group. Each link gets a NEW shortcode — the old one stays alive in your Geniuslink dashboard but is no longer in your post. Uncheck any you want to skip.`
+                    : `${affPreview.length} post${affPreview.length !== 1 ? 's' : ''} have a broken buy link. Uncheck any you don't want to change — nothing's saved yet.`}
                 </p>
               </div>
               <button

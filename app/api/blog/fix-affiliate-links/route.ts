@@ -53,9 +53,18 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as {
       dryRun?: boolean
       fixes?: { postId: string; oldUrl: string; newUrl: string }[]
+      /** 'broken' (default): only repair dead/junk-ASIN links — the original
+       *  use case. 'regroup': also re-wrap WORKING geni.us links, used when
+       *  the per-site Geniuslink group rule was added and existing posts
+       *  carry links that landed in MVP-YOUTUBE before the routing fix.
+       *  In regroup mode every blog post with a geni.us link gets a fresh
+       *  shortcode in the per-site group, even if the old one resolves
+       *  cleanly. 2026-06-09. */
+      mode?: 'broken' | 'regroup'
     }
     const dryRun = body.dryRun === true
     const selectedFixes = Array.isArray(body.fixes) ? body.fixes : null
+    const mode: 'broken' | 'regroup' = body.mode === 'regroup' ? 'regroup' : 'broken'
 
     // Per-user settings (tier, Amazon tag, Geniuslink keys). WP credentials
     // are resolved per-post below — multi-site users have posts on different
@@ -202,7 +211,16 @@ export async function POST(request: Request) {
             const finalUrl = await resolveTrueDestination(oldUrl)
             broken = badAmazonAsin(finalUrl)
           }
-          if (!broken) return
+          // 'broken' mode: only proceed when the link is actually broken.
+          // 'regroup' mode: proceed when the link is broken OR when it's a
+          // geni.us link (which may be in the wrong group). Non-geni.us
+          // working links are left alone — they have no group concept.
+          if (mode === 'broken') {
+            if (!broken) return
+          } else { // regroup
+            const isGeniuslink = GENIUSLINK.test(oldUrl)
+            if (!broken && !isGeniuslink) return
+          }
 
           // Re-resolve the RIGHT product + the user's own affiliate link.
           // ownSite = THIS post's site (multi-site self-link filter). Fall
