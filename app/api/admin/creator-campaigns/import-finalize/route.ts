@@ -67,18 +67,25 @@ async function runFinalize(request: Request): Promise<NextResponse> {
 
   // ── Step 1: stale-row delete ──────────────────────────────────────────
   // Anything with imported_at older than batchStart wasn't in this
-  // import — prune it. Index-backed (imported_at has an index from
-  // migration 084).
+  // import — prune it.
+  //
+  // 2026-06-09: routed through delete_stale_creator_campaigns(...) RPC
+  // (migration 115) instead of a single bulk DELETE. The bulk version
+  // worked fine until catalogs hit ~600K rows, at which point Supabase
+  // would cancel the statement at its default per-statement timeout
+  // and the user saw "Cleanup failed: canceling statement due to
+  // statement timeout". The RPC loops over 25k-row chunks internally
+  // so each individual DELETE stays well under that ceiling.
   const t0 = Date.now()
   let staleDeleted: number | null = null
   let cleanupError: string | null = null
   try {
-    const { error, count } = await sb
-      .from('creator_connections_catalog')
-      .delete({ count: 'exact' })
-      .lt('imported_at', batchStart)
+    const { data, error } = await sb.rpc('delete_stale_creator_campaigns', {
+      p_batch_start: batchStart,
+      p_chunk_size: 25000,
+    })
     if (error) cleanupError = error.message
-    else staleDeleted = count ?? 0
+    else if (typeof data === 'number') staleDeleted = data
   } catch (e) {
     cleanupError = e instanceof Error ? e.message : 'unknown delete error'
   }
