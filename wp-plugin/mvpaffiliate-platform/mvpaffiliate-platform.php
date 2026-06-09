@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.47
+ * Version: 1.0.48
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -14,7 +14,19 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('MVP_AFFILIATE_VERSION', '1.0.43');
+// Single source of truth: read the version from this file's own "Version:"
+// header (line 6). Previously this was a hard-coded string that drifted
+// behind the header on every bump — the /status endpoint reported the stale
+// constant, the dashboard banner kept saying "update available" after
+// successful updates because the *reported* version never moved. WP's
+// get_file_data() parses plugin header comments and is always available at
+// plugin-load time. Fallback string is only used if get_file_data is somehow
+// missing (it shouldn't be — WP core defines it in functions.php).
+$mvp_affiliate_self_meta = function_exists('get_file_data')
+    ? get_file_data(__FILE__, ['Version' => 'Version'])
+    : ['Version' => '1.0.48'];
+define('MVP_AFFILIATE_VERSION', (string) ($mvp_affiliate_self_meta['Version'] ?: '1.0.48'));
+unset($mvp_affiliate_self_meta);
 
 // ─── 0. allow MVP to receive Authorize-Application redirects ──────────────────
 // WordPress core's wp-admin/authorize-application.php calls wp_safe_redirect()

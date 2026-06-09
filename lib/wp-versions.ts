@@ -12,7 +12,11 @@
  *        - theme:  wp-plugin/mvp-affiliate-theme/style.css  (Version:)
  *                  wp-plugin/mvp-affiliate-theme/functions.php (MVP_AFFILIATE_THEME_VERSION)
  *        - plugin: wp-plugin/mvpaffiliate-platform/mvpaffiliate-platform.php
- *                  (the `* Version:` header AND the MVP_AFFILIATE_VERSION define — keep them equal)
+ *                  (ONLY the `* Version:` header — the MVP_AFFILIATE_VERSION
+ *                  PHP constant now auto-reads from that header via
+ *                  get_file_data(), so they can never drift again. Fixed
+ *                  2026-06-09 after a stale constant caused the "click Update
+ *                  → banner returns" loop.)
  *   3. Rebuild the zips:
  *        cd wp-plugin
  *        rm -f ../public/mvp-affiliate-theme.zip && zip -r ../public/mvp-affiliate-theme.zip mvp-affiliate-theme -x "*.DS_Store"
@@ -26,7 +30,7 @@ export const WP_VERSIONS = {
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip',
   },
   plugin: {
-    version: '1.0.47',
+    version: '1.0.48',
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate.zip',
   },
 } as const
