@@ -1437,6 +1437,31 @@ async function handleGenerate(request: Request) {
       }
     } catch { /* non-fatal — keep the generated text */ }
 
+    // ── Citation-guard pass (Sprint 2 hallucination layer, 2026-06-09) ───────
+    // Belt-and-suspenders second fact-check that runs AFTER the broad one
+    // above. Narrower scope: only "cite-or-omit" claim classes (numeric specs,
+    // dimensions, model numbers, named materials, accessory lists, certs,
+    // multi-function identity, numbered comparisons). Subjective voice +
+    // lived-experience anecdotes are left untouched so this never flattens
+    // the writer's prose.
+    //
+    // Silent strip — no per-claim report surfaced; we just publish the cleaner
+    // version (matches the design decision from the Sprint 2 question pass).
+    // Same safety rails as the prior pass: length floor + affiliate-link
+    // preservation guards inside citationGuard() itself.
+    try {
+      const guarded = await claude.citationGuard(content, transcript, productResearch, { userId: user.id, tier: (wp?.tier as string) ?? null })
+      if (guarded && guarded !== content) {
+        const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
+        content = scrubVoicePatterns(scrubBanned(guarded), { channelUrl: channelUrlForRescrub }).content
+        try { await wpService.updatePost(wpPost.id, { content }) } catch { /* keep prior text */ }
+        if (savedPost?.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          try { await supabase.from('blog_posts').update({ content }).eq('id', savedPost.id) } catch { /* non-fatal */ }
+        }
+      }
+    } catch { /* non-fatal — keep the prior fact-checked text */ }
+
     // ── Title-vs-body identity fact-check (2026-06-07 fix) ───────────────────
     // After the body has settled (above body fact-check may have corrected it),
     // verify the title still names the SAME product. The original WagComb
