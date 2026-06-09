@@ -9,12 +9,15 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 2026-06-09 Phase 2 (VA): deleting collabs targets the owner's bucket.
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { ownerId } = auth
 
     const body = await request.json().catch(() => ({})) as { ids?: unknown }
     const ids = Array.isArray(body.ids)
@@ -28,7 +31,7 @@ export async function POST(request: Request) {
     const { error, count } = await supabase
       .from('collaborations')
       .delete({ count: 'exact' })
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .in('id', ids)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

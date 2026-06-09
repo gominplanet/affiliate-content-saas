@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeService } from '@/services/youtube'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  // 2026-06-09 Phase 2 (VA): syncing pulls the OWNER's channel videos and
+  // writes them under ownerId so the Library reflects the owner's workspace
+  // regardless of who triggered the sync.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const apiKey = process.env.YOUTUBE_API_KEY
   if (!apiKey) {
@@ -23,7 +25,7 @@ export async function POST(request: Request) {
   const { data: intRow } = await supabase
     .from('integrations')
     .select('youtube_channel_id')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .maybeSingle()
 
   const channelId = intRow?.youtube_channel_id || process.env.YOUTUBE_CHANNEL_ID
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
     }
 
     const rows = videos.map((v) => ({
-      user_id: user.id,
+      user_id: ownerId,
       youtube_video_id: v.youtubeVideoId,
       title: v.title,
       description: v.description,
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
     const { data: existing } = await supabase
       .from('youtube_videos')
       .select('youtube_video_id')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .in('youtube_video_id', incomingIds)
     const existingIds = new Set((existing ?? []).map((r: { youtube_video_id: string }) => r.youtube_video_id))
     const newVideos = videos.filter(v => !existingIds.has(v.youtubeVideoId))

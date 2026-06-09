@@ -12,6 +12,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 // Same 20 niches that ship with brand profiles — used for dedup. Mirrors
 // the constant on the Brand page and the Content page picker.
@@ -26,8 +27,10 @@ const MASTER_NICHES = new Set([
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 2026-06-09 Phase 2 (VA): custom categories live on owner's brand profile.
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { ownerId } = auth
 
     const { category } = await request.json() as { category?: string }
     const trimmed = (category ?? '').trim()
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
     const { data: brand } = await supabase
       .from('brand_profiles')
       .select('custom_categories')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .single()
 
     const existing: string[] = (brand?.custom_categories as string[] | null) ?? []
@@ -67,7 +70,7 @@ export async function POST(request: Request) {
     const { error: updateErr } = await supabase
       .from('brand_profiles')
       .update({ custom_categories: next })
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
 
     if (updateErr) {
       return NextResponse.json({ error: updateErr.message }, { status: 500 })

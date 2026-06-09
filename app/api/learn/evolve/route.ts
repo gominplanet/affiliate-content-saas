@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 import {
   VOICE_QUESTIONS,
   STYLE_AXES,
@@ -25,16 +26,20 @@ export const maxDuration = 60
 
 export async function POST() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): LEARN evolution runs on owner's brand_profiles
+  // using the owner's published posts as training data. AI usage tracked
+  // under user.id (caller).
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { user, ownerId } = auth
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sb = supabase as any
 
   const [{ data: brand }, { data: intRow }, { count }] = await Promise.all([
-    sb.from('brand_profiles').select('learn_profile,author_bio,target_audience').eq('user_id', user.id).single(),
-    sb.from('integrations').select('tier').eq('user_id', user.id).single(),
-    sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'published'),
+    sb.from('brand_profiles').select('learn_profile,author_bio,target_audience').eq('user_id', ownerId).single(),
+    sb.from('integrations').select('tier').eq('user_id', ownerId).single(),
+    sb.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', ownerId).eq('status', 'published'),
   ])
 
   if ((count ?? 0) < 1) {
@@ -64,7 +69,7 @@ export async function POST() {
   const { data: posts } = await sb
     .from('blog_posts')
     .select('title,content')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .eq('status', 'published')
     .order('published_at', { ascending: false })
     .limit(5)
@@ -100,7 +105,7 @@ export async function POST() {
   }
 
   update.learn_profile_evolved_at = new Date().toISOString()
-  await sb.from('brand_profiles').update(update).eq('user_id', user.id)
+  await sb.from('brand_profiles').update(update).eq('user_id', ownerId)
 
   return NextResponse.json({ ok: true, evolved: true, fieldsFilled: changed })
 }

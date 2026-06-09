@@ -9,19 +9,24 @@ import { createServerClient } from '@/lib/supabase/server'
 import { TIERS, billingWindow, nextTierFor, normalizeTier, type Tier } from '@/lib/tier'
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export const maxDuration = 120
 
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 2026-06-09 Phase 2 (VA): resource reads (integrations, brand,
+    // collaborations) go through ownerId; collab cap + AI usage tracked
+    // under user.id (caller).
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { user, ownerId } = auth
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [{ data: intRow }, { data: brand }] = await Promise.all([
-      supabase.from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', user.id).single(),
-      supabase.from('brand_profiles').select('*').eq('user_id', user.id).single(),
+      supabase.from('integrations').select('tier,subscription_period_start,subscription_period_end').eq('user_id', ownerId).single(),
+      supabase.from('brand_profiles').select('*').eq('user_id', ownerId).single(),
     ])
     const tier = normalizeTier(intRow?.tier)
     // Tier restructure 2026-06-04: Collabs is Creator+ minimum per matrix
@@ -50,7 +55,7 @@ export async function POST(request: Request) {
       const { count } = await supabase
         .from('collaborations')
         .select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .gte('created_at', startISO)
       if ((count ?? 0) >= collabCap) {
         const next = nextTierFor(tier, 'collabsPerMonth')
@@ -142,7 +147,7 @@ export async function POST(request: Request) {
     const { data: row } = await supabase
       .from('collaborations')
       .insert({
-        user_id: user.id,
+        user_id: ownerId,
         brand_name: input.brandName,
         amazon_storefront: input.amazonStorefront || null,
         website_url: input.websiteUrl || null,

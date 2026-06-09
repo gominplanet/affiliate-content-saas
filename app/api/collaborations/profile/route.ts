@@ -9,12 +9,16 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 2026-06-09 Phase 2 (VA): collab profile updates land on owner's
+    // brand_profiles. UI gating prevents VAs from reaching this surface.
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { ownerId } = auth
 
     const body = await request.json().catch(() => ({})) as {
       collabsDone?: unknown
@@ -69,7 +73,7 @@ export async function POST(request: Request) {
         ...(str(body.wechat).trim()   ? { contact_wechat:   str(body.wechat).trim()   } : {}),
         ...(str(body.lark).trim()     ? { contact_lark:     str(body.lark).trim()     } : {}),
       })
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })

@@ -5,11 +5,15 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function GET() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): collaborations + brand + integrations live
+  // on the owner — surface them when a VA opens /collaborations.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [{ data: rows }, { data: intg }, { data: brand }] = await Promise.all([
@@ -17,14 +21,14 @@ export async function GET() {
     supabase
       .from('collaborations')
       .select('id,brand_name,platforms,generated_email,created_at')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .order('created_at', { ascending: false })
       .limit(100),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
       .select('facebook_page_id,threads_access_token,twitter_access_token,linkedin_access_token,bluesky_handle,telegram_channel_id,pinterest_access_token,instagram_user_id,tiktok_access_token')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .single(),
     // Cast through `any` because contact_whatsapp/wechat/lark were added
     // in migration 096; the generated Database types in this branch don't
@@ -33,7 +37,7 @@ export async function GET() {
     (supabase as any)
       .from('brand_profiles')
       .select('website_url,youtube_channel_url,instagram_url,tiktok_url,facebook_url,pinterest_url,threads_url,twitter_url,amazon_storefront_url,linktree_url,collab_track_record,collab_example_links,collab_extra_notes,collab_livestreams,collab_livestream_link,contact_whatsapp,contact_wechat,contact_lark')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .single(),
   ])
 
