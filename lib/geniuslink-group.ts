@@ -105,6 +105,71 @@ export async function resolveGeniuslinkGroupId(opts: ResolveOpts): Promise<numbe
   return groupId
 }
 
+/** The canonical group name for the YouTube Co-Pilot path. Lives at the
+ *  USER level (not per-site) because YT descriptions are written once per
+ *  video and don't belong to any one blog. Pairs with the per-site group
+ *  (groupNameForSiteUrl) for unambiguous traffic-source attribution: a
+ *  click landing in MVP-YOUTUBE came from a YouTube description; a click
+ *  in `gominreviews.com` came from a blog post. */
+export const YOUTUBE_COPILOT_GROUP_NAME = 'MVP-YOUTUBE'
+
+interface ResolveYouTubeOpts {
+  supabase: Client
+  userId: string
+  apiKey: string | null | undefined
+  apiSecret: string | null | undefined
+}
+
+/**
+ * Resolve the per-user "MVP-YOUTUBE" Geniuslink group, creating + caching
+ * on first use. Sibling of resolveGeniuslinkGroupId() — that one routes
+ * blog posts to the site's group; this one routes YT Co-Pilot output to
+ * the user's dedicated YouTube bucket so the two traffic sources stay
+ * cleanly separated in the Geniuslink dashboard.
+ *
+ * Cache lives on integrations.geniuslink_youtube_group_id (migration 113).
+ * Returns null on any failure — callers fall back to the service's
+ * default group + a soft log line, no UX regression.
+ */
+export async function resolveGeniuslinkYouTubeGroupId(opts: ResolveYouTubeOpts): Promise<number | null> {
+  const { supabase, userId, apiKey, apiSecret } = opts
+  if (!apiKey || !apiSecret) return null
+
+  // Step 1 — cached value on the integrations row.
+  // Cast through unknown because the regenerated DB types lag the
+  // migration (geniuslink_youtube_group_id just added in migration 113).
+  const { data: row } = await supabase
+    .from('integrations')
+    .select('geniuslink_youtube_group_id')
+    .eq('user_id', userId)
+    .maybeSingle() as unknown as { data: { geniuslink_youtube_group_id: number | null } | null }
+  if (row?.geniuslink_youtube_group_id) return row.geniuslink_youtube_group_id
+
+  // Step 2 + 3 — find an existing MVP-YOUTUBE group, then auto-create on miss.
+  const svc = createGeniuslinkService(apiKey, apiSecret)
+  let groupId: number | null = null
+  try {
+    groupId = await svc.getOrCreateGroupId(YOUTUBE_COPILOT_GROUP_NAME)
+  } catch (err) {
+    console.error('[geniuslink-group] youtube-group resolve failed:', err)
+    return null
+  }
+  if (!groupId) return null
+
+  // Step 4 — persist for next time. Best-effort; another generation will
+  // re-resolve if this write fails.
+  await supabase
+    .from('integrations')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .update({ geniuslink_youtube_group_id: groupId } as any)
+    .eq('user_id', userId)
+    .then(() => undefined, (err: unknown) => {
+      console.error('[geniuslink-group] youtube-group cache write failed:', err)
+    })
+
+  return groupId
+}
+
 /**
  * Append Amazon's per-click subID parameter (ascsubtag) to an Amazon
  * destination URL. The subtag rides through Geniuslink's redirect and
