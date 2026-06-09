@@ -113,6 +113,11 @@ interface BrandData {
    *  used by /api/blog/generate + /api/blog/refresh-images via the
    *  3rd argument to allowedBlogImages. 2026-06-07. */
   blog_image_count: number | null
+  /** 2026-06-08 (#14): when true, every generated post gets a "What we'd
+   *  improve" section between the body and FAQ — manufacturer-facing
+   *  critique distinct from the consumer-facing Cons. Opt-in because it
+   *  reads more critical and not all creators want it on by default. */
+  include_improvements_section: boolean
   affiliate_disclaimer: string
   primary_color: string
   secondary_color: string
@@ -199,6 +204,7 @@ const DEFAULT: BrandData = {
   tone: [],
   post_length: 'medium',
   cta_style: 'soft_recommendation',
+  include_improvements_section: false,
   // Null = use the tier-default (word-scaled). Existing users keep
   // legacy behavior until they explicitly pick a number.
   blog_image_count: null,
@@ -313,6 +319,8 @@ export default function BrandPage() {
         tone: row.tone ?? [],
         post_length: row.post_length ?? 'medium',
         cta_style: row.cta_style ?? 'soft_recommendation',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        include_improvements_section: !!(row as any).include_improvements_section,
         // blog_image_count is nullable in DB; null = "use tier default".
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         blog_image_count: typeof (row as any).blog_image_count === 'number' ? (row as any).blog_image_count : null,
@@ -1324,6 +1332,29 @@ export default function BrandPage() {
                   onChange={(e) => set('affiliate_disclaimer', e.target.value)}
                   className="input-field resize-none text-xs"
                 />
+              </div>
+              {/* 2026-06-08 (#14): opt-in "What we'd improve" block — adds a
+                   Wirecutter-style manufacturer-facing critique section to
+                   every generated post. Spans full width so the description
+                   fits cleanly on its own line. */}
+              <div className="md:col-span-2">
+                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg border border-[#e5e5e7] dark:border-[#3a3a3c] hover:border-[#FF6B00] hover:bg-orange-50/30 dark:hover:bg-orange-950/10 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={data.include_improvements_section}
+                    onChange={(e) => set('include_improvements_section', e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-[#86868b] text-[#FF6B00] focus:ring-[#FF6B00]"
+                  />
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-1.5">
+                      Include a &quot;What we&apos;d improve&quot; section
+                      <InfoTip>Adds a Wirecutter-style manufacturer-facing critique block to every review — 1-3 concrete things the brand should fix in the next version. Different from Cons (consumer friction). Reads more critical, so it&apos;s opt-in. The AI grounds every point in the transcript / product info — never invents flaws.</InfoTip>
+                    </div>
+                    <div className="text-[11px] text-[#6e6e73] dark:text-[#a8a8ad] mt-0.5 leading-snug">
+                      Adds a &quot;Flaws but not deal breakers&quot; block between the body and FAQ. Editorial credibility boost — but only turn on if your voice can carry the extra critique.
+                    </div>
+                  </div>
+                </label>
               </div>
             </div>
           </div>

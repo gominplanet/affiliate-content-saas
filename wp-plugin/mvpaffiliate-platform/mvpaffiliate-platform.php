@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.44
+ * Version: 1.0.45
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -3366,6 +3366,19 @@ if (!function_exists('mvp_affiliate_render_reader_ux')) {
   .gr-vs-comparison{font-size:12px}
   .gr-vs-comparison thead th,.gr-vs-comparison tbody th,.gr-vs-comparison tbody td{padding:9px 8px}
 }
+
+/* H. What we'd improve (#14, 2026-06-08, opt-in) — manufacturer-facing
+   critique block between the body and FAQ. Styled with a soft amber
+   left rail so it reads as editorial commentary, not another Cons list.
+   Only renders when the user opted in via Brand Profile + the AI emitted
+   the block. */
+.gr-improvements{background:#fffaf0;border-left:4px solid #f59e0b;border-radius:0 6px 6px 0;padding:20px 24px;margin:32px 0}
+.gr-improvements-title{font-size:14px !important;font-weight:800 !important;letter-spacing:.6px;text-transform:uppercase;color:#92400e !important;margin:0 0 8px !important;padding:0 !important;border:0 !important}
+.gr-improvements-lead{font-size:15px;color:#3a3a3c;margin:0 0 14px}
+.gr-improvements-list{margin:0;padding:0 0 0 20px;color:#3a3a3c}
+.gr-improvements-list li{margin:0 0 10px;line-height:1.55}
+.gr-improvements-list li:last-child{margin-bottom:0}
+.gr-improvements-list strong{color:#1d1d1f;font-weight:700}
 
 /* G. Also Consider cards (#8, 2026-06-08) — clickable internal-link cards
    inline (mid-post, just before FAQ via lib/internal-links.ts). Each card

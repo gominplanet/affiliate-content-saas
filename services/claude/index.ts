@@ -23,6 +23,10 @@ export interface BrandProfile {
   words_to_avoid: string | null
   /** Structured LEARN voice profile (jsonb). Shape validated in lib/learn. */
   learn_profile?: unknown
+  /** Per-user toggle for the "What we'd improve" section (#14, 2026-06-08).
+   *  When true, the generator adds a manufacturer-facing critique block
+   *  between the body and FAQ. Defaults to false — opt-in. */
+  include_improvements_section?: boolean
 }
 
 export interface VideoInput {
@@ -140,6 +144,47 @@ function buildSystemPrompt(
   // The LEARN voice profile — the writer's own taste/style training.
   // High priority: it encodes what THIS user finds fake vs trustworthy.
   const learnSection = learnProfileToPrompt(brand.learn_profile)
+
+  // 2026-06-08 (#14, opt-in): "What we'd improve" block. The Wirecutter
+  // pattern — manufacturer-facing critique that sits between Cons (consumer
+  // friction) and the FAQ. Adds editorial credibility but reads more
+  // critical, so it's gated by the brand toggle. Empty string when off so
+  // the AI doesn't even know the block exists.
+  const improvementsSection = brand.include_improvements_section ? `
+
+[4c] WHAT WE'D IMPROVE (2026-06-08, manufacturer-facing critique) —
+REQUIRED when this section is enabled. Sits between Section G of the body
+and the [4b] mini-comparison (or, if no [4b], before the FAQ).
+
+This is NOT a second Cons list. The verdict's Skip-if box already covers
+consumer-facing friction. This block addresses the MANUFACTURER: 1-3
+concrete design / build / packaging choices that, if the brand fixed
+them in v2, would meaningfully improve the product. Same pattern Wirecutter
+uses under "Flaws but not deal breakers".
+
+Render as:
+<!-- wp:html -->
+<div class="gr-improvements">
+  <h3 class="gr-improvements-title">What we'd improve</h3>
+  <p class="gr-improvements-lead">{One-line lead sentence framing why these matter — e.g. "Three things that wouldn't be hard for the next version to fix:"}</p>
+  <ul class="gr-improvements-list">
+    <li><strong>{Specific design/build/packaging issue}</strong> — {Concrete fix the manufacturer could make, grounded in something from the transcript or product info.}</li>
+    <li><strong>{Issue}</strong> — {Fix.}</li>
+    {{-- optional 3rd --}}
+  </ul>
+</div>
+<!-- /wp:html -->
+
+Rules:
+  • Each bullet names a SPECIFIC thing (not "the materials" — but
+    "the zipper pull is too small to grip with gloves on").
+  • Critique the PRODUCT, not the price. If price is the complaint,
+    that belongs in Cons or the verdict, not here.
+  • Tone stays even-handed. You can be critical without being snarky.
+    "I'd love to see X" beats "How did they ship this?"
+  • Grounded ONLY in transcript / product info. Never invent a flaw to
+    fill a bullet — 1 honest bullet beats 3 fabricated ones.
+` : ''
 
   const voiceSection = voiceProfile ? `
 ═══════════════════════════════════════
@@ -272,7 +317,7 @@ CRITICAL RULES — FOLLOW STRICTLY
 
 10b. CLICKABLE VIDEO TIMESTAMPS — OPTIONAL, 2–4 per post when natural.
 
-   Annotate concrete moments from the video with `[mm:ss]` (or `[m:ss]`)
+   Annotate concrete moments from the video with [mm:ss] (or [m:ss])
    timestamps. The MVP plugin converts these into clickable links that
    seek the embedded YouTube player to that exact moment — same UX as
    Wirecutter / Tom's Guide rarely match, an "obviously a real review"
@@ -293,8 +338,8 @@ CRITICAL RULES — FOLLOW STRICTLY
      • If you're guessing — only annotate moments where the transcript
        actually provides the timestamp.
 
-   FORMAT — exactly `[mm:ss]` with square brackets, inside body
-   paragraphs, after the sentence the timestamp anchors. Use `[m:ss]`
+   FORMAT — exactly [mm:ss] with square brackets, inside body
+   paragraphs, after the sentence the timestamp anchors. Use [m:ss]
    for moments under 10 min (single-digit minute is fine). Don't
    invent timestamps to look thorough — 0 is better than fabricated.
 
@@ -964,7 +1009,7 @@ specific feature). Keep cells to 4 words max — this is a scan-table.
 </table>
 <p class="gr-vs-source"><em>Comparison drawn from what {reviewer name or "we"} discussed in the video.</em></p>
 <!-- /wp:html -->
-
+${improvementsSection}
 [5] FAQ — Minimum 5 questions (product-specific, not generic)
 <!-- wp:heading {"level":2} --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->
 Each Q: <!-- wp:heading {"level":3} --><h3>{question}</h3><!-- /wp:heading -->

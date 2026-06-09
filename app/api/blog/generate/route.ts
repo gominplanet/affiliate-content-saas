@@ -665,6 +665,11 @@ async function handleGenerate(request: Request) {
         target_audience: (brand as Record<string, unknown>).target_audience as string | null,
         words_to_avoid: (brand as Record<string, unknown>).words_to_avoid as string | null,
         learn_profile: (brand as Record<string, unknown>).learn_profile,
+        // 2026-06-08 (#14): opt-in "What we'd improve" section. Read from
+        // brand_profiles.include_improvements_section (migration 110).
+        // Falls back to false when the column is missing so the toggle is
+        // opt-in by default.
+        include_improvements_section: !!(brand as Record<string, unknown>).include_improvements_section,
       },
       {
         videoId: v.youtube_video_id as string,

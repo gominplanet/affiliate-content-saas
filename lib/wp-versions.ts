@@ -22,11 +22,11 @@
 
 export const WP_VERSIONS = {
   theme: {
-    version: '1.4.18',
+    version: '1.4.19',
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate-theme.zip',
   },
   plugin: {
-    version: '1.0.44',
+    version: '1.0.45',
     downloadUrl: 'https://www.mvpaffiliate.io/mvp-affiliate.zip',
   },
 } as const
