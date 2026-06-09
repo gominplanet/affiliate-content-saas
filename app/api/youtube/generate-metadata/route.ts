@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, checkGenerationLimit, type Tier } from '@/lib/tier'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { scoreTitle } from '@/lib/thumbnail-score'
 
@@ -377,8 +378,12 @@ Return JSON:
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 2026-06-09 Phase 2 (VA): resource reads use ownerId so VAs see the
+    // owner's brand + integrations + history; usage cap + telemetry use
+    // user.id so we bill the actual caller.
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { user, ownerId } = auth
 
     const { asin, videoTitle, videoDescription, youtubeVideoId } = await request.json() as {
       asin?: string | null
@@ -412,13 +417,13 @@ export async function POST(request: Request) {
       supabase
         .from('brand_profiles')
         .select('name,author_name,niches,tone,website_url,contact_email,contact_preference,gear_sections')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .single(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       supabase
         .from('integrations')
         .select('geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag,tier,subscription_period_start,subscription_period_end')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .single(),
     ])
 
@@ -551,7 +556,7 @@ export async function POST(request: Request) {
       if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
         const groupId = await resolveGeniuslinkYouTubeGroupId({
           supabase,
-          userId: user.id,
+          userId: ownerId,
           apiKey: intRow.geniuslink_api_key,
           apiSecret: intRow.geniuslink_api_secret,
         })
@@ -597,7 +602,7 @@ export async function POST(request: Request) {
           : videoTitle
         const groupId = await resolveGeniuslinkYouTubeGroupId({
           supabase,
-          userId: user.id,
+          userId: ownerId,
           apiKey: intRow.geniuslink_api_key,
           apiSecret: intRow.geniuslink_api_secret,
         })
@@ -643,7 +648,7 @@ export async function POST(request: Request) {
     const { data: priorMetaRows } = await supabase
       .from('youtube_videos')
       .select('generated_title,generated_description,generated_pinned_comment,youtube_video_id')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .not('metadata_generated_at', 'is', null)
       .neq('youtube_video_id', youtubeVideoId ?? '__none__')
       .order('metadata_generated_at', { ascending: false })
@@ -817,7 +822,7 @@ export async function POST(request: Request) {
             // code if this generation fell back to the raw Amazon URL.
             ...(ytGeniuslinkCode ? { geniuslink_yt_code: ytGeniuslinkCode } : {}),
           })
-          .eq('user_id', user.id)
+          .eq('user_id', ownerId)
           .eq('youtube_video_id', youtubeVideoId)
           .select('id')
         if (updErr) {

@@ -24,6 +24,7 @@ import { scorePostSeo } from '@/lib/seo-score'
 import { fetchSitemapSlugs } from '@/lib/sitemap'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials, listSites } from '@/lib/wordpress-sites'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export const maxDuration = 120
 
@@ -43,15 +44,20 @@ interface SiteContext {
 
 export async function GET() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): all resource reads (integrations, blog_posts,
+  // post_seo, GSC token, WP credentials) go through ownerId so VAs see the
+  // owner's SEO dashboard. user.id only used for the post_seo upsert below
+  // where we keep it as ownerId too — post_seo lives on the owner's side.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // Per-user: GSC property only. WP credentials are per-site (loaded below).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: integ } = await supabase
     .from('integrations')
     .select('gsc_property')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .single()
   const property: string | null = integ?.gsc_property || null
 
@@ -66,7 +72,7 @@ export async function GET() {
   const { data: postsRaw } = await supabase
     .from('blog_posts')
     .select('id,title,slug,content,post_type,wordpress_post_id,wordpress_site_id,published_at')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .not('wordpress_post_id', 'is', null)
     .order('published_at', { ascending: false })
     .limit(POSTS_OVERVIEW_CAP)
@@ -75,7 +81,7 @@ export async function GET() {
 
   // ── Multi-site setup: resolve every site referenced by these posts, once.
   // Build siteCache keyed by wordpress_sites.id (or LEGACY_BUCKET for nulls).
-  const sites = await listSites(supabase, user.id)
+  const sites = await listSites(supabase, ownerId)
   const defaultSiteId = sites.find(s => s.isDefault)?.id ?? sites[0]?.id ?? null
   const LEGACY_BUCKET = '__legacy__'
   const referencedSiteIds = new Set<string>()
@@ -89,7 +95,7 @@ export async function GET() {
   const siteResults = await Promise.all(
     Array.from(referencedSiteIds).map(async (key): Promise<[string, SiteContext | null]> => {
       const lookupId = key === LEGACY_BUCKET ? null : key
-      const creds = await getWordPressCredentials(supabase, user.id, lookupId)
+      const creds = await getWordPressCredentials(supabase, ownerId, lookupId)
       if (!creds) return [key, null]
       const wpBase = creds.wordpress_url.replace(/\/$/, '')
       // Live IDs + sitemap can also run in parallel (independent
@@ -142,7 +148,7 @@ export async function GET() {
   const { data: cacheRows } = await supabase
     .from('post_seo')
     .select('post_id,indexed_state,coverage_state,last_crawl,clicks,impressions,position,ctr,dropped_at,checked_at,score')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cache = new Map<string, any>((cacheRows ?? []).map((r: any) => [r.post_id, r]))
 
@@ -150,7 +156,7 @@ export async function GET() {
   let token: string | null = null
   let perfByPage: Map<string, { clicks: number; impressions: number; position: number; ctr: number }> = new Map()
   if (property) {
-    token = await getValidGscToken(supabase, user.id)
+    token = await getValidGscToken(supabase, ownerId)
     if (token) {
       const end = new Date(); end.setDate(end.getDate() - 3)   // GSC has ~3-day lag
       const start = new Date(); start.setDate(start.getDate() - 31)
@@ -274,7 +280,7 @@ export async function GET() {
     out.push(row)
 
     toUpsert.push({
-      post_id: p.id, user_id: user.id, url,
+      post_id: p.id, user_id: ownerId, url,
       indexed_state: indexedState, coverage_state: coverageState, last_crawl: lastCrawl,
       clicks: row.clicks, impressions: row.impressions, position: row.position, ctr: row.ctr,
       seo_score: score, score_detail: checks, checked_at: new Date().toISOString(),

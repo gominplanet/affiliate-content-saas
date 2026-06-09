@@ -26,6 +26,7 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 import { fal } from '@fal-ai/client'
 
 export const maxDuration = 300
@@ -98,8 +99,11 @@ async function identifyProduct(
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): resources go through ownerId; caps/usage
+  // tracked under user.id (caller).
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { user, ownerId } = auth
 
   const { videoUrls, format, topic, heroImageDataUrl, siteId } = (await request.json()) as {
     videoUrls?: string[]
@@ -122,7 +126,7 @@ export async function POST(request: Request) {
   const { data: wp } = await supabase
     .from('integrations')
     .select('tier,wordpress_url,wordpress_username,wordpress_app_password,geniuslink_api_key,geniuslink_api_secret,amazon_associates_tag')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .maybeSingle()
   const tier = normalizeTier(wp?.tier)
 
@@ -139,7 +143,7 @@ export async function POST(request: Request) {
   // Multi-site: resolve target site (default if siteId omitted). See
   // app/api/blog/generate for the full pattern; comparison is a thin
   // variant that follows it.
-  const site = await getWordPressCredentials(supabase, user.id, siteId)
+  const site = await getWordPressCredentials(supabase, ownerId, siteId)
   if (!site) {
     return NextResponse.json({ error: 'Connect your WordPress site first (Site & Integrations).' }, { status: 400 })
   }
@@ -157,7 +161,7 @@ export async function POST(request: Request) {
   const { data: brand } = await supabase
     .from('brand_profiles')
     .select('learn_profile,affiliate_disclaimer,name,niches,author_name')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .single()
   const learnBlock = learnProfileToPrompt(brand?.learn_profile)
   const disclaimer = (brand?.affiliate_disclaimer as string) ||
@@ -542,12 +546,12 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   }
 
   // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.
-  void pingIndexNowForUrl(supabase, user.id, wpPost.link, siteId).catch(() => {})
+  void pingIndexNowForUrl(supabase, ownerId, wpPost.link, siteId).catch(() => {})
 
   // ── Save blog_posts row (post_type distinguishes it; counts as 1 post) ──────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await supabase.from('blog_posts').insert({
-    user_id: user.id,
+    user_id: ownerId,
     video_id: resolved[0].videoId,
     title,
     slug,

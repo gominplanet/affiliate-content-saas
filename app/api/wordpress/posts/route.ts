@@ -1,21 +1,25 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export const maxDuration = 120
 
 export async function GET(req: Request) {
   try {
     const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 2026-06-09 Phase 2 (VA): resource reads use ownerId so VAs see the
+    // owner's WordPress posts + blog_posts mapping table.
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { ownerId } = auth
 
     // Multi-site: ?siteId=<uuid> targets a specific site; omitted → default.
     // Used by /attach-video modal — Pro multi-site users pick which site's
     // legacy posts to list. Single-site users see no UI affordance.
     const url = new URL(req.url)
     const siteId = url.searchParams.get('siteId')
-    const site = await getWordPressCredentials(supabase, user.id, siteId)
+    const site = await getWordPressCredentials(supabase, ownerId, siteId)
     if (!site) {
       return NextResponse.json({ error: 'WordPress not connected' }, { status: 400 })
     }
@@ -71,7 +75,7 @@ export async function GET(req: Request) {
     const { data: allDbPosts } = await supabase
       .from('blog_posts')
       .select('wordpress_post_id,slug,wordpress_url,video_id')
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .not('video_id', 'is', null)
       .limit(2000)
 
@@ -106,7 +110,7 @@ export async function GET(req: Request) {
       const { data: ytRows } = await supabase
         .from('youtube_videos')
         .select('id,youtube_video_id')
-        .eq('user_id', user.id)
+        .eq('user_id', ownerId)
         .in('youtube_video_id', [...ytVideoIds])
       for (const r of (ytRows ?? []) as { id: string; youtube_video_id: string }[]) {
         ytIdToRowId[r.youtube_video_id] = r.id
