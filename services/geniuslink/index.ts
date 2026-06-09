@@ -25,10 +25,15 @@ export class GeniuslinkService {
   }
 
   /** All enabled groups on the account. Used to find or auto-create a
-   *  per-site group named after the blog domain. */
+   *  per-site group named after the blog domain.
+   *
+   *  Hard 8s timeout so a hung Geniuslink endpoint can never block the
+   *  caller (blog generation) past that — the request falls back to the
+   *  default group instead of timing the whole POST out at the client. */
   async listGroups(): Promise<Array<{ Id: number; Name: string; Enabled: number }>> {
     const res = await fetch(`${GENIUSLINK_API}/v1/groups/list`, {
       headers: this.authHeaders,
+      signal: AbortSignal.timeout(8000),
     })
     const text = await res.text()
     if (!res.ok) throw new Error(`Geniuslink groups error ${res.status}: ${text.slice(0, 200)}`)
@@ -53,36 +58,92 @@ export class GeniuslinkService {
     return match ? match.Id : null
   }
 
-  /** Create a new group on the account. Tries known endpoint variants in
-   *  order because Geniuslink doesn't publish a stable create endpoint —
-   *  some accounts respond on /v1/groups/add, others on /v3/groups. Returns
-   *  null when both fail so callers can fall back to the default group
-   *  + log a "please create the group manually" hint. */
+  /** Create a new group on the account. Tries many known endpoint
+   *  shapes in order — Geniuslink doesn't publish a stable create
+   *  endpoint, so we attempt every documented + community-reported
+   *  pattern until one returns 2xx. Returns null on all-fail so callers
+   *  fall back to the default group + log a "please create manually" hint.
+   *
+   *  Each attempt has its own 6s timeout so a single hung endpoint can
+   *  never block past ~30s total (vs the previous unbounded behavior
+   *  that ate the entire 4-minute request budget on a stuck endpoint).
+   *
+   *  Last-resort attempts use the same query-string-on-POST shape as the
+   *  WORKING /v3/shorturls endpoint — same auth, same param style. */
   async createGroup(name: string): Promise<number | null> {
     const cleanName = name.trim().slice(0, 80)
     if (!cleanName) return null
 
-    const attempts: Array<{ url: string; method: 'POST'; body?: string; query?: string }> = [
-      // v1 add — body form-encoded
-      { url: `${GENIUSLINK_API}/v1/groups/add`, method: 'POST', query: new URLSearchParams({ name: cleanName, enabled: '1' }).toString() },
-      // v3 RESTful — JSON body
-      { url: `${GENIUSLINK_API}/v3/groups`, method: 'POST', body: JSON.stringify({ Name: cleanName, Enabled: 1 }) },
+    const formBody = new URLSearchParams({ name: cleanName, enabled: '1' }).toString()
+    const formBodyCap = new URLSearchParams({ Name: cleanName, Enabled: '1' }).toString()
+    const jsonLowerBody = JSON.stringify({ name: cleanName, enabled: true })
+    const jsonCapBody = JSON.stringify({ Name: cleanName, Enabled: 1 })
+
+    type Attempt = {
+      url: string
+      body?: string
+      contentType?: string
+      label: string
+    }
+
+    const attempts: Attempt[] = [
+      // Pattern #1 — mirrors the working /v3/shorturls call (query string on POST, no body).
+      { url: `${GENIUSLINK_API}/v3/groups?${formBody}`, label: 'v3-querystring' },
+      { url: `${GENIUSLINK_API}/v1/groups?${formBody}`, label: 'v1-querystring' },
+      { url: `${GENIUSLINK_API}/v1/groups/add?${formBody}`, label: 'v1-add-querystring' },
+      // Pattern #2 — form-urlencoded body (the most common REST-y create shape)
+      { url: `${GENIUSLINK_API}/v3/groups`, body: formBody, contentType: 'application/x-www-form-urlencoded', label: 'v3-form' },
+      { url: `${GENIUSLINK_API}/v1/groups`, body: formBody, contentType: 'application/x-www-form-urlencoded', label: 'v1-form' },
+      { url: `${GENIUSLINK_API}/v1/groups/add`, body: formBody, contentType: 'application/x-www-form-urlencoded', label: 'v1-add-form' },
+      { url: `${GENIUSLINK_API}/v1/groups/add`, body: formBodyCap, contentType: 'application/x-www-form-urlencoded', label: 'v1-add-form-cap' },
+      // Pattern #3 — JSON body
+      { url: `${GENIUSLINK_API}/v3/groups`, body: jsonLowerBody, contentType: 'application/json', label: 'v3-json' },
+      { url: `${GENIUSLINK_API}/v3/groups`, body: jsonCapBody, contentType: 'application/json', label: 'v3-json-cap' },
+      { url: `${GENIUSLINK_API}/v1/groups`, body: jsonLowerBody, contentType: 'application/json', label: 'v1-json' },
+      { url: `${GENIUSLINK_API}/v1/groups/add`, body: jsonCapBody, contentType: 'application/json', label: 'v1-add-json-cap' },
     ]
 
+    const failures: string[] = []
     for (const attempt of attempts) {
       try {
-        const url = attempt.query ? `${attempt.url}?${attempt.query}` : attempt.url
         const headers: Record<string, string> = { ...this.authHeaders }
-        if (attempt.body) headers['Content-Type'] = 'application/json'
-        const res = await fetch(url, { method: attempt.method, headers, body: attempt.body })
-        if (!res.ok) continue
-        const data = await res.json().catch(() => null) as Record<string, unknown> | null
-        if (!data) continue
-        // Different shapes: { Id }, { id }, { Group: { Id } }, { group: { id } }
-        const id = (data.Id ?? data.id ?? (data.Group as { Id?: number })?.Id ?? (data.group as { id?: number })?.id) as number | undefined
-        if (typeof id === 'number') return id
-      } catch { /* try next */ }
+        if (attempt.contentType) headers['Content-Type'] = attempt.contentType
+        const res = await fetch(attempt.url, {
+          method: 'POST',
+          headers,
+          body: attempt.body,
+          signal: AbortSignal.timeout(6000),
+        })
+        const text = await res.text().catch(() => '')
+        if (!res.ok) {
+          failures.push(`${attempt.label}=${res.status}`)
+          continue
+        }
+        let data: Record<string, unknown> | null = null
+        try { data = JSON.parse(text) } catch { /* not JSON */ }
+        if (!data) {
+          failures.push(`${attempt.label}=ok-non-json`)
+          continue
+        }
+        // Response shapes seen across versions: { Id }, { id },
+        // { Group: { Id } }, { group: { id } }, { Data: { Id } }
+        const id = (data.Id
+          ?? data.id
+          ?? (data.Group as { Id?: number })?.Id
+          ?? (data.group as { id?: number })?.id
+          ?? (data.Data as { Id?: number })?.Id
+        ) as number | undefined
+        if (typeof id === 'number') {
+          console.log(`[geniuslink.createGroup] ✓ created "${cleanName}" via ${attempt.label} (Id=${id})`)
+          return id
+        }
+        failures.push(`${attempt.label}=ok-no-id(keys:${Object.keys(data).join(',')})`)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        failures.push(`${attempt.label}=${msg.slice(0, 40)}`)
+      }
     }
+    console.error(`[geniuslink.createGroup] ALL ATTEMPTS FAILED for "${cleanName}": ${failures.join(' | ')}`)
     return null
   }
 
@@ -153,9 +214,14 @@ export class GeniuslinkService {
     let text: string
     let attempt = 0
     while (true) {
+      // 12s per attempt × 2 attempts + 1.5s backoff = ~25s worst case.
+      // Before 2026-06-09 there was NO timeout here; a stuck Geniuslink
+      // call could (and did) eat the entire blog-generation budget and
+      // surface as the client's 4-min abort with no clue about the cause.
       res = await fetch(`${GENIUSLINK_API}/v3/shorturls?${params.toString()}`, {
         method: 'POST',
         headers: this.authHeaders,
+        signal: AbortSignal.timeout(12000),
       })
       text = await res.text()
       if (res.ok || res.status < 500 || attempt >= 1) break
