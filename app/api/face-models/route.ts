@@ -20,6 +20,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { TIERS, normalizeTier } from '@/lib/tier'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 // LoRA training retired (2026-05-22): gpt-image-1/2 uses the uploaded photos
 // directly as identity references at generation time — no training job, no
@@ -32,14 +33,17 @@ const MAX_IMAGES = 20
 
 export async function GET() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): faces saved on the owner's workspace so anyone
+  // generating thumbnails for that creator sees + uses the same face models.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await supabase
     .from('face_models')
     .select('id,name,trigger_token,status,lora_url,failure_reason,source_images,created_at')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .order('created_at', { ascending: false })
 
   return NextResponse.json({ models: data || [] })
@@ -47,13 +51,14 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // ── Paid-tier gate (maxFaces 0 = feature off for this tier) ───────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await supabase
-    .from('integrations').select('tier').eq('user_id', user.id).single()
+    .from('integrations').select('tier').eq('user_id', ownerId).single()
   const tier = normalizeTier(intRow?.tier)
   const maxFaces = TIERS[tier].maxFaces
   if (maxFaces === 0) {
@@ -70,7 +75,7 @@ export async function POST(request: Request) {
   if (maxFaces !== null) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { count } = await supabase
-      .from('face_models').select('id', { count: 'exact', head: true }).eq('user_id', user.id)
+      .from('face_models').select('id', { count: 'exact', head: true }).eq('user_id', ownerId)
     if ((count ?? 0) >= maxFaces) {
       return NextResponse.json({
         error: `You can keep up to ${maxFaces} faces. Delete one to add another.`,
@@ -109,7 +114,7 @@ export async function POST(request: Request) {
   const { data: row, error: insertErr } = await supabase
     .from('face_models')
     .insert({
-      user_id: user.id,
+      user_id: ownerId,
       name: trimmedName,
       trigger_token: triggerToken,
       status: 'ready',

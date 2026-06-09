@@ -9,21 +9,23 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { fal } from '@fal-ai/client'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 const STORAGE_BUCKET = 'headshots'
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: model } = await supabase
     .from('face_models')
     .select('*')
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .single()
   if (!model) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -86,13 +88,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // Confirm ownership and grab source paths before deleting.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: model } = await supabase
-    .from('face_models').select('source_images').eq('id', id).eq('user_id', user.id).single()
+    .from('face_models').select('source_images').eq('id', id).eq('user_id', ownerId).single()
   if (!model) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   // Best-effort cleanup of the original training images.
@@ -103,7 +106,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await supabase
-    .from('face_models').delete().eq('id', id).eq('user_id', user.id)
+    .from('face_models').delete().eq('id', id).eq('user_id', ownerId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true })

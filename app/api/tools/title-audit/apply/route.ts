@@ -16,16 +16,19 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
 import { normalizeTier, type Tier } from '@/lib/tier'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 2026-06-09 Phase 2 (VA): title fix applies to owner's post + WP.
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { ownerId } = auth
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+      .from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
     const tier = normalizeTier((tierRow?.tier as Tier) ?? 'trial')
     if (tier === 'trial') {
       return NextResponse.json(
@@ -49,7 +52,7 @@ export async function POST(request: Request) {
       .from('blog_posts')
       .select('id,wordpress_post_id,wordpress_site_id')
       .eq('id', postId)
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .maybeSingle()
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
@@ -58,7 +61,7 @@ export async function POST(request: Request) {
     if (post.wordpress_post_id) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const siteId = (post as Record<string, unknown>).wordpress_site_id as string | null | undefined
-      const creds = await getWordPressCredentials(supabase, user.id, siteId ?? null)
+      const creds = await getWordPressCredentials(supabase, ownerId, siteId ?? null)
       if (!creds) return NextResponse.json({ error: 'WordPress credentials not found' }, { status: 500 })
       const wp = createWordPressService(creds.wordpress_url, creds.wordpress_username, creds.wordpress_app_password, creds.wordpress_api_token ?? undefined)
       try {
@@ -74,7 +77,7 @@ export async function POST(request: Request) {
       .from('blog_posts')
       .update({ title: newTitle.trim() })
       .eq('id', postId)
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
     if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 })
 
     return NextResponse.json({ ok: true })

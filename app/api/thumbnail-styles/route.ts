@@ -9,27 +9,32 @@
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export const maxDuration = 30
 
 export async function GET() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): saved thumbnail styles belong to the owner's
+  // workspace so anyone generating sees the same chips.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await supabase
     .from('thumbnail_styles')
     .select('id,name,reference_url,created_at')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .order('created_at', { ascending: false })
   return NextResponse.json({ ok: true, styles: data ?? [] })
 }
 
 export async function POST(request: Request) {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const body = await request.json().catch(() => ({})) as { name?: string; referenceUrl?: string }
   const name = (body.name || '').trim().slice(0, 60)
@@ -45,7 +50,7 @@ export async function POST(request: Request) {
   const { count } = await supabase
     .from('thumbnail_styles')
     .select('id', { count: 'exact', head: true })
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
   if ((count ?? 0) >= 12) {
     return NextResponse.json({ error: 'You\'ve reached the 12-preset limit. Delete one to add a new one.' }, { status: 422 })
   }
@@ -53,7 +58,7 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await supabase
     .from('thumbnail_styles')
-    .insert({ user_id: user.id, name, reference_url: referenceUrl })
+    .insert({ user_id: ownerId, name, reference_url: referenceUrl })
     .select('id,name,reference_url,created_at')
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

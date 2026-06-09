@@ -24,6 +24,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { normalizeTier, type Tier } from '@/lib/tier'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 // Give the route headroom — 20 parallel Haiku calls usually finish in
 // ~2-4s, but slow ones can take 10s+. The default 10s Vercel timeout
@@ -43,12 +44,15 @@ interface Mismatch {
 export async function POST(request: Request) {
   try {
     const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // 2026-06-09 Phase 2 (VA): title audit scans owner's posts under owner's
+    // tier. Caller's user.id is what AI usage tracks.
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    const { user, ownerId } = auth
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: tierRow } = await supabase
-      .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+      .from('integrations').select('tier').eq('user_id', ownerId).maybeSingle()
     const tier = normalizeTier((tierRow?.tier as Tier) ?? 'trial')
     // Trial is blocked (≤5 lifetime posts — nothing meaningful to audit
     // AND they could spam the route to burn Haiku). Every paying tier is
@@ -73,7 +77,7 @@ export async function POST(request: Request) {
     const { data: posts, error: pErr, count } = await (supabase as any)
       .from('blog_posts')
       .select('id,video_id,title,content,wordpress_post_id,wordpress_url', { count: 'exact' })
-      .eq('user_id', user.id)
+      .eq('user_id', ownerId)
       .eq('status', 'published')
       .not('content', 'is', null)
       .order('published_at', { ascending: false })

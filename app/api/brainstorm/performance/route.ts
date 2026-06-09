@@ -34,6 +34,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
+import { getAuthAndOwner } from '@/lib/agency-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -73,8 +74,12 @@ function gscWindow(): { startDate: string; endDate: string } {
 
 export async function GET() {
   const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // 2026-06-09 Phase 2 (VA): brainstorm performance aggregates owner's
+  // YouTube + blog + GSC data so a VA's brainstorm coaching sees the same
+  // workspace as the owner.
+  const auth = await getAuthAndOwner(supabase)
+  if (auth.error) return auth.error
+  const { ownerId } = auth
 
   const cutoff = ninetyDaysAgo()
 
@@ -83,7 +88,7 @@ export async function GET() {
   const { data: ytRaw } = await (supabase as any)
     .from('youtube_videos')
     .select('youtube_video_id,title,thumbnail_url,published_at,view_count,duration_seconds,is_vertical')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .gte('published_at', cutoff)
     .order('view_count', { ascending: false, nullsFirst: false })
     .limit(50)
@@ -108,7 +113,7 @@ export async function GET() {
   const { data: postRaw } = await (supabase as any)
     .from('blog_posts')
     .select('id,title,asin,niches,post_type,permalink,published_at')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .eq('status', 'published')
     .gte('published_at', cutoff)
     .order('published_at', { ascending: false })
@@ -124,14 +129,14 @@ export async function GET() {
   const { data: intRow } = await (supabase as any)
     .from('integrations')
     .select('gsc_property')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .maybeSingle()
   const gscProperty = (intRow?.gsc_property as string | null) ?? null
 
   let gscToken: string | null = null
   if (gscProperty) {
     try {
-      gscToken = await getValidGscToken(supabase, user.id)
+      gscToken = await getValidGscToken(supabase, ownerId)
     } catch {
       // GSC connected but token refresh failed — silently skip the section.
       gscToken = null
@@ -213,7 +218,7 @@ export async function GET() {
   const { data: brandRow } = await (supabase as any)
     .from('brand_profiles')
     .select('niches')
-    .eq('user_id', user.id)
+    .eq('user_id', ownerId)
     .maybeSingle()
   const claimedNiches = ((brandRow?.niches as string[] | null) ?? [])
   const coveredNiches = new Set(niches.map(n => n.niche))
