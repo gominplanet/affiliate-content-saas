@@ -336,6 +336,53 @@ function CampaignsInner() {
     return [...seen]
   }, [items])
 
+  // 2026-06-09: "Remove delisted" button — probes every queued ASIN
+  // against Amazon (using the same retry chain as the carousel-video
+  // filter so transient bot blocks don't wrongly delete live products)
+  // and removes the ones that return 404. Companion to the in-search
+  // auto-prune that handles freshly-scanned candidates.
+  const [verifyingQueue, setVerifyingQueue] = useState(false)
+  const [verifyResult, setVerifyResult] = useState<string | null>(null)
+  async function verifyQueue() {
+    if (!items || items.length === 0) return
+    const confirmed = window.confirm(
+      `Probe all ${items.length} queued campaigns against Amazon and remove the ones whose products are delisted (404)?\n\n` +
+      `Live products are left alone. Items where Amazon temporarily blocked the check are also left alone — run the button again later to recheck them.\n\n` +
+      `This takes ~1 minute and removes the campaign + its WordPress post for any 404'd ASIN.`,
+    )
+    if (!confirmed) return
+    setVerifyingQueue(true)
+    setVerifyResult(null)
+    try {
+      const res = await fetch('/api/campaigns/verify-queue', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setVerifyResult(`Couldn't verify: ${data.error || `HTTP ${res.status}`}`)
+        return
+      }
+      const { probed, deleted, ambiguous, errors } = data as {
+        probed: number; deleted: number; deletedAsins: string[]; ambiguous: number; errors: string[]
+      }
+      if (deleted > 0) {
+        // Immediately reflect in the UI without waiting for a full reload.
+        const deletedSet = new Set<string>(data.deletedAsins ?? [])
+        setItems(prev => (prev ?? []).filter(x => !deletedSet.has(x.asin)))
+      }
+      const parts = [
+        `Probed ${probed} campaign${probed === 1 ? '' : 's'}`,
+        `removed ${deleted} delisted product${deleted === 1 ? '' : 's'}`,
+      ]
+      if (ambiguous > 0) parts.push(`${ambiguous} ambiguous (Amazon blocked the check — retry later)`)
+      if (errors?.length) parts.push(`${errors.length} error${errors.length === 1 ? '' : 's'} (see console)`)
+      setVerifyResult(parts.join(' · ') + '.')
+      if (errors?.length) console.warn('[campaigns/verify-queue] errors:', errors)
+    } catch (e) {
+      setVerifyResult(e instanceof Error ? e.message : 'Verify failed')
+    } finally {
+      setVerifyingQueue(false)
+    }
+  }
+
   function copyCampaignIds() {
     if (ccIds.length === 0) return
     navigator.clipboard.writeText(ccIds.join('\n')).then(() => {
@@ -829,16 +876,31 @@ function CampaignsInner() {
               <>No Campaign Ids yet — only campaigns imported from the <strong>.zip</strong> after this update carry them. Re-import to capture IDs.</>
             )}
           </p>
-          <button
-            onClick={copyCampaignIds}
-            disabled={ccIds.length === 0}
-            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {copiedIds
-              ? <><CheckCircle size={12} className="text-[#34c759]" /> Copied {ccIds.length}</>
-              : <><Copy size={12} /> Copy {ccIds.length} campaign ID{ccIds.length === 1 ? '' : 's'}</>}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={verifyQueue}
+              disabled={verifyingQueue}
+              title="Probe each queued ASIN against Amazon and remove ones that 404 (delisted). Live products are left alone."
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {verifyingQueue
+                ? <><Loader2 size={12} className="animate-spin" /> Verifying…</>
+                : <><Trash2 size={12} /> Remove delisted</>}
+            </button>
+            <button
+              onClick={copyCampaignIds}
+              disabled={ccIds.length === 0}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {copiedIds
+                ? <><CheckCircle size={12} className="text-[#34c759]" /> Copied {ccIds.length}</>
+                : <><Copy size={12} /> Copy {ccIds.length} campaign ID{ccIds.length === 1 ? '' : 's'}</>}
+            </button>
+          </div>
         </div>
+      )}
+      {verifyResult && (
+        <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mb-3 max-w-3xl">{verifyResult}</p>
       )}
 
       {/* Select-all + bulk delete */}
