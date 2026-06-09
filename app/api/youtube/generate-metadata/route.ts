@@ -18,6 +18,66 @@ interface GearItem { name: string; url: string }
 interface GearSection { title: string; items: GearItem[] }
 
 // ── Retry wrapper for Anthropic 529 overloaded errors ────────────────────────
+/**
+ * Sanity-check that the Amazon product the ASIN resolves to is actually
+ * what the video is about. Catches the common footgun: a user typos one
+ * char of their hair-mask ASIN, MVP fetches a phone case, and writes
+ * the entire description + thumbnail + tags around the phone case.
+ *
+ * Heuristic: tokenize product side (title + first 2 bullets) and video
+ * side (title + first 400 chars of description). Strip stop words +
+ * very short tokens. Require at least ONE shared meaningful token to
+ * consider it a match. Returns null on match, or a list of distinguishing
+ * tokens from each side on mismatch (so the error message can be specific).
+ *
+ * Permissive on purpose — generic words like "review", "best", "2026"
+ * already get stripped, so even a one-word product noun match passes.
+ * The point is to catch the dramatic mismatches (hair mask vs phone
+ * case), not punish loose phrasing.
+ */
+function verifyAsinMatchesVideo(
+  productTitle: string,
+  productBullets: string[],
+  videoTitle: string,
+  videoDescription: string,
+): { match: true } | { match: false; productWords: string[]; videoWords: string[] } {
+  const STOP = new Set([
+    'a','an','the','this','that','these','those','it','its','for','of','to','in','on','with','and','or','but','by','at','from',
+    'is','are','was','were','be','been','being','am','do','does','did','have','has','had','will','would','could','should','can',
+    'i','you','we','he','she','they','your','my','our','their','his','her','them',
+    'review','reviews','reviewing','reviewed','test','tested','testing','best','top','vs','versus','any','new','old',
+    'amazon','product','products','model','item','items','unboxing','demo','tutorial','guide','how','what','why','when','where',
+    'video','watch','channel','subscribe','like','share','today','now','first','last','really','actually','just','also','full',
+    '2024','2025','2026','2027','part','one','two','three','full','small','large','big','medium',
+  ])
+  const tokenize = (s: string): Set<string> => {
+    const out = new Set<string>()
+    for (const raw of (s || '').toLowerCase().split(/[^a-z0-9]+/)) {
+      if (!raw) continue
+      if (raw.length < 4) continue
+      if (/^[a-z0-9]{10}$/.test(raw)) continue // ASIN-shaped junk
+      if (/^\d+$/.test(raw)) continue
+      if (STOP.has(raw)) continue
+      out.add(raw)
+    }
+    return out
+  }
+  const productText = `${productTitle} ${(productBullets ?? []).slice(0, 2).join(' ')}`
+  const videoText = `${videoTitle} ${(videoDescription ?? '').slice(0, 400)}`
+  const productTokens = tokenize(productText)
+  const videoTokens = tokenize(videoText)
+  // Either side empty (e.g. Amazon scrape returned no title) — can't judge, pass.
+  if (productTokens.size === 0 || videoTokens.size === 0) return { match: true }
+  for (const t of productTokens) {
+    if (videoTokens.has(t)) return { match: true }
+  }
+  return {
+    match: false,
+    productWords: Array.from(productTokens).slice(0, 5),
+    videoWords: Array.from(videoTokens).slice(0, 5),
+  }
+}
+
 async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 8): Promise<T> {
   let delay = 2000
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -437,6 +497,41 @@ export async function POST(request: Request) {
         product = await fetchAmazonProduct(trimmedAsin)
       } catch {
         product = { asin: trimmedAsin, title: videoTitle, bullets: [], description: '', price: null, rating: null, imageUrl: null }
+      }
+
+      // 2026-06-09: ASIN-mismatch tripwire. Block early if the fetched
+      // Amazon product clearly isn't what the video is about — saves the
+      // agent-swarm token cost AND prevents the worst-case footgun
+      // (publishing a phone-case description on a hair-mask video). Only
+      // runs when we got a real product back from Amazon — when the
+      // scrape returns the videoTitle as a fallback, the heuristic
+      // would always match itself and the check is moot. Only enforced
+      // when the user EXPLICITLY supplied the ASIN; auto-discovered
+      // ASINs (via title search) trust the discovery's match score.
+      if (
+        productDiscoverySource === 'caller'
+        && product.title
+        && product.title !== videoTitle
+      ) {
+        const verdict = verifyAsinMatchesVideo(
+          product.title,
+          product.bullets,
+          videoTitle,
+          videoDescription || '',
+        )
+        if (!verdict.match) {
+          return NextResponse.json({
+            error:
+              `That ASIN (${trimmedAsin}) points to "${product.title.slice(0, 80)}", which doesn't seem to match your video. ` +
+              `Distinctive words in the product: ${verdict.productWords.join(', ')}. ` +
+              `Distinctive words in your video: ${verdict.videoWords.join(', ')}. ` +
+              `Double-check the ASIN in your title — one wrong character can land you on a totally different product.`,
+            asinMismatch: true,
+            productTitle: product.title,
+            productWords: verdict.productWords,
+            videoWords: verdict.videoWords,
+          }, { status: 422 })
+        }
       }
 
       // 2026-06-09: YT Co-Pilot routes EVERY description link to the
