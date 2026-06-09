@@ -188,23 +188,37 @@ export async function POST(request: Request) {
       if (rowId) {
         embedYtIdMap[p.id] = rowId
       } else if (ytId) {
-        // Video not in youtube_videos table — create a minimal record so rewrite works
-        const { data: newVid } = await sb
+        // Video not in youtube_videos table — create a minimal record so rewrite works.
+        //
+        // 2026-06-08: previously this insert omitted channel_id + channel_title.
+        // Both are NOT NULL on youtube_videos with no default → INSERT silently
+        // failed → newVid was null → post counted as `skipped` instead of `linked`.
+        // Same shape as the "Pushed via Co-Pilot" tab bug (commit 42ca4d5).
+        // Supplying placeholders is fine — these stub rows exist only as a
+        // foreign-key target for blog_posts.video_id; the channel fields aren't
+        // surfaced anywhere downstream for backfilled rows.
+        const { data: newVid, error: insErr } = await sb
           .from('youtube_videos')
           .insert({
             user_id: user.id,
             youtube_video_id: ytId,
             title: p.title.rendered.replace(/<[^>]+>/g, ''),
             published_at: p.date,
+            channel_id: 'legacy-backfill',
+            channel_title: 'Backfilled from WordPress',
           })
           .select('id')
           .single()
+        if (insErr) console.warn('[backfill] youtube_videos insert failed:', insErr.message)
         if (newVid?.id) {
           ytIdToRowId[ytId] = newVid.id
           embedYtIdMap[p.id] = newVid.id
         }
       }
-    } catch { /* non-fatal */ }
+    } catch (err) {
+      // Surface unexpected throws — was previously silent.
+      console.warn('[backfill] yt-id resolution failed:', err instanceof Error ? err.message : String(err))
+    }
   }
 
   // ── 7. Insert blog_posts records for matched posts ────────────────────────

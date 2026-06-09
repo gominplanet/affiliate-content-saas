@@ -2100,6 +2100,22 @@ export default function ContentPage() {
       })
       const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
       setImgToast(res.ok ? `Added ${data.count} image${data.count === 1 ? '' : 's'} — refresh the post to see them.` : (data.error || 'Image refresh failed'))
+      // 2026-06-08: bump the local bodyImagesCount so the orange "needs images"
+      // warning badge disappears without a full page reload. Same fix pattern
+      // as the Co-Pilot auto-refresh (commit cd57807) — DB write success
+      // should be reflected in the UI without a manual refresh.
+      if (res.ok && typeof data.count === 'number') {
+        setPosts(prev => {
+          const next = { ...prev }
+          for (const [vid, p] of Object.entries(next)) {
+            if (p.wpPostId === wpPostId) {
+              next[vid] = { ...p, bodyImagesCount: data.count }
+              break
+            }
+          }
+          return next
+        })
+      }
     } catch (e) {
       setImgToast(e instanceof Error ? e.message : 'Image refresh failed')
     } finally {

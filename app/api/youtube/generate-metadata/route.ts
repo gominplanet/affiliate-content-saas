@@ -25,17 +25,26 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 8): Promise<T> {
     } catch (err) {
       const status = (err as Record<string, unknown>)?.status as number | undefined
       const msg = err instanceof Error ? err.message : String(err)
-      const isOverloaded = status === 529 || msg.includes('529') || msg.toLowerCase().includes('overloaded')
-      if (!isOverloaded || attempt === maxAttempts) {
-        if (isOverloaded) throw new Error('Claude AI is temporarily overloaded — please try again in a moment.')
+      // 2026-06-08: retry on transient upstream failures, not just 529 overloaded.
+      // Anthropic SDK surfaces InternalServerError with msg="Internal Server
+      // Error" and status=500. Previously bubbled raw to UI — same bug fix as
+      // 61f7bc8 applied to /api/blog/generate, and 2026-06-08 to the twin
+      // /api/youtube/generate-thumbnail route.
+      const lower = msg.toLowerCase()
+      const isTransient = status === 529 || status === 500 || status === 502 || status === 503
+        || lower.includes('overloaded')
+        || lower.includes('internal server error')
+        || /\b5\d\d\b/.test(msg)
+      if (!isTransient || attempt === maxAttempts) {
+        if (isTransient) throw new Error('Claude AI is temporarily unavailable (upstream returned ' + (status || '5xx') + '). Please retry in a moment.')
         throw err
       }
-      console.warn(`[anthropic-retry] 529 overloaded, attempt ${attempt}/${maxAttempts}, waiting ${delay}ms`)
+      console.warn(`[anthropic-retry] transient (status=${status ?? '?'}, msg=${msg.slice(0, 80)}), attempt ${attempt}/${maxAttempts}, waiting ${delay}ms`)
       await new Promise(r => setTimeout(r, delay))
       delay = Math.min(delay * 1.5, 15000)
     }
   }
-  throw new Error('Claude AI is temporarily overloaded — please try again in a moment.')
+  throw new Error('Claude AI is temporarily unavailable — please try again in a moment.')
 }
 
 // ── Agent runner helper ───────────────────────────────────────────────────────
@@ -645,10 +654,16 @@ export async function POST(request: Request) {
 
     // ── Persist generated metadata for the voice-anchor loop ─────────────────
     // Best-effort write — telemetry-style, never fails the request.
+    //
+    // 2026-06-08: this .update() silently no-ops for Co-Pilot users whose
+    // youtube_videos row doesn't exist yet (same population as the Co-Pilot
+    // push tracking bug — only /api/youtube/sync populates that table). The
+    // voice-anchor loop then never learns from their metadata generations.
+    // Use .select() to detect 0-rows and warn so we know if this regresses.
     if (youtubeVideoId) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await supabase
+        const { data: updated, error: updErr } = await supabase
           .from('youtube_videos')
           .update({
             generated_title: titleResult.best,
@@ -659,7 +674,15 @@ export async function POST(request: Request) {
           })
           .eq('user_id', user.id)
           .eq('youtube_video_id', youtubeVideoId)
-      } catch { /* non-fatal */ }
+          .select('id')
+        if (updErr) {
+          console.warn('[generate-metadata] persist failed:', updErr.message)
+        } else if (!updated || updated.length === 0) {
+          console.warn('[generate-metadata] persist no-op: no youtube_videos row for', youtubeVideoId, '— Co-Pilot user without sync? Voice-anchor loop will skip this generation.')
+        }
+      } catch (err) {
+        console.warn('[generate-metadata] persist threw:', err instanceof Error ? err.message : String(err))
+      }
     }
 
     return NextResponse.json({

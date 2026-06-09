@@ -283,6 +283,22 @@ export async function bakeSimpleHeadline(
     const line1 = lineToPaths(font, copy.line1, copy.emphasisWord, fontSizeLine1, startX, baselineLine1, svgAnchor)
     const line2 = lineToPaths(font, copy.line2, copy.emphasisWord, fontSizeLine2, startX, baselineLine2, svgAnchor)
 
+    // Post-fit sanity check: when the MIN_FONT_PX floor clamps a long line,
+    // overflow can sneak through silently. Re-measure the actual rendered
+    // width and surface it as opentypeError so the API response shows that
+    // the headline is too long for the column. Doesn't fail the bake (text
+    // still renders, just clipped at the canvas edge) — but the user gets
+    // signal they need shorter copy.
+    if (line1.totalWidth > colMaxWidth + 4) {
+      const overshoot = Math.round(line1.totalWidth - colMaxWidth)
+      opentypeErrorMessage = `Line 1 overflows column by ${overshoot}px at ${fontSizeLine1}px floor. Shorten "${copy.line1}" (${copy.line1.length} chars).`
+      console.warn('[simple-bake]', opentypeErrorMessage)
+    } else if (line2.totalWidth > colMaxWidth + 4) {
+      const overshoot = Math.round(line2.totalWidth - colMaxWidth)
+      opentypeErrorMessage = `Line 2 overflows column by ${overshoot}px at ${fontSizeLine2}px floor. Shorten "${copy.line2}" (${copy.line2.length} chars).`
+      console.warn('[simple-bake]', opentypeErrorMessage)
+    }
+
     // Wrap both lines in a <g> with the rotation + stroke + paint-order.
     // Setting stroke/paint-order on the group means every child <path>
     // inherits the SAME outline treatment without us having to repeat
