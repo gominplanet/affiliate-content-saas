@@ -266,6 +266,47 @@ export default function BrandPage() {
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
+  // Geniuslink group-setup state. Powers the "Verify groups" panel inside
+  // the Geniuslink card — runs POST /api/geniuslink/setup which finds or
+  // auto-creates the required tracking groups (MVP-YOUTUBE for the YT
+  // Co-Pilot path; one named after each site's domain for the blog path).
+  // Surfaces "needs-manual-create" rows with a deep link to the user's
+  // Geniuslink dashboard when the auto-create endpoint is rejected.
+  type GeniusTarget = {
+    kind: 'youtube' | 'site'
+    groupName: string
+    label: string
+    siteId?: string
+    status: 'cached' | 'matched-existing' | 'auto-created' | 'needs-manual-create' | 'error'
+    groupId?: number
+    detail: string
+  }
+  type GeniusSetupResult = {
+    ok: boolean
+    hasCredentials: boolean
+    manualCreateUrl: string
+    targets: GeniusTarget[]
+  }
+  const [geniusSetup, setGeniusSetup] = useState<GeniusSetupResult | null>(null)
+  const [geniusSetupBusy, setGeniusSetupBusy] = useState(false)
+  async function runGeniuslinkSetup() {
+    setGeniusSetupBusy(true)
+    try {
+      const res = await fetch('/api/geniuslink/setup', { method: 'POST' })
+      const json = await res.json() as GeniusSetupResult
+      setGeniusSetup(json)
+    } catch (err) {
+      console.error('[brand] geniuslink setup failed:', err)
+      setGeniusSetup({
+        ok: false,
+        hasCredentials: !!geniuslinkKey && !!geniuslinkSecret,
+        manualCreateUrl: 'https://my.geni.us/groups',
+        targets: [],
+      })
+    } finally {
+      setGeniusSetupBusy(false)
+    }
+  }
   // User's tier — drives the dropdown options for "Images per article"
   // (Trial 0-2, Creator/Studio 0-3, Pro/Admin 0-4). Loaded alongside
   // the Geniuslink + Amazon-tag fields from `integrations` below. 2026-06-07.
@@ -805,6 +846,63 @@ export default function BrandPage() {
                   />
                 </div>
               </div>
+
+              {/* Group setup — verify the tracking groups MVP routes to. */}
+              {geniuslinkKey && geniuslinkSecret && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-white/10">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Link tracking groups</p>
+                      <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
+                        MVP routes YouTube descriptions to <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 rounded text-[10px]">MVP-YOUTUBE</code> and each blog post to a group named after the site&apos;s domain so you can see clicks by source. Verify they exist (or auto-create them).
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={runGeniuslinkSetup}
+                      disabled={geniusSetupBusy}
+                      className="text-[11px] font-medium px-3 py-1.5 rounded-md bg-[#7C3AED] text-white hover:bg-[#6D28D9] disabled:opacity-60 flex-shrink-0"
+                    >
+                      {geniusSetupBusy ? 'Checking…' : (geniusSetup ? 'Re-check' : 'Verify groups')}
+                    </button>
+                  </div>
+                  {geniusSetup && (
+                    <div className="space-y-1.5">
+                      {geniusSetup.targets.length === 0 && (
+                        <p className="text-[11px] text-[#86868b]">
+                          {geniusSetup.hasCredentials
+                            ? 'Add a WordPress site to enable per-blog grouping.'
+                            : 'Add API key + secret above, then click "Verify groups".'}
+                        </p>
+                      )}
+                      {geniusSetup.targets.map(t => {
+                        const ok = t.status === 'cached' || t.status === 'matched-existing' || t.status === 'auto-created'
+                        return (
+                          <div key={`${t.kind}-${t.siteId ?? 'yt'}`} className="flex items-start gap-2 text-[11px]">
+                            <span className="mt-0.5 flex-shrink-0">{ok ? '✅' : '⚠️'}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
+                                {t.label} <span className="text-[#86868b] font-normal">→ <code className="bg-[#f5f5f7] dark:bg-[#1c1c1e] px-1 rounded">{t.groupName}</code></span>
+                              </p>
+                              <p className="text-[#6e6e73] dark:text-[#ebebf0]">{t.detail}</p>
+                              {t.status === 'needs-manual-create' && (
+                                <a
+                                  href={geniusSetup.manualCreateUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-block mt-1 text-[#7C3AED] hover:underline font-medium"
+                                >
+                                  Open Geniuslink → create group named &quot;{t.groupName}&quot;
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Amazon Associates fallback */}
