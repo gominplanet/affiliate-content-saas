@@ -53,6 +53,12 @@ export default function CreatorCampaignsAdminPage() {
   // we walk the zip + each upsert batch lands. Re-set to null between
   // runs and on completion.
   const [progress, setProgress] = useState<string | null>(null)
+  // Last successful batchStart — set when an import upserts all rows but
+  // the finalize step (stale-delete + canonical RPC) fails. Used by the
+  // "Retry cleanup" button so the admin doesn't re-upload the zip just
+  // to rerun the cleanup. Cleared on next fresh upload.
+  const [lastBatchStart, setLastBatchStart] = useState<string | null>(null)
+  const [finalizing, setFinalizing] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   // ── Import filters ────────────────────────────────────────────────────
   // The Amazon Creator Connections weekly export ships ~600k rows, most
@@ -109,8 +115,70 @@ export default function CreatorCampaignsAdminPage() {
     })()
   }, [supabase, loadStats])
 
+  // ── Finalize helper: stale-delete + canonical recompute ────────────────
+  // Called automatically at the end of upload(), or manually via the
+  // "Retry cleanup" button when the previous finalize step timed out
+  // (typically with 600K+ catalogs).
+  async function runFinalize(batchStart: string): Promise<{
+    ok?: boolean
+    error?: string
+    stale_deleted?: number | null
+    stale_cleanup_error?: string | null
+    canonical_count?: number | null
+    canonical_error?: string | null
+    timings_ms?: { stale_delete: number; canonical_rpc: number; total: number }
+  }> {
+    try {
+      const r = await fetch('/api/admin/creator-campaigns/import-finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchStart }),
+      })
+      const raw = await r.text()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let d: any
+      try { d = JSON.parse(raw) } catch {
+        const snippet = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)
+        return { error: r.ok ? `Server returned non-JSON: ${snippet}` : `Server error ${r.status}: ${snippet || 'no body'}` }
+      }
+      return d
+    } catch (e) {
+      return { error: toErrorString(e) }
+    }
+  }
+
+  // "Retry cleanup" — admin clicks this when the finalize step failed
+  // (504 timeout on the previous attempt). Reruns just the stale-delete
+  // + canonical RPC. Idempotent — safe even if some cleanup already ran.
+  async function retryFinalize() {
+    if (!lastBatchStart) return
+    setFinalizing(true)
+    setProgress('Pruning stale rows + refreshing search index (up to ~5 min)…')
+    try {
+      const f = await runFinalize(lastBatchStart)
+      const staleNote = typeof f.stale_deleted === 'number'
+        ? `${f.stale_deleted.toLocaleString()} stale rows pruned`
+        : (f.stale_cleanup_error ? `cleanup error: ${f.stale_cleanup_error}` : '')
+      const canonicalNote = typeof f.canonical_count === 'number'
+        ? `${f.canonical_count.toLocaleString()} unique products searchable`
+        : (f.canonical_error ? `canonical refresh error: ${f.canonical_error}` : '')
+      const failed = !!(f.stale_cleanup_error || f.canonical_error || f.error)
+      setResult({
+        ok: !failed,
+        message: failed
+          ? `Cleanup failed: ${f.error || f.stale_cleanup_error || f.canonical_error}`
+          : `Cleanup done — ${[staleNote, canonicalNote].filter(Boolean).join(' · ')}.`,
+      })
+      if (!failed) setLastBatchStart(null) // clear so the Retry button disappears
+      await loadStats()
+    } finally {
+      setFinalizing(false)
+      setProgress(null)
+    }
+  }
+
   async function upload(file: File) {
-    setUploading(true); setResult(null); setProgress(null)
+    setUploading(true); setResult(null); setProgress(null); setLastBatchStart(null)
     try {
       // Architecture (2026-06-05 rewrite):
       //   - PARSE happens in the BROWSER. We dynamic-import jszip +
@@ -260,15 +328,22 @@ export default function CreatorCampaignsAdminPage() {
       }
 
       // ── Stream to the server in 2k-row batches ────────────────────────
-      // Single shared batchStart so the FINAL call can prune anything
-      // older than this import as stale.
+      // 2026-06-09: stripped the `isFinal` cleanup-trigger out of the
+      // batch loop. Cleanup (stale-delete + canonical RPC) now runs in
+      // a dedicated /import-finalize call AFTER all batches succeed —
+      // gives it its own 300s budget instead of competing with the
+      // last 2k-row batch's 120s ceiling. The previous flow timed out
+      // on 631K-row catalogs (FUNCTION_INVOCATION_TIMEOUT).
       const batchStart = new Date().toISOString()
+      // Stash batchStart for the "Retry cleanup" button — if the
+      // finalize step fails, the admin can rerun JUST that step
+      // without re-uploading the whole zip.
+      setLastBatchStart(batchStart)
       const BATCH = 2000
       let totalUpserted = 0
       const totalFailures: Array<{ start: number; end: number; error: string }> = []
       for (let i = 0; i < deduped.length; i += BATCH) {
         const slice = deduped.slice(i, i + BATCH)
-        const isFinal = i + BATCH >= deduped.length
         setProgress(
           `Sending batch ${Math.floor(i / BATCH) + 1}/${Math.ceil(deduped.length / BATCH)} ` +
           `(${i.toLocaleString()}/${deduped.length.toLocaleString()} rows)…`,
@@ -278,7 +353,8 @@ export default function CreatorCampaignsAdminPage() {
           r = await fetch('/api/admin/creator-campaigns/import-batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rows: slice, batchStart, isFinal }),
+            // isFinal: false on EVERY batch now — cleanup is its own call.
+            body: JSON.stringify({ rows: slice, batchStart, isFinal: false }),
           })
         } catch (e) {
           throw new Error(`Network error sending batch ${i}-${i + slice.length}: ${toErrorString(e)}`)
@@ -293,25 +369,27 @@ export default function CreatorCampaignsAdminPage() {
         if (!r.ok) throw new Error(d.error ? toErrorString(d.error) : `Batch failed (${r.status})`)
         totalUpserted += d.upserted ?? 0
         if (Array.isArray(d.failed_chunks)) totalFailures.push(...d.failed_chunks)
-        if (isFinal) {
-          const staleNote = typeof d.stale_deleted === 'number'
-            ? ` · ${d.stale_deleted.toLocaleString()} stale rows pruned`
-            : (d.stale_cleanup_error ? ` · cleanup error: ${d.stale_cleanup_error}` : '')
-          // canonical_count = unique products users actually search.
-          // Surface it so the admin can sanity-check (e.g. 631K rows →
-          // ~40K canonical = 16x dedup, sounds right).
-          const canonicalNote = typeof d.canonical_count === 'number'
-            ? ` · ${d.canonical_count.toLocaleString()} unique products searchable`
-            : (d.canonical_error ? ` · canonical refresh error: ${d.canonical_error}` : '')
-          setResult({
-            ok: true,
-            message:
-              `Imported ${totalUpserted.toLocaleString()} of ${deduped.length.toLocaleString()} ` +
-              `unique rows from ${scannedTotal.toLocaleString()} scanned${staleNote}${canonicalNote}` +
-              (totalFailures.length ? ` · ${totalFailures.length} chunk(s) failed (retry to fill in)` : ''),
-          })
-        }
       }
+
+      // ── Finalize: stale-row delete + canonical recompute ──────────────
+      setProgress(`Upserted ${totalUpserted.toLocaleString()} rows · Now pruning stale rows + refreshing search index (up to ~2 min)…`)
+      const finalizeResult = await runFinalize(batchStart)
+
+      const staleNote = typeof finalizeResult.stale_deleted === 'number'
+        ? ` · ${finalizeResult.stale_deleted.toLocaleString()} stale rows pruned`
+        : (finalizeResult.stale_cleanup_error ? ` · cleanup error: ${finalizeResult.stale_cleanup_error}` : '')
+      const canonicalNote = typeof finalizeResult.canonical_count === 'number'
+        ? ` · ${finalizeResult.canonical_count.toLocaleString()} unique products searchable`
+        : (finalizeResult.canonical_error ? ` · canonical refresh error: ${finalizeResult.canonical_error}` : '')
+      const finalizeFailed = !!(finalizeResult.stale_cleanup_error || finalizeResult.canonical_error || finalizeResult.error)
+      setResult({
+        ok: !finalizeFailed,
+        message:
+          `Imported ${totalUpserted.toLocaleString()} of ${deduped.length.toLocaleString()} ` +
+          `unique rows from ${scannedTotal.toLocaleString()} scanned${staleNote}${canonicalNote}` +
+          (totalFailures.length ? ` · ${totalFailures.length} chunk(s) failed (retry to fill in)` : '') +
+          (finalizeFailed ? ' — click "Retry cleanup" below to finish the post-import steps.' : ''),
+      })
 
       await loadStats()
     } catch (e) {
@@ -487,16 +565,36 @@ export default function CreatorCampaignsAdminPage() {
           }}
           className="hidden"
         />
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          className="btn-primary text-sm"
-        >
-          {uploading
-            ? <><Loader2 size={14} className="animate-spin" /> Parsing &amp; importing…</>
-            : <><Upload size={14} /> Choose .zip</>}
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || finalizing}
+            className="btn-primary text-sm"
+          >
+            {uploading
+              ? <><Loader2 size={14} className="animate-spin" /> Parsing &amp; importing…</>
+              : <><Upload size={14} /> Choose .zip</>}
+          </button>
+
+          {/* "Retry cleanup" — visible only when the previous import upserted
+              all rows but the finalize step (stale-delete + canonical RPC)
+              failed. Lets the admin rerun JUST that step without re-uploading
+              the zip. Idempotent on the server side. */}
+          {lastBatchStart && !uploading && (
+            <button
+              type="button"
+              onClick={retryFinalize}
+              disabled={finalizing}
+              className="text-sm font-semibold inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#FF9500]/40 bg-[#FF9500]/10 text-[#FF9500] hover:bg-[#FF9500]/20 disabled:opacity-60 transition-colors"
+              title="Re-run the post-import cleanup (stale rows + canonical refresh) without re-uploading the zip"
+            >
+              {finalizing
+                ? <><Loader2 size={14} className="animate-spin" /> Running cleanup…</>
+                : <>↻ Retry cleanup</>}
+            </button>
+          )}
+        </div>
 
         {progress && uploading && (
           <div className="mt-4 flex items-start gap-2 text-sm text-[#86868b]">
