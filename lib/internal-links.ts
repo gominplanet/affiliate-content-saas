@@ -115,18 +115,35 @@ function esc(s: string): string {
  * internal links). Anchor text is the post title (descriptive, keyword-rich).
  * Returns '' when there are no links.
  */
-export function renderRelatedLinksBlock(related: LinkCandidate[], heading = 'Related reviews'): string {
+export function renderRelatedLinksBlock(related: LinkCandidate[], heading = 'Also worth considering'): string {
   if (!related.length) return ''
-  const items = related
-    .map(r => `<li><a href="${esc(r.url)}">${esc(r.title)}</a></li>`)
-    .join('')
-  return `\n<!-- wp:heading -->
-<h2 class="wp-block-heading">${esc(heading)}</h2>
-<!-- /wp:heading -->
 
-<!-- wp:list -->
-<ul class="wp-block-list">${items}</ul>
-<!-- /wp:list -->\n`
+  // 2026-06-08 (#8 Also Consider): upgraded from a flat <ul> of links to a
+  // card-style block — each candidate becomes a clickable card with the
+  // post-type chip (Review / Comparison / Guide) so the reader can tell at a
+  // glance whether they're heading into a single-product write-up or a
+  // multi-product round-up. Visual upgrade matches Wirecutter / Tom's Guide
+  // "Also great" pattern. CSS lives in the plugin (.gr-also-consider).
+  const cards = related.map(r => {
+    const typeLabel =
+      r.postType === 'comparison' ? 'Comparison' :
+      r.postType === 'guide'      ? 'Guide'      :
+                                    'Review'
+    return `<a class="gr-ac-card" href="${esc(r.url)}">
+  <span class="gr-ac-chip">${esc(typeLabel)}</span>
+  <span class="gr-ac-title">${esc(r.title)}</span>
+  <span class="gr-ac-arrow" aria-hidden="true">→</span>
+</a>`
+  }).join('\n')
+
+  return `\n<!-- wp:html -->
+<aside class="gr-also-consider" aria-label="${esc(heading)}">
+  <h2 class="gr-ac-heading">${esc(heading)}</h2>
+  <div class="gr-ac-grid">
+${cards}
+  </div>
+</aside>
+<!-- /wp:html -->\n`
 }
 
 /**

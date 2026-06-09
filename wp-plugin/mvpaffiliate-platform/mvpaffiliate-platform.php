@@ -3333,6 +3333,57 @@ if (!function_exists('mvp_affiliate_render_reader_ux')) {
 .gr-best-for-tags{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 0;padding-top:14px;border-top:1px solid #e5e5e7}
 .gr-best-for-tag{display:inline-flex;align-items:center;gap:5px;background:#fff8e1;color:#9a6400;border:1px solid #ffd54f;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;line-height:1.4}
 .gr-best-for-tag::before{content:"";display:inline-block;width:6px;height:6px;background:currentColor;border-radius:50%}
+
+/* E. AT A GLANCE specs table (#7, 2026-06-08) — compact 4-6 row table the
+   generator emits between the scorecard and the body. Scan-friendly two-
+   column layout: bold spec name left, value right. */
+.gr-specs-table{width:100%;border-collapse:collapse;margin:24px 0 32px;font-size:14px;line-height:1.5;background:#fff;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden}
+.gr-specs-table tr{border-bottom:1px solid #f0f0f0}
+.gr-specs-table tr:last-child{border-bottom:none}
+.gr-specs-table tr:nth-child(odd){background:#fafafa}
+.gr-specs-table th{text-align:left;font-weight:700;color:#1d1d1f;padding:10px 16px;width:38%;vertical-align:middle;font-size:13px;letter-spacing:.2px}
+.gr-specs-table td{padding:10px 16px;color:#3a3a3c;vertical-align:middle}
+@media(max-width:520px){
+  .gr-specs-table{font-size:13px}
+  .gr-specs-table th{padding:9px 12px;width:44%}
+  .gr-specs-table td{padding:9px 12px}
+}
+.gr-specs-table::before{display:block;content:"At a glance";font-size:11px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#86868b;padding:12px 16px 8px;border-bottom:1px solid #f0f0f0;background:#fff}
+
+/* F. Inline mini-comparison (#12, 2026-06-08) — VS competitors table the
+   generator emits ONLY when transcript names 2 specific alternatives.
+   Highlight the "this product" column with a subtle accent so the reader
+   sees what they're comparing against. */
+.gr-vs-comparison{width:100%;border-collapse:collapse;margin:32px 0 8px;font-size:14px;background:#fff;border:1px solid #e5e5e7;border-radius:6px;overflow:hidden}
+.gr-vs-comparison thead th{background:#f5f5f7;font-size:12px;font-weight:800;color:#1d1d1f;padding:14px 12px;text-align:left;letter-spacing:.3px;border-bottom:2px solid #e5e5e7}
+.gr-vs-comparison thead th.gr-vs-this{background:#fff8e1;color:#9a6400}
+.gr-vs-comparison tbody th{text-align:left;font-weight:700;color:#86868b;padding:12px;font-size:11px;letter-spacing:.8px;text-transform:uppercase;width:22%;border-bottom:1px solid #f0f0f0}
+.gr-vs-comparison tbody td{padding:12px;color:#1d1d1f;font-weight:500;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+.gr-vs-comparison tbody td.gr-vs-this{background:#fffbe8;font-weight:700}
+.gr-vs-comparison tr:last-child th,.gr-vs-comparison tr:last-child td{border-bottom:none}
+.gr-vs-source{font-size:12px;color:#86868b;margin:0 0 32px;text-align:right}
+@media(max-width:520px){
+  .gr-vs-comparison{font-size:12px}
+  .gr-vs-comparison thead th,.gr-vs-comparison tbody th,.gr-vs-comparison tbody td{padding:9px 8px}
+}
+
+/* G. Also Consider cards (#8, 2026-06-08) — clickable internal-link cards
+   inline (mid-post, just before FAQ via lib/internal-links.ts). Each card
+   shows a post-type chip + title + arrow. Three-up on desktop, stacked
+   on mobile. */
+.gr-also-consider{margin:36px 0;padding:24px 0;border-top:1px solid #e5e5e7;border-bottom:1px solid #e5e5e7}
+.gr-ac-heading{font-size:13px !important;font-weight:800 !important;letter-spacing:1.2px;text-transform:uppercase;color:#86868b !important;margin:0 0 16px !important;padding:0 !important;border:0 !important}
+.gr-ac-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.gr-ac-card{position:relative;display:flex;flex-direction:column;gap:8px;background:#fff;border:1px solid #e5e5e7;border-radius:8px;padding:16px 18px 22px;text-decoration:none;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;color:inherit}
+.gr-ac-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.06);border-color:#d2d2d7;text-decoration:none;color:inherit}
+.gr-ac-chip{align-self:flex-start;background:#f5f5f7;color:#3a3a3c;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;padding:3px 8px;border-radius:999px;line-height:1.4}
+.gr-ac-title{font-size:15px;font-weight:700;color:#1d1d1f;line-height:1.35;letter-spacing:-.01em;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.gr-ac-arrow{position:absolute;bottom:14px;right:16px;font-size:18px;color:#86868b;transition:color .15s ease,transform .15s ease}
+.gr-ac-card:hover .gr-ac-arrow{color:#FF6B00;transform:translateX(2px)}
+@media(max-width:768px){
+  .gr-ac-grid{grid-template-columns:1fr;gap:8px}
+  .gr-ac-card{padding:14px 16px 18px}
+}
 </style>
 
 <!-- A. Reading progress bar -->

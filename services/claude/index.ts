@@ -713,6 +713,40 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
 </div>
 <!-- /wp:html -->
 
+[3c] AT A GLANCE SPECS TABLE (2026-06-08, OPTIONAL) — IF and only IF you can
+extract at least FOUR concrete specs from the product bullets / description
+that a buyer would actually compare against alternatives (dimensions,
+weight, capacity, materials, battery, warranty, connectivity, power,
+included accessories, etc.). Skip vague marketing ("premium quality",
+"easy to use") and pure brand fluff. If you can't reach 4 honest rows,
+OMIT the entire block. Goal: a compact 4–6 row table same shape Tom's
+Guide / TechRadar use for at-a-glance scanning.
+
+Render as (block goes right after the scorecard, before the body H2):
+<!-- wp:html -->
+<table class="gr-specs-table">
+  <tbody>
+    <tr><th>{Spec name}</th><td>{Value with units}</td></tr>
+    <tr><th>{Spec name}</th><td>{Value with units}</td></tr>
+    <tr><th>{Spec name}</th><td>{Value with units}</td></tr>
+    <tr><th>{Spec name}</th><td>{Value with units}</td></tr>
+    {{-- optional 5th + 6th rows --}}
+  </tbody>
+</table>
+<!-- /wp:html -->
+
+Spec name examples (PICK relevant ones, not all):
+  Dimensions · Weight · Capacity · Material · Battery life · Warranty ·
+  Connectivity · Power · Compatibility · Includes · Color options · Care
+Value example: "16.5 × 13 × 7.5 in" / "2.4 lbs" / "45 L" / "Polycarbonate" /
+  "Up to 8 hrs" / "Lifetime" / "USB-C + Bluetooth 5.3" / "120 W" /
+  "iOS 15+, Android 11+" / "Bag, strap, dust cover" / "3 (Black, Sand, Navy)" /
+  "Spot clean, no machine wash"
+
+Numbers must come from the product info. Don't invent specs to fill rows.
+If a spec is uncertain, prefix with "~" (e.g. "~2.5 lbs"). If totally
+unknown, leave that spec out.
+
 [4] BODY — 7 REQUIRED SECTIONS (WordPress heading + paragraph blocks)
 
   Section A: <!-- wp:heading --> H2 — Hook opener
@@ -870,6 +904,38 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
 
   Section G: <!-- wp:heading {"level":3} --> H3 — Advice for buyers
     Honest retrospective. Setup tips. Mistakes to avoid.
+
+[4b] INLINE MINI-COMPARISON (2026-06-08, OPTIONAL) — IF and only IF the
+transcript explicitly names at least TWO specific alternative products by
+brand and model (e.g. "We had the Osprey Farpoint 40 before this", "This
+is way better than the Nomatic Travel Bag"). Vague mentions like "other
+backpacks" or "cheaper options" don't qualify — skip the block. Most
+single-product reviews won't qualify, and that's fine — leaving it out
+is better than inventing competitor specs.
+
+If you DO have 2 transcript-grounded alternatives, emit this block
+between Section G of the body and the FAQ. Compare on 3 dimensions that
+the transcript actually addresses (price, weight, capacity, battery,
+specific feature). Keep cells to 4 words max — this is a scan-table.
+
+<!-- wp:html -->
+<table class="gr-vs-comparison">
+  <thead>
+    <tr>
+      <th></th>
+      <th class="gr-vs-this">{This product short name}</th>
+      <th>{Alt 1 short name}</th>
+      <th>{Alt 2 short name}</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><th>{Dimension 1 — e.g. Price}</th><td class="gr-vs-this">{value}</td><td>{value}</td><td>{value}</td></tr>
+    <tr><th>{Dimension 2}</th><td class="gr-vs-this">{value}</td><td>{value}</td><td>{value}</td></tr>
+    <tr><th>{Dimension 3}</th><td class="gr-vs-this">{value}</td><td>{value}</td><td>{value}</td></tr>
+  </tbody>
+</table>
+<p class="gr-vs-source"><em>Comparison drawn from what {reviewer name or "we"} discussed in the video.</em></p>
+<!-- /wp:html -->
 
 [5] FAQ — Minimum 5 questions (product-specific, not generic)
 <!-- wp:heading {"level":2} --><h2>Frequently Asked Questions</h2><!-- /wp:heading -->
