@@ -50,12 +50,15 @@ function verifyAsinMatchesVideo(
     'amazon','product','products','model','item','items','unboxing','demo','tutorial','guide','how','what','why','when','where',
     'video','watch','channel','subscribe','like','share','today','now','first','last','really','actually','just','also','full',
     '2024','2025','2026','2027','part','one','two','three','full','small','large','big','medium',
+    // 3-letter grammatical filler — listed so lowering the length floor to 3 (to catch real
+    // short product nouns like "bag", "cup", "pen", "kit", "fan", "mat", "jar", "lid") stays clean.
+    'get','got','let','out','off','too','way','lot','use','put','via','per','all','not','but','was',
   ])
   const tokenize = (s: string): Set<string> => {
     const out = new Set<string>()
     for (const raw of (s || '').toLowerCase().split(/[^a-z0-9]+/)) {
       if (!raw) continue
-      if (raw.length < 4) continue
+      if (raw.length < 3) continue // 3, not 4 — so real short nouns count ("bag","cup","pen","kit","fan","mat","jar","lid","pcs")
       if (/^[a-z0-9]{10}$/.test(raw)) continue // ASIN-shaped junk
       if (/^\d+$/.test(raw)) continue
       if (STOP.has(raw)) continue
@@ -392,7 +395,7 @@ export async function POST(request: Request) {
     if (auth.error) return auth.error
     const { user, ownerId } = auth
 
-    const { asin, videoTitle, videoDescription, youtubeVideoId } = await request.json() as {
+    const { asin, videoTitle, videoDescription, youtubeVideoId, skipAsinCheck = false } = await request.json() as {
       asin?: string | null
       videoTitle: string
       videoDescription?: string
@@ -400,6 +403,10 @@ export async function POST(request: Request) {
        *  generated metadata back to youtube_videos for the voice-
        *  anchor loop. Optional — generation still works without it. */
       youtubeVideoId?: string | null
+      /** Set by the UI's "Generate anyway" button to bypass the ASIN-mismatch
+       *  tripwire when the creator confirms the product is right (the word-overlap
+       *  heuristic can false-fire on casual titles vs keyword-stuffed Amazon titles). */
+      skipAsinCheck?: boolean
     }
 
     // ASIN is OPTIONAL. With a valid ASIN we treat the video as a product
@@ -521,7 +528,8 @@ export async function POST(request: Request) {
       // when the user EXPLICITLY supplied the ASIN; auto-discovered
       // ASINs (via title search) trust the discovery's match score.
       if (
-        productDiscoverySource === 'caller'
+        !skipAsinCheck
+        && productDiscoverySource === 'caller'
         && product.title
         && product.title !== videoTitle
       ) {

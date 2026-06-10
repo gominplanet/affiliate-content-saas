@@ -176,6 +176,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
   const [proSettings, setProSettings] = useState<ProPublishSettings>(defaultProSettings)
   const [geniuslinkError, setGeniuslinkError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // True when the last generate failed the ASIN-mismatch tripwire → show "Generate anyway".
+  const [asinMismatch, setAsinMismatch] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [applied, setApplied] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -446,9 +448,10 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
     }
   }
 
-  async function generate() {
+  async function generate(skipAsinCheck = false) {
     setGenerating(true)
     setError(null)
+    setAsinMismatch(false)
     setGenerated(null)
     setApplied(false)
     setThumbnailUrl(null)
@@ -469,6 +472,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           // the youtube_videos row so future generations can use it as
           // a voice anchor.
           youtubeVideoId: video.youtubeVideoId,
+          // "Generate anyway" → bypass the ASIN-mismatch tripwire.
+          skipAsinCheck,
         }),
       })
 
@@ -491,6 +496,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
         return
       }
       if (!res.ok) {
+        // ASIN-mismatch tripwire (422) → flag so the UI can offer "Generate anyway".
+        setAsinMismatch(!!data.asinMismatch)
         // data.error can come back as a string OR an object with .message
         // (depends on which error path fired server-side). Without this
         // normalization, an object error makes new Error(obj) render as
@@ -1299,7 +1306,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
               </div>
             ) : (
               <button
-                onClick={generate}
+                onClick={() => generate()}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: video.detectedAsin
                   ? 'linear-gradient(135deg, #ff9500 0%, #ff3b30 100%)'
@@ -1324,6 +1331,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
             </a>
           </div>
           {error && <p className="text-xs text-[#ff3b30] mt-2">{typeof error === 'string' ? error : 'Something went wrong'}</p>}
+          {asinMismatch && !generating && (
+            <button
+              onClick={() => generate(true)}
+              className="mt-2 text-[11px] px-3 h-7 rounded-md border border-[#ff9500] text-[#ff9500] font-semibold hover:bg-[#ff9500] hover:text-white transition"
+              title="The product is right? Generate metadata anyway, skipping the ASIN match check."
+            >
+              Generate anyway
+            </button>
+          )}
           {capError && (
             <div className="mt-3">
               <CapReachedBanner
@@ -2120,7 +2136,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                       : applied ? <><CheckCircle size={14} /> {proSettings.privacyStatus === 'draft' ? 'Saved to draft' : 'Applied to YouTube'}</>
                       : <><Youtube size={14} /> {proSettings.privacyStatus === 'draft' ? 'Save draft to YouTube' : 'Apply to YouTube'}</>}
                   </button>
-                  <button onClick={generate} disabled={generating}
+                  <button onClick={() => generate()} disabled={generating}
                     className="flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
                     <RefreshCw size={11} /> Regenerate
                   </button>
