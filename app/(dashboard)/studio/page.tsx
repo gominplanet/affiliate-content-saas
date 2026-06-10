@@ -52,11 +52,8 @@ type VideoTab = 'todo-product' | 'todo-no-product' | 'shipped' | 'done'
 // We allow the broader 10-alphanum pattern but anchor on word boundaries so
 // random letters in a title don't false-match.
 const ASIN_RE = /\b(B0[A-Z0-9]{8})\b/i
-// "Affiliate link" detector for the DONE bucket. Per user (2026-06-08):
-// strictly an Amazon or Geniuslink-shaped URL.
-const AFFILIATE_LINK_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/[^\s]*(?:[?&]tag=|\/dp\/))/i
-// "Any Amazon presence" for the no-product cutoff. Catches both raw amazon
-// URLs and any of the affiliate shapes above.
+// "Any Amazon presence" — used to tag an UNPUBLISHED draft as a product video
+// (ASIN in the title, or any Amazon/Geniuslink URL in the title/description).
 const AMAZON_PRESENCE_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/)/i
 
 function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt' | 'status'>): VideoTab {
@@ -64,17 +61,15 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   const desc = v.description || ''
 
   // SHIPPED wins first: if we pushed metadata via Co-Pilot, that's the
-  // authoritative signal — overrides every other heuristic.
+  // authoritative signal — overrides everything, regardless of status.
   if (v.metadataAppliedAt) return 'shipped'
 
-  // DONE second: a PUBLISHED video whose description already has an affiliate
-  // link = completed/monetized elsewhere, nothing to do. CRITICAL: gate on
-  // status==='public'. A DRAFT (private/unlisted) with a link is NOT "done" —
-  // it's an unpublished video you may still want Co-Pilot to optimize, so it
-  // must fall through to the product / no-product buckets below. (Reviewers'
-  // drafts almost always already have an Amazon link, so without this gate
-  // every product draft wrongly landed in "Done elsewhere".)
-  if (v.status === 'public' && AFFILIATE_LINK_RE.test(desc)) return 'done'
+  // PUBLISHED (and not pushed via Co-Pilot) → "Done elsewhere". The With product
+  // / No product tabs are STRICTLY unpublished drafts (per user 2026-06-10):
+  // private/unlisted videos the creator hasn't shipped yet — typically a raw
+  // product-name + ASIN title and no finished thumbnail. A live/public video
+  // never belongs in those tabs, even if it carries a product signal.
+  if (v.status === 'public') return 'done'
 
   // Product signal: ASIN in title (either via our pre-extracted field or a
   // freshly regex'd match), OR any Amazon URL in the description even
@@ -2620,10 +2615,10 @@ export default function StudioPage() {
           {!activeQuery && drafts.length > 0 && (
             <div className="flex items-center gap-1 mb-3 border-b border-gray-200 dark:border-white/10">
               {([
-                { id: 'todo-product' as const, label: '🛒 With product', sub: 'ASIN or Amazon link · no affiliate yet' },
-                { id: 'todo-no-product' as const, label: '✍️ No product', sub: 'General / topic videos' },
+                { id: 'todo-product' as const, label: '🛒 With product', sub: 'Unpublished drafts with a product (ASIN or Amazon link)' },
+                { id: 'todo-no-product' as const, label: '✍️ No product', sub: 'Unpublished drafts — no product detected' },
                 { id: 'shipped' as const, label: '🚀 Pushed via Co-Pilot', sub: 'You applied metadata via MVP — authoritative' },
-                { id: 'done' as const, label: '✅ Done elsewhere', sub: 'Description has an affiliate link but not via MVP' },
+                { id: 'done' as const, label: '✅ Done elsewhere', sub: 'Already published on YouTube (not via Co-Pilot)' },
               ]).map(t => {
                 const count = tabbed[t.id].length
                 const active = activeTab === t.id
@@ -2691,10 +2686,10 @@ export default function StudioPage() {
                 // which tab to switch to OR that they're all done.
                 <>
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">
-                    {activeTab === 'todo-product' && 'No videos with a product waiting'}
-                    {activeTab === 'todo-no-product' && 'No general videos waiting'}
+                    {activeTab === 'todo-product' && 'No unpublished product drafts waiting'}
+                    {activeTab === 'todo-no-product' && 'No unpublished drafts without a product'}
                     {activeTab === 'shipped' && 'Nothing pushed via Co-Pilot yet'}
-                    {activeTab === 'done' && 'No videos completed outside Co-Pilot'}
+                    {activeTab === 'done' && 'No published videos here'}
                   </p>
                   <p className="text-xs text-[#86868b] dark:text-[#8e8e93] max-w-md mx-auto">
                     {activeTab === 'shipped'
