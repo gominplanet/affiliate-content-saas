@@ -21,6 +21,7 @@ import { researchProductFromUrl, researchProductByWebSearch } from '@/services/r
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { maybeDistillFeedback } from '@/lib/feedback-distill'
+import { maybeLearnFromEdits } from '@/lib/edit-learning'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -654,6 +655,22 @@ async function handleGenerate(request: Request) {
       ?.map(r => (r.last_rewrite_feedback || '').trim())
       .filter(s => s.length > 0)
       .slice(0, 8) ?? []
+  }
+
+  // Sprint 3 Part 2: fold in the IMPLICIT edit-pattern rules learned from the
+  // diff between our drafts and the creator's edited WordPress versions
+  // (lib/edit-learning.ts → brand_profiles.edit_pattern_feedback). Same bullet
+  // format as distilled_feedback; appended so BOTH the explicit Rewrite notes
+  // and the implicit edit signal shape every new draft. Capped so it stays tight.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const editPatternRaw = ((brand as Record<string, unknown> | null)?.edit_pattern_feedback as string | null | undefined)?.trim() || ''
+  if (editPatternRaw) {
+    const editRules = editPatternRaw
+      .split('\n')
+      .map(l => l.replace(/^\s*[-•*]\s*/, '').trim())
+      .filter(s => s.length > 0)
+      .slice(0, 6)
+    persistentFeedback = [...persistentFeedback, ...editRules].slice(0, 14)
   }
 
   // ── Voice anchors: pull the user's 2 most-recently-published posts
@@ -1353,6 +1370,13 @@ async function handleGenerate(request: Request) {
   // brand_profiles.distilled_feedback. Debounced 6h. No await — same pattern
   // as the LEARN evolution above. Reads + writes the OWNER's profile.
   void maybeDistillFeedback(supabase, { userId: ownerId, tier: (wp?.tier as string) ?? null })
+
+  // Fire-and-forget IMPLICIT edit-pattern learning (Sprint 3 Part 2). Diffs our
+  // stored drafts against the creator's edited WordPress versions and distills
+  // the recurring changes into brand_profiles.edit_pattern_feedback. Debounced
+  // 24h (edits trickle in over days). No await — reads + writes the OWNER's
+  // profile. Safe no-op until migration 118 runs (catches missing column).
+  void maybeLearnFromEdits(supabase, { userId: ownerId, tier: (wp?.tier as string) ?? null })
 
   // ── 10. Body images + cache purge — DEFERRED to after the response ────────
   // The text post is already published (correct links) and saved, so the user
