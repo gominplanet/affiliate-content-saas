@@ -77,19 +77,26 @@ export async function GET(request: Request) {
     //     details lookup is 1 unit. 10 pages = 20 units, well under the
     //     10k/day default channel quota.
     const MAX_PAGES = 10
-    // MIN_HITS=10 keeps the first batch fast so the user sees content
-    // immediately. The client's loadAll() chains round-trips until the
-    // cursor is null, so a small MIN_HITS doesn't lose any drafts — it
-    // just keeps each round-trip short.
-    const MIN_HITS = 10
+    // Keep scanning until we've found MIN_DRAFT_HITS *actual drafts* (private /
+    // unlisted) — NOT just any matching videos. THIS is the "my product drafts
+    // disappeared" fix: gating on total matches let a first page of recent
+    // PUBLIC videos (especially when includePublished is on) end the scan before
+    // it ever reached the user's drafts. Counting drafts specifically means a
+    // wall of published videos can't short-circuit draft discovery. The client's
+    // loadAll() chains round-trips (via the cursor) to pull the rest.
+    const MIN_DRAFT_HITS = 10
     const drafts: Array<Awaited<ReturnType<typeof yt.getDraftVideos>>['videos'][number]> = []
     let cursor: string | undefined = pageToken
     let pagesScanned = 0
-    while (pagesScanned < MAX_PAGES && drafts.length < MIN_HITS) {
+    let draftHits = 0
+    while (pagesScanned < MAX_PAGES && draftHits < MIN_DRAFT_HITS) {
       const page = await yt.getDraftVideos(50, cursor)
       pagesScanned++
-      const matching = page.videos.filter(v => includePublished || v.status !== 'public')
-      drafts.push(...matching)
+      for (const v of page.videos) {
+        const isDraft = v.status !== 'public'
+        if (isDraft) draftHits++
+        if (includePublished || isDraft) drafts.push(v)
+      }
       if (!page.nextPageToken) {
         cursor = undefined
         break
@@ -148,6 +155,16 @@ export async function GET(request: Request) {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    // YouTube Data API daily quota (10k units, resets ~midnight Pacific) or a
+    // short-term rate limit. Heavy refreshing/searching burns it fast. Surface
+    // it CLEARLY — previously this fell through to a generic 500 / empty list,
+    // which looked exactly like "my videos vanished" ("worked then stopped").
+    if (/quotaExceeded|dailyLimitExceeded|rateLimitExceeded|userRateLimitExceeded|\bquota\b/i.test(msg)) {
+      return NextResponse.json({
+        error: 'YouTube’s daily API quota is used up (heavy refreshing/searching uses it fast). It resets around midnight Pacific — your videos will load again then.',
+        quotaExceeded: true,
+      }, { status: 429 })
+    }
     // Token refresh failed or token rejected by Google → ask user to reconnect
     const isAuthError =
       msg.includes('Failed to refresh YouTube token') ||
