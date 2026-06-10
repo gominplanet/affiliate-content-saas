@@ -19,7 +19,7 @@
 'use client'
 
 import { Suspense } from 'react'
-import { IntegrationsPanel } from '@/app/(dashboard)/setup/page'
+import { IntegrationsPanel } from '@/app/(dashboard)/setup/_components'
 import { TutorialVideo } from '@/components/TutorialVideo'
 
 function ConnectSocialsInner() {

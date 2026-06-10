@@ -1277,7 +1277,7 @@ async function handleGenerate(request: Request) {
     // on legacy integrations.wordpress_* with no wordpress_sites row yet,
     // and writing 'legacy' to a uuid column would error.
     ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
-    ai_model: 'claude-sonnet-4-6',
+    ai_model: 'claude-opus-4-8', // matches the #248 writer upgrade (was stale 'claude-sonnet-4-6')
     generation_prompt_version: 'v3.0',
     published_at: new Date().toISOString(),
     image_prompts: generated.imagePrompts,

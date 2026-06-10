@@ -52,10 +52,9 @@ interface YouTubeVideoRow {
 interface BlogPostRow {
   id: string
   title: string
-  asin: string | null
-  niches: string[] | null
+  niches: string[] | null   // derived from the linked video's selected_category
   post_type: string | null
-  permalink: string | null
+  permalink: string | null  // = blog_posts.wordpress_url (key kept for the page + GSC match)
   published_at: string | null
 }
 
@@ -109,16 +108,52 @@ export async function GET() {
     : 0
 
   // ── 2. Blog posts (last 90d) ────────────────────────────────────────────
+  // NOTE: blog_posts has NO `asin`/`niches`/`permalink` columns — selecting them
+  // made Supabase reject the whole query, so this section silently showed "0
+  // posts" even when the user had published plenty (bug 2026-06-10). Select the
+  // REAL columns; the URL lives in `wordpress_url`, and the niche tag is derived
+  // below from the linked video's selected_category (blog_posts has no niche).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: postRaw } = await (supabase as any)
     .from('blog_posts')
-    .select('id,title,asin,niches,post_type,permalink,published_at')
+    .select('id,title,post_type,published_at,wordpress_url,video_id')
     .eq('user_id', ownerId)
     .eq('status', 'published')
     .gte('published_at', cutoff)
     .order('published_at', { ascending: false })
     .limit(50)
-  const posts: BlogPostRow[] = (postRaw as BlogPostRow[] | null) ?? []
+  const rawPosts = (postRaw as Array<{
+    id: string; title: string; post_type: string | null
+    published_at: string | null; wordpress_url: string | null; video_id: string | null
+  }> | null) ?? []
+
+  // Niche tag per post = the linked video's selected_category (the closest real
+  // signal, sharing vocabulary with brand_profiles.niches). blog_posts.video_id
+  // → youtube_videos.id. Best-effort: posts without a linked video get no tag.
+  const postVideoIds = Array.from(new Set(rawPosts.map(p => p.video_id).filter((v): v is string => Boolean(v))))
+  const categoryByVideo = new Map<string, string>()
+  if (postVideoIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: vidCats } = await (supabase as any)
+      .from('youtube_videos')
+      .select('id,selected_category')
+      .eq('user_id', ownerId)
+      .in('id', postVideoIds)
+    for (const v of ((vidCats ?? []) as Array<{ id: string; selected_category: string | null }>)) {
+      if (v.selected_category) categoryByVideo.set(v.id, v.selected_category)
+    }
+  }
+  const posts: BlogPostRow[] = rawPosts.map(p => {
+    const niche = p.video_id ? categoryByVideo.get(p.video_id) ?? null : null
+    return {
+      id: p.id,
+      title: p.title,
+      post_type: p.post_type,
+      published_at: p.published_at,
+      permalink: p.wordpress_url,   // GSC match key + the page's outbound link
+      niches: niche ? [niche] : [],
+    }
+  })
 
   // ── 3. Search Console clicks/impressions for the top posts ──────────────
   // Skipped silently if GSC isn't connected. We query per-page so the row
