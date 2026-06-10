@@ -146,6 +146,24 @@ export async function GET(request: Request) {
       metadataAppliedAt: appliedMap[d.youtubeVideoId] ?? null,
     }))
 
+    // Debug view (?debug=1): per-video classification inputs so we can see
+    // exactly what loaded + how each would bucket, without guessing. Read-only.
+    if (searchParams.get('debug') === '1') {
+      return NextResponse.json({
+        pagesScanned,
+        draftHits,
+        totalLoaded: enriched.length,
+        hasMore: !!cursor,
+        videos: enriched.map(d => ({
+          title: (d.title || '').slice(0, 70),
+          status: d.status,
+          scheduled: !!d.publishAt,
+          asin: d.detectedAsin || null,
+          pushedViaCopilot: !!d.metadataAppliedAt,
+        })),
+      })
+    }
+
     return NextResponse.json({
       drafts: enriched,
       nextPageToken: cursor,
