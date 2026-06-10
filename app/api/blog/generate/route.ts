@@ -1409,13 +1409,15 @@ async function handleGenerate(request: Request) {
   // profile. Safe no-op until migration 118 runs (catches missing column).
   void maybeLearnFromEdits(supabase, { userId: ownerId, tier: (wp?.tier as string) ?? null })
 
-  // ── 10. Body images + cache purge — DEFERRED to after the response ────────
-  // The text post is already published (correct links) and saved, so the user
-  // gets it immediately. Next.js `after()` runs this within the same
-  // function's remaining time budget; if image generation is slow or the
-  // function is cut off, the published post simply keeps its text — the
-  // request can NEVER 504 on the user because of images.
-  after(async () => {
+  // ── 10. Body images + cache purge ─────────────────────────────────────────
+  // Heavy follow-up: title/body fact-checks, schema, and IN-ARTICLE IMAGES.
+  // Defined once here, then run one of two ways (see just below the definition):
+  //   • Interactive request → DEFERRED via Next.js after() so the user gets the
+  //     published text instantly; images stream in within the remaining budget.
+  //     (If the function is cut off, the post simply keeps its text — never 504s.)
+  //   • Async job (isServiceCall) → awaited INLINE so the job only completes once
+  //     images are attached. No after()-cutoff → reliable images. (#255 follow-up.)
+  const deferredWork = async () => {
     // ── Video→blog backlink (SEO #21) ──────────────────────────────────────
     // Append a "Full written review" link to the source YouTube video's
     // description so the video drives authority to the post (and vice versa).
@@ -2004,7 +2006,23 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
     // litespeed_purge_all + wp_cache_flush), WITH auth, so it purges even on a
     // site with no customizations saved. Best-effort.
     await wpService.purgeCache((wp as Record<string, unknown> | null)?.blog_customizations)
-  })
+  }
+
+  if (isServiceCall) {
+    // Async job — nobody is waiting on latency, so run the image/fact-check work
+    // INLINE. The job then completes only once images are attached (the runner
+    // waits for this response), eliminating the after()-cutoff that left async
+    // posts image-less. Best-effort: the post is already published, so a failure
+    // here must never fail the job — log and move on.
+    try {
+      await deferredWork()
+    } catch (e) {
+      console.warn('[blog-generate] inline deferred work failed (post already published):', e instanceof Error ? e.message : String(e))
+    }
+  } else {
+    // Interactive request: defer so the response returns immediately.
+    after(deferredWork)
+  }
 
   return NextResponse.json({
     success: true,
