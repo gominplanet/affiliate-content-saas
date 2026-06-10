@@ -76,25 +76,35 @@ export async function GET(request: Request) {
     //   - Quota cost: each playlistItems page is 1 unit, each videos
     //     details lookup is 1 unit. 10 pages = 20 units, well under the
     //     10k/day default channel quota.
-    const MAX_PAGES = 10
-    // Keep scanning until we've found MIN_DRAFT_HITS *actual drafts* (private /
-    // unlisted) — NOT just any matching videos. THIS is the "my product drafts
-    // disappeared" fix: gating on total matches let a first page of recent
-    // PUBLIC videos (especially when includePublished is on) end the scan before
-    // it ever reached the user's drafts. Counting drafts specifically means a
-    // wall of published videos can't short-circuit draft discovery. The client's
-    // loadAll() chains round-trips (via the cursor) to pull the rest.
-    const MIN_DRAFT_HITS = 10
+    const MAX_PAGES = 15
+    // TWO thresholds, both must be satisfied (or MAX_PAGES / catalogue end):
+    //   - MIN_DRAFT_HITS: enough drafts overall to populate the No-product /
+    //     scheduled tabs.
+    //   - MIN_PRODUCT_HITS: enough RAW PRODUCT drafts (an ASIN in the title) so
+    //     the "With product" tab isn't empty.
+    // Why the product gate (2026-06-10): a creator's newest drafts are often the
+    // polished, already-scheduled videos (full title, no raw ASIN). The scan used
+    // to stop at the first 10 drafts — all of which were scheduled/no-ASIN — so
+    // "With product" showed 0 even though raw "Product name B0XXXXXXXX" drafts
+    // existed DEEPER in the uploads list. Counting title-ASIN drafts makes the
+    // scan dig past the polished ones until it surfaces the product drafts. The
+    // client's loadAll() chains the cursor for anything beyond MAX_PAGES.
+    const MIN_DRAFT_HITS = 12
+    const MIN_PRODUCT_HITS = 6
     const drafts: Array<Awaited<ReturnType<typeof yt.getDraftVideos>>['videos'][number]> = []
     let cursor: string | undefined = pageToken
     let pagesScanned = 0
     let draftHits = 0
-    while (pagesScanned < MAX_PAGES && draftHits < MIN_DRAFT_HITS) {
+    let productHits = 0
+    while (pagesScanned < MAX_PAGES && (draftHits < MIN_DRAFT_HITS || productHits < MIN_PRODUCT_HITS)) {
       const page = await yt.getDraftVideos(50, cursor)
       pagesScanned++
       for (const v of page.videos) {
         const isDraft = v.status !== 'public'
-        if (isDraft) draftHits++
+        if (isDraft) {
+          draftHits++
+          if (v.detectedAsin) productHits++ // raw title-ASIN draft → "With product"
+        }
         if (includePublished || isDraft) drafts.push(v)
       }
       if (!page.nextPageToken) {
