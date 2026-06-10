@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { jsonrepair } from 'jsonrepair'
 import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { learnProfileToPrompt } from '@/lib/learn'
+import { resolveNicheScaffold, nicheScaffoldToPrompt, type NicheScaffold } from '@/lib/niche-scaffold'
 
 /** Caller identity for cost telemetry (optional — logging is best-effort). */
 export interface UsageCtx { userId?: string | null; tier?: string | null }
@@ -104,6 +105,11 @@ function buildSystemPrompt(
    *  the Amazon-product path is unchanged; non-Amazon (direct store/brand
    *  links) get neutral "Get the best price today" copy instead of "...on Amazon". */
   isAmazon: boolean = true,
+  /** Per-niche scaffold (Sprint 3). When provided, overrides the scorecard
+   *  dimensions + injects a niche-context block (FAQ emphasis, depth lean,
+   *  image setting). When omitted (e.g. the campaign path), the generic
+   *  scorecard + universal rules apply unchanged. */
+  nicheScaffold?: NicheScaffold,
 ): string {
   const authorLine = brand.author_name
     ? `the review blog of ${brand.author_name}`
@@ -160,6 +166,22 @@ function buildSystemPrompt(
   // The LEARN voice profile — the writer's own taste/style training.
   // High priority: it encodes what THIS user finds fake vs trustworthy.
   const learnSection = learnProfileToPrompt(brand.learn_profile)
+
+  // Per-niche scaffold (Sprint 3). When present:
+  //   - nicheBlock: the injected niche-context block (FAQ emphasis, depth
+  //     lean, image setting) placed near the top of the prompt.
+  //   - the 4 scorecard subscore dimension labels + score guide use the
+  //     niche's dimensions instead of the generic Value/Quality/Ease/
+  //     Durability (applied at the template literals below).
+  // Falls back to the generic dimensions when no scaffold is passed.
+  const nicheBlock = nicheScaffold ? nicheScaffoldToPrompt(nicheScaffold) : ''
+  const scDims = nicheScaffold?.scorecard ?? ['Value', 'Quality', 'Ease of Use', 'Durability']
+  const scGuide = nicheScaffold?.scorecardGuide ?? [
+    'Value     = price-for-what-you-get based on what the reviewer said about cost',
+    'Quality   = build quality + performance the reviewer demonstrated',
+    'Ease      = setup, daily use, learning curve from the transcript',
+    'Durability = how it held up / how it\'s expected to hold up',
+  ]
 
   // 2026-06-09: per-brand section toggles. Each defaults to true (existing
   // behavior preserved). When false, the AI is told to OMIT that section
@@ -286,6 +308,7 @@ ${writingGuidance}
 ${avoidLine}
 ${learnSection}
 ${voiceSection}
+${nicheBlock}
 ${sectionsConfig}
 ═══════════════════════════════════════
 CRITICAL RULES — FOLLOW STRICTLY
@@ -956,11 +979,8 @@ BUY / SKIP / (optional WAIT) — three modes of conviction:
 [3b] SCORECARD (HTML block, immediately after the Quick Verdict)
 This gives readers at-a-glance trust + drives Google rich snippets via the Review schema (the overall score is what shows as stars in search results). The 4 subscore bars are visual only — derived from the transcript, not invented. If the video clearly doesn't speak to one of the four dimensions, you may still infer a score from how the reviewer talks (enthusiasm, ease of setup mentions, comparisons to other products, etc.) — but ground every number in something the transcript actually shows.
 
-Score guide (1-5, decimals allowed, e.g. 4.5):
-  - Value     = price-for-what-you-get based on what the reviewer said about cost
-  - Quality   = build quality + performance the reviewer demonstrated
-  - Ease      = setup, daily use, learning curve from the transcript
-  - Durability = how it held up / how it's expected to hold up
+Score guide (1-5, decimals allowed, e.g. 4.5). The 4 dimensions are tailored to this product's niche — score and discuss the product against THESE:
+  - ${scGuide.join('\n  - ')}
 
 The 4 subscores should average roughly to the Overall — small differences are fine and realistic. Don't make them all the same number.
 
@@ -992,22 +1012,22 @@ Stars row: use ★ for whole points, ½ for halves, ☆ for empty. E.g. 4.5/5 �
      reference the rating verbally ("Excellent overall…"). --}}
   <div class="gr-sc-subs">
     <div class="gr-sc-sub">
-      <span class="gr-sc-sub-name">Value</span>
+      <span class="gr-sc-sub-name">${scDims[0]}</span>
       <span class="gr-sc-sub-bar"><span style="width:{Y0}%"></span></span>
       <span class="gr-sc-sub-num">{Y.Y}</span>
     </div>
     <div class="gr-sc-sub">
-      <span class="gr-sc-sub-name">Quality</span>
+      <span class="gr-sc-sub-name">${scDims[1]}</span>
       <span class="gr-sc-sub-bar"><span style="width:{Y1}%"></span></span>
       <span class="gr-sc-sub-num">{Y.Y}</span>
     </div>
     <div class="gr-sc-sub">
-      <span class="gr-sc-sub-name">Ease of Use</span>
+      <span class="gr-sc-sub-name">${scDims[2]}</span>
       <span class="gr-sc-sub-bar"><span style="width:{Y2}%"></span></span>
       <span class="gr-sc-sub-num">{Y.Y}</span>
     </div>
     <div class="gr-sc-sub">
-      <span class="gr-sc-sub-name">Durability</span>
+      <span class="gr-sc-sub-name">${scDims[3]}</span>
       <span class="gr-sc-sub-bar"><span style="width:{Y3}%"></span></span>
       <span class="gr-sc-sub-num">{Y.Y}</span>
     </div>
@@ -1969,7 +1989,14 @@ ${t}`,
     const ctaIsAmazon =
       !!asin ||
       /amazon\.[a-z.]+\b|\bamzn\.to\b|\bgeni\.us\b|\ba\.co\b/i.test(affiliateUrl)
-    const systemPrompt = buildSystemPrompt(brand, voiceProfile || undefined, ctaIsAmazon)
+    // Per-niche scaffold (Sprint 3). Resolve the best-fit niche from the
+    // strongest available product signal — the YouTube title (usually names
+    // the product/category) plus the first line of the scraped product brief
+    // when present — CONSTRAINED to the brand's declared niches. Zero LLM
+    // cost, deterministic. Falls back gracefully when nothing matches.
+    const nicheSignal = [video.title, (video.productResearch || '').slice(0, 200)].filter(Boolean).join(' ')
+    const nicheScaffold = resolveNicheScaffold(nicheSignal, brand.niches)
+    const systemPrompt = buildSystemPrompt(brand, voiceProfile || undefined, ctaIsAmazon, nicheScaffold)
 
     const feedbackBlock = rewriteFeedback?.trim()
       ? `\n\nREWRITE REQUEST — the user already received one version of this post and asked for a different angle. Make this draft materially different from a standard generation. Their feedback:\n"${rewriteFeedback.trim()}"\n\nAddress these points directly: pick a different opening hook, restructure the body around the missing angle, and avoid repeating any phrasings that would feel like the previous draft.`
@@ -2200,7 +2227,10 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     input: { product: { asin: string; title: string; bullets: string[]; description: string; price: string | null; rating: string | null }; researchBrief: string; affiliateUrl: string },
     ctx?: UsageCtx,
   ): Promise<BlogGenerationOutput> {
-    const systemPrompt = buildSystemPrompt(brand)
+    // Per-niche scaffold (Sprint 3). The campaign path has a clean product
+    // title from the Amazon scrape — the strongest possible niche signal.
+    const campaignScaffold = resolveNicheScaffold(input.product.title, brand.niches)
+    const systemPrompt = buildSystemPrompt(brand, undefined, true, campaignScaffold)
     const p = input.product
 
     const userMessage = `Generate a long-form, SEO-optimized INFORMATIONAL buyer's-guide article about this product. This is NOT a personal review. There is NO video — base the post entirely on the product facts and the research brief below.
