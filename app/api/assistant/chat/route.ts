@@ -43,7 +43,7 @@ function buildSystemPrompt(
 WHAT MVP AFFILIATE DOES — full feature guide below. Treat this as
 authoritative: when a user asks how to do something in MVP, answer
 from THIS guide, not from generic web knowledge. Cite specific URLs
-(/setup, /studio, /brand) so users can navigate directly. If a user
+(/setup, /co-pilot, /brand) so users can navigate directly. If a user
 asks about something the guide doesn't cover, say so plainly and
 suggest the closest workflow that IS in the guide — don't invent
 features.

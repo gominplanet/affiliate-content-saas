@@ -19,7 +19,7 @@
  *   still apply on top of this content.
  * - Action-oriented. Lead with what the user clicks/types/picks.
  * - Include the URL or sidebar entry for every feature so the
- *   assistant can say "go to /studio" or "click Blog Set Up in the
+ *   assistant can say "go to /co-pilot" or "click Blog Set Up in the
  *   sidebar".
  * - Mention tier gates when they matter — saves a follow-up "but
  *   I'm on Creator and don't see it" exchange.
@@ -47,7 +47,7 @@ The sidebar groups everything under headings the user can collapse:
 - **Channels** — Connected social platforms (Instagram Burner, TikTok publish)
 - **Settings** — MVP Help Desk, Plan & Billing, Virtual Assistants, Community
 
-URLs cited below are exact (e.g. /setup, /brand, /studio).
+URLs cited below are exact (e.g. /setup, /brand, /co-pilot).
 
 ---
 
@@ -126,13 +126,13 @@ to WordPress automatically via /api/wordpress/sync-brand.
 
 ## YOUTUBE CO-PILOT
 
-URL: /studio · Sidebar: Create → YouTube Co-Pilot
+URL: /co-pilot · Sidebar: Create → YouTube Co-Pilot
 
 The flagship feature. Workflow:
 
 1. **In YouTube Studio**: save an unlisted draft of a review video. Put a
    10-character Amazon ASIN in the title (e.g. "Best Vacuum Review — B08TT4YHG1").
-2. **In MVP**: /studio shows a list of all the user's draft + scheduled
+2. **In MVP**: /co-pilot shows a list of all the user's draft + scheduled
    YouTube videos. Click "Generate" on one.
 3. The Co-Pilot generates: SEO-optimized YouTube title, full YouTube
    description (with affiliate links wired through Geniuslink or their
@@ -162,7 +162,7 @@ uppercase (Amazon's format). Tell users: "Vacuum — B08TT4YHG1".
 All blog posts publish to the user's WordPress site automatically.
 
 ### Regular Review
-Generated from /studio when the user clicks "Generate". Grounded in the
+Generated from /co-pilot when the user clicks "Generate". Grounded in the
 video transcript. ~2000-word long-form with verdict box, pros/cons,
 FAQ, in-body product images, affiliate buttons.
 

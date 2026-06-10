@@ -263,7 +263,7 @@ export default function BrainstormPage() {
             </div>
             {report.youtube.top.length === 0 ? (
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
-                No videos synced yet for this window. <a href="/studio" className="text-[#7C3AED] hover:underline">Sync your channel</a> first.
+                No videos synced yet for this window. <a href="/co-pilot" className="text-[#7C3AED] hover:underline">Sync your channel</a> first.
               </p>
             ) : (
               <div className="grid md:grid-cols-2 gap-5">
@@ -321,7 +321,7 @@ export default function BrainstormPage() {
             )}
             {report.blog.top.length === 0 ? (
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">
-                No published blog posts in this window yet. Run a generation in <a href="/studio" className="text-[#7C3AED] hover:underline">YouTube Co-Pilot</a> or paste a deal in <a href="/deals" className="text-[#7C3AED] hover:underline">Deals Hub</a>.
+                No published blog posts in this window yet. Run a generation in <a href="/co-pilot" className="text-[#7C3AED] hover:underline">YouTube Co-Pilot</a> or paste a deal in <a href="/deals" className="text-[#7C3AED] hover:underline">Deals Hub</a>.
               </p>
             ) : (
               <div className="grid md:grid-cols-2 gap-5">

@@ -35,6 +35,14 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['lucide-react'],
   },
+  // Old route slug → new. The YouTube Co-Pilot page moved from /studio to
+  // /co-pilot (its real product name); 308-redirect so old bookmarks and any
+  // stale links still land on the page.
+  async redirects() {
+    return [
+      { source: '/studio', destination: '/co-pilot', permanent: true },
+    ]
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'img.youtube.com' },

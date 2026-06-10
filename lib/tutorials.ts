@@ -69,7 +69,7 @@ export const TUTORIALS: Tutorial[] = [
     title: 'YouTube Co-Pilot',
     description: 'Generate titles, descriptions, tags, and pinned comments for new videos before you upload.',
     videoId: '-d06O5SWUhU',
-    href: '/studio',
+    href: '/co-pilot',
   },
   {
     sectionKey: 'library',

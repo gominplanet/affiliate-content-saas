@@ -206,7 +206,7 @@ export default async function DashboardPage() {
         <section>
           <div className="flex flex-wrap gap-2">
             <ActionChip href="/content" icon={<PenLine size={13} />} label="Generate post" />
-            <ActionChip href="/studio" icon={<ImageIcon size={13} />} label="Make thumbnail" />
+            <ActionChip href="/co-pilot" icon={<ImageIcon size={13} />} label="Make thumbnail" />
             <ActionChip href="/comparison" icon={<Scale size={13} />} label="Compare products" />
             <ActionChip href="/deals" icon={<BadgePercent size={13} />} label="Spot a deal" />
             <ActionChip href="/seo" icon={<Wand2 size={13} />} label="Refresh SEO" />

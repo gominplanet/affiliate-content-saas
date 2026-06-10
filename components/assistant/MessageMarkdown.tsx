@@ -42,7 +42,7 @@ const IN_APP_ROUTES = [
   '/newsletter/subscribers',
   '/newsletter',
   '/setup',
-  '/studio',
+  '/co-pilot',
   '/content',
   '/brand',
   '/learn',

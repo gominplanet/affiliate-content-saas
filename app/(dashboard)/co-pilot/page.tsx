@@ -12,7 +12,7 @@ import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosi
 import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
-import BrandStylePanel from '@/components/studio/BrandStylePanel'
+import BrandStylePanel from '@/components/co-pilot/BrandStylePanel'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,

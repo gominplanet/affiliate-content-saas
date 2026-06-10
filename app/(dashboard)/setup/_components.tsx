@@ -1397,7 +1397,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         {youtubeOAuthConnected ? (
           <div className="flex flex-col gap-2">
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
-              Your Google account is connected. Visit <a href="/studio" className="text-[#7C3AED] hover:underline">YouTube Co-Pilot</a> to generate metadata for your draft videos.
+              Your Google account is connected. Visit <a href="/co-pilot" className="text-[#7C3AED] hover:underline">YouTube Co-Pilot</a> to generate metadata for your draft videos.
             </p>
             <button onClick={disconnectYoutube} disabled={ytDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
               {ytDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect YouTube

@@ -227,7 +227,7 @@ export default function ProTourPage() {
                 The MVP-YOUTUBE Geniuslink group catches every YouTube-description click separately from your blog clicks,
                 so your analytics dashboard tells you whether to invest the next hour writing a blog post or recording a video.
               </p>
-              <SectionCta href="/studio" label="Open YouTube Co-Pilot" />
+              <SectionCta href="/co-pilot" label="Open YouTube Co-Pilot" />
             </Section>
 
             {/* ── 3. SEO ──────────────────────────────────────────── */}

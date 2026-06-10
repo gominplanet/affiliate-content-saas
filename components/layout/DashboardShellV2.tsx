@@ -245,7 +245,7 @@ export default function DashboardShellV2({
     {
       label: 'Create',
       items: [
-        { href: '/studio', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
+        { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
         { href: '/script', icon: <PenLine size={15} />, label: 'Script writer' },
         { href: '/comparison', icon: <Scale size={15} />, label: 'Compare products' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuides },
