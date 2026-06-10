@@ -19,6 +19,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
+import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,7 +54,60 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'videoId is required' }, { status: 400 })
   }
 
-  const jobId = await enqueueGenerationJob(createAdminClient(), {
+  const admin = createAdminClient()
+
+  // ── Queue-depth cap (anti-flood, task #256) ───────────────────────────────
+  // Reject if this caller already has several jobs in flight so a loop can't
+  // pile up unbounded generations. Capped by the actual caller (user.id) so one
+  // VA can't flood the owner's queue. Tolerant of a missing table (enqueue 503s).
+  try {
+    const { count } = await admin
+      .from('generation_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .in('status', ['queued', 'running'])
+    if ((count ?? 0) >= 5) {
+      return NextResponse.json({
+        error: 'You already have several generations queued — wait for those to finish before queuing more.',
+        limitReached: true, cap: 'queue_depth',
+      }, { status: 429 })
+    }
+  } catch { /* count failed (e.g. pre-migration 119) — don't block; enqueue 503s below if the table is missing */ }
+
+  // ── Generation quota — consume ONCE here, per job (not per worker attempt) ──
+  // The service-mode generate route trusts this and skips its own quota check
+  // (task #255), so consuming here is what enforces the cap for async. Only a
+  // FRESH post consumes a unit; a rewrite (existing post for this video) follows
+  // the Pro rewrite rule instead — mirrors /api/blog/generate.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (admin as any)
+    .from('blog_posts')
+    .select('id, rewrite_count')
+    .eq('user_id', ownerId)
+    .eq('video_id', body.videoId)
+    .limit(1)
+    .maybeSingle()
+  if (existing) {
+    const { data: intRow } = await admin.from('integrations').select('tier').eq('user_id', ownerId).single()
+    const tier = normalizeTier(intRow?.tier)
+    if (tier !== 'pro' && tier !== 'admin') {
+      return NextResponse.json({ error: 'Rewrite is a Pro feature. You can still edit the post manually in WordPress.', limitReached: true, cap: 'rewrites', currentTier: tier }, { status: 403 })
+    }
+    if (tier !== 'admin' && ((existing.rewrite_count as number) ?? 0) >= 1) {
+      return NextResponse.json({ error: 'This post has already been rewritten once. Pro allows one AI rewrite per post.', limitReached: true, cap: 'rewrites', currentTier: tier }, { status: 403 })
+    }
+  } else {
+    const trialUsage = await checkUsageLimit(supabase, user.id)
+    if (!trialUsage.allowed) {
+      return NextResponse.json({ error: trialUsage.reason, limitReached: true, cap: 'posts', currentTier: trialUsage.tier, upgrade: trialUsage.upgrade }, { status: 403 })
+    }
+    const usage = await checkGenerationLimit(supabase, user.id)
+    if (!usage.allowed) {
+      return NextResponse.json({ error: usage.reason, limitReached: true, cap: 'generations', currentTier: usage.tier, upgrade: usage.upgrade }, { status: 403 })
+    }
+  }
+
+  const jobId = await enqueueGenerationJob(admin, {
     userId: user.id,
     ownerId,
     kind: 'blog',

@@ -52,19 +52,32 @@ async function runBlogJob(job: GenerationJob): Promise<Record<string, unknown>> 
   const secret = process.env.CRON_SECRET
   if (!secret) throw new Error('CRON_SECRET not set — cannot make the internal service call')
 
-  const res = await fetch(`${resolveSelfBaseUrl()}/api/blog/generate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-mvp-service': secret,
-      'x-mvp-service-user': job.user_id,
-      'x-mvp-service-owner': job.owner_id,
-    },
-    body: JSON.stringify(job.input ?? {}),
-    // Almost the worker's whole 300s budget; the route is tuned to finish under
-    // it (Opus effort:'medium'). A timeout throws → the job retries next tick.
-    signal: AbortSignal.timeout(290_000),
-  })
+  let res: Response
+  try {
+    res = await fetch(`${resolveSelfBaseUrl()}/api/blog/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-mvp-service': secret,
+        'x-mvp-service-user': job.user_id,
+        'x-mvp-service-owner': job.owner_id,
+      },
+      body: JSON.stringify(job.input ?? {}),
+      // Almost the worker's whole 300s budget; the route is tuned to finish
+      // under it (Opus effort:'medium').
+      signal: AbortSignal.timeout(290_000),
+    })
+  } catch (e) {
+    // AbortSignal.timeout throws a DOMException named 'TimeoutError' (also handle
+    // 'AbortError'). TAG it so the worker leaves the job 'running' for stale
+    // recovery instead of requeuing into a concurrent double-run — the route may
+    // still be publishing on its side (it doesn't abort on our disconnect).
+    const name = (e as { name?: string } | null)?.name
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      throw new Error('TIMEOUT: blog generation exceeded the worker budget')
+    }
+    throw e
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let data: any = null

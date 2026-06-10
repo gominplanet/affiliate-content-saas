@@ -60,15 +60,32 @@ export async function GET(req: Request) {
     }
     if (!job) break // queue empty
 
+    let result
     try {
-      const result = await runGenerationJob(admin, job)
-      await completeJob(admin, job.id, result)
-      processed.push({ id: job.id, ok: true })
+      result = await runGenerationJob(admin, job)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
+      // Client-side timeout/abort: the generate route does NOT abort when we
+      // disconnect, so it may still be publishing. Do NOT requeue — a 2nd
+      // concurrent run risks a duplicate post. Leave the job 'running'; the
+      // stale-claim window (600s, > the route's 300s ceiling) re-runs it only if
+      // it truly died, and a re-run UPDATES in place (isRewrite), so no dup.
+      if (/^TIMEOUT/i.test(msg)) {
+        processed.push({ id: job.id, ok: false, error: 'timeout — left running for stale recovery' })
+        continue
+      }
       await failJob(admin, job, msg)
       processed.push({ id: job.id, ok: false, error: msg })
+      continue
     }
+    // Success. Complete OUTSIDE the run-try so a transient completeJob error
+    // can't fall into the failure path and re-run an already-published post. If
+    // the status write fails, the job ran + published; a later tick / the stale
+    // window reconciles it (the .eq('status','running') guard keeps it safe).
+    try {
+      await completeJob(admin, job.id, result)
+    } catch { /* published already; status write will reconcile */ }
+    processed.push({ id: job.id, ok: true })
   }
 
   return NextResponse.json({ processed: processed.length, jobs: processed })

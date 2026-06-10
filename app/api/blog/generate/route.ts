@@ -280,7 +280,13 @@ async function handleGenerate(request: Request) {
   const existingSiteId: string | null =
     (existingForLimit as { wordpress_site_id?: string | null } | null)?.wordpress_site_id ?? null
 
-  if (isRewrite) {
+  if (isServiceCall) {
+    // Queued async job (Phase 4 increment C). The interactive gates do NOT apply:
+    // the Generations quota was consumed ONCE at enqueue (not per worker attempt),
+    // and a retry that finds an existing row must UPDATE it in place (the isRewrite
+    // logic above already set existingWpPostId, preserving the live URL) rather
+    // than 403 as a user-initiated "rewrite". Skip both gates.
+  } else if (isRewrite) {
     // ── Rewrite gate (Pro-only, once per post) ──────────────────────────────
     // Manual editing in WordPress is always available; this gate stops the
     // expensive AI rewrite path from being triggered by non-Pro tiers.
