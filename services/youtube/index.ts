@@ -176,6 +176,10 @@ export interface DraftVideo {
   thumbnailUrl: string
   status: 'private' | 'unlisted' | 'public'
   publishedAt: string
+  // YouTube's scheduled-publish time (status.publishAt) — set only when a
+  // private video is scheduled to go public. Non-null = "scheduled / queued",
+  // which the Co-Pilot treats as done work (out of the draft to-do tabs).
+  publishAt: string | null
   detectedAsin: string | null
 }
 
@@ -244,6 +248,7 @@ export class YouTubeOAuthService {
         thumbnailUrl: v.snippet.thumbnails?.high?.url ?? v.snippet.thumbnails?.default?.url ?? '',
         status: v.status?.privacyStatus ?? 'private',
         publishedAt: v.snippet.publishedAt,
+        publishAt: v.status?.publishAt ?? null,
         detectedAsin: asinMatch ? asinMatch[1] : null,
       }
     }) as DraftVideo[]
@@ -292,6 +297,7 @@ export class YouTubeOAuthService {
         thumbnailUrl: v.snippet.thumbnails?.high?.url ?? v.snippet.thumbnails?.default?.url ?? '',
         status: v.status?.privacyStatus ?? 'private',
         publishedAt: v.snippet.publishedAt,
+        publishAt: v.status?.publishAt ?? null,
         detectedAsin: asinMatch ? asinMatch[1] : null,
       }
     })

@@ -25,6 +25,9 @@ interface DraftVideo {
   thumbnailUrl: string
   status: 'private' | 'unlisted' | 'public'
   publishedAt: string
+  /** YouTube scheduled-publish time (status.publishAt). Non-null = scheduled to
+   *  go live → treated as done (out of the draft to-do tabs). */
+  publishAt?: string | null
   detectedAsin: string | null
   /** ISO timestamp when the user pushed metadata for this video to YouTube
    *  via /api/youtube/apply or /api/youtube/update-metadata. null if we
@@ -56,7 +59,7 @@ const ASIN_RE = /\b(B0[A-Z0-9]{8})\b/i
 // (ASIN in the title, or any Amazon/Geniuslink URL in the title/description).
 const AMAZON_PRESENCE_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/)/i
 
-function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt' | 'status'>): VideoTab {
+function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt' | 'status' | 'publishAt'>): VideoTab {
   const title = v.title || ''
   const desc = v.description || ''
 
@@ -70,6 +73,12 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   // product-name + ASIN title and no finished thumbnail. A live/public video
   // never belongs in those tabs, even if it carries a product signal.
   if (v.status === 'public') return 'done'
+
+  // SCHEDULED (still private/unlisted, but a publishAt is set) = finished, queued
+  // work — NOT a raw draft. Per user 2026-06-10 these sit with the shipped videos
+  // ("Pushed via Co-Pilot"), out of the With product / No product to-do queue —
+  // that queue is only the orange, raw "product name + ASIN", no-thumbnail drafts.
+  if (v.publishAt) return 'shipped'
 
   // Product signal: ASIN in title (either via our pre-extracted field or a
   // freshly regex'd match), OR any Amazon URL in the description even
@@ -2617,7 +2626,7 @@ export default function StudioPage() {
               {([
                 { id: 'todo-product' as const, label: '🛒 With product', sub: 'Unpublished drafts with a product (ASIN or Amazon link)' },
                 { id: 'todo-no-product' as const, label: '✍️ No product', sub: 'Unpublished drafts — no product detected' },
-                { id: 'shipped' as const, label: '🚀 Pushed via Co-Pilot', sub: 'You applied metadata via MVP — authoritative' },
+                { id: 'shipped' as const, label: '🚀 Pushed via Co-Pilot', sub: 'Pushed via Co-Pilot, or already scheduled to go live' },
                 { id: 'done' as const, label: '✅ Done elsewhere', sub: 'Already published on YouTube (not via Co-Pilot)' },
               ]).map(t => {
                 const count = tabbed[t.id].length
