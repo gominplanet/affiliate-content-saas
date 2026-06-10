@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/process-generation-jobs",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/process-scheduled",
       "schedule": "* * * * *"
     },
