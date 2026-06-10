@@ -2319,14 +2319,17 @@ export default function StudioPage() {
   // Pagination — single cursor. When non-null, more drafts can be fetched
   // via "Load more". When null, we've walked the entire uploads playlist.
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
-  // Include published videos toggle. Default off → only private + unlisted
-  // (i.e. true YouTube Studio drafts). The user can flip this if they
-  // want to re-do metadata on an already-public video.
-  const [includePublished, setIncludePublished] = useState(false)
-  // Active workflow tab. Defaults to 'todo-product' since that's the highest-
-  // value bucket (product videos = affiliate $$). Switches between three
-  // mutually-exclusive views of the same drafts list.
+  // Include published videos. Default ON so the page shows the creator's whole
+  // library the moment they open Co-Pilot (drafts AND already-public videos) —
+  // an established channel is mostly published, so defaulting off looked empty.
+  // Untick to focus on just private/unlisted drafts.
+  const [includePublished, setIncludePublished] = useState(true)
+  // Active workflow tab. Starts at 'todo-product' (highest value: product videos
+  // = affiliate $$), but if that bucket is empty on load we auto-jump to the
+  // first tab that actually has videos (effect below) so the page never opens
+  // on a blank list.
   const [activeTab, setActiveTab] = useState<VideoTab>('todo-product')
+  const autoTabPicked = React.useRef(false)
   // Server-side search across the user's entire channel (not just the
   // currently-loaded uploads-playlist page). Debounced 350ms below so we
   // don't hammer YouTube's search endpoint on every keystroke — that one
@@ -2348,6 +2351,21 @@ export default function StudioPage() {
     return buckets
   }, [drafts])
   const visibleDrafts = activeQuery ? drafts : tabbed[activeTab]
+
+  // On first load, if the default tab ('todo-product') is empty, jump to the
+  // FULLEST tab so Co-Pilot opens on the user's actual library instead of a
+  // blank actionable-queue (an established channel is mostly "Done elsewhere").
+  // Runs once; a manual tab click also marks this done (below) so we never
+  // override the user's choice afterward.
+  useEffect(() => {
+    if (autoTabPicked.current || activeQuery || drafts.length === 0) return
+    autoTabPicked.current = true
+    if (tabbed[activeTab].length === 0) {
+      const order: VideoTab[] = ['todo-product', 'todo-no-product', 'shipped', 'done']
+      const fullest = order.reduce((best, t) => (tabbed[t].length > tabbed[best].length ? t : best), order[0])
+      if (tabbed[fullest].length > 0) setActiveTab(fullest)
+    }
+  }, [tabbed, drafts.length, activeQuery, activeTab])
 
   /** load() handles three modes:
    *    - Initial / refresh / new search: replaces the drafts list. (append=false, no pageToken)
@@ -2605,7 +2623,7 @@ export default function StudioPage() {
                 return (
                   <button
                     key={t.id}
-                    onClick={() => setActiveTab(t.id)}
+                    onClick={() => { autoTabPicked.current = true; setActiveTab(t.id) }}
                     className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
                       active
                         ? 'border-[#7C3AED] text-[#7C3AED]'
