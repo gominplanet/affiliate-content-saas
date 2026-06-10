@@ -59,7 +59,7 @@ const AFFILIATE_LINK_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/[^\s]*(?:[?
 // URLs and any of the affiliate shapes above.
 const AMAZON_PRESENCE_RE = /(?:geni\.us\/|amzn\.to\/|amazon\.[a-z.]+\/)/i
 
-function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt'>): VideoTab {
+function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAsin' | 'metadataAppliedAt' | 'status'>): VideoTab {
   const title = v.title || ''
   const desc = v.description || ''
 
@@ -67,9 +67,14 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   // authoritative signal — overrides every other heuristic.
   if (v.metadataAppliedAt) return 'shipped'
 
-  // DONE second: heuristic match — description has an affiliate link but
-  // we don't have a Co-Pilot record. Means user completed it elsewhere.
-  if (AFFILIATE_LINK_RE.test(desc)) return 'done'
+  // DONE second: a PUBLISHED video whose description already has an affiliate
+  // link = completed/monetized elsewhere, nothing to do. CRITICAL: gate on
+  // status==='public'. A DRAFT (private/unlisted) with a link is NOT "done" —
+  // it's an unpublished video you may still want Co-Pilot to optimize, so it
+  // must fall through to the product / no-product buckets below. (Reviewers'
+  // drafts almost always already have an Amazon link, so without this gate
+  // every product draft wrongly landed in "Done elsewhere".)
+  if (v.status === 'public' && AFFILIATE_LINK_RE.test(desc)) return 'done'
 
   // Product signal: ASIN in title (either via our pre-extracted field or a
   // freshly regex'd match), OR any Amazon URL in the description even
@@ -2319,11 +2324,13 @@ export default function StudioPage() {
   // Pagination — single cursor. When non-null, more drafts can be fetched
   // via "Load more". When null, we've walked the entire uploads playlist.
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined)
-  // Include published videos. Default ON so the page shows the creator's whole
-  // library the moment they open Co-Pilot (drafts AND already-public videos) —
-  // an established channel is mostly published, so defaulting off looked empty.
-  // Untick to focus on just private/unlisted drafts.
-  const [includePublished, setIncludePublished] = useState(true)
+  // Include published videos. Default OFF → drafts-first (private + unlisted).
+  // Two reasons: (a) Co-Pilot's job is to optimize metadata BEFORE you publish,
+  // and (b) the /drafts fetch deep-scans pages to surface drafts — defaulting ON
+  // filled the first page with recent PUBLISHED videos and buried older product
+  // drafts (they stopped appearing under "With product"). Tick it to also pull
+  // the already-live library.
+  const [includePublished, setIncludePublished] = useState(false)
   // Active workflow tab. Starts at 'todo-product' (highest value: product videos
   // = affiliate $$), but if that bucket is empty on load we auto-jump to the
   // first tab that actually has videos (effect below) so the page never opens
