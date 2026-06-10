@@ -1520,6 +1520,26 @@ async function resolveAffiliateUrl(
   return { url: top.url, asin: asin || null }
 }
 
+/** True when two titles name the SAME product and differ only cosmetically
+ *  (added/dropped descriptors, stopwords, punctuation) — NOT a product swap.
+ *  Deterministic guard so the title-audit converges instead of re-flagging fine
+ *  titles on every (non-deterministic) Haiku scan. A genuine swap (WagComb →
+ *  Woyamay) has unique significant words on BOTH sides; a cosmetic edit is a
+ *  subset/superset (same product, just more/fewer descriptors). */
+function isCosmeticTitleDiff(a: string, b: string): boolean {
+  const STOP = new Set(['the', 'a', 'an', 'your', 'our', 'my', 'their', 'with', 'for', 'and', 'to', 'of', 'in', 'on', 'at', 'this', 'that', 'best', 'top', 'new', 'review', 'reviews', 'guide'])
+  const sig = (s: string) => new Set(
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 3 && !STOP.has(w)),
+  )
+  const A = sig(a), B = sig(b)
+  if (A.size === 0 || B.size === 0) return true
+  const onlyA = [...A].filter(w => !B.has(w))
+  const onlyB = [...B].filter(w => !A.has(w))
+  // Subset/superset (same product ± descriptors) → cosmetic. Unique significant
+  // words on BOTH sides → a genuine different-product swap (flag it).
+  return onlyA.length === 0 || onlyB.length === 0
+}
+
 export class ClaudeService {
   private client: Anthropic
 
@@ -1868,18 +1888,20 @@ Where i, j are 1-indexed image numbers. Empty array if every pair is distinct en
         system: 'You verify that a blog post title names the SAME product the post body is about. You never invent — you only rewrite the title to match the body when they disagree.',
         messages: [{
           role: 'user',
-          content: `Below is a published blog post's TITLE and its BODY (plain text). Verify they describe the SAME product.
+          content: `Below is a published blog post's TITLE and its BODY (plain text). Your ONLY job: detect when the title names a DIFFERENT product than the body actually reviews — a brand/item swap, like a title saying "WagComb Electric Flea Comb" while the body reviews "Woyamay flea chews". Nothing else.
 
 CHECK:
 - What product is the BODY actually about? Look at the opening paragraph + every section heading — these reveal the body's true subject.
 - What product does the TITLE name?
-- If the title's product matches the body's product, return the title EXACTLY unchanged.
-- If they're different (e.g. title says "WagComb Electric Flea Comb" but body opens with "We tested Woyamay's flea chews"), rewrite the title so it names the BODY's product. Keep the original title's framing/voice/structure — just swap the product identity. Keep "Review" if it was there.
+- SAME product → return the title EXACTLY unchanged. "Same product" INCLUDES the title using MORE or FEWER descriptive words than the body (e.g. title "Musical Sunflower Card" vs body "Musical Sunflower Bouquet Pop-Up Card" = SAME product → unchanged). Different wording, length, or specificity is NOT a mismatch.
+- DIFFERENT product (different brand, OR a clearly different item) → rewrite the title so it names the BODY's product. Keep the original framing/voice/structure; just swap the product identity. Keep "Review" if it was there.
 
-NEVER:
-- Add a feature the body doesn't claim.
-- Use the word "honest".
-- Output anything except the final title text.
+THESE ARE NOT MISMATCHES — return the title UNCHANGED:
+- Adding or removing words like "Your", "The", "Best", "New".
+- Expanding/shortening the product name, fixing grammar, or improving style/clarity/specificity.
+- Adding a feature the body doesn't claim.
+- The word "honest".
+When in doubt, return the title UNCHANGED. Only rewrite for a genuine different-product swap. Output ONLY the final title text.
 
 OUTPUT: the final title on a single line. No quotes. No JSON. No explanation.
 
@@ -1896,6 +1918,11 @@ ${plain}`,
       recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_factcheck_title_vs_body', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
       // Safety: reject obviously broken output.
       if (!out || out.length < 5 || out.length > 180 || /\n/.test(out)) return title
+      // Deterministic convergence guard: if the model's suggestion is only a
+      // COSMETIC variant of the original (same product, just added/dropped
+      // descriptors or stopwords), it is NOT a product mismatch — return the
+      // title unchanged so the title-audit stops re-flagging fine posts.
+      if (isCosmeticTitleDiff(t, out)) return title
       return out
     } catch {
       return title
