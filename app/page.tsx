@@ -165,6 +165,7 @@ export default function LandingPreview() {
       <BeforeAfterSection />
       <GroundedSection />
       <BrandedSiteSection />
+      <BusinessLayerSection />
       <PricingSection />
       <ProofSection />
       <FAQSection />
@@ -459,6 +460,77 @@ function RolesSection() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {ROLES.map((role) => (
             <RoleCard key={role.label} {...role} />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** The "business layer" — content-first doesn't mean content-ONLY. After the
+ *  content engine, this section shows how MVP helps you EARN and SCALE: brand
+ *  deals (live), Creator Connections campaign scouting (Pro, live — scout by
+ *  EPC + publish, NOT auto-accept), and VA seats (Pro). All shipped today. */
+const BUSINESS_CARDS: Array<{ icon: React.ReactNode; title: string; body: string; pro?: boolean }> = [
+  {
+    icon: <HeartHandshake size={18} />,
+    title: 'Land brand deals',
+    body: 'MVP writes the pitch — researches the brand, cites your real track record and reach, and attaches your media kit. The founder’s own outreach method, built in. 5–100 pitches a month by tier.',
+  },
+  {
+    icon: <BadgePercent size={18} />,
+    title: 'Promote what pays',
+    body: 'Pull your Amazon Creator Connections campaigns, rank them by commission and EPC, and turn the best-paying ones into published reviews in one click.',
+    pro: true,
+  },
+  {
+    icon: <Rocket size={18} />,
+    title: 'Scale with a team',
+    body: 'Add Virtual Assistants with granular permissions — they draft and publish, you keep approval control. Up to 3 seats.',
+    pro: true,
+  },
+]
+
+function BusinessLayerSection() {
+  return (
+    <section id="business" className="px-6 lg:px-8 pt-24 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF', border: '1px solid rgba(124,58,237,0.25)' }}
+          >
+            <BadgePercent size={10} />
+            The business layer
+          </span>
+          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+            Content is step one.
+            <br />
+            <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              MVP runs the business around it.
+            </span>
+          </h2>
+          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            Discoverable content earns. MVP closes the loop — the brands you pitch, the campaigns worth your time, and the team that scales it.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {BUSINESS_CARDS.map((c) => (
+            <div key={c.title} className="rounded-2xl border p-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+                  {c.icon}
+                </span>
+                {c.pro && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+                    Pro
+                  </span>
+                )}
+              </div>
+              <h3 className="text-[16px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{c.title}</h3>
+              <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{c.body}</p>
+            </div>
           ))}
         </div>
       </div>
