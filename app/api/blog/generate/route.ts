@@ -269,7 +269,7 @@ async function handleGenerate(request: Request) {
   const isRewrite = !!existingForLimit
   // When set: skip createPost and updatePost(existingWpPostId) instead, so the
   // live URL + Google indexing history are preserved across the rebuild.
-  const existingWpPostId: number | null = existingForLimit?.wordpress_post_id ?? null
+  let existingWpPostId: number | null = existingForLimit?.wordpress_post_id ?? null
   const existingSlug: string | null = existingForLimit?.slug ?? null
   // Multi-site: if this is a rewrite and the existing post is tied to a
   // specific wordpress_sites row, ROUTE THE REGENERATE TO THE SAME SITE
@@ -1134,15 +1134,44 @@ async function handleGenerate(request: Request) {
       // We don't override status on rebuilds even when a schedule is
       // present: scheduling a REGENERATE of a live post would be
       // surprising. If you need that, use a fresh post.
-      const updated = await wpService.updatePost(existingWpPostId, {
-        title: generated.title,
-        content,
-        excerpt: generated.excerpt,
-        status: 'publish',
-        tags: tagIds,
-        categories: categoryIds,
-      })
-      wpPost = updated
+      try {
+        wpPost = await wpService.updatePost(existingWpPostId, {
+          title: generated.title,
+          content,
+          excerpt: generated.excerpt,
+          status: 'publish',
+          tags: tagIds,
+          categories: categoryIds,
+        })
+      } catch (err: unknown) {
+        // The stored wordpress_post_id no longer exists on WP — the post was
+        // deleted on the site (or the DB drifted), so WP returns 404
+        // rest_post_invalid_id "Invalid post ID". Don't fail the whole
+        // generation: fall back to creating a FRESH post. The blog_posts upsert
+        // below repoints wordpress_post_id to the new one (self-healing), and
+        // the thumbnail/backlink steps now treat it as fresh (existingWpPostId
+        // cleared). This was the #1 cause of "Internal Server Error" on
+        // re-generates against a deleted post.
+        const m = err instanceof Error ? err.message : String(err)
+        if (/rest_post_invalid_id|invalid post id|"status":\s*404/i.test(m)) {
+          console.warn(`[blog-generate] stored WP post ${existingWpPostId} is gone — creating fresh instead:`, m)
+          existingWpPostId = null
+          wpPost = await wpService.createPost({
+            title: generated.title,
+            slug,
+            content,
+            excerpt: generated.excerpt,
+            status: wpStatus,
+            ...(wpStatus === 'future' && scheduledForIso ? { date: scheduledForIso } : {}),
+            tags: tagIds,
+            categories: categoryIds,
+            comment_status: 'closed',
+            ping_status: 'closed',
+          })
+        } else {
+          throw err // a real WP error (auth / 403 WAF / etc.) — keep failing loudly
+        }
+      }
     } else {
       // Fresh post — honor the requested wpStatus. 'future' requires a
       // `date` field (the scheduled publish time); 'draft' and 'publish'
