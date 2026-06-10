@@ -23,6 +23,20 @@ import { enqueueGenerationJob } from '@/lib/generation-jobs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
+  // KILL-SWITCH (2026-06-09). Migration 119 is now live, which makes this
+  // producer functional — but Phase 4 increment C (the Generate-UI flip + the
+  // queue-correctness fixes in AUDIT-2026-06-09.md / tasks #255 + #256) is NOT
+  // built yet. The retry/completion path has known bugs and there's no cap, so
+  // we keep the producer OFF until C ships. The synchronous /api/blog/generate
+  // remains the live path. Enable by setting ENABLE_ASYNC_GENERATION=true in
+  // the Vercel env once increment C is done.
+  if (process.env.ENABLE_ASYNC_GENERATION !== 'true') {
+    return NextResponse.json(
+      { error: 'Async generation is not available yet — use the standard Generate flow.' },
+      { status: 503 },
+    )
+  }
+
   const supabase = await createServerClient()
   const auth = await getAuthAndOwner(supabase)
   if (auth.error) return auth.error
