@@ -232,9 +232,9 @@ export const TIERS = {
     photoboothPerMonth: 20 as number | null,
     maxFaces: 2 as number | null,
     blogImagesPerPost: 4,
-    assistantMessagesPerMonth: 5000 as number | null,
-    /** Pro: 5 LoRA retrains/mo. */
-    faceTrainJobs: 5 as number | null,
+    assistantMessagesPerMonth: 2500 as number | null,
+    /** Pro: 3 LoRA retrains/mo (lowered from 5 — 2026-06-10 COGS tune). */
+    faceTrainJobs: 3 as number | null,
     /** Twice-weekly cadence: 10k subs, 8 sends/mo. */
     newsletterSubscribers: 10000 as number | null,
     newsletterBroadcastsPerMonth: 8 as number | null,
