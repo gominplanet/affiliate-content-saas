@@ -16,9 +16,9 @@
 
 import { useState, useEffect } from 'react'
 import {
-  FileText, Image as ImageIcon, Music2, Instagram, Mail, Scale, Calendar,
+  FileText, Image as ImageIcon, Mail, Scale, Calendar,
   Play, Sun, Moon, Sparkles, ArrowRight, Bookmark,
-  Twitter, AtSign, Cloud, Send, Facebook,
+  Twitter, Cloud, Send, Linkedin,
   Compass, HeartHandshake, PenLine, Share2, Globe, TrendingUp, Wand2,
   Youtube, ShieldCheck, Zap, Upload, X as XIcon, Check, Quote,
   Crown, Rocket, Plus, Minus,
@@ -81,19 +81,19 @@ interface Spoke {
  *  then 8 social platforms. Labels kept short so the pills don't overlap
  *  at the equator. */
 const SPOKES: Spoke[] = [
-  { angle:  -90.0, label: 'Blog post',  icon: <FileText size={13} /> },
-  { angle:  -62.3, label: 'Thumbnail',  icon: <ImageIcon size={13} /> },
-  { angle:  -34.6, label: 'Comparison', icon: <Scale size={13} /> },
-  { angle:   -6.9, label: 'Newsletter', icon: <Mail size={13} /> },
-  { angle:   20.8, label: 'Scheduled',  icon: <Calendar size={13} /> },
-  { angle:   48.5, label: 'TikTok',     icon: <Music2 size={13} /> },
-  { angle:   76.2, label: 'Instagram',  icon: <Instagram size={13} /> },
-  { angle:  103.8, label: 'Pinterest',  icon: <Bookmark size={13} /> },
-  { angle:  131.5, label: 'X',          icon: <Twitter size={13} /> },
-  { angle:  159.2, label: 'Threads',    icon: <AtSign size={13} /> },
-  { angle:  186.9, label: 'Bluesky',    icon: <Cloud size={13} /> },
-  { angle:  214.6, label: 'Telegram',   icon: <Send size={13} /> },
-  { angle:  242.3, label: 'FB Groups',  icon: <Facebook size={13} /> },
+  { angle:  -90.0, label: 'Blog post',       icon: <FileText size={13} /> },
+  { angle:  -62.3, label: 'Comparison',      icon: <Scale size={13} /> },
+  { angle:  -34.6, label: 'Buying guide',    icon: <Bookmark size={13} /> },
+  { angle:   -6.9, label: 'Thumbnail',       icon: <ImageIcon size={13} /> },
+  { angle:   20.8, label: 'Newsletter',      icon: <Mail size={13} /> },
+  { angle:   48.5, label: 'Script',          icon: <PenLine size={13} /> },
+  { angle:   76.2, label: 'Brand pitch',     icon: <HeartHandshake size={13} /> },
+  { angle:  103.8, label: 'Ranks on Google', icon: <TrendingUp size={13} /> },
+  { angle:  131.5, label: 'Cited by AI',     icon: <Sparkles size={13} /> },
+  { angle:  159.2, label: 'Scheduled',       icon: <Calendar size={13} /> },
+  { angle:  186.9, label: 'X',               icon: <Twitter size={13} /> },
+  { angle:  214.6, label: 'Bluesky',         icon: <Cloud size={13} /> },
+  { angle:  242.3, label: 'Telegram',        icon: <Send size={13} /> },
 ]
 
 /** Convert an angle to {x,y} on the spoke circle. */
@@ -481,7 +481,7 @@ const ROLES: Role[] = [
   {
     icon: <Calendar size={18} />,
     label: 'Scheduler',
-    line: 'Schedule once. MVP fires off every platform at the perfect time.',
+    line: 'Schedule a week of content and let it publish itself, right on time.',
   },
   {
     icon: <HeartHandshake size={18} />,
@@ -496,7 +496,7 @@ const ROLES: Role[] = [
   {
     icon: <Share2 size={18} />,
     label: 'Social generator',
-    line: 'Nine social platforms. Each post written native to that one. No copy-paste.',
+    line: 'Native posts for X, LinkedIn, Bluesky & Telegram — each written for that feed. More channels rolling out.',
   },
   {
     icon: <Globe size={18} />,
@@ -1289,7 +1289,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Sparkles size={16} />,
     features: [
       '20 posts / month (blog + thumbnail + metadata bundle)',
-      '5 socials: LinkedIn, Bluesky, Pinterest, Facebook *, Threads *',
+      'Auto-post to LinkedIn + Bluesky (Facebook *, Threads *, Pinterest * rolling out)',
       '1 face + 1 LoRA retrain / month, 10 Photobooth headshots',
       '10 video scripts + shot-lists / month',
       'Newsletter taster: 500 subs, 1 broadcast / month',
@@ -1301,7 +1301,7 @@ const PRICING_TIERS: PricingTier[] = [
   },
   {
     name: 'Studio',
-    tagline: 'For creators who post everywhere.',
+    tagline: 'For the all-in solo review creator.',
     price: 99,
     regularPrice: 199,
     highlight: true,
@@ -1329,7 +1329,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Rocket size={16} />,
     features: [
       '200 posts / month + Comparisons + Buying Guides',
-      'Adds Twitter / X + TikTok * (9 socials total)',
+      'Adds X + TikTok * auto-post on top of Studio',
       'Rebuild-from-video on any legacy WP post',
       'Creator Campaigns (Amazon EPC scout, one-click publish)',
       'Up to 10 WordPress sites + 3 Virtual Assistant seats',
@@ -1892,14 +1892,14 @@ function Hero() {
             className="text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.02]"
             style={{ color: 'var(--text)' }}
           >
-            Your Central<br />
-            Content Hub.
+            Turn one review video<br />
+            into content that ranks.
           </h1>
           <p
             className="mt-4 text-[20px] font-medium tracking-tight"
             style={{ color: 'var(--text-muted)' }}
           >
-            One Review. Every Output. One Hub.
+            Blog-first content, built to get found by Google — and cited by AI.
           </p>
 
           {/* Sub */}
@@ -1907,7 +1907,7 @@ function Hero() {
             className="mt-6 text-[16px] leading-relaxed max-w-xl"
             style={{ color: 'var(--text-soft)' }}
           >
-            From one review video: a published blog post, a CTR-tested thumbnail, 9 social variants, a newsletter draft, and a full week of scheduled posts. In ten minutes. <span style={{ color: 'var(--text)' }}>Grounded in what you actually said.</span>
+            From one review video: a published, SEO- and AI-optimized blog post — plus comparison and buying-guide articles, a CTR-tested thumbnail, a newsletter, and native posts for X, LinkedIn, Bluesky &amp; Telegram. All in your voice, <span style={{ color: 'var(--text)' }}>grounded in what you actually said on camera.</span>
           </p>
 
           {/* CTAs — primary button + its supporting reassurance live as
@@ -2079,10 +2079,10 @@ function SpokeNode({ icon, label }: { icon: React.ReactNode; label: string }) {
   )
 }
 
-/** Platform bar — slim strip directly under the hero that names every
- *  platform MVP publishes to. Reinforces the breadth promise of the hub
- *  diagram with concrete platform names, and bonus: helps SEO
- *  discoverability for "WordPress + TikTok + Instagram + ..." searches.
+/** Platform bar — slim strip under the hero naming the channels MVP
+ *  publishes to LIVE today (your WordPress site + the text socials).
+ *  Meta / TikTok / Pinterest are intentionally NOT listed until their
+ *  platform reviews clear — we don't advertise what we can't yet deliver.
  *
  *  Visual: monochrome icons + names laid out horizontally, separated by
  *  thin dividers. Theme-aware via var(--text-faint). Wraps on mobile.
@@ -2120,14 +2120,10 @@ function PlatformBar() {
 
 const PLATFORMS = [
   { name: 'WordPress', icon: <Globe size={14} /> },
-  { name: 'TikTok', icon: <Music2 size={14} /> },
-  { name: 'Instagram', icon: <Instagram size={14} /> },
-  { name: 'Pinterest', icon: <Bookmark size={14} /> },
   { name: 'X', icon: <Twitter size={14} /> },
-  { name: 'Threads', icon: <AtSign size={14} /> },
+  { name: 'LinkedIn', icon: <Linkedin size={14} /> },
   { name: 'Bluesky', icon: <Cloud size={14} /> },
   { name: 'Telegram', icon: <Send size={14} /> },
-  { name: 'Facebook', icon: <Facebook size={14} /> },
 ]
 
 /** Before/After visual — sits between Workflow (Section 4) and Grounded

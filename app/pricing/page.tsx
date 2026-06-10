@@ -146,9 +146,9 @@ export default function PricingPage() {
           <span className="bg-gradient-to-br from-[#7C3AED] to-[#C026D3] bg-clip-text text-transparent">YouTube affiliate workflow</span>
         </h1>
         <p className="text-lg text-[#6e6e73] dark:text-[#ebebf0] leading-relaxed">
-          Paste a YouTube link. Get a blog post on your site, a TikTok, a thumbnail,
-          a newsletter, and a script for your next video. All in your voice, all from
-          one tool. Start free, no card.
+          Paste a YouTube link. Get a published, SEO-tuned blog post — plus comparison
+          and buying-guide articles, a thumbnail, a newsletter, and a script for your
+          next video. All in your voice, all from one tool. Start free, no card.
         </p>
         <p className="mt-3 text-sm font-semibold text-[#34c759]">
           🔒 Early access pricing, locked in for life on the tier you subscribe to.
@@ -225,9 +225,10 @@ export default function PricingPage() {
       </div>
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
-        * Facebook, Threads, Instagram, and TikTok auto-publish are built and gated on those platforms&apos;
-        developer reviews (Meta + TikTok). They activate automatically on every paid plan that includes
-        them once approved, at no extra cost. Pinterest is approved and live.
+        * Facebook, Threads, Instagram, TikTok, and Pinterest auto-publish are built and gated on each
+        platform&apos;s developer review. They activate automatically on every paid plan that includes them
+        once approved, at no extra cost. Live and auto-posting today: your WordPress site, X, LinkedIn,
+        Bluesky, and Telegram.
       </p>
 
       {/* ───────────────────────────────────────────────────────────────────
@@ -325,7 +326,7 @@ export default function PricingPage() {
         </div>
 
         <p className="text-center text-xs text-[#86868b] dark:text-[#8e8e93] mt-5 max-w-3xl mx-auto">
-          Pricing shown from each tool&apos;s public pricing page at the equivalent feature tier as of 2026. MVP also handles parts none of these do: direct posting to TikTok &amp; Instagram, brand-pitch emails, multi-account social, and the YouTube Co-Pilot metadata sync.
+          Pricing shown from each tool&apos;s public pricing page at the equivalent feature tier as of 2026. MVP also handles parts none of these do: fact-grounded blog, comparison &amp; buying-guide content built to rank, brand-pitch emails, a newsletter with list management, and the YouTube Co-Pilot metadata sync.
         </p>
       </section>
 
@@ -352,7 +353,7 @@ export default function PricingPage() {
             },
             {
               title: 'One video → six outputs',
-              body: 'Paste a YouTube link. Get back a blog post on your site, a TikTok or Instagram reel, a thumbnail, a newsletter draft, a script for the next video, and a metadata refresh for the source video. End-to-end, in one run.',
+              body: 'Paste a YouTube link. Get back a published, SEO-tuned blog post, a comparison or buying guide, a thumbnail, a newsletter draft, a script for the next video, and native posts for X, LinkedIn, Bluesky &amp; Telegram. End-to-end, in one run.',
             },
             {
               title: 'Trained on YOUR voice, not a generic AI voice',
