@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
 import { verifyProductMatch } from '@/lib/product-image'
@@ -375,7 +376,10 @@ ${NO_BRAND_IMAGE_CLAUSE} Landscape 4:3, photorealistic editorial product photogr
   )
 
   try { await wpService.updatePost(wordpressPostId, { content: finalContent }) }
-  catch (err) { return NextResponse.json({ error: `WordPress update failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 }) }
+  catch (err) {
+    if (isStalePostError(err)) return NextResponse.json({ error: WP_STALE_POST_MESSAGE, code: 'wp_post_deleted' }, { status: 410 })
+    return NextResponse.json({ error: `WordPress update failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+  }
   // Persist the image-enriched body AND stamp body_images_count so the Content
   // page's diagnostic badge ("🖼 N") reflects the refresh result — otherwise a
   // post whose initial generation died at 0 images would keep showing the

@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 export async function GET(request: Request) {
@@ -89,6 +90,9 @@ export async function POST(request: Request) {
       await wpService.updatePost(post.wordpress_post_id, { content })
       return NextResponse.json({ ok: true, pushedToWp: true })
     } catch (err: unknown) {
+      if (isStalePostError(err)) {
+        return NextResponse.json({ ok: true, pushedToWp: false, warning: WP_STALE_POST_MESSAGE })
+      }
       const msg = err instanceof Error ? err.message : 'WordPress update failed'
       return NextResponse.json({ ok: true, pushedToWp: false, warning: `Saved locally but WordPress update failed: ${msg}` })
     }

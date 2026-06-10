@@ -36,6 +36,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -1393,6 +1394,7 @@ OUTPUT: VALID HTML only. No markdown fences. Same structure as the input — jus
       // the numbers, not the URL or the page metadata.
     })
   } catch (err) {
+    if (isStalePostError(err)) return NextResponse.json({ error: WP_STALE_POST_MESSAGE, code: 'wp_post_deleted' }, { status: 410 })
     return NextResponse.json({ error: err instanceof Error ? err.message : 'WordPress update failed' }, { status: 500 })
   }
 

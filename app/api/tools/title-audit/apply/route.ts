@@ -15,6 +15,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createWordPressService } from '@/services/wordpress'
+import { isStalePostError, WP_STALE_POST_MESSAGE } from '@/lib/wp-errors'
 import { normalizeTier, type Tier } from '@/lib/tier'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
       try {
         await wp.updatePost(post.wordpress_post_id, { title: newTitle.trim() })
       } catch (e) {
+        if (isStalePostError(e)) return NextResponse.json({ error: WP_STALE_POST_MESSAGE, code: 'wp_post_deleted' }, { status: 410 })
         return NextResponse.json({ error: `WP update failed: ${e instanceof Error ? e.message : 'unknown'}` }, { status: 502 })
       }
     }
