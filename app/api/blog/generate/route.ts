@@ -10,7 +10,7 @@ import { checkUsageLimit, checkGenerationLimit, TIERS, nextTierFor, allowedBlogI
 import { scrubBanned } from '@/lib/scrub'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
-import { selfCheckBlogPost } from '@/lib/blog-self-check'
+import { selfCheckBlogPost, selfCritiqueBlogPost } from '@/lib/blog-self-check'
 import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
@@ -909,6 +909,35 @@ async function handleGenerate(request: Request) {
     }
   } catch (err) {
     console.warn('[blog/generate] self-check threw — shipping unchanged:', err instanceof Error ? err.message : err)
+  }
+
+  // ── Holistic self-critique pass (Sprint 3, 2026-06-09) ───────────────────
+  // The self-check above is a PATTERN matcher (11 enumerated tics). This pass
+  // is an OPEN-ENDED harsh editor: it reads the whole post and rewrites the 3
+  // weakest passages — flat verdicts, vague claims, generic "solid choice"
+  // filler — the kind of weakness nobody pre-enumerated. Runs on Sonnet (a
+  // critic should match the writer) but emits only targeted patches, so the
+  // cost is ~half a cent per post. Modifies `content` in place BEFORE the WP
+  // publish + blog_posts insert below, so its edits flow through naturally.
+  // Best-effort: any failure ships the de-ticked text unchanged.
+  try {
+    const critique = await selfCritiqueBlogPost({
+      content,
+      productTitle: generated.title || '',
+      maxEdits: 3,
+      ctx: { userId: user.id, tier: (wp?.tier as string) ?? null },
+    })
+    if (critique.editsApplied > 0) {
+      console.log(`[blog/generate] self-critique: applied ${critique.editsApplied}/${critique.edits.length} edits`,
+        critique.edits.map(e => ({ weakness: e.weakness, applied: e.applied })))
+      // Re-scrub — the critique rewrites can reintroduce banned voice/words.
+      const channelUrlForRescrub = ((brand as Record<string, unknown> | null)?.youtube_channel_url as string | null) ?? null
+      content = scrubVoicePatterns(scrubBanned(critique.content), { channelUrl: channelUrlForRescrub }).content
+    } else if (critique.edits.length > 0) {
+      console.log(`[blog/generate] self-critique: ${critique.edits.length} flagged but 0 applied (verbatim mismatch)`)
+    }
+  } catch (err) {
+    console.warn('[blog/generate] self-critique threw — shipping unchanged:', err instanceof Error ? err.message : err)
   }
 
   // ── 6.1. Topical internal linking (SEO #15) — pick the 2–3 most relevant of

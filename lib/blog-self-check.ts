@@ -277,3 +277,149 @@ ${truncated}`,
     return { content, violations: [], fixesApplied: 0, numbersDetected }
   }
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// HOLISTIC SELF-CRITIQUE PASS (blog writer Sprint 3, 2026-06-09)
+//
+// selfCheckBlogPost (above) is a PATTERN MATCHER — it hunts an enumerated list
+// of 11 known tics. It can't catch a passage that's weak in a way nobody
+// pre-enumerated: a flat verdict, a section that says nothing concrete, a hook
+// that doesn't hook, a paragraph that reads like every other AI review.
+//
+// This pass is the opposite: an OPEN-ENDED harsh editor. It reads the whole
+// post and answers "what are the N weakest passages, and how would a great
+// human editor sharpen each?" — then applies those targeted rewrites via the
+// same verbatim string-replace mechanism.
+//
+// Model choice: claude-sonnet-4-6, NOT Haiku. A critic should be at least as
+// strong as the writer (the generator is Sonnet). Haiku judging Sonnet's prose
+// produces shallow critiques. The OUTPUT is small (N short passage rewrites,
+// not the full post), so the only real cost is reading the post once on Sonnet
+// (~half a cent per post) — worth it for a genuinely better edit.
+//
+// Defensive principle (identical to selfCheckBlogPost): ANY failure ships the
+// original content. Best-effort polish, never a gate. The verbatim
+// string-replace can't mangle HTML — a passage that doesn't match exactly is
+// skipped, not fuzzy-applied.
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface BlogCritiqueEdit {
+  /** One-line label of what was weak (telemetry / debug). */
+  weakness: string
+  /** The exact passage in the content that was weak. */
+  original: string
+  /** The editor's sharpened rewrite. */
+  improved: string
+  /** Whether the verbatim string-replace landed. */
+  applied: boolean
+}
+
+export interface BlogCritiqueResult {
+  content: string
+  edits: BlogCritiqueEdit[]
+  /** Count of edits that actually landed via string-replace. */
+  editsApplied: number
+}
+
+export async function selfCritiqueBlogPost(opts: {
+  content: string
+  productTitle: string
+  /** Number of weakest passages to find + fix. 3 is the sweet spot —
+   *  enough to lift the post, few enough to stay surgical + cheap. */
+  maxEdits?: number
+  ctx: { userId: string | null; tier: string | null }
+}): Promise<BlogCritiqueResult> {
+  const { content, productTitle, ctx } = opts
+  const maxEdits = Math.max(1, Math.min(5, opts.maxEdits ?? 3))
+
+  if (!content || content.length < 400) {
+    return { content, edits: [], editsApplied: 0 }
+  }
+
+  const truncated = content.length > MAX_INPUT_CHARS
+    ? content.slice(0, MAX_INPUT_CHARS) + '\n\n[…article truncated for critique, but critique what you have above]'
+    : content
+
+  try {
+    const client = createAnthropicClient()
+    const msg = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2500,
+      messages: [{
+        role: 'user',
+        content: `You are a ruthless, experienced editor at a top product-review publication (think Wirecutter / Tom's Guide editorial standards). You are reviewing a draft review of "${productTitle}" before it publishes. Your job is to find the ${maxEdits} WEAKEST passages and sharpen each one.
+
+A passage is WEAK if it:
+- says something every AI review says ("this product offers great value", "a solid choice for most users", "it gets the job done")
+- is vague where it should be concrete (no number, no specific moment, no real detail)
+- buries the verdict or the interesting point under setup/throat-clearing
+- reads as filler that adds length but no information
+- is a flat, unconvincing hook, verdict, or section opener
+- hedges so hard it says nothing ("it might work for some people depending on their needs")
+
+For each weak passage you pick, rewrite it to be SHARPER: more specific, more concrete, more confident, more human. Keep it the same approximate length (don't balloon it). Keep the first-person voice. Do NOT invent product facts — sharpen using only what's already in the passage or clearly implied by the surrounding post; if a passage is weak because it's vague AND you have no real detail to add, tighten/cut it rather than inventing a spec. Never use the word "honest".
+
+CRITICAL OUTPUT RULES:
+- "original" MUST be a verbatim substring of the draft — copied exactly, including any punctuation and inline HTML. We apply your rewrites via exact string-replace, so a paraphrased "original" means the fix silently fails to land.
+- Pick passages that are PLAIN PROSE — a sentence or two inside a <p>. Do NOT pick text inside the scorecard, rating box, CTA card, <style>, or HTML attributes (those have structural meaning).
+- Each "original" should be one to three sentences — long enough to be unique in the document, short enough to be a clean swap.
+- Return ONLY a JSON array of exactly up to ${maxEdits} objects, each: { "weakness": "<short label>", "original": "<verbatim weak passage>", "improved": "<sharpened rewrite>" }. No prose before or after. No code fences. If the draft is genuinely strong and you can't find ${maxEdits} weak passages, return fewer (even []).
+
+THE DRAFT:
+${truncated}`,
+      }],
+    }, { timeout: 45000 })
+
+    recordAnthropicUsage(msg, {
+      userId: ctx.userId,
+      tier: ctx.tier,
+      feature: 'blog_self_critique',
+      model: 'claude-sonnet-4-6',
+    })
+
+    const raw = (msg.content[0] as { type: string; text: string }).text.trim()
+    const jsonStart = raw.indexOf('[')
+    const jsonEnd = raw.lastIndexOf(']')
+    if (jsonStart < 0 || jsonEnd <= jsonStart) {
+      return { content, edits: [], editsApplied: 0 }
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1))
+    } catch {
+      return { content, edits: [], editsApplied: 0 }
+    }
+    if (!Array.isArray(parsed)) {
+      return { content, edits: [], editsApplied: 0 }
+    }
+
+    // Apply each edit via verbatim string-replace — identical safety model to
+    // selfCheckBlogPost. A non-matching "original" is skipped, never fuzzy-
+    // applied, so a paraphrase can't mangle the post.
+    let updated = content
+    const edits: BlogCritiqueEdit[] = []
+    let editsApplied = 0
+    for (const raw_e of (parsed as Array<Record<string, unknown>>).slice(0, maxEdits)) {
+      const weakness = typeof raw_e.weakness === 'string' ? raw_e.weakness : 'unspecified'
+      const original = typeof raw_e.original === 'string' ? raw_e.original : ''
+      const improved = typeof raw_e.improved === 'string' ? raw_e.improved : ''
+      if (!original || !improved || original === improved) continue
+      // Guard: never let the critic touch structural blocks even if it ignored
+      // the instruction — if the passage looks like it contains scorecard /
+      // rating / CTA / style markup, skip it.
+      if (/gr-scorecard|gr-rating|gr-cta|gr-verdict|<style|class="gr-/.test(original)) continue
+      let applied = false
+      if (updated.includes(original)) {
+        updated = updated.replace(original, improved)
+        applied = true
+        editsApplied++
+      }
+      edits.push({ weakness, original, improved, applied })
+    }
+
+    return { content: updated, edits, editsApplied }
+  } catch (err) {
+    console.warn('[blog-self-critique] failed — shipping original content:', err instanceof Error ? err.message : err)
+    return { content, edits: [], editsApplied: 0 }
+  }
+}
