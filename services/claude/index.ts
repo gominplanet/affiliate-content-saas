@@ -97,6 +97,29 @@ export interface BlogGenerationOutput {
 const PROMPT_VERSION = 'v3.2'
 export { PROMPT_VERSION }
 
+/**
+ * Reviewer-voice block, extracted from the cached system prompt (task #257,
+ * 2026-06-09). The voice profile is pulled fresh from each transcript, so
+ * baking it INTO the cache_control system block changed the cached prefix on
+ * every generation — the ~25-30K-token stable rules+templates prefix never got
+ * a cache READ (we only paid the ~1.25× write premium). generateBlogPost now
+ * appends this as a SEPARATE trailing UNCACHED system block: identical content,
+ * just moved past the cache breakpoint (and to the end — fine-to-better recency
+ * for a "match this voice" instruction). Returns '' when there's no profile.
+ */
+function buildVoiceBlock(voiceProfile?: string): string {
+  return voiceProfile ? `
+═══════════════════════════════════════
+REVIEWER VOICE — USE THEIR EXACT WORDS
+═══════════════════════════════════════
+${voiceProfile}
+
+These are real expressions pulled directly from the video. Do not sanitize or paraphrase — use their actual words. If they said "this thing is an absolute unit" write that. If they laughed at something, let that energy show. If they were underwhelmed, say so in their tone.
+
+The opening paragraph of the post MUST start with something close to how they opened the video — their actual setup, the problem they were solving, or a specific thing they said. A reader who watched the video and then reads this post should recognize the voice immediately.
+` : ''
+}
+
 function buildSystemPrompt(
   brand: BrandProfile,
   voiceProfile?: string,
@@ -285,16 +308,11 @@ Rules:
     fill a bullet — 1 honest bullet beats 3 fabricated ones.
 ` : ''
 
-  const voiceSection = voiceProfile ? `
-═══════════════════════════════════════
-REVIEWER VOICE — USE THEIR EXACT WORDS
-═══════════════════════════════════════
-${voiceProfile}
-
-These are real expressions pulled directly from the video. Do not sanitize or paraphrase — use their actual words. If they said "this thing is an absolute unit" write that. If they laughed at something, let that energy show. If they were underwhelmed, say so in their tone.
-
-The opening paragraph of the post MUST start with something close to how they opened the video — their actual setup, the problem they were solving, or a specific thing they said. A reader who watched the video and then reads this post should recognize the voice immediately.
-` : ''
+  // Built via buildVoiceBlock so the SAME block can be appended UNCACHED by the
+  // blog path (task #257). The blog path now passes voiceProfile separately and
+  // calls this with undefined → '' here (nothing injected inline, prefix stays
+  // cacheable); the campaign path has no voice profile either way.
+  const voiceSection = buildVoiceBlock(voiceProfile)
 
   return `You are generating SEO-optimized affiliate review blog posts for ${brand.name || 'an affiliate blog'} — ${authorLine}.
 ${contextLine}
@@ -1996,7 +2014,12 @@ ${t}`,
     // cost, deterministic. Falls back gracefully when nothing matches.
     const nicheSignal = [video.title, (video.productResearch || '').slice(0, 200)].filter(Boolean).join(' ')
     const nicheScaffold = resolveNicheScaffold(nicheSignal, brand.niches)
-    const systemPrompt = buildSystemPrompt(brand, voiceProfile || undefined, ctaIsAmazon, nicheScaffold)
+    // task #257: build the system prompt WITHOUT the per-video voice (pass
+    // undefined) so the big rules+templates prefix is a STABLE, cache-readable
+    // block. The voice profile is appended as a trailing UNCACHED system block
+    // at the stream call below.
+    const systemPrompt = buildSystemPrompt(brand, undefined, ctaIsAmazon, nicheScaffold)
+    const voiceBlock = buildVoiceBlock(voiceProfile || undefined)
 
     const feedbackBlock = rewriteFeedback?.trim()
       ? `\n\nREWRITE REQUEST — the user already received one version of this post and asked for a different angle. Make this draft materially different from a standard generation. Their feedback:\n"${rewriteFeedback.trim()}"\n\nAddress these points directly: pick a different opening hook, restructure the body around the missing angle, and avoid repeating any phrasings that would feel like the previous draft.`
@@ -2147,6 +2170,9 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
           text: systemPrompt,
           cache_control: { type: 'ephemeral' },
         },
+        // task #257: per-video voice as a trailing UNCACHED block so the cached
+        // prefix above stays stable across this user's posts and gets cache reads.
+        ...(voiceBlock ? [{ type: 'text' as const, text: voiceBlock }] : []),
       ],
       messages: [{ role: 'user', content: userMessage }],
     }).finalMessage()
