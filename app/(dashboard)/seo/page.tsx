@@ -8,6 +8,7 @@
  * missing (and, soon, one-click fixes).
  */
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
 import { Gauge, Loader2, RefreshCw, ExternalLink, CheckCircle, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Wand2, X, Zap, Youtube } from 'lucide-react'
@@ -578,6 +579,12 @@ export default function SeoPage() {
       ) : !data ? null : (
         <div className="flex flex-col gap-4">
           <IndexingGuide property={data.property} connected={data.connected} />
+
+          {/* Revenue-opportunity worklist (Phase 2). Self-contained — fetches
+              /api/seo/opportunities and ranks every post by its single highest-
+              leverage fix. Only shown when GSC is connected (the page already
+              renders a prominent connect prompt below when it isn't). */}
+          {data.connected && <OpportunitiesPanel />}
           {fixMsg && (
             <div className={`flex items-start justify-between gap-3 px-4 py-2.5 rounded-lg text-sm ${fixMsg.ok ? 'bg-[#34c759]/10 text-[#1d1d1f] dark:text-[#f5f5f7] border border-[#34c759]/30' : 'bg-[#ff3b30]/5 text-[#ff3b30] border border-[#ff3b30]/30'}`}>
               <span className="whitespace-pre-line">{fixMsg.text}</span>
