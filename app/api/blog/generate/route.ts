@@ -20,6 +20,7 @@ import { verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
+import { maybeDistillFeedback } from '@/lib/feedback-distill'
 import { gutenbergImageBlock, pickBodyImageOffsets, insertImagesAtOffsets } from '@/lib/blog-body-images'
 import { composeWithNanoBanana, rehostToFal } from '@/lib/thumbnail-generators'
 import { fetchStoryboardFrames } from '@/lib/youtube-storyboards'
@@ -622,18 +623,38 @@ async function handleGenerate(request: Request) {
   // has ever typed into the Rewrite modal. These accumulate over time
   // and apply to every new generation — the AI keeps learning what
   // this user actually wants.
+  //
+  // Sprint 3 (2026-06-09): prefer the DISTILLED feedback when available.
+  // lib/feedback-distill.ts collapses the raw notes into a deduplicated,
+  // weighted rule set cached on brand_profiles.distilled_feedback — so
+  // "make the intro shorter" × 5 becomes ONE strong rule instead of 5
+  // redundant lines. Falls back to the raw notes when no distilled cache
+  // exists yet (new users, or pre-migration). The distilled text is a
+  // bullet list; split it into lines (stripping the "- " prefix) so it
+  // renders cleanly as the numbered standing-feedback list downstream.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: feedbackRows } = await supabase
-    .from('blog_posts')
-    .select('last_rewrite_feedback,published_at')
-    .eq('user_id', ownerId)
-    .not('last_rewrite_feedback', 'is', null)
-    .order('published_at', { ascending: false })
-    .limit(8)
-  const persistentFeedback = (feedbackRows as Array<{ last_rewrite_feedback: string | null }> | null)
-    ?.map(r => (r.last_rewrite_feedback || '').trim())
-    .filter(s => s.length > 0)
-    .slice(0, 8) ?? []
+  const distilledFeedbackRaw = ((brand as Record<string, unknown> | null)?.distilled_feedback as string | null | undefined)?.trim() || ''
+  let persistentFeedback: string[]
+  if (distilledFeedbackRaw) {
+    persistentFeedback = distilledFeedbackRaw
+      .split('\n')
+      .map(l => l.replace(/^\s*[-•*]\s*/, '').trim())
+      .filter(s => s.length > 0)
+      .slice(0, 10)
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: feedbackRows } = await supabase
+      .from('blog_posts')
+      .select('last_rewrite_feedback,published_at')
+      .eq('user_id', ownerId)
+      .not('last_rewrite_feedback', 'is', null)
+      .order('published_at', { ascending: false })
+      .limit(8)
+    persistentFeedback = (feedbackRows as Array<{ last_rewrite_feedback: string | null }> | null)
+      ?.map(r => (r.last_rewrite_feedback || '').trim())
+      .filter(s => s.length > 0)
+      .slice(0, 8) ?? []
+  }
 
   // ── Voice anchors: pull the user's 2 most-recently-published posts
   // so Claude can match their voice on every new generation. This is
@@ -1325,6 +1346,13 @@ async function handleGenerate(request: Request) {
   // burst of publishes doesn't hammer Haiku. No await — request keeps
   // moving so the user's blog-publish flow stays fast.
   void maybeEvolveLearnProfile(supabase, { userId: ownerId, tier: (wp?.tier as string) ?? null })
+
+  // Fire-and-forget feedback distillation (Sprint 3). When this generation
+  // included a fresh Rewrite note (or notes have accumulated), collapse the
+  // raw notes into a deduplicated, weighted standing-rule set cached on
+  // brand_profiles.distilled_feedback. Debounced 6h. No await — same pattern
+  // as the LEARN evolution above. Reads + writes the OWNER's profile.
+  void maybeDistillFeedback(supabase, { userId: ownerId, tier: (wp?.tier as string) ?? null })
 
   // ── 10. Body images + cache purge — DEFERRED to after the response ────────
   // The text post is already published (correct links) and saved, so the user
