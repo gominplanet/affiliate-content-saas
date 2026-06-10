@@ -29,6 +29,7 @@ import { dispatchCapReached } from '@/components/CapReachedBanner'
 import { type Tier } from '@/lib/tier'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
+import { generateBlogRequest } from '@/lib/blog-generate-client'
 
 // ── Generation status ───────────────────────────────────────────────────
 type GenStatus = 'idle' | 'generating' | 'done' | 'error'
@@ -197,18 +198,17 @@ export function GenerateButton({
         const ctrl = new AbortController()
         const abortTimer = setTimeout(() => ctrl.abort(), GENERATE_ABORT_MS)
         try {
-          const r = await fetch('/api/blog/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              videoId,
-              includeImages,
-              ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
-              ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
-              ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
-            }),
-            signal: ctrl.signal,
-          })
+          // Phase 4 increment C: route through the async queue when enabled
+          // (enqueue + poll), with a transparent sync fallback when it isn't —
+          // see lib/blog-generate-client. Response-compatible, so the abort +
+          // error handling below is unchanged.
+          const r = await generateBlogRequest({
+            videoId,
+            includeImages,
+            ...(includeImages && userImages.length > 0 ? { userImageUrls: userImages } : {}),
+            ...(opts?.rewriteFeedback ? { rewriteFeedback: opts.rewriteFeedback } : {}),
+            ...(allowEmptyTranscript ? { allowEmptyTranscript: true } : {}),
+          }, ctrl.signal)
           let d: Record<string, unknown> = {}
           try { d = await r.json() } catch { throw new Error(`Server error (${r.status}) — check Vercel logs`) }
           return { res: r, data: d }
