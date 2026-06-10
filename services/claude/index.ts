@@ -390,7 +390,7 @@ CRITICAL RULES — FOLLOW STRICTLY
    Match the writing sample above precisely if provided.
 
 4. AFFILIATE LINK — Use the Geniuslink/affiliate URL from the video description.
-   Wrap all links with: target="_blank" rel="noopener sponsored"
+   Wrap all links with: target="_blank" rel="noopener sponsored nofollow"
    Must appear: intro paragraph + naturally 2–3× in body + final CTA.
 
 5. LENGTH — Hit the target length. Long-form wins on SEO.
@@ -1222,7 +1222,7 @@ unknown, leave that spec out.
     <div class="gr-cta-body">
       <p class="gr-cta-eyebrow">${ctaEyebrow}</p>
       <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
-      <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
+      <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored nofollow" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
         ${ctaButton}
       </a>
       <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
@@ -1347,7 +1347,7 @@ Use the exact same product name string here as in the mid-article CTA from [4]:
   <div class="gr-cta-body">
     <p class="gr-cta-eyebrow">${ctaEyebrow}</p>
     <p class="gr-cta-product-name">{Clean product name — 2-6 words, no ASIN, no fluff}</p>
-    <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
+    <a href="{AFFILIATE_URL}" target="_blank" rel="noopener sponsored nofollow" class="gr-cta-btn" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#FFC200;color:#111;font-size:15px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:18px 24px;border-radius:3px;text-decoration:none;margin-top:4px;width:100%;box-sizing:border-box">
       ${ctaButton}
     </a>
     <p class="gr-cta-disclaimer" style="font-size:10px;line-height:1.4;color:#6b6b70;margin:6px 0 0;font-style:italic">${disclaimer}</p>
@@ -1597,7 +1597,7 @@ ALSO — PRICES: remove EVERY specific price, currency amount, list/sale price, 
 
 OUTPUT RULES (critical):
 - Return the FULL corrected post as raw HTML and NOTHING else — no preamble, no markdown fences, no commentary.
-- Preserve ALL HTML structure exactly: every Gutenberg block comment (<!-- wp:... -->), heading, list, the CTA card markup, images, and EVERY hyperlink — especially affiliate links (rel="noopener sponsored"). Do not drop, alter, or reorder any link or block.
+- Preserve ALL HTML structure exactly: every Gutenberg block comment (<!-- wp:... -->), heading, list, the CTA card markup, images, and EVERY hyperlink — especially affiliate links (rel="noopener sponsored nofollow"). Do not drop, alter, or reorder any link or block.
 - Change as LITTLE as possible. Only touch unsupported product facts. If everything checks out, return the post completely unchanged.
 - Never use the word "honest".
 
@@ -1693,7 +1693,7 @@ LENIENT — DO NOT TOUCH:
 - Feel / look / sound descriptions WITHOUT spec numbers ("it's quiet", "the finish is matte", "feels solid in the hand").
 - Generic capability statements ("makes coffee", "trims hedges", "tracks steps") — those describe the product category, not a claim that needs citation.
 - Opening hook prose, verdict reasoning, closing, FAQs that don't include numeric claims, internal links, related-reviews list, schema markup.
-- Affiliate / sponsored links and their surrounding markup (rel="noopener sponsored").
+- Affiliate / sponsored links and their surrounding markup (rel="noopener sponsored nofollow").
 
 RULES FOR STRIPPING:
 - Remove only the offending claim. Rewrite the surrounding sentence minimally so it still reads naturally.
