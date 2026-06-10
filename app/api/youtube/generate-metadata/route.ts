@@ -79,8 +79,15 @@ function verifyAsinMatchesVideo(
   }
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 8): Promise<T> {
-  let delay = 2000
+// maxAttempts kept LOW + backoff capped LOW on purpose: this route runs a
+// multi-agent swarm (~4 sequential Claude stages) inside a 120s function. The
+// old 8 attempts × up-to-15s backoff (~70s/call) could stack across stages and
+// blow the budget → the function TIMED OUT → Vercel returned a generic "Internal
+// Server Error" page instead of our clean "Claude temporarily unavailable" JSON.
+// 4 × ≤7s keeps the worst case well under 120s so a real Anthropic blip surfaces
+// fast + clearly (and a recovered Anthropic just succeeds on retry). (2026-06-10)
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+  let delay = 1500
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn()
@@ -103,7 +110,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 8): Promise<T> {
       }
       console.warn(`[anthropic-retry] transient (status=${status ?? '?'}, msg=${msg.slice(0, 80)}), attempt ${attempt}/${maxAttempts}, waiting ${delay}ms`)
       await new Promise(r => setTimeout(r, delay))
-      delay = Math.min(delay * 1.5, 15000)
+      delay = Math.min(delay * 1.5, 7000)
     }
   }
   throw new Error('Claude AI is temporarily unavailable — please try again in a moment.')
