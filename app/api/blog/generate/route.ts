@@ -131,14 +131,39 @@ export async function POST(request: Request) {
 }
 
 async function handleGenerate(request: Request) {
-  const supabase = await createServerClient()
   // 2026-06-09 Phase 2: resolve the effective owner so a VA's generation
   // reads + writes under the OWNER's user_id (their workspace), while
   // usage caps + generation tracking still bill the caller (the VA).
   // For account owners, ownerId === user.id and behavior is unchanged.
-  const auth = await getAuthAndOwner(supabase)
-  if (auth.error) return auth.error
-  const { user, ownerId } = auth
+  //
+  // 2026-06-09 Phase 4: the generation-job worker invokes this route
+  // INTERNALLY (off the user's request) carrying the shared secret + the job's
+  // identity in headers. In that service mode we authenticate via the
+  // service-role client + the header identity instead of a cookie session.
+  // Everything downstream is byte-identical — queries are already scoped by
+  // ownerId and caps are billed to user.id — so the whole handler is reused
+  // for both the synchronous request and the async worker, with zero
+  // duplication of the generation logic.
+  const svcSecret = request.headers.get('x-mvp-service')
+  const isServiceCall = !!svcSecret && svcSecret === process.env.CRON_SECRET
+
+  let supabase: Awaited<ReturnType<typeof createServerClient>>
+  let user: { id: string }
+  let ownerId: string
+  if (isServiceCall) {
+    const svcUser = request.headers.get('x-mvp-service-user') || ''
+    if (!svcUser) return NextResponse.json({ error: 'Service call missing identity' }, { status: 400 })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    supabase = createAdminClient() as unknown as Awaited<ReturnType<typeof createServerClient>>
+    user = { id: svcUser }
+    ownerId = request.headers.get('x-mvp-service-owner') || svcUser
+  } else {
+    supabase = await createServerClient()
+    const auth = await getAuthAndOwner(supabase)
+    if (auth.error) return auth.error
+    user = auth.user
+    ownerId = auth.ownerId
+  }
 
   const body = (await request.json()) as {
     videoId?: string

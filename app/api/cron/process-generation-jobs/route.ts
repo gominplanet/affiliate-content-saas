@@ -28,11 +28,13 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { claimNextJob, completeJob, failJob } from '@/lib/generation-jobs'
 import { runGenerationJob } from '@/lib/generation-job-runner'
 
-export const maxDuration = 60
-
-// Jobs can be heavy (a full generation). Process a few per tick and leave
-// headroom under maxDuration; the backlog drains on subsequent minutes.
-const MAX_PER_TICK = 3
+// A blog job invokes the full generation route internally and AWAITS it (up to
+// ~290s), so the worker needs the same 300s ceiling the sync generate route
+// uses. One heavy job per tick — the every-minute schedule + SKIP LOCKED claim
+// let successive ticks run different jobs in parallel, so a backlog still drains
+// without any single invocation juggling two long generations.
+export const maxDuration = 300
+const MAX_PER_TICK = 1
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get('authorization')
