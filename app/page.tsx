@@ -670,7 +670,7 @@ const STEPS: Step[] = [
   {
     icon: <Sparkles size={18} />,
     title: 'Generate 9 outputs in one click.',
-    body: 'Blog post, comparison, thumbnail, newsletter, plus 6 native social posts. All in your voice. All in about four minutes.',
+    body: 'Blog post, comparison, thumbnail, newsletter, plus native posts for X, LinkedIn, Bluesky & Telegram. All in your voice. All in about four minutes.',
   },
   {
     icon: <Upload size={18} />,
@@ -1504,7 +1504,7 @@ interface Stat {
 const STATS: Stat[] = [
   { value: '$3M+', label: '/yr proven', detail: 'in affiliate sales by the founder' },
   { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
-  { value: '9', label: 'outputs per video', detail: 'blog + thumb + 7 socials' },
+  { value: '9', label: 'outputs per video', detail: 'blog, thumbnail, newsletter + 4 socials' },
   { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
 ]
 
