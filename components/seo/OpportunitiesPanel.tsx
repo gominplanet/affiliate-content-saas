@@ -82,7 +82,7 @@ export default function OpportunitiesPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [indexing, setIndexing] = useState<Set<string>>(new Set())
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true) // closed by default — opens on click (header still shows the count badge)
 
   const load = useCallback(async () => {
     setLoading(true)
