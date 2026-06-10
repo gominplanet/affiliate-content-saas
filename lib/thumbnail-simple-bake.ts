@@ -96,6 +96,10 @@ export interface ThumbCopyForBake {
 export interface BakeOptions {
   width?: number
   height?: number
+  /** Which neon-border style to use (color + shape). Pass the variant index so
+   *  each thumbnail in a batch gets a DIFFERENT border; omit for a random pick.
+   *  See NEON_BORDER_STYLES. */
+  borderStyleIndex?: number
   anchor?: 'upper-left' | 'upper-right'
   personCutoutPng?: Buffer
   /** For the Satori-based text fallback (renderDesignerOverlay) when
@@ -191,6 +195,42 @@ function lineToPaths(font: Font, line: string, emphasis: string, fontSize: numbe
   return { paths: pathsOut, totalWidth }
 }
 
+// ── Neon border styles ──────────────────────────────────────────────────────
+// The glowing frame around the thumbnail. 10 variants (color + shape) so a batch
+// of thumbnails — and successive generations — don't all wear the same border.
+// The route passes the per-variant index (BakeOptions.borderStyleIndex) so each
+// variant in one batch is distinct; falls back to a random pick when no index.
+interface NeonBorderStyle {
+  stops: [string, string, string]
+  angle: 'diagonal' | 'vertical' | 'horizontal'
+  radiusMul: number  // corner radius ÷ scaleBase — small = sharp, large = pill
+  glowMul: number    // outer glow stroke width ÷ scaleBase
+  opacity: number    // glow-layer opacity
+}
+const NEON_BORDER_STYLES: NeonBorderStyle[] = [
+  { stops: ['#00E5FF', '#FF00E5', '#00E5FF'], angle: 'diagonal',   radiusMul: 0.026, glowMul: 0.025, opacity: 0.75 }, // cyan ↔ magenta (original)
+  { stops: ['#FFE600', '#FFB400', '#FFE600'], angle: 'diagonal',   radiusMul: 0.020, glowMul: 0.028, opacity: 0.82 }, // all-yellow / amber
+  { stops: ['#39FF14', '#00FFA3', '#39FF14'], angle: 'vertical',   radiusMul: 0.030, glowMul: 0.024, opacity: 0.78 }, // neon green ↔ teal
+  { stops: ['#FF2D95', '#A020F0', '#FF2D95'], angle: 'diagonal',   radiusMul: 0.018, glowMul: 0.026, opacity: 0.80 }, // hot pink ↔ purple
+  { stops: ['#FF8A00', '#FF1E1E', '#FF8A00'], angle: 'horizontal', radiusMul: 0.024, glowMul: 0.030, opacity: 0.80 }, // fire (orange ↔ red), wide glow
+  { stops: ['#FFFFFF', '#33B5FF', '#FFFFFF'], angle: 'diagonal',   radiusMul: 0.034, glowMul: 0.022, opacity: 0.72 }, // ice (white ↔ blue), very rounded
+  { stops: ['#FFD700', '#FF9D00', '#FFD700'], angle: 'vertical',   radiusMul: 0.022, glowMul: 0.026, opacity: 0.82 }, // gold
+  { stops: ['#B6FF00', '#00E5FF', '#B6FF00'], angle: 'diagonal',   radiusMul: 0.028, glowMul: 0.025, opacity: 0.78 }, // lime ↔ cyan
+  { stops: ['#FF00E5', '#00E5FF', '#FFE600'], angle: 'diagonal',   radiusMul: 0.020, glowMul: 0.027, opacity: 0.80 }, // tri-color rainbow
+  { stops: ['#00E5FF', '#0091FF', '#00E5FF'], angle: 'diagonal',   radiusMul: 0.008, glowMul: 0.018, opacity: 0.85 }, // electric blue, SHARP corners + tight glow
+]
+function neonGradientCoords(angle: NeonBorderStyle['angle']): string {
+  if (angle === 'vertical') return 'x1="0%" y1="0%" x2="0%" y2="100%"'
+  if (angle === 'horizontal') return 'x1="0%" y1="0%" x2="100%" y2="0%"'
+  return 'x1="0%" y1="0%" x2="100%" y2="100%"'
+}
+function pickNeonBorderStyle(index?: number): NeonBorderStyle {
+  const i = typeof index === 'number' && index >= 0
+    ? index % NEON_BORDER_STYLES.length
+    : Math.floor(Math.random() * NEON_BORDER_STYLES.length)
+  return NEON_BORDER_STYLES[i]
+}
+
 export async function bakeSimpleHeadline(
   baseImage: Buffer,
   copy: ThumbCopyForBake,
@@ -205,18 +245,19 @@ export async function bakeSimpleHeadline(
 
   const scaleBase = Math.max(360, Math.min(width, height * 16 / 9))
 
-  // ── 1. Neon border SVG ──────────────────────────────────────────────────
+  // ── 1. Neon border SVG (randomized color + shape per variant) ────────────
+  const nStyle = pickNeonBorderStyle(opts.borderStyleIndex)
   const borderInset = Math.round(scaleBase * 0.028)
-  const borderRadius = Math.round(scaleBase * 0.026)
+  const borderRadius = Math.round(scaleBase * nStyle.radiusMul)
   const borderSharpWidth = Math.round(scaleBase * 0.006)
-  const borderGlowWidth = Math.round(scaleBase * 0.025)
+  const borderGlowWidth = Math.round(scaleBase * nStyle.glowMul)
   const borderSvg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="neon" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00E5FF"/>
-      <stop offset="50%" stop-color="#FF00E5"/>
-      <stop offset="100%" stop-color="#00E5FF"/>
+    <linearGradient id="neon" ${neonGradientCoords(nStyle.angle)}>
+      <stop offset="0%" stop-color="${nStyle.stops[0]}"/>
+      <stop offset="50%" stop-color="${nStyle.stops[1]}"/>
+      <stop offset="100%" stop-color="${nStyle.stops[2]}"/>
     </linearGradient>
     <filter id="neonBlur" x="-20%" y="-20%" width="140%" height="140%">
       <feGaussianBlur stdDeviation="${Math.round(scaleBase * 0.008)}"/>
@@ -225,7 +266,7 @@ export async function bakeSimpleHeadline(
   <rect x="${borderInset}" y="${borderInset}" width="${width - borderInset * 2}" height="${height - borderInset * 2}"
         rx="${borderRadius}" ry="${borderRadius}"
         fill="none" stroke="url(#neon)" stroke-width="${borderGlowWidth}"
-        filter="url(#neonBlur)" opacity="0.75"/>
+        filter="url(#neonBlur)" opacity="${nStyle.opacity}"/>
   <rect x="${borderInset}" y="${borderInset}" width="${width - borderInset * 2}" height="${height - borderInset * 2}"
         rx="${borderRadius}" ry="${borderRadius}"
         fill="none" stroke="url(#neon)" stroke-width="${borderSharpWidth}"/>

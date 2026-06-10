@@ -1292,6 +1292,12 @@ Ultra-sharp, professional, photorealistic.`
             let designerApplied = false
             if (wantClean) {
               designerApplied = true
+              // Random per-generation offset into the neon-border palette so a
+              // SINGLE-variant generation doesn't always land on style 0 — each
+              // regenerate rotates the starting color/shape. Within one batch the
+              // per-variant origIdx still spreads styles apart (palette has 10,
+              // variant cap is 10 → no collisions). See NEON_BORDER_STYLES.
+              const borderOffset = Math.floor(Math.random() * 10)
               const designerResults = await Promise.all(rank.urls.map(async (cleanUrl, i) => {
                 try {
                   // Find which original index this ranked URL came from so
@@ -1386,6 +1392,12 @@ Ultra-sharp, professional, photorealistic.`
                   const result = await bakeSimpleHeadline(baseBuf, variantCopy, {
                     anchor,
                     personCutoutPng,
+                    // Per-variant index (+ per-generation offset) → each thumbnail
+                    // in this batch gets a DIFFERENT neon border (color + shape),
+                    // and the whole batch rotates start color on each regenerate.
+                    // origIdx keeps the border tied to the variant's original slot
+                    // so it's stable across the rank reshuffle. See NEON_BORDER_STYLES.
+                    borderStyleIndex: origIdx + borderOffset,
                     userId: String(TELEMETRY.userId ?? ''),
                     tier: TELEMETRY.tier,
                   })
