@@ -26,7 +26,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import {
   Compass, FileText, Youtube, Search, Mail, Handshake, Lightbulb,
-  Layers, Users, Plug, MessageSquare, Palette, Code, Sparkles,
+  Layers, Users, Plug, MessageSquare, Code, Sparkles,
   ArrowRight, CheckCircle2, ArrowUpRight,
 } from 'lucide-react'
 
@@ -49,7 +49,6 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'vas',          label: 'Virtual Assistants' },
   { id: 'plugin',       label: 'WordPress plugin + theme' },
   { id: 'helpdesk',     label: 'AI Help Desk' },
-  { id: 'whitelabel',   label: 'White-label branding' },
   { id: 'api',          label: 'API access' },
   { id: 'misc',         label: 'Tools we built for ourselves' },
 ]
@@ -458,23 +457,7 @@ export default function ProTourPage() {
               <SectionCta href="/assistant" label="Open Help Desk" />
             </Section>
 
-            {/* ── 11. White-label ────────────────────────────────── */}
-            <Section id="whitelabel" icon={<Palette size={18} />} title="White-label branding (Pro-exclusive)">
-              <p>
-                If you&apos;re running this for an agency or a team that doesn&apos;t need to know which platform you&apos;re using:
-              </p>
-              <ul>
-                <li>Replace the MVP logo on the dashboard with your own.</li>
-                <li>Replace the &quot;MVP Affiliate&quot; company name throughout the UI.</li>
-                <li>Set a custom accent color that reskins the dashboard.</li>
-              </ul>
-              <p>
-                VAs you invite see your white-label, not MVP&apos;s. Clients you give access to never see our brand.
-              </p>
-              <SectionCta href="/branding" label="Set up white-label" />
-            </Section>
-
-            {/* ── 12. API ─────────────────────────────────────────── */}
+            {/* ── 11. API ─────────────────────────────────────────── */}
             <Section id="api" icon={<Code size={18} />} title="API access (Pro-exclusive)">
               <p>
                 For Pro creators with engineering resources or who want to wire MVP into their own internal tools:

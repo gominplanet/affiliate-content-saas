@@ -92,7 +92,7 @@ export default function ProTourBanner() {
           <p className="text-[16px] sm:text-[17px] font-bold text-white">See everything Pro can do for you</p>
           <p className="text-[13px] mt-1 text-white/85">
             The full tour of every Pro feature live today — generation engine, SEO, newsletter, brand deals,
-            multi-site, VAs, white-label, and more.
+            multi-site, VAs, and more.
           </p>
         </div>
         <span className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-[13px] font-semibold bg-white text-[#7C3AED] flex-shrink-0">

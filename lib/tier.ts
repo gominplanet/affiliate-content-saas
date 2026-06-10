@@ -261,11 +261,12 @@ export const TIERS = {
     publishAll: true,
     cascadeOnlySchedulesPerMonth: null as number | null,
     campaigns: true,
-    /** API access + White-label HIDDEN from nav for now. The features
-     *  exist; the nav links are commented out in DashboardShellV2 until
-     *  real demand surfaces. */
+    /** API access HIDDEN from nav for now (link commented out in
+     *  DashboardShellV2 until real demand surfaces). White-label is OFF —
+     *  not offered or on the roadmap for now (2026-06-10): the /branding UI
+     *  404s and it's not advertised anywhere. */
     apiAccess: true,
-    whiteLabel: true,
+    whiteLabel: false,
     /** VA / Agency seats: up to 3 invitees with granular permissions. */
     vaSeats: 3,
     priorityQueue: true,
