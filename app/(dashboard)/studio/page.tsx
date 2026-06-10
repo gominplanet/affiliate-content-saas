@@ -74,18 +74,23 @@ function classifyVideo(v: Pick<DraftVideo, 'title' | 'description' | 'detectedAs
   // never belongs in those tabs, even if it carries a product signal.
   if (v.status === 'public') return 'done'
 
-  // SCHEDULED (still private/unlisted, but a publishAt is set) = finished, queued
-  // work — NOT a raw draft. Per user 2026-06-10 these sit with the shipped videos
-  // ("Pushed via Co-Pilot"), out of the With product / No product to-do queue —
-  // that queue is only the orange, raw "product name + ASIN", no-thumbnail drafts.
+  // RAW PRODUCT DRAFT wins next: an ASIN in the TITLE (incl. the filename-derived
+  // title of a fresh upload, e.g. "White turtle neck B07NSJ95HM") is the orange
+  // "Generate YouTube metadata" signal — exactly what "With product" is for. This
+  // BEATS the scheduled check below: the creator schedules raw drafts too, so a
+  // scheduled raw product draft is still work to do and stays in "With product".
+  const hasAsin = !!v.detectedAsin || ASIN_RE.test(title)
+  if (hasAsin) return 'todo-product'
+
+  // SCHEDULED (private/unlisted but a publishAt is set) and NOT a raw ASIN draft =
+  // a finished/polished video queued to go live (the purple full-title ones) →
+  // "Pushed via Co-Pilot", out of the to-do queue. (Per user 2026-06-10.)
   if (v.publishAt) return 'shipped'
 
-  // Product signal: ASIN in title (either via our pre-extracted field or a
-  // freshly regex'd match), OR any Amazon URL in the description even
-  // without an affiliate tag (user may have pasted a plain link).
-  const hasAsin = !!v.detectedAsin || ASIN_RE.test(title)
+  // Unscheduled, no title-ASIN: a product draft if there's any Amazon link (the
+  // "No product" generate uses it as a fallback); otherwise a plain topic draft.
   const hasAmazonAnywhere = AMAZON_PRESENCE_RE.test(title) || AMAZON_PRESENCE_RE.test(desc)
-  if (hasAsin || hasAmazonAnywhere) return 'todo-product'
+  if (hasAmazonAnywhere) return 'todo-product'
 
   return 'todo-no-product'
 }
