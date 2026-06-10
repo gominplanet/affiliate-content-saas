@@ -30,6 +30,7 @@ import {
   type PostOpportunity,
   type OpportunityKind,
 } from '@/lib/post-opportunity'
+import { resolvePostAsins } from '@/lib/post-asin'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -40,6 +41,8 @@ interface PostRow {
   wordpress_url: string | null
   geniuslink_code: string | null
   content: string | null
+  video_id: string | null
+  deal_meta: unknown
 }
 
 interface OpportunityResult {
@@ -48,6 +51,9 @@ interface OpportunityResult {
   url: string
   metrics: PostMetrics
   opportunity: PostOpportunity
+  /** Uploaded Associates commissions attributed to this post's ASIN(s), or
+   *  null when untracked / unresolved (revenue loop #249). */
+  earningsUsd: number | null
 }
 
 /** GSC data lags ~2–3 days; end the window at today-3, span 28 days back. */
@@ -129,9 +135,10 @@ export async function GET() {
     }
 
     // ── Published posts (owner-scoped) ────────────────────────────────────────
-    const { data: postRaw } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: postRaw } = await (supabase as any)
       .from('blog_posts')
-      .select('id,title,wordpress_url,geniuslink_code,content')
+      .select('id,title,wordpress_url,geniuslink_code,content,video_id,deal_meta')
       .eq('user_id', ownerId)
       .eq('status', 'published')
       .limit(500)
@@ -163,6 +170,44 @@ export async function GET() {
     } catch { /* pre-migration 120 or read error — decay just won't fire */ }
     const peakUpserts: Array<{ post_id: string; user_id: string; best_position: number; best_position_at: string }> = []
     const nowIso = new Date().toISOString()
+
+    // ── Per-post revenue attribution (revenue loop #249) ──────────────────────
+    // Map post → its ASIN(s) → uploaded Associates commissions. earningsByAsin
+    // stays empty (earningsTracked=false) until the user uploads an earnings CSV
+    // and runs migration 121 — until then every post just shows no $ (no change).
+    const earningsByAsin = new Map<string, number>()
+    try {
+      const { data: earnRows } = await admin
+        .from('amazon_earnings')
+        .select('asin,earnings_usd')
+        .eq('user_id', ownerId)
+      for (const r of ((earnRows ?? []) as Array<{ asin: string; earnings_usd: number }>)) {
+        const asin = (r.asin || '').toUpperCase()
+        if (asin) earningsByAsin.set(asin, (earningsByAsin.get(asin) ?? 0) + Number(r.earnings_usd || 0))
+      }
+    } catch { /* pre-migration 121 — attribution just stays empty */ }
+    const earningsTracked = earningsByAsin.size > 0
+
+    // The video's resolved product_url holds a /dp/{ASIN} for Amazon-direct
+    // products — load it only when there are actually earnings to attribute.
+    const productUrlByVideo = new Map<string, string>()
+    if (earningsTracked) {
+      const videoIds = Array.from(
+        new Set(livePosts.map(p => p.video_id).filter((v): v is string => Boolean(v))),
+      )
+      if (videoIds.length > 0) {
+        try {
+          const { data: vids } = await admin
+            .from('youtube_videos')
+            .select('id,product_url')
+            .eq('user_id', ownerId)
+            .in('id', videoIds)
+          for (const v of ((vids ?? []) as Array<{ id: string; product_url: string | null }>)) {
+            if (v.product_url) productUrlByVideo.set(v.id, v.product_url)
+          }
+        } catch { /* non-fatal — fall back to body-link ASIN extraction */ }
+      }
+    }
 
     // ── ONE bulk GSC query over the whole property, matched back by URL ───────
     const { startDate, endDate } = gscWindow()
@@ -261,12 +306,25 @@ export async function GET() {
         indexed: null, // v1: impressions proxy for indexed; URL-inspection wiring is a follow-up
         bestPosition: storedBest,
       }
+      // Attribute uploaded commissions to this post via its resolved ASIN(s).
+      let earningsUsd: number | null = null
+      if (earningsTracked) {
+        const asins = resolvePostAsins({
+          dealMeta: p.deal_meta,
+          productUrl: p.video_id ? productUrlByVideo.get(p.video_id) ?? null : null,
+          content: p.content,
+        })
+        let sum = 0
+        for (const a of asins) sum += earningsByAsin.get(a) ?? 0
+        earningsUsd = sum > 0 ? Math.round(sum * 100) / 100 : null
+      }
       return {
         postId: p.id,
         title: p.title ?? '',
         url: p.wordpress_url!,
         metrics,
         opportunity: classifyPostOpportunity(metrics),
+        earningsUsd,
       }
     })
 
@@ -289,6 +347,7 @@ export async function GET() {
     return NextResponse.json({
       connected: true,
       geniuslink: hasGenius,
+      earningsTracked,
       window: { startDate, endDate },
       summary: { total: worklist.length, byKind },
       posts: worklist.slice(0, 100),

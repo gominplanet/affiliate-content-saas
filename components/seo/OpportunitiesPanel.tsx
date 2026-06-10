@@ -38,10 +38,14 @@ interface Row {
     affiliateClicks: number | null
   }
   opportunity: Opportunity
+  /** Amazon commissions attributed to this post's ASIN(s) (revenue loop #249). */
+  earningsUsd?: number | null
 }
 interface ApiResponse {
   connected: boolean
   geniuslink?: boolean
+  /** True once the user has uploaded an Amazon earnings CSV (so $ is shown). */
+  earningsTracked?: boolean
   reason?: string
   message?: string
   window?: { startDate: string; endDate: string }
@@ -196,6 +200,14 @@ export default function OpportunitiesPanel() {
                         {row.title || 'Untitled post'}
                         <ExternalLink className="h-3 w-3 opacity-50 shrink-0" />
                       </a>
+                      {typeof row.earningsUsd === 'number' && row.earningsUsd > 0 && (
+                        <span
+                          className="text-[11px] font-bold px-2 py-0.5 rounded-full text-[#1a7a3c] bg-[#34c759]/12 whitespace-nowrap"
+                          title="Amazon commissions attributed to this post, from your uploaded earnings"
+                        >
+                          ${row.earningsUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} earned
+                        </span>
+                      )}
                     </div>
                     <p className="text-[13px] font-medium text-[var(--text)] mt-1">{row.opportunity.action}</p>
                     <p className="text-xs text-[var(--text-2)] mt-0.5">{row.opportunity.reason}</p>
