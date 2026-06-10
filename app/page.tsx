@@ -164,6 +164,7 @@ export default function LandingPreview() {
       <WorkflowSection />
       <BeforeAfterSection />
       <GroundedSection />
+      <DiscoverabilitySection />
       <BrandedSiteSection />
       <BusinessLayerSection />
       <PricingSection />
@@ -530,6 +531,57 @@ function BusinessLayerSection() {
               </div>
               <h3 className="text-[16px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{c.title}</h3>
               <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{c.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Discoverability / AEO section — the capstone of the content-first pitch.
+ *  Search engines + AI answer engines (Google AI Overviews, ChatGPT, Perplexity)
+ *  answer before the click; this section shows how MVP's content is built to be
+ *  the cited source. Every point maps to a real shipped feature (answer-first
+ *  H2s, schema enrichment, fact-grounding, auto-indexing). */
+const AEO_POINTS: Array<{ icon: React.ReactNode; title: string; body: string }> = [
+  { icon: <Zap size={18} />, title: 'Answer-first structure', body: 'Every section opens with the answer — the exact shape AI engines lift into their results.' },
+  { icon: <LayoutTemplate size={18} />, title: 'Schema-rich', body: 'Product, Review & FAQ schema so Google and AI read your verdict, rating, and specs — not just your prose.' },
+  { icon: <Quote size={18} />, title: 'Grounded = citable', body: 'Real specs and real experience from your video. Engines quote sources they can trust, not generic AI filler.' },
+  { icon: <TrendingUp size={18} />, title: 'Auto-indexed', body: 'Submitted to Google the moment it publishes, so it gets discovered — and cited — fast.' },
+]
+
+function DiscoverabilitySection() {
+  return (
+    <section id="discoverability" className="px-6 lg:px-8 pt-24 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF', border: '1px solid rgba(124,58,237,0.25)' }}
+          >
+            <Sparkles size={10} />
+            Found by Google and AI
+          </span>
+          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+            Search changed.
+            <br />
+            <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              Be the source AI quotes.
+            </span>
+          </h2>
+          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            Google answers right in the results now. ChatGPT and Perplexity answer before the click. MVP writes every review to be the source those engines pull from — so you still show up when nobody clicks a blue link.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          {AEO_POINTS.map((p) => (
+            <div key={p.title} className="rounded-2xl border p-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+                {p.icon}
+              </span>
+              <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{p.title}</h3>
+              <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>{p.body}</p>
             </div>
           ))}
         </div>
@@ -1538,13 +1590,10 @@ function PricingCard({ tier }: { tier: PricingTier }) {
 
 /** Section 7 — Proof.
  *
- *  We don't have user testimonials yet, so this section grounds the
- *  promise in NUMBERS we can defend: the founder's $3M+/yr operation,
- *  the 4-min workflow, the 8 outputs per video, the fact-grounding
- *  guarantee. No fabricated quotes.
- *
- *  Below the stat row: a "Built for these niches" panel that names real
- *  categories MVP supports without naming individual customers.
+ *  The proof is the founder's own brand, Gominplanet: a +$3M/yr affiliate
+ *  business run on MVP, and the edge it gives in attracting brand partners.
+ *  Backed by defensible numbers (the 4-min workflow, 8 outputs/video, the
+ *  fact-grounding guarantee). No fabricated customer quotes.
  */
 function ProofSection() {
   return (
@@ -1560,19 +1609,19 @@ function ProofSection() {
             }}
           >
             <TrendingUp size={10} />
-            Numbers that matter
+            Proven, not projected
           </span>
           <h2
             className="text-[36px] sm:text-[44px] font-semibold tracking-tight leading-[1.1] mb-4"
             style={{ color: 'var(--text)' }}
           >
-            Built by an operator. Run daily.
+            The system behind a $3M/year affiliate business.
           </h2>
           <p
             className="text-[16px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Every number on this page is something the founder uses MVP to do every week.
+            Gominplanet grew this affiliate business past $3M a year in revenue — and it&apos;s a big reason brands want to work with us. MVP is that system, made yours.
           </p>
         </div>
 
@@ -1595,7 +1644,7 @@ interface Stat {
 }
 
 const STATS: Stat[] = [
-  { value: '$3M+', label: '/yr proven', detail: 'in affiliate sales by the founder' },
+  { value: '$3M+', label: '/yr at Gominplanet', detail: 'real affiliate revenue, run on MVP' },
   { value: '4 min', label: 'average workflow', detail: 'video → 8 outputs' },
   { value: '8', label: 'outputs per video', detail: 'blog, comparison, thumbnail, newsletter + 4 socials' },
   { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
@@ -1711,6 +1760,14 @@ const FAQS = [
   {
     q: 'Can I switch plans up or down later?',
     a: 'Anytime. Upgrade and the difference is pro-rated and applied immediately. Downgrade and the new plan kicks in at the next billing cycle (you keep the higher plan\'s features until then). No "annual commitment" trap.',
+  },
+  {
+    q: 'Will my content actually rank — and how long does it take?',
+    a: 'SEO is a slow game, and anyone promising overnight rankings is selling you something. What MVP gives you is the foundation ranking depends on: answer-first structure, Product / Review / FAQ schema, fast indexing, internal links, and content genuinely grounded in your real review (which Google\'s helpful-content system rewards). Low-competition terms can move in a few weeks; competitive terms take months and consistent volume — and MVP is what makes publishing that volume realistic.',
+  },
+  {
+    q: 'Will my reviews show up in AI search — ChatGPT, Perplexity, Google\'s AI answers?',
+    a: 'That\'s exactly what MVP is built for. AI engines quote sources they can parse and trust: the answer up top, schema they can read, and real specs and experience they can verify. MVP writes every review that way. No tool can guarantee a specific engine cites you, but content built to be citable is how you show up — and it\'s the opposite of the generic AI filler those engines are learning to skip.',
   },
 ]
 
