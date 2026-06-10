@@ -25,6 +25,11 @@ interface GenResponseLike {
 }
 
 const POLL_INTERVAL_MS = 3000
+// Safety ceiling so a stuck or backlogged job never spins the UI forever. The
+// worker runs up to 300s; this leaves generous headroom for a short queue. The
+// job may still finish server-side after this — so we tell the user to check the
+// Library rather than calling it a failure.
+const MAX_POLL_MS = 10 * 60 * 1000
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function generateBlogRequest(body: Record<string, any>, signal?: AbortSignal): Promise<GenResponseLike> {
@@ -71,8 +76,14 @@ export async function generateBlogRequest(body: Record<string, any>, signal?: Ab
     return { ok: false, status: 502, json: async () => ({ error: 'Queued but no job id returned.' }) }
   }
 
+  const startedAt = Date.now()
   for (;;) {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (Date.now() - startedAt > MAX_POLL_MS) {
+      return { ok: false, status: 504, json: async () => ({
+        error: 'This is taking longer than usual — the post is still being generated in the background. Check your Library in a few minutes; it’ll appear when it’s ready.',
+      }) }
+    }
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
     let s: { status?: string; result?: unknown; error?: string } = {}
     try {
