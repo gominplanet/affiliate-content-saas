@@ -1040,7 +1040,7 @@ function BrandedSiteSection() {
           }}
         >
           <p className="text-center text-[11px] uppercase tracking-[0.18em] font-semibold mb-5" style={{ color: '#9D6BFF' }}>
-            What it would cost you to build this yourself
+            What this content costs the old way
           </p>
           <ul className="flex flex-col gap-2.5 max-w-2xl mx-auto mb-7">
             {SITE_COST_STACK.map(([tool, price]) => (
@@ -1053,11 +1053,11 @@ function BrandedSiteSection() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-center sm:text-left">
             <div>
               <p className="text-[12px] uppercase tracking-[0.15em] mb-1" style={{ color: 'var(--text-faint)' }}>
-                Cobbled together
+                The old way
               </p>
               <p className="text-[24px] font-mono font-semibold" style={{ color: 'var(--text)' }}>
-                ~$504<span className="text-[16px]" style={{ color: 'var(--text-faint)' }}>/yr</span>
-                <span className="text-[14px] ml-2" style={{ color: 'var(--text-faint)' }}>+ a weekend</span>
+                ~$3,800<span className="text-[16px]" style={{ color: 'var(--text-faint)' }}>/mo</span>
+                <span className="text-[14px] ml-2" style={{ color: 'var(--text-faint)' }}>+ your time</span>
               </p>
             </div>
             <span className="hidden sm:block text-[20px]" style={{ color: 'var(--text-faint)' }}>→</span>
@@ -1066,9 +1066,9 @@ function BrandedSiteSection() {
                 With MVP
               </p>
               <p className="text-[28px] font-mono font-bold" style={{ color: '#10B981' }}>
-                $0
+                from $49<span className="text-[16px] font-sans font-normal" style={{ color: 'var(--text-faint)' }}>/mo</span>
                 <span className="text-[14px] ml-2 font-sans font-normal" style={{ color: 'var(--text-faint)' }}>
-                  / installed in 5 minutes
+                  / done in minutes
                 </span>
               </p>
             </div>
@@ -1136,18 +1136,17 @@ const SITE_FEATURE_COLUMNS = [
   },
 ] as const
 
-/** What you'd otherwise be paying. Numbers are public pricing for the
- *  most common stack (Cuppa Pro / Schema Pro / Pretty Links Pro /
- *  TablePress Pro / OptinMonster basic / UpdraftPlus Premium). The
- *  list is the math behind the ~$504/yr total in the card. */
+/** What it costs to PRODUCE this content the old way — hire it out — per month
+ *  for ~20 reviews. The real alternative to MVP is paying writers/designers/a VA,
+ *  NOT a pile of WP plugins. Conservative freelance + tool rates; the list is the
+ *  math behind the ~$3,800/mo total in the card. */
 const SITE_COST_STACK: ReadonlyArray<readonly [string, string]> = [
-  ['Affiliate review theme (Cuppa Pro, Newspaper, etc.)', '$59-$99 / yr'],
-  ['Schema markup plugin (Schema Pro)', '$89 / yr'],
-  ['Affiliate link manager (Pretty Links Pro)', '$99 / yr'],
-  ['Comparison-table builder (TablePress Pro)', '$79 / yr'],
-  ['Newsletter signup plugin (OptinMonster basic)', '$108 / yr'],
-  ['Site backups + security (UpdraftPlus Premium)', '$70 / yr'],
-  ['Your weekend setting it all up', 'priceless'],
+  ['SEO product-review writer (~$120 / review × 20)', '$2,400 / mo'],
+  ['Comparison & buying-guide articles', '$400 / mo'],
+  ['Thumbnail designer (~$25 each)', '$500 / mo'],
+  ['Keyword + rank-tracking tool (Ahrefs / Semrush)', '$129 / mo'],
+  ['A VA to format, publish & schedule', '$350 / mo'],
+  ['Briefing & editing it all yourself', 'your weekends'],
 ]
 
 /** Section 6 — Pricing.
