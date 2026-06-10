@@ -19,6 +19,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
 import { createGeniuslinkService } from '@/services/geniuslink'
@@ -146,6 +147,23 @@ export async function GET() {
       })
     }
 
+    // ── Ranking-decay history: the stored PEAK position per post (task #249) ──
+    // Admin client so a VA can read the owner's post_seo (its RLS is
+    // auth.uid()=user_id; we're owner-scoped here). Map post_id → peak position.
+    const admin = createAdminClient()
+    const bestByPost = new Map<string, number>()
+    try {
+      const { data: seoRows } = await admin
+        .from('post_seo')
+        .select('post_id,best_position')
+        .eq('user_id', ownerId)
+      for (const r of ((seoRows ?? []) as Array<{ post_id: string; best_position: number | null }>)) {
+        if (typeof r.best_position === 'number') bestByPost.set(r.post_id, r.best_position)
+      }
+    } catch { /* pre-migration 120 or read error — decay just won't fire */ }
+    const peakUpserts: Array<{ post_id: string; user_id: string; best_position: number; best_position_at: string }> = []
+    const nowIso = new Date().toISOString()
+
     // ── ONE bulk GSC query over the whole property, matched back by URL ───────
     const { startDate, endDate } = gscWindow()
     const rows = await querySearchAnalytics(gscToken, gscProperty, {
@@ -226,13 +244,22 @@ export async function GET() {
       const affiliateClicks = (hasGenius && code && affiliateClicksByCode.has(code))
         ? affiliateClicksByCode.get(code)!
         : null
+      const storedBest = bestByPost.get(p.id) ?? null
+      const livePos = stats?.position ?? null
+      // Track the all-time peak: if the live position beats the stored best (or
+      // there's no history yet), record it. The classifier sees the OLD peak, so
+      // a dip below it reads as decay; an improvement simply raises the peak.
+      if (livePos != null && (storedBest == null || livePos < storedBest)) {
+        peakUpserts.push({ post_id: p.id, user_id: ownerId, best_position: livePos, best_position_at: nowIso })
+      }
       const metrics: PostMetrics = {
-        position: stats?.position ?? null,
+        position: livePos,
         impressions: stats?.impressions ?? 0,
         searchClicks: stats?.clicks ?? 0,
         ctr: stats?.ctr ?? 0,
         affiliateClicks,
         indexed: null, // v1: impressions proxy for indexed; URL-inspection wiring is a follow-up
+        bestPosition: storedBest,
       }
       return {
         postId: p.id,
@@ -245,6 +272,12 @@ export async function GET() {
 
     // Rank by priority; drop the pure-noise rows ('no_data') from the worklist
     // but keep them counted in the summary so the user knows coverage.
+    // Persist improved peaks (fire-and-forget — a failure just delays decay
+    // detection, never blocks the response). onConflict = post_id (the PK).
+    if (peakUpserts.length > 0) {
+      try { await admin.from('post_seo').upsert(peakUpserts, { onConflict: 'post_id' }) } catch { /* non-fatal */ }
+    }
+
     const ranked = rankOpportunities(results)
     const worklist = ranked.filter(r => r.opportunity.kind !== 'no_data')
 

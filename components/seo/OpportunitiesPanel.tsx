@@ -16,7 +16,7 @@ import { RefreshCw, ArrowUpRight, ExternalLink } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 
 type Kind =
-  | 'not_indexed' | 'striking_distance' | 'low_ctr'
+  | 'not_indexed' | 'decaying' | 'striking_distance' | 'low_ctr'
   | 'ranks_but_no_clickout' | 'winner' | 'low_volume' | 'no_data'
 
 interface Opportunity {
@@ -51,6 +51,7 @@ interface ApiResponse {
 
 const KIND_META: Record<Kind, { label: string; cls: string }> = {
   not_indexed:           { label: 'Not indexed',       cls: 'text-[#ff3b30] bg-[#ff3b30]/10' },
+  decaying:              { label: 'Slipping',          cls: 'text-[#ff9500] bg-[#ff9500]/12' },
   striking_distance:     { label: 'Striking distance', cls: 'text-[#b8860b] bg-[#FFC200]/20' },
   low_ctr:               { label: 'Low CTR',           cls: 'text-[#4285F4] bg-[#4285F4]/10' },
   ranks_but_no_clickout: { label: 'Not converting',    cls: 'text-[#7C3AED] bg-[#7C3AED]/10' },

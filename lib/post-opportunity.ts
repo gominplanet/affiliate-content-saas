@@ -33,11 +33,16 @@ export interface PostMetrics {
   affiliateClicks: number | null
   /** URL Inspection verdict. null = not checked (don't infer a problem). */
   indexed: boolean | null
+  /** Best (lowest) average position this post has ever recorded
+   *  (post_seo.best_position). null = no history yet. Drives decay detection —
+   *  a post that peaked on page 1 and has since slipped. */
+  bestPosition: number | null
 }
 
 /** The kind of opportunity a post represents, in rough priority order. */
 export type OpportunityKind =
   | 'not_indexed'            // Google can't show it at all → 0 traffic ceiling
+  | 'decaying'               // peaked on page 1, now slipping → refresh to recover
   | 'striking_distance'      // pos 5–15 with demand → a push lands page 1
   | 'low_ctr'                // ranks well, under-clicked → title/meta problem
   | 'ranks_but_no_clickout'  // readers arrive but don't click the affiliate link
@@ -91,6 +96,8 @@ const STRIKING_MIN = 5            // avg position window that a refresh can real
 const STRIKING_MAX = 15
 const LOW_CTR_RATIO = 0.5         // actual < 0.5× expected(position) = under-clicked
 const WINNER_MAX_POSITION = 4     // top-of-page-1 to count as a "winner"
+const DECAY_BEST_MAX = 5          // a post must have PEAKED at ≤ this to count as decayed
+const DECAY_DROP = 5              // ...and slipped at least this many positions since the peak
 
 /**
  * Classify a single post from its joined metrics. Order matters: the most
@@ -125,7 +132,21 @@ export function classifyPostOpportunity(m: PostMetrics): PostOpportunity {
   const exp = expectedCtr(m.position)
   const upside = impressionUpside(m.impressions) // 0..1 scaling factor
 
-  // 2. Striking distance — ranks on the cusp (page 1 bottom / page 2) with real
+  // 2. Decaying — the post PEAKED on page 1 and has since slipped. Checked before
+  //    striking-distance because it's more specific + higher value: you're LOSING
+  //    ranking you already earned, and a refresh recovers it before it slides
+  //    further. (A post that never ranked well has no peak, so it can't decay.)
+  if (m.bestPosition != null && m.bestPosition <= DECAY_BEST_MAX && (m.position - m.bestPosition) >= DECAY_DROP) {
+    return {
+      kind: 'decaying',
+      priority: clamp(68 + Math.round(upside * 30)),
+      action: 'Refresh — it’s slipping from where it ranked',
+      reason: `Peaked at position ${m.bestPosition.toFixed(1)} but now sits at ${m.position.toFixed(1)} on ${m.impressions} impressions. Refresh it to recover the lost ranking before it slides further.`,
+      cta: 'rebuild',
+    }
+  }
+
+  // 3. Striking distance — ranks on the cusp (page 1 bottom / page 2) with real
   //    demand. The single best ROI move: a refresh/expansion often lands page 1.
   if (m.position >= STRIKING_MIN && m.position <= STRIKING_MAX) {
     return {
