@@ -600,7 +600,7 @@ function WorkflowSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            From video to nine outputs, fact-grounded and in your voice.
+            From video to eight outputs, fact-grounded and in your voice.
           </p>
         </div>
 
@@ -669,7 +669,7 @@ const STEPS: Step[] = [
   },
   {
     icon: <Sparkles size={18} />,
-    title: 'Generate 9 outputs in one click.',
+    title: 'Generate 8 outputs from one video.',
     body: 'Blog post, comparison, thumbnail, newsletter, plus native posts for X, LinkedIn, Bluesky & Telegram. All in your voice. All in about four minutes.',
   },
   {
@@ -1075,6 +1075,27 @@ function BrandedSiteSection() {
           </div>
         </div>
 
+        {/* Own-your-audience callout — the newsletter is the one channel you
+            actually own (vs rented social reach). Honest about tiers: it STARTS
+            on Creator (small) and scales; not "zero setup" (domain auth). */}
+        <div
+          className="mt-6 max-w-2xl mx-auto rounded-2xl border p-5 sm:p-6"
+          style={{ backgroundColor: 'var(--surface)', borderColor: 'rgba(124,58,237,0.30)' }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Mail size={16} style={{ color: '#9D6BFF' }} />
+            <p className="text-[15px] font-semibold" style={{ color: 'var(--text)' }}>
+              The audience you actually own
+            </p>
+          </div>
+          <p className="text-[14px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
+            Social reach is rented — the algorithm decides who sees you. Your email list is yours.
+            MVP builds it in: a signup form on your site, broadcasts written in your voice, list
+            management, and the deliverability setup that makes standalone tools a headache.
+            Start your list on Creator and scale to 10,000 subscribers with A/B and segments as you grow.
+          </p>
+        </div>
+
         {/* Final emphasis line — drives home the "even trial users" angle. */}
         <p className="text-center text-[15px] mt-8 max-w-2xl mx-auto leading-relaxed" style={{ color: 'var(--text-soft)' }}>
           The site is yours. On your domain. Forever. Even after you cancel,
@@ -1145,6 +1166,7 @@ const SITE_COST_STACK: ReadonlyArray<readonly [string, string]> = [
   ['Comparison & buying-guide articles', '$400 / mo'],
   ['Thumbnail designer (~$25 each)', '$500 / mo'],
   ['Keyword + rank-tracking tool (Ahrefs / Semrush)', '$129 / mo'],
+  ['Email + newsletter tool (Mailchimp / ConvertKit)', '$39 / mo'],
   ['A VA to format, publish & schedule', '$350 / mo'],
   ['Briefing & editing it all yourself', 'your weekends'],
 ]
@@ -1446,7 +1468,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
  *
  *  We don't have user testimonials yet, so this section grounds the
  *  promise in NUMBERS we can defend: the founder's $3M+/yr operation,
- *  the 4-min workflow, the 9 outputs per video, the fact-grounding
+ *  the 4-min workflow, the 8 outputs per video, the fact-grounding
  *  guarantee. No fabricated quotes.
  *
  *  Below the stat row: a "Built for these niches" panel that names real
@@ -1502,8 +1524,8 @@ interface Stat {
 
 const STATS: Stat[] = [
   { value: '$3M+', label: '/yr proven', detail: 'in affiliate sales by the founder' },
-  { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
-  { value: '9', label: 'outputs per video', detail: 'blog, thumbnail, newsletter + 4 socials' },
+  { value: '4 min', label: 'average workflow', detail: 'video → 8 outputs' },
+  { value: '8', label: 'outputs per video', detail: 'blog, comparison, thumbnail, newsletter + 4 socials' },
   { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
 ]
 
