@@ -280,8 +280,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
   const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string }>>([])
-  // Whether the next generation applies the creator's saved brand thumbnail style.
-  const [applyBrandStyle, setApplyBrandStyle] = useState(false)
+  // Live thumbnail-style controls (the single block) — drive every generation.
+  const [borderIndex, setBorderIndex] = useState<number | null>(null) // null = keep borders varied
+  const [accentColor, setAccentColor] = useState<string>('#FFE034')   // title emphasis colour
   const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
@@ -965,8 +966,9 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           style: 'lifestyle',
           customHeadline: headline,
           variantCount,
-          // Apply the creator's saved brand style (locked border/accent/face) when toggled on.
-          applyBrandStyle: applyBrandStyle || undefined,
+          // The thumbnail-style block drives every generation (border + accent, live).
+          borderStyleIndex: borderIndex ?? undefined,
+          accentColor,
           // "Your Face" — lock the host's likeness from their uploaded photos.
           faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto' && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           faceAuto: selectedFaceModelId === 'auto' || undefined,
@@ -1033,7 +1035,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           style: 'lifestyle',
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
-          applyBrandStyle: applyBrandStyle || undefined,
+          borderStyleIndex: borderIndex ?? undefined,
+          accentColor,
           faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto' && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           faceAuto: selectedFaceModelId === 'auto' || undefined,
           // 'no-human' → product-only thumbnail, no face composition at all.
@@ -1801,60 +1804,15 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                   </label>
                 </div>
 
-                {/* "Your Face" picker — choose WHICH uploaded face to lock into
-                    the thumbnail (e.g. Seb vs Michelle), or Off to rely on the
-                    video frame alone. Manage faces in Face Training. */}
-                {faceModels.length > 0 ? (
-                  <div className="flex items-center gap-2 mb-3 flex-wrap">
-                    <span className="text-[11px] text-[#86868b]">Use my face:</span>
-                    <button
-                      onClick={() => setSelectedFaceModelId('auto')}
-                      disabled={generatingThumbnail}
-                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === 'auto' ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
-                      title="Auto — we match the video to the right person from your faces"
-                    >
-                      Auto
-                    </button>
-                    <button
-                      onClick={() => setSelectedFaceModelId(null)}
-                      disabled={generatingThumbnail}
-                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === null ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
-                      title="Don't lock a face — use the video frame's host as-is"
-                    >
-                      Off
-                    </button>
-                    <button
-                      onClick={() => setSelectedFaceModelId('no-human')}
-                      disabled={generatingThumbnail}
-                      className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === 'no-human' ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
-                      title="Product-only thumbnail — no creator face, no human at all. Best for unboxings or comparison shots."
-                    >
-                      Product only
-                    </button>
-                    {faceModels.map(fm => (
-                      <button
-                        key={fm.id}
-                        onClick={() => setSelectedFaceModelId(fm.id)}
-                        disabled={generatingThumbnail}
-                        className={`text-[11px] px-2.5 h-7 rounded-md border font-semibold transition disabled:opacity-60 ${selectedFaceModelId === fm.id ? 'bg-[#7C3AED] border-[#7C3AED] text-white' : 'border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] hover:border-[#7C3AED]'}`}
-                        title={`Lock the host's likeness to "${fm.name}" using your uploaded photos`}
-                      >
-                        {fm.name}
-                      </button>
-                    ))}
-                    <span className="text-[10px] text-[#86868b]">— locks that person&apos;s likeness from your photos</span>
-                  </div>
-                ) : (
-                  <p className="text-[10px] text-[#86868b] mb-3">
-                    Want the host to look more like you? Add your photos in{' '}
-                    <a href="/face-training" className="text-[#7C3AED] hover:underline">Face Training</a> — they&apos;ll lock your likeness into every thumbnail.
-                  </p>
-                )}
-
+                {/* Face / border / accent all live in the single thumbnail-style block below. */}
                 <BrandStylePanel
                   faceModels={faceModels}
-                  applyBrandStyle={applyBrandStyle}
-                  onToggle={setApplyBrandStyle}
+                  selectedFaceModelId={selectedFaceModelId}
+                  setSelectedFaceModelId={setSelectedFaceModelId}
+                  borderIndex={borderIndex}
+                  setBorderIndex={setBorderIndex}
+                  accentColor={accentColor}
+                  setAccentColor={setAccentColor}
                   disabled={generatingThumbnail}
                 />
 

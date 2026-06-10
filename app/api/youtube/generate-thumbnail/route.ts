@@ -654,7 +654,8 @@ export async function POST(request: Request) {
       // one thumbnail (comparison videos), or multiple angles of one product.
       customProductImageUrls,
       productCompositionNote,
-      applyBrandStyle = false,
+      borderStyleIndex,
+      accentColor,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -733,38 +734,21 @@ export async function POST(request: Request) {
        *  right" or "Product A above, Product B below". Folded into the
        *  productRefClause so Nano Banana Pro respects it. */
       productCompositionNote?: string
-      /** When true, apply the creator's saved brand thumbnail style (locked neon
-       *  border + title accent + face model) instead of the varied defaults. */
-      applyBrandStyle?: boolean
+      /** Live brand-style controls from the Co-Pilot block, driving THIS generation.
+       *  A fixed neon border index (0-9), or null/omitted = keep borders varied. */
+      borderStyleIndex?: number | null
+      /** Title emphasis colour (hex) from the block; omitted = default yellow. */
+      accentColor?: string
     }
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
 
-    // ── Saved brand thumbnail style (migration 122) ───────────────────────────
-    // When the creator toggles "Use my brand style", load their locked look: a
-    // fixed neon border, a title accent colour, and a pinned face model. null =
-    // Explore mode (varied borders, default yellow accent, face as passed).
-    let brandStyle: { borderStyleIndex: number | null; accentColor: string | null; faceModelId: string | null } | null = null
-    if (applyBrandStyle) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: bp } = await supabase
-        .from('brand_profiles')
-        .select('thumbnail_brand_style')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const raw = (bp as any)?.thumbnail_brand_style
-      if (raw && typeof raw === 'object') {
-        brandStyle = {
-          borderStyleIndex: typeof raw.borderStyleIndex === 'number' ? raw.borderStyleIndex : null,
-          accentColor: typeof raw.accentColor === 'string' ? raw.accentColor : null,
-          faceModelId: typeof raw.faceModelId === 'string' ? raw.faceModelId : null,
-        }
-      }
-    }
-    // Brand style can pin a face model; an explicit request faceModelId still wins.
-    const effectiveFaceModelId = faceModelId || (noHuman ? undefined : brandStyle?.faceModelId) || undefined
+    // Face comes straight from the request — the Co-Pilot block's face chips
+    // (Auto / Off / Product only / a likeness model) drive it live. The saved
+    // brand style is applied CLIENT-side (it prefills the block), so the route
+    // never reads it; it just honours the border/accent/face it's handed.
+    const effectiveFaceModelId = faceModelId || undefined
 
     // ── Load the user's face model if they picked one ─────────────────────────
     // Only honored when status='ready' and lora_url is populated. If the
@@ -1418,18 +1402,18 @@ Ultra-sharp, professional, photorealistic.`
                     console.warn('[simple-bake] rembg cutout failed (non-fatal):', e instanceof Error ? e.message : String(e))
                   }
 
-                  // Brand style locks ONE border + accent for every variant;
-                  // Explore mode varies them (origIdx spreads the palette across
-                  // the batch, borderOffset rotates the start each regenerate).
-                  const effectiveBorderIndex = brandStyle && brandStyle.borderStyleIndex != null
-                    ? brandStyle.borderStyleIndex
+                  // A locked border index (from the Co-Pilot block) pins ONE border
+                  // for every variant; null/omitted → varied (origIdx spreads the
+                  // palette across the batch, borderOffset rotates the start).
+                  const effectiveBorderIndex = (typeof borderStyleIndex === 'number' && borderStyleIndex >= 0)
+                    ? borderStyleIndex
                     : origIdx + borderOffset
                   const result = await bakeSimpleHeadline(baseBuf, variantCopy, {
                     anchor,
                     personCutoutPng,
                     borderStyleIndex: effectiveBorderIndex,
-                    // Title emphasis colour from the saved brand style (else default yellow).
-                    accentColor: brandStyle?.accentColor || undefined,
+                    // Title emphasis colour from the block (else default yellow).
+                    accentColor: accentColor || undefined,
                     userId: String(TELEMETRY.userId ?? ''),
                     tier: TELEMETRY.tier,
                   })

@@ -1,14 +1,14 @@
 /**
- * GET  /api/youtube/thumbnail-style  → { style: { borderStyleIndex, accentColor, faceModelId } | null }
- * POST /api/youtube/thumbnail-style  { borderStyleIndex?, accentColor?, faceModelId?, clear? }
+ * GET  /api/youtube/thumbnail-style  → { style: { borderStyleIndex, accentColor, face } | null }
+ * POST /api/youtube/thumbnail-style  { borderStyleIndex?, accentColor?, face?, clear? }
  *                                    → save (or clear) the creator's ONE brand thumbnail style.
  *
- * The brand style locks the OVERLAY look of generated thumbnails — which neon
- * border, the title accent colour, and which face model — so a whole channel
- * reads consistently. Stored as brand_profiles.thumbnail_brand_style (migration
- * 122). DISTINCT from /api/thumbnail-styles, which is a library of reference
- * IMAGES that flavor the AI scene. Scoped to the signed-in user (same scope the
- * generate-thumbnail route reads it back with).
+ * The brand style is the creator's DEFAULT look for the Co-Pilot thumbnail block:
+ * which neon border, the title accent colour, and the face mode (auto-match / off /
+ * product-only / a specific likeness model). The CLIENT prefills the block from this
+ * on mount; the generate-thumbnail route never reads it (the block sends values live).
+ * Stored as brand_profiles.thumbnail_brand_style (migration 122). DISTINCT from
+ * /api/thumbnail-styles (a library of reference IMAGES that flavor the AI scene).
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
@@ -19,18 +19,20 @@ export const maxDuration = 20
 interface BrandThumbStyle {
   borderStyleIndex: number | null
   accentColor: string | null
-  faceModelId: string | null
+  // 'auto' = vision-match a likeness · 'off' = no face lock · 'product' = product-only
+  // (no human) · or a face_models.id for a specific likeness.
+  face: string | null
 }
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 const UUID_RE = /^[0-9a-fA-F-]{36}$/
+const FACE_MODES = new Set(['auto', 'off', 'product'])
 
 export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await supabase
     .from('brand_profiles')
     .select('thumbnail_brand_style')
@@ -49,11 +51,11 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as {
     borderStyleIndex?: number | null
     accentColor?: string | null
-    faceModelId?: string | null
+    face?: string | null
     clear?: boolean
   }
 
-  // Clearing → null the column (back to Explore mode).
+  // Clearing → null the column (back to varied borders + default yellow accent).
   if (body.clear) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase as any)
@@ -83,23 +85,26 @@ export async function POST(request: Request) {
     accentColor = body.accentColor.toUpperCase()
   }
 
-  // Face model: must be one of the user's own face_models (or null = auto-match).
-  let faceModelId: string | null = null
-  if (body.faceModelId) {
-    if (!UUID_RE.test(body.faceModelId)) {
-      return NextResponse.json({ error: 'faceModelId must be a uuid or null' }, { status: 400 })
+  // Face: a mode ('auto'|'off'|'product') or one of the user's own face_models id.
+  let face: string | null = null
+  if (body.face) {
+    if (FACE_MODES.has(body.face)) {
+      face = body.face
+    } else if (UUID_RE.test(body.face)) {
+      const { data: fm } = await supabase
+        .from('face_models')
+        .select('id')
+        .eq('id', body.face)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!fm) return NextResponse.json({ error: 'face model not found' }, { status: 404 })
+      face = body.face
+    } else {
+      return NextResponse.json({ error: "face must be 'auto', 'off', 'product', or a face-model id" }, { status: 400 })
     }
-    const { data: fm } = await supabase
-      .from('face_models')
-      .select('id')
-      .eq('id', body.faceModelId)
-      .eq('user_id', user.id)
-      .maybeSingle()
-    if (!fm) return NextResponse.json({ error: 'face model not found' }, { status: 404 })
-    faceModelId = body.faceModelId
   }
 
-  const style: BrandThumbStyle = { borderStyleIndex, accentColor, faceModelId }
+  const style: BrandThumbStyle = { borderStyleIndex, accentColor, face }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any)
     .from('brand_profiles')
