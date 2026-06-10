@@ -73,6 +73,11 @@ function extractCode(text: string | null | undefined): string | null {
   return m ? m[1] : null
 }
 
+// This route fans out per-shortcode Geniuslink reporting calls (now 8s-bounded
+// each); give it headroom over Vercel's 60s default so a large-but-healthy
+// account doesn't 504 on the legitimate fan-out.
+export const maxDuration = 120
+
 export async function GET() {
   try {
     const supabase = await createServerClient()

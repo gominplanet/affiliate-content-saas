@@ -99,6 +99,7 @@ export async function completeJob(
     .from('generation_jobs')
     .update({ status: 'done', result, error: null, finished_at: new Date().toISOString() })
     .eq('id', id)
+    .eq('status', 'running') // guard: only complete a job we still own (not re-claimed / already terminal)
 }
 
 /**
@@ -121,6 +122,7 @@ export async function failJob(
         : { status: 'queued', error: errorMessage, claimed_at: null },
     )
     .eq('id', job.id)
+    .eq('status', 'running') // guard: don't clobber a job another tick already re-claimed / finished
 }
 
 /** Update the progress stage label on a running job (for staged handlers + UI). */
@@ -130,7 +132,7 @@ export async function setJobStage(
   id: string,
   stage: string,
 ): Promise<void> {
-  await admin.from('generation_jobs').update({ stage }).eq('id', id)
+  await admin.from('generation_jobs').update({ stage }).eq('id', id).eq('status', 'running')
 }
 
 /** Fetch a single job (RLS-scoped when called with a user client). */

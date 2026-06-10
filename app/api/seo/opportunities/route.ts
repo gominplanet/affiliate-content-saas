@@ -159,7 +159,25 @@ export async function GET() {
       if (!url) continue
       const stats = { clicks: r.clicks, impressions: r.impressions, ctr: r.ctr, position: r.position }
       byExact.set(url, stats)
-      byNorm.set(normUrl(url), stats)
+      // Merge http/https/www/trailing-slash variants under the normalized key so
+      // a duplicate GSC row doesn't clobber the canonical metrics (last-write-wins).
+      // Sum clicks+impressions; recompute CTR + impression-weighted avg position.
+      const nk = normUrl(url)
+      const prev = byNorm.get(nk)
+      if (prev) {
+        const impressions = prev.impressions + stats.impressions
+        const clicks = prev.clicks + stats.clicks
+        byNorm.set(nk, {
+          clicks,
+          impressions,
+          ctr: impressions > 0 ? clicks / impressions : 0,
+          position: impressions > 0
+            ? (prev.position * prev.impressions + stats.position * stats.impressions) / impressions
+            : stats.position,
+        })
+      } else {
+        byNorm.set(nk, stats)
+      }
     }
     const gscFor = (url: string) => byExact.get(url) ?? byNorm.get(normUrl(url)) ?? null
 

@@ -99,6 +99,13 @@ begin
 end;
 $$;
 
+-- Claim path is service-role-only. The worker calls this with the service key
+-- (which bypasses grants); revoke EXECUTE from normal clients so a user-scoped
+-- session can't invoke the claim/UPDATE path at all. Defense-in-depth: today
+-- RLS already blocks the internal UPDATE for non-service roles, but this
+-- removes the surface entirely (matches the "writes via service role only" design).
+revoke all on function public.claim_generation_job(int) from public, anon, authenticated;
+
 -- RLS: an owner and their accepted VAs can READ jobs. Writes happen only via
 -- the worker (service-role admin client) and the server-side enqueue route —
 -- no client INSERT/UPDATE/DELETE policies, same guardrail as migration 116.
