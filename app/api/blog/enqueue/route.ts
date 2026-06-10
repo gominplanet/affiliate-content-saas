@@ -61,7 +61,8 @@ export async function POST(request: Request) {
   // pile up unbounded generations. Capped by the actual caller (user.id) so one
   // VA can't flood the owner's queue. Tolerant of a missing table (enqueue 503s).
   try {
-    const { count } = await admin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generation_jobs not in generated types until migration 119 + regen
+    const { count } = await (admin as any)
       .from('generation_jobs')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)

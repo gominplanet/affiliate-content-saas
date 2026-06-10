@@ -160,7 +160,8 @@ export async function GET() {
     const admin = createAdminClient()
     const bestByPost = new Map<string, number>()
     try {
-      const { data: seoRows } = await admin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- post_seo.best_position not in generated types until migration 120 + regen
+      const { data: seoRows } = await (admin as any)
         .from('post_seo')
         .select('post_id,best_position')
         .eq('user_id', ownerId)
@@ -177,7 +178,8 @@ export async function GET() {
     // and runs migration 121 — until then every post just shows no $ (no change).
     const earningsByAsin = new Map<string, number>()
     try {
-      const { data: earnRows } = await admin
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- amazon_earnings not in generated types until migration 121 + regen
+      const { data: earnRows } = await (admin as any)
         .from('amazon_earnings')
         .select('asin,earnings_usd')
         .eq('user_id', ownerId)
@@ -333,7 +335,8 @@ export async function GET() {
     // Persist improved peaks (fire-and-forget — a failure just delays decay
     // detection, never blocks the response). onConflict = post_id (the PK).
     if (peakUpserts.length > 0) {
-      try { await admin.from('post_seo').upsert(peakUpserts, { onConflict: 'post_id' }) } catch { /* non-fatal */ }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- post_seo.best_position not in generated types until migration 120 + regen
+      try { await (admin as any).from('post_seo').upsert(peakUpserts, { onConflict: 'post_id' }) } catch { /* non-fatal */ }
     }
 
     const ranked = rankOpportunities(results)

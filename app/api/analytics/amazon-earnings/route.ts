@@ -39,7 +39,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No earnings rows with an ASIN were found in that file.', warnings: parsed.warnings }, { status: 422 })
   }
 
-  const admin = createAdminClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- amazon_earnings isn't in the generated types until migration 121 + regen
+  const admin = createAdminClient() as any
   const importedAt = new Date().toISOString()
   try {
     // Latest upload = current truth: replace this owner's rows, then insert.
@@ -84,7 +85,8 @@ export async function GET() {
   const { ownerId } = auth
 
   try {
-    const admin = createAdminClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- amazon_earnings isn't in the generated types until migration 121 + regen
+    const admin = createAdminClient() as any
     const { data } = await admin
       .from('amazon_earnings')
       .select('asin,product_title,earnings_usd,items_shipped,revenue_usd,imported_at')

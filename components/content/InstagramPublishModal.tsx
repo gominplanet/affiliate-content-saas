@@ -13,10 +13,14 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
+import { CheckCircle, Loader2, RefreshCw, Wand2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { useModalA11y } from '@/components/ui/useModalA11y'
 import { effectiveTier } from '@/lib/view-as'
+import { dispatchCapReached } from '@/components/CapReachedBanner'
+import { pickWeightedStyleIndex, renderThumbnailOverlay } from '@/lib/thumbnail-overlay'
 
 // ── Instagram Publish modal ───────────────────────────────────────────────────
 // Opens when the user clicks the Instagram pill on a video card. Walks them
