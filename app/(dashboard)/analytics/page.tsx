@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import Link from 'next/link'
 import { TrendingUp, MousePointerClick, Eye, ExternalLink, Loader2, AlertCircle, Link2, Youtube, Globe } from 'lucide-react'
-import AmazonEarningsPanel from '@/components/analytics/AmazonEarningsPanel'
 
 interface AnalyticsPost {
   postId: string
@@ -165,14 +164,7 @@ export default function AnalyticsPage() {
         }
       />
 
-      {/* Amazon Associates commissions (epic #249) — upload the earnings CSV to
-          see real $ per product. Independent of Geniuslink (clicks vs. dollars). */}
-      <div className="mb-6">
-        <AmazonEarningsPanel />
-      </div>
-
-      {/* Top stats — three tiles. Clicks come from Geniuslink; dollars from the
-          Amazon earnings upload above. */}
+      {/* Top stats — three tiles (Geniuslink click data). */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard
           icon={MousePointerClick}

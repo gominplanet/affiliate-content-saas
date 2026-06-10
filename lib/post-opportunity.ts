@@ -121,9 +121,9 @@ export function classifyPostOpportunity(m: PostMetrics): PostOpportunity {
     return {
       kind: m.impressions > 0 ? 'low_volume' : 'no_data',
       priority: 5,
-      action: m.impressions > 0 ? 'Low search demand — consider consolidating' : 'Too new to judge',
+      action: m.impressions > 0 ? 'Low search demand — fine to leave as-is' : 'Too new to judge',
       reason: m.impressions > 0
-        ? `Only ${m.impressions} impressions in the window — little search demand for this topic.`
+        ? `Only ${m.impressions} impressions in 28 days — few people search this topic. Nothing to fix here; just don't prioritize more posts like it.`
         : 'Not enough Search Console data yet. Check back after it accrues impressions.',
       cta: 'none',
     }

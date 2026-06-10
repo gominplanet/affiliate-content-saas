@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { RefreshCw, ArrowUpRight, ExternalLink } from 'lucide-react'
+import { RefreshCw, ArrowUpRight, ExternalLink, ChevronDown } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 
 type Kind =
@@ -38,14 +38,10 @@ interface Row {
     affiliateClicks: number | null
   }
   opportunity: Opportunity
-  /** Amazon commissions attributed to this post's ASIN(s) (revenue loop #249). */
-  earningsUsd?: number | null
 }
 interface ApiResponse {
   connected: boolean
   geniuslink?: boolean
-  /** True once the user has uploaded an Amazon earnings CSV (so $ is shown). */
-  earningsTracked?: boolean
   reason?: string
   message?: string
   window?: { startDate: string; endDate: string }
@@ -86,6 +82,7 @@ export default function OpportunitiesPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [indexing, setIndexing] = useState<Set<string>>(new Set())
+  const [collapsed, setCollapsed] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -129,15 +126,29 @@ export default function OpportunitiesPanel() {
   return (
     <div className="card p-5">
       <div className="flex items-start justify-between gap-3 mb-1">
-        <div>
-          <h2 className="text-base font-semibold text-[var(--text)]">Revenue opportunities</h2>
-          <p className="text-xs text-[var(--text-2)] mt-0.5">
-            Your posts, ranked by the single highest-leverage fix — from Search Console rankings + affiliate click-out.
-            {data?.window && (
-              <span className="opacity-70"> Last 28 days.</span>
-            )}
-          </p>
-        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed(c => !c)}
+          className="flex items-start gap-2 text-left min-w-0"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Expand revenue opportunities' : 'Collapse revenue opportunities'}
+        >
+          <ChevronDown className={`h-4 w-4 mt-0.5 text-[var(--text-2)] shrink-0 transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-[var(--text)] inline-flex items-center gap-2">
+              Revenue opportunities
+              {data && data.connected && data.posts.length > 0 && (
+                <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-[var(--surface-2)] text-[var(--text-2)]">{data.posts.length}</span>
+              )}
+            </h2>
+            <p className="text-xs text-[var(--text-2)] mt-0.5">
+              Your posts, ranked by the single highest-leverage fix — from Search Console rankings + affiliate click-out.
+              {data?.window && (
+                <span className="opacity-70"> Last 28 days.</span>
+              )}
+            </p>
+          </div>
+        </button>
         <Button
           variant="ghost"
           size="sm"
@@ -149,8 +160,8 @@ export default function OpportunitiesPanel() {
         </Button>
       </div>
 
-      {/* States */}
-      {loading && !data ? (
+      {/* States — collapsible (accordion); the whole list hides when collapsed */}
+      {!collapsed && (loading && !data ? (
         <div className="py-8 text-center text-sm text-[var(--text-2)]">Analyzing your posts…</div>
       ) : error ? (
         <div className="py-4 text-sm text-[#ff3b30]">{error}</div>
@@ -200,14 +211,6 @@ export default function OpportunitiesPanel() {
                         {row.title || 'Untitled post'}
                         <ExternalLink className="h-3 w-3 opacity-50 shrink-0" />
                       </a>
-                      {typeof row.earningsUsd === 'number' && row.earningsUsd > 0 && (
-                        <span
-                          className="text-[11px] font-bold px-2 py-0.5 rounded-full text-[#1a7a3c] bg-[#34c759]/12 whitespace-nowrap"
-                          title="Amazon commissions attributed to this post, from your uploaded earnings"
-                        >
-                          ${row.earningsUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} earned
-                        </span>
-                      )}
                     </div>
                     <p className="text-[13px] font-medium text-[var(--text)] mt-1">{row.opportunity.action}</p>
                     <p className="text-xs text-[var(--text-2)] mt-0.5">{row.opportunity.reason}</p>
@@ -240,7 +243,7 @@ export default function OpportunitiesPanel() {
             })}
           </div>
         </>
-      ) : null}
+      ) : null)}
     </div>
   )
 }
