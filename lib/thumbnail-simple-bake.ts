@@ -100,6 +100,10 @@ export interface BakeOptions {
    *  each thumbnail in a batch gets a DIFFERENT border; omit for a random pick.
    *  See NEON_BORDER_STYLES. */
   borderStyleIndex?: number
+  /** Title emphasis-word colour (hex). The emphasis word renders in this colour;
+   *  the rest of the headline stays white. Default '#FFE034' (yellow). Set from a
+   *  creator's saved brand style. */
+  accentColor?: string
   anchor?: 'upper-left' | 'upper-right'
   personCutoutPng?: Buffer
   /** For the Satori-based text fallback (renderDesignerOverlay) when
@@ -154,7 +158,7 @@ function fitFontToWidth(font: Font, text: string, ceilSize: number, maxWidth: nu
  * Returns the SVG <path> snippets ready to splice into the parent SVG,
  * plus the total advance width so the caller can centre/right-align.
  */
-function lineToPaths(font: Font, line: string, emphasis: string, fontSize: number, startX: number, baselineY: number, anchor: 'start' | 'end'): { paths: string; totalWidth: number } {
+function lineToPaths(font: Font, line: string, emphasis: string, fontSize: number, startX: number, baselineY: number, anchor: 'start' | 'end', accentColor: string): { paths: string; totalWidth: number } {
   const upper = line.toUpperCase()
   const upperEmphasis = emphasis.toUpperCase().trim()
 
@@ -188,7 +192,7 @@ function lineToPaths(font: Font, line: string, emphasis: string, fontSize: numbe
     // Each glyph chunk is one <path>. The fill colour is the only
     // difference between emphasis and non-emphasis runs; stroke +
     // paint-order are inherited from the <g> wrapper for consistency.
-    const fill = seg.isEmphasis ? '#FFE034' : '#FFFFFF'
+    const fill = seg.isEmphasis ? accentColor : '#FFFFFF'
     pathsOut += `<path d="${d}" fill="${fill}"/>`
     pen += segWidths[i]
   }
@@ -219,6 +223,10 @@ const NEON_BORDER_STYLES: NeonBorderStyle[] = [
   { stops: ['#FF00E5', '#00E5FF', '#FFE600'], angle: 'diagonal',   radiusMul: 0.020, glowMul: 0.027, opacity: 0.80 }, // tri-color rainbow
   { stops: ['#00E5FF', '#0091FF', '#00E5FF'], angle: 'diagonal',   radiusMul: 0.008, glowMul: 0.018, opacity: 0.85 }, // electric blue, SHARP corners + tight glow
 ]
+/** Count of neon border styles — exported so the route's random offset and a
+ *  saved brand-style index stay in range without duplicating the magic number. */
+export const NEON_BORDER_STYLE_COUNT = NEON_BORDER_STYLES.length
+
 function neonGradientCoords(angle: NeonBorderStyle['angle']): string {
   if (angle === 'vertical') return 'x1="0%" y1="0%" x2="0%" y2="100%"'
   if (angle === 'horizontal') return 'x1="0%" y1="0%" x2="100%" y2="0%"'
@@ -321,8 +329,10 @@ export async function bakeSimpleHeadline(
     const fontSizeLine2 = fitFontToWidth(font, copy.line2, ceilLine2, colMaxWidth, MIN_FONT_PX)
     const baselineLine1 = Math.round(height * 0.22)
     const baselineLine2 = baselineLine1 + Math.round(fontSizeLine2 * 1.05)
-    const line1 = lineToPaths(font, copy.line1, copy.emphasisWord, fontSizeLine1, startX, baselineLine1, svgAnchor)
-    const line2 = lineToPaths(font, copy.line2, copy.emphasisWord, fontSizeLine2, startX, baselineLine2, svgAnchor)
+    // Emphasis-word colour: the creator's saved brand accent, else default yellow.
+    const accentColor = opts.accentColor || '#FFE034'
+    const line1 = lineToPaths(font, copy.line1, copy.emphasisWord, fontSizeLine1, startX, baselineLine1, svgAnchor, accentColor)
+    const line2 = lineToPaths(font, copy.line2, copy.emphasisWord, fontSizeLine2, startX, baselineLine2, svgAnchor, accentColor)
 
     // Post-fit sanity check: when the MIN_FONT_PX floor clamps a long line,
     // overflow can sneak through silently. Re-measure the actual rendered

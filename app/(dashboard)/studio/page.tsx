@@ -12,6 +12,7 @@ import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosi
 import { isExtensionAvailable, requestVideoFrames } from '@/lib/extension-frame'
 import { effectiveTier } from '@/lib/view-as'
 import type { Tier } from '@/lib/tier'
+import BrandStylePanel from '@/components/studio/BrandStylePanel'
 import {
   Youtube, Wand2, CheckCircle, AlertCircle, Loader2, ExternalLink,
   Copy, ChevronDown, ChevronUp, RefreshCw, Link2, Tag, Lock, Eye, Globe,
@@ -277,6 +278,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
    *  When the user picks one, faceModelId gets passed to the generate
    *  request and the server routes through the LoRA-capable Flux endpoint. */
   const [faceModels, setFaceModels] = useState<Array<{ id: string; name: string; trigger_token: string }>>([])
+  // Whether the next generation applies the creator's saved brand thumbnail style.
+  const [applyBrandStyle, setApplyBrandStyle] = useState(false)
   const [selectedFaceModelId, setSelectedFaceModelId] = useState<string | null>(null)
   // Tier-cap-reached state — keyed separately from the red error toast
   // so we can render an amber upgrade banner with a /pricing CTA instead.
@@ -955,6 +958,8 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           style: 'lifestyle',
           customHeadline: headline,
           variantCount,
+          // Apply the creator's saved brand style (locked border/accent/face) when toggled on.
+          applyBrandStyle: applyBrandStyle || undefined,
           // "Your Face" — lock the host's likeness from their uploaded photos.
           faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto' && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           faceAuto: selectedFaceModelId === 'auto' || undefined,
@@ -1021,6 +1026,7 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
           style: 'lifestyle',
           customHeadline: customHeadline.trim() || undefined,
           variantCount,
+          applyBrandStyle: applyBrandStyle || undefined,
           faceModelId: (selectedFaceModelId && selectedFaceModelId !== 'auto' && selectedFaceModelId !== 'no-human') ? selectedFaceModelId : undefined,
           faceAuto: selectedFaceModelId === 'auto' || undefined,
           // 'no-human' → product-only thumbnail, no face composition at all.
@@ -1828,6 +1834,13 @@ function VideoStudioCard({ video, userTier, playlists, onApplied }: {
                     <a href="/face-training" className="text-[#7C3AED] hover:underline">Face Training</a> — they&apos;ll lock your likeness into every thumbnail.
                   </p>
                 )}
+
+                <BrandStylePanel
+                  faceModels={faceModels}
+                  applyBrandStyle={applyBrandStyle}
+                  onToggle={setApplyBrandStyle}
+                  disabled={generatingThumbnail}
+                />
 
                 {thumbnailError && (
                   <p className="text-xs text-[#ff3b30] mb-3">{thumbnailError}</p>

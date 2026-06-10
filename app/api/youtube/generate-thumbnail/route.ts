@@ -21,7 +21,7 @@ import { composeWithNanoBanana, composeWithNanoBananaPro, generateWithIdeogram, 
 // that produced soft/blurry edges). Kept around as a fallback option for
 // admin/preview surfaces that may still reference it.
 import { renderDesignerOverlay } from '@/lib/thumbnail-text-templates'
-import { bakeSimpleHeadline } from '@/lib/thumbnail-simple-bake'
+import { bakeSimpleHeadline, NEON_BORDER_STYLE_COUNT } from '@/lib/thumbnail-simple-bake'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
 import { getStarredPhotoboothRefs } from '@/lib/photobooth-refs'
 import { getThumbnailFaceRef } from '@/lib/identity-anchor'
@@ -654,6 +654,7 @@ export async function POST(request: Request) {
       // one thumbnail (comparison videos), or multiple angles of one product.
       customProductImageUrls,
       productCompositionNote,
+      applyBrandStyle = false,
     } = await request.json() as {
       quickMode?: boolean
       videoTitle: string
@@ -732,10 +733,38 @@ export async function POST(request: Request) {
        *  right" or "Product A above, Product B below". Folded into the
        *  productRefClause so Nano Banana Pro respects it. */
       productCompositionNote?: string
+      /** When true, apply the creator's saved brand thumbnail style (locked neon
+       *  border + title accent + face model) instead of the varied defaults. */
+      applyBrandStyle?: boolean
     }
 
     const variantCount = Math.min(10, Math.max(1, Number(rawVariantCount) || 1))
     const lockedHeadline = (customHeadline || '').trim().toUpperCase()
+
+    // ── Saved brand thumbnail style (migration 122) ───────────────────────────
+    // When the creator toggles "Use my brand style", load their locked look: a
+    // fixed neon border, a title accent colour, and a pinned face model. null =
+    // Explore mode (varied borders, default yellow accent, face as passed).
+    let brandStyle: { borderStyleIndex: number | null; accentColor: string | null; faceModelId: string | null } | null = null
+    if (applyBrandStyle) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: bp } = await supabase
+        .from('brand_profiles')
+        .select('thumbnail_brand_style')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = (bp as any)?.thumbnail_brand_style
+      if (raw && typeof raw === 'object') {
+        brandStyle = {
+          borderStyleIndex: typeof raw.borderStyleIndex === 'number' ? raw.borderStyleIndex : null,
+          accentColor: typeof raw.accentColor === 'string' ? raw.accentColor : null,
+          faceModelId: typeof raw.faceModelId === 'string' ? raw.faceModelId : null,
+        }
+      }
+    }
+    // Brand style can pin a face model; an explicit request faceModelId still wins.
+    const effectiveFaceModelId = faceModelId || (noHuman ? undefined : brandStyle?.faceModelId) || undefined
 
     // ── Load the user's face model if they picked one ─────────────────────────
     // Only honored when status='ready' and lora_url is populated. If the
@@ -746,12 +775,12 @@ export async function POST(request: Request) {
     // Auto-match pool: all the user's ready face models (used when faceAuto is
     // on and no specific model was picked — we vision-match the frame below).
     let autoFaceModels: Array<{ id: string; name: string; source_images: string[] }> = []
-    if (faceModelId) {
+    if (effectiveFaceModelId) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: fm } = await supabase
         .from('face_models')
         .select('name,source_images')
-        .eq('id', faceModelId)
+        .eq('id', effectiveFaceModelId)
         .eq('user_id', user.id)
         .single()
       // face_models.source_images is JSONB Json[]; we always write string[].
@@ -760,7 +789,7 @@ export async function POST(request: Request) {
         ? (fm.source_images as unknown[]).filter((x): x is string => typeof x === 'string')
         : []
       if (fm && srcImages.length > 0) {
-        faceModel = { id: faceModelId, name: fm.name, source_images: srcImages }
+        faceModel = { id: effectiveFaceModelId, name: fm.name, source_images: srcImages }
       }
     } else if (faceAuto) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1297,7 +1326,7 @@ Ultra-sharp, professional, photorealistic.`
               // regenerate rotates the starting color/shape. Within one batch the
               // per-variant origIdx still spreads styles apart (palette has 10,
               // variant cap is 10 → no collisions). See NEON_BORDER_STYLES.
-              const borderOffset = Math.floor(Math.random() * 10)
+              const borderOffset = Math.floor(Math.random() * NEON_BORDER_STYLE_COUNT)
               const designerResults = await Promise.all(rank.urls.map(async (cleanUrl, i) => {
                 try {
                   // Find which original index this ranked URL came from so
@@ -1389,15 +1418,18 @@ Ultra-sharp, professional, photorealistic.`
                     console.warn('[simple-bake] rembg cutout failed (non-fatal):', e instanceof Error ? e.message : String(e))
                   }
 
+                  // Brand style locks ONE border + accent for every variant;
+                  // Explore mode varies them (origIdx spreads the palette across
+                  // the batch, borderOffset rotates the start each regenerate).
+                  const effectiveBorderIndex = brandStyle && brandStyle.borderStyleIndex != null
+                    ? brandStyle.borderStyleIndex
+                    : origIdx + borderOffset
                   const result = await bakeSimpleHeadline(baseBuf, variantCopy, {
                     anchor,
                     personCutoutPng,
-                    // Per-variant index (+ per-generation offset) → each thumbnail
-                    // in this batch gets a DIFFERENT neon border (color + shape),
-                    // and the whole batch rotates start color on each regenerate.
-                    // origIdx keeps the border tied to the variant's original slot
-                    // so it's stable across the rank reshuffle. See NEON_BORDER_STYLES.
-                    borderStyleIndex: origIdx + borderOffset,
+                    borderStyleIndex: effectiveBorderIndex,
+                    // Title emphasis colour from the saved brand style (else default yellow).
+                    accentColor: brandStyle?.accentColor || undefined,
                     userId: String(TELEMETRY.userId ?? ''),
                     tier: TELEMETRY.tier,
                   })
