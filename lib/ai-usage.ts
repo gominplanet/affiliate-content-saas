@@ -26,7 +26,12 @@ export const PRICING: Record<string, Pricing> = {
   // ── Anthropic ──────────────────────────────────────────────────────────
   'claude-sonnet-4-6':         { in: 3,  out: 15 },
   'claude-haiku-4-5-20251001': { in: 1,  out: 5  },
-  'claude-opus-4-7':           { in: 15, out: 75 },
+  // Opus 4.x list price is $5/$25 per 1M. The blog + campaign WRITER runs on
+  // 4.8 (upgraded from Sonnet 4.6 on 2026-06-09). 4.7 was previously mapped at
+  // $15/$75 — stale Opus-3-era pricing — so any historical 4.7 rows were
+  // over-priced 3×; corrected here so recomputation reflects the true rate.
+  'claude-opus-4-8':           { in: 5,  out: 25 },
+  'claude-opus-4-7':           { in: 5,  out: 25 },
 
   // ── OpenAI — image generation (per-image flat rates) ──────────────────
   // dall-e-3 standard 1024x1024 = $0.04, 1024x1792 / 1792x1024 = $0.08

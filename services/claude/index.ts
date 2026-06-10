@@ -2127,13 +2127,20 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     // undici "terminated" / "fetch failed" / socket error. One clean retry
     // recovers the common case rather than failing the whole generation.
     const runGeneration = () => this.client.messages.stream({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-opus-4-8',
       max_tokens: 32000,
-      // Trimmed from 10k → 6k: extended thinking added ~40s of latency up
-      // front, and on a deep post + body images the whole pipeline was
-      // tipping past the 300s function limit (504). 6k still gives solid
-      // planning headroom without the timeout risk.
-      thinking: { type: 'enabled', budget_tokens: 6000 },
+      // Writer upgraded Sonnet 4.6 → Opus 4.8 (2026-06-09) for prose quality.
+      // Opus 4.8 removed the fixed `budget_tokens` thinking budget (it 400s)
+      // and only accepts ADAPTIVE thinking, so the model self-decides depth.
+      // effort:'medium' is the latency governor: the whole publish pipeline
+      // (generation + body images + fact/citation/self-critique passes) shares
+      // ONE 300s function, Opus is slower per token than Sonnet, and we were
+      // already brushing the limit (the old 10k→6k budget trim was for exactly
+      // this 504 risk). Medium keeps adaptive thinking from running long while
+      // preserving the quality lift — which comes from Opus being the better
+      // writer, not from deep thinking about a blog post.
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
       system: [
         {
           type: 'text',
@@ -2161,7 +2168,7 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     }
     {
       const u = usageFromAnthropic(message)
-      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_generate', model: 'claude-sonnet-4-6', input: u.input, output: u.output })
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_generate', model: 'claude-opus-4-8', input: u.input, output: u.output })
     }
 
     // Filter out thinking blocks — only keep text output
@@ -2266,9 +2273,13 @@ STRUCTURE REQUIREMENTS (in addition to your normal brand-voice rules):
 Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONTENT_END%% format you always use.`
 
     const stream = this.client.messages.stream({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-opus-4-8',
       max_tokens: 32000,
-      thinking: { type: 'enabled', budget_tokens: 10000 },
+      // Opus 4.8 writer + adaptive thinking, effort-capped to stay inside the
+      // shared 300s pipeline budget (see generateBlogPost for the full
+      // rationale — campaign generation runs the same passes downstream).
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'medium' },
       system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: userMessage }],
     })
@@ -2276,7 +2287,7 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
     const message = await stream.finalMessage()
     {
       const u = usageFromAnthropic(message)
-      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'campaign_generate', model: 'claude-sonnet-4-6', input: u.input, output: u.output })
+      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'campaign_generate', model: 'claude-opus-4-8', input: u.input, output: u.output })
     }
     const raw = message.content
       .filter(block => block.type === 'text')
