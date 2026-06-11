@@ -36,7 +36,7 @@ export function HelpDeskButton() {
   return (
     <button
       onClick={() => setOpen(true)}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-[#0071E3] to-[#0051BA] hover:from-[#0051BA] hover:to-[#003D8A] transition-all shadow-md hover:shadow-lg"
       title="Ask Me For Help"
     >
       <MessageCircle size={18} />
