@@ -41,6 +41,16 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
+import { HelpDeskButton } from '@/components/HelpDeskSidebar'
+
+// Wrapper to handle context safely
+function HelpDeskButtonWrapper() {
+  try {
+    return <HelpDeskButton />
+  } catch {
+    return null
+  }
+}
 
 interface NavItemDef {
   href: string
@@ -632,32 +642,12 @@ export default function DashboardShellV2({
               {isDark ? <Sun size={14} /> : <Moon size={14} />}
             </button>
 
-            {/* Ask anything — opens the MVP Help Desk. Cmd+K hotkey wiring
-                lands in a follow-up; for now the button is a Link. */}
-            <Link
-              href="/assistant"
-              className="px-3 py-2 rounded-lg border text-[12px] font-medium inline-flex items-center gap-2 transition-colors"
-              style={{
-                backgroundColor: 'var(--surface)',
-                borderColor: 'var(--border)',
-                color: 'var(--text-soft)',
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface-hover)')}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--surface)')}
-            >
-              <Sparkles size={12} className="text-[#7C3AED]" />
-              Ask anything
-              <kbd
-                className="px-1.5 py-0.5 rounded text-[10px] border font-mono"
-                style={{
-                  backgroundColor: 'var(--kbd-bg)',
-                  borderColor: 'var(--border-bright)',
-                  color: 'var(--text-faint)',
-                }}
-              >
-                ⌘K
-              </kbd>
-            </Link>
+            {/* Help Desk button — replaces the old "Ask anything" Link. Rendered here,
+                opens the panel which persists via context. */}
+            {/* Dynamic import to avoid server-side errors when HelpDeskButton needs context */}
+            <div suppressHydrationWarning>
+              <HelpDeskButtonWrapper />
+            </div>
 
             {/* Notification bell — last 7 days of scheduled-post results
                 (completed / failed). Driven by /api/notifications which

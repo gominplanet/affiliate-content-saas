@@ -3,10 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import DashboardShellV2 from '@/components/layout/DashboardShellV2'
 import { Toaster } from '@/components/ui/toaster'
 import MigrationDriftBanner from '@/components/admin/MigrationDriftBanner'
-import { HelpDeskSidebar } from '@/components/HelpDeskSidebar'
-
-// Export button for use in nav headers
-export { HelpDeskButton } from '@/components/HelpDeskSidebar'
+import { HelpDeskProvider, HelpDeskPanel } from '@/components/HelpDeskSidebar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerClient()
@@ -75,11 +72,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const showDeals = tier === 'studio' || tier === 'pro' || tier === 'admin'
 
   return (
-    <>
-      {/* DashboardShellV2 is the new chrome (per task #143). The legacy
-          Sidebar.tsx + the old wrapper stayed in components/layout/
-          intentionally for rollback; once the new look is locked in for
-          a few days a follow-up commit deletes them. */}
+    <HelpDeskProvider>
       <DashboardShellV2
         email={user.email}
         wpSiteUrl={wpSiteUrl}
@@ -98,8 +91,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* Single Toaster mount for every dashboard route — see
           components/ui/toaster.tsx for usage. */}
       <Toaster />
-      {/* Help Desk sidebar — persists across all dashboard pages */}
-      <HelpDeskSidebar />
-    </>
+      {/* Help Desk panel — persists across all dashboard pages */}
+      <HelpDeskPanel />
+    </HelpDeskProvider>
   )
 }
