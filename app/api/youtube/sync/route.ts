@@ -3,6 +3,45 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeService } from '@/services/youtube'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 
+const SYNC_CACHE_TTL_MS = 5 * 60 * 1000 // 5 min to prevent spam while allowing fresh data
+
+interface SyncCacheRow {
+  page_token: string | null
+  synced_count: number
+  next_page_token: string | null
+  cached_at: string
+}
+
+async function readSyncCache(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+): Promise<SyncCacheRow | null> {
+  const { data } = await (supabase as any)
+    .from('youtube_sync_cache')
+    .select('page_token,synced_count,next_page_token,cached_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  return data ?? null
+}
+
+async function writeSyncCache(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+  pageToken: string | null,
+  syncedCount: number,
+  nextPageToken: string | null,
+): Promise<void> {
+  await (supabase as any)
+    .from('youtube_sync_cache')
+    .upsert({
+      user_id: userId,
+      page_token: pageToken,
+      synced_count: syncedCount,
+      next_page_token: nextPageToken,
+      cached_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,page_token' })
+}
+
 export async function POST(request: Request) {
   const supabase = await createServerClient()
   // 2026-06-09 Phase 2 (VA): syncing pulls the OWNER's channel videos and
@@ -43,6 +82,23 @@ export async function POST(request: Request) {
   } catch { /* no body */ }
 
   try {
+    // Check cache for this page (only when no pageToken — first page)
+    if (!pageToken) {
+      const cached = await readSyncCache(supabase, ownerId)
+      if (cached) {
+        const cacheAge = Date.now() - new Date(cached.cached_at).getTime()
+        if (cacheAge < SYNC_CACHE_TTL_MS) {
+          // Cache fresh — return it (0 units)
+          return NextResponse.json({
+            synced: cached.synced_count,
+            nextPageToken: cached.next_page_token ?? null,
+            channelId,
+            fromCache: true,
+          })
+        }
+      }
+    }
+
     const youtube = createYouTubeService(apiKey)
     const { videos, nextPageToken } = await youtube.getChannelVideos(channelId, 50, pageToken)
 
@@ -80,6 +136,13 @@ export async function POST(request: Request) {
       .upsert(rows, { onConflict: 'user_id,youtube_video_id' })
 
     if (error) throw error
+
+    // Cache this page's results to prevent repeated API calls (5 min TTL)
+    if (!pageToken) {
+      try {
+        await writeSyncCache(supabase, ownerId, null, videos.length, nextPageToken ?? null)
+      } catch { /* non-fatal */ }
+    }
 
     return NextResponse.json({ synced: videos.length, newCount: newVideos.length, nextPageToken: nextPageToken ?? null, channelId })
   } catch (err: unknown) {
