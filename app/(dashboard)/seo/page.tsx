@@ -675,6 +675,10 @@ export default function SeoPage() {
             )}
           </div>
 
+          {/* Missed demand (Phase 3 GSC loop) — queries the site already gets
+              impressions for with no post squarely targeting them. */}
+          {data.connected && <QueryGapsCard />}
+
           {/* Sort controls */}
           <div className="flex items-center gap-2 text-xs">
             <span className="text-[#86868b]">Sort by:</span>
@@ -1180,6 +1184,69 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
           {!connected && (
             <p className="text-[12px] text-[#86868b]">Connect Google Search Console to see live index status and get one-click links here.</p>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Phase 3 GSC loop — "Missed demand". Queries the site already earns
+ *  impressions for with NO post squarely targeting them (proven demand,
+ *  zero coverage). Each row deep-links to Buying Guides with the query
+ *  prefilled so acting on a gap is one click. Renders nothing while GSC
+ *  has no qualifying data — silence beats an empty teaser. */
+function QueryGapsCard() {
+  const [gaps, setGaps] = useState<Array<{ query: string; impressions: number; clicks: number; position: number; bestPage: string | null }> | null>(null)
+  const [open, setOpen] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/seo/query-gaps')
+      .then(r => (r.ok ? r.json() : { gaps: [] }))
+      .then(d => { if (alive) setGaps(Array.isArray(d?.gaps) ? d.gaps : []) })
+      .catch(() => { if (alive) setGaps([]) })
+    return () => { alive = false }
+  }, [])
+
+  // Loaded and empty → hide entirely (new sites / thin GSC data).
+  if (gaps !== null && gaps.length === 0) return null
+
+  return (
+    <div className="card overflow-hidden">
+      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between gap-3 p-4 text-left">
+        <div className="flex items-start gap-2.5">
+          <Zap size={16} className="text-[#ff9500] mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">Search demand you&rsquo;re missing</p>
+            <p className="text-xs text-[#86868b]">Real Google queries your site already shows for, with no post that targets them. Proven demand — strong candidates for your next guides.</p>
+          </div>
+        </div>
+        {open ? <ChevronDown size={16} className="shrink-0 text-[#86868b]" /> : <ChevronRight size={16} className="shrink-0 text-[#86868b]" />}
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 dark:border-white/10 divide-y divide-gray-100 dark:divide-white/10">
+          {gaps === null ? (
+            <div className="p-4 text-xs text-[#86868b] flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin" /> Mining Search Console for missed demand…
+            </div>
+          ) : gaps.map(g => (
+            <div key={g.query} className="p-3 px-4 flex items-center gap-3 flex-wrap">
+              <div className="flex-1 min-w-[220px]">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">&ldquo;{g.query}&rdquo;</p>
+                <p className="text-[11px] text-[#86868b]">
+                  {g.impressions.toLocaleString()} impressions (28d)
+                  {' · '}{g.clicks === 0 ? 'no clicks yet' : `${g.clicks} click${g.clicks === 1 ? '' : 's'}`}
+                  {' · '}best position {g.position}
+                </p>
+              </div>
+              <Link
+                href={`/buying-guides?topic=${encodeURIComponent(g.query)}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-[#7C3AED] hover:bg-[#6D28D9] transition-colors"
+              >
+                Write a guide for this →
+              </Link>
+            </div>
+          ))}
         </div>
       )}
     </div>

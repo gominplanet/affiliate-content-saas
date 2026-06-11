@@ -76,6 +76,17 @@ export default function BuyingGuidesPage() {
   const [previewPicks, setPreviewPicks] = useState<PreviewPick[] | null>(null)
   const [previewTopic, setPreviewTopic] = useState<string>('')
 
+  // Prefill the topic from ?topic= (deep link from the /seo "Search demand
+  // you're missing" card — Phase 3 GSC loop). window.location instead of
+  // useSearchParams so we don't need a Suspense boundary on this page. Fills
+  // BOTH topic inputs so the prefill survives a catalogue↔manual mode switch.
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('topic')
+      if (t && t.trim()) { setTopic(t.trim()); setManualTopic(t.trim()) }
+    } catch { /* SSR / no window */ }
+  }, [])
+
   // Load mode pref once on mount.
   useEffect(() => {
     try {

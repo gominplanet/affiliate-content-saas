@@ -67,6 +67,15 @@ export interface VideoInput {
   targetKeyword?: string | null
   /** Secondary validated phrases to weave in naturally where they fit. */
   supportingKeywords?: string[]
+  /**
+   * Phase 3 GSC feedback loop — REBUILDS ONLY. The real Google queries this
+   * post's live URL already ranks for (Search Console, last 28 days), top-8
+   * by impressions. The writer works these (or close variants) into subheads,
+   * FAQ questions, and body copy — striking-distance queries (position 4-20)
+   * are the highest-priority page-2 → page-1 push. Empty on fresh posts or
+   * when GSC isn't connected / has no data yet.
+   */
+  gscQueries?: Array<{ query: string; position: number; impressions: number }>
 }
 
 export interface BlogGenerationOutput {
@@ -2196,7 +2205,9 @@ The rest of the brand voice, tone, length, learn-profile rules, and formatting f
 
 VIDEO ID: ${video.videoId}
 TITLE: ${video.title}
-${video.targetKeyword ? `TARGET KEYWORD — researched from the Amazon seller's listing (title + "about this item" bullets) and validated against live Amazon + Google autocomplete demand. USE THIS VERBATIM as your seoKeyword and place it per rule 2c; do NOT invent a different one: "${video.targetKeyword}"${video.supportingKeywords && video.supportingKeywords.length ? `\nSUPPORTING KEYWORDS (secondary phrases buyers also search — weave in naturally ONLY where they genuinely fit, never force): ${video.supportingKeywords.join(', ')}` : ''}\n` : ''}${isProduct ? `AFFILIATE URL: ${affiliateUrl || '[AFFILIATE_LINK]'}` : 'AFFILIATE URL: (none — general video, no product)'}
+${video.targetKeyword ? `TARGET KEYWORD — researched from the Amazon seller's listing (title + "about this item" bullets) and validated against live Amazon + Google autocomplete demand. USE THIS VERBATIM as your seoKeyword and place it per rule 2c; do NOT invent a different one: "${video.targetKeyword}"${video.supportingKeywords && video.supportingKeywords.length ? `\nSUPPORTING KEYWORDS (secondary phrases buyers also search — weave in naturally ONLY where they genuinely fit, never force): ${video.supportingKeywords.join(', ')}` : ''}\n` : ''}${video.gscQueries && video.gscQueries.length ? `REAL GOOGLE QUERIES (Search Console, last 28 days) — Google ALREADY shows this post's live URL for these searches. This is proven demand for the exact page you are rewriting; do not waste it. Work EACH query below (or a close natural variant) into the post — the strongest as an H2/H3 subhead or FAQ question, the rest woven into body sentences. Queries at position 4-20 are one push from page 1: give those subhead/FAQ priority. Natural phrasing only — rules 1 and 2c still win; never stuff, never fabricate an experience to fit a query.
+${video.gscQueries.map(q => `- "${q.query}" — position ${q.position}, ${q.impressions} impressions (28d)`).join('\n')}
+` : ''}${isProduct ? `AFFILIATE URL: ${affiliateUrl || '[AFFILIATE_LINK]'}` : 'AFFILIATE URL: (none — general video, no product)'}
 VIDEO TAGS: ${video.tags.join(', ')}
 
 VIDEO DESCRIPTION:

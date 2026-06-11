@@ -20,6 +20,7 @@ import { verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { researchKeyword } from '@/lib/keyword-research'
+import { getValidGscToken, querySearchAnalytics } from '@/lib/gsc'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { maybeDistillFeedback } from '@/lib/feedback-distill'
 import { maybeLearnFromEdits } from '@/lib/edit-learning'
@@ -261,7 +262,7 @@ async function handleGenerate(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: existingForLimit } = await supabase
     .from('blog_posts')
-    .select('id, rewrite_count, wordpress_post_id, slug, wordpress_site_id')
+    .select('id, rewrite_count, wordpress_post_id, slug, wordpress_site_id, wordpress_url')
     .eq('user_id', ownerId)
     .eq('video_id', videoId)
     .limit(1)
@@ -845,6 +846,57 @@ async function handleGenerate(request: Request) {
     }
   }
 
+  // ── 5.97. GSC feedback loop (Phase 3 — rebuilds only). When this video
+  //          already has a LIVE post, Google Search Console knows the exact
+  //          queries it ranks for. Feed the top ones back into the rewrite so
+  //          striking-distance queries (pos 4-20) get worked into subheads/
+  //          FAQs — the cheapest page-2 → page-1 push there is. Best-effort +
+  //          time-boxed: any failure (GSC not connected, no data yet, slow
+  //          API) silently degrades to the Phase-2-only behavior.
+  let gscQueries: Array<{ query: string; position: number; impressions: number }> = []
+  const livePostUrl = (existingForLimit as { wordpress_url?: string | null } | null)?.wordpress_url || null
+  if (isRewrite && livePostUrl) {
+    gscQueries = await withTimeout(
+      (async () => {
+        const { data: gscRow } = await supabase
+          .from('integrations').select('gsc_property').eq('user_id', ownerId).maybeSingle()
+        const property = (gscRow as { gsc_property?: string | null } | null)?.gsc_property
+        if (!property) return []
+        const token = await getValidGscToken(supabase, ownerId)
+        if (!token) return []
+        const end = new Date(); end.setDate(end.getDate() - 3)   // GSC ~3-day lag
+        const start = new Date(); start.setDate(start.getDate() - 31)
+        const ymd = (d: Date) => d.toISOString().slice(0, 10)
+        const rows = await querySearchAnalytics(token, property, {
+          startDate: ymd(start), endDate: ymd(end), dimensions: ['query'], page: livePostUrl, rowLimit: 25,
+        })
+        return rows
+          .filter(r => (r.impressions ?? 0) >= 3 && r.keys?.[0])
+          .sort((a, b) => (b.impressions ?? 0) - (a.impressions ?? 0))
+          .slice(0, 8)
+          .map(r => ({
+            query: String(r.keys![0]),
+            position: Math.round((r.position ?? 0) * 10) / 10,
+            impressions: Math.round(r.impressions ?? 0),
+          }))
+      })(),
+      8000,
+      [] as Array<{ query: string; position: number; impressions: number }>,
+    )
+    if (gscQueries.length) {
+      console.log('[blog/generate] gsc rebuild targeting', { post: existingForLimit?.id, queries: gscQueries.map(q => q.query) })
+      // Populate the (previously dormant) post_seo.top_queries cache so the
+      // SEO dashboard can show the same data without another GSC call.
+      try {
+        await supabase.from('post_seo').upsert({
+          post_id: existingForLimit!.id,
+          user_id: ownerId,
+          top_queries: gscQueries,
+        }, { onConflict: 'post_id' })
+      } catch { /* non-fatal */ }
+    }
+  }
+
   // ── 6. Generate blog post with Claude ─────────────────────────────────────
   const claude = createClaudeService()
   let generated
@@ -891,6 +943,7 @@ async function handleGenerate(request: Request) {
         productResearch,
         targetKeyword,
         supportingKeywords,
+        gscQueries,
       },
       { userId: user.id, tier: (wp?.tier as string) ?? null },
       isRewrite ? (rewriteFeedback?.trim() || null) : null,
