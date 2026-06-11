@@ -48,7 +48,13 @@ export async function GET() {
   // belt-and-braces fallback).
   const state = Buffer.from(user.id).toString('base64url')
 
-  const authUrl = new URL('https://twitter.com/i/oauth2/authorize')
+  // Use x.com (not twitter.com) for the authorize endpoint. After X's
+  // twitter.com → x.com migration, the user's login session cookie is set on
+  // x.com. Sending them to twitter.com/i/oauth2/authorize lands on a domain
+  // that can't read that cookie, so X shows "you have to be logged in to X"
+  // and loops forever even after a correct username/password login. Same
+  // OAuth flow, same client_id — just the domain where the session lives.
+  const authUrl = new URL('https://x.com/i/oauth2/authorize')
   authUrl.searchParams.set('response_type', 'code')
   authUrl.searchParams.set('client_id', clientId)
   authUrl.searchParams.set('redirect_uri', redirectUri)
