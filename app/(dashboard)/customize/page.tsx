@@ -108,6 +108,13 @@ interface PostMetaData {
   showDate: boolean
 }
 
+/**
+ * Featured posts (Editor's Picks curation). Five slots of post URLs:
+ * index 0 pins the homepage hero ("Editor's Pick"), 1-4 pin the
+ * "Editor's Picks" 4-card strip. Empty slots fall back to most-recent —
+ * so an uncurated site renders exactly as before, and bulk-publishing
+ * can never bump a pinned post off the homepage.
+ */
 interface BlogCustomizations {
   sidebar: AdBlock[]
   incontent: AdBlock[]
@@ -123,6 +130,8 @@ interface BlogCustomizations {
   postMeta: PostMetaData
   footer: FooterData
   pickOfDay: PickOfDayConfig
+  /** 5 post URLs: [hero, strip1..strip4]. '' = automatic (most recent). */
+  featuredPosts: string[]
   /** Raw <meta> tags injected into the site's <head> — domain verification
    *  for Google Search Console, Pinterest, Facebook, Bing, etc. One full
    *  tag string per entry. Sanitized server-side in the WP plugin. */
@@ -198,6 +207,7 @@ const defaultCustomizations: BlogCustomizations = {
   postMeta: { showDate: true },
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
+  featuredPosts: ['', '', '', '', ''],
   headMetaTags: [],
   analytics: { gtmId: '', ga4Id: '' },
 }
@@ -427,6 +437,8 @@ export default function CustomizePage() {
   const [purging, setPurging] = useState(false)
   const [purged, setPurged] = useState(false)
   const [userId, setUserId] = useState('')
+  // Published posts for the Featured-posts dropdowns (title + live URL).
+  const [pubPosts, setPubPosts] = useState<Array<{ title: string; url: string }>>([])
 
   // (Logo upload / bio / socials editing was removed — those are managed in Brand Profile now.)
 
@@ -434,6 +446,21 @@ export default function CustomizePage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     setUserId(user.id)
+    // Published posts feed the Featured-posts pickers. Best-effort — an
+    // empty list just means the dropdowns only offer "Automatic".
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: postRows } = await (supabase.from('blog_posts') as any)
+        .select('title,wordpress_url')
+        .eq('user_id', user.id)
+        .eq('status', 'published')
+        .not('wordpress_url', 'is', null)
+        .order('published_at', { ascending: false })
+        .limit(200)
+      setPubPosts(((postRows ?? []) as Array<{ title: string | null; wordpress_url: string | null }>)
+        .filter(p => p.title && p.wordpress_url)
+        .map(p => ({ title: p.title as string, url: p.wordpress_url as string })))
+    } catch { /* non-fatal */ }
     // Pull the canonical logo URL from brand_profiles — that's the single source
     // of truth (set in Brand Profile). We only use blog_customizations.about
     // for blog-specific layout choices (the banner background color).
@@ -515,6 +542,9 @@ export default function CustomizePage() {
         newsletterInline,
         // Dates default ON — only an explicit saved false turns them off.
         postMeta: { showDate: bc.postMeta?.showDate !== false },
+        // Always exactly 5 slots (hero + 4 strip), padded/truncated.
+        featuredPosts: Array.from({ length: 5 }, (_, i) =>
+          typeof bc.featuredPosts?.[i] === 'string' ? bc.featuredPosts[i] : ''),
         sidebar:   (bc.sidebar   ?? []).map(migrateBlock),
         incontent: (bc.incontent ?? []).map(migrateBlock),
         homepageAds: padHomepageAds(bc.homepageAds),
@@ -1004,6 +1034,43 @@ export default function CustomizePage() {
                 )}
               </>
             )}
+          </div>
+        </Section>
+
+        {/* Featured posts (Editor's Picks curation) */}
+        <Section
+          title="Featured posts (Editor's Picks)"
+          description="Hand-pick what leads your homepage. Slot 1 is the big Editor's Pick hero; slots 2–5 fill the Editor's Picks row. Anything left on Automatic shows your newest post — pin your best reviews so a fresh batch of posts can never bump them off the top."
+        >
+          <div className="flex flex-col gap-3">
+            {data.featuredPosts.map((url, i) => (
+              <div key={i}>
+                <label className="block text-xs font-medium text-[var(--text-2)] mb-1.5">
+                  {i === 0 ? 'Hero — the big Editor’s Pick' : `Editor’s Picks row · card ${i}`}
+                </label>
+                <select
+                  value={url}
+                  onChange={e => setData(d => {
+                    const fp = [...d.featuredPosts]; fp[i] = e.target.value
+                    return { ...d, featuredPosts: fp }
+                  })}
+                  className="input-field text-sm"
+                >
+                  <option value="">Automatic — latest post</option>
+                  {/* Keep a saved URL selectable even if it fell out of the
+                      200-post dropdown window (or the post was unpublished). */}
+                  {url && !pubPosts.some(p => p.url === url) && (
+                    <option value={url}>(current) {url}</option>
+                  )}
+                  {pubPosts.map(p => (
+                    <option key={p.url} value={p.url}>{p.title}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            <p className="text-[11px] text-[var(--text-3)]">
+              Pinned posts never show twice on the homepage — every other section skips them automatically. Save, then refresh your blog to see the new lineup.
+            </p>
           </div>
         </Section>
 

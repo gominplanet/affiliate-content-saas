@@ -16,10 +16,15 @@ $used_ids = [];
 
 <main class="mvp-main mvp-frontpage">
 
-  <?php /* ─── BIG EDITORIAL HERO — most recent post ─────────────────── */ ?>
+  <?php /* ─── BIG EDITORIAL HERO — curated pin or most recent post ────
+       Featured-posts curation (Customize Blog → Featured posts): slot 0
+       pins the hero, slots 1-4 pin the Editor's Picks strip below. Any
+       empty/unresolvable slot falls back to recency, so an uncurated
+       site renders exactly as before. */ ?>
   <?php
+  $featured_ids = function_exists('mvp_affiliate_featured_post_ids') ? mvp_affiliate_featured_post_ids() : [0, 0, 0, 0, 0];
   $hero_ids = array_diff($all_post_ids, $used_ids);
-  $hero_id  = !empty($hero_ids) ? reset($hero_ids) : null;
+  $hero_id  = $featured_ids[0] ?: (!empty($hero_ids) ? reset($hero_ids) : null);
   if ($hero_id):
       $used_ids[] = $hero_id;
       $hero_post = get_post($hero_id);
@@ -61,9 +66,14 @@ $used_ids = [];
   </section>
   <?php wp_reset_postdata(); endif; ?>
 
-  <?php /* ─── EDITOR'S PICKS STRIP — next 4 posts ───────────────────── */ ?>
+  <?php /* ─── EDITOR'S PICKS STRIP — curated pins first, recency fills ── */ ?>
   <?php
-  $picks_ids = array_slice(array_values(array_diff($all_post_ids, $used_ids)), 0, 4);
+  $pinned_picks = [];
+  foreach (array_slice($featured_ids, 1) as $fid) {
+      if ($fid && !in_array($fid, $used_ids, true)) $pinned_picks[] = $fid;
+  }
+  $recency_pool = array_values(array_diff($all_post_ids, $used_ids, $pinned_picks));
+  $picks_ids = array_slice(array_merge($pinned_picks, $recency_pool), 0, 4);
   if (!empty($picks_ids)):
       $used_ids = array_merge($used_ids, $picks_ids);
   ?>

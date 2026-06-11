@@ -64,6 +64,71 @@ if (!function_exists('mvp_affiliate_pick_of_day_config')) {
 }
 
 /**
+ * Resolve a post URL (or raw numeric ID) to a PUBLISHED post ID, or 0.
+ * Shared by Pick of the Day (pinned mode) and the Featured-posts curation
+ * on the homepage. url_to_postid first, slug fallback second — the slug
+ * path covers pasted URLs whose domain doesn't match (e.g. www vs non-www).
+ */
+if (!function_exists('mvp_affiliate_url_to_post_id')) {
+    function mvp_affiliate_url_to_post_id(string $raw): int {
+        $raw = trim($raw);
+        if ($raw === '') return 0;
+
+        if (ctype_digit($raw)) {
+            $id = intval($raw); // legacy: raw numeric post ID
+        } else {
+            $id = url_to_postid($raw);
+            // url_to_postid returns 0 if it can't match (e.g. wrong domain).
+            // Try one more time by extracting the slug from the path.
+            if ($id === 0) {
+                $path = parse_url($raw, PHP_URL_PATH);
+                if ($path) {
+                    $slug = trim($path, '/');
+                    $slug = preg_replace('#^.*/#', '', $slug); // last path segment
+                    if ($slug) {
+                        $by_slug = get_posts([
+                            'name'        => $slug,
+                            'post_type'   => 'post',
+                            'post_status' => 'publish',
+                            'numberposts' => 1,
+                        ]);
+                        if (!empty($by_slug)) $id = $by_slug[0]->ID;
+                    }
+                }
+            }
+        }
+
+        if ($id <= 0) return 0;
+        $post = get_post($id);
+        return ($post && $post->post_status === 'publish' && $post->post_type === 'post') ? $id : 0;
+    }
+}
+
+/**
+ * Featured-posts curation (Customize Blog → Featured posts). Returns exactly
+ * 5 post IDs (0 = slot not curated / unresolvable): index 0 pins the homepage
+ * hero, 1-4 pin the Editor's Picks strip. Duplicates collapse to the first
+ * slot that used them so a post can never render twice.
+ */
+if (!function_exists('mvp_affiliate_featured_post_ids')) {
+    function mvp_affiliate_featured_post_ids(): array {
+        $raw = mvp_affiliate_data()['featuredPosts'] ?? [];
+        $out = [0, 0, 0, 0, 0];
+        if (!is_array($raw)) return $out;
+        $seen = [];
+        for ($i = 0; $i < 5; $i++) {
+            $val = $raw[$i] ?? '';
+            $id = is_string($val) ? mvp_affiliate_url_to_post_id($val) : 0;
+            if ($id && !in_array($id, $seen, true)) {
+                $out[$i] = $id;
+                $seen[] = $id;
+            }
+        }
+        return $out;
+    }
+}
+
+/**
  * Returns the post chosen as today's pick, or null.
  * Behavior depends on $config['rotation']:
  *   'pinned' → the post in pinnedPostId (or null if unset/invalid).
@@ -78,40 +143,8 @@ if (!function_exists('mvp_affiliate_pick_of_day')) {
 
         // Pinned mode — accepts either a URL or a raw numeric post ID
         if ($config['rotation'] === 'pinned') {
-            $raw = trim((string)($config['pinnedPostId'] ?? ''));
-            if ($raw === '') return null;
-
-            // Numeric → treat as post ID (legacy)
-            if (ctype_digit($raw)) {
-                $pinned_id = intval($raw);
-            } else {
-                // URL → resolve via WP's built-in resolver
-                $pinned_id = url_to_postid($raw);
-                // url_to_postid returns 0 if it can't match (e.g. wrong domain).
-                // Try one more time by extracting the slug from the path.
-                if ($pinned_id === 0) {
-                    $path = parse_url($raw, PHP_URL_PATH);
-                    if ($path) {
-                        $slug = trim($path, '/');
-                        $slug = preg_replace('#^.*/#', '', $slug); // last path segment
-                        if ($slug) {
-                            $by_slug = get_posts([
-                                'name'        => $slug,
-                                'post_type'   => 'post',
-                                'post_status' => 'publish',
-                                'numberposts' => 1,
-                            ]);
-                            if (!empty($by_slug)) $pinned_id = $by_slug[0]->ID;
-                        }
-                    }
-                }
-            }
-
-            if ($pinned_id <= 0) return null;
-            $post = get_post($pinned_id);
-            return ($post && $post->post_status === 'publish' && $post->post_type === 'post')
-                ? $post
-                : null;
+            $pinned_id = mvp_affiliate_url_to_post_id((string)($config['pinnedPostId'] ?? ''));
+            return $pinned_id ? get_post($pinned_id) : null;
         }
 
         // Rotation seed + cache key + TTL
