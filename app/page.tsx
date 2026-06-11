@@ -485,6 +485,11 @@ const BUSINESS_CARDS: Array<{ icon: React.ReactNode; title: string; body: string
     pro: true,
   },
   {
+    icon: <Zap size={18} />,
+    title: 'Cash in on deal moments',
+    body: 'Paste an Amazon deal link + promo code — MVP writes a timely deal post with a countdown thumbnail, an end-date countdown, and your code wired into every CTA. Bulk-import a CSV to schedule a month of deals at once. (Studio+)',
+  },
+  {
     icon: <Rocket size={18} />,
     title: 'Scale with a team',
     body: 'Add Virtual Assistants with granular permissions — they draft and publish, you keep approval control. Up to 3 seats.',
@@ -512,11 +517,11 @@ function BusinessLayerSection() {
             </span>
           </h2>
           <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            Discoverable content earns. MVP closes the loop — the brands you pitch, the campaigns worth your time, and the team that scales it.
+            Discoverable content earns. MVP closes the loop — the brands you pitch, the deals and campaigns worth your time, and the team that scales it.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {BUSINESS_CARDS.map((c) => (
             <div key={c.title} className="rounded-2xl border p-6" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2 mb-3">
