@@ -121,11 +121,22 @@ export async function researchKeyword(input: KeywordResearchInput): Promise<Keyw
   const title = input.amazonTitle || input.videoTitle || ''
   if (!title.trim()) return empty
 
-  const titleToks = meaningfulTokens(title, input.brandName)
-  if (titleToks.length === 0) return empty
+  const rawTitleToks = meaningfulTokens(title, input.brandName)
+  if (rawTitleToks.length === 0) return empty
 
-  // Seed phrases for autocomplete = the head bigram/trigram (closest to the
-  // buyer-facing category). Capped at 2 seeds to bound network calls.
+  // Amazon listings LEAD WITH THE SELLER'S BRAND, which is coined ("PurRugs")
+  // and not something buyers search — it must never become the keyword. Treat
+  // the lead token as the probable seller brand (when enough category tokens
+  // remain) and DENY it across every candidate. This is the fix for the
+  // "purrugs dirt trapping" miss: strip the brand and the category phrase wins.
+  // (input.brandName is the USER's brand, a different thing — also denied.)
+  const sellerBrand = rawTitleToks.length >= 3 ? rawTitleToks[0] : null
+  const titleToks = sellerBrand ? rawTitleToks.slice(1) : rawTitleToks
+  const deny = new Set<string>(meaningfulTokens(input.brandName || ''))
+  if (sellerBrand) deny.add(sellerBrand)
+
+  // Seed phrases for autocomplete = the DE-BRANDED head bigram/trigram (closest
+  // to the buyer-facing category). Capped to bound network calls.
   const seeds = Array.from(new Set([
     titleToks.slice(0, 2).join(' '),
     titleToks.length >= 3 ? titleToks.slice(0, 3).join(' ') : '',
@@ -154,6 +165,7 @@ export async function researchKeyword(input: KeywordResearchInput): Promise<Keyw
     const toks = phrase.split(' ').filter(Boolean)
     if (toks.length < 2 || toks.length > 5) return        // long-tail sweet spot
     if (toks.some(t => /\d/.test(t))) return               // skip model/size noise
+    if (toks.some(t => deny.has(t))) return                // never the seller/user brand
     if (!toks.some(t => titleTokenSet.has(t))) return      // must be on-topic
     const e = cand.get(phrase) || { phrase, score: 0, sources: [] }
     e.score += base
@@ -170,8 +182,11 @@ export async function researchKeyword(input: KeywordResearchInput): Promise<Keyw
   // Final adjustments: length sweet spot + multi-source corroboration bonus.
   for (const e of cand.values()) {
     const len = e.phrase.split(' ').length
-    if (len >= 2 && len <= 4) e.score += 1
-    if (e.sources.length >= 2) e.score += 1.5
+    // Favor winnable long-tail (3–4 words) over generic 2-word category heads —
+    // the heads are higher-competition and convert worse for an affiliate review.
+    if (len === 3 || len === 4) e.score += 2
+    else if (len === 2) e.score += 0.5
+    if (e.sources.length >= 2) e.score += 1.5    // corroborated across sources
   }
 
   const ranked = Array.from(cand.values()).sort((a, b) => b.score - a.score)
