@@ -260,8 +260,9 @@ function buildDraftVideo(v: Record<string, unknown>) {
 }
 
 // Scan up to MAX_PAGES, return the accumulated videos + a continuation cursor.
-// Stores the uploads playlist ID and all accumulated videos to the cache after
-// each round so partial results survive even if the user navigates away.
+// When MAX_PAGES is hit with a cursor remaining, the cursor is returned so
+// "Load more" can continue — we don't claim full_scan=true unless the cursor
+// is actually exhausted.
 const MAX_PAGES = 15
 const MIN_DRAFT_HITS = 12
 const MIN_PRODUCT_HITS = 6
@@ -278,11 +279,9 @@ async function runFullScanWithCursor(
   let draftHits = 0
   let productHits = 0
   let uploadsPlaylistId = cachedPlaylistId
+  let hitPageLimit = false
 
-  while (
-    pagesScanned < MAX_PAGES &&
-    (draftHits < MIN_DRAFT_HITS || productHits < MIN_PRODUCT_HITS)
-  ) {
+  while (pagesScanned < MAX_PAGES) {
     const page = await yt.getDraftVideos(50, cursor, uploadsPlaylistId)
     uploadsPlaylistId = page.uploadsPlaylistId
     pagesScanned++
@@ -293,13 +292,26 @@ async function runFullScanWithCursor(
         if (v.detectedAsin) productHits++
       }
     }
+    // Stop scanning if we hit both minimums (unless we haven't scanned much yet)
+    if (draftHits >= MIN_DRAFT_HITS && productHits >= MIN_PRODUCT_HITS && pagesScanned >= 3) {
+      if (!page.nextPageToken) { cursor = undefined } else { cursor = page.nextPageToken }
+      break
+    }
+    // Page limit reached — preserve the cursor for continuation
+    if (pagesScanned >= MAX_PAGES) {
+      hitPageLimit = true
+      cursor = page.nextPageToken
+      break
+    }
+    // More pages exist
     if (!page.nextPageToken) { cursor = undefined; break }
     cursor = page.nextPageToken
   }
 
-  // Persist what we scanned so the next load within TTL can skip the API
+  // Persist what we scanned. full_scan=true only if we actually exhausted the playlist.
+  const isFullyScanFull = !cursor && !hitPageLimit
   if (uploadsPlaylistId) {
-    await writeCache(supabase, userId, uploadsPlaylistId, accumulated, !cursor)
+    await writeCache(supabase, userId, uploadsPlaylistId, accumulated, isFullyScanFull)
   }
 
   return { videos: accumulated, nextCursor: cursor }
