@@ -97,6 +97,17 @@ interface NewsletterInlineData {
   button: string
 }
 
+/**
+ * Post meta display switches. showDate hides every visible date on the
+ * blog (byline publish date, "Updated" chips, homepage hero "Updated"
+ * line, Recently Published mini-dates) — for evergreen positioning.
+ * Machine-readable dates (JSON-LD datePublished, sitemap lastmod) are
+ * untouched, so SEO freshness signals survive. Default ON.
+ */
+interface PostMetaData {
+  showDate: boolean
+}
+
 interface BlogCustomizations {
   sidebar: AdBlock[]
   incontent: AdBlock[]
@@ -109,6 +120,7 @@ interface BlogCustomizations {
   about: AboutData
   authorBlock: AuthorBlockData
   newsletterInline: NewsletterInlineData
+  postMeta: PostMetaData
   footer: FooterData
   pickOfDay: PickOfDayConfig
   /** Raw <meta> tags injected into the site's <head> — domain verification
@@ -183,6 +195,7 @@ const defaultCustomizations: BlogCustomizations = {
   about: emptyAbout,
   authorBlock: emptyAuthorBlock,
   newsletterInline: emptyNewsletterInline,
+  postMeta: { showDate: true },
   footer: emptyFooter,
   pickOfDay: defaultPickOfDay,
   headMetaTags: [],
@@ -500,6 +513,8 @@ export default function CustomizePage() {
         ...bc,
         authorBlock,
         newsletterInline,
+        // Dates default ON — only an explicit saved false turns them off.
+        postMeta: { showDate: bc.postMeta?.showDate !== false },
         sidebar:   (bc.sidebar   ?? []).map(migrateBlock),
         incontent: (bc.incontent ?? []).map(migrateBlock),
         homepageAds: padHomepageAds(bc.homepageAds),
@@ -767,6 +782,28 @@ export default function CustomizePage() {
                 </div>
               </>
             )}
+          </div>
+        </Section>
+
+        {/* Post dates */}
+        <Section
+          title="Post dates"
+          description="Show or hide the date on your posts — the byline date on articles and cards, “Updated” stamps, and the homepage date column. Hiding dates keeps reviews looking evergreen; search engines still see the real dates in your page data either way."
+        >
+          <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border-2)]">
+            <div>
+              <p className="text-sm font-medium text-[var(--text)]">Show post dates</p>
+              <p className="text-xs text-[var(--text-3)]">Site-wide. Turn off to remove visible dates everywhere on the blog.</p>
+            </div>
+            <button
+              onClick={() => setData(d => ({ ...d, postMeta: { ...d.postMeta, showDate: !d.postMeta.showDate } }))}
+              className="text-[var(--text-3)]"
+              aria-label="Toggle post dates"
+            >
+              {data.postMeta.showDate
+                ? <ToggleRight size={28} className="text-[#7C3AED]" />
+                : <ToggleLeft size={28} />}
+            </button>
           </div>
         </Section>
 

@@ -49,8 +49,10 @@ $used_ids = [];
           <?php endif; ?>
           <p class="mvp-lead-byline">
             By <strong><?php echo esc_html(get_the_author_meta('display_name', $hero_post->post_author)); ?></strong>
+            <?php if (mvp_affiliate_show_dates()): ?>
             <span class="mvp-lead-dot">·</span>
             <span class="mvp-lead-updated">Updated <?php echo esc_html(get_the_modified_date('M j, Y', $hero_id)); ?></span>
+            <?php endif; ?>
           </p>
           <span class="mvp-lead-cta">Read the review →</span>
         </div>
@@ -236,13 +238,16 @@ $used_ids = [];
         <h2 class="mvp-section-title">Recently Published</h2>
         <a href="<?php echo esc_url(home_url('/?s=&post_type=post')); ?>" class="mvp-section-link">View archive →</a>
       </header>
-      <ul class="mvp-recent-list">
+      <?php $recent_dates = mvp_affiliate_show_dates(); ?>
+      <ul class="mvp-recent-list<?php echo $recent_dates ? '' : ' mvp-recent-nodate'; ?>">
         <?php foreach ($remaining_ids as $pid): $p = get_post($pid); ?>
         <li class="mvp-recent-item">
           <a href="<?php echo esc_url(get_permalink($p)); ?>" class="mvp-recent-link">
+            <?php if ($recent_dates): ?>
             <time class="mvp-recent-date" datetime="<?php echo esc_attr(get_the_date('c', $p)); ?>">
               <?php echo esc_html(get_the_date('M j', $p)); ?>
             </time>
+            <?php endif; ?>
             <span class="mvp-recent-title"><?php echo esc_html(get_the_title($p)); ?></span>
             <?php $rc = get_the_category($p->ID); if (!empty($rc)): ?>
             <span class="mvp-recent-cat"><?php echo esc_html($rc[0]->name); ?></span>

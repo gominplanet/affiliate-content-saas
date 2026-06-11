@@ -3,7 +3,7 @@
  * Plugin Name: MVP Affiliate Platform
  * Plugin URI: https://www.mvpaffiliate.io
  * Description: Connects this WordPress site to the MVP Affiliate dashboard. Provides REST endpoints, blog customizations, banners, social bar, footer, logo header, and "You might also like" section.
- * Version: 1.0.51
+ * Version: 1.0.52
  * Author: MVP Affiliate
  * Author URI: https://www.mvpaffiliate.io
  * License: GPLv2 or later
@@ -911,6 +911,17 @@ add_action('wp_footer', function () {
   var data = <?php echo wp_json_encode($cards); ?>;
   if (!data || !data.length) return;
 
+  // Skip posts the visitor can already see above the strip (the MVP theme's
+  // hero + Editor's Picks show the newest posts, which are usually also the
+  // most recently *modified* — without this the strip repeats the exact same
+  // thumbnails that sit right above it and the homepage looks broken/spammy).
+  var seen = {};
+  document.querySelectorAll('.mvp-lead a[href], .mvp-section-picks a[href]').forEach(function (a) {
+    seen[a.href.replace(/\/+$/, '')] = true;
+  });
+  data = data.filter(function (c) { return !seen[String(c.url).replace(/\/+$/, '')]; });
+  if (data.length < 2) return; // a 1-card "strip" looks like a glitch — skip
+
   var wrap = document.createElement('div');
   wrap.className = 'gr-recently-updated';
   var html = '<h2>Recently updated</h2><div class="gr-ru-scroll">';
@@ -925,20 +936,25 @@ add_action('wp_footer', function () {
   wrap.innerHTML = html;
 
   // Place the strip BELOW the "Pick of the Day" / Editor's Pick hero so the
-  // featured post stays the first thing visitors see. Try in priority order:
-  //   1. .mvp-pick / .mvp-pick-homepage — the theme-rendered Pick of the Day
-  //   2. First <article> inside main content — the homepage hero post
-  //   3. Fallback: top of main container
+  // featured post stays the first thing visitors see. CRITICAL: anchors must
+  // be normalized to their closest <section> — on the MVP Affiliate theme the
+  // homepage articles live INSIDE css grids (.mvp-grid-4), and inserting the
+  // strip next to an article there makes it a grid ITEM: cards overlap at
+  // random sizes (the "messy Editor's Picks" bug, 2026-06-11). The strip must
+  // only ever be a full-width sibling BETWEEN sections, never inside one.
   function placeAfter(el) {
-    if (el && el.parentNode) {
-      el.parentNode.insertBefore(wrap, el.nextSibling);
-      return true;
-    }
-    return false;
+    if (!el) return false;
+    el = el.closest('section') || el;
+    if (!el.parentNode) return false;
+    el.parentNode.insertBefore(wrap, el.nextSibling);
+    return true;
   }
 
-  var pick = document.querySelector('.mvp-pick-homepage, .mvp-pick');
-  if (placeAfter(pick)) return;
+  if (placeAfter(document.querySelector('.mvp-pick-homepage, .mvp-pick'))) return;
+
+  // MVP Affiliate theme front page: drop the strip after the Editor's Picks
+  // strip (or the lead hero) as its own row.
+  if (placeAfter(document.querySelector('.mvp-section-picks, .mvp-lead'))) return;
 
   var firstArticle = document.querySelector(
     '.entry-content article:first-of-type, ' +

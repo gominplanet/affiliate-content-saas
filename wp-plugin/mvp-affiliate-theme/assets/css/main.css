@@ -518,6 +518,10 @@ a.mvp-ad-slot-filled:hover {
   transition: background .15s ease;
 }
 .mvp-recent-link:hover { background: var(--mvp-bg-soft); }
+/* Dates hidden (Customize Blog → Post dates off): drop the 80px date
+   column so titles don't slide into the empty slot. Higher specificity
+   than the in-media-query base rule, so it wins on mobile too. */
+.mvp-recent-nodate .mvp-recent-link { grid-template-columns: 1fr auto; }
 .mvp-recent-date {
   font-family: var(--mvp-font-sans);
   font-size: 12px;

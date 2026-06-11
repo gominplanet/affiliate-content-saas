@@ -15,9 +15,24 @@ if (!defined('ABSPATH')) exit;
  * Guide / NYT — they live next to the date so a scanner sees the
  * trust signals in the first second of the page.
  */
+/**
+ * Site-wide "show post dates" switch (Customize Blog → Post dates).
+ * Default ON — only an explicit false from the dashboard hides dates,
+ * so existing installs render exactly as before until the user opts out.
+ * Covers the byline publish date, the "Updated" chip, the homepage hero
+ * "Updated" line, and the Recently Published mini-dates.
+ */
+if (!function_exists('mvp_affiliate_show_dates')) {
+    function mvp_affiliate_show_dates(): bool {
+        $pm = mvp_affiliate_data()['postMeta'] ?? [];
+        return !(is_array($pm) && isset($pm['showDate']) && $pm['showDate'] === false);
+    }
+}
+
 if (!function_exists('mvp_affiliate_posted_meta')) {
     function mvp_affiliate_posted_meta(): void {
         $author = mvp_affiliate_profile()['authorName'] ?? get_the_author();
+        $show_dates = mvp_affiliate_show_dates();
 
         // ── Updated chip ───────────────────────────────────────────────
         // Only show "Updated" if the post was revised more than 7 days
@@ -38,29 +53,29 @@ if (!function_exists('mvp_affiliate_posted_meta')) {
         $word_count = str_word_count(wp_strip_all_tags($content));
         $read_min = max(2, (int) round($word_count / 220));
 
-        $out  = '<div class="mvp-byline">';
-        $out .= sprintf('<span class="mvp-byline-author">By %s</span>', esc_html($author));
-        $out .= '<span class="mvp-byline-dot">·</span>';
-        $out .= sprintf(
-            '<time class="mvp-byline-date" datetime="%s">%s</time>',
-            esc_attr(get_the_date('c')),
-            esc_html(get_the_date())
-        );
-        if ($is_updated) {
-            $out .= '<span class="mvp-byline-dot">·</span>';
-            $out .= sprintf(
-                '<span class="mvp-byline-updated" title="Last meaningfully updated %s"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>Updated %s</span>',
-                esc_attr(get_the_modified_date()),
-                esc_html(get_the_modified_date('M j, Y'))
+        // Chips joined by dots — so hiding the date chips can never leave
+        // a dangling "·" in the byline.
+        $chips = [];
+        $chips[] = sprintf('<span class="mvp-byline-author">By %s</span>', esc_html($author));
+        if ($show_dates) {
+            $chips[] = sprintf(
+                '<time class="mvp-byline-date" datetime="%s">%s</time>',
+                esc_attr(get_the_date('c')),
+                esc_html(get_the_date())
             );
+            if ($is_updated) {
+                $chips[] = sprintf(
+                    '<span class="mvp-byline-updated" title="Last meaningfully updated %s"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>Updated %s</span>',
+                    esc_attr(get_the_modified_date()),
+                    esc_html(get_the_modified_date('M j, Y'))
+                );
+            }
         }
-        $out .= '<span class="mvp-byline-dot">·</span>';
-        $out .= sprintf(
+        $chips[] = sprintf(
             '<span class="mvp-byline-readtime" title="Approximate read time"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>%d min read</span>',
             $read_min
         );
-        $out .= '</div>';
-        echo $out;
+        echo '<div class="mvp-byline">' . implode('<span class="mvp-byline-dot">·</span>', $chips) . '</div>';
     }
 }
 
