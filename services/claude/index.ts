@@ -1428,6 +1428,16 @@ BLOCK 1 rules:
   fill the gap. The body and the title MUST describe the SAME brand and
   product type.
 
+  ★★ AUTHORITATIVE LISTING WINS FOR IDENTITY: if the PRODUCT INFO contains a
+  block labeled "AUTHORITATIVE PRODUCT LISTING (Amazon)", the product's BRAND and
+  exact name come from THAT listing's title — it is the item the affiliate link
+  actually sells. A generic phrase the creator says on camera ("this mat", "this
+  little rug", "the muddy mat") is a DESCRIPTOR, not a brand — do NOT promote it
+  to a brand name in the title or body. Use the listing's real maker name (its
+  leading brand, e.g. "PurRugs") instead. The transcript still rules the
+  EXPERIENCE (tests, opinions, verdict, what happened on camera); only the
+  product IDENTITY follows the listing.
+
   The title is the SEED for the whole post, the slug, and the URL — a fabricated
   identity here poisons every section. Truthful first, catchy second. Never "honest".
 - slug: kebab-case derived from the truthful title — it must NOT contain any term

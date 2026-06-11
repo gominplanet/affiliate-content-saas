@@ -803,23 +803,44 @@ async function handleGenerate(request: Request) {
   let targetKeyword: string | null = null
   let supportingKeywords: string[] = []
   if (asinOverride) {
-    const research = await withTimeout(
+    // ONE Amazon fetch, two jobs: (a) the AUTHORITATIVE product identity + specs
+    // for the writer — the listing TITLE carries the real brand and the bullets
+    // carry real specs; (b) the keyword-research seed. Best-effort + time-boxed;
+    // on any failure we fall back to prior behavior (model derives everything).
+    const amazonStep = await withTimeout(
       (async () => {
         const product = await fetchAmazonProduct(asinOverride!).catch(() => null)
         if (!product?.title) return null
-        return researchKeyword({
+        const research = await researchKeyword({
           amazonTitle: product.title,
           amazonBullets: product.bullets,
           videoTitle: rawTitle,
           brandName: (brand as Record<string, unknown>).name as string | undefined,
-        })
+        }).catch(() => null)
+        return { product, research }
       })(),
-      12000,
+      15000,
       null,
     )
-    if (research?.primary) {
-      targetKeyword = research.primary
-      supportingKeywords = research.supporting
+    if (amazonStep?.product?.title) {
+      // Hand the writer the seller's listing as GROUND TRUTH for the product's
+      // brand + specs. This is what stops the writer inventing a brand from a
+      // generic transcript/web phrase (e.g. titling a PURRUGS mat "Muddy Mat").
+      // It's the user's Amazon-listing rule applied to the BODY, not just the
+      // keyword. Prepended so it leads the product info the writer reads — and
+      // the title fact-check (§5.6) reads the same productResearch, so it gains
+      // the real brand too.
+      const a = amazonStep.product
+      const amazonFacts = [
+        'AUTHORITATIVE PRODUCT LISTING (Amazon) — the exact item the affiliate link sells. Use THIS for the product\'s real brand + name; it overrides any generic descriptor the creator used on camera.',
+        `Title: ${a.title}`,
+        a.bullets.length ? `About this item:\n${a.bullets.map((b) => `- ${b}`).join('\n')}` : '',
+      ].filter(Boolean).join('\n')
+      productResearch = productResearch ? `${amazonFacts}\n\n${productResearch}` : amazonFacts
+    }
+    if (amazonStep?.research?.primary) {
+      targetKeyword = amazonStep.research.primary
+      supportingKeywords = amazonStep.research.supporting
       console.log('[blog/generate] keyword research', { primary: targetKeyword, supporting: supportingKeywords })
     }
   }
