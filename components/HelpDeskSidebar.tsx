@@ -31,10 +31,10 @@ export function HelpDeskSidebar() {
     setStreaming('')
 
     try {
-      const res = await fetch('/api/assistant/message', {
+      const res = await fetch('/api/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, conversationId: null }),
+        body: JSON.stringify({ message: text }),
       })
 
       if (!res.ok) {
