@@ -2248,7 +2248,7 @@ export default function ContentPage() {
     if (!toGenerate.length) return
     setBulkGenerating(true)
     setBulkGenerateProgress({ done: 0, total: toGenerate.length })
-    let success = 0; let failed = 0; let firstError = ''
+    let success = 0; let failed = 0; let skipped = 0; let firstError = ''
     for (let i = 0; i < toGenerate.length; i++) {
       const video = toGenerate[i]
       setBulkGenerateProgress({ done: i, total: toGenerate.length })
@@ -2258,6 +2258,14 @@ export default function ContentPage() {
         if (res.ok) {
           setPosts(prev => ({ ...prev, [video.id as string]: { url: data.wordpressUrl ?? '', title: data.title ?? '', postId: data.postId } }))
           success++
+        } else if (
+          // Review-worthiness gate: short clip, no product, thin transcript.
+          // In bulk this is a SKIP, not a failure — these are exactly the
+          // videos that used to flood the blog with contentless posts.
+          data.reason === 'not_reviewable'
+          || /short clip with no product attached/i.test(String(data.error || ''))
+        ) {
+          skipped++
         } else {
           failed++
           if (!firstError) firstError = data.error || `HTTP ${res.status}`
@@ -2270,7 +2278,12 @@ export default function ContentPage() {
     setBulkGenerateProgress(null)
     setBulkGenerating(false)
     setSelectedVideoIds(new Set())
-    if (failed > 0) setFixCatResult(`${success} generated · ${failed} failed${firstError ? ` (${firstError})` : ''}`)
+    if (failed > 0 || skipped > 0) {
+      const parts = [`${success} generated`]
+      if (skipped > 0) parts.push(`${skipped} skipped (short clips with no product — add the product link to the video description to include them)`)
+      if (failed > 0) parts.push(`${failed} failed${firstError ? ` (${firstError})` : ''}`)
+      setFixCatResult(parts.join(' · '))
+    }
   }
 
   /**

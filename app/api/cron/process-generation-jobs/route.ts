@@ -74,6 +74,15 @@ export async function GET(req: Request) {
         processed.push({ id: job.id, ok: false, error: 'timeout — left running for stale recovery' })
         continue
       }
+      // PERMANENT: deterministic 4xx refusal (review-worthiness gate, caps,
+      // validation) — fail terminally on the first attempt instead of
+      // replaying the same refusal until the retry budget runs out.
+      if (/^PERMANENT:\s*/i.test(msg)) {
+        const clean = msg.replace(/^PERMANENT:\s*/i, '')
+        await failJob(admin, { ...job, attempts: job.max_attempts }, clean)
+        processed.push({ id: job.id, ok: false, error: clean })
+        continue
+      }
       await failJob(admin, job, msg)
       processed.push({ id: job.id, ok: false, error: msg })
       continue

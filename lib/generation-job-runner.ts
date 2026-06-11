@@ -83,7 +83,15 @@ async function runBlogJob(job: GenerationJob): Promise<Record<string, unknown>> 
   let data: any = null
   try { data = await res.json() } catch { /* non-JSON body (e.g. a raw 504) */ }
   if (!res.ok) {
-    throw new Error((data && data.error) || `blog generation returned ${res.status}`)
+    const msg = (data && data.error) || `blog generation returned ${res.status}`
+    // 4xx responses are deterministic refusals (review-worthiness gate, caps,
+    // validation) — retrying replays the exact same refusal three times. Tag
+    // them so the worker terminally fails the job on the first attempt; 5xx /
+    // network errors keep the normal retry budget.
+    if (res.status >= 400 && res.status < 500) {
+      throw new Error('PERMANENT: ' + msg)
+    }
+    throw new Error(msg)
   }
   return data && typeof data === 'object' ? data : { ok: true }
 }

@@ -250,6 +250,27 @@ export function GenerateButton({
           ;({ res, data } = await callGenerate(true))
         }
       }
+      // Review-worthiness gate (no product + thin transcript). The sync path
+      // returns reason: 'not_reviewable'; the async path surfaces only the
+      // failed job's error TEXT, so match the stable phrase as a fallback.
+      const notReviewable = data.reason === 'not_reviewable'
+        || /short clip with no product attached/i.test(String(data.error || ''))
+      if (!res.ok && notReviewable) {
+        const proceed = await confirm({
+          title: 'Short clip with no product — generate anyway?',
+          description:
+            'MVP couldn\'t find a product on this video (no Amazon link or ASIN in the title/description) and the transcript is too thin to ground a review. ' +
+            'Best fix: add the product link to the first lines of the video\'s YouTube description, then retry — you\'ll get a full review with your affiliate link. ' +
+            '"Generate anyway" publishes a general post with no affiliate link.',
+          confirmLabel: 'Generate anyway',
+          cancelLabel: 'I\'ll add the product link',
+        })
+        if (!proceed) {
+          setStatus('idle')
+          return
+        }
+        ;({ res, data } = await callGenerate(true))
+      }
       if (!res.ok) {
         if (data.limitReached) {
           dispatchCapReached(

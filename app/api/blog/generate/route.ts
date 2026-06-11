@@ -457,14 +457,12 @@ async function handleGenerate(request: Request) {
     } catch { /* non-fatal */ }
   }
 
-  // NOTE: no hard gate on empty transcript anymore — the layered fetcher above
-  // already tries the official Data API before the scraper, and on the rare
-  // case where both fail the voice-betrayal scrub (lib/blog-voice-scrub.ts) +
-  // the explicit prompt rules in rule 8 of services/claude/index.ts prevent
-  // the "we don't have a transcript" / "watch the full video" patterns from
-  // appearing in the body. allowEmptyTranscript is kept as a no-op for
-  // forward compat.
-  void allowEmptyTranscript
+  // NOTE: no standalone empty-transcript gate here — the layered fetcher above
+  // already tries the official Data API before the scraper, and the voice-
+  // betrayal scrub + prompt rule 8 keep "we don't have a transcript" patterns
+  // out of the body. The REVIEW-WORTHINESS gate below (§5.2) refuses only the
+  // truly contentless case: no resolvable product AND a thin transcript.
+  // allowEmptyTranscript is that gate's explicit "generate anyway" override.
   const transcriptUsed = !!transcript && transcript.trim().length >= 80
 
   // ── 5. Resolve the product / affiliate link ───────────────────────────────
@@ -651,6 +649,24 @@ async function handleGenerate(request: Request) {
   if (productUrl) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await supabase.from('youtube_videos').update({ product_url: productUrl }).eq('id', videoId)
+  }
+
+  // ── 5.2. Review-worthiness gate ────────────────────────────────────────────
+  // A review needs SOMETHING to ground on: a resolved product (link/ASIN) or
+  // real spoken content. Short clips with neither (one-word title, no
+  // description link) used to sail through and publish 2,000 scrupulously
+  // honest words of "the clip doesn't say" — no affiliate link to earn with,
+  // and thin content that drags the whole site's rankings (the
+  // lizonajourney.com hair-straightener case, 2026-06-11). Refuse HERE, before
+  // the research + writer spend. The same check protects rebuilds: rebuilding
+  // one of these without first attaching a product would reproduce the same
+  // empty post. allowEmptyTranscript is the explicit "generate anyway"
+  // override from the UI confirm — the user keeps the final say.
+  if (!productUrl && (transcript || '').trim().length < 500 && !allowEmptyTranscript) {
+    return NextResponse.json({
+      error: 'This looks like a short clip with no product attached — no Amazon or product link in the video\'s title or description, and not enough spoken content to ground a review. Add the product link to the first lines of the video\'s YouTube description, then try again — or generate anyway to publish a general post without an affiliate link.',
+      reason: 'not_reviewable',
+    }, { status: 422 })
   }
 
   // ── Persistent feedback: every "what was missing" note this user
