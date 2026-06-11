@@ -5,6 +5,9 @@ import { Toaster } from '@/components/ui/toaster'
 import MigrationDriftBanner from '@/components/admin/MigrationDriftBanner'
 import { HelpDeskSidebar } from '@/components/HelpDeskSidebar'
 
+// Export button for use in nav headers
+export { HelpDeskButton } from '@/components/HelpDeskSidebar'
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()

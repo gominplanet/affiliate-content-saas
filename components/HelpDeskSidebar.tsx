@@ -7,6 +7,19 @@ import { MessageMarkdown } from '@/components/assistant/MessageMarkdown'
 
 interface Msg { role: 'user' | 'assistant'; content: string }
 
+export function HelpDeskButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+      title="Ask Me For Help"
+    >
+      <MessageCircle size={18} />
+      <span className="hidden sm:inline">Ask Me</span>
+    </button>
+  )
+}
+
 export function HelpDeskSidebar() {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Msg[]>([])
@@ -72,17 +85,8 @@ export function HelpDeskSidebar() {
 
   return (
     <>
-      {/* Floating button */}
-      {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 w-12 h-12 rounded-full bg-gradient-to-br from-[#0071E3] to-[#0051BA] text-white shadow-lg hover:shadow-xl transition-shadow flex items-center justify-center z-40"
-          aria-label="Open help desk"
-          title="Ask MVP Help Desk"
-        >
-          <MessageCircle size={20} />
-        </button>
-      )}
+      {/* Button in top-right nav */}
+      <HelpDeskButton onOpen={() => setOpen(true)} />
 
       {/* Sidebar panel */}
       {open && (
