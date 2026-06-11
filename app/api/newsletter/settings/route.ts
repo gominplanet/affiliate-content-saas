@@ -11,6 +11,7 @@
  * route (/api/newsletter/domain) rather than living here.
  */
 import { NextResponse } from 'next/server'
+import { denyNewsletterWrite } from '@/lib/agency'
 import { createServerClient } from '@/lib/supabase/server'
 import { pushNewsletterToWp } from '@/lib/wp-newsletter-sync'
 
@@ -63,6 +64,9 @@ export async function PUT(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = await denyNewsletterWrite(user.id)
+  if (denied) return denied
+
 
   let body: {
     enabled?: boolean

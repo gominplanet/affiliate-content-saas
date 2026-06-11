@@ -10,6 +10,7 @@
  * caller's own subscribers via RLS.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { denyNewsletterWrite } from '@/lib/agency'
 import { createServerClient } from '@/lib/supabase/server'
 
 export async function GET(req: NextRequest) {
@@ -115,6 +116,8 @@ export async function PATCH(req: NextRequest) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = await denyNewsletterWrite(user.id)
+  if (denied) return denied
 
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
@@ -145,6 +148,8 @@ export async function DELETE(req: NextRequest) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = await denyNewsletterWrite(user.id)
+  if (denied) return denied
 
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })

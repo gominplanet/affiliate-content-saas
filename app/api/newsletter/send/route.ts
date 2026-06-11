@@ -37,6 +37,7 @@
  *   scheduled: { ok, broadcastId, mode:'scheduled', scheduledAt }
  */
 import { NextResponse } from 'next/server'
+import { denyNewsletterWrite } from '@/lib/agency'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeTier, allowedNewsletterBroadcasts, tierHas } from '@/lib/tier'
 import { isEmailConfigured } from '@/services/email'
@@ -85,6 +86,8 @@ export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = await denyNewsletterWrite(user.id)
+  if (denied) return denied
 
   let body: SendInput
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }

@@ -10,6 +10,7 @@
 // Both tables live in migration 089.
 
 import { randomBytes, createHash } from 'node:crypto'
+import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 // Import for INTERNAL use (resolveAgencyContext) — these are also
 // re-exported below so callers of @/lib/agency see them as if they
@@ -105,6 +106,21 @@ export function isOwner(ctx: AgencyContext): boolean {
 export function hasPermission(ctx: AgencyContext, key: VaPermissionKey): boolean {
   if (isOwner(ctx)) return true
   return !!ctx.permissions?.[key]
+}
+
+/** Gate for newsletter WRITE routes (#242). Owners always pass; VAs need
+ *  the manage_newsletter permission (toggled by the owner on /agency).
+ *  Returns a ready-to-return 403 when denied, null when allowed. The
+ *  newsletter routes are still owner-scoped via user.id today, so this is
+ *  the yes/no gate put in place BEFORE those writes open up to VAs — the
+ *  moment they go owner-scoped, the permission already applies. */
+export async function denyNewsletterWrite(callerUserId: string): Promise<NextResponse | null> {
+  const ctx = await resolveAgencyContext(callerUserId)
+  if (hasPermission(ctx, 'manage_newsletter')) return null
+  return NextResponse.json(
+    { error: 'Your account doesn’t have newsletter access. Ask the account owner to enable “Manage newsletter” for you on the Virtual Assistants page.' },
+    { status: 403 },
+  )
 }
 
 /** Resolve full agency context for a user. Useful when a route needs both

@@ -24,6 +24,7 @@
  * newsletter_settings row (enforced by RLS + the user_id scope below).
  */
 import { NextResponse } from 'next/server'
+import { denyNewsletterWrite } from '@/lib/agency'
 import { createServerClient } from '@/lib/supabase/server'
 import {
   createResendDomain,
@@ -52,6 +53,8 @@ export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = await denyNewsletterWrite(user.id)
+  if (denied) return denied
 
   let body: { subdomain?: string }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
@@ -175,6 +178,8 @@ export async function DELETE() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = await denyNewsletterWrite(user.id)
+  if (denied) return denied
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: row } = await supabase
