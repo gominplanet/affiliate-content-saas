@@ -106,6 +106,30 @@ interface PreviewResp {
 
 type Mode = 'auto' | 'review'
 
+// ── datetime-local helpers ───────────────────────────────────────────────
+// A <input type="datetime-local"> yields a zone-less string ("2026-06-15T09:00")
+// that the browser means in LOCAL time. We convert to a real UTC ISO before
+// sending so the server (Vercel = UTC) — and then WordPress's native future-
+// publish — fires at the instant the user actually picked, not the same wall-
+// clock reinterpreted as UTC. WP's REST `date` field detects the Z offset and
+// converts to the site timezone itself.
+function localToIso(v: string): string | undefined {
+  if (!v) return undefined
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? undefined : d.toISOString()
+}
+/** Format a Date as the value a datetime-local input expects (local time). */
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+/** Friendly local label for toasts + confirmations ("Jun 15, 9:00 AM"). */
+function formatSchedule(v: string): string {
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 export default function DealsHubPage() {
   const { confirm, ConfirmHost } = useConfirm()
   const [deals, setDeals] = useState<DealRow[]>([])
@@ -127,6 +151,12 @@ export default function DealsHubPage() {
   const [promoUrl, setPromoUrl] = useState('')
   const [occasion, setOccasion] = useState<string>('auto')
   const [manualDealEnd, setManualDealEnd] = useState<string>('')
+  // Schedule publish (optional). When set, the post is written + baked now but
+  // held back as a WordPress 'future' post; WP auto-publishes it live at this
+  // instant. Empty → publish immediately. This is the "deal only starts on a
+  // certain date" flow — prep a Prime Day / Black Friday post days ahead.
+  const [scheduleAt, setScheduleAt] = useState<string>('')
+  const [minSchedule, setMinSchedule] = useState<string>('') // earliest pickable slot
   const [generating, setGenerating] = useState(false)
 
   // Full Auto vs Let-Me-See — persisted across visits.
@@ -138,6 +168,7 @@ export default function DealsHubPage() {
   const [previewPromoCode, setPreviewPromoCode] = useState('')
   const [previewPromoUrl, setPreviewPromoUrl] = useState('')
   const [previewDealEnd, setPreviewDealEnd] = useState('')
+  const [previewScheduleAt, setPreviewScheduleAt] = useState('')
 
   // Tier restructure 2026-06-04: Deals Hub is Studio + Pro only. Trial +
   // Creator see the FeatureLockedCard upsell. tier === null while loading
@@ -170,12 +201,16 @@ export default function DealsHubPage() {
     return () => { cancelled = true; window.removeEventListener(VIEW_AS_EVENT, apply) }
   }, [])
 
-  // ── Load mode from localStorage on mount ────────────────────────────────
+  // ── Load mode from localStorage on mount + seed the schedule field's min ─
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem('mvp_deals_mode')
       if (saved === 'auto' || saved === 'review') setMode(saved)
     } catch { /* ignore */ }
+    // Earliest selectable publish time = 5 minutes out (the server requires
+    // 60s+; the buffer keeps the picker from offering an already-stale slot).
+    // Computed in an effect, not at render, to avoid an SSR hydration mismatch.
+    setMinSchedule(toLocalInput(new Date(Date.now() + 5 * 60 * 1000)))
   }, [])
 
   function pickMode(m: Mode) {
@@ -222,7 +257,17 @@ export default function DealsHubPage() {
         occasion: occasion,
         manualDealEnd: manualDealEnd || undefined,
       }
-      if (mode === 'review') body.preview = true
+      if (mode === 'review') {
+        // Preview only scrapes — don't send the schedule (a past/too-soon
+        // value would 400 the preview instead of showing the product). The
+        // picked time is carried into the preview card below so the user
+        // can confirm or tweak it before the real publish.
+        body.preview = true
+      } else {
+        // Full-auto: schedule now if a time was picked, else publish live.
+        const iso = localToIso(scheduleAt)
+        if (iso) body.scheduledAt = iso
+      }
 
       const res = await fetch('/api/deals', {
         method: 'POST',
@@ -242,19 +287,27 @@ export default function DealsHubPage() {
         setPreviewPromoCode((j as PreviewResp).promo.code || '')
         setPreviewPromoUrl((j as PreviewResp).promo.url || '')
         setPreviewDealEnd((j as PreviewResp).product.dealEndsAt || '')
+        setPreviewScheduleAt(scheduleAt) // carry the picked time onto the card
         return
       }
 
-      // Full auto path — publish completed.
-      toast.success('Deal post published!', {
-        action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
-      })
+      // Full auto path — publish (or schedule) completed.
+      if (scheduleAt) {
+        toast.success(`Deal post scheduled for ${formatSchedule(scheduleAt)}.`, {
+          description: 'WordPress publishes it live automatically at that time.',
+        })
+      } else {
+        toast.success('Deal post published!', {
+          action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
+        })
+      }
       if (j.migrationNeeded) setMigrationNeeded(j.migrationNeeded)
       // Reset + refresh.
       setInput('')
       setPromoCode('')
       setPromoUrl('')
       setManualDealEnd('')
+      setScheduleAt('')
       const list = await fetch('/api/deals').then(r => r.json()).catch(() => null)
       if (list?.deals) setDeals(list.deals)
       if (list?.migrationNeeded) setMigrationNeeded(list.migrationNeeded)
@@ -270,6 +323,7 @@ export default function DealsHubPage() {
     if (!preview || generating) return
     setGenerating(true)
     try {
+      const scheduledIso = localToIso(previewScheduleAt)
       const res = await fetch('/api/deals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -279,7 +333,8 @@ export default function DealsHubPage() {
           promoUrl: previewPromoUrl.trim() || undefined,
           occasion: previewOccasion,
           manualDealEnd: previewDealEnd || undefined,
-          // preview omitted → server runs the full publish path.
+          ...(scheduledIso ? { scheduledAt: scheduledIso } : {}),
+          // preview omitted → server runs the full publish (or schedule) path.
         }),
       })
       const j = await res.json()
@@ -287,15 +342,23 @@ export default function DealsHubPage() {
         toast.error(j.error || 'Publish failed')
         return
       }
-      toast.success('Deal post published!', {
-        action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
-      })
+      if (previewScheduleAt) {
+        toast.success(`Deal post scheduled for ${formatSchedule(previewScheduleAt)}.`, {
+          description: 'WordPress publishes it live automatically at that time.',
+        })
+      } else {
+        toast.success('Deal post published!', {
+          action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
+        })
+      }
       // Reset preview + form, refresh list.
       setPreview(null)
       setInput('')
       setPromoCode('')
       setPromoUrl('')
       setManualDealEnd('')
+      setScheduleAt('')
+      setPreviewScheduleAt('')
       const list = await fetch('/api/deals').then(r => r.json()).catch(() => null)
       if (list?.deals) setDeals(list.deals)
     } catch (err) {
@@ -431,10 +494,10 @@ export default function DealsHubPage() {
       <FeatureLockedCard
         icon={<BadgePercent size={28} strokeWidth={1.8} />}
         feature="Deals Hub"
-        description="Paste an Amazon link (or any Geniuslink/amzn.to short link), optionally add a promo code, and MVP writes a timely deal post with a baked countdown thumbnail, end-date countdown, and your promo code wired into every CTA. Bulk-import a full Amazon Creator Connections CSV to schedule a month's worth of deal posts in one go."
+        description="Paste an Amazon link (or any Geniuslink/amzn.to short link), optionally add a promo code, and MVP writes a timely deal post with a baked deal-badge thumbnail, end-date countdown, and your promo code wired into every CTA. Schedule it to go live the day the deal opens, so a Prime Day or Black Friday post publishes itself right on time."
         bullets={[
           'Single-link form: paste, customize, publish',
-          'Bulk CSV import: drop the Amazon Associates "Export deals" file, generate or schedule rows individually',
+          'Schedule publish: prep a deal now, WordPress takes it live on the start date',
           'Countdown banner + buy button wired into the deal end-date',
           'Promo-code support (writes the code into every CTA on the post)',
           'Occasion auto-detection (Prime Day, Black Friday, Lightning Deal, Lowest Price YTD, etc.)',
@@ -652,10 +715,38 @@ create index if not exists blog_posts_deal_meta_gin
                   className="w-full text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] px-3 py-2"
                 />
               </div>
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1 text-[#86868b]">
+                  <Clock size={11} className="inline mr-1" /> Schedule publish (optional)
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    type="datetime-local"
+                    min={minSchedule || undefined}
+                    value={previewScheduleAt}
+                    onChange={(e) => setPreviewScheduleAt(e.target.value)}
+                    className="text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] px-3 py-2"
+                  />
+                  {previewScheduleAt && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewScheduleAt('')}
+                      className="text-[11px] text-[#86868b] hover:text-[#ff3b30]"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--fg-muted)' }}>
+                  Empty = publish now. Set a time and WordPress auto-publishes the post live at that moment.
+                </p>
+              </div>
             </div>
 
             <Button onClick={publishFromPreview} disabled={generating} className="w-full sm:w-auto">
-              {generating ? <><Loader2 size={14} className="animate-spin" /> Publishing...</> : <><Sparkles size={14} /> Write the deal post & publish</>}
+              {generating
+                ? <><Loader2 size={14} className="animate-spin" /> {previewScheduleAt ? 'Scheduling...' : 'Publishing...'}</>
+                : <><Sparkles size={14} /> {previewScheduleAt ? 'Write & schedule the deal post' : 'Write the deal post & publish'}</>}
             </Button>
           </div>
         )}
@@ -746,15 +837,47 @@ create index if not exists blog_posts_deal_meta_gin
               </div>
             </div>
 
+            {/* Schedule publish (optional) — the "deal only starts on a date"
+                flow. Writes the post now, holds it as a WP 'future' post, and
+                WordPress flips it live at exactly the picked time. */}
+            <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-2)', background: 'var(--surface-2)' }}>
+              <label className="block text-[11px] font-semibold uppercase tracking-wide mb-1.5 text-[#86868b]" htmlFor="deal-schedule">
+                <Clock size={11} className="inline mr-1" /> Schedule publish (optional)
+              </label>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  id="deal-schedule"
+                  type="datetime-local"
+                  min={minSchedule || undefined}
+                  value={scheduleAt}
+                  onChange={(e) => setScheduleAt(e.target.value)}
+                  disabled={generating}
+                  className="text-sm rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1c1c1e] px-3 py-2"
+                />
+                {scheduleAt && (
+                  <button
+                    type="button"
+                    onClick={() => setScheduleAt('')}
+                    className="text-[11px] text-[#86868b] hover:text-[#ff3b30]"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] mt-1.5" style={{ color: 'var(--fg-muted)' }}>
+                Leave empty to publish right away. Pick a date + time and MVP writes the post now but holds it back — WordPress publishes it live automatically at that moment. Ideal for prepping a Prime Day or Black Friday deal in advance.
+              </p>
+            </div>
+
             <div className="flex items-center justify-between flex-wrap gap-3">
               <p className="text-[11px]" style={{ color: 'var(--fg-muted)' }}>
                 Promo code lands in the deal-box CTA copy. Promo URL replaces every buy-button href. Both can coexist.
               </p>
               <Button type="submit" disabled={generating || !input.trim()}>
                 {generating ? (
-                  <><Loader2 size={14} className="animate-spin" /> {mode === 'auto' ? 'Publishing...' : 'Reading the listing...'}</>
+                  <><Loader2 size={14} className="animate-spin" /> {mode === 'auto' ? (scheduleAt ? 'Scheduling...' : 'Publishing...') : 'Reading the listing...'}</>
                 ) : (
-                  <><Sparkles size={14} /> {mode === 'auto' ? 'Generate & publish' : 'Preview the deal'} <ArrowRight size={13} /></>
+                  <><Sparkles size={14} /> {mode === 'auto' ? (scheduleAt ? 'Generate & schedule' : 'Generate & publish') : 'Preview the deal'} <ArrowRight size={13} /></>
                 )}
               </Button>
             </div>
