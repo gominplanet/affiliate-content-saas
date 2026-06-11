@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import DashboardShellV2 from '@/components/layout/DashboardShellV2'
 import { Toaster } from '@/components/ui/toaster'
 import MigrationDriftBanner from '@/components/admin/MigrationDriftBanner'
+import { HelpDeskSidebar } from '@/components/HelpDeskSidebar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createServerClient()
@@ -94,6 +95,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* Single Toaster mount for every dashboard route — see
           components/ui/toaster.tsx for usage. */}
       <Toaster />
+      {/* Help Desk sidebar — persists across all dashboard pages */}
+      <HelpDeskSidebar />
     </>
   )
 }

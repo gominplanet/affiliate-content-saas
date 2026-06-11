@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
-import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { pickWeightedStyleIndex, OVERLAY_STYLES, drawHeadline, type HeadlinePosition, type FaceBox } from '@/lib/thumbnail-overlay'
@@ -2537,7 +2536,6 @@ export default function StudioPage() {
         subtitle="Generate titles, descriptions, tags, hashtags and thumbnails for any video, then push it all back to YouTube in one click. Add the Amazon ASIN to your title for an exact product review with affiliate links."
       />
 
-      <TutorialVideo sectionKey="studio" />
 
       {/* Connect YouTube OAuth banner */}
       {needsAuth && (

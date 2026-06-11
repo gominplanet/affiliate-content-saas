@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapReachedBanner } from '@/components/CapReachedBanner'
 import { useConfirm } from '@/components/ui/useConfirm'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -284,7 +283,6 @@ export default function CollaborationsPage() {
         subtitle="Fill this out and we'll research the brand and write a pitch email that sells your work, ready to copy and send."
       />
 
-      <TutorialVideo sectionKey="collaborations" />
 
       {/* Recommended Tools — outside-of-MVP resources that help with the
           brand-outreach workflow. Surfaced here because /collaborations is

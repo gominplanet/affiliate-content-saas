@@ -12,7 +12,6 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import { metaEnabled, socialEnabled, type GatedSocialPlatform } from '@/lib/feature-flags'
 import { effectiveTier } from '@/lib/view-as'
 import { Suspense } from 'react'
-import { TutorialVideo } from '@/components/TutorialVideo'
 import WordPressSitesManager from '@/components/dashboard/WordPressSitesManager'
 import { IntegrationsPanel } from './_components'
 
@@ -1089,7 +1088,6 @@ function SetupPageInner() {
             <a href="/setup" className="text-[#7C3AED] hover:underline font-medium">← Back to Blog Set Up</a>
           </p>
         </div>
-        <TutorialVideo sectionKey="integrations" />
         <IntegrationsPanel onLoad={() => {}} />
         {/* Multi-site WordPress manager — Pro feature. Renders only if the
             user has at least one WP site connected; otherwise the existing
@@ -1128,7 +1126,6 @@ function SetupPageInner() {
             Your WordPress sites, connection health, and publishing settings.
           </p>
         </div>
-        <TutorialVideo sectionKey="blog-setup" />
 
         {/* Primary status — current default site at a glance */}
         <div className="card p-5">
@@ -1211,7 +1208,6 @@ function SetupPageInner() {
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
           <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in a few minutes.</p>
         </div>
-        <TutorialVideo sectionKey="blog-setup" />
         <div className="card p-7">
           <ModePicker onSelect={setMode} />
         </div>
@@ -1226,7 +1222,6 @@ function SetupPageInner() {
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
         </div>
-        <TutorialVideo sectionKey="blog-setup" />
         <div className="card p-7">
           <ExistingConnect
             onBack={() => setMode(null)}
@@ -1247,7 +1242,6 @@ function SetupPageInner() {
         <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Blog Set Up</h1>
         <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">Get your WordPress affiliate blog running in a few minutes.</p>
       </div>
-      <TutorialVideo sectionKey="blog-setup" />
 
       <div className="flex items-center justify-between mb-2">
         <StepIndicator current={step} />

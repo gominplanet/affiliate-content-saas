@@ -9,7 +9,6 @@ import { createBrowserClient } from '@/lib/supabase/client'
 import PageHero from '@/components/layout/PageHero'
 import { useConfirm } from '@/components/ui/useConfirm'
 import { useModalA11y } from '@/components/ui/useModalA11y'
-import { TutorialVideo } from '@/components/TutorialVideo'
 import { CapBannerHost, dispatchCapReached } from '@/components/CapReachedBanner'
 import { SOCIAL_CAP } from '@/lib/social-cap'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
@@ -2741,7 +2740,6 @@ export default function ContentPage() {
         }
       />
 
-      <TutorialVideo sectionKey="library" />
       <CapBannerHost />
 
       {/* Tab bar — split Videos into Horizontal (16:9 long-form, blog source)

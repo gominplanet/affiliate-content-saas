@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { TutorialVideo } from '@/components/TutorialVideo'
 import { Save, Check, Loader2, Sparkles } from 'lucide-react'
 import {
   VOICE_QUESTIONS, STYLE_AXES, SPEECH_PATTERNS, THOUGHT_PROCESS,
@@ -142,7 +141,6 @@ export default function LearnPage() {
         subtitle="Train the blog writer in your voice. Every field here is read by MVP on every post — be specific."
       />
 
-      <TutorialVideo sectionKey="learning" />
 
       <div className="max-w-3xl mb-4">
         <div className="card p-4 flex items-start gap-3" style={{ background: 'linear-gradient(180deg, rgba(88,86,214,0.05) 0%, transparent 100%)', borderColor: 'rgba(88,86,214,0.25)' }}>

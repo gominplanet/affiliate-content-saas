@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import PageHero from '@/components/layout/PageHero'
-import { TutorialVideo } from '@/components/TutorialVideo'
 import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Plus, Trash2, Save, Loader2, ToggleLeft, ToggleRight,
@@ -659,7 +658,6 @@ export default function CustomizePage() {
 
       <div className="flex flex-col gap-6 max-w-2xl">
 
-        <TutorialVideo sectionKey="customize" />
 
         {/* Cross-link banner */}
         <div className="rounded-xl border border-blue-200 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5 px-4 py-3 flex items-start gap-3">

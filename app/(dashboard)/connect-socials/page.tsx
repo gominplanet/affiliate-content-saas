@@ -20,7 +20,6 @@
 
 import { Suspense } from 'react'
 import { IntegrationsPanel } from '@/app/(dashboard)/setup/_components'
-import { TutorialVideo } from '@/components/TutorialVideo'
 
 function ConnectSocialsInner() {
   return (
@@ -34,7 +33,6 @@ function ConnectSocialsInner() {
           Connect once — fan-out posting works from anywhere in the app afterward.
         </p>
       </div>
-      <TutorialVideo sectionKey="integrations" />
       {/* Same panel that lives at /setup?tab=integrations. Reused so OAuth
           callbacks, in-flight states, and DB writes stay consistent.
           mode="socials" hides the legacy WordPress OAuth section and

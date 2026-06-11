@@ -22,7 +22,6 @@
 
 import type { Metadata } from 'next'
 import { createServerClient } from '@/lib/supabase/server'
-import { TutorialVideo } from '@/components/TutorialVideo'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
@@ -196,9 +195,6 @@ export default async function DashboardPage() {
       </section>
 
       <div className="px-6 sm:px-8 py-8 flex flex-col gap-8">
-        {/* Tutorial video — keeps its own card styling for now */}
-        <TutorialVideo sectionKey="dashboard" />
-
         {/* Quick-action chips. Each maps to a real workflow the user
             launches from the dashboard. Sit just under the hero so the
             page is "action-first" instead of "metric-first" — matches

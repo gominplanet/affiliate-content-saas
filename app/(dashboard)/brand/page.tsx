@@ -6,7 +6,6 @@ import PageHero from '@/components/layout/PageHero'
 import { Save, Check, Plus, Trash2, GripVertical, Upload, X, RefreshCw, Loader2 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { InfoTip } from '@/components/ui/InfoTip'
-import { TutorialVideo } from '@/components/TutorialVideo'
 
 async function uploadBrandImage(
   file: File,
@@ -659,7 +658,6 @@ export default function BrandPage() {
         </div>
       )}
 
-      <TutorialVideo sectionKey="brand-profile" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left — identity */}
