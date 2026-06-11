@@ -57,6 +57,16 @@ export interface VideoInput {
    *  description (Pro tier). Treated like an Amazon spec sheet — gives
    *  the writer real product facts. The transcript still drives voice. */
   productResearch?: string | null
+  /**
+   * Phase 2 keyword research — a search phrase validated for real buyer demand
+   * (mined from the Amazon seller's listing title/bullets + Amazon/Google
+   * autocomplete in lib/keyword-research.ts). When set, the writer uses it
+   * VERBATIM as the seoKeyword and places it per rule 2c instead of guessing.
+   * Null → the model derives its own keyword (prior behavior).
+   */
+  targetKeyword?: string | null
+  /** Secondary validated phrases to weave in naturally where they fit. */
+  supportingKeywords?: string[]
 }
 
 export interface BlogGenerationOutput {
@@ -385,6 +395,20 @@ CRITICAL RULES — FOLLOW STRICTLY
      That's both a punchy verdict AND a moment. Don't sacrifice the moment for blandness — sharpen both.
    • Why this matters: Google's featured-snippet picker and AI Overview lift the FIRST sentence
      after an H2 verbatim. Generic 25-word setup sentences cost you the snippet — and the click.
+
+2c. PRIMARY KEYWORD PLACEMENT (SEO) — Decide the ONE primary search phrase a buyer would type
+   (this is the seoKeyword you output in BLOCK 1) BEFORE you write, then write the post TO it.
+   If the request provides a TARGET KEYWORD, use THAT verbatim as your seoKeyword (it's already
+   validated for real search demand) — only derive your own when none is given.
+   Place that exact phrase — or a close, natural variant — in ALL of:
+     • the TITLE,
+     • the FIRST sentence (inside the answer-first lead, within the first ~100 words),
+     • at least ONE H2 subhead,
+     • naturally 3–5× across the body (it also seeds the slug).
+   Keep it human: if a spot reads awkwardly with the exact phrase, use a close variant there.
+   ⛔ NEVER keyword-stuff, repeat it robotically, or bend a fact to fit the phrase — rules 1
+   (transcript is law) and 8 (no fabrication) ALWAYS win over keyword placement. This is the
+   phrase the post ranks for, so treat the four placements above as REQUIRED, not optional.
 
 3. VOICE — Conversational, direct, personal. Not a product page. Not a press release.
    Match the writing sample above precisely if provided.
@@ -1409,7 +1433,7 @@ BLOCK 1 rules:
 - slug: kebab-case derived from the truthful title — it must NOT contain any term
   the title doesn't (no invented function/component leaking into the URL).
 - excerpt: max 160 chars
-- seoKeyword: the ONE primary search phrase a real buyer would type into Google/YouTube to find THIS product/topic. Derive it from what the creator actually says in the transcript + the product facts — natural buyer language (e.g. "adjustable neck harness", "best budget standing desk"), 2–5 words, no brand fluff, no special characters. This is the phrase the post should rank for.
+- seoKeyword: the ONE primary search phrase a real buyer would type into Google/YouTube to find THIS product/topic. Derive it from what the creator actually says in the transcript + the product facts — natural buyer language (e.g. "adjustable neck harness", "best budget standing desk"), 2–5 words, no brand fluff, no special characters. This is the phrase the post should rank for — and you MUST place it across the post per rule 2c (title, answer-first lead, ≥1 H2 subhead, and 3–5× in the body).
 - metaDescription: the SERP/social meta description, MAX 155 chars. Lead with seoKeyword in the first few words, then a concrete benefit + a reason to click. Active voice, no hype, no clickbait, never the word "honest". This is distinct from excerpt — write it to win the click in search results.
 - tags: 10 items — mix of broad high-traffic, niche-specific, and product/brand tags for SEO and social virality
 - category: REQUIRED — pick EXACTLY ONE label from this list of brand niches that best fits THIS specific product: ${niches}. Copy the label verbatim, including capitalization, spacing, and the "&" character. If multiple niches plausibly fit, pick the most specific one (e.g. for a kitchen mat prefer "Home & Kitchen" over "Tools & Home Improvement"). If none of the brand niches plausibly fit, pick the closest match anyway — never invent a new category and never leave this field blank.
@@ -2162,7 +2186,7 @@ The rest of the brand voice, tone, length, learn-profile rules, and formatting f
 
 VIDEO ID: ${video.videoId}
 TITLE: ${video.title}
-${isProduct ? `AFFILIATE URL: ${affiliateUrl || '[AFFILIATE_LINK]'}` : 'AFFILIATE URL: (none — general video, no product)'}
+${video.targetKeyword ? `TARGET KEYWORD — researched from the Amazon seller's listing (title + "about this item" bullets) and validated against live Amazon + Google autocomplete demand. USE THIS VERBATIM as your seoKeyword and place it per rule 2c; do NOT invent a different one: "${video.targetKeyword}"${video.supportingKeywords && video.supportingKeywords.length ? `\nSUPPORTING KEYWORDS (secondary phrases buyers also search — weave in naturally ONLY where they genuinely fit, never force): ${video.supportingKeywords.join(', ')}` : ''}\n` : ''}${isProduct ? `AFFILIATE URL: ${affiliateUrl || '[AFFILIATE_LINK]'}` : 'AFFILIATE URL: (none — general video, no product)'}
 VIDEO TAGS: ${video.tags.join(', ')}
 
 VIDEO DESCRIPTION:

@@ -55,7 +55,7 @@ function renderFaqBlock(items: { question: string; answer: string }[]): string {
  *  impossible fix that would then bail with a confusing skip reason. */
 export function fixableFailing(post: FixablePost, siteHost: string): SeoFixType[] {
   const title = post.title || ''
-  const { checks } = scorePostSeo({ title, contentHtml: post.content || '', siteHost, postType: post.post_type || 'review' })
+  const { checks } = scorePostSeo({ title, contentHtml: post.content || '', siteHost, postType: post.post_type || 'review', seoKeyword: post.seo_keyword })
   return checks
     .filter(c => !c.pass && (SEO_FIX_TYPES as string[]).includes(c.id))
     .filter(c => !(c.id === 'title_length' && title.length <= 65))
@@ -188,7 +188,7 @@ export async function applyPostFixes(opts: {
     await supabase.from('blog_posts').update(dbUpdate).eq('id', post.id)
   }
 
-  const { score, checks } = scorePostSeo({ title: state.title, contentHtml: state.content, siteHost: wpBase, postType })
+  const { score, checks } = scorePostSeo({ title: state.title, contentHtml: state.content, siteHost: wpBase, postType, seoKeyword: post.seo_keyword })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   try { await supabase.from('post_seo').update({ seo_score: score, score_detail: checks, checked_at: new Date().toISOString() }).eq('post_id', post.id) } catch { /* non-fatal */ }
 

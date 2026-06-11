@@ -15,10 +15,11 @@ import { discoverProductForVideo } from '@/lib/product-detect'
 import { firstProductUrl, resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { resolveGeniuslinkGroupId, appendAmazonSubtag, groupNameForSiteUrl } from '@/lib/geniuslink-group'
-import { extractAsin } from '@/services/amazon'
+import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { verifyProductMatch } from '@/lib/product-image'
 import { researchProductFromUrl, researchProductByWebSearch } from '@/services/research'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
+import { researchKeyword } from '@/lib/keyword-research'
 import { maybeEvolveLearnProfile } from '@/lib/learn-evolve'
 import { maybeDistillFeedback } from '@/lib/feedback-distill'
 import { maybeLearnFromEdits } from '@/lib/edit-learning'
@@ -790,6 +791,39 @@ async function handleGenerate(request: Request) {
     }
   }
 
+  // ── 5.95. Keyword research (Phase 2 — FREE). The Amazon seller already did
+  //          the keyword research for us: the listing TITLE is packed with the
+  //          highest-converting buyer search terms (strongest signal), the
+  //          "about this item" bullets second. Mine those + validate real
+  //          demand with FREE Amazon + Google autocomplete, and hand the writer
+  //          a researched target keyword instead of letting it guess. Best-
+  //          effort + time-boxed; on any failure the model derives its own
+  //          keyword (prior behavior) so generation never blocks. No paid APIs,
+  //          no user accounts (see lib/keyword-research.ts).
+  let targetKeyword: string | null = null
+  let supportingKeywords: string[] = []
+  if (asinOverride) {
+    const research = await withTimeout(
+      (async () => {
+        const product = await fetchAmazonProduct(asinOverride!).catch(() => null)
+        if (!product?.title) return null
+        return researchKeyword({
+          amazonTitle: product.title,
+          amazonBullets: product.bullets,
+          videoTitle: rawTitle,
+          brandName: (brand as Record<string, unknown>).name as string | undefined,
+        })
+      })(),
+      12000,
+      null,
+    )
+    if (research?.primary) {
+      targetKeyword = research.primary
+      supportingKeywords = research.supporting
+      console.log('[blog/generate] keyword research', { primary: targetKeyword, supporting: supportingKeywords })
+    }
+  }
+
   // ── 6. Generate blog post with Claude ─────────────────────────────────────
   const claude = createClaudeService()
   let generated
@@ -834,6 +868,8 @@ async function handleGenerate(request: Request) {
         asinOverride,
         affiliateUrlOverride,
         productResearch,
+        targetKeyword,
+        supportingKeywords,
       },
       { userId: user.id, tier: (wp?.tier as string) ?? null },
       isRewrite ? (rewriteFeedback?.trim() || null) : null,

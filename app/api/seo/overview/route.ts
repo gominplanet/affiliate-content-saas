@@ -71,12 +71,12 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: postsRaw } = await supabase
     .from('blog_posts')
-    .select('id,title,slug,content,post_type,wordpress_post_id,wordpress_site_id,published_at')
+    .select('id,title,slug,content,seo_keyword,post_type,wordpress_post_id,wordpress_site_id,published_at')
     .eq('user_id', ownerId)
     .not('wordpress_post_id', 'is', null)
     .order('published_at', { ascending: false })
     .limit(POSTS_OVERVIEW_CAP)
-  type Post = { id: string; title: string; slug: string; content: string; post_type: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null }
+  type Post = { id: string; title: string; slug: string; content: string; seo_keyword: string | null; post_type: string | null; wordpress_post_id: number | null; wordpress_site_id: string | null; published_at: string | null }
   const posts = (postsRaw as Post[] | null) ?? []
 
   // ── Multi-site setup: resolve every site referenced by these posts, once.
@@ -200,7 +200,7 @@ export async function GET() {
     const siteCtx = siteFor(p)
     const wpBase = siteCtx?.wpBase ?? ''
     const { score, checks } = scorePostSeo({
-      title: p.title || '', contentHtml: p.content || '', siteHost: wpBase, postType: p.post_type || 'review',
+      title: p.title || '', contentHtml: p.content || '', siteHost: wpBase, postType: p.post_type || 'review', seoKeyword: p.seo_keyword,
     })
     const matchedPage = findPageForSlug(p.slug)
     const url = matchedPage || (wpBase && p.slug ? `${wpBase}/${p.slug}` : null)

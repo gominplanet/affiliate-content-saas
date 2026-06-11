@@ -24,6 +24,12 @@ export interface SeoScoreInput {
   /** The user's site host, to identify INTERNAL links (e.g. gominreviews.com). */
   siteHost?: string | null
   postType?: string // 'review' | 'comparison' | 'guide'
+  /**
+   * The post's primary target keyword (blog_posts.seo_keyword), if set. Drives the
+   * keyword-placement checks. When absent, those checks are neutral-weighted so
+   * un-keyworded / legacy posts aren't penalized.
+   */
+  seoKeyword?: string | null
 }
 
 export interface SeoScoreResult {
@@ -39,6 +45,28 @@ function plainText(html: string): string {
     .replace(/&[a-z#0-9]+;/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+// Words too generic to require for a keyword match (so "best budget standing desk"
+// still matches a "Budget Standing Desk" title that drops "best").
+const KW_STOPWORDS = new Set(['the', 'a', 'an', 'for', 'and', 'or', 'of', 'to', 'with', 'in', 'on', 'best', 'top', 'review', 'reviews'])
+
+function normalizeForKeyword(s: string): string {
+  return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+// Tolerant keyword matcher: accepts an exact-phrase hit, or all significant tokens
+// (length ≥ 3, minus stopwords) present in the text. Forgiving of plurals and word
+// order — "dog harness" matches "harness for dogs" — which is what natural on-page
+// keyword usage looks like. Substring token match is intentional (favors recall).
+function keywordHit(haystack: string, keyword: string): boolean {
+  const hay = normalizeForKeyword(haystack)
+  const kw = normalizeForKeyword(keyword)
+  if (!hay || !kw) return false
+  if (hay.includes(kw)) return true
+  const tokens = kw.split(' ').filter(t => t.length >= 3 && !KW_STOPWORDS.has(t))
+  if (tokens.length === 0) return false
+  return tokens.every(t => hay.includes(t))
 }
 
 export function scorePostSeo(input: SeoScoreInput): SeoScoreResult {
@@ -64,8 +92,18 @@ export function scorePostSeo(input: SeoScoreInput): SeoScoreResult {
   // direct-answer lead AI Overviews reward), or the first ~600 chars carry
   // a real paragraph of prose.
   const beforeFirstH2 = html.split(/<h2[\s>]/i)[0] || ''
-  const leadWords = plainText(beforeFirstH2).split(/\s+/).filter(Boolean).length
+  const leadText = plainText(beforeFirstH2)
+  const leadWords = leadText.split(/\s+/).filter(Boolean).length
   const answerFirst = leadWords >= 30
+
+  // Primary-keyword discipline (Phase 1). Neutral-weighted when no seoKeyword is set
+  // so legacy / un-keyworded posts aren't penalized.
+  const h2Texts = (html.match(/<h2\b[^>]*>([\s\S]*?)<\/h2>/gi) || []).map(plainText)
+  const kw = (input.seoKeyword || '').trim()
+  const hasKw = kw.length >= 2
+  const kwInTitle = hasKw && keywordHit(title, kw)
+  const kwInIntro = hasKw && keywordHit(leadText, kw)
+  const kwInSubhead = hasKw && h2Texts.some(h => keywordHit(h, kw))
 
   const faqCount = (() => { try { return extractFaqFromHtml(html).length } catch { return 0 } })()
   const hasFaq = faqCount > 0 || /frequently asked|<h2[^>]*>\s*FAQ/i.test(html)
@@ -93,6 +131,21 @@ export function scorePostSeo(input: SeoScoreInput): SeoScoreResult {
       id: 'answer_first', label: 'Answer-first intro (AI Overview signal)',
       pass: answerFirst, weight: 14,
       hint: 'Open with a direct 2–3 sentence answer before the first section — this is what AI Overviews quote.',
+    },
+    {
+      id: 'keyword_title', label: 'Primary keyword in the title',
+      pass: hasKw ? kwInTitle : true, weight: hasKw ? 10 : 0,
+      hint: 'Work your target search phrase into the title — it’s the strongest on-page ranking signal.',
+    },
+    {
+      id: 'keyword_intro', label: 'Primary keyword in the opening',
+      pass: hasKw ? kwInIntro : true, weight: hasKw ? 8 : 0,
+      hint: 'Use the target phrase in the first sentence / lead — Google and AI Overviews weight it heavily.',
+    },
+    {
+      id: 'keyword_subhead', label: 'Primary keyword in a subhead',
+      pass: hasKw ? kwInSubhead : true, weight: hasKw ? 6 : 0,
+      hint: 'Put the target phrase (or a close variant) in at least one H2 subheading.',
     },
     {
       id: 'internal_links', label: 'Internal links (2+)',
