@@ -1626,7 +1626,7 @@ function ProofSection() {
             className="text-[16px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            Gominplanet grew this affiliate business past $3M a year in revenue — and it&apos;s a big reason brands want to work with us. MVP is that system, made yours.
+            Gominplanet grew this affiliate business past $3M a year in revenue — and it&apos;s a big reason brands want to work with us. We built MVP to run it. Now it&apos;s yours.
           </p>
         </div>
 
