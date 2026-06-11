@@ -640,7 +640,7 @@ const ROLES: Role[] = [
   {
     icon: <Wand2 size={18} />,
     label: 'Thumbnail maker',
-    line: 'Click-worthy thumbnails and titles, scored best-first — AI-built from your actual video frames.',
+    line: 'Click-worthy thumbnails and titles, scored best-first — AI-generated with your face and the product.',
   },
 ]
 
@@ -1016,7 +1016,7 @@ const COMPARISON_ROWS: ComparisonRowData[] = [
   {
     label: 'Thumbnails',
     oldWay: 'Generic AI illustrations.',
-    mvpWay: 'Built from your actual video frames, with your face baked in.',
+    mvpWay: 'AI-generated with your real face and the actual product.',
   },
   {
     label: 'Time',
