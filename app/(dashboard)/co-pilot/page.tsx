@@ -2380,7 +2380,7 @@ export default function StudioPage() {
    *  refresh so the list updates in place instead of flashing empty for a
    *  beat — the user just pushed a video, they don't want to see a spinner.
    */
-  const load = useCallback(async (opts?: { pageToken?: string; query?: string; append?: boolean; includePublished?: boolean; silent?: boolean }) => {
+  const load = useCallback(async (opts?: { pageToken?: string; query?: string; append?: boolean; includePublished?: boolean; silent?: boolean; forceRefresh?: boolean }) => {
     const append = opts?.append === true
     const silent = opts?.silent === true
     if (append) setLoadingMore(true)
@@ -2413,6 +2413,7 @@ export default function StudioPage() {
     if (pageToken) params.set('pageToken', pageToken)
     if (query) params.set('q', query)
     if (wantPublished) params.set('includePublished', '1')
+    if (opts?.forceRefresh) params.set('refresh', '1')
     const url = params.toString() ? `/api/youtube/drafts?${params.toString()}` : '/api/youtube/drafts'
     const res = await fetch(url)
     const data = await res.json()
@@ -2502,7 +2503,7 @@ export default function StudioPage() {
 
   const refresh = useCallback(() => {
     setNextPageToken(undefined)
-    load({ query: activeQuery, includePublished })
+    load({ query: activeQuery, includePublished, forceRefresh: true })
   }, [load, activeQuery, includePublished])
 
   // When the user flips the "Include published videos" toggle, treat it

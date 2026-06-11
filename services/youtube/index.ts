@@ -255,17 +255,25 @@ export class YouTubeOAuthService {
     return { videos, nextPageToken: searchData.nextPageToken }
   }
 
-  // List videos for the authenticated user (includes private/draft), with pagination
+  // Resolve the uploads playlist ID for the authenticated user.
+  // Costs 1 quota unit — callers should cache the result.
+  async getUploadsPlaylistId(): Promise<string> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const channelData = await this.get<any>('/channels', { part: 'contentDetails', mine: 'true' })
+    const id = channelData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads as string | undefined
+    if (!id) throw new Error('No uploads playlist found')
+    return id
+  }
+
+  // List videos for the authenticated user (includes private/draft), with pagination.
+  // Pass `cachedPlaylistId` to skip the channels.list quota call — the ID is
+  // stable for the lifetime of a channel, so callers should persist it.
   async getDraftVideos(
     maxResults = 25,
     pageToken?: string,
-  ): Promise<{ videos: DraftVideo[]; nextPageToken?: string }> {
-    // Get the authenticated user's channel
-    const channelData = await this.get<any>('/channels', {
-      part: 'contentDetails',
-      mine: 'true',
-    })
-    const uploadsPlaylistId = channelData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads
+    cachedPlaylistId?: string,
+  ): Promise<{ videos: DraftVideo[]; nextPageToken?: string; uploadsPlaylistId: string }> {
+    const uploadsPlaylistId = cachedPlaylistId ?? await this.getUploadsPlaylistId()
     if (!uploadsPlaylistId) throw new Error('No uploads playlist found')
 
     // List videos (includes private), one page at a time
@@ -278,7 +286,7 @@ export class YouTubeOAuthService {
     const playlistData = await this.get<any>('/playlistItems', params)
 
     const items = playlistData.items ?? []
-    if (items.length === 0) return { videos: [], nextPageToken: undefined }
+    if (items.length === 0) return { videos: [], nextPageToken: undefined, uploadsPlaylistId }
 
     // Get full video details including status
     const videoIds = items.map((i: any) => i.snippet.resourceId.videoId).join(',')
@@ -302,7 +310,7 @@ export class YouTubeOAuthService {
       }
     })
 
-    return { videos, nextPageToken: playlistData.nextPageToken }
+    return { videos, nextPageToken: playlistData.nextPageToken, uploadsPlaylistId }
   }
 
   // Update a video's title, description, and tags

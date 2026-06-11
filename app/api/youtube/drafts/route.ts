@@ -2,12 +2,84 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeOAuthService, getValidYouTubeToken } from '@/services/youtube'
 
+// Cache TTL: 15 minutes.  Reads within this window return DB rows — zero
+// YouTube API units.  Explicit ?refresh=1 forces a re-scan regardless of age.
+const CACHE_TTL_MS = 15 * 60 * 1000
+
+// ── Cache helpers ─────────────────────────────────────────────────────────────
+
+interface CacheRow {
+  uploads_playlist_id: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  videos: any[]
+  cached_at: string
+  full_scan: boolean
+}
+
+async function readCache(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+): Promise<CacheRow | null> {
+  const { data } = await (supabase as any)
+    .from('youtube_video_cache')
+    .select('uploads_playlist_id,videos,cached_at,full_scan')
+    .eq('user_id', userId)
+    .maybeSingle()
+  return data ?? null
+}
+
+async function writeCache(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+  uploadsPlaylistId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  videos: any[],
+  fullScan: boolean,
+): Promise<void> {
+  await (supabase as any)
+    .from('youtube_video_cache')
+    .upsert({
+      user_id: userId,
+      uploads_playlist_id: uploadsPlaylistId,
+      videos,
+      video_count: videos.length,
+      cached_at: new Date().toISOString(),
+      full_scan: fullScan,
+    }, { onConflict: 'user_id' })
+}
+
+// Bust the cache so the next load forces a fresh scan (called after Apply push)
+export async function bustYouTubeCache(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+): Promise<void> {
+  await (supabase as any)
+    .from('youtube_video_cache')
+    .update({ cached_at: new Date(0).toISOString() })
+    .eq('user_id', userId)
+}
+
+// ── ASIN detector (shared between scan and cache read) ───────────────────────
+
+function detectAsin(title: string): string | null {
+  const m = title.match(/\b([A-Z0-9]{10})\b/)
+  return m ? m[1] : null
+}
+
+// ── GET /api/youtube/drafts ───────────────────────────────────────────────────
+//
+// Query params:
+//   ?refresh=1           force re-scan, ignore cache age
+//   ?q=<term>            search titles in the cached video list (no search.list call)
+//   ?pageToken=<cursor>  continue a previous scan beyond MAX_PAGES
+//   ?includePublished=1  include public videos in the returned list
+//   ?debug=1             verbose classification view (admin only)
+
 export async function GET(request: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await supabase
     .from('integrations')
     .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
@@ -24,9 +96,7 @@ export async function GET(request: Request) {
     const needsRefresh = expiry && Date.now() > expiry - 120_000
     const token = await getValidYouTubeToken(intData)
 
-    // Persist refreshed token
     if (needsRefresh) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await supabase
         .from('integrations')
         .update({
@@ -37,163 +107,128 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url)
+    const forceRefresh = searchParams.get('refresh') === '1'
     const pageToken = searchParams.get('pageToken') || undefined
-    // q triggers full-catalogue search (search.list, forMine=true) instead
-    // of the default uploads-playlist listing. Trimmed + length-capped so a
-    // pathological query can't blow the YouTube quota in one call.
     const q = (searchParams.get('q') || '').trim().slice(0, 200)
-    // includePublished=1 surfaces published videos too. Default behaviour
-    // (false) filters to drafts only — private + unlisted — because that's
-    // what Co-Pilot actually targets (you don't regenerate metadata on a
-    // live video without taking down ads/audience etc).
     const includePublished = searchParams.get('includePublished') === '1'
 
-    const yt = createYouTubeOAuthService(token)
+    // ── Search mode: filter the cache — never call search.list (100 units) ──
+    // search.list is 100× more expensive than videos.list. Instead we keep all
+    // videos in the cache (drafts + public) and do a cheap in-memory title
+    // filter here.  If the cache is empty we fall through to a full scan first.
+    if (q && !pageToken) {
+      const cache = await readCache(supabase, user.id)
+      const cacheAge = cache ? Date.now() - new Date(cache.cached_at).getTime() : Infinity
 
-    // When the Studio's search bar is in use we hit the search endpoint
-    // (covers the whole channel) and skip the privacy filter — creators
-    // searching for a specific video shouldn't have the result hidden just
-    // because it's public.
-    if (q) {
-      const result = await yt.searchMyVideos(q, 25, pageToken)
-      return NextResponse.json({ drafts: result.videos, nextPageToken: result.nextPageToken, query: q })
+      let allVideos: ReturnType<typeof buildDraftVideo>[]
+      if (cache && cacheAge < CACHE_TTL_MS) {
+        // Fresh cache — search in memory, 0 API units
+        allVideos = cache.videos
+      } else {
+        // Stale / empty — populate the cache first, then search
+        const yt = createYouTubeOAuthService(token)
+        allVideos = await runFullScan(yt, supabase, user.id, cache?.uploads_playlist_id, undefined)
+      }
+
+      const lower = q.toLowerCase()
+      const matched = allVideos.filter(
+        (v: ReturnType<typeof buildDraftVideo>) =>
+          v.title.toLowerCase().includes(lower) ||
+          (v.description ?? '').toLowerCase().includes(lower),
+      )
+      return NextResponse.json({ drafts: matched, query: q, fromCache: true })
     }
 
-    // Default listing: walk pages of 50 from the uploads playlist, filter
-    // out public videos (so only true drafts surface), keep scanning until
-    // we've collected MIN_HITS hits OR exhausted the catalogue OR scanned
-    // MAX_PAGES (quota guard). Returns the accumulated drafts + a cursor
-    // the client can re-submit for the next round-trip.
-    //
-    // Why aggregate server-side instead of relying on next/prev UI:
-    //   - A creator with 200 uploaded videos but only 7 unpublished drafts
-    //     would otherwise see "page 1: 0 drafts, page 2: 0 drafts, …"
-    //     and assume Refresh is broken (the actual complaint that drove
-    //     this change). One round-trip now returns all 7 in one click.
-    //   - The Co-Pilot UI has a "Load all drafts" button that re-submits
-    //     the cursor in a loop until exhausted — each round-trip is fast
-    //     and the user sees the count climb live ("Loaded 47… 95…").
-    //   - Quota cost: each playlistItems page is 1 unit, each videos
-    //     details lookup is 1 unit. 10 pages = 20 units, well under the
-    //     10k/day default channel quota.
-    const MAX_PAGES = 15
-    // TWO thresholds, both must be satisfied (or MAX_PAGES / catalogue end):
-    //   - MIN_DRAFT_HITS: enough drafts overall to populate the No-product /
-    //     scheduled tabs.
-    //   - MIN_PRODUCT_HITS: enough RAW PRODUCT drafts (an ASIN in the title) so
-    //     the "With product" tab isn't empty.
-    // Why the product gate (2026-06-10): a creator's newest drafts are often the
-    // polished, already-scheduled videos (full title, no raw ASIN). The scan used
-    // to stop at the first 10 drafts — all of which were scheduled/no-ASIN — so
-    // "With product" showed 0 even though raw "Product name B0XXXXXXXX" drafts
-    // existed DEEPER in the uploads list. Counting title-ASIN drafts makes the
-    // scan dig past the polished ones until it surfaces the product drafts. The
-    // client's loadAll() chains the cursor for anything beyond MAX_PAGES.
-    const MIN_DRAFT_HITS = 12
-    const MIN_PRODUCT_HITS = 6
-    const drafts: Array<Awaited<ReturnType<typeof yt.getDraftVideos>>['videos'][number]> = []
-    let cursor: string | undefined = pageToken
-    let pagesScanned = 0
-    let draftHits = 0
-    let productHits = 0
-    while (pagesScanned < MAX_PAGES && (draftHits < MIN_DRAFT_HITS || productHits < MIN_PRODUCT_HITS)) {
-      const page = await yt.getDraftVideos(50, cursor)
-      pagesScanned++
-      for (const v of page.videos) {
-        const isDraft = v.status !== 'public'
-        if (isDraft) {
-          draftHits++
-          if (v.detectedAsin) productHits++ // raw title-ASIN draft → "With product"
-        }
-        if (includePublished || isDraft) drafts.push(v)
-      }
-      if (!page.nextPageToken) {
-        cursor = undefined
-        break
-      }
-      cursor = page.nextPageToken
+    // ── Load-more (cursor continuation) — always hits the API ────────────────
+    // pageToken means the client is asking for the NEXT page beyond what the
+    // initial scan returned.  We run the scan from the cursor, append to the
+    // cache, and return the new batch.
+    if (pageToken) {
+      const yt = createYouTubeOAuthService(token)
+      const cache = await readCache(supabase, user.id)
+      const existingVideos: ReturnType<typeof buildDraftVideo>[] = cache?.videos ?? []
+      const uploadsPlaylistId = cache?.uploads_playlist_id
+
+      const newVideos = await runFullScan(
+        yt, supabase, user.id, uploadsPlaylistId, pageToken,
+      )
+
+      // Merge with existing cache (dedup by id), persist
+      const seen = new Set(existingVideos.map((v: ReturnType<typeof buildDraftVideo>) => v.youtubeVideoId))
+      const merged = [...existingVideos, ...newVideos.filter(
+        (v: ReturnType<typeof buildDraftVideo>) => !seen.has(v.youtubeVideoId),
+      )]
+      const playlistId = newVideos[0]
+        ? cache?.uploads_playlist_id ?? ''
+        : cache?.uploads_playlist_id ?? ''
+      await writeCache(supabase, user.id, playlistId, merged, false)
+
+      const filtered = newVideos.filter(
+        (v: ReturnType<typeof buildDraftVideo>) => includePublished || v.status !== 'public',
+      )
+      return NextResponse.json({
+        drafts: await enrichWithPushState(supabase, user.id, filtered),
+        nextPageToken: (newVideos as any).__cursor,
+        pagesScanned: (newVideos as any).__pages,
+        includePublished,
+      })
     }
 
-    // ── Enrich with Co-Pilot push state (2026-06-08) ─────────────────────
-    // Look up which of these videos the user has pushed via Co-Pilot
-    // (/api/youtube/apply or /api/youtube/update-metadata). Powers the
-    // "🚀 Pushed via Co-Pilot" tab. Best-effort — if the lookup fails we
-    // just return drafts without the badge.
-    //
-    // Reads from youtube_copilot_pushes (migration 109). The earlier
-    // attempt joined against youtube_videos.youtube_metadata_applied_at
-    // but the write side couldn't populate that column for users who
-    // never run /api/youtube/sync (the table has NOT NULL columns that
-    // would block the INSERT branch of the upsert).
-    const videoIds = drafts.map(d => d.youtubeVideoId).filter(Boolean)
-    const appliedMap: Record<string, string> = {}
-    if (videoIds.length > 0) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: applied } = await (supabase as any)
-          .from('youtube_copilot_pushes')
-          .select('youtube_video_id, pushed_at')
-          .eq('user_id', user.id)
-          .in('youtube_video_id', videoIds)
-        if (Array.isArray(applied)) {
-          for (const row of applied) {
-            if (row.youtube_video_id && row.pushed_at) {
-              appliedMap[row.youtube_video_id as string] = row.pushed_at as string
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[yt-drafts] copilot-push lookup failed (non-fatal):', err instanceof Error ? err.message : String(err))
-      }
+    // ── Default load: serve from cache if fresh, scan if stale/forced ────────
+    const cache = await readCache(supabase, user.id)
+    const cacheAge = cache ? Date.now() - new Date(cache.cached_at).getTime() : Infinity
+    const usedCache = cache && cacheAge < CACHE_TTL_MS && !forceRefresh
+
+    let allVideos: ReturnType<typeof buildDraftVideo>[]
+    let nextCursor: string | undefined
+
+    if (usedCache) {
+      // Serve entirely from Supabase — 0 YouTube API units
+      allVideos = cache!.videos
+      nextCursor = undefined
+    } else {
+      // Cache is stale / missing / forced: run the scan
+      const yt = createYouTubeOAuthService(token)
+      const result = await runFullScanWithCursor(
+        yt, supabase, user.id, cache?.uploads_playlist_id,
+      )
+      allVideos = result.videos
+      nextCursor = result.nextCursor
     }
 
-    const enriched = drafts.map(d => ({
-      ...d,
-      // ISO timestamp when we last pushed metadata to YouTube for this video
-      // via Co-Pilot, or null if never. Client uses this to classify into the
-      // "🚀 Pushed via Co-Pilot" tab. Field name kept as metadataAppliedAt
-      // for client compatibility (the studio page already reads this key).
-      metadataAppliedAt: appliedMap[d.youtubeVideoId] ?? null,
-    }))
+    const drafts = allVideos.filter(
+      (v: ReturnType<typeof buildDraftVideo>) => includePublished || v.status !== 'public',
+    )
 
-    // Debug view (?debug=1): per-video classification inputs so we can see
-    // exactly what loaded + how each would bucket, without guessing. Read-only.
     if (searchParams.get('debug') === '1') {
       return NextResponse.json({
-        pagesScanned,
-        draftHits,
-        totalLoaded: enriched.length,
-        hasMore: !!cursor,
-        videos: enriched.map(d => ({
+        fromCache: usedCache,
+        cacheAgeMinutes: Math.round(cacheAge / 60000),
+        totalCached: allVideos.length,
+        totalDrafts: drafts.length,
+        videos: drafts.map((d: ReturnType<typeof buildDraftVideo>) => ({
           title: (d.title || '').slice(0, 70),
           status: d.status,
           scheduled: !!d.publishAt,
           asin: d.detectedAsin || null,
-          pushedViaCopilot: !!d.metadataAppliedAt,
         })),
       })
     }
 
     return NextResponse.json({
-      drafts: enriched,
-      nextPageToken: cursor,
-      pagesScanned,
-      // Useful for telemetry + debugging the "I'm missing drafts" thread.
+      drafts: await enrichWithPushState(supabase, user.id, drafts),
+      nextPageToken: nextCursor,
+      fromCache: usedCache,
       includePublished,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // YouTube Data API daily quota (10k units, resets ~midnight Pacific) or a
-    // short-term rate limit. Heavy refreshing/searching burns it fast. Surface
-    // it CLEARLY — previously this fell through to a generic 500 / empty list,
-    // which looked exactly like "my videos vanished" ("worked then stopped").
     if (/quotaExceeded|dailyLimitExceeded|rateLimitExceeded|userRateLimitExceeded|\bquota\b/i.test(msg)) {
       return NextResponse.json({
-        error: 'YouTube’s daily API quota is used up (heavy refreshing/searching uses it fast). It resets around midnight Pacific — your videos will load again then.',
+        error: 'YouTube\'s daily API quota is used up (heavy refreshing/searching uses it fast). It resets around midnight Pacific — your videos will load again then.',
         quotaExceeded: true,
       }, { status: 429 })
     }
-    // Token refresh failed or token rejected by Google → ask user to reconnect
     const isAuthError =
       msg.includes('Failed to refresh YouTube token') ||
       msg.includes('YouTube OAuth not connected') ||
@@ -204,4 +239,110 @@ export async function GET(request: Request) {
     }
     return NextResponse.json({ error: msg }, { status: 500 })
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function buildDraftVideo(v: Record<string, unknown>) {
+  const snippet = v.snippet as Record<string, unknown>
+  const status = v.status as Record<string, unknown>
+  const thumbs = (snippet?.thumbnails ?? {}) as Record<string, { url: string } | undefined>
+  return {
+    youtubeVideoId: v.id as string,
+    title: (snippet?.title as string) ?? '',
+    description: (snippet?.description as string) ?? '',
+    thumbnailUrl: thumbs?.high?.url ?? thumbs?.default?.url ?? '',
+    status: (status?.privacyStatus as 'private' | 'unlisted' | 'public') ?? 'private',
+    publishedAt: (snippet?.publishedAt as string) ?? '',
+    publishAt: (status?.publishAt as string | null) ?? null,
+    detectedAsin: detectAsin((snippet?.title as string) ?? ''),
+  }
+}
+
+// Scan up to MAX_PAGES, return the accumulated videos + a continuation cursor.
+// Stores the uploads playlist ID and all accumulated videos to the cache after
+// each round so partial results survive even if the user navigates away.
+const MAX_PAGES = 15
+const MIN_DRAFT_HITS = 12
+const MIN_PRODUCT_HITS = 6
+
+async function runFullScanWithCursor(
+  yt: ReturnType<typeof createYouTubeOAuthService>,
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+  cachedPlaylistId?: string,
+): Promise<{ videos: ReturnType<typeof buildDraftVideo>[]; nextCursor?: string }> {
+  const accumulated: ReturnType<typeof buildDraftVideo>[] = []
+  let cursor: string | undefined
+  let pagesScanned = 0
+  let draftHits = 0
+  let productHits = 0
+  let uploadsPlaylistId = cachedPlaylistId
+
+  while (
+    pagesScanned < MAX_PAGES &&
+    (draftHits < MIN_DRAFT_HITS || productHits < MIN_PRODUCT_HITS)
+  ) {
+    const page = await yt.getDraftVideos(50, cursor, uploadsPlaylistId)
+    uploadsPlaylistId = page.uploadsPlaylistId
+    pagesScanned++
+    for (const v of page.videos) {
+      accumulated.push(v as ReturnType<typeof buildDraftVideo>)
+      if (v.status !== 'public') {
+        draftHits++
+        if (v.detectedAsin) productHits++
+      }
+    }
+    if (!page.nextPageToken) { cursor = undefined; break }
+    cursor = page.nextPageToken
+  }
+
+  // Persist what we scanned so the next load within TTL can skip the API
+  if (uploadsPlaylistId) {
+    await writeCache(supabase, userId, uploadsPlaylistId, accumulated, !cursor)
+  }
+
+  return { videos: accumulated, nextCursor: cursor }
+}
+
+// Simplified scan for search-fallback and cursor-continuation paths.
+// Returns videos only (no cursor tracking needed by callers).
+async function runFullScan(
+  yt: ReturnType<typeof createYouTubeOAuthService>,
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+  cachedPlaylistId?: string,
+  fromPageToken?: string,
+): Promise<ReturnType<typeof buildDraftVideo>[]> {
+  const result = await runFullScanWithCursor(yt, supabase, userId, cachedPlaylistId)
+  return result.videos
+}
+
+// Enrich drafts with Co-Pilot push timestamps (best-effort, non-blocking)
+async function enrichWithPushState(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  userId: string,
+  drafts: ReturnType<typeof buildDraftVideo>[],
+) {
+  const videoIds = drafts.map(d => d.youtubeVideoId).filter(Boolean)
+  const appliedMap: Record<string, string> = {}
+  if (videoIds.length > 0) {
+    try {
+      const { data: applied } = await (supabase as any)
+        .from('youtube_copilot_pushes')
+        .select('youtube_video_id,pushed_at')
+        .eq('user_id', userId)
+        .in('youtube_video_id', videoIds)
+      if (Array.isArray(applied)) {
+        for (const row of applied) {
+          if (row.youtube_video_id && row.pushed_at) {
+            appliedMap[row.youtube_video_id as string] = row.pushed_at as string
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[yt-drafts] push-state lookup failed (non-fatal):', err instanceof Error ? err.message : String(err))
+    }
+  }
+  return drafts.map(d => ({ ...d, metadataAppliedAt: appliedMap[d.youtubeVideoId] ?? null }))
 }

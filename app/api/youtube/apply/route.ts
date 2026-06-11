@@ -30,6 +30,7 @@ import {
 } from '@/services/youtube'
 import { tierAllowsPublishAll, type Tier } from '@/lib/tier'
 import { resolveThumbnailInput } from '@/lib/youtube-thumbnail-input'
+import { bustYouTubeCache } from '@/app/api/youtube/drafts/route'
 
 export const maxDuration = 60
 
@@ -191,6 +192,9 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         console.warn('[yt-apply] failed to record copilot push:', err instanceof Error ? err.message : String(err))
       }
+      // Bust the video cache so the next Co-Pilot load reflects the pushed
+      // video's new title/status/thumbnail rather than serving stale data.
+      try { await bustYouTubeCache(supabase, user.id) } catch { /* non-fatal */ }
     }
 
     return NextResponse.json({ ok: warnings.length === 0, warnings })
