@@ -639,8 +639,8 @@ const ROLES: Role[] = [
   },
   {
     icon: <Wand2 size={18} />,
-    label: 'Thumbnail studio',
-    line: 'CTR-tested thumbnails and titles. AI-picked from your actual video frames.',
+    label: 'Thumbnail maker',
+    line: 'Click-worthy thumbnails and titles, scored best-first — AI-built from your actual video frames.',
   },
 ]
 
