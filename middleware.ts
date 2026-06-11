@@ -24,6 +24,8 @@ const publicPaths = [
   // rest.
   '/agency/accept',
   '/pricing', '/privacy', '/terms',
+  // Public product tour — the marketing twin of the in-app /pro-tour page.
+  '/tour',
 ]
 
 function isPublicRoot(pathname: string) {

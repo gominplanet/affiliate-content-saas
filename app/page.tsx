@@ -1993,6 +1993,9 @@ function Nav({ theme, onToggle }: { theme: 'dark' | 'light'; onToggle: () => voi
 const NAV_ANCHORS = [
   { label: 'Roles', href: '#roles' },
   { label: 'Workflow', href: '#how-it-works' },
+  // Full public product tour — a standalone page (/tour), not an in-page
+  // anchor. Sits before Pricing so prospects can see what it does, then price.
+  { label: 'Tour', href: '/tour' },
   { label: 'Pricing', href: '#pricing' },
   { label: 'FAQ', href: '#faq' },
   // /affiliates is a full page, not an in-page anchor — added here so the
@@ -2088,6 +2091,16 @@ function Hero() {
               >
                 <Play size={13} fill="currentColor" />
                 Watch the 90-second intro
+              </a>
+              {/* Tertiary CTA — the full public product tour (/tour). Kept as a
+                  plain link so it doesn't compete with the two buttons above. */}
+              <a
+                href="/tour"
+                className="px-3 py-3 text-[14px] font-medium inline-flex items-center gap-1.5 transition-colors hover:opacity-80"
+                style={{ color: 'var(--text-soft)' }}
+              >
+                See the full tour
+                <ArrowRight size={13} />
               </a>
             </div>
             <p className="mt-3 text-[12px] inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
@@ -2511,6 +2524,7 @@ function Footer() {
             links={[
               { label: 'Roles', href: '#roles' },
               { label: 'Workflow', href: '#how-it-works' },
+              { label: 'Product tour', href: '/tour' },
               { label: 'Pricing', href: '#pricing' },
               { label: 'FAQ', href: '#faq' },
               { label: 'Watch intro', href: '#demo' },
