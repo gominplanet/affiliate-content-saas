@@ -17,6 +17,7 @@ import { SocialPill } from '@/components/content/SocialPill'
 import { ManualEdit } from '@/components/content/ManualEdit'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
+import { generateBlogRequest } from '@/lib/blog-generate-client'
 import { GenerateButton } from '@/components/content/GenerateButton'
 import { InstagramPublishModal } from '@/components/content/InstagramPublishModal'
 import { renderThumbnailOverlay, pickWeightedStyleIndex } from '@/lib/thumbnail-overlay'
@@ -642,11 +643,7 @@ const VideoCard = memo(function VideoCardImpl({
     if (!currentPostId) {
       setPublishAllStep('Generating blog post…')
       try {
-        const res = await fetch('/api/blog/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: id }),
-        })
+        const res = await generateBlogRequest({ videoId: id })
         const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
         if (!res.ok) {
           if (data.limitReached) {
@@ -2079,13 +2076,9 @@ export default function ContentPage() {
   async function rewritePost(wpPostId: number, videoId: string, rewriteFeedback?: string) {
     setRewritingPostId(wpPostId)
     try {
-      const res = await fetch('/api/blog/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId,
-          ...(rewriteFeedback?.trim() ? { rewriteFeedback: rewriteFeedback.trim() } : {}),
-        }),
+      const res = await generateBlogRequest({
+        videoId,
+        ...(rewriteFeedback?.trim() ? { rewriteFeedback: rewriteFeedback.trim() } : {}),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -2215,11 +2208,7 @@ export default function ContentPage() {
       const post = toRewrite[i]
       setBulkRewriteProgress({ done: i, total: toRewrite.length })
       try {
-        const res = await fetch('/api/blog/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: post.videoId }),
-        })
+        const res = await generateBlogRequest({ videoId: post.videoId })
         const data = await res.json().catch(() => ({}))
         if (res.ok) {
           setAllBlogPosts(prev => prev.map(p =>
@@ -2264,11 +2253,7 @@ export default function ContentPage() {
       const video = toGenerate[i]
       setBulkGenerateProgress({ done: i, total: toGenerate.length })
       try {
-        const res = await fetch('/api/blog/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: video.id }),
-        })
+        const res = await generateBlogRequest({ videoId: video.id })
         const data = await res.json().catch(() => ({}))
         if (res.ok) {
           setPosts(prev => ({ ...prev, [video.id as string]: { url: data.wordpressUrl ?? '', title: data.title ?? '', postId: data.postId } }))

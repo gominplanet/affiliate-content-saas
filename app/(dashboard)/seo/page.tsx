@@ -8,6 +8,7 @@
  * missing (and, soon, one-click fixes).
  */
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { generateBlogRequest } from '@/lib/blog-generate-client'
 import OpportunitiesPanel from '@/components/seo/OpportunitiesPanel'
 import Link from 'next/link'
 import PageHero from '@/components/layout/PageHero'
@@ -373,17 +374,13 @@ export default function SeoPage() {
         setRebuildStage(''); return
       }
       setRebuildStage('generating')
-      const genRes = await fetch('/api/blog/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId: linkJson.videoId,
-          rewriteFeedback: rebuildFeedback.trim() || undefined,
-          // Body images are slow + best-effort; the rebuild's gain is body
-          // quality (transcript-grounded, voice-tuned, comparison table,
-          // FAQ etc.). Existing featured image stays.
-          includeImages: true,
-        }),
+      const genRes = await generateBlogRequest({
+        videoId: linkJson.videoId,
+        rewriteFeedback: rebuildFeedback.trim() || undefined,
+        // Body images are slow + best-effort; the rebuild's gain is body
+        // quality (transcript-grounded, voice-tuned, comparison table,
+        // FAQ etc.). Existing featured image stays.
+        includeImages: true,
       })
       const genJson = await genRes.json().catch(() => ({})) as { error?: string; wordpressUrl?: string }
       if (!genRes.ok) {

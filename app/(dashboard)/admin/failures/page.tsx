@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
+import { generateBlogRequest } from '@/lib/blog-generate-client'
 import { RefreshCw, Trash2, AlertCircle, ChevronDown, ChevronRight, CheckCircle2, Loader2 } from 'lucide-react'
 
 type JobType = 'blog_generation' | 'wp_publish' | 'social_draft' | 'youtube_sync'
@@ -92,11 +93,7 @@ function FailureRow({
     setRetrying(true)
     setRetryError(null)
     try {
-      const res = await fetch('/api/blog/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId: failure.video_id }),
-      })
+      const res = await generateBlogRequest({ videoId: failure.video_id })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setRetryError(data.error || 'Retry failed')
@@ -246,11 +243,7 @@ export default function FailuresPage() {
     setRetryingAll(true)
     for (const f of retryable) {
       try {
-        const res = await fetch('/api/blog/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoId: f.video_id }),
-        })
+        const res = await generateBlogRequest({ videoId: f.video_id })
         if (res.ok) await markResolved(f.id)
       } catch { /* continue with next */ }
     }
