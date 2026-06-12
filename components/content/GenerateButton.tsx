@@ -50,12 +50,18 @@ const GEN_STEPS = [
   'Publishing to WordPress…',
   'Still working — large posts can take a couple minutes…',
   'Almost there — finalising the post…',
+  'Running in the background — a busy queue can add a few minutes. Safe to keep browsing…',
 ]
-// Hard client-side abort if the route hasn't returned in this many ms. The
-// server's maxDuration is 300s; we abort just before that so the user gets
-// a clean, actionable error instead of a Vercel-killed connection that
-// shows as "TypeError: fetch failed". 270s ≈ 4.5 minutes.
-const GENERATE_ABORT_MS = 270_000
+// Hard client-side abort if generation hasn't resolved in this many ms.
+// With the async queue (Phase 4) the request is enqueue + poll: worker
+// pickup adds up to ~60s and the job itself runs 2-4 min server-side, so
+// the old 270s fuse (tuned to the sync route's 300s maxDuration) fired
+// while jobs were still happily finishing. 11 min sits just past the
+// poll helper's own 10-min ceiling, so its friendlier "still running in
+// the background — check your Library" result wins the race. On the
+// sync fallback path a dead server still surfaces earlier as a network
+// error with its own actionable message.
+const GENERATE_ABORT_MS = 660_000
 
 export function GenerateButton({
   videoId, existingPost, userTier, onDone,
@@ -217,7 +223,7 @@ export function GenerateButton({
           // message so the user sees something they can act on, not a
           // bare "The user aborted a request."
           if (e instanceof DOMException && e.name === 'AbortError') {
-            throw new Error('Generation took too long (>4 min) and was cancelled. The post may have published anyway — refresh the page to check. If it didn\'t, retry; if it keeps timing out, check Vercel logs or your WordPress site.')
+            throw new Error('Generation took unusually long (>10 min) and the page stopped waiting — the post is likely still finishing in the background. Refresh the page in a minute or two and check your Library before retrying; if it keeps happening, check Vercel logs or your WordPress site.')
           }
           // "Failed to fetch" — browser-level TypeError thrown when the
           // connection drops BEFORE any HTTP response (Vercel killed the
