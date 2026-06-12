@@ -22,9 +22,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { createBrowserClient } from '@/lib/supabase/client'
 import {
   Check, Wrench, Youtube, Link2, Palette, Sparkles, Brush, UserSquare,
-  ArrowRight, ArrowLeft, ExternalLink, Loader2, PartyPopper,
+  ArrowRight, ArrowLeft, ExternalLink, Loader2, PartyPopper, Lock,
 } from 'lucide-react'
 
 const HOSTINGER_URL = 'https://geni.us/ANaArQ'
@@ -54,7 +55,9 @@ interface StepDef {
 
 const STEPS: StepDef[] = [
   { n: 1, key: 'wp', title: 'Connect WordPress', icon: <Wrench size={16} />, done: (s) => s.wpConnected, required: true },
-  { n: 2, key: 'yt', title: 'Connect YouTube', icon: <Youtube size={16} />, done: (s) => s.ytConnected },
+  // YouTube is also required-to-proceed: the user can't advance to or jump to
+  // any later section until both WordPress AND YouTube are connected.
+  { n: 2, key: 'yt', title: 'Connect YouTube', icon: <Youtube size={16} />, done: (s) => s.ytConnected, required: true },
   { n: 3, key: 'aff', title: 'Affiliate Links', icon: <Link2 size={16} />, done: (s) => s.affiliateConnected },
   { n: 4, key: 'brand', title: 'Brand Profile', icon: <Palette size={16} />, done: (s) => s.brandStarted },
   { n: 5, key: 'voice', title: 'Voice Training', icon: <Sparkles size={16} />, done: (s) => s.voiceStarted },
@@ -63,6 +66,18 @@ const STEPS: StepDef[] = [
 ]
 
 const ACCENT = '#7C3AED'
+
+/**
+ * Navigation lock: a user can't reach step 2 until WordPress (1) is connected,
+ * and can't reach any later section (3-7) until BOTH WordPress and YouTube are
+ * connected. Step 1 is always open. Drives both the rail (click) and the
+ * Save & next button.
+ */
+function stepUnlocked(n: number, s: Status): boolean {
+  if (n <= 1) return true
+  if (n === 2) return s.wpConnected
+  return s.wpConnected && s.ytConnected
+}
 
 export default function OnboardingFunnel({
   email, initialStep, status: initialStatus,
@@ -110,7 +125,9 @@ export default function OnboardingFunnel({
 
   const next = useCallback(() => {
     if (current.required && !current.done(status)) {
-      toast.error('Connect your WordPress site to continue — everything starts here.')
+      toast.error(current.key === 'wp'
+        ? 'Connect your WordPress site to continue — everything starts here.'
+        : 'Connect your YouTube to continue — it’s required before the rest of setup.')
       return
     }
     if (step >= STEPS.length) return
@@ -165,12 +182,14 @@ export default function OnboardingFunnel({
               {STEPS.map((s) => {
                 const done = s.done(status)
                 const active = s.n === step
+                const locked = !stepUnlocked(s.n, status)
                 return (
                   <li key={s.key}>
                     <button
-                      onClick={() => goToStep(s.n)}
+                      onClick={() => { if (locked) { toast.error('Finish WordPress and YouTube first.'); return } goToStep(s.n) }}
+                      aria-disabled={locked}
                       className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors"
-                      style={{ background: active ? 'rgba(124,58,237,0.16)' : 'transparent' }}
+                      style={{ background: active ? 'rgba(124,58,237,0.16)' : 'transparent', cursor: locked ? 'not-allowed' : 'pointer', opacity: locked ? 0.4 : 1 }}
                     >
                       <span
                         className="grid place-items-center w-6 h-6 rounded-full text-[11px] font-semibold shrink-0"
@@ -179,7 +198,7 @@ export default function OnboardingFunnel({
                           color: done || active ? '#fff' : '#a1a1a6',
                         }}
                       >
-                        {done ? <Check size={13} /> : s.n}
+                        {done ? <Check size={13} /> : locked ? <Lock size={11} /> : s.n}
                       </span>
                       <span className="text-sm" style={{ color: active ? '#fff' : '#c7c7cc' }}>{s.title}</span>
                     </button>
@@ -206,13 +225,17 @@ export default function OnboardingFunnel({
 
               {/* Footer nav */}
               <div className="flex items-center justify-between pt-6 mt-6 border-t border-white/10">
-                <button
-                  onClick={() => goToStep(step - 1)}
-                  disabled={step === 1}
-                  className="inline-flex items-center gap-1.5 text-sm text-[#a1a1a6] hover:text-white disabled:opacity-30 disabled:hover:text-[#a1a1a6] transition-colors"
-                >
-                  <ArrowLeft size={15} /> Back
-                </button>
+                {/* Single working Back: hidden on step 1 (nothing precedes it;
+                    the WordPress card has its own internal back for its
+                    sub-screens). Spacer preserves the footer's space-between. */}
+                {step > 1 ? (
+                  <button
+                    onClick={() => goToStep(step - 1)}
+                    className="inline-flex items-center gap-1.5 text-sm text-[#a1a1a6] hover:text-white transition-colors"
+                  >
+                    <ArrowLeft size={15} /> Back
+                  </button>
+                ) : <span />}
 
                 <div className="flex items-center gap-3">
                   {/* Skip — optional steps only */}
@@ -259,7 +282,7 @@ function StepBody({ stepKey, status, onConnected }: { stepKey: string; status: S
   switch (stepKey) {
     case 'wp': return <WordPressStep connected={status.wpConnected} onConnected={onConnected} />
     case 'yt': return <YouTubeStep connected={status.ytConnected} />
-    case 'aff': return <AffiliateStep done={status.affiliateConnected} />
+    case 'aff': return <AffiliateStep done={status.affiliateConnected} onSaved={onConnected} />
     case 'brand': return <ToolStep
       title="Build your Brand Profile"
       blurb="Your name, niches, tone of voice, logo and disclosures. This is what every generated post is branded with — fill it out as completely as you can."
@@ -283,7 +306,10 @@ function StepBody({ stepKey, status, onConnected }: { stepKey: string; status: S
 function StepHeading({ title, blurb }: { title: string; blurb: string }) {
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight mb-2">{title}</h1>
+      {/* Explicit color: globals.css sets `h1,h2 { color: var(--text) }`, and on
+          this top-level route --text resolves to the LIGHT value (dark text),
+          which rendered the titles invisible on the dark funnel. Force light. */}
+      <h1 className="text-2xl font-semibold tracking-tight mb-2" style={{ color: '#f5f5f7' }}>{title}</h1>
       <p className="text-[15px] leading-relaxed text-[#c7c7cc] mb-6">{blurb}</p>
     </>
   )
@@ -443,26 +469,106 @@ function YouTubeStep({ connected }: { connected: boolean }) {
 }
 
 /* Step 3 — Affiliate Links (Geniuslink / Amazon) */
-function AffiliateStep({ done }: { done: boolean }) {
+function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }) {
+  const [key, setKey] = useState('')
+  const [secret, setSecret] = useState('')
+  const [tag, setTag] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+
+  // Prefill any values the account already saved (so re-visits aren't blank).
+  useEffect(() => {
+    (async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (supabase as any).from('integrations')
+          .select('geniuslink_api_key, geniuslink_api_secret, amazon_associates_tag')
+          .eq('user_id', user.id).maybeSingle()
+        if (data) {
+          setKey(data.geniuslink_api_key ?? '')
+          setSecret(data.geniuslink_api_secret ?? '')
+          setTag(data.amazon_associates_tag ?? '')
+        }
+      } catch { /* leave blank */ }
+    })()
+  }, [])
+
+  async function save() {
+    setSaving(true)
+    try {
+      const supabase = createBrowserClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { toast.error('Session expired — refresh and try again.'); return }
+      // Mirrors how /brand persists these (client-side update on integrations).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any).from('integrations').upsert({
+        user_id: user.id,
+        geniuslink_api_key: key.trim() || null,
+        geniuslink_api_secret: secret.trim() || null,
+        amazon_associates_tag: tag.trim() || null,
+      }, { onConflict: 'user_id' })
+      if (error) { toast.error(error.message || 'Could not save.'); return }
+      toast.success('Affiliate settings saved.')
+      onSaved()
+    } catch { toast.error('Something went wrong. Try again.') }
+    finally { setSaving(false) }
+  }
+
+  async function verifyGroups() {
+    setVerifying(true)
+    try {
+      const res = await fetch('/api/geniuslink/setup', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(data.error || 'Could not reach Geniuslink — check your key + secret.'); return }
+      toast.success('Geniuslink connected — link groups are ready.')
+      onSaved()
+    } catch { toast.error('Verification failed. Check your key + secret.') }
+    finally { setVerifying(false) }
+  }
+
+  const inputCls = 'w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60'
+
   return (
     <>
       <StepHeading
         title="Set up affiliate link routing"
-        blurb="If you use Geniuslink, add your API key + secret on the Brand Profile page and create the two link groups MVP uses. No Geniuslink? Just add your Amazon Associates tag instead — that works too."
+        blurb="This is how your product links earn commissions. If you use Geniuslink, paste your API key + secret and we’ll create the two link groups MVP needs. No Geniuslink? Just add your Amazon Associates tag instead — that works too."
       />
       {done && (
         <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-5">
           <Check size={16} /> Affiliate routing configured.
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-3">
-        <a href="/brand" target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
-          Open Affiliate Links setup <ExternalLink size={14} />
-        </a>
-        <a href={GENIUSLINK_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-[#a1a1a6] hover:text-white transition-colors">
-          Don’t have Geniuslink? Sign up →
-        </a>
+
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
+        <p className="font-semibold text-sm mb-1">Geniuslink (recommended)</p>
+        <p className="text-sm text-[#a1a1a6] mb-3">Find these in your Geniuslink dashboard under API access. We’ll auto-create your two link groups when you verify.</p>
+        <div className="flex flex-col gap-2">
+          <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="Geniuslink API key" className={inputCls} />
+          <input value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Geniuslink API secret" type="password" className={inputCls} />
+        </div>
+        <div className="flex flex-wrap items-center gap-3 mt-3">
+          <button onClick={verifyGroups} disabled={verifying || !key.trim() || !secret.trim()} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50" style={{ background: ACCENT }}>
+            {verifying && <Loader2 size={14} className="animate-spin" />} Verify &amp; create groups
+          </button>
+          <a href={GENIUSLINK_URL} target="_blank" rel="noopener noreferrer" className="text-sm text-[#a1a1a6] hover:text-white transition-colors">
+            Don’t have Geniuslink? Sign up →
+          </a>
+        </div>
       </div>
+
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
+        <p className="font-semibold text-sm mb-1">Or use your Amazon Associates tag</p>
+        <p className="text-sm text-[#a1a1a6] mb-3">Your storefront tracking ID (e.g. <span className="text-[#c7c7cc]">yourtag-20</span>). Used when Geniuslink isn’t set.</p>
+        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="yourtag-20" className={inputCls} />
+      </div>
+
+      <button onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60" style={{ background: 'rgba(255,255,255,0.1)' }}>
+        {saving && <Loader2 size={14} className="animate-spin" />} Save affiliate settings
+      </button>
     </>
   )
 }
