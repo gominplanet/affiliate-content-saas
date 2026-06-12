@@ -2251,7 +2251,13 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
       // preserving the quality lift — which comes from Opus being the better
       // writer, not from deep thinking about a blog post.
       thinking: { type: 'adaptive' },
-      output_config: { effort: 'medium' },
+      // effort:'low' (lowered from 'medium' 2026-06-12): Opus's quality comes
+      // from it being the better WRITER, not from deep thinking about a blog
+      // post — so minimal thinking keeps the prose while cutting the expensive
+      // part. Thinking tokens bill as output ($25/1M), so this drops per-post
+      // cost ~$0.45→$0.30 AND speeds generation (less likely to hit the 300s
+      // timeout that caused the queue re-bill loop).
+      output_config: { effort: 'low' },
       system: [
         {
           type: 'text',
@@ -2399,7 +2405,13 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
       // shared 300s pipeline budget (see generateBlogPost for the full
       // rationale — campaign generation runs the same passes downstream).
       thinking: { type: 'adaptive' },
-      output_config: { effort: 'medium' },
+      // effort:'low' (lowered from 'medium' 2026-06-12): Opus's quality comes
+      // from it being the better WRITER, not from deep thinking about a blog
+      // post — so minimal thinking keeps the prose while cutting the expensive
+      // part. Thinking tokens bill as output ($25/1M), so this drops per-post
+      // cost ~$0.45→$0.30 AND speeds generation (less likely to hit the 300s
+      // timeout that caused the queue re-bill loop).
+      output_config: { effort: 'low' },
       system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: userMessage }],
     })
