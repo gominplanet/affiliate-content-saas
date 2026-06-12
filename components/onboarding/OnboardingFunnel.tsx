@@ -388,11 +388,17 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
     const checking = wpStatus === null
     const pluginOk = wpStatus?.pluginInstalled === true
     const themeOk = wpStatus?.themeActive === true
+    // Only treat the plugin as missing when we POSITIVELY detect it (a
+    // successful health check that says it's absent — the rare no-plugin quick
+    // connect). While checking, or on the normal token path, assume it's there
+    // (they just activated it to generate the token) and show the one-click
+    // theme path — never flash plugin-install steps at someone who just did it.
+    const pluginMissing = wpStatus !== null && wpStatus.pluginInstalled === false
     return (
       <>
         <StepHeading
-          title="Site connected — now install the MVP look"
-          blurb="Your blog is linked. The MVP plugin + theme turn it into a real review site: the review layout, Google-ready schema, Editor’s Picks, the AI Product Finder and more. Good news — the plugin installs the theme for you in one click."
+          title="Site connected — one last thing"
+          blurb="Your blog is linked and the MVP plugin is active. The only thing left is to switch on the MVP theme — your plugin can do that in one click, no downloads."
         />
         <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-5">
           <Check size={16} /> Connection successful.
@@ -400,69 +406,52 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
 
         {/* Live status — turns green automatically as each piece lands. */}
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 mb-5 space-y-2.5">
-          <CheckRow ok={pluginOk} checking={checking} label="MVP plugin installed & active" />
+          <CheckRow ok={pluginOk} checking={checking && !pluginMissing} label="MVP plugin installed & active" />
           <CheckRow ok={themeOk} checking={checking} label="MVP theme installed & active" />
         </div>
 
-        {/* Look-and-feel consent — must be unmistakable. */}
-        <div className="rounded-xl border border-[#ff9500]/40 bg-[#ff9500]/10 px-4 py-3.5 mb-5">
-          <p className="text-sm font-semibold text-[#ff9f0a] mb-1">Heads up: this changes how your blog looks</p>
-          <p className="text-sm text-[#e8c9a0] leading-relaxed">
-            Activating the MVP theme replaces your current theme’s design — your blog’s layout, colors, fonts and overall look &amp; feel become the MVP review-site style. Your posts and content stay safe; only the styling changes. If you already have a blog whose look you want to keep, you can <span className="text-white">skip this</span> and keep your theme — MVP will still publish posts, just without the review layout and homepage features.
-          </p>
-        </div>
-
-        {/* Theme — installed in ONE CLICK from the plugin page; no re-download. */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
-          <p className="font-semibold text-sm mb-2">Install the MVP theme — one click, no download</p>
-          {themeOk ? (
-            <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-sm text-[#7ee2a0]">
-              <Check size={14} className="inline -mt-0.5 mr-1" /> Theme is installed and active. Nothing to do here.
+        {themeOk ? (
+          /* Everything done — no instructions, no consent wall needed. */
+          <div className="rounded-xl border border-[#34c759]/30 bg-[#34c759]/10 px-4 py-3.5 text-sm text-[#7ee2a0]">
+            <Check size={15} className="inline -mt-0.5 mr-1" /> Plugin and theme are both active — your review site is ready. Hit “Save &amp; next” below.
+          </div>
+        ) : (
+          <>
+            {/* Look-and-feel consent — must be unmistakable. */}
+            <div className="rounded-xl border border-[#ff9500]/40 bg-[#ff9500]/10 px-4 py-3.5 mb-5">
+              <p className="text-sm font-semibold text-[#ff9f0a] mb-1">Heads up: this changes how your blog looks</p>
+              <p className="text-sm text-[#e8c9a0] leading-relaxed">
+                Activating the MVP theme replaces your current theme’s design — your blog’s layout, colors, fonts and overall look &amp; feel become the MVP review-site style. Your posts and content stay safe; only the styling changes. Want to keep your current design? You can <span className="text-white">skip this</span> and still publish posts — just without the review layout and homepage features.
+              </p>
             </div>
-          ) : pluginOk ? (
-            <>
-              <ol className="space-y-1.5 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
-                <li>In your WordPress admin, open the <span className="text-white">MVP Affiliate</span> menu in the left sidebar.</li>
-                <li>Under <span className="text-white">“Step 1 — Install the MVP Affiliate theme,”</span> click <span className="text-white">Install &amp; activate MVP Affiliate theme</span>. That’s it — the plugin downloads, installs and activates it for you. No file to download or upload.</li>
-              </ol>
-              <p className="text-xs text-[#6e6e73] mt-2">The check above turns green on its own once it’s active.</p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-[#a1a1a6] mb-2">Once the MVP plugin is installed (below), you’ll get a one-click <span className="text-white">Install &amp; activate theme</span> button on its page — no download needed. Prefer to do it manually now?</p>
-              <a href={THEME_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-2">
-                Download the theme manually <ExternalLink size={12} />
-              </a>
-              <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
-                <li>WordPress admin → <span className="text-white">Appearance → Themes → Add New → Upload Theme</span> → Install &amp; Activate.</li>
-              </ol>
-            </>
-          )}
-        </div>
 
-        {/* Plugin — usually already installed (they connected via it). */}
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-5">
-          <p className="font-semibold text-sm mb-2">The MVP plugin</p>
-          {pluginOk ? (
-            <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-sm text-[#7ee2a0]">
-              <Check size={14} className="inline -mt-0.5 mr-1" /> Plugin installed — this is what powers the one-click theme install above.
-            </div>
-          ) : (
-            <>
-              <p className="text-xs text-[#8e8e93] mb-2">Used the no-plugin quick connect? Add the plugin to unlock the SEO schema, Editor’s Picks, Product Finder, topic hubs — and the one-click theme installer:</p>
-              <a href={PLUGIN_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-3">
-                Download the MVP plugin <ExternalLink size={12} />
-              </a>
-              <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
-                <li>WordPress admin → <span className="text-white">Plugins → Add New Plugin → Upload Plugin</span>.</li>
-                <li>Choose the .zip, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
-              </ol>
-              <p className="text-xs text-[#6e6e73] mt-2">(You only do this once — future updates are one click.)</p>
-            </>
-          )}
-        </div>
-
-        <p className="text-xs text-[#6e6e73]">Both green, or keeping your own theme? Either way, hit “Save &amp; next” below to continue.</p>
+            {pluginMissing ? (
+              /* Rare no-plugin path: they connected via Application Passwords,
+                 so there's no one-click installer. Give the manual route + a
+                 nudge to add the plugin for the full experience. */
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+                <p className="font-semibold text-sm mb-2">Activate the MVP theme</p>
+                <p className="text-sm text-[#a1a1a6] mb-2">You connected without the plugin, so install the theme manually — or <a href={PLUGIN_ZIP} className="text-[#7C3AED] hover:underline">add the MVP plugin</a> to get the one-click installer plus schema, Editor’s Picks and Product Finder.</p>
+                <a href={THEME_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-2">
+                  Download the MVP theme <ExternalLink size={12} />
+                </a>
+                <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
+                  <li>WordPress admin → <span className="text-white">Appearance → Themes → Add New → Upload Theme</span> → Install &amp; Activate.</li>
+                </ol>
+              </div>
+            ) : (
+              /* Normal path: plugin is active → one-click theme install. */
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+                <p className="font-semibold text-sm mb-2">Switch on the MVP theme — one click</p>
+                <ol className="space-y-1.5 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
+                  <li>In your WordPress admin, open the <span className="text-white">MVP Affiliate</span> menu in the left sidebar (the plugin you just installed).</li>
+                  <li>Under <span className="text-white">“Step 1 — Install the MVP Affiliate theme,”</span> click <span className="text-white">Install &amp; activate MVP Affiliate theme</span>. The plugin downloads, installs and activates it for you — nothing to download here.</li>
+                </ol>
+                <p className="text-xs text-[#6e6e73] mt-2">The theme check above turns green automatically once it’s active — no need to refresh.</p>
+              </div>
+            )}
+          </>
+        )}
       </>
     )
   }
