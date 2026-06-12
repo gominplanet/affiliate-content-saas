@@ -466,7 +466,7 @@ function AddSiteModal({
               <li className="flex items-start gap-2">
                 <span className="w-4 h-4 rounded-full bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-bold flex items-center justify-center flex-shrink-0 mt-0.5">2</span>
                 <span>
-                  In the left sidebar, click <strong>MVP Affiliate</strong>. (If you don&apos;t see it: install the plugin first — <a href="/mvpaffiliate-platform.zip" download className="text-[#7C3AED] hover:underline">download mvpaffiliate-platform.zip</a> → Plugins → Add New → Upload Plugin → Activate.)
+                  In the left sidebar, click <strong>MVP Affiliate</strong>. (If you don&apos;t see it: install the plugin first — <a href="/mvp-affiliate.zip" download className="text-[#7C3AED] hover:underline">download mvpaffiliate-platform.zip</a> → Plugins → Add New → Upload Plugin → Activate.)
                 </span>
               </li>
               <li className="flex items-start gap-2">

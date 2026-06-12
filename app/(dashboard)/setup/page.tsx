@@ -354,7 +354,7 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
         <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
           WordPress blocks cross-site redirects by default — our plugin whitelists MVP so the one-click connect can work, then quietly powers theme, banner, and footer features.
         </p>
-        <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm self-start inline-flex mb-3">
+        <a href="/mvp-affiliate.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm self-start inline-flex mb-3">
           <Download size={14} /> Download plugin
         </a>
         <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside">
@@ -404,7 +404,7 @@ function ExistingConnect({ onBack, onDone }: { onBack: () => void; onDone: (url:
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-3">
               Install our plugin, generate a token in wp-admin, paste it here. Only needed if your host blocks WordPress&apos;s built-in Application Passwords.
             </p>
-            <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-secondary text-xs self-start inline-flex mb-3">
+            <a href="/mvp-affiliate.zip" download="mvpaffiliate-platform.zip" className="btn-secondary text-xs self-start inline-flex mb-3">
               <Download size={12} /> Download plugin ZIP
             </a>
             <ol className="text-xs text-[#6e6e73] dark:text-[#ebebf0] flex flex-col gap-1 list-decimal list-inside mb-3">
@@ -623,7 +623,7 @@ function Step2({ onNext }: { onNext: () => void }) {
         {/* Download */}
         <div className="p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#000] mb-3">
           <p className="text-xs font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-2">Download the plugin (10 sec)</p>
-          <a href="/mvpaffiliate-platform.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm inline-flex">
+          <a href="/mvp-affiliate.zip" download="mvpaffiliate-platform.zip" className="btn-primary text-sm inline-flex">
             <Download size={14} /> Download mvpaffiliate-platform.zip
           </a>
         </div>
