@@ -2224,7 +2224,7 @@ VIDEO DESCRIPTION:
 ${video.description.slice(0, 2000)}
 ${video.productResearch ? `\nPRODUCT INFO (scraped from the product/brand site linked in the description — use these as FACTUAL product details; the transcript still governs the voice, tone, and the reviewer's actual opinions):\n${video.productResearch.slice(0, 2500)}\n` : ''}
 TRANSCRIPT:
-${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
+${video.transcript ? video.transcript.slice(0, 12000) : 'No transcript available — base post on title, description, and tags only.'}${persistentFeedbackBlock}${voiceExamplesBlock}${generalModeOverride}${feedbackBlock}`
 
     // Pass 2 — generate with extended thinking (streaming required for large
     // max_tokens). Retry once on transient stream drops: a long streamed
