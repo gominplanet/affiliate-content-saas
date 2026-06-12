@@ -75,13 +75,26 @@ async function runBlogJob(job: GenerationJob): Promise<Record<string, unknown>> 
 
   let res: Response
   try {
-    res = await fetch(`${resolveSelfBaseUrl()}/api/blog/generate`, init)
-    if ([301, 302, 307, 308].includes(res.status)) {
+    // Follow redirect CHAINS manually (up to 5 hops), re-issuing the same
+    // POST each time. One hop wasn't enough in production: the canonical
+    // redirect can stack with trailing-slash/host normalization (observed
+    // 2026-06-11: 405 → fixed one hop → then "returned 307" = a second hop).
+    // The hop log makes any remaining loop visible in Vercel logs.
+    let url = `${resolveSelfBaseUrl()}/api/blog/generate`
+    const hops: string[] = []
+    res = await fetch(url, init)
+    while ([301, 302, 303, 307, 308].includes(res.status) && hops.length < 5) {
       const loc = res.headers.get('location')
-      if (loc) {
-        const target = new URL(loc, `${resolveSelfBaseUrl()}/api/blog/generate`).toString()
-        res = await fetch(target, init)
-      }
+      if (!loc) break
+      url = new URL(loc, url).toString()
+      hops.push(`${res.status}→${url}`)
+      res = await fetch(url, init)
+    }
+    if (hops.length) console.log('[generation-job] self-call redirect chain:', hops.join(' | '), '→ final', res.status)
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      // Still redirecting after 5 hops = a redirect loop in the domain
+      // config — deterministic, don't burn the retry budget on it.
+      throw new Error(`PERMANENT: self-call stuck in a redirect loop (${hops.join(' | ')}) — check the domain redirect configuration for ${resolveSelfBaseUrl()}`)
     }
   } catch (e) {
     // AbortSignal.timeout throws a DOMException named 'TimeoutError' (also handle
