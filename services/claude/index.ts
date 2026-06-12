@@ -2233,7 +2233,13 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     // recovers the common case rather than failing the whole generation.
     const runGeneration = () => this.client.messages.stream({
       model: 'claude-opus-4-8',
-      max_tokens: 10000,  // cost cap 2026-06-12: posts ≤1,500 words; was 32000 ($0.80 worst-case output → ~$0.25)
+      // Safety CEILING, not the cost control — adaptive thinking tokens count
+      // toward max_tokens, so 10000 was truncating real posts (heavy thinking
+      // ate the budget before the META/CONTENT blocks finished → "invalid JSON").
+      // 16000 clears thinking + a ≤1,500-word article + the meta block with
+      // headroom. The actual cost is held down by the word-count prompt rule +
+      // effort:'medium' (you only pay for tokens generated, not the ceiling).
+      max_tokens: 16000,  // raised from 10000 on 2026-06-12 to stop truncation
       // Writer upgraded Sonnet 4.6 → Opus 4.8 (2026-06-09) for prose quality.
       // Opus 4.8 removed the fixed `budget_tokens` thinking budget (it 400s)
       // and only accepts ADAPTIVE thinking, so the model self-decides depth.
@@ -2301,7 +2307,7 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
         try {
           parsed = JSON.parse(jsonrepair(extracted))
         } catch {
-          throw new Error(`Claude returned invalid JSON: ${raw.slice(0, 300)}`)
+          throw new Error(`MVP couldn't finish this post (the draft came back incomplete). Hit Retry — it usually works on the next pass.`)
         }
       }
       parsed.content = parsed.content.replace(/{VIDEO_ID}/g, video.videoId)
@@ -2315,7 +2321,7 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
       try {
         meta = JSON.parse(jsonrepair(metaMatch[1]))
       } catch {
-        throw new Error(`Claude returned invalid metadata JSON: ${metaMatch[1].slice(0, 200)}`)
+        throw new Error(`MVP couldn't finish this post (the draft came back incomplete). Hit Retry — it usually works on the next pass.`)
       }
     }
 
@@ -2382,7 +2388,13 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
 
     const stream = this.client.messages.stream({
       model: 'claude-opus-4-8',
-      max_tokens: 10000,  // cost cap 2026-06-12: posts ≤1,500 words; was 32000 ($0.80 worst-case output → ~$0.25)
+      // Safety CEILING, not the cost control — adaptive thinking tokens count
+      // toward max_tokens, so 10000 was truncating real posts (heavy thinking
+      // ate the budget before the META/CONTENT blocks finished → "invalid JSON").
+      // 16000 clears thinking + a ≤1,500-word article + the meta block with
+      // headroom. The actual cost is held down by the word-count prompt rule +
+      // effort:'medium' (you only pay for tokens generated, not the ceiling).
+      max_tokens: 16000,  // raised from 10000 on 2026-06-12 to stop truncation
       // Opus 4.8 writer + adaptive thinking, effort-capped to stay inside the
       // shared 300s pipeline budget (see generateBlogPost for the full
       // rationale — campaign generation runs the same passes downstream).
@@ -2415,7 +2427,7 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
         try {
           return JSON.parse(jsonrepair(extracted)) as BlogGenerationOutput
         } catch {
-          throw new Error(`Claude returned invalid JSON: ${raw.slice(0, 300)}`)
+          throw new Error(`MVP couldn't finish this post (the draft came back incomplete). Hit Retry — it usually works on the next pass.`)
         }
       }
     }
@@ -2427,7 +2439,7 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
       try {
         meta = JSON.parse(jsonrepair(metaMatch[1]))
       } catch {
-        throw new Error(`Claude returned invalid metadata JSON: ${metaMatch[1].slice(0, 200)}`)
+        throw new Error(`MVP couldn't finish this post (the draft came back incomplete). Hit Retry — it usually works on the next pass.`)
       }
     }
 
