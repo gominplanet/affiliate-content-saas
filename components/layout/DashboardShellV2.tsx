@@ -228,12 +228,16 @@ export default function DashboardShellV2({
       label: 'Set up',
       items: [
         { href: '/setup', icon: <Wrench size={15} />, label: 'WordPress' },
-        { href: '/connect-socials', icon: <Youtube size={15} />, label: 'YouTube' },
+        // YouTube gets its OWN focused page (it's the most important integration
+        // — every video→blog flow starts here), separate from the full socials
+        // grid. "Connect Socials" sits at the bottom of SET UP for everything else.
+        { href: '/connect-youtube', icon: <Youtube size={15} />, label: 'YouTube' },
         { href: '/brand', icon: <Link2 size={15} />, label: 'Affiliate Links' },
         { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
         { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog' },
         { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
+        { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
       ],
     },
     {
@@ -242,10 +246,8 @@ export default function DashboardShellV2({
         { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
         // "Library" renamed -> "Blog Post Generator" (2026-06-12 IA).
         { href: '/content', icon: <Library size={15} />, label: 'Blog Post Generator' },
-        // Socials — connect the channels available for auto-posting today.
-        // Shares /connect-socials with the SET UP "YouTube" step for now;
-        // Phase 2 may split YouTube-only onboarding from the full socials grid.
-        { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Socials' },
+        // Socials connection moved to SET UP > "Connect Socials" (it's setup,
+        // not a create action). YouTube has its own SET UP > "YouTube" entry.
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuides },
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals },
