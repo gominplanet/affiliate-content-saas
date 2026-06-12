@@ -23,6 +23,7 @@ const PAID_TIERS = ['creator', 'pro'] as const
 
 export default function AdminCostsPage() {
   const [days, setDays] = useState(30)
+  const [excludeAdmin, setExcludeAdmin] = useState(false)
   const [data, setData] = useState<CostData | null>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -30,7 +31,7 @@ export default function AdminCostsPage() {
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
     try {
-      const res = await fetch(`/api/admin/costs?days=${days}`)
+      const res = await fetch(`/api/admin/costs?days=${days}${excludeAdmin ? '&excludeAdmin=1' : ''}`)
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Failed to load')
       setData(d)
@@ -39,7 +40,7 @@ export default function AdminCostsPage() {
     } finally {
       setLoading(false)
     }
-  }, [days])
+  }, [days, excludeAdmin])
 
   useEffect(() => { load() }, [load])
 
@@ -69,6 +70,18 @@ export default function AdminCostsPage() {
           </button>
         ))}
         {loading && <Loader2 size={14} className="animate-spin text-[#86868b] ml-1" />}
+
+        {/* Exclude-admin toggle — strips the founder's own testing accounts so
+            the numbers reflect real customer economics. */}
+        <button
+          onClick={() => setExcludeAdmin(v => !v)}
+          className={`ml-auto px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+            excludeAdmin ? 'bg-[#34c759] text-white' : 'bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7]'
+          }`}
+          title="Hide the admin tier (your own testing) to see customer-only spend"
+        >
+          {excludeAdmin ? '✓ Excluding admin (customers only)' : 'Exclude admin testing'}
+        </button>
       </div>
 
       {err && (
