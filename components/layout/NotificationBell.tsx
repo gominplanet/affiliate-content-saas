@@ -18,7 +18,7 @@ import { Bell, ExternalLink, AlertCircle, CheckCircle2 } from 'lucide-react'
 
 interface NotificationEvent {
   id: string
-  kind: 'social' | 'blog_publish'
+  kind: 'social' | 'blog_publish' | 'support'
   platform: string | null
   status: 'completed' | 'failed'
   blog_post_title: string | null
@@ -152,7 +152,7 @@ export default function NotificationBell() {
           <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border, rgba(255,255,255,0.08))' }}>
             <p className="text-sm font-semibold">Recent activity</p>
             <p className="text-[11px]" style={{ color: 'var(--text-faint, rgba(255,255,255,0.5))' }}>
-              Last 7 days of scheduled-post results
+              Last 7 days of activity
             </p>
           </div>
           <div className="max-h-[420px] overflow-y-auto">
@@ -179,7 +179,9 @@ export default function NotificationBell() {
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-semibold">
-                          {platformLabel(e.kind, e.platform)} {isFailed ? 'failed' : 'published'}
+                          {e.kind === 'support'
+                            ? 'Support ticket answered'
+                            : `${platformLabel(e.kind, e.platform)} ${isFailed ? 'failed' : 'published'}`}
                         </p>
                         <p className="text-[11px] truncate" style={{ color: 'var(--text-soft, rgba(255,255,255,0.7))' }}>
                           {e.blog_post_title || 'Untitled post'}

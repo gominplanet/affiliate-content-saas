@@ -277,7 +277,7 @@ export default function DashboardShellV2({
       items: [
         { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm' },
         { href: '/assistant', icon: <Bot size={15} />, label: 'MVP Help Desk' },
-        { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket', gate: false },
+        { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket' },
         { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
         { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
       ],
@@ -324,6 +324,7 @@ export default function DashboardShellV2({
       label: 'Admin',
       items: [
         { href: '/admin/users', icon: <UserCog size={15} />, label: 'Users (admin)' },
+        { href: '/admin/support-tickets', icon: <LifeBuoy size={15} />, label: 'Support tickets' },
         { href: '/admin/failures', icon: <AlertTriangle size={15} />, label: 'Failures' },
         { href: '/admin/cron', icon: <Activity size={15} />, label: 'Cron health' },
         // Title audit moved to /tools/title-audit and is now Creator+ accessible.

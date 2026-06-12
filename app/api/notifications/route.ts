@@ -1,11 +1,12 @@
 /**
  * GET /api/notifications
  *
- * Returns the user's last 20 scheduled-post events from the past 7 days
- * (completed + failed, sorted newest-first). Powers the bell dropdown in
- * the dashboard topbar — surfaces "your LinkedIn fired at 9:05, your
- * Threads failed because the token expired" without forcing the user to
- * keep the Schedule modal's toast open during the 30-60s gen.
+ * Returns the user's recent activity from the past 7 days (scheduled-post
+ * results — completed + failed — PLUS answered-but-unseen support tickets),
+ * sorted newest-first. Powers the bell dropdown in the dashboard topbar —
+ * surfaces "your LinkedIn fired at 9:05, your Threads failed because the token
+ * expired, your help ticket was answered" without forcing the user to keep a
+ * toast open.
  *
  * Returns: { events: NotificationEvent[] }
  */
@@ -14,7 +15,7 @@ import { createServerClient } from '@/lib/supabase/server'
 
 export interface NotificationEvent {
   id: string
-  kind: 'social' | 'blog_publish'
+  kind: 'social' | 'blog_publish' | 'support'
   platform: string | null
   status: 'completed' | 'failed'
   blog_post_title: string | null
@@ -59,5 +60,37 @@ export async function GET() {
     error_message: (r.error_message as string | null) ?? null,
   }))
 
-  return NextResponse.json({ events })
+  // Answered help tickets the user hasn't opened yet (cleared when they visit
+  // /support). Best-effort — a missing support_tickets table (pre-migration
+  // 126) must not break the bell, so swallow errors. Merge + re-sort newest
+  // first, then cap to 20.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tickets } = await (supabase as any)
+      .from('support_tickets')
+      .select('id,subject,responded_at')
+      .eq('user_id', user.id)
+      .eq('status', 'answered')
+      .eq('response_seen', false)
+      .gte('responded_at', weekAgo)
+      .order('responded_at', { ascending: false })
+      .limit(20)
+    for (const t of (tickets ?? []) as Array<Record<string, unknown>>) {
+      events.push({
+        id: `support_${t.id as string}`,
+        kind: 'support',
+        platform: null,
+        status: 'completed',
+        blog_post_title: (t.subject as string | null) ?? 'Your ticket',
+        blog_post_url: '/support',
+        scheduled_at: (t.responded_at as string) ?? new Date().toISOString(),
+        updated_at: (t.responded_at as string) ?? new Date().toISOString(),
+        error_message: null,
+      })
+    }
+  } catch { /* table not migrated yet — skip */ }
+
+  events.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+
+  return NextResponse.json({ events: events.slice(0, 20) })
 }
