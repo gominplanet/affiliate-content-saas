@@ -40,7 +40,16 @@ export default function SignupForm() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: {
+        data: { full_name: fullName },
+        // Send the email-confirmation link through our auth callback (which
+        // exchanges the code for a session) and on into the onboarding funnel,
+        // so a brand-new user lands exactly where setup begins. window.origin
+        // keeps it correct across preview + prod. NOTE: the Supabase dashboard's
+        // Auth → URL Configuration redirect allow-list must include
+        // <site>/api/auth/callback (already used by the existing flow).
+        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=/onboarding`,
+      },
     })
 
     if (error) {
