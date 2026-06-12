@@ -19,7 +19,7 @@
  * /api/onboarding. Styled with explicit dark colors because top-level routes
  * don't inherit the dashboard's dark CSS tokens.
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createBrowserClient } from '@/lib/supabase/client'
@@ -31,6 +31,20 @@ import {
 const HOSTINGER_URL = 'https://geni.us/ANaArQ'
 const GENIUSLINK_URL = 'https://geni.us/Y70p9R'
 const PLUGIN_ZIP = '/mvp-affiliate.zip'
+
+// Mirror the option lists from the full Brand Profile editor (app/(dashboard)/
+// brand/page.tsx) so the inline funnel card writes identical values.
+const NICHES = [
+  'Home & Kitchen', 'Electronics & Tech', 'Outdoor & Sports', 'Beauty & Personal Care',
+  'Health & Wellness', 'Pet Supplies', 'Tools & Home Improvement', 'Toys & Games',
+  'Books & Education', 'Fashion & Apparel', 'Garden & Outdoors', 'Automotive',
+  'Baby & Kids', 'Office & Productivity', 'Food & Grocery', 'Travel & Luggage',
+  'Arts & Crafts', 'Musical Instruments', 'Software & Apps', 'Finance & Investing',
+]
+const TONE_OPTIONS = [
+  'Professional', 'Conversational', 'Bold', 'Friendly',
+  'Educational', 'Persuasive', 'Humorous', 'Inspiring',
+]
 
 interface Status {
   wpConnected: boolean
@@ -283,10 +297,7 @@ function StepBody({ stepKey, status, onConnected }: { stepKey: string; status: S
     case 'wp': return <WordPressStep connected={status.wpConnected} onConnected={onConnected} />
     case 'yt': return <YouTubeStep connected={status.ytConnected} />
     case 'aff': return <AffiliateStep done={status.affiliateConnected} onSaved={onConnected} />
-    case 'brand': return <ToolStep
-      title="Build your Brand Profile"
-      blurb="Your name, niches, tone of voice, logo and disclosures. This is what every generated post is branded with — fill it out as completely as you can."
-      href="/brand" cta="Open Brand Profile" done={status.brandStarted} />
+    case 'brand': return <BrandStep onSaved={onConnected} />
     case 'voice': return <ToolStep
       title="Train your writing voice"
       blurb="Paste a writing sample and tell MVP who you are and who you're writing for. Strongly recommended — it's the difference between generic AI copy and posts that sound like you. You can leave fields blank and come back later."
@@ -573,7 +584,173 @@ function AffiliateStep({ done, onSaved }: { done: boolean; onSaved: () => void }
   )
 }
 
-/* Steps 4–7 — open the existing editor in a new tab; funnel tracks completion */
+/* Step 4 — Brand Profile, fully inline as an in-card multi-step form.
+   Autosaves to brand_profiles (same columns the full /brand editor writes), so
+   whether the user advances via the card's own Next or the funnel footer, their
+   work is persisted. No link-out. */
+function BrandStep({ onSaved }: { onSaved: () => void }) {
+  const [page, setPage] = useState(0) // 0=Basics, 1=Niches & tone, 2=Disclosure
+  const [brandName, setBrandName] = useState('')
+  const [authorName, setAuthorName] = useState('')
+  const [tagline, setTagline] = useState('')
+  const [niches, setNiches] = useState<string[]>([])
+  const [tone, setTone] = useState<string[]>([])
+  const [disclaimer, setDisclaimer] = useState('')
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const loaded = useRef(false)
+
+  // Prefill from any existing brand_profiles row.
+  useEffect(() => {
+    (async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) { loaded.current = true; return }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data } = await (supabase as any).from('brand_profiles')
+          .select('name, author_name, tagline, niches, tone, affiliate_disclaimer')
+          .eq('user_id', user.id).maybeSingle()
+        if (data) {
+          setBrandName(data.name ?? '')
+          setAuthorName(data.author_name ?? '')
+          setTagline(data.tagline ?? '')
+          setNiches(Array.isArray(data.niches) ? data.niches : [])
+          setTone(Array.isArray(data.tone) ? data.tone : [])
+          setDisclaimer(data.affiliate_disclaimer ?? '')
+        }
+      } catch { /* start blank */ }
+      finally { loaded.current = true }
+    })()
+  }, [])
+
+  // Debounced autosave — fires whenever a field changes after initial load.
+  useEffect(() => {
+    if (!loaded.current) return
+    const t = setTimeout(async () => {
+      try {
+        const supabase = createBrowserClient()
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase as any).from('brand_profiles').upsert({
+          user_id: user.id,
+          name: brandName.trim() || null,
+          author_name: authorName.trim() || null,
+          tagline: tagline.trim() || null,
+          niches,
+          tone,
+          affiliate_disclaimer: disclaimer.trim() || null,
+        }, { onConflict: 'user_id' })
+        if (!error) { setSavedAt(Date.now()); onSaved() }
+      } catch { /* transient */ }
+    }, 800)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandName, authorName, tagline, niches, tone, disclaimer])
+
+  const toggle = (arr: string[], v: string, set: (x: string[]) => void) =>
+    set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
+
+  const inputCls = 'w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60'
+  const PAGES = ['Basics', 'Niches & tone', 'Disclosure']
+
+  return (
+    <>
+      <StepHeading
+        title="Build your Brand Profile"
+        blurb="This is what every generated post is branded with. Fill it out as completely as you can — it saves automatically as you go."
+      />
+
+      {/* In-card page dots */}
+      <div className="flex items-center gap-2 mb-5">
+        {PAGES.map((label, i) => (
+          <button key={label} onClick={() => setPage(i)}
+            className="flex items-center gap-1.5 text-xs transition-colors"
+            style={{ color: i === page ? '#fff' : '#6e6e73' }}>
+            <span className="grid place-items-center w-5 h-5 rounded-full text-[10px] font-semibold"
+              style={{ background: i === page ? ACCENT : 'rgba(255,255,255,0.08)', color: i === page ? '#fff' : '#a1a1a6' }}>{i + 1}</span>
+            {label}
+          </button>
+        ))}
+        {savedAt && <span className="ml-auto inline-flex items-center gap-1 text-xs text-[#34c759]"><Check size={12} /> Saved</span>}
+      </div>
+
+      {page === 0 && (
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-1.5">Brand / site name</label>
+            <input value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="e.g. Gomin Reviews" className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-1.5">Your name (the author)</label>
+            <input value={authorName} onChange={(e) => setAuthorName(e.target.value)} placeholder="e.g. Seb" className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-1.5">Tagline <span className="text-[#6e6e73]">(optional)</span></label>
+            <input value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="Honest hands-on reviews of the gear I actually use" className={inputCls} />
+          </div>
+        </div>
+      )}
+
+      {page === 1 && (
+        <div className="flex flex-col gap-5">
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-2">Your niches <span className="text-[#6e6e73]">(pick all that apply)</span></label>
+            <div className="flex flex-wrap gap-2">
+              {NICHES.map((n) => {
+                const on = niches.includes(n)
+                return (
+                  <button key={n} onClick={() => toggle(niches, n, setNiches)}
+                    className="rounded-full px-3 py-1.5 text-xs border transition-colors"
+                    style={{ background: on ? ACCENT : 'transparent', borderColor: on ? ACCENT : 'rgba(255,255,255,0.14)', color: on ? '#fff' : '#c7c7cc' }}>
+                    {n}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-2">Tone of voice</label>
+            <div className="flex flex-wrap gap-2">
+              {TONE_OPTIONS.map((t) => {
+                const on = tone.includes(t)
+                return (
+                  <button key={t} onClick={() => toggle(tone, t, setTone)}
+                    className="rounded-full px-3 py-1.5 text-xs border transition-colors"
+                    style={{ background: on ? ACCENT : 'transparent', borderColor: on ? ACCENT : 'rgba(255,255,255,0.14)', color: on ? '#fff' : '#c7c7cc' }}>
+                    {t}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {page === 2 && (
+        <div>
+          <label className="block text-sm text-[#c7c7cc] mb-1.5">Affiliate disclosure</label>
+          <p className="text-xs text-[#6e6e73] mb-2">Shown on your posts to stay FTC-compliant. A simple default works fine.</p>
+          <textarea value={disclaimer} onChange={(e) => setDisclaimer(e.target.value)} rows={4}
+            placeholder="As an Amazon Associate I earn from qualifying purchases. Some links on this site are affiliate links — if you buy through them I may earn a commission at no extra cost to you."
+            className={inputCls} />
+        </div>
+      )}
+
+      {/* In-card prev/next (separate from the funnel's step nav) */}
+      <div className="flex items-center justify-between mt-6">
+        <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+          className="text-sm text-[#a1a1a6] hover:text-white disabled:opacity-30 transition-colors">← Previous</button>
+        {page < PAGES.length - 1
+          ? <button onClick={() => setPage((p) => Math.min(PAGES.length - 1, p + 1))}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>Next →</button>
+          : <span className="text-xs text-[#6e6e73]">All set — use “Save &amp; next” below to continue.</span>}
+      </div>
+    </>
+  )
+}
+
+/* Steps 5–7 — open the existing editor in a new tab; funnel tracks completion */
 function ToolStep({ title, blurb, href, cta, done }: { title: string; blurb: string; href: string; cta: string; done: boolean }) {
   return (
     <>
