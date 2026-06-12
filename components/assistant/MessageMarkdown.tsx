@@ -51,7 +51,6 @@ const IN_APP_ROUTES = [
   '/connect-socials',
   '/comparison',
   '/buying-guides',
-  '/campaigns',
   '/deals',
   '/collaborations',
   '/script',

@@ -33,7 +33,7 @@ import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
   Settings, CreditCard, Bot, ChevronsLeft, ChevronsRight,
   Bell, ChevronDown, Sparkles, PenLine, Scale, Calendar,
-  Sun, Moon, BookOpen, BadgePercent, Megaphone, Handshake,
+  Sun, Moon, BookOpen, BadgePercent, Handshake,
   Flame, GraduationCap, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
@@ -286,7 +286,9 @@ export default function DashboardShellV2({
     {
       label: 'Collaborate',
       items: [
-        { href: '/campaigns', icon: <Megaphone size={15} />, label: 'Creator Campaigns' },
+        // Creator Campaigns gated out of the product for all tiers (2026-06-12).
+        // The /campaigns page server-redirects to /dashboard; the full
+        // implementation is preserved in git history if it's ever revived.
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
       ],
     },
