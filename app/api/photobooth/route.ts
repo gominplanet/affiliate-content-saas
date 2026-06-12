@@ -14,6 +14,7 @@ import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { createOpenAIService, OpenAIService, normalizeToPng } from '@/services/openai'
 import { recordUsage } from '@/lib/ai-usage'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 300
 
@@ -162,6 +163,10 @@ export async function POST(request: Request) {
         usage: { used: usage.used, limit: usage.limit, remaining: 0, resetLabel: usage.resetLabel },
       }, { status: 429 })
     }
+
+    // Monthly AI-spend circuit breaker (gpt-image headshots).
+    const spendBlocked = await spendGate(user.id, tier)
+    if (spendBlocked) return spendBlocked
 
     const body = await request.json() as {
       faceModelId?: string

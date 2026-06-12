@@ -40,6 +40,7 @@ import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { resolveProductReference } from '@/lib/resolve-product-reference'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { checkScriptUsage } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 
 type Style = 'first_look' | 'hands_on' | 'long_term'
 const VALID_STYLES: Style[] = ['first_look', 'hands_on', 'long_term']
@@ -177,6 +178,10 @@ export async function POST(req: Request) {
       limit: usage.cap,
     }, { status: 403 })
   }
+
+  // Monthly AI-spend circuit breaker (Sonnet script writer).
+  const spendBlocked = await spendGate(user.id, usage.tier)
+  if (spendBlocked) return spendBlocked
 
   // ── Resolve the product ───────────────────────────────────────────────────
   let asin = extractAsin(input.toUpperCase())

@@ -48,6 +48,7 @@ import { scrubDealHtml, DEAL_VOICE_RULES } from '@/lib/deal-scrub'
 import { scrubEmDashes } from '@/lib/html-scrub'
 import { getOccasion, detectOccasion, listOccasions, type DealOccasionSlug } from '@/lib/deal-occasion'
 import { checkDealsUsage } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 300
 
@@ -332,6 +333,10 @@ export async function POST(req: Request) {
     }, { status: dealsCheck.cap === 0 ? 403 : 429 })
   }
   const tier = dealsCheck.tier
+
+  // Monthly AI-spend circuit breaker (Sonnet writer + nano-banana thumbnails).
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   // Parse + validate body
   let body: {

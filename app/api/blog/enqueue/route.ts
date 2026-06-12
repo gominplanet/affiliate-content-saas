@@ -19,8 +19,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
-import { checkUsageLimit, checkGenerationLimit, normalizeTier, nextTierFor } from '@/lib/tier'
-import { checkSpendCeiling } from '@/lib/ai-spend'
+import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 
 export const dynamic = 'force-dynamic'
 
@@ -119,22 +119,8 @@ export async function POST(request: Request) {
       .select('tier')
       .eq('user_id', ownerId)
       .maybeSingle()
-    const spend = await checkSpendCeiling(ownerId, spendTierRow?.tier)
-    if (!spend.allowed) {
-      const next = nextTierFor(spend.status.tier, 'postsPerMonth')
-      return NextResponse.json({
-        error:
-          `This account has reached its monthly AI usage limit ` +
-          `($${spend.status.ceiling?.toFixed(0)} of AI cost this month). ` +
-          `Generation is paused until the 1st, or ` +
-          `${next ? `upgrade to ${next.label} for a higher limit.` : 'contact support to raise the limit.'}`,
-        limitReached: true,
-        cap: 'spend',
-        currentTier: spend.status.tier,
-        spend: { spent: Number(spend.status.spent.toFixed(2)), ceiling: spend.status.ceiling },
-        upgrade: next,
-      }, { status: 403 })
-    }
+    const gate = await spendGate(ownerId, spendTierRow?.tier)
+    if (gate) return gate
   }
 
   const jobId = await enqueueGenerationJob(admin, {

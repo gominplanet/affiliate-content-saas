@@ -31,6 +31,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { spendGate } from '@/lib/ai-spend'
 import { scrubAiHtml } from '@/lib/html-scrub'
 
 export const maxDuration = 300
@@ -516,6 +517,10 @@ export async function POST(req: Request) {
   if (tier !== 'pro' && tier !== 'admin') {
     return NextResponse.json({ error: 'Buying guides require the Pro tier.', code: 'tier_not_allowed' }, { status: 403 })
   }
+
+  // Monthly AI-spend circuit breaker (Sonnet writer + hero image).
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   // POST accepts three flows:
   //   1. { topic }                            → FULL AUTO: pick + write + publish

@@ -7,7 +7,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, checkGenerationLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
-import { checkSpendCeiling } from '@/lib/ai-spend'
+import { spendGate } from '@/lib/ai-spend'
 import { scrubBanned } from '@/lib/scrub'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
@@ -300,22 +300,8 @@ async function handleGenerate(request: Request) {
       .select('tier')
       .eq('user_id', ownerId)
       .maybeSingle()
-    const spend = await checkSpendCeiling(ownerId, spendTierRow?.tier)
-    if (!spend.allowed) {
-      const next = nextTierFor(spend.status.tier, 'postsPerMonth')
-      return NextResponse.json({
-        error:
-          `This account has reached its monthly AI usage limit ` +
-          `($${spend.status.ceiling?.toFixed(0)} of AI cost this month). ` +
-          `Generation is paused until the 1st, or ` +
-          `${next ? `upgrade to ${next.label} for a higher limit.` : 'contact support to raise the limit.'}`,
-        limitReached: true,
-        cap: 'spend',
-        currentTier: spend.status.tier,
-        spend: { spent: Number(spend.status.spent.toFixed(2)), ceiling: spend.status.ceiling },
-        upgrade: next,
-      }, { status: 403 })
-    }
+    const gate = await spendGate(ownerId, spendTierRow?.tier)
+    if (gate) return gate
   }
 
   if (isServiceCall) {

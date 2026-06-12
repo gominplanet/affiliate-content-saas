@@ -21,6 +21,7 @@ import { denyNewsletterWrite } from '@/lib/agency'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
+import { spendGate } from '@/lib/ai-spend'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import {
   renderNewsletterHtml,
@@ -120,6 +121,10 @@ export async function POST(req: Request) {
   const writingSample = ((brand?.writing_sample as string) || '').slice(0, 800)
   const niches: string[] = Array.isArray(brand?.niches) ? (brand!.niches as string[]).slice(0, 4) : []
   const tier = (integ?.tier as string | undefined) || 'trial'
+
+  // Monthly AI-spend circuit breaker (Sonnet newsletter writer).
+  const spendBlocked = await spendGate(user.id, tier)
+  if (spendBlocked) return spendBlocked
 
   // ── Claude prompt — return strict JSON we then parse ───────────────────────
   const postsForPrompt = posts.map((p, i) => `${i + 1}. ${p.title} — ${p.excerpt.slice(0, 240)}`).join('\n')

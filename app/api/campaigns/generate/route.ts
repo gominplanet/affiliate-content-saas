@@ -26,6 +26,7 @@ import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { researchProduct } from '@/services/research'
 import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 import { scrubBanned } from '@/lib/scrub'
 import { buildCampaignHero } from '@/lib/hero-image'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
     if (!tierAllowsCampaigns(tier)) {
       return NextResponse.json({ error: 'Creator Campaigns is a Pro feature.' }, { status: 403 })
     }
+    // Monthly AI-spend circuit breaker (Opus campaign writer).
+    const spendBlocked = await spendGate(user.id, tier)
+    if (spendBlocked) return spendBlocked
     if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
       return NextResponse.json({ error: 'WordPress not connected. Connect it in Setup first.' }, { status: 400 })
     }

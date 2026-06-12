@@ -24,6 +24,7 @@ import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
 import { fal } from '@fal-ai/client'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
+import { spendGate } from '@/lib/ai-spend'
 import { TIERS, nextTierFor, type Tier } from '@/lib/tier'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { analyzeTextZone } from '@/lib/thumbnail-textzone'
@@ -298,6 +299,10 @@ export async function POST(request: Request) {
         upgrade: { tier: 'studio' as Tier, label: TIERS.studio.label, limit: TIERS.studio.instagramAiThumbnailsPerMonth },
       }, { status: 403 })
     }
+
+    // Monthly AI-spend circuit breaker (nano-banana-pro image, $0.13).
+    const spendBlocked = await spendGate(user.id, tier)
+    if (spendBlocked) return spendBlocked
 
     // ── Pull the video row (gives us title / description / detected ASIN /
     // existing AI thumbnail URL for the dedupe path) ─────────────────────────

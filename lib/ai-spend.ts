@@ -17,9 +17,10 @@
  * OPEN (allow generation) — a telemetry hiccup must never hard-block a paying
  * user. The breaker only ever trips on a confident over-ceiling read.
  */
+import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { costOf, type UsageRow } from '@/lib/ai-usage'
-import { TIERS, normalizeTier, type Tier } from '@/lib/tier'
+import { TIERS, normalizeTier, nextTierFor, type Tier } from '@/lib/tier'
 
 /** First instant of the current calendar month, UTC, as an ISO string. */
 function startOfMonthUtcIso(): string {
@@ -92,4 +93,35 @@ export async function checkSpendCeiling(
 ): Promise<{ allowed: boolean; status: SpendStatus }> {
   const status = await spendStatus(userId, tier)
   return { allowed: !status.exceeded, status }
+}
+
+/**
+ * Drop-in gate for any expensive generation route. Returns a ready-to-return
+ * 403 NextResponse when the account is over its monthly AI-spend ceiling, or
+ * `null` to proceed. Usage at the top of a POST handler, right after the tier
+ * is known:
+ *
+ *   const gate = await spendGate(userId, tier)
+ *   if (gate) return gate
+ *
+ * Fails open (returns null) on any telemetry error — never hard-blocks on a
+ * read failure. Keep the gate AFTER auth but BEFORE the model call.
+ */
+export async function spendGate(userId: string, tier: unknown): Promise<NextResponse | null> {
+  if (!userId) return null
+  const status = await spendStatus(userId, tier)
+  if (!status.exceeded) return null
+  const next = nextTierFor(status.tier, 'postsPerMonth')
+  return NextResponse.json({
+    error:
+      `This account has reached its monthly AI usage limit ` +
+      `($${status.ceiling?.toFixed(0)} of AI cost this month). ` +
+      `Generation is paused until the 1st, or ` +
+      `${next ? `upgrade to ${next.label} for a higher limit.` : 'contact support to raise the limit.'}`,
+    limitReached: true,
+    cap: 'spend',
+    currentTier: status.tier,
+    spend: { spent: Number(status.spent.toFixed(2)), ceiling: status.ceiling },
+    upgrade: next,
+  }, { status: 403 })
 }

@@ -10,6 +10,7 @@ import { TIERS, billingWindow, nextTierFor, normalizeTier, type Tier } from '@/l
 import { generateCollabEmail, type CollabInput } from '@/lib/collab'
 import { extractAsin, fetchAmazonProduct } from '@/services/amazon'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { spendGate } from '@/lib/ai-spend'
 
 export const maxDuration = 120
 
@@ -71,6 +72,10 @@ export async function POST(request: Request) {
         }, { status: 429 })
       }
     }
+
+    // Monthly AI-spend circuit breaker (Sonnet research + email writer).
+    const spendBlocked = await spendGate(ownerId, tier)
+    if (spendBlocked) return spendBlocked
 
     const body = await request.json().catch(() => ({})) as Partial<CollabInput>
     const brandName = (body.brandName ?? '').trim()

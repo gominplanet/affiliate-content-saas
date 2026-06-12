@@ -9,6 +9,7 @@ import sharp from 'sharp'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { recordAnthropicUsage, recordUsage } from '@/lib/ai-usage'
 import { TIERS, nextTierFor, normalizeTier, checkGenerationLimit, type Tier } from '@/lib/tier'
+import { spendGate } from '@/lib/ai-spend'
 import { checkUsageCap, PRIMARY_FEATURE } from '@/lib/usage-cap'
 import { rankThumbnails, pickBestFrame, type ThumbnailScore } from '@/lib/thumbnail-score'
 import { type TextPosition } from '@/lib/thumbnail-textzone'
@@ -620,6 +621,11 @@ export async function POST(request: Request) {
       .single()
     const tier = normalizeTier(tierRow?.tier)
     TELEMETRY = { userId: user.id, tier }
+
+    // Monthly AI-spend circuit breaker — thumbnails generate nano-banana-pro
+    // images ($0.13 each), an unbounded vector for admin (no thumbnail cap).
+    const spendBlocked = await spendGate(user.id, tier)
+    if (spendBlocked) return spendBlocked
 
     const falKey = process.env.FAL_KEY
     if (!falKey) return NextResponse.json({ error: 'FAL_KEY is not configured' }, { status: 500 })

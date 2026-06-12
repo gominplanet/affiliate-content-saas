@@ -28,6 +28,7 @@ import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { spendGate } from '@/lib/ai-spend'
 import { fal } from '@fal-ai/client'
 
 export const maxDuration = 300
@@ -141,6 +142,11 @@ export async function POST(request: Request) {
       limitReached: true, cap: 'posts', currentTier: tier, code: 'tier_not_allowed',
     }, { status: 403 })
   }
+
+  // Monthly AI-spend circuit breaker (Sonnet writer + hero image).
+  const spendBlocked = await spendGate(ownerId, tier)
+  if (spendBlocked) return spendBlocked
+
   // Multi-site: resolve target site (default if siteId omitted). See
   // app/api/blog/generate for the full pattern; comparison is a thin
   // variant that follows it.
