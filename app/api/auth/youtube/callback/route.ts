@@ -9,14 +9,37 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
-  if (error || !code) {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&youtube_error=${error || 'no_code'}`)
+  // Decode state up front so BOTH the error and success paths can route back to
+  // wherever the flow began (e.g. the onboarding funnel) instead of always
+  // dumping the user on /setup. New format is JSON { uid, rt }; legacy callers
+  // sent the bare uid string.
+  let userId: string | null = null
+  let returnTo = ''
+  if (state) {
+    try {
+      const decoded = Buffer.from(state, 'base64url').toString('utf-8')
+      if (decoded.startsWith('{')) {
+        const parsed = JSON.parse(decoded) as { uid?: string; rt?: string }
+        userId = typeof parsed.uid === 'string' ? parsed.uid : null
+        // Re-validate the return path on the way out too (defence in depth
+        // against a tampered state): same-origin relative only.
+        if (typeof parsed.rt === 'string' && /^\/(?!\/)/.test(parsed.rt)) returnTo = parsed.rt
+      } else {
+        userId = decoded
+      }
+    } catch { /* ignore — fall back to session below */ }
   }
 
-  // Decode user ID from state
-  let userId: string | null = null
-  if (state) {
-    try { userId = Buffer.from(state, 'base64url').toString('utf-8') } catch { /* ignore */ }
+  // Build a redirect that returns to the funnel (returnTo) when present, else
+  // the existing /setup destination. Appends the marker query param correctly
+  // whether or not the path already has a query string.
+  const dest = (params: string) =>
+    returnTo
+      ? `${appUrl}${returnTo}${returnTo.includes('?') ? '&' : '?'}${params}`
+      : `${appUrl}/setup?tab=integrations&${params}`
+
+  if (error || !code) {
+    return NextResponse.redirect(dest(`youtube_error=${error || 'no_code'}`))
   }
   if (!userId) {
     const supabase = await createServerClient()
@@ -92,12 +115,12 @@ export async function GET(request: NextRequest) {
     // "Connect YouTube" banner up with no explanation.
     if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&youtube_oauth_connected=1`)
+    return NextResponse.redirect(dest('youtube_oauth_connected=1'))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // eslint-disable-next-line no-console
     console.error(`[youtube callback] ${step} failed:`, msg)
     const detail = encodeURIComponent(`${step}: ${msg}`.slice(0, 300))
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&youtube_error=${detail}`)
+    return NextResponse.redirect(dest(`youtube_error=${detail}`))
   }
 }

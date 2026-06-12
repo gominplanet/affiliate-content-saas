@@ -127,6 +127,22 @@ export default function OnboardingFunnel({
     return () => { clearInterval(t); window.removeEventListener('focus', onFocus) }
   }, [refreshStatus])
 
+  // The YouTube OAuth callback returns here (returnTo=/onboarding) with a
+  // result marker. Surface it as a toast, refresh status so the step flips to
+  // ✓, then strip the params so a refresh doesn't re-toast.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    const connected = sp.get('youtube_oauth_connected')
+    const ytErr = sp.get('youtube_error')
+    if (!connected && !ytErr) return
+    if (connected) { toast.success('YouTube connected.'); void refreshStatus() }
+    else if (ytErr) { toast.error(`Couldn’t connect YouTube: ${decodeURIComponent(ytErr)}`) }
+    const url = new URL(window.location.href)
+    url.searchParams.delete('youtube_oauth_connected')
+    url.searchParams.delete('youtube_error')
+    window.history.replaceState({}, '', url.pathname + url.search)
+  }, [refreshStatus])
+
   const persistStep = useCallback(async (n: number) => {
     try { await fetch('/api/onboarding', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ step: n }) }) }
     catch { /* best-effort resume point */ }
@@ -574,7 +590,9 @@ function YouTubeStep({ connected }: { connected: boolean }) {
   return (
     <>
       <StepHeading title="Connect your YouTube" blurb="One click — authorize with Google and you’re done. MVP figures out your channel automatically (no IDs to paste). This is how it turns your videos into blog posts." />
-      <a href="/api/auth/youtube" className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
+      {/* returnTo brings the OAuth callback back to the funnel instead of
+          dumping the user on /setup (the callback's default). */}
+      <a href="/api/auth/youtube?returnTo=/onboarding" className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
         <Youtube size={16} /> Connect YouTube
       </a>
       <p className="text-xs text-[#6e6e73] mt-4">Not ready? You can skip this and connect later from Set up.</p>
