@@ -71,6 +71,23 @@ export async function GET(req: Request) {
       // stale-claim window (600s, > the route's 300s ceiling) re-runs it only if
       // it truly died, and a re-run UPDATES in place (isRewrite), so no dup.
       if (/^TIMEOUT/i.test(msg)) {
+        // MONEY-SAFETY (2026-06-12): a job that times out used to be left
+        // 'running' forever — the 600s stale-claim re-ran it every ~10 min, and
+        // EACH re-run bills a full Opus generation. claim_generation_job bumps
+        // `attempts` on every (re)claim, but nothing here enforced the cap, so a
+        // post too heavy to finish in 300s re-billed indefinitely. Now: once the
+        // attempts budget is spent, stop re-running and fail it terminally. Below
+        // the cap, keep the stale-recovery behaviour (re-run only if it truly
+        // died; the in-place isRewrite update prevents duplicate posts).
+        if (job.attempts >= job.max_attempts) {
+          await failJob(
+            admin,
+            { ...job, attempts: job.max_attempts },
+            'Generation timed out repeatedly — stopped to avoid re-billing. Try a shorter length or Retry.',
+          )
+          processed.push({ id: job.id, ok: false, error: 'timeout — gave up after max attempts' })
+          continue
+        }
         processed.push({ id: job.id, ok: false, error: 'timeout — left running for stale recovery' })
         continue
       }
