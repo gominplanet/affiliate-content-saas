@@ -300,10 +300,7 @@ function StepBody({ stepKey, status, onConnected }: { stepKey: string; status: S
     case 'aff': return <AffiliateStep done={status.affiliateConnected} onSaved={onConnected} />
     case 'brand': return <BrandStep onSaved={onConnected} />
     case 'voice': return <VoiceStep onSaved={onConnected} />
-    case 'customize': return <ToolStep
-      title="Customize your blog"
-      blurb="Set your colors, homepage Editor's Picks, author trust block and footer. You can refine this anytime, but a quick pass now makes your first posts look polished."
-      href="/customize" cta="Open Customize Blog" done={false} />
+    case 'customize': return <CustomizeStep onSaved={onConnected} />
     case 'face': return <ToolStep
       title="Create your face model"
       blurb="Upload up to 20 selfies and MVP trains a reference model so your real face can appear in AI thumbnails and social images. Takes a few minutes to train in the background."
@@ -904,7 +901,117 @@ function VoiceStep({ onSaved }: { onSaved: () => void }) {
   )
 }
 
-/* Steps 6–7 — open the existing editor in a new tab; funnel tracks completion */
+/* Step 6 — Customize Blog, inline. The full editor has dozens of options (ads,
+   footer, homepage picks, analytics); the funnel surfaces the two highest-impact
+   "look" settings — the author trust block + post-date display — and saves them
+   back through the SAME endpoint (GET the full customizations object, merge,
+   POST). Everything else stays editable later in the full Customize Blog page. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CustomizeStep({ onSaved }: { onSaved: () => void }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [cfg, setCfg] = useState<Record<string, any> | null>(null)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const loaded = useRef(false)
+
+  // Load the current customizations so we POST back the FULL object (never drop
+  // the user's ads/footer/picks just because the funnel only edits two fields).
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/wordpress/customizations')
+        const data = res.ok ? await res.json() : {}
+        setCfg({
+          ...data,
+          authorBlock: { enabled: true, name: '', tagline: '', photoUrl: '', linkUrl: '', linkLabel: 'More about me', ...(data.authorBlock || {}) },
+          postMeta: { showDate: data?.postMeta?.showDate !== false },
+        })
+      } catch {
+        setCfg({ authorBlock: { enabled: true, name: '', tagline: '', photoUrl: '', linkUrl: '', linkLabel: 'More about me' }, postMeta: { showDate: true } })
+      } finally { loaded.current = true }
+    })()
+  }, [])
+
+  // Debounced save of the full (merged) object.
+  useEffect(() => {
+    if (!loaded.current || !cfg) return
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/wordpress/customizations', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg),
+        })
+        if (res.ok) { setSavedAt(Date.now()); onSaved() }
+      } catch { /* transient — WP push best-effort */ }
+    }, 900)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg])
+
+  const inputCls = 'w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const patch = (fn: (c: any) => any) => setCfg((c) => c ? fn({ ...c }) : c)
+
+  if (!cfg) {
+    return (<><StepHeading title="Customize your blog" blurb="Loading your current settings…" /><Loader2 size={18} className="animate-spin text-[#a1a1a6]" /></>)
+  }
+
+  const author = cfg.authorBlock || {}
+  const showDate = cfg.postMeta?.showDate !== false
+
+  return (
+    <>
+      <StepHeading
+        title="Customize your blog"
+        blurb="Two quick settings that shape how every post reads. Everything else — colors, homepage picks, footer — you can fine-tune anytime in Customize Blog. Saves as you go."
+      />
+
+      {/* Author trust block */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
+        <div className="flex items-center justify-between mb-1">
+          <p className="font-semibold text-sm">Reviewer trust block</p>
+          <button
+            onClick={() => patch((c) => { c.authorBlock = { ...c.authorBlock, enabled: !author.enabled }; return c })}
+            className="relative w-10 h-6 rounded-full transition-colors"
+            style={{ background: author.enabled ? ACCENT : 'rgba(255,255,255,0.15)' }}
+          >
+            <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: author.enabled ? '18px' : '2px' }} />
+          </button>
+        </div>
+        <p className="text-xs text-[#6e6e73] mb-3">A short “who reviewed this” intro at the top of every post — builds Google + AI-Overview trust (E-E-A-T). Recommended on.</p>
+        {author.enabled && (
+          <div className="flex flex-col gap-2">
+            <input value={author.name || ''} onChange={(e) => patch((c) => { c.authorBlock = { ...c.authorBlock, name: e.target.value }; return c })} placeholder="Your name (e.g. Seb)" className={inputCls} />
+            <input value={author.tagline || ''} onChange={(e) => patch((c) => { c.authorBlock = { ...c.authorBlock, tagline: e.target.value }; return c })} placeholder="Credibility line (e.g. I've tested 200+ kitchen gadgets)" className={inputCls} />
+            <p className="text-[11px] text-[#6e6e73]">Your photo pulls from Brand Profile → Headshot automatically.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Show dates */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+        <div className="flex items-center justify-between mb-1">
+          <p className="font-semibold text-sm">Show post dates</p>
+          <button
+            onClick={() => patch((c) => { c.postMeta = { ...c.postMeta, showDate: !showDate }; return c })}
+            className="relative w-10 h-6 rounded-full transition-colors"
+            style={{ background: showDate ? ACCENT : 'rgba(255,255,255,0.15)' }}
+          >
+            <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{ left: showDate ? '18px' : '2px' }} />
+          </button>
+        </div>
+        <p className="text-xs text-[#6e6e73]">{showDate ? 'Visible publish/updated dates on posts.' : 'Dates hidden — “evergreen” look. SEO freshness signals (schema) are kept either way.'}</p>
+      </div>
+
+      <div className="flex items-center justify-between mt-5">
+        <a href="/customize" target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 text-sm text-[#a1a1a6] hover:text-white transition-colors">
+          Fine-tune everything else (ads, footer, homepage) <ExternalLink size={13} />
+        </a>
+        {savedAt && <span className="inline-flex items-center gap-1 text-xs text-[#34c759]"><Check size={12} /> Saved</span>}
+      </div>
+    </>
+  )
+}
+
+/* Step 7 — opens the existing editor in a new tab; funnel tracks completion */
 function ToolStep({ title, blurb, href, cta, done }: { title: string; blurb: string; href: string; cta: string; done: boolean }) {
   return (
     <>
