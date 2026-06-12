@@ -31,6 +31,7 @@ import {
 const HOSTINGER_URL = 'https://geni.us/ANaArQ'
 const GENIUSLINK_URL = 'https://geni.us/Y70p9R'
 const PLUGIN_ZIP = '/mvp-affiliate.zip'
+const THEME_ZIP = '/mvp-affiliate-theme.zip'
 
 // Mirror the option lists from the full Brand Profile editor (app/(dashboard)/
 // brand/page.tsx) so the inline funnel card writes identical values.
@@ -333,10 +334,48 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   if (connected) {
     return (
       <>
-        <StepHeading title="WordPress connected" blurb="Your blog is linked to MVP Affiliate. This is the foundation — everything else builds on it." />
-        <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759]">
-          <Check size={16} /> Site connected. Hit “Save &amp; next” to continue.
+        <StepHeading
+          title="Site connected — now install the MVP look"
+          blurb="Your blog is linked. The last piece is the MVP theme + plugin, which turn your site into a real review site: the review layout, Google-ready schema, Editor’s Picks, the AI Product Finder, and more."
+        />
+        <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-5">
+          <Check size={16} /> Connection successful.
         </div>
+
+        {/* Look-and-feel consent — must be unmistakable. */}
+        <div className="rounded-xl border border-[#ff9500]/40 bg-[#ff9500]/10 px-4 py-3.5 mb-5">
+          <p className="text-sm font-semibold text-[#ff9f0a] mb-1">Heads up: this changes how your blog looks</p>
+          <p className="text-sm text-[#e8c9a0] leading-relaxed">
+            Activating the MVP theme replaces your current theme’s design — your blog’s layout, colors, fonts and overall look &amp; feel become the MVP review-site style. Your posts and content stay safe; only the styling changes. If you already have a blog whose look you want to keep, you can <span className="text-white">skip this</span> and keep your theme — MVP will still publish posts, just without the review layout and homepage features.
+          </p>
+        </div>
+
+        {/* Theme */}
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
+          <p className="font-semibold text-sm mb-2">1 · Install the MVP theme</p>
+          <a href={THEME_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-3">
+            Download the MVP theme <ExternalLink size={12} />
+          </a>
+          <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
+            <li>In WordPress admin → <span className="text-white">Appearance → Themes → Add New Theme → Upload Theme</span>.</li>
+            <li>Choose the .zip, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
+          </ol>
+        </div>
+
+        {/* Plugin */}
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-5">
+          <p className="font-semibold text-sm mb-2">2 · Install the MVP plugin</p>
+          <a href={PLUGIN_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-3">
+            Download the MVP plugin <ExternalLink size={12} />
+          </a>
+          <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
+            <li>In WordPress admin → <span className="text-white">Plugins → Add New Plugin → Upload Plugin</span>.</li>
+            <li>Choose the .zip, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
+          </ol>
+          <p className="text-xs text-[#6e6e73] mt-2">The plugin adds the SEO schema, Editor’s Picks, Product Finder and topic hubs. (You only do this once — future updates are one click.)</p>
+        </div>
+
+        <p className="text-xs text-[#6e6e73]">Installed them, or keeping your own theme? Either way, hit “Save &amp; next” below to continue.</p>
       </>
     )
   }
