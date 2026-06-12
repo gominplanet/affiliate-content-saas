@@ -409,12 +409,21 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   // mode === 'have'
   return (
     <>
-      <StepHeading title="Connect your WordPress site" blurb="Two ways — one-click is fastest. Either one links your site so MVP can publish to it." />
+      <StepHeading title="Connect your WordPress site" blurb="Two ways to link your site so MVP can publish to it. Option A is fastest (no plugin); Option B works on every host. Pick whichever fits — both end the same way." />
 
       {/* One-click */}
+      {/* Option A — WordPress's built-in app authorization (no plugin). */}
       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
-        <p className="font-semibold text-sm mb-1">Option A · One-click (recommended)</p>
-        <p className="text-sm text-[#a1a1a6] mb-3">Enter your site URL and authorize in a new tab. This page updates on its own when it’s done.</p>
+        <p className="font-semibold text-sm mb-1">Option A · Fastest (no plugin) · ~30 seconds</p>
+        <p className="text-sm text-[#a1a1a6] mb-3">
+          Uses WordPress’s built-in app permission — nothing to install. Here’s exactly what happens:
+        </p>
+        <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#6e6e73]">
+          <li>Make sure you’re <span className="text-white">logged in to your WordPress admin</span> in this browser (open <span className="text-[#c7c7cc]">yoursite.com/wp-admin</span> in another tab first if you’re not sure).</li>
+          <li>Type your site address below and click <span className="text-white">Connect</span>.</li>
+          <li>A WordPress page opens in a new tab titled <span className="text-white">“MVP Affiliate would like to connect.”</span> Click <span className="text-white">Yes, I approve.</span></li>
+          <li>That tab closes/finishes — come back here and this page turns green automatically.</li>
+        </ol>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)}
@@ -425,17 +434,26 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
             Connect
           </button>
         </div>
+        <p className="text-xs text-[#6e6e73] mt-2.5">
+          Your site must use <span className="text-[#a1a1a6]">https://</span>. If the approve page doesn’t appear or your host blocks it, use Option B below — it always works.
+        </p>
       </div>
 
-      {/* Plugin + token */}
+      {/* Option B — plugin + connection token (works everywhere). */}
       <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-        <p className="font-semibold text-sm mb-1">Option B · Plugin + connection token</p>
-        <p className="text-sm text-[#a1a1a6] mb-3">
-          Install our plugin, then paste the token it gives you (wp-admin → MVP Affiliate).
-        </p>
-        <a href={PLUGIN_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-3">
-          Download the MVP Affiliate plugin <ExternalLink size={13} />
-        </a>
+        <p className="font-semibold text-sm mb-1">Option B · Plugin + token · works on every host</p>
+        <p className="text-sm text-[#a1a1a6] mb-3">A few more steps, but bulletproof. Do these in order:</p>
+        <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#6e6e73]">
+          <li>
+            <a href={PLUGIN_ZIP} className="text-[#7C3AED] hover:underline inline-flex items-center gap-1">Download the MVP Affiliate plugin <ExternalLink size={12} /></a>
+            {' '}— it saves a <span className="text-white">.zip</span> file (don’t unzip it).
+          </li>
+          <li>In your WordPress admin, go to <span className="text-white">Plugins → Add New Plugin → Upload Plugin</span>.</li>
+          <li>Choose the .zip you just downloaded, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
+          <li>A new <span className="text-white">“MVP Affiliate”</span> item appears in your WordPress admin’s left menu. Click it.</li>
+          <li>Click <span className="text-white">Generate connection token</span>, then <span className="text-white">copy</span> the token it shows.</li>
+          <li>Paste that token below and click <span className="text-white">Connect</span>.</li>
+        </ol>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             value={token} onChange={(e) => setToken(e.target.value)}
