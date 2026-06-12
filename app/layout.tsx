@@ -49,7 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             metadata.other) because Impact's crawler checks the `value`
             attribute, and Next's metadata API only emits `content`. React 19
             hoists this <meta> into <head>. */}
-        <meta name="impact-site-verification" value="e55f7edf-8f38-42e9-8db5-ef3793169671" />
+        <meta {...({ name: 'impact-site-verification', value: 'e55f7edf-8f38-42e9-8db5-ef3793169671' } as React.MetaHTMLAttributes<HTMLMetaElement>)} />
         {rewardfulKey && (
           <>
             <Script

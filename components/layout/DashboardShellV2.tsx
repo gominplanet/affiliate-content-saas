@@ -37,7 +37,7 @@ import {
   Flame, GraduationCap, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
-  Share2, UserSquare, Lightbulb,
+  Share2, UserSquare, Lightbulb, LifeBuoy, Link2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
@@ -165,9 +165,6 @@ export default function DashboardShellV2({
   }, [collapsed])
 
   const isAdmin = tier === 'admin'
-  // Paid tiers (everyone except trial). Used to gate Creator+ features
-  // like the Title/body audit that live in the user-facing sidebar.
-  const isPaid = tier !== 'trial'
 
   // Admin "view as tier" dropdown state. Sourced from localStorage so the
   // sidebar reflects whichever tier the admin is currently previewing.
@@ -199,122 +196,99 @@ export default function DashboardShellV2({
   // explained. 2026-06-08.
 
   const NAV_GROUPS: NavGroupDef[] = [
+    // ── IA RESTRUCTURE 2026-06-12 (onboarding-funnel epic, Phase 1) ──────────
+    // Sidebar regrouped into the funnel-aligned sections a user actually moves
+    // through: SET UP (the 7 onboarding steps, in funnel order) → CREATE →
+    // GROW → COLLABORATE → HELP & COMMUNITY. Dashboard sits headerless at the
+    // top; Plan & Billing in its own small Account group at the bottom.
+    // Hidden (routes alive, just unlinked): Analytics, Title audit, Instagram
+    // Burner — not surfaced for now. The standalone Photobooth "Create" entry
+    // folded into the single Face Models step (same /photobooth route).
+    //
+    // Headerless top item.
     {
-      label: 'Today',
+      label: '',
       items: [
         { href: '/dashboard', icon: <Home size={15} />, label: 'Dashboard' },
-        { href: '/content', icon: <Library size={15} />, label: 'Library' },
-        // Brainstorm — daily-check "what should I make next" surface.
-        // Reads 90-day perf snapshot + lets the user one-shot a
-        // grounded brainstorm via the Help Desk. Lives under Today
-        // because it answers a daily question, not a setup one.
-        { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm' },
       ],
     },
-    // "Your Blog" sidebar group removed 2026-06-08 — the two
-    // shortcuts (Visit Blog / WP Admin) now live as paired buttons
-    // in the topbar to the left of the theme toggle. Same site-gated
-    // visibility (hidden until Blog Set Up runs).
     {
-      // The onboarding spine. Every item here is a "you only do this
-      // once (or rarely)" surface — point a new user at this group and
-      // they'll have a working, branded, voice-trained blog by the end.
-      // Order = the order a fresh signup should touch them:
-      //   1. Blog Set Up    -> get WordPress installed + connected
-      //   2. Integrations   -> hook up YouTube, Stripe, socials
-      //   3. Brand Profile  -> name, niches, tone-of-voice settings
-      //   4. Voice Training -> teach the AI your writing voice (LEARN
-      //                        profile honoured by every content agent
-      //                        per the LEARN-always-applied rule)
-      //   5. Customize Blog -> theme colors, layout, hero copy
-      //   6. Tutorials      -> reference videos for anything that's still
-      //                        unclear once they're rolling
+      // SET UP — the onboarding spine, in the exact order the funnel walks a
+      // new user through (Phase 2 turns these into guided Save-&-Next cards):
+      //   1. WordPress      -> get a blog installed + connected (hard gate)
+      //   2. YouTube        -> OAuth connect (channel ID auto-derived; Phase 2)
+      //   3. Affiliate Links-> Geniuslink keys + groups / Amazon tag fallback
+      //   4. Brand Profile  -> name, niches, tone
+      //   5. Voice Training -> teach the AI your writing voice (LEARN)
+      //   6. Customize Blog -> theme colors, layout, hero copy
+      //   7. Face Models    -> upload selfies, train the reference model
+      // NOTE (interim): Affiliate Links + Brand Profile both point at /brand
+      // today (Geniuslink lives inside the brand page). Phase 2 splits
+      // Geniuslink into its own funnel card/route.
       label: 'Set up',
       items: [
-        { href: '/setup', icon: <Wrench size={15} />, label: 'Blog Set Up' },
-        // /connect-socials is a real top-level route as of 2026-06-05 —
-        // no longer a hash anchor inside /setup?tab=integrations. Hosts
-        // YouTube + every social channel. The old `Integrations` sidebar
-        // entry was removed because everything moved to its proper home:
-        //   - WordPress  → /setup (Blog Set Up — wizard + manager)
-        //   - Geniuslink → /brand (Brand Profile → Affiliate Link Routing)
-        //   - Socials    → /connect-socials (this entry)
-        { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Connect Socials' },
+        { href: '/setup', icon: <Wrench size={15} />, label: 'WordPress' },
+        { href: '/connect-socials', icon: <Youtube size={15} />, label: 'YouTube' },
+        { href: '/brand', icon: <Link2 size={15} />, label: 'Affiliate Links' },
         { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
         { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
-        // Face Models points at /photobooth — same page that hosts
-        // headshot generation. In Set up the entry frames it as the
-        // "do this once" face-upload surface; the Create entry frames
-        // the same page as the "use it to generate headshots" surface.
-        // Two intents, one URL.
-        { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog' },
-        { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
+        { href: '/photobooth', icon: <UserSquare size={15} />, label: 'Face Models' },
       ],
     },
     {
       label: 'Create',
       items: [
         { href: '/co-pilot', icon: <Youtube size={15} />, label: 'YouTube Co-Pilot' },
-        { href: '/script', icon: <PenLine size={15} />, label: 'Script writer' },
-        { href: '/comparison', icon: <Scale size={15} />, label: 'Compare products' },
+        // "Library" renamed -> "Blog Post Generator" (2026-06-12 IA).
+        { href: '/content', icon: <Library size={15} />, label: 'Blog Post Generator' },
+        // Socials — connect the channels available for auto-posting today.
+        // Shares /connect-socials with the SET UP "YouTube" step for now;
+        // Phase 2 may split YouTube-only onboarding from the full socials grid.
+        { href: '/connect-socials', icon: <Share2 size={15} />, label: 'Socials' },
+        { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuides },
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals },
+        { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
-        { href: '/instagram-burner', icon: <Flame size={15} />, label: 'Instagram Burner' },
-        // Photobooth — face training + studio-quality headshot generation.
-        // Lives in Create because it's a visual-content tool the creator
-        // actively uses; sits next to Instagram Burner since both are about
-        // "your likeness" output. /face-training was merged into this page
-        // and just redirects here, so this single entry covers both.
-        { href: '/photobooth', icon: <Camera size={15} />, label: 'Photobooth' },
+        // Instagram Burner hidden 2026-06-12 (not ready). Route stays alive.
       ],
     },
     {
       label: 'Grow',
       items: [
         { href: '/seo', icon: <TrendingUp size={15} />, label: 'SEO & Indexing' },
-        { href: '/analytics', icon: <TrendingUp size={15} />, label: 'Analytics' },
-        // Title audit — scan the user's archive for title/body product
-        // mismatches (the WagComb-class hallucination). Creator+ only —
-        // trial blocked because they have ≤5 lifetime posts. Lives under
-        // Grow because catching wrong titles is a content-quality move,
-        // adjacent to SEO. Moved from /admin to /tools 2026-06-07.
-        { href: '/tools/title-audit', icon: <AlertTriangle size={15} />, label: 'Title audit', gate: isPaid },
+        // Analytics + Title audit hidden 2026-06-12. Routes stay alive
+        // (/analytics, /tools/title-audit) — just unlinked for now.
       ],
     },
     {
       label: 'Collaborate',
       items: [
-        // Creator Campaigns gated out of the product for all tiers (2026-06-12).
-        // The /campaigns page server-redirects to /dashboard; the full
-        // implementation is preserved in git history if it's ever revived.
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
+        { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistant' },
       ],
     },
     {
-      // Blog Set Up, Integrations, and Tutorials moved to the "Set up"
-      // group as part of the 2026-06-05 IA restructure — keep them in
-      // exactly one place so onboarding flows linearly. Settings is now
-      // only the day-2 surfaces: ongoing AI chat, billing, teammates, and
-      // the community link.
-      label: 'Settings',
+      // HELP & COMMUNITY — support + learning surfaces. "Create a Help Ticket"
+      // (-> /support) ships in Phase 3 with its DB table + admin inbox; the
+      // nav entry is added then.
+      label: 'Help & Community',
       items: [
+        { href: '/brainstorm', icon: <Lightbulb size={15} />, label: 'Brainstorm' },
         { href: '/assistant', icon: <Bot size={15} />, label: 'MVP Help Desk' },
-        { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
-        // API Access (/developers) and White-label Branding (/branding) are
-        // built and tier-gated, but hidden from the sidebar per the
-        // 2026-06-04 tier session — surface them only when there's real
-        // demand. The pages + routes still work for anyone who knows the
-        // URL. Re-add by un-commenting:
-        //   { href: '/developers', icon: <KeyRound size={15} />, label: 'API Access' },
-        //   { href: '/branding', icon: <Palette size={15} />, label: 'White-label' },
-        { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistants' },
-        // Community lands users on the MVP Affiliate Facebook group hub
-        // (Discord-rethink era, see app/(dashboard)/community/page.tsx).
-        // Sits last in Settings because it's a low-frequency, support-style
-        // link, not a daily-driver route.
+        { href: '/support', icon: <LifeBuoy size={15} />, label: 'Create a Help Ticket', gate: false },
+        { href: '/tutorials', icon: <GraduationCap size={15} />, label: 'Tutorials' },
         { href: '/community', icon: <MessageCircle size={15} />, label: 'Community' },
+      ],
+    },
+    {
+      // Account — kept reachable; not part of the funnel IA but billing must
+      // always be one click away (upgrades).
+      label: 'Account',
+      items: [
+        { href: '/billing', icon: <CreditCard size={15} />, label: 'Plan & Billing' },
+        // API Access (/developers) + White-label (/branding) remain hidden.
       ],
     },
     // Recommended tools — external partner-affiliate links the user earns
@@ -459,7 +433,7 @@ export default function DashboardShellV2({
             if (visibleItems.length === 0) return null
             return (
               <div key={group.label}>
-                {!collapsed && (
+                {!collapsed && group.label && (
                   <p
                     className="px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold"
                     style={{ color: 'var(--text-faint)' }}
