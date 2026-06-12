@@ -410,6 +410,17 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
     toast('Finish the authorization in the new tab — this page updates automatically.')
   }
 
+  // Convenience for non-technical users: take whatever they typed, normalise it
+  // to a URL, and open <site>/wp-admin in a new tab — that's where the plugin
+  // install steps happen. Pure navigation, nothing saved.
+  function openWpAdmin() {
+    let u = siteUrl.trim()
+    if (!u) { toast.error('Enter your website address first.'); return }
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u
+    u = u.replace(/\/+$/, '')
+    window.open(`${u}/wp-admin`, '_blank', 'noopener')
+  }
+
   if (mode === 'choose') {
     return (
       <>
@@ -465,6 +476,23 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
           <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#7C3AED] text-white">Recommended</span>
         </div>
         <p className="text-sm text-[#c9b8ec] mb-3">Unlocks your fully customizable review blog and works on every host. Do these in order:</p>
+
+        {/* Newbie helper: open their WordPress login for them. Steps 2-5 all
+            happen inside wp-admin, so get them there in one click. */}
+        <div className="rounded-lg border border-white/10 bg-black/20 p-3 mb-4">
+          <p className="text-xs text-[#a1a1a6] mb-2">New to WordPress? Type your site address and we’ll open its login page in a new tab — that’s where steps 2–5 happen.</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)}
+              placeholder="yourblog.com"
+              className="flex-1 rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-sm outline-none focus:border-[#7C3AED]/60"
+            />
+            <button onClick={openWpAdmin} className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity inline-flex items-center gap-1.5 whitespace-nowrap" style={{ background: 'rgba(255,255,255,0.1)' }}>
+              Open my WordPress login <ExternalLink size={13} />
+            </button>
+          </div>
+        </div>
+
         <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#7C3AED]">
           <li>
             <a href={PLUGIN_ZIP} className="text-[#a78bfa] hover:underline inline-flex items-center gap-1">Download the MVP Affiliate plugin <ExternalLink size={12} /></a>
