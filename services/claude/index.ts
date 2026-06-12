@@ -178,13 +178,17 @@ function buildSystemPrompt(
   const niches = brand.niches?.length ? brand.niches.join(', ') : 'general consumer products'
   const tones = brand.tone?.length ? brand.tone.join(', ') : 'conversational, candid'
 
+  // Word-count tiers (2026-06-12 cost control). Hard ceiling 1,500 words —
+  // long-form was driving Opus output cost with no payoff. SHORT=500,
+  // MEDIUM=550–750, DEEP DIVE=up to 1,500. ('long' kept as an alias under the
+  // cap for any stored profiles that still use it.)
   const lengthMap: Record<string, string> = {
-    short: '6,000–9,000 characters',
-    medium: '9,000–13,000 characters',
-    long: '13,000–18,000 characters',
-    deep: '18,000+ characters',
+    short: 'about 500 words',
+    medium: '550–750 words',
+    long: '900–1,100 words',
+    deep: '1,200–1,500 words',
   }
-  const targetLength = lengthMap[brand.post_length] || '9,000–13,000 characters'
+  const targetLength = lengthMap[brand.post_length] || '550–750 words'
 
   const disclaimer = brand.affiliate_disclaimer
     || (isAmazon
@@ -426,7 +430,13 @@ CRITICAL RULES — FOLLOW STRICTLY
    Wrap all links with: target="_blank" rel="noopener sponsored nofollow"
    Must appear: intro paragraph + naturally 2–3× in body + final CTA.
 
-5. LENGTH — Hit the target length. Long-form wins on SEO.
+5. LENGTH — Hit the target length above, and NEVER exceed 1,500 words total, no
+   matter what. Tighter is better: every sentence earns its place. A focused
+   500–750 word review that answers the buyer's question beats a padded 2,000-
+   word one — do NOT inflate with filler, restated points, or throat-clearing to
+   reach a length. The target is a ceiling to write UP TO only if the substance
+   is genuinely there; if you've said everything worth saying in fewer words,
+   stop.
 
 6. NO CAPTIONS — Never output any <p class="gr-img-caption"> or caption text.
    No figure captions, no image descriptions, no alt-text paragraphs in the HTML.
@@ -2223,7 +2233,7 @@ ${video.transcript ? video.transcript.slice(0, 20000) : 'No transcript available
     // recovers the common case rather than failing the whole generation.
     const runGeneration = () => this.client.messages.stream({
       model: 'claude-opus-4-8',
-      max_tokens: 32000,
+      max_tokens: 10000,  // cost cap 2026-06-12: posts ≤1,500 words; was 32000 ($0.80 worst-case output → ~$0.25)
       // Writer upgraded Sonnet 4.6 → Opus 4.8 (2026-06-09) for prose quality.
       // Opus 4.8 removed the fixed `budget_tokens` thinking budget (it 400s)
       // and only accepts ADAPTIVE thinking, so the model self-decides depth.
@@ -2372,7 +2382,7 @@ Return in the same %%META_START%% / %%META_END%% then %%CONTENT_START%% / %%CONT
 
     const stream = this.client.messages.stream({
       model: 'claude-opus-4-8',
-      max_tokens: 32000,
+      max_tokens: 10000,  // cost cap 2026-06-12: posts ≤1,500 words; was 32000 ($0.80 worst-case output → ~$0.25)
       // Opus 4.8 writer + adaptive thinking, effort-capped to stay inside the
       // shared 300s pipeline budget (see generateBlogPost for the full
       // rationale — campaign generation runs the same passes downstream).

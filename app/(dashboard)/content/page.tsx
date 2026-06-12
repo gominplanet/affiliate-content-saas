@@ -28,6 +28,14 @@ import {
   RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload, Search, Calendar,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
+
+// COST CONTROL (2026-06-12): master switch for every multi-video bulk
+// GENERATION action (bulk generate, bulk schedule, bulk rewrite). Off by
+// default — an unattended bulk run was the single biggest Anthropic cost
+// (the overnight-$60 spike). Bulk DELETE and bulk CATEGORY stay on (no AI
+// cost). Set to true to bring the bulk generation buttons back.
+const BULK_GENERATION_ENABLED = false
+
 // Audit perf fix 2026-06-06: lazy-load the vertical-direct modals just
 // like the other rarely-opened modals. They include ShortVideoUpload
 // (tus client, file upload) and bring ~30-50KB into the initial bundle
@@ -2848,9 +2856,10 @@ export default function ContentPage() {
                   >
                     Clear ({selectedPostIds.size})
                   </button>
-                  {/* Bulk Rewrite is Pro-only. Server still enforces
-                      the one-rewrite-per-post rule per row. */}
-                  {(userTier === 'pro' || userTier === 'admin') && (
+                  {/* Bulk Rewrite DISABLED 2026-06-12 (cost control — each rewrite
+                      is a full Opus generation; a bulk click fires N at once).
+                      Rewrite one post at a time. Flip BULK_GENERATION_ENABLED to restore. */}
+                  {BULK_GENERATION_ENABLED && (userTier === 'pro' || userTier === 'admin') && (
                     <button
                       onClick={bulkRewriteSelected}
                       disabled={bulkRewriting || bulkDeleting}
@@ -3276,7 +3285,12 @@ export default function ContentPage() {
                     >
                       Clear ({selectedVideoIds.size})
                     </button>
-                    {ungenerated.length > 0 && (
+                    {/* Bulk generate + bulk schedule DISABLED 2026-06-12 (cost
+                        control). One unattended "Generate N" / "Bulk schedule N"
+                        click could fire dozens–hundreds of Opus generations — the
+                        overnight-$60 spike. Generate one video at a time from its
+                        card. Flip BULK_GENERATION_ENABLED to restore. */}
+                    {BULK_GENERATION_ENABLED && ungenerated.length > 0 && (
                       <button
                         onClick={bulkGenerateSelected}
                         disabled={bulkBusy}
@@ -3288,7 +3302,7 @@ export default function ContentPage() {
                         }
                       </button>
                     )}
-                    {ungenerated.length > 0 && (
+                    {BULK_GENERATION_ENABLED && ungenerated.length > 0 && (
                       <button
                         onClick={() => setBulkScheduleVideosOpen(true)}
                         disabled={bulkBusy}

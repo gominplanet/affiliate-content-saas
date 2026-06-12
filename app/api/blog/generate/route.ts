@@ -236,9 +236,12 @@ async function handleGenerate(request: Request) {
     scheduleMode === 'draft-flip' ? 'draft' :
     'publish'
   const isScheduled = scheduleMode !== undefined
-  // Default ON when omitted (older callers / bulk triggers) — the Content
-  // page sends the explicit per-generation choice.
-  const includeImages = body.includeImages !== false
+  // OPT-IN (2026-06-12 cost control): images only when the caller EXPLICITLY
+  // asks. Was `!== false` (default ON when omitted), which meant rewrites,
+  // retries, and any caller that didn't send the field silently generated a
+  // full set of fal images every time. The Content page's "Include photos"
+  // box sends the explicit choice; the SEO rebuild sends includeImages:true.
+  const includeImages = body.includeImages === true
   const userImageUrls = Array.isArray(body.userImageUrls)
     ? body.userImageUrls.filter(u => typeof u === 'string' && /^https?:\/\//.test(u)).slice(0, 3)
     : []
@@ -785,8 +788,15 @@ async function handleGenerate(request: Request) {
   //         the open-web equivalent of an Amazon scrape. The transcript
   //         still drives the voice; this just gives the writer real
   //         product facts. Creator/Pro/Admin (not Trial); best-effort.
+  //
+  //  COST (2026-06-12): SKIP this entirely for Amazon products. When we have an
+  //  ASIN, §5.95 below already does ONE fetchAmazonProduct() and feeds the
+  //  authoritative listing (title + bullets) to the writer — so the web search
+  //  here was redundant AND expensive (it was the $28/mo, ~36k-input-tokens/call
+  //  `blog_web_product_search` line). Only run it for NON-Amazon products
+  //  (direct-store links) where we have no listing to fall back on.
   let productResearch: string | null = null
-  if (tier === 'creator' || tier === 'pro' || tier === 'admin') {
+  if (!asinOverride && (tier === 'creator' || tier === 'pro' || tier === 'admin')) {
     const pUrl = firstProductUrl(rawDescription, site.wordpress_url ?? null)
     if (pUrl) {
       // HARD TIME BUDGET: research is best-effort enrichment, but the

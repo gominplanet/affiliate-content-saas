@@ -330,15 +330,19 @@ export function allowedBlogImages(
   wordCount: number,
   userPreference?: number | null,
 ): number {
-  const ceiling = TIERS[normalizeTier(tier)].blogImagesPerPost
+  // HARD COST CAP (2026-06-12): at most ONE in-body image per 750 words, on
+  // top of the tier ceiling and any user preference. Posts are capped at 1,500
+  // words, so this resolves to 1 (≤750w) or 2 (751–1,500w). Replaces the old
+  // "1 per 1,500 words, minimum 2" rule that over-generated images.
+  const wordCap = Math.max(1, Math.ceil((wordCount || 0) / 750))
+  const ceiling = Math.min(TIERS[normalizeTier(tier)].blogImagesPerPost, wordCap)
   if (typeof userPreference === 'number' && userPreference >= 0) {
-    // User has an explicit preference — respect it, clamped to tier
-    // ceiling. 0 is valid and means "no in-body images".
+    // User has an explicit preference — respect it, clamped to the (now
+    // word-capped) ceiling. 0 is valid and means "no in-body images".
     return Math.min(ceiling, userPreference)
   }
-  // Legacy default — word-count scaled, min 2, clamped to tier ceiling.
-  const byLength = Math.round(wordCount / 1500)
-  return Math.max(2, Math.min(ceiling, byLength))
+  // Default when images are requested: the full word-scaled allowance.
+  return ceiling
 }
 
 /** Whether a given tier can publish to a specific social platform. */
