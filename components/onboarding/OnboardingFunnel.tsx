@@ -302,8 +302,8 @@ function StepBody({ stepKey, status, onConnected }: { stepKey: string; status: S
     case 'voice': return <VoiceStep onSaved={onConnected} />
     case 'customize': return <CustomizeStep onSaved={onConnected} />
     case 'face': return <ToolStep
-      title="Create your face model"
-      blurb="Upload up to 20 selfies and MVP trains a reference model so your real face can appear in AI thumbnails and social images. Takes a few minutes to train in the background."
+      title="Last step — create your face model"
+      blurb="Open Face Models, upload up to 20 selfies, and MVP trains a reference model so your real face can appear in AI thumbnails and social images. It trains in the background (a few minutes) — you don't have to wait. This is the one step that lives in its own tool; once you've started it, come back and hit “Finish & go to dashboard” below."
       href="/photobooth" cta="Open Face Models" done={status.faceReady} />
     default: return null
   }
