@@ -52,21 +52,37 @@ async function runBlogJob(job: GenerationJob): Promise<Record<string, unknown>> 
   const secret = process.env.CRON_SECRET
   if (!secret) throw new Error('CRON_SECRET not set — cannot make the internal service call')
 
+  const init = {
+    method: 'POST' as const,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-mvp-service': secret,
+      'x-mvp-service-user': job.user_id,
+      'x-mvp-service-owner': job.owner_id,
+    },
+    body: JSON.stringify(job.input ?? {}),
+    // Almost the worker's whole 300s budget; the route is tuned to finish
+    // under it (Opus effort:'medium').
+    signal: AbortSignal.timeout(290_000),
+    // CRITICAL: never auto-follow. NEXT_PUBLIC_APP_URL is the non-www
+    // canonical, but the domain layer 30x-redirects non-www → www — and
+    // fetch's auto-follow DOWNGRADES POST to GET on 301/302, which hits the
+    // route's missing GET handler as a 405 ("blog generation returned 405",
+    // first observed on the queue's first production run 2026-06-11). We
+    // follow one hop manually below, re-issuing the SAME POST.
+    redirect: 'manual' as const,
+  }
+
   let res: Response
   try {
-    res = await fetch(`${resolveSelfBaseUrl()}/api/blog/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-mvp-service': secret,
-        'x-mvp-service-user': job.user_id,
-        'x-mvp-service-owner': job.owner_id,
-      },
-      body: JSON.stringify(job.input ?? {}),
-      // Almost the worker's whole 300s budget; the route is tuned to finish
-      // under it (Opus effort:'medium').
-      signal: AbortSignal.timeout(290_000),
-    })
+    res = await fetch(`${resolveSelfBaseUrl()}/api/blog/generate`, init)
+    if ([301, 302, 307, 308].includes(res.status)) {
+      const loc = res.headers.get('location')
+      if (loc) {
+        const target = new URL(loc, `${resolveSelfBaseUrl()}/api/blog/generate`).toString()
+        res = await fetch(target, init)
+      }
+    }
   } catch (e) {
     // AbortSignal.timeout throws a DOMException named 'TimeoutError' (also handle
     // 'AbortError'). TAG it so the worker leaves the job 'running' for stale
