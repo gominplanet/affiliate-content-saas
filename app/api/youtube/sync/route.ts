@@ -67,7 +67,14 @@ export async function POST(request: Request) {
     .eq('user_id', ownerId)
     .maybeSingle()
 
-  const channelId = intRow?.youtube_channel_id || process.env.YOUTUBE_CHANNEL_ID
+  // SECURITY (2026-06-12 cross-tenant leak fix): the channel is PER-USER only.
+  // The previous `|| process.env.YOUTUBE_CHANNEL_ID` fallback meant ANY account
+  // that hadn't set its own channel id synced the FOUNDER's channel (the env
+  // value) and wrote those videos under that user's user_id — so the founder's
+  // YouTube videos appeared in random users' Library + Co-Pilot. There is NO
+  // shared fallback: an account with no channel set gets the clear error below
+  // and syncs nothing. (Reads were always user-scoped; the leak was this write.)
+  const channelId = intRow?.youtube_channel_id || null
   if (!channelId) {
     return NextResponse.json({
       error: 'No YouTube channel ID set on your account yet. Open Blog Set Up → Integrations and paste your YouTube channel ID, then try Sync again.',
