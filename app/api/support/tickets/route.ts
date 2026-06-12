@@ -95,7 +95,7 @@ export async function POST(req: Request) {
   // Best-effort founder alert — never block ticket creation on the email.
   if (isEmailConfigured()) {
     const alertTo = process.env.SUPPORT_ALERT_EMAIL || 'gominunlimited@gmail.com'
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.mvpaffiliate.io'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.mvpaffiliate.io'
     try {
       await sendEmail({
         to: alertTo,

@@ -37,8 +37,6 @@ export async function GET(req: Request) {
   let q = (admin as any)
     .from('support_tickets')
     .select('id,user_id,email,subject,body,status,admin_response,responded_at,created_at,updated_at')
-    // Open tickets float to the top; within each bucket newest-first.
-    .order('status', { ascending: true })
     .order('created_at', { ascending: false })
     .limit(500)
   if (status !== 'all' && (VALID_STATUS as readonly string[]).includes(status)) {
@@ -46,7 +44,15 @@ export async function GET(req: Request) {
   }
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ tickets: data ?? [] })
+
+  // Surface actionable tickets first: open → answered → closed, newest-first
+  // within each bucket. (Can't do this in the DB order() — alphabetical sort
+  // would bury "open" beneath "answered"/"closed".)
+  const rank: Record<string, number> = { open: 0, answered: 1, closed: 2 }
+  const tickets = ((data ?? []) as Array<{ status: string }>).slice().sort(
+    (a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9),
+  )
+  return NextResponse.json({ tickets })
 }
 
 export async function PATCH(req: Request) {
