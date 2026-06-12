@@ -327,6 +327,9 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   const [siteUrl, setSiteUrl] = useState('')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
+  // The no-plugin "quick connect" is a demoted fallback — collapsed by default
+  // so the plugin path (the full customizable-blog experience) leads.
+  const [showQuick, setShowQuick] = useState(false)
 
   if (connected) {
     return (
@@ -359,9 +362,14 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
           </ol>
         </div>
 
-        {/* Plugin */}
+        {/* Plugin — most users already installed it to get their connection
+            token, so lead with that and make the install steps the fallback. */}
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-5">
-          <p className="font-semibold text-sm mb-2">2 · Install the MVP plugin</p>
+          <p className="font-semibold text-sm mb-2">2 · The MVP plugin</p>
+          <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-sm text-[#7ee2a0] mb-3">
+            Connected with the plugin? It’s already installed — nothing to do here. Just activate the theme above and continue.
+          </div>
+          <p className="text-xs text-[#8e8e93] mb-2">Used the no-plugin quick connect instead? Add the plugin now to unlock the SEO schema, Editor’s Picks, Product Finder and topic hubs:</p>
           <a href={PLUGIN_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-3">
             Download the MVP plugin <ExternalLink size={12} />
           </a>
@@ -369,7 +377,7 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
             <li>In WordPress admin → <span className="text-white">Plugins → Add New Plugin → Upload Plugin</span>.</li>
             <li>Choose the .zip, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
           </ol>
-          <p className="text-xs text-[#6e6e73] mt-2">The plugin adds the SEO schema, Editor’s Picks, Product Finder and topic hubs. (You only do this once — future updates are one click.)</p>
+          <p className="text-xs text-[#6e6e73] mt-2">(You only do this once — future updates are one click.)</p>
         </div>
 
         <p className="text-xs text-[#6e6e73]">Installed them, or keeping your own theme? Either way, hit “Save &amp; next” below to continue.</p>
@@ -445,43 +453,21 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   // mode === 'have'
   return (
     <>
-      <StepHeading title="Connect your WordPress site" blurb="Two ways to link your site so MVP can publish to it. Option A is fastest (no plugin); Option B works on every host. Pick whichever fits — both end the same way." />
+      <StepHeading title="Connect your WordPress site" blurb="The MVP plugin is what turns your blog into a full review site — the review layout, Editor’s Picks, the AI Product Finder, topic hubs and Google-ready schema. Install it, connect, and you get the whole experience. (Already have a blog whose look you want to keep? There’s a no-plugin quick option at the bottom.)" />
 
-      {/* One-click */}
-      {/* Option A — WordPress's built-in app authorization (no plugin). */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
-        <p className="font-semibold text-sm mb-1">Option A · Fastest (no plugin) · ~30 seconds</p>
-        <p className="text-sm text-[#a1a1a6] mb-3">
-          Uses WordPress’s built-in app permission — nothing to install. Here’s exactly what happens:
-        </p>
-        <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#6e6e73]">
-          <li>Make sure you’re <span className="text-white">logged in to your WordPress admin</span> in this browser (open <span className="text-[#c7c7cc]">yoursite.com/wp-admin</span> in another tab first if you’re not sure).</li>
-          <li>Type your site address below and click <span className="text-white">Connect</span>.</li>
-          <li>A WordPress page opens in a new tab titled <span className="text-white">“MVP Affiliate would like to connect.”</span> Click <span className="text-white">Yes, I approve.</span></li>
-          <li>That tab closes/finishes — come back here and this page turns green automatically.</li>
-        </ol>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)}
-            placeholder="https://yourblog.com"
-            className="flex-1 rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60"
-          />
-          <button onClick={connectOneClick} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>
-            Connect
-          </button>
+      {/* PRIMARY — plugin + connection token. This is the pushed path: it powers
+          the full customizable-blog experience AND works on every host (the
+          body-auth proxy sidesteps the Hostinger-style WAF 403s that block the
+          no-plugin method). */}
+      <div className="rounded-xl border border-[#7C3AED]/45 bg-[#7C3AED]/[0.07] p-5">
+        <div className="flex items-center gap-2 mb-1">
+          <p className="font-semibold text-sm">Install the MVP plugin, then connect</p>
+          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#7C3AED] text-white">Recommended</span>
         </div>
-        <p className="text-xs text-[#6e6e73] mt-2.5">
-          Your site must use <span className="text-[#a1a1a6]">https://</span>. If the approve page doesn’t appear or your host blocks it, use Option B below — it always works.
-        </p>
-      </div>
-
-      {/* Option B — plugin + connection token (works everywhere). */}
-      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-        <p className="font-semibold text-sm mb-1">Option B · Plugin + token · works on every host</p>
-        <p className="text-sm text-[#a1a1a6] mb-3">A few more steps, but bulletproof. Do these in order:</p>
-        <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#6e6e73]">
+        <p className="text-sm text-[#c9b8ec] mb-3">Unlocks your fully customizable review blog and works on every host. Do these in order:</p>
+        <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#7C3AED]">
           <li>
-            <a href={PLUGIN_ZIP} className="text-[#7C3AED] hover:underline inline-flex items-center gap-1">Download the MVP Affiliate plugin <ExternalLink size={12} /></a>
+            <a href={PLUGIN_ZIP} className="text-[#a78bfa] hover:underline inline-flex items-center gap-1">Download the MVP Affiliate plugin <ExternalLink size={12} /></a>
             {' '}— it saves a <span className="text-white">.zip</span> file (don’t unzip it).
           </li>
           <li>In your WordPress admin, go to <span className="text-white">Plugins → Add New Plugin → Upload Plugin</span>.</li>
@@ -496,13 +482,51 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
             placeholder="Paste connection token"
             className="flex-1 rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60"
           />
-          <button onClick={connectWithToken} disabled={busy} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60 inline-flex items-center gap-1.5" style={{ background: 'rgba(255,255,255,0.1)' }}>
+          <button onClick={connectWithToken} disabled={busy} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-60 inline-flex items-center gap-1.5" style={{ background: ACCENT }}>
             {busy && <Loader2 size={14} className="animate-spin" />} Connect
           </button>
         </div>
       </div>
 
-      <button onClick={() => setMode('choose')} className="text-xs text-[#6e6e73] hover:text-white transition-colors mt-4">← back</button>
+      {/* FALLBACK — WordPress's built-in app authorization (no plugin). Demoted:
+          collapsed by default, publishes posts only, no front-end features. */}
+      <button
+        onClick={() => setShowQuick(v => !v)}
+        className="mt-4 text-xs text-[#8e8e93] hover:text-white transition-colors inline-flex items-center gap-1"
+      >
+        {showQuick ? '▾' : '▸'} Just want to publish quickly, without the customization features?
+      </button>
+      {showQuick && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 mt-2">
+          <p className="font-semibold text-sm mb-1">Quick connect · no plugin · ~30 seconds</p>
+          <p className="text-sm text-[#a1a1a6] mb-3">
+            Publishes posts only — you <span className="text-[#c7c7cc]">won’t</span> get the review layout, Editor’s Picks, Product Finder or schema unless you add the plugin later. Best if you already have a blog whose look you want to keep.
+          </p>
+          <ol className="space-y-1.5 text-sm text-[#c7c7cc] mb-4 list-decimal pl-5 marker:text-[#6e6e73]">
+            <li>Make sure you’re <span className="text-white">logged in to your WordPress admin</span> in this browser (open <span className="text-[#c7c7cc]">yoursite.com/wp-admin</span> in another tab first if you’re not sure).</li>
+            <li>Type your site address below and click <span className="text-white">Connect</span>.</li>
+            <li>A WordPress page opens in a new tab titled <span className="text-white">“MVP Affiliate would like to connect.”</span> Click <span className="text-white">Yes, I approve.</span></li>
+            <li>That tab closes/finishes — come back here and this page turns green automatically.</li>
+          </ol>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)}
+              placeholder="https://yourblog.com"
+              className="flex-1 rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60"
+            />
+            <button onClick={connectOneClick} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: 'rgba(255,255,255,0.1)' }}>
+              Connect
+            </button>
+          </div>
+          <p className="text-xs text-[#6e6e73] mt-2.5">
+            Your site must use <span className="text-[#a1a1a6]">https://</span>. If the approve page doesn’t appear or your host blocks it, use the plugin method above — it always works.
+          </p>
+        </div>
+      )}
+
+      <div className="mt-5">
+        <button onClick={() => setMode('choose')} className="text-xs text-[#6e6e73] hover:text-white transition-colors">← back</button>
+      </div>
     </>
   )
 }
