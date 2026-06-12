@@ -53,6 +53,25 @@ export async function GET(request: NextRequest) {
       expires_in: number
     }
 
+    // Auto-derive the channel ID from the authorized account so the user
+    // never has to paste it (2026-06-12 onboarding simplification). The
+    // OAuth'd account already knows its own channel — one channels.list
+    // call with mine=true returns it. Best-effort: if it fails we still
+    // save the tokens (the manual channel-ID field stays as a fallback),
+    // so a transient YouTube API hiccup never blocks the connect.
+    step = 'fetch_channel_id'
+    let channelId: string | null = null
+    try {
+      const chRes = await fetch(
+        'https://www.googleapis.com/youtube/v3/channels?part=id&mine=true',
+        { headers: { Authorization: `Bearer ${tokens.access_token}` } },
+      )
+      if (chRes.ok) {
+        const data = await chRes.json() as { items?: Array<{ id?: string }> }
+        channelId = data.items?.[0]?.id ?? null
+      }
+    } catch { /* leave channelId null — manual field remains the fallback */ }
+
     step = 'save_token'
     const supabase = await createServerClient()
     // Encrypt OAuth tokens at rest (2026-06-02).
@@ -63,6 +82,9 @@ export async function GET(request: NextRequest) {
         youtube_oauth_access_token: tokens.access_token,
         ...(tokens.refresh_token && { youtube_oauth_refresh_token: tokens.refresh_token }),
         youtube_oauth_token_expiry: Date.now() + tokens.expires_in * 1000,
+        // Only overwrite the stored channel ID when we actually resolved one,
+        // so a failed lookup doesn't clobber a value the user set manually.
+        ...(channelId && { youtube_channel_id: channelId }),
       }),
       { onConflict: 'user_id' },
     )

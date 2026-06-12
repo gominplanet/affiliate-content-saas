@@ -14,12 +14,27 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: intRow } = await (supabase as any)
     .from('integrations')
-    .select('wordpress_url, tier, wp_post_count, wp_post_count_updated_at')
+    .select('wordpress_url, tier, wp_post_count, wp_post_count_updated_at, onboarding_completed')
     .eq('user_id', user.id)
     .maybeSingle()
 
   const wpSiteUrl = intRow?.wordpress_url || null
   const tier = (intRow?.tier as string | null) || 'trial'
+
+  // ── Onboarding funnel hard gate (epic Phase 2) ──────────────────────────────
+  // A brand-new user has no connected WordPress site — nothing in the app works
+  // without it, so route them into the guided /onboarding funnel instead of a
+  // dashboard full of dead options. The gate is WordPress-only: once a site is
+  // connected the user can reach the dashboard freely even mid-funnel ("Skip
+  // for now" on the optional steps). onboarding_completed lets an existing user
+  // who has since disconnected WP avoid being re-funneled. /onboarding lives
+  // OUTSIDE this layout, so there's no redirect loop.
+  // `as any`: onboarding_completed ships in migration 125, not yet in the
+  // generated DB types (treat a missing column as not-completed → safe).
+  const onboardingCompleted = (intRow as { onboarding_completed?: boolean } | null)?.onboarding_completed === true
+  if (!wpSiteUrl && !onboardingCompleted) {
+    redirect('/onboarding')
+  }
 
   // Buying Guides feature gate (500-post threshold). The round-up
   // format only earns its keep on a wide catalogue.
