@@ -337,6 +337,22 @@ function StepHeading({ title, blurb }: { title: string; blurb: string }) {
   )
 }
 
+/* A live install-status row: spinner while checking, green ✓ when done, hollow
+   circle while pending. Used on the WordPress connected screen. */
+function CheckRow({ ok, checking, label }: { ok: boolean; checking: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2.5 text-sm">
+      <span className="grid place-items-center w-5 h-5 rounded-full shrink-0"
+        style={{ background: ok ? '#34c759' : 'rgba(255,255,255,0.08)' }}>
+        {checking ? <Loader2 size={12} className="animate-spin text-[#a1a1a6]" />
+          : ok ? <Check size={12} className="text-white" />
+          : <span className="w-2 h-2 rounded-full border border-[#6e6e73]" />}
+      </span>
+      <span style={{ color: ok ? '#f5f5f7' : '#a1a1a6' }}>{label}</span>
+    </div>
+  )
+}
+
 /* Step 1 — WordPress (inline, the hard gate) */
 function WordPressStep({ connected, onConnected }: { connected: boolean; onConnected: () => void }) {
   const [mode, setMode] = useState<'choose' | 'have' | 'need'>('choose')
@@ -346,16 +362,46 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
   // The no-plugin "quick connect" is a demoted fallback — collapsed by default
   // so the plugin path (the full customizable-blog experience) leads.
   const [showQuick, setShowQuick] = useState(false)
+  // Live plugin/theme install state (from the plugin's /status via
+  // /api/wordpress/health) so the connected screen shows real green checks
+  // instead of asking the user to self-assess. null = still checking.
+  const [wpStatus, setWpStatus] = useState<{ pluginInstalled: boolean; themeActive: boolean } | null>(null)
+
+  useEffect(() => {
+    if (!connected) return
+    let cancelled = false
+    const check = async () => {
+      try {
+        const res = await fetch('/api/wordpress/health')
+        if (!res.ok || cancelled) return
+        const d = await res.json()
+        const det = d?.details || {}
+        if (!cancelled) setWpStatus({ pluginInstalled: det.pluginInstalled === true, themeActive: det.themeActive === true })
+      } catch { /* transient — interval retries */ }
+    }
+    check()
+    const t = setInterval(check, 6000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [connected])
 
   if (connected) {
+    const checking = wpStatus === null
+    const pluginOk = wpStatus?.pluginInstalled === true
+    const themeOk = wpStatus?.themeActive === true
     return (
       <>
         <StepHeading
           title="Site connected — now install the MVP look"
-          blurb="Your blog is linked. The last piece is the MVP theme + plugin, which turn your site into a real review site: the review layout, Google-ready schema, Editor’s Picks, the AI Product Finder, and more."
+          blurb="Your blog is linked. The MVP plugin + theme turn it into a real review site: the review layout, Google-ready schema, Editor’s Picks, the AI Product Finder and more. Good news — the plugin installs the theme for you in one click."
         />
         <div className="inline-flex items-center gap-2 rounded-xl bg-[#34c759]/10 border border-[#34c759]/30 px-4 py-3 text-sm text-[#34c759] mb-5">
           <Check size={16} /> Connection successful.
+        </div>
+
+        {/* Live status — turns green automatically as each piece lands. */}
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 mb-5 space-y-2.5">
+          <CheckRow ok={pluginOk} checking={checking} label="MVP plugin installed & active" />
+          <CheckRow ok={themeOk} checking={checking} label="MVP theme installed & active" />
         </div>
 
         {/* Look-and-feel consent — must be unmistakable. */}
@@ -366,37 +412,57 @@ function WordPressStep({ connected, onConnected }: { connected: boolean; onConne
           </p>
         </div>
 
-        {/* Theme */}
+        {/* Theme — installed in ONE CLICK from the plugin page; no re-download. */}
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-4">
-          <p className="font-semibold text-sm mb-2">1 · Install the MVP theme</p>
-          <a href={THEME_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-3">
-            Download the MVP theme <ExternalLink size={12} />
-          </a>
-          <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
-            <li>In WordPress admin → <span className="text-white">Appearance → Themes → Add New Theme → Upload Theme</span>.</li>
-            <li>Choose the .zip, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
-          </ol>
+          <p className="font-semibold text-sm mb-2">Install the MVP theme — one click, no download</p>
+          {themeOk ? (
+            <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-sm text-[#7ee2a0]">
+              <Check size={14} className="inline -mt-0.5 mr-1" /> Theme is installed and active. Nothing to do here.
+            </div>
+          ) : pluginOk ? (
+            <>
+              <ol className="space-y-1.5 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
+                <li>In your WordPress admin, open the <span className="text-white">MVP Affiliate</span> menu in the left sidebar.</li>
+                <li>Under <span className="text-white">“Step 1 — Install the MVP Affiliate theme,”</span> click <span className="text-white">Install &amp; activate MVP Affiliate theme</span>. That’s it — the plugin downloads, installs and activates it for you. No file to download or upload.</li>
+              </ol>
+              <p className="text-xs text-[#6e6e73] mt-2">The check above turns green on its own once it’s active.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-[#a1a1a6] mb-2">Once the MVP plugin is installed (below), you’ll get a one-click <span className="text-white">Install &amp; activate theme</span> button on its page — no download needed. Prefer to do it manually now?</p>
+              <a href={THEME_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-2">
+                Download the theme manually <ExternalLink size={12} />
+              </a>
+              <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
+                <li>WordPress admin → <span className="text-white">Appearance → Themes → Add New → Upload Theme</span> → Install &amp; Activate.</li>
+              </ol>
+            </>
+          )}
         </div>
 
-        {/* Plugin — most users already installed it to get their connection
-            token, so lead with that and make the install steps the fallback. */}
+        {/* Plugin — usually already installed (they connected via it). */}
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 mb-5">
-          <p className="font-semibold text-sm mb-2">2 · The MVP plugin</p>
-          <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-sm text-[#7ee2a0] mb-3">
-            Connected with the plugin? It’s already installed — nothing to do here. Just activate the theme above and continue.
-          </div>
-          <p className="text-xs text-[#8e8e93] mb-2">Used the no-plugin quick connect instead? Add the plugin now to unlock the SEO schema, Editor’s Picks, Product Finder and topic hubs:</p>
-          <a href={PLUGIN_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-3">
-            Download the MVP plugin <ExternalLink size={12} />
-          </a>
-          <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
-            <li>In WordPress admin → <span className="text-white">Plugins → Add New Plugin → Upload Plugin</span>.</li>
-            <li>Choose the .zip, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
-          </ol>
-          <p className="text-xs text-[#6e6e73] mt-2">(You only do this once — future updates are one click.)</p>
+          <p className="font-semibold text-sm mb-2">The MVP plugin</p>
+          {pluginOk ? (
+            <div className="rounded-lg bg-[#34c759]/10 border border-[#34c759]/25 px-3 py-2 text-sm text-[#7ee2a0]">
+              <Check size={14} className="inline -mt-0.5 mr-1" /> Plugin installed — this is what powers the one-click theme install above.
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-[#8e8e93] mb-2">Used the no-plugin quick connect? Add the plugin to unlock the SEO schema, Editor’s Picks, Product Finder, topic hubs — and the one-click theme installer:</p>
+              <a href={PLUGIN_ZIP} className="inline-flex items-center gap-1.5 text-sm text-[#7C3AED] hover:underline mb-3">
+                Download the MVP plugin <ExternalLink size={12} />
+              </a>
+              <ol className="space-y-1 text-sm text-[#c7c7cc] list-decimal pl-5 marker:text-[#6e6e73]">
+                <li>WordPress admin → <span className="text-white">Plugins → Add New Plugin → Upload Plugin</span>.</li>
+                <li>Choose the .zip, click <span className="text-white">Install Now</span>, then <span className="text-white">Activate</span>.</li>
+              </ol>
+              <p className="text-xs text-[#6e6e73] mt-2">(You only do this once — future updates are one click.)</p>
+            </>
+          )}
         </div>
 
-        <p className="text-xs text-[#6e6e73]">Installed them, or keeping your own theme? Either way, hit “Save &amp; next” below to continue.</p>
+        <p className="text-xs text-[#6e6e73]">Both green, or keeping your own theme? Either way, hit “Save &amp; next” below to continue.</p>
       </>
     )
   }

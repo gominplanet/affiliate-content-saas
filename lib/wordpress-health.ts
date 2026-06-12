@@ -29,6 +29,10 @@ export interface WpHealthDetails {
   pluginInstalled: boolean
   pluginVersion: string | null
   proxyEnabled: boolean
+  /** Whether the MVP Affiliate theme is installed / active. Only populated on a
+   *  'verified' result (the plugin's /status reports it). Undefined otherwise. */
+  themeInstalled?: boolean
+  themeActive?: boolean
   httpStatus?: number
 }
 
@@ -132,6 +136,8 @@ export async function probeWpHealth(
   const s = await statusRes.json().catch(() => ({})) as {
     plugin_version?: string | null
     proxy_secret?: string | null
+    theme_version?: string | null
+    theme_active?: boolean
   }
 
   return {
@@ -143,6 +149,8 @@ export async function probeWpHealth(
       pluginInstalled: true,
       pluginVersion: s.plugin_version || null,
       proxyEnabled: !!s.proxy_secret,
+      themeInstalled: s.theme_version != null,
+      themeActive: s.theme_active === true,
       httpStatus: 200,
     },
   }
