@@ -298,10 +298,7 @@ function StepBody({ stepKey, status, onConnected }: { stepKey: string; status: S
     case 'yt': return <YouTubeStep connected={status.ytConnected} />
     case 'aff': return <AffiliateStep done={status.affiliateConnected} onSaved={onConnected} />
     case 'brand': return <BrandStep onSaved={onConnected} />
-    case 'voice': return <ToolStep
-      title="Train your writing voice"
-      blurb="Paste a writing sample and tell MVP who you are and who you're writing for. Strongly recommended — it's the difference between generic AI copy and posts that sound like you. You can leave fields blank and come back later."
-      href="/learn" cta="Open Voice Training" done={status.voiceStarted} />
+    case 'voice': return <VoiceStep onSaved={onConnected} />
     case 'customize': return <ToolStep
       title="Customize your blog"
       blurb="Set your colors, homepage Editor's Picks, author trust block and footer. You can refine this anytime, but a quick pass now makes your first posts look polished."
@@ -750,7 +747,107 @@ function BrandStep({ onSaved }: { onSaved: () => void }) {
   )
 }
 
-/* Steps 5–7 — open the existing editor in a new tab; funnel tracks completion */
+/* Step 5 — Voice Training, fully inline (2-page). Reuses GET/POST /api/learn
+   (which UPDATEs brand_profiles), autosaved on debounce. Skippable. */
+function VoiceStep({ onSaved }: { onSaved: () => void }) {
+  const [page, setPage] = useState(0)
+  const [bio, setBio] = useState('')
+  const [audience, setAudience] = useState('')
+  const [sample, setSample] = useState('')
+  const [avoid, setAvoid] = useState('')
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+  const loaded = useRef(false)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/learn')
+        if (res.ok) {
+          const d = await res.json()
+          setBio(d.author_bio ?? '')
+          setAudience(d.target_audience ?? '')
+          setSample(d.writing_sample ?? '')
+          setAvoid(d.words_to_avoid ?? '')
+        }
+      } catch { /* start blank */ }
+      finally { loaded.current = true }
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (!loaded.current) return
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/learn', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ author_bio: bio, target_audience: audience, writing_sample: sample, words_to_avoid: avoid }),
+        })
+        if (res.ok) { setSavedAt(Date.now()); onSaved() }
+      } catch { /* transient */ }
+    }, 900)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bio, audience, sample, avoid])
+
+  const inputCls = 'w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-[#7C3AED]/60'
+  const PAGES = ['You & your reader', 'Your voice']
+
+  return (
+    <>
+      <StepHeading
+        title="Train your writing voice"
+        blurb="The difference between generic AI copy and posts that sound like you. Optional, but strongly recommended — and it saves as you type. You can refine it later."
+      />
+      <div className="flex items-center gap-2 mb-5">
+        {PAGES.map((label, i) => (
+          <button key={label} onClick={() => setPage(i)} className="flex items-center gap-1.5 text-xs transition-colors" style={{ color: i === page ? '#fff' : '#6e6e73' }}>
+            <span className="grid place-items-center w-5 h-5 rounded-full text-[10px] font-semibold" style={{ background: i === page ? ACCENT : 'rgba(255,255,255,0.08)', color: i === page ? '#fff' : '#a1a1a6' }}>{i + 1}</span>
+            {label}
+          </button>
+        ))}
+        {savedAt && <span className="ml-auto inline-flex items-center gap-1 text-xs text-[#34c759]"><Check size={12} /> Saved</span>}
+      </div>
+
+      {page === 0 && (
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-1.5">About you</label>
+            <p className="text-xs text-[#6e6e73] mb-2">Your background and what makes you credible on your niches.</p>
+            <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={4} placeholder="I've been reviewing pet gear for 4 years and test every product with my own two dogs..." className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-1.5">Your target reader</label>
+            <p className="text-xs text-[#6e6e73] mb-2">Who reads you, what they care about, what they already know.</p>
+            <textarea value={audience} onChange={(e) => setAudience(e.target.value)} rows={4} placeholder="Busy pet owners comparing options before buying — they want a clear recommendation, not fluff." className={inputCls} />
+          </div>
+        </div>
+      )}
+
+      {page === 1 && (
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-1.5">Writing sample</label>
+            <p className="text-xs text-[#6e6e73] mb-2">Paste something you’ve written that sounds exactly like you — MVP matches this voice.</p>
+            <textarea value={sample} onChange={(e) => setSample(e.target.value)} rows={7} placeholder="Paste a few paragraphs in your own voice..." className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-sm text-[#c7c7cc] mb-1.5">Words &amp; phrases to avoid <span className="text-[#6e6e73]">(one per line)</span></label>
+            <textarea value={avoid} onChange={(e) => setAvoid(e.target.value)} rows={3} placeholder={'game-changer\ngame changer\nin today’s world'} className={inputCls} />
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-6">
+        <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="text-sm text-[#a1a1a6] hover:text-white disabled:opacity-30 transition-colors">← Previous</button>
+        {page < PAGES.length - 1
+          ? <button onClick={() => setPage((p) => Math.min(PAGES.length - 1, p + 1))} className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity" style={{ background: ACCENT }}>Next →</button>
+          : <span className="text-xs text-[#6e6e73]">Looks good — “Save &amp; next” below to continue.</span>}
+      </div>
+    </>
+  )
+}
+
+/* Steps 6–7 — open the existing editor in a new tab; funnel tracks completion */
 function ToolStep({ title, blurb, href, cta, done }: { title: string; blurb: string; href: string; cta: string; done: boolean }) {
   return (
     <>
