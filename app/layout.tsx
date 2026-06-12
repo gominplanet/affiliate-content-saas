@@ -45,6 +45,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${geistMono.variable}`}>
       <body suppressHydrationWarning>
+        {/* Impact.com site verification. Rendered as a literal tag (not via
+            metadata.other) because Impact's crawler checks the `value`
+            attribute, and Next's metadata API only emits `content`. React 19
+            hoists this <meta> into <head>. */}
+        <meta name="impact-site-verification" value="e55f7edf-8f38-42e9-8db5-ef3793169671" />
         {rewardfulKey && (
           <>
             <Script
