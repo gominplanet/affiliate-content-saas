@@ -9,6 +9,7 @@ import {
   Facebook, Pin, MessageCircle, Wifi, Check, LogOut, Save, Linkedin, Lock, Clock,
 } from 'lucide-react'
 import { createBrowserClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
 import { metaEnabled, socialEnabled, type GatedSocialPlatform } from '@/lib/feature-flags'
 import { effectiveTier } from '@/lib/view-as'
 import { Suspense } from 'react'
@@ -898,6 +899,68 @@ function Step5({ wordpressUrl, accentColor }: { wordpressUrl: string; accentColo
 }
 
 
+/* Danger zone — disconnect WordPress and re-run the guided onboarding funnel
+   from step 1. Two-step confirm (no destructive single click). Posts to
+   /api/onboarding/restart (clears WP + resets the funnel + drops multi-site
+   rows), then full-navigates to /onboarding so the gate + funnel reload clean. */
+function DisconnectRestart() {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  async function run() {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/onboarding/restart', { method: 'POST' })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        toast.error(d.error || 'Could not restart setup. Try again.')
+        setBusy(false)
+        return
+      }
+      try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+      toast.success('WordPress disconnected — restarting setup…')
+      window.location.href = '/onboarding'
+    } catch {
+      toast.error('Something went wrong. Try again.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card p-5 border border-[#ff3b30]/25">
+      <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Disconnect &amp; start over</p>
+      <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed mb-3">
+        Disconnect this WordPress site and go back through the guided setup from step&nbsp;1. Your YouTube, Brand Profile, voice training and face models are kept — only the WordPress connection is reset.
+      </p>
+      {!confirming ? (
+        <button
+          onClick={() => setConfirming(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-[#ff3b30] border border-[#ff3b30]/30 hover:bg-[#ff3b30]/10 transition-colors"
+        >
+          <LogOut size={12} /> Disconnect WordPress &amp; restart setup
+        </button>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={run}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white bg-[#ff3b30] hover:opacity-90 disabled:opacity-50 transition-opacity"
+          >
+            {busy && <Loader2 size={12} className="animate-spin" />} Yes, disconnect &amp; restart
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={busy}
+            className="text-xs text-[#6e6e73] dark:text-[#8e8e93] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7] transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Wizard shell ─────────────────────────────────────────────────────────────
 function SetupPageInner() {
   const searchParams = useSearchParams()
@@ -1196,6 +1259,9 @@ function SetupPageInner() {
             Run the full setup wizard →
           </button>
         </p>
+
+        {/* Disconnect WordPress + restart the guided onboarding from step 1. */}
+        <DisconnectRestart />
       </div>
     )
   }
