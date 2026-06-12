@@ -37,6 +37,19 @@ function isPublic(pathname: string) {
 }
 
 export async function middleware(request: NextRequest) {
+  // Internal service calls — the generation-job worker invoking
+  // /api/blog/generate on its own deployment — carry the x-mvp-service
+  // header instead of a session cookie. Middleware must NOT bounce them to
+  // the /login HTML page (discovered on the queue's first production run:
+  // every job died on 307 → /login). This is a routing bypass only, not an
+  // auth grant: the route handler compares the header against CRON_SECRET
+  // and falls back to normal cookie auth (→ 401 JSON) on mismatch, so a
+  // forged header buys an attacker nothing they couldn't get by calling
+  // the API without cookies.
+  if (request.nextUrl.pathname.startsWith('/api/') && request.headers.has('x-mvp-service')) {
+    return NextResponse.next()
+  }
+
   const { supabase, response } = createMiddlewareClient(request)
   const { data: { session } } = await supabase.auth.getSession()
 
