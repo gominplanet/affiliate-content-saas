@@ -18,6 +18,7 @@ export default function BillingPage() {
   // Current view-as override (admin only). null = "My view (Admin)".
   const [viewAs, setViewAsState] = useState<Tier | null>(null)
   const [postsUsed, setPostsUsed] = useState(0)
+  const [spend, setSpend] = useState<{ spent: number; ceiling: number | null; fraction: number; exceeded: boolean } | null>(null)
   const [socialCounts, setSocialCounts] = useState({ facebook: 0, threads: 0, pinterest: 0 })
   const [loading, setLoading] = useState(true)
   const [upgraded, setUpgraded] = useState(false)
@@ -73,6 +74,13 @@ export default function BillingPage() {
         supabase.from('blog_posts').select('id', { count: 'exact', head: true }).eq('user_id', user.id).not('pinterest_pin_id', 'is', null).gte('published_at', monthStart),
       ])
       setSocialCounts({ facebook: fbRes.count ?? 0, threads: thRes.count ?? 0, pinterest: pinRes.count ?? 0 })
+
+      // Monthly AI-spend meter (circuit-breaker status). Best-effort — the
+      // page still renders if this read fails.
+      try {
+        const res = await fetch('/api/usage/spend')
+        if (res.ok) setSpend(await res.json())
+      } catch { /* non-fatal */ }
     } finally {
       // Always exit the loading state — without this finally a thrown
       // supabase error or `!user` early return left the page on the
@@ -287,6 +295,35 @@ export default function BillingPage() {
                 )}
               </div>
             )}
+
+            {/* AI-spend meter — monthly circuit breaker. Shown whenever the
+                tier has a ceiling. A dollar backstop separate from the post
+                cap: generation pauses if monthly AI cost crosses the ceiling. */}
+            {spend && spend.ceiling != null && (() => {
+              const pct = Math.min(100, Math.round(spend.fraction * 100))
+              const tone = spend.exceeded || pct >= 100 ? '#ff3b30' : pct >= 80 ? '#ff9500' : '#34c759'
+              return (
+                <div className="mt-5 pt-5 border-t border-gray-100 dark:border-white/10">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">
+                      ${spend.spent.toFixed(2)} of ${spend.ceiling.toFixed(0)} AI usage this month · resets the 1st
+                    </span>
+                    <span className="text-xs font-semibold" style={{ color: tone }}>{pct}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: tone }} />
+                  </div>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#a1a1a6] mt-2">
+                    A safety limit on total AI cost. Generation pauses if you cross it — it resets automatically on the 1st.
+                  </p>
+                  {spend.exceeded && (
+                    <p className="text-xs text-[#ff3b30] mt-1.5">
+                      You&apos;ve reached this month&apos;s AI usage limit. Generation is paused until the 1st{tier !== 'pro' && tier !== 'admin' ? ' — upgrade for a higher limit.' : '.'}
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Plans */}

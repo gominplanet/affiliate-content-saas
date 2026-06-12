@@ -7,6 +7,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getValidYouTubeToken, createYouTubeOAuthService } from '@/services/youtube'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { checkUsageLimit, checkGenerationLimit, TIERS, nextTierFor, allowedBlogImages, normalizeTier, type Tier } from '@/lib/tier'
+import { checkSpendCeiling } from '@/lib/ai-spend'
 import { scrubBanned } from '@/lib/scrub'
 import { scrubAiHtml } from '@/lib/html-scrub'
 import { scrubVoicePatterns } from '@/lib/blog-voice-scrub'
@@ -284,6 +285,38 @@ async function handleGenerate(request: Request) {
   // caller explicitly picks a different site (we trust the caller's intent).
   const existingSiteId: string | null =
     (existingForLimit as { wordpress_site_id?: string | null } | null)?.wordpress_site_id ?? null
+
+  // ── Monthly AI-spend circuit breaker ───────────────────────────────────────
+  // Hard dollar backstop on top of the per-feature caps. Trips when the account
+  // has burned more than its tier's `monthlyAiSpendCeilingUsd` in real AI cost
+  // this calendar month — catching runaway loops and uncapped admin testing
+  // (the overnight-$60 case) that the postsPerMonth caps can't, since admin is
+  // unlimited there. Skipped for the worker self-call: that job already passed
+  // this gate at enqueue, and we don't want a half-finished queue to wedge.
+  // Fails open on any telemetry error (checkSpendCeiling returns allowed=true).
+  if (!isServiceCall) {
+    const { data: spendTierRow } = await supabase
+      .from('integrations')
+      .select('tier')
+      .eq('user_id', ownerId)
+      .maybeSingle()
+    const spend = await checkSpendCeiling(ownerId, spendTierRow?.tier)
+    if (!spend.allowed) {
+      const next = nextTierFor(spend.status.tier, 'postsPerMonth')
+      return NextResponse.json({
+        error:
+          `This account has reached its monthly AI usage limit ` +
+          `($${spend.status.ceiling?.toFixed(0)} of AI cost this month). ` +
+          `Generation is paused until the 1st, or ` +
+          `${next ? `upgrade to ${next.label} for a higher limit.` : 'contact support to raise the limit.'}`,
+        limitReached: true,
+        cap: 'spend',
+        currentTier: spend.status.tier,
+        spend: { spent: Number(spend.status.spent.toFixed(2)), ceiling: spend.status.ceiling },
+        upgrade: next,
+      }, { status: 403 })
+    }
+  }
 
   if (isServiceCall) {
     // Queued async job (Phase 4 increment C). The interactive gates do NOT apply:

@@ -58,6 +58,12 @@ export const TIERS = {
     label: 'Free Trial',
     price: 0,
     regularPrice: 0,
+    /** Hard monthly AI-spend ceiling (USD of real ai_usage cost). When an
+     *  account crosses this in a calendar month, generation is paused with an
+     *  upgrade nudge — a circuit breaker on top of the per-feature caps,
+     *  catching runaways + uncapped admin testing (the overnight-$60 case).
+     *  Set ~2× the expected max so normal users never hit it. null = no ceiling. */
+    monthlyAiSpendCeilingUsd: 5 as number | null,
     /** Shared "Generations" counter: blog + thumbnail + metadata each
      *  burn 1 unit. Trial is gated by lifetimeMax below, not monthly. */
     postsPerMonth: null as number | null,
@@ -117,6 +123,8 @@ export const TIERS = {
     label: 'Creator',
     price: 49,
     regularPrice: 99,
+    /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial. */
+    monthlyAiSpendCeilingUsd: 15 as number | null,
     /** Shared counter: 20 generations/mo across blog + thumbnail + metadata.
      *  Each path currently enforces its own cap at this value (true atomic
      *  shared bucket is a follow-up RPC — see TASK_X). */
@@ -170,6 +178,8 @@ export const TIERS = {
     label: 'Studio',
     price: 99,
     regularPrice: 199,
+    /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial. */
+    monthlyAiSpendCeilingUsd: 40 as number | null,
     /** Shared counter: 60 generations/mo. */
     postsPerMonth: 60,
     lifetimeMax: null as number | null,
@@ -220,6 +230,8 @@ export const TIERS = {
     label: 'Pro',
     price: 199,
     regularPrice: 499,
+    /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial. */
+    monthlyAiSpendCeilingUsd: 120 as number | null,
     /** Shared counter: 200 generations/mo. */
     postsPerMonth: 200,
     lifetimeMax: null as number | null,
@@ -276,6 +288,9 @@ export const TIERS = {
     label: 'Admin',
     price: 0,
     regularPrice: 0,
+    /** Even internal/admin accounts get a ceiling — this is the lever that
+     *  catches the uncapped-testing overnight-$60 case. Generous, not infinite. */
+    monthlyAiSpendCeilingUsd: 150 as number | null,
     postsPerMonth: null as number | null,
     lifetimeMax: null as number | null,
     collabsPerMonth: null as number | null,

@@ -19,7 +19,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { enqueueGenerationJob } from '@/lib/generation-jobs'
-import { checkUsageLimit, checkGenerationLimit, normalizeTier } from '@/lib/tier'
+import { checkUsageLimit, checkGenerationLimit, normalizeTier, nextTierFor } from '@/lib/tier'
+import { checkSpendCeiling } from '@/lib/ai-spend'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,6 +106,34 @@ export async function POST(request: Request) {
     const usage = await checkGenerationLimit(supabase, user.id)
     if (!usage.allowed) {
       return NextResponse.json({ error: usage.reason, limitReached: true, cap: 'generations', currentTier: usage.tier, upgrade: usage.upgrade }, { status: 403 })
+    }
+  }
+
+  // ── Monthly AI-spend circuit breaker ───────────────────────────────────────
+  // Stop the job from even entering the queue once the account is over its
+  // tier's monthly AI-cost ceiling. Mirrors the gate in /api/blog/generate so
+  // the async producer can't bypass the dollar backstop. Fails open.
+  {
+    const { data: spendTierRow } = await admin
+      .from('integrations')
+      .select('tier')
+      .eq('user_id', ownerId)
+      .maybeSingle()
+    const spend = await checkSpendCeiling(ownerId, spendTierRow?.tier)
+    if (!spend.allowed) {
+      const next = nextTierFor(spend.status.tier, 'postsPerMonth')
+      return NextResponse.json({
+        error:
+          `This account has reached its monthly AI usage limit ` +
+          `($${spend.status.ceiling?.toFixed(0)} of AI cost this month). ` +
+          `Generation is paused until the 1st, or ` +
+          `${next ? `upgrade to ${next.label} for a higher limit.` : 'contact support to raise the limit.'}`,
+        limitReached: true,
+        cap: 'spend',
+        currentTier: spend.status.tier,
+        spend: { spent: Number(spend.status.spent.toFixed(2)), ceiling: spend.status.ceiling },
+        upgrade: next,
+      }, { status: 403 })
     }
   }
 
