@@ -86,7 +86,7 @@ export default function AdminCostsPage() {
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">{data.calls.toLocaleString()} billable AI calls</p>
             </div>
             <div className="card p-5">
-              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-1">Posts published · last {data.days}d</p>
+              <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-1">New posts created · last {data.days}d</p>
               <p className="text-3xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">{data.totalPosts.toLocaleString()}</p>
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">
                 Avg cost / post: <span className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">${data.totalPosts > 0 ? (data.total / data.totalPosts).toFixed(2) : '—'}</span>

@@ -34,11 +34,15 @@ export async function GET(request: Request) {
         .select('tier,feature,model,input_tokens,output_tokens,web_searches,images,user_id')
         .gte('created_at', since)
         .limit(100000),
-      // Post volume in the same window — drives cost-per-post per tier.
+      // NET-NEW post volume in the same window — drives cost-per-post per tier.
+      // Count by created_at, NOT published_at: published_at gets bumped on every
+      // re-publish / update (rewrites, image refresh, schedule cascade, brand
+      // re-sync), which massively over-counted "posts" (e.g. 299 vs 56 actual
+      // generations) and made cost-per-post look artificially cheap. created_at
+      // is immutable, so this is the true count of posts generated this window.
       sb.from('blog_posts')
-        .select('user_id,published_at')
-        .gte('published_at', since)
-        .eq('status', 'published')
+        .select('user_id,created_at')
+        .gte('created_at', since)
         .limit(100000),
       // Active paying users (anyone currently on a paid tier) — drives
       // cost-per-active-user and per-tier margin.
