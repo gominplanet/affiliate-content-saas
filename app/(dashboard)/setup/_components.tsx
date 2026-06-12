@@ -602,7 +602,10 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         </div>
       </div>
 
-      {/* YouTube */}
+      {/* YouTube — hidden in 'socials' mode: YouTube has its own dedicated
+          /connect-youtube page now, so Connect Socials no longer offers it
+          (it'd be a confusing second place to connect the same account). */}
+      {mode !== 'socials' && (
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
           <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
@@ -638,6 +641,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           </label>
         )}
       </div>
+      )}
 
       {/* WordPress connection — Application Password is managed inside the MVP Affiliate plugin.
           Hidden in 'socials' mode because /connect-socials is just about social platforms;
@@ -1368,7 +1372,9 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         )}
       </div>
 
-      {/* YouTube OAuth — for YouTube Studio (draft video metadata) */}
+      {/* YouTube OAuth — hidden in 'socials' mode (YouTube lives on its own
+          /connect-youtube page now); still shown on /setup (mode 'all'). */}
+      {mode !== 'socials' && (
       <div className="card p-5 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1416,6 +1422,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           </div>
         )}
       </div>
+      )}
 
       {/* Google Search Console */}
       <div className="card p-5 flex flex-col gap-4">
