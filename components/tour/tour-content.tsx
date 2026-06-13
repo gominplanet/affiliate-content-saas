@@ -33,7 +33,7 @@ const SECTIONS: Array<{ id: string; label: string }> = [
   { id: 'multisite',    label: 'Multi-site WordPress' },
   { id: 'vas',          label: 'Virtual Assistants' },
   { id: 'plugin',       label: 'WordPress plugin + theme' },
-  { id: 'helpdesk',     label: 'AI Help Desk' },
+  { id: 'helpdesk',     label: 'MVP Help Desk' },
   { id: 'api',          label: 'API access' },
   { id: 'misc',         label: 'Tools we built for ourselves' },
 ]
@@ -127,7 +127,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
               and pulls a different search audience.
             </li>
             <li>
-              <strong>Multi-site publishing.</strong> Connect up to 5 WordPress sites. Each post can be routed to any
+              <strong>Multi-site publishing.</strong> Connect up to 10 WordPress sites. Each post can be routed to any
               site, each site can run a different brand, each site gets its own Geniuslink tracking group, and the site
               picker is built into every generation surface.
             </li>
@@ -355,15 +355,20 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 8. Multi-site ────────────────────────────────────────── */}
-        <Section id="multisite" icon={<Layers size={18} />} title="Multi-site WordPress (up to 5 sites)">
+        <Section id="multisite" icon={<Layers size={18} />} title="Multi-site WordPress + multi-channel (Pro)">
           <p>
             If you run more than one review site — a main brand plus a niche-specific spinoff, or a multi-language
             network — Pro is built for you.
           </p>
           <ul>
             <li>
-              Connect up to 5 sites. Each lives as its own entry in your Pro account with its own credentials, its own
+              Connect up to 10 sites. Each lives as its own entry in your Pro account with its own credentials, its own
               Geniuslink group, its own brand profile data flowing through, its own newsletter, its own Customize settings.
+            </li>
+            <li>
+              <strong>Multiple YouTube channels.</strong> Connect more than one channel, set a default channel per blog,
+              and pull videos from any connected channel onto any site — so a portfolio of channels and sites stays
+              cleanly separated. (Manage it under Set Up → Connect YouTube.)
             </li>
             <li>
               The Add Site modal accepts either the standard wp-admin connection or a one-shot Connection Token from
@@ -439,7 +444,7 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         </Section>
 
         {/* ── 11. Help Desk ────────────────────────────────────────── */}
-        <Section id="helpdesk" icon={<MessageSquare size={18} />} title="AI Help Desk">
+        <Section id="helpdesk" icon={<MessageSquare size={18} />} title="MVP Help Desk">
           <p>
             The MVP Help Desk knows your account, your features, your brand, your voice, your recent posts, your
             published patterns.
