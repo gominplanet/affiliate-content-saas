@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createYouTubeService } from '@/services/youtube'
 import { getAuthAndOwner } from '@/lib/agency-auth'
+import { resolveSyncChannelId } from '@/lib/youtube-channels'
 
 const SYNC_CACHE_TTL_MS = 5 * 60 * 1000 // 5 min to prevent spam while allowing fresh data
 
@@ -60,37 +61,39 @@ export async function POST(request: Request) {
   // missing integrations row (rare but possible right after signup) doesn't
   // throw the silent .single() error that the empty-catch on the client
   // then swallows.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: intRow } = await supabase
-    .from('integrations')
-    .select('youtube_channel_id')
-    .eq('user_id', ownerId)
-    .maybeSingle()
+  let pageToken: string | undefined
+  let bodyChannelId: string | undefined
+  let bodySiteId: string | undefined
+  try {
+    const body = await request.json().catch(() => ({}))
+    pageToken = body.pageToken || undefined
+    bodyChannelId = body.channelId || undefined
+    bodySiteId = body.siteId || undefined
+  } catch { /* no body */ }
 
-  // SECURITY (2026-06-12 cross-tenant leak fix): the channel is PER-USER only.
-  // The previous `|| process.env.YOUTUBE_CHANNEL_ID` fallback meant ANY account
-  // that hadn't set its own channel id synced the FOUNDER's channel (the env
-  // value) and wrote those videos under that user's user_id — so the founder's
-  // YouTube videos appeared in random users' Library + Co-Pilot. There is NO
-  // shared fallback: an account with no channel set gets the clear error below
-  // and syncs nothing. (Reads were always user-scoped; the leak was this write.)
-  const channelId = intRow?.youtube_channel_id || null
+  // Resolve which channel to sync. Multi-channel (Pro, migration 127): the
+  // request may pass an explicit `channelId` (UC…) to pull a specific connected
+  // channel, or a `siteId` to use that WordPress site's default channel.
+  // Resolver falls back to the user's default channel, then the legacy
+  // integrations.youtube_channel_id. The channel is PER-USER only — there is NO
+  // shared/env fallback (2026-06-12 cross-tenant leak fix): an account with no
+  // channel connected gets the clear error below and syncs nothing.
+  const channelId = await resolveSyncChannelId(supabase, ownerId, { channelId: bodyChannelId, siteId: bodySiteId })
   if (!channelId) {
     return NextResponse.json({
-      error: 'No YouTube channel ID set on your account yet. Open Blog Set Up → Integrations and paste your YouTube channel ID, then try Sync again.',
+      error: 'No YouTube channel connected yet. Open Set Up → YouTube and connect your channel, then try Sync again.',
       code: 'no_channel_id',
     }, { status: 400 })
   }
 
-  let pageToken: string | undefined
-  try {
-    const body = await request.json().catch(() => ({}))
-    pageToken = body.pageToken || undefined
-  } catch { /* no body */ }
+  // The sync cache is keyed per-user (not per-channel), so only the DEFAULT
+  // channel path uses it. An explicit channel pick bypasses the cache to avoid
+  // returning another channel's cached page.
+  const useCache = !bodyChannelId
 
   try {
     // Check cache for this page (only when no pageToken — first page)
-    if (!pageToken) {
+    if (!pageToken && useCache) {
       const cached = await readSyncCache(supabase, ownerId)
       if (cached) {
         const cacheAge = Date.now() - new Date(cached.cached_at).getTime()
@@ -144,8 +147,9 @@ export async function POST(request: Request) {
 
     if (error) throw error
 
-    // Cache this page's results to prevent repeated API calls (5 min TTL)
-    if (!pageToken) {
+    // Cache this page's results to prevent repeated API calls (5 min TTL).
+    // Default channel only — the cache is keyed per-user, not per-channel.
+    if (!pageToken && useCache) {
       try {
         await writeSyncCache(supabase, ownerId, null, videos.length, nextPageToken ?? null)
       } catch { /* non-fatal */ }
