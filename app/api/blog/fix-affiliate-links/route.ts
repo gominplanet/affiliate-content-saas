@@ -255,6 +255,18 @@ export async function POST(request: Request) {
             unresolved.push(post.title || post.slug || post.id)
             return
           }
+          // REGROUP SAFETY: never DOWNGRADE a working geni.us link to a raw
+          // Amazon-tag URL. resolveAffiliateUrl falls back to a tagged
+          // amazon.com link when Geniuslink minting fails (API error) or the
+          // new link doesn't validate to the product — that fallback is right
+          // for BROKEN links, but applying it to a working geni.us link would
+          // strip its geo-routing + click tracking. Skip instead; leave the
+          // live link as-is and report it so the user can retry. (Broken-mode
+          // links and non-geni.us originals still take the Amazon fallback.)
+          if (mode === 'regroup' && GENIUSLINK.test(oldUrl) && !GENIUSLINK.test(affiliateUrl)) {
+            unresolved.push(post.title || post.slug || post.id)
+            return
+          }
           candidates.push({ post, video, oldUrl, newUrl: affiliateUrl })
         } catch (err) {
           errors.push(`${post.title || post.id}: ${err instanceof Error ? err.message : String(err)}`)
