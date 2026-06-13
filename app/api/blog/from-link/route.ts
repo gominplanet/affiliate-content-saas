@@ -42,6 +42,39 @@ export const maxDuration = 300
 const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
 
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// Guarantee the affiliate link is hyperlinked inline at least `min` times in
+// the prose (matches the main blog writer's "affiliate link 3+ times" rule —
+// services/claude/index.ts). The from-link writer only emits CTA buttons, so
+// we weave contextual links into the body deterministically: wrap natural
+// product-name mentions in an anchor, one per text run, skipping any text
+// already inside an <a>. Caps at `min` so we never over-link.
+function ensureInlineAffiliateLinks(html: string, url: string, productName: string, min = 3): string {
+  if (!url || !productName) return html
+  const name = productName.split(/[,(\-–|]/)[0].trim()
+  if (name.length < 3) return html
+  const existing = (html.match(new RegExp(`href="${escapeRegExp(url)}"`, 'g')) || []).length
+  let needed = min - existing
+  if (needed <= 0) return html
+  const nameRe = new RegExp(`\\b${escapeRegExp(name)}\\b`, 'i')
+  const anchor = (m: string) => `<a href="${url}" target="_blank" rel="nofollow sponsored noopener">${m}</a>`
+  let inAnchor = 0
+  const tokens = html.split(/(<[^>]+>)/)
+  for (let i = 0; i < tokens.length && needed > 0; i++) {
+    const t = tokens[i]
+    if (t.startsWith('<')) {
+      if (/^<a\b/i.test(t)) inAnchor++
+      else if (/^<\/a\s*>/i.test(t)) inAnchor = Math.max(0, inAnchor - 1)
+      continue
+    }
+    if (inAnchor > 0 || !nameRe.test(t)) continue
+    tokens[i] = t.replace(nameRe, anchor) // one mention per text run — no clustering
+    needed--
+  }
+  return tokens.join('')
+}
+
 // Shorteners/cloakers we resolve to a final URL before extracting an ASIN.
 const CLOAK_RE = /(?:geni\.us|amzn\.to|a\.co|bit\.ly|tinyurl\.com|rebrand\.ly|fkbms\.|lddy\.no|shrsl\.|sovrn\.|go\.magik)/i
 
@@ -180,7 +213,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   "category": "a single concise blog category for this product/service, Title Case, 1-3 words (e.g. 'VPNs & Security', 'Headphones', 'Kitchen'); never the word 'blog'",
   "hero_prompt": "one vivid sentence describing an editorial, text-free HERO photo of this product's CATEGORY — clean, aspirational, magazine-style (no people required, no logos, no text)",
   "intro_html": "1-2 short intro paragraphs as raw HTML <p>...</p> (first person, answer-first hook)",
-  "body_html": "700-1100 words as raw HTML <p>/<h2>/<ul><li> blocks. Real benefits, who it's for, how it's used, set-up, and trade-offs — specific and grounded, answer-first under each H2. No fabricated claims, no banned words.",
+  "body_html": "700-1100 words as raw HTML <p>/<h2>/<ul><li> blocks. Real benefits, who it's for, how it's used, set-up, and trade-offs — specific and grounded, answer-first under each H2. Refer to the product by its name naturally several times across the body. No fabricated claims, no banned words.",
   "pros": ["3-5 concrete pros grounded in the data"],
   "cons": ["2-3 real drawbacks/limitations grounded in the data (every product has trade-offs)"],
   "verdict": "one punchy bottom-line sentence",
@@ -206,6 +239,15 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     parsed = JSON.parse(j?.[0] ?? raw)
   } catch (err) {
     return NextResponse.json({ error: `Writing failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+  }
+
+  // Weave the affiliate link inline through the prose — at least 3 contextual
+  // hyperlinks on natural product mentions (the writer only emits CTA buttons).
+  // Done BEFORE assembly so the links pass through the citation guards, which
+  // are instructed to preserve every hyperlink.
+  if (affiliateUrl) {
+    parsed.intro_html = ensureInlineAffiliateLinks(parsed.intro_html || '', affiliateUrl, productName, 1)
+    parsed.body_html = ensureInlineAffiliateLinks(parsed.body_html || '', affiliateUrl, productName, 3)
   }
 
   // ── 4. Assemble the WordPress (Gutenberg) HTML ──────────────────────────────
