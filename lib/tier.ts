@@ -103,6 +103,7 @@ export const TIERS = {
     basePosts: 5,
     bonusPosts: 0,
     sites: 1,
+    youtubeChannels: 1,
     socials: [] as readonly Social[],
     multiAccountSocial: false,
     publishAll: false,
@@ -160,6 +161,7 @@ export const TIERS = {
     basePosts: 20,
     bonusPosts: 0,
     sites: 1,
+    youtubeChannels: 1,
     /** Creator unlocks: LinkedIn, Bluesky, Pinterest, Facebook*, Threads*
      *  (* = Meta App Review still gating these for non-admin/non-reviewer
      *  users — see app-review middleware). */
@@ -213,6 +215,7 @@ export const TIERS = {
     basePosts: 60,
     bonusPosts: 0,
     sites: 1,
+    youtubeChannels: 1,
     /** Studio = Creator's + Instagram* + Telegram. */
     socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads', 'instagram', 'telegram'] as readonly Social[],
     multiAccountSocial: false,
@@ -266,6 +269,8 @@ export const TIERS = {
     bonusPosts: 60,
     /** Pro multi-site: up to 10 WP sites. */
     sites: 10,
+    /** Pro multi-channel: connect multiple YouTube channels (one default per WP site, plus pull from others). */
+    youtubeChannels: 10,
     /** Pro = Studio's + Twitter + TikTok*. */
     socials: ['linkedin', 'bluesky', 'pinterest', 'facebook', 'threads', 'instagram', 'telegram', 'twitter', 'tiktok'] as readonly Social[],
     /** Multi-account social: per-post FB Page / IG account picker. */
@@ -317,6 +322,7 @@ export const TIERS = {
     basePosts: 0,
     bonusPosts: 0,
     sites: 999,
+    youtubeChannels: 999,
     socials: ['facebook', 'threads', 'linkedin', 'pinterest', 'twitter', 'bluesky', 'telegram', 'instagram', 'tiktok'] as readonly Social[],
     multiAccountSocial: true,
     publishAll: true,
