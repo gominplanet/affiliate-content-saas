@@ -7,7 +7,7 @@ import { encryptIntegrationWrite } from '@/lib/integration-secrets'
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
   const redirectUri = `${appUrl}/api/auth/facebook/callback`
-  const setupUrl = `${appUrl}/setup?tab=integrations`
+  const setupUrl = `${appUrl}/connect-socials`
 
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state')
 
   if (error || !code) {
-    return NextResponse.redirect(`${setupUrl}&fb_error=access_denied`)
+    return NextResponse.redirect(`${setupUrl}?fb_error=access_denied`)
   }
 
   try {
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     // at start; if it's missing or doesn't match, abort.
     if (!state || state !== user.id) {
       console.warn('[facebook/callback] state mismatch — possible CSRF', { hasState: !!state, sessionUid: user.id })
-      return NextResponse.redirect(`${setupUrl}&fb_error=state_mismatch`)
+      return NextResponse.redirect(`${setupUrl}?fb_error=state_mismatch`)
     }
 
     // Exchange code → short-lived token → long-lived token
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     // Fetch pages the user manages
     const pages = await getPages(longToken)
     if (pages.length === 0) {
-      return NextResponse.redirect(`${setupUrl}&fb_error=no_pages&debug_token=${encodeURIComponent(longToken)}`)
+      return NextResponse.redirect(`${setupUrl}?fb_error=no_pages&debug_token=${encodeURIComponent(longToken)}`)
     }
 
     // Save the first page by default (user can switch in settings)
@@ -68,9 +68,9 @@ export async function GET(request: NextRequest) {
       console.warn('[facebook/callback] syncFacebookAccounts failed:', e)
     }
 
-    return NextResponse.redirect(`${setupUrl}&fb_connected=1`)
+    return NextResponse.redirect(`${setupUrl}?fb_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.redirect(`${setupUrl}&fb_error=${encodeURIComponent(msg)}`)
+    return NextResponse.redirect(`${setupUrl}?fb_error=${encodeURIComponent(msg)}`)
   }
 }

@@ -10,7 +10,7 @@
  *   3. Pull the creator's basic profile (open_id, username, display name,
  *      avatar) so the settings UI can show "Connected as @handle"
  *   4. Persist tokens + identity on integrations
- *   5. Redirect back to /setup?tab=integrations&tiktok_connected=1
+ *   5. Redirect back to /connect-socials?tiktok_connected=1
  *
  * Failure modes surface as `?tiktok_error=` query params; the Settings
  * page renders human-readable banners for each.
@@ -47,7 +47,7 @@ interface TikTokUserInfoResponse {
 export async function GET(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL!
   const redirect = (params: string) =>
-    NextResponse.redirect(`${appUrl}/setup?tab=integrations&${params}`)
+    NextResponse.redirect(`${appUrl}/connect-socials?${params}`)
 
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')

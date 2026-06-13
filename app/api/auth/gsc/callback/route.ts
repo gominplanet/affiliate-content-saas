@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   const dest = (params: string) =>
     returnTo
       ? `${appUrl}${returnTo}${returnTo.includes('?') ? '&' : '?'}${params}`
-      : `${appUrl}/setup?tab=integrations&${params}`
+      : `${appUrl}/brand?${params}`
 
   if (error || !code) {
     return NextResponse.redirect(dest(`gsc_error=${error || 'no_code'}`))

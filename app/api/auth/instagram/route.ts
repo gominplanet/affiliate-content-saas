@@ -24,7 +24,7 @@ export async function GET() {
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
   if (!(await metaEnabledForUser(supabase, user))) {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&meta_disabled=1`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?meta_disabled=1`)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,7 +40,7 @@ export async function GET() {
 
   const clientId = process.env.INSTAGRAM_APP_ID
   if (!clientId) {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&instagram_error=server_not_configured`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=server_not_configured`)
   }
 
   // CSRF protection — pass user id as state so the callback can validate.

@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   if (error || !code) {
     return NextResponse.redirect(
-      `${appUrl}/setup?tab=integrations&twitter_error=${error || 'no_code'}`,
+      `${appUrl}/connect-socials?twitter_error=${error || 'no_code'}`,
     )
   }
 
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
   if (!stateUserId || stateUserId !== user.id) {
     console.warn('[twitter/callback] state mismatch — possible CSRF', { hasState: !!stateUserId, sessionUid: user.id })
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&twitter_error=state_mismatch`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?twitter_error=state_mismatch`)
   }
   const userId = user.id
 
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   const codeVerifier = cookieStore.get('twitter_pkce_verifier')?.value
   if (!codeVerifier) {
     return NextResponse.redirect(
-      `${appUrl}/setup?tab=integrations&twitter_error=pkce_verifier_missing`,
+      `${appUrl}/connect-socials?twitter_error=pkce_verifier_missing`,
     )
   }
 
@@ -75,11 +75,11 @@ export async function GET(request: NextRequest) {
     // Clear the verifier cookie — it's single-use.
     cookieStore.delete('twitter_pkce_verifier')
 
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&twitter_connected=1`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?twitter_connected=1`)
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'callback_failed'
     return NextResponse.redirect(
-      `${appUrl}/setup?tab=integrations&twitter_error=${encodeURIComponent(msg.slice(0, 100))}`,
+      `${appUrl}/connect-socials?twitter_error=${encodeURIComponent(msg.slice(0, 100))}`,
     )
   }
 }

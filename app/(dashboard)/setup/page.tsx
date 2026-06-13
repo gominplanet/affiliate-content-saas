@@ -14,7 +14,6 @@ import { metaEnabled, socialEnabled, type GatedSocialPlatform } from '@/lib/feat
 import { effectiveTier } from '@/lib/view-as'
 import { Suspense } from 'react'
 import WordPressSitesManager from '@/components/dashboard/WordPressSitesManager'
-import { IntegrationsPanel } from './_components'
 
 type Mode = 'existing' | 'new' | null
 type Step = 1 | 2 | 3 | 4 | 5
@@ -964,16 +963,19 @@ function DisconnectRestart() {
 // ─── Wizard shell ─────────────────────────────────────────────────────────────
 function SetupPageInner() {
   const searchParams = useSearchParams()
-  const [tab, setTab] = useState<'wordpress' | 'integrations'>(
+  const router = useRouter()
+  const [tab] = useState<'wordpress' | 'integrations'>(
     searchParams.get('tab') === 'integrations' ? 'integrations' : 'wordpress'
   )
 
-  // Keep tab in sync with the URL so sidebar links between "Blog Set Up"
-  // and "Integrations" (both at /setup) actually switch tabs when clicked.
+  // RETIRED: the legacy /setup?tab=integrations tab. Everything it held now
+  // has a proper home — socials on /connect-socials, Google Search Console +
+  // Geniuslink on /brand, YouTube on /connect-youtube, the multi-site manager
+  // on the /setup "connected" view. OAuth callbacks were all repointed; this
+  // bounce catches any stale bookmark or link so the dead tab never renders.
   useEffect(() => {
-    const next = searchParams.get('tab') === 'integrations' ? 'integrations' : 'wordpress'
-    setTab(prev => prev === next ? prev : next)
-  }, [searchParams])
+    if (searchParams.get('tab') === 'integrations') router.replace('/connect-socials')
+  }, [searchParams, router])
 
   // Scroll-to-hash for in-page anchors like #social-platforms (the
   // sidebar's "Connect Socials" entry uses this). Next App Router
@@ -1118,63 +1120,12 @@ function SetupPageInner() {
 
   if (!hydrated) return null
 
-  // ── Tab bar (always shown) ─────────────────────────────────────────────────
-  const TabBar = () => (
-    <div className="flex items-center gap-1 bg-[#f5f5f7] dark:bg-[#000] p-1 rounded-xl w-fit mb-6">
-      {([
-        { key: 'wordpress', label: 'WordPress' },
-        { key: 'integrations', label: 'Integrations' },
-      ] as const).map(({ key, label }) => (
-        <button
-          key={key}
-          onClick={() => setTab(key)}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-            tab === key
-              ? 'bg-white dark:bg-[#1c1c1e] text-[#1d1d1f] dark:text-[#f5f5f7] shadow-apple-sm border border-gray-200/80 dark:border-white/10'
-              : 'text-[#6e6e73] dark:text-[#ebebf0] hover:text-[#1d1d1f] dark:hover:text-[#f5f5f7]'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
 
-  // ── Integrations tab ───────────────────────────────────────────────────────
-  if (tab === 'integrations') {
-    return (
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] tracking-tight">Other settings</h1>
-          <p className="text-sm text-[#6e6e73] dark:text-[#ebebf0] mt-0.5">
-            Affiliate links, YouTube, and social platforms.{' '}
-            <a href="/setup" className="text-[#7C3AED] hover:underline font-medium">← Back to Blog Set Up</a>
-          </p>
-        </div>
-        <IntegrationsPanel onLoad={() => {}} />
-        {/* Multi-site WordPress manager — Pro feature. Renders only if the
-            user has at least one WP site connected; otherwise the existing
-            IntegrationsPanel above handles the empty-state connect flow. */}
-        <WordPressSitesManager />
-
-        {/* Connection doctor link — surfaces the diagnostic page that
-            detects security plugins / CDN WAFs blocking writes. Always
-            visible after Integrations so users can self-serve when
-            anything goes wrong with WP. */}
-        <div className="card p-4 mt-4 border border-gray-200 dark:border-white/10 flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Posting trouble?</p>
-            <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mt-0.5 leading-relaxed">
-              Run the connection doctor — it pinpoints the exact plugin or firewall blocking writes and gives you click-by-click fix steps.
-            </p>
-          </div>
-          <a href="/setup/wp-doctor" className="btn-secondary text-xs flex-shrink-0">
-            Run doctor →
-          </a>
-        </div>
-      </div>
-    )
-  }
+  // ── Legacy Integrations tab — RETIRED ───────────────────────────────────────
+  // Render nothing while the effect above redirects to /connect-socials. The
+  // old panel (socials / YouTube / affiliate / multi-site) lives on its proper
+  // pages now and must never be shown here.
+  if (tab === 'integrations') return null
 
   // ── Already connected — Manager view ──────────────────────────────────────
   // Surfaces the multi-site manager, connection doctor, brand customizations

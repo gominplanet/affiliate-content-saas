@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   if (error || !code) {
     const msg = errorDescription || error || 'no_code'
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&instagram_error=${encodeURIComponent(msg)}`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=${encodeURIComponent(msg)}`)
   }
 
   const supabase = await createServerClient()
@@ -29,13 +29,13 @@ export async function GET(request: NextRequest) {
 
   // CSRF — state should match the user id we passed in /api/auth/instagram
   if (state !== user.id) {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&instagram_error=invalid_state`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=invalid_state`)
   }
 
   const clientId = process.env.INSTAGRAM_APP_ID
   const clientSecret = process.env.INSTAGRAM_APP_SECRET
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&instagram_error=server_not_configured`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=server_not_configured`)
   }
 
   try {
@@ -70,9 +70,9 @@ export async function GET(request: NextRequest) {
       console.warn('[instagram/callback] syncInstagramAccount failed:', e)
     }
 
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&instagram_connected=1`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?instagram_connected=1`)
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'callback_failed'
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&instagram_error=${encodeURIComponent(msg.slice(0, 200))}`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?instagram_error=${encodeURIComponent(msg.slice(0, 200))}`)
   }
 }

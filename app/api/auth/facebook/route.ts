@@ -9,7 +9,7 @@ export async function GET() {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!(await metaEnabledForUser(supabase, user))) {
-    return NextResponse.redirect(`${appUrl || ''}/setup?tab=integrations&meta_disabled=1`)
+    return NextResponse.redirect(`${appUrl || ''}/connect-socials?meta_disabled=1`)
   }
   const appId = process.env.FACEBOOK_APP_ID
   if (!appId || !appUrl) {

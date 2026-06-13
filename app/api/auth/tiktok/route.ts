@@ -38,7 +38,7 @@ export async function GET() {
 
   const clientKey = process.env.TIKTOK_CLIENT_KEY
   if (!clientKey) {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&tiktok_error=server_not_configured`)
+    return NextResponse.redirect(`${appUrl}/connect-socials?tiktok_error=server_not_configured`)
   }
 
   // CSRF state — TikTok echoes this back to the callback. We pass the
