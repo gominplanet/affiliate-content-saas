@@ -2617,7 +2617,7 @@ export default function StudioPage() {
               {([
                 { id: 'todo-product' as const, label: '🛒 With product', sub: 'Unpublished drafts with a product (ASIN or Amazon link)' },
                 { id: 'todo-no-product' as const, label: '✍️ No product', sub: 'Unpublished drafts — no product detected' },
-                { id: 'shipped' as const, label: '🚀 Pushed via Co-Pilot', sub: 'Pushed via Co-Pilot, or already scheduled to go live' },
+                { id: 'shipped' as const, label: '🚀 Shipped / Scheduled', sub: 'Pushed to YouTube through Co-Pilot, or scheduled to go live' },
                 { id: 'done' as const, label: '✅ Done elsewhere', sub: 'Already published on YouTube (not via Co-Pilot)' },
               ]).map(t => {
                 const count = tabbed[t.id].length
