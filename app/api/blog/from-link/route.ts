@@ -165,9 +165,17 @@ export async function POST(req: Request) {
         : `https://www.amazon.com/dp/${asin}`
     }
   } else if (link) {
-    // Non-Amazon store/affiliate link — keep the user's own link (it already
-    // carries their tracking). Geniuslink ASIN recloaking only applies to Amazon.
+    // Non-Amazon store/affiliate link — recloak it through Geniuslink when
+    // connected (geo-routing + click analytics), preserving the user's own
+    // link as the destination so any existing tracking is kept. Falls back to
+    // the raw link if Geniuslink isn't configured or minting fails.
     affiliateUrl = link
+    if (genius) {
+      try {
+        const wrapped = await genius.createLink(link, productName || 'product')
+        if (wrapped) affiliateUrl = wrapped
+      } catch { /* keep the user's own link */ }
+    }
   }
   if (!productName) productName = providedName || 'this product'
 

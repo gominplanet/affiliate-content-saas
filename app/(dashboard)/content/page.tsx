@@ -26,7 +26,7 @@ import { effectiveTier } from '@/lib/view-as'
 import { metaEnabled } from '@/lib/feature-flags'
 import {
   Youtube, Wand2, ExternalLink, CheckCircle, AlertCircle,
-  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, Edit3, MessageCircle, Save, Upload, Search, Calendar,
+  RefreshCw, Loader2, ChevronRight, Sparkles, X, Facebook, Pin, MessageCircle, Save, Upload, Search, Calendar,
 } from 'lucide-react'
 import type { PinPreviewData } from '@/components/PinterestPreviewModal'
 
@@ -812,8 +812,6 @@ const VideoCard = memo(function VideoCardImpl({
     } finally { setDeleting(false) }
   }
 
-  const editorUrl = wpSiteUrl && post?.wpPostId ? `${wpSiteUrl}/wp-admin/post.php?post=${post.wpPostId}&action=edit` : null
-
   return (
     <div className="card p-4 flex gap-4 items-start">
       {thumb && (
@@ -952,11 +950,6 @@ const VideoCard = memo(function VideoCardImpl({
             {post ? (
               <>
                 <ManualEdit postId={post.postId} />
-                {editorUrl && (
-                  <a href={editorUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors">
-                    <ExternalLink size={11} /> Edit in WP
-                  </a>
-                )}
                 <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors disabled:opacity-60">
                   {deleting ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
                   {deleting ? 'Deleting…' : 'Delete'}
@@ -2677,7 +2670,7 @@ export default function ContentPage() {
   return (
     <>
       <PageHero
-        title="Library"
+        title="Blog Post Generator"
         subtitle={
           loading ? 'Loading…' :
           activeTab === 'scheduled'
@@ -3101,18 +3094,8 @@ export default function ContentPage() {
                   {refreshingImagesId === post.id ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
                   {refreshingImagesId === post.id ? 'Adding…' : 'Images'}
                 </button>
-                {/* Edit manually — opens the post in the WordPress editor. */}
-                {post.link && (
-                  <a
-                    href={`${new URL(post.link).origin}/wp-admin/post.php?post=${post.id}&action=edit`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-[#86868b] hover:text-[#7C3AED] flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                    title="Edit this post manually in WordPress"
-                  >
-                    <Edit3 size={11} /> Edit
-                  </a>
-                )}
+                {/* Manual edit — same in-app HTML editor as the video cards. */}
+                <ManualEdit postId={String(post.id)} />
                 <button
                   onClick={() => deletePostFromList(post.id)}
                   disabled={deletingPostId === post.id}
