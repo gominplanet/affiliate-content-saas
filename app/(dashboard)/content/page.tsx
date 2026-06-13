@@ -2683,7 +2683,7 @@ export default function ContentPage() {
           activeTab === 'scheduled'
             ? `Queued posts that will fire automatically. The cron runs every minute, your computer can be off.`
             : activeTab === 'posts'
-            ? `Published reviews. Manage social fan-out from each card. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
+            ? `Everything live on your blog — reviews, comparisons, buying guides and link posts, from any source. Manage social fan-out from each card. ${allBlogPosts.length} post${allBlogPosts.length !== 1 ? 's' : ''} live.`
             : activeTab === 'vertical'
               ? `Shorts to Instagram Reels & Stories. Click the Instagram pill on a card to publish. ${verticalVideos.length} vertical video${verticalVideos.length !== 1 ? 's' : ''}.`
               : horizontalVideos.length > 0
@@ -2785,7 +2785,7 @@ export default function ContentPage() {
         {([
           { key: 'horizontal' as const, label: 'Horizontal Videos' },
           { key: 'vertical' as const, label: 'Vertical Videos' },
-          { key: 'posts' as const, label: `Posts${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
+          { key: 'posts' as const, label: `Published Posts${postsLoaded ? ` (${allBlogPosts.length})` : ''}` },
           { key: 'scheduled' as const, label: `Scheduled${scheduledItems ? ` (${scheduledItems.filter(s => s.status === 'pending').length})` : ''}` },
         ]).map(({ key, label }) => (
           <button
@@ -3040,7 +3040,7 @@ export default function ContentPage() {
                 )}
                 <div className="border-t border-[#e5e5ea] dark:border-white/10 mt-1" />
                 <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-                  Older posts archive ({allBlogPosts.length} total — includes ones with no matching YouTube video)
+                  Comparisons, buying guides, link posts &amp; older reviews — everything else live on your blog ({allBlogPosts.length} total)
                 </p>
               </div>
             )
@@ -3052,8 +3052,8 @@ export default function ContentPage() {
             </div>
           ) : allBlogPosts.length === 0 ? (
             <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No reviews live yet</p>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Head to the Videos tab, pick one with an Amazon ASIN, and click Generate. The full review lands on your site in about 60 seconds.</p>
+              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No posts live yet</p>
+              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Everything you publish lands here — from a video (Videos tab → Generate), a comparison, a buying guide, or just a product link (New post from a link). The full post lands on your site in about 60 seconds.</p>
             </div>
           ) : filteredPosts.length === 0 ? (
             <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">
