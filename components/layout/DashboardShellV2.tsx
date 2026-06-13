@@ -537,11 +537,11 @@ export default function DashboardShellV2({
             backgroundColor: isDark ? 'rgba(14,14,17,0.85)' : 'rgba(250,250,248,0.85)',
           }}
         >
-          {/* Site chip — shows the connected WordPress hostname. Click
-              opens Setup → Integrations. Multi-site picker comes in a
-              follow-up (needs wordpress_sites API wiring + dropdown). */}
+          {/* Site chip — shows the connected WordPress hostname. Click opens
+              the WordPress setup / multi-site manager (where Pro users add
+              more sites). Was /setup?tab=integrations (now retired/redirected). */}
           <Link
-            href="/setup?tab=integrations"
+            href="/setup"
             className="flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] font-medium transition-colors"
             style={{
               backgroundColor: 'var(--surface)',
