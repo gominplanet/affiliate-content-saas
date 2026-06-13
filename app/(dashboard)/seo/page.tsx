@@ -903,7 +903,7 @@ export default function SeoPage() {
                       <button
                         onClick={(e) => { e.stopPropagation(); requestIndexing(p.url!) }}
                         className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline flex-shrink-0"
-                        title="Copy this post's URL and open Search Console to Request Indexing"
+                        title="Submit this post to Google for indexing — sends a request via Google's Indexing API (no manual Search Console step)"
                       >
                         Index <ExternalLink size={11} />
                       </button>
@@ -1113,11 +1113,6 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
   const sitemapsUrl = rid
     ? `https://search.google.com/search-console/sitemaps?resource_id=${rid}`
     : 'https://search.google.com/search-console'
-  // URL Inspection has no reliable pre-fill deep link (Google's `id` param wants
-  // an internal inspection hash, not a page URL), so just open Search Console
-  // and paste into the Inspect bar.
-  const inspectUrl = 'https://search.google.com/search-console'
-
   return (
     <div className="card overflow-hidden">
       <button
@@ -1156,7 +1151,7 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
             <p className="font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">What to expect</p>
             <ul className="list-disc pl-5 flex flex-col gap-1">
               <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Bing, Yandex, Copilot:</strong> usually a few hours to a day or two.</li>
-              <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Google:</strong> slower, on Google’s own schedule. Days to a few weeks is normal, sometimes longer for a new site. There’s no “index now” button for Google (for anyone), so early statuses like “Not indexed”, “Still checking” or “URL unknown to Google” are expected — not a problem with your post.</li>
+              <li><strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Google:</strong> slower, on Google’s own schedule. The <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Index</strong> button sends Google a direct request through its Indexing API — a strong nudge, but Google still decides when (and whether) to index. Days to a few weeks is normal, sometimes longer for a new site, so early statuses like “Not indexed”, “Still checking” or “URL unknown to Google” are expected — not a problem with your post.</li>
               <li>Impressions show up before clicks, so 0 clicks at the start is normal.</li>
             </ul>
           </div>
@@ -1169,8 +1164,7 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
                 <a href={sitemapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console → Sitemaps <ExternalLink size={11} /></a>, type <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px]">wp-sitemap.xml</code> under “Add a new sitemap”, and click Submit. The status should read “Success” within a day. You only do this once.
               </li>
               <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Request indexing for important posts.</span> Click <span className="font-semibold text-[#7C3AED] whitespace-nowrap">Index ↗</span> on any post below — it copies that post’s URL and opens{' '}
-                <a href={inspectUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console <ExternalLink size={11} /></a>. Paste the URL into the Inspect bar at the top, then click <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Request Indexing</strong>. Use the <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> filter below to work through them in order. Google allows about 10 a day — it’s a nudge, not a guarantee, but it’s the strongest signal you can send.
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Request indexing for important posts.</span> Click <span className="font-semibold text-[#7C3AED] whitespace-nowrap">Index ↗</span> on any post below and MVP submits it straight to Google through its <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Indexing API</strong> — no Search Console, no pasting. Use the <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> filter below to work through them in order. You get up to <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">50 submissions a day</strong> (Google’s free quota is 200/day, shared across MVP, so each account is capped at 50). It’s the strongest automatic nudge you can send — not a guarantee.
               </li>
               <li>
                 <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on social (MVP can auto-post to Pinterest, Facebook &amp; Instagram — every share is a crawlable link back). Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.
