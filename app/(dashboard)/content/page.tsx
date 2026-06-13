@@ -44,6 +44,11 @@ const TikTokDirectModal = dynamic(
   () => import('@/components/TikTokDirectModal').then(m => ({ default: m.TikTokDirectModal })),
   { ssr: false },
 )
+// From-link generator — create a post from a product link/ASIN, no video.
+const FromLinkModal = dynamic(
+  () => import('@/components/content/FromLinkModal').then(m => ({ default: m.FromLinkModal })),
+  { ssr: false },
+)
 const InstagramDirectModal = dynamic(
   () => import('@/components/InstagramDirectModal').then(m => ({ default: m.InstagramDirectModal })),
   { ssr: false },
@@ -1547,6 +1552,7 @@ export default function ContentPage() {
   const [brandFacebookGroups, setBrandFacebookGroups] = useState<Array<{ name: string; url: string }>>([])
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [fromLinkOpen, setFromLinkOpen] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ pulled: number; pages: number } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -2686,6 +2692,15 @@ export default function ContentPage() {
         actions={
           <div className="flex items-center gap-2">
             <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setFromLinkOpen(true)}
+              leftIcon={<Sparkles size={14} />}
+              title="No video? Create a post from a product link or ASIN — MVP researches, writes and publishes it."
+            >
+              New post from a link
+            </Button>
+            <Button
               variant="secondary"
               size="sm"
               onClick={previewFixCategories}
@@ -2747,6 +2762,15 @@ export default function ContentPage() {
       />
 
       <CapBannerHost />
+
+      {/* From-link generator — create a post from a product link/ASIN (no video).
+          On publish it refreshes whatever tab is active so the new post appears. */}
+      {fromLinkOpen && (
+        <FromLinkModal
+          onClose={() => setFromLinkOpen(false)}
+          onDone={() => refreshActiveTabRef.current()}
+        />
+      )}
 
       {/* Tab bar — split Videos into Horizontal (16:9 long-form, blog source)
           and Vertical (9:16 Shorts, Instagram source) since the workflows differ */}
