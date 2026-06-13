@@ -1511,7 +1511,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Sparkles size={16} />,
     features: [
       '20 posts / month (blog + thumbnail + metadata bundle)',
-      'Auto-post to LinkedIn + Bluesky (Facebook *, Threads *, Pinterest * rolling out)',
+      'Auto-post to LinkedIn + Bluesky',
       '1 face + 1 LoRA retrain / month, 10 Photobooth headshots',
       '10 video scripts + shot-lists / month',
       'Newsletter taster: 500 subs, 1 broadcast / month',
@@ -1530,7 +1530,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Crown size={16} />,
     features: [
       '60 posts / month (blog + thumbnail + metadata bundle)',
-      'Adds Instagram * + Telegram on top of Creator',
+      'Adds Telegram auto-post on top of Creator',
       'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
       'IG AI Thumbnails 4:5 (30 / month)',
       'Topic hubs + Refresh Images on published posts',
@@ -1551,7 +1551,7 @@ const PRICING_TIERS: PricingTier[] = [
     icon: <Rocket size={16} />,
     features: [
       '200 posts / month + Comparisons + Buying Guides',
-      'Adds X + TikTok * auto-post on top of Studio',
+      'Adds X (Twitter) auto-post on top of Studio',
       'Rebuild-from-video on any legacy WP post',
       'Creator Campaigns (Amazon EPC scout, one-click publish)',
       'Up to 10 WordPress sites + 3 Virtual Assistant seats',

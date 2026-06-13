@@ -64,7 +64,7 @@ const plans: PlanExt[] = [
     description: 'For creators shipping a few reviews a week across the lower-friction socials, with a taste of the Pro brand-pitch workflow.',
     features: [
       '20 full reviews per month (blog + thumbnail + metadata bundle)',
-      'Auto-post to Facebook *, Threads *, LinkedIn, Bluesky, Pinterest *',
+      'Auto-post to LinkedIn + Bluesky',
       'In-body AI product images (up to 3 per post)',
       'Your Face in AI thumbnails (1 face, 1 LoRA retrain / month)',
       'Photobooth headshots (10 / month)',
@@ -83,10 +83,10 @@ const plans: PlanExt[] = [
     price: 99,
     regularPrice: 199,
     limit: '60 posts / month',
-    description: 'For the serious solo affiliate creator. Adds Instagram + Telegram, scripts, Deals Hub, IG AI thumbnails, and weekly newsletter scheduling.',
+    description: 'For the serious solo affiliate creator. Adds Telegram, scripts, Deals Hub, IG-ready AI thumbnails, and weekly newsletter scheduling.',
     features: [
       '60 full reviews per month (blog + thumbnail + metadata bundle)',
-      'Adds Instagram * + Telegram on top of Creator\'s platforms',
+      'Adds Telegram auto-post on top of Creator',
       'Deals Hub: 5 deal posts / month with countdown banners + Amazon CSV bulk import',
       'Refresh Images on any published post (re-renders the in-body shots)',
       'Topic hubs auto-aggregate your reviews into category pages (built-in WP plugin)',
@@ -111,12 +111,12 @@ const plans: PlanExt[] = [
     description: 'Become the creator brands want. Comparisons, Buying Guides, Rebuild-from-video, Creator Campaigns, multi-account social, VA seats, and 10 WordPress sites.',
     features: [
       '200 full reviews per month (blog + thumbnail + metadata bundle)',
-      'Adds Twitter / X + TikTok * on top of Studio\'s platforms',
+      'Adds X (Twitter) auto-post on top of Studio',
       'Comparison posts: head-to-head ranked review with a named winner',
       'Buying Guides: "Best [topic] for 2026" round-ups (auto-curate or pick-your-own)',
       'Rebuild-from-video: re-write any legacy WordPress post from its source video',
       'For Amazon influencers + associates: Creator Campaigns scout high-EPC programs, one-click research + write + publish',
-      'Multi-account social: multiple Facebook Pages, Instagram, TikTok accounts',
+      'Multi-account social: choose which connected account each post publishes to',
       'Up to 10 WordPress sites on one subscription',
       'Up to 3 Virtual Assistant seats with per-VA permissions',
       'Deals Hub: 30 deal posts / month (Studio cap × 6)',
@@ -225,10 +225,9 @@ export default function PricingPage() {
       </div>
 
       <p className="mt-10 text-sm text-[#86868b] dark:text-[#8e8e93] max-w-2xl text-center px-4">
-        * Facebook, Threads, Instagram, TikTok, and Pinterest auto-publish are built and gated on each
-        platform&apos;s developer review. They activate automatically on every paid plan that includes them
-        once approved, at no extra cost. Live and auto-posting today: your WordPress site, X, LinkedIn,
-        Bluesky, and Telegram.
+        Auto-posting live today: your WordPress site, X, LinkedIn, Bluesky, and Telegram. More platforms —
+        Facebook, Instagram, Threads, TikTok, and Pinterest — are built and switch on automatically, at no
+        extra cost, as each completes its platform review.
       </p>
 
       {/* ───────────────────────────────────────────────────────────────────
