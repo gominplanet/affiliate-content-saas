@@ -102,10 +102,17 @@ export function TourBody({ ctaMode }: { ctaMode: TourCtaMode }) {
         {/* ── 1. Blog engine ───────────────────────────────────────── */}
         <Section id="engine" icon={<FileText size={18} />} title="The blog content engine">
           <p>
-            This is the core of what Pro buys you. You connect your YouTube channel, sync your videos, and from any
+            This is the core of the toolbox. You connect your YouTube channel, sync your videos, and from any
             video MVP generates a full SEO blog post in about three minutes — complete with featured image, in-article
             images, internal links, schema markup, OG tags, alt text, and a quick verdict box. It auto-publishes to your
             WordPress site with one click.
+          </p>
+          <p>
+            <strong>No video? Start from a link.</strong> MVP isn&apos;t only for YouTubers. Paste any product or service
+            link — an Amazon ASIN, a store page, a brand site, even a SaaS — and MVP researches it (the link, its name,
+            and the web), then writes the same fact-grounded review in your voice, recloaks the link through Geniuslink,
+            and adds a hero image. The post lands in your library like any other, ready to schedule or push to socials.
+            The whole engine works whether your starting point is a video or a link.
           </p>
           <h3>What Pro gets you here that lower tiers don&apos;t</h3>
           <ul>

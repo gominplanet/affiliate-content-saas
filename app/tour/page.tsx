@@ -19,12 +19,12 @@ import { TourBody } from '@/components/tour/tour-content'
 export const metadata: Metadata = {
   title: 'Product tour · MVP Affiliate',
   description:
-    'The full tour of MVP Affiliate: turn one review video into a blog post that ranks, comparisons, buying guides, thumbnails, a newsletter, brand pitches, and more — all fact-grounded in your real video. Everything that ships today.',
+    'The full tour of MVP Affiliate: turn a review video — or just a product link — into a blog post that ranks, comparisons, buying guides, thumbnails, a newsletter, brand pitches, and more, all fact-grounded and published to a blog you own. Everything that ships today.',
   alternates: { canonical: '/tour' },
   openGraph: {
     title: 'Product tour · MVP Affiliate',
     description:
-      'Turn one review video into content that ranks — blog, comparisons, buying guides, thumbnails, newsletter, brand outreach. The full tour of what ships today.',
+      'Turn a review video — or just a product link — into content that ranks: blog, comparisons, buying guides, thumbnails, newsletter, brand outreach. The full tour of what ships today.',
     url: '/tour',
     type: 'website',
   },
@@ -99,9 +99,10 @@ export default function PublicTourPage() {
             Everything MVP Affiliate does today
           </h1>
           <p className="text-[15px] leading-relaxed max-w-3xl mb-6" style={{ color: 'var(--text-soft)' }}>
-            One review video becomes a blog post that ranks, comparisons, buying guides, a thumbnail, a newsletter,
-            brand pitches, and more — all fact-grounded in your real video. This is the full tour of what ships right
-            now. No roadmap, no &quot;coming soon.&quot; Just what works today.
+            One review video — or just a product or service link — becomes a blog post that ranks, plus comparisons,
+            buying guides, a thumbnail, a newsletter, brand pitches, and more. All fact-grounded in your real video or
+            real research, published to a blog you own. This is the full tour of what ships right now. No roadmap, no
+            &quot;coming soon.&quot; Just what works today.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Link
