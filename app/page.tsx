@@ -1532,7 +1532,7 @@ const PRICING_TIERS: PricingTier[] = [
       '60 posts / month (blog + thumbnail + metadata bundle)',
       'Adds Telegram auto-post on top of Creator',
       'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
-      'IG AI Thumbnails 4:5 (30 / month)',
+      'Portrait (4:5) AI thumbnails (30 / month)',
       'Topic hubs + Refresh Images on published posts',
       '2 faces + 3 LoRA retrains / month, 15 Photobooth headshots',
       '30 video scripts, 15 brand pitches',

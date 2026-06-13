@@ -292,7 +292,7 @@ export async function POST(request: Request) {
     // 30/mo via instagramAiThumbnailsPerMonth.)
     if (tier !== 'studio' && tier !== 'pro' && tier !== 'admin') {
       return NextResponse.json({
-        error: `Native Instagram AI thumbnails are a ${TIERS.studio.label}+ feature.`,
+        error: `Portrait (4:5) AI thumbnails are a ${TIERS.studio.label}+ feature.`,
         limitReached: true,
         cap: 'instagram_ai',
         currentTier: tier,
