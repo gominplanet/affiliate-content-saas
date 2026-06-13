@@ -1618,7 +1618,6 @@ export default function ContentPage() {
   // their buttons + dropdowns + social pills) and the tab took ~1.5s
   // to become interactive. 2026-06-07.
   const [recentPage, setRecentPage] = useState(1)
-  const [olderPage, setOlderPage] = useState(1)
   const POSTS_PER_PAGE = 20
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkRewriting, setBulkRewriting] = useState(false)
@@ -1655,7 +1654,6 @@ export default function ContentPage() {
   // returns 8 matches, and see an empty page.
   useEffect(() => {
     setRecentPage(1)
-    setOlderPage(1)
   }, [postSearch])
 
   const load = useCallback(async () => {
@@ -2659,15 +2657,17 @@ export default function ContentPage() {
     })
   const filtersActive = !!(search || videoChannel || videoGenFilter !== 'all' || videoSort !== 'newest')
 
-  // Posts-tab search: filter the published list by title (strip HTML entities
-  // for a forgiving match). Bulk-select + the list both use this.
-  // ALSO filter to "orphans" — posts whose source video isn't in the current
-  // youtube_videos list. Without this, the "Older posts archive" section
-  // duplicates every row already shown in the rich VideoCard "Recent"
-  // section above. Orphans matter (older posts, deleted videos), so we
-  // keep them visible; non-orphans live in Recent.
+  // Posts-tab search query (lowercased; HTML entities stripped at match time
+  // for a forgiving title match). Drives the single merged Published Posts
+  // stream below.
   const postQuery = postSearch.trim().toLowerCase()
   const videoIdsInLibrary = new Set(videos.map(v => v.id as string))
+  // "Orphans" = posts whose source video isn't in the current youtube_videos
+  // list (comparisons, buying guides, link posts, older/deleted-video reviews).
+  // These render as the lightweight card in the merged stream; library-video
+  // posts render as the rich VideoCard. The split avoids double-listing a
+  // single post. `filteredPosts` also backs the bulk-select toolbar (no-
+  // thumbnail / select-all → delete / rewrite), which targets standalone posts.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orphanPosts = allBlogPosts.filter((p: any) => !p.videoId || !videoIdsInLibrary.has(p.videoId))
   const filteredPosts = postQuery
@@ -2914,81 +2914,85 @@ export default function ContentPage() {
             </div>
           )}
 
-          {/* ── Recent activity (kanban) ──────────────────────────────────
-              Rich VideoCard rows for every video that's been "touched":
-                - Horizontal: a blog post exists (live or scheduled)
-                - Vertical: TikTok or Instagram push succeeded
-              This is what the user sees as "in flight or done" — the
-              workspace for socials, schedule edits, and re-pushes. The
-              flat WP-post list below stays as a searchable archive for
-              older posts whose source video may no longer be present.
-              IA shift 2026-06-06.
+          {/* ── Published Posts — one chronological stream ───────────────
+              Every post live on the blog, newest first, no split. A
+              video-backed post (a library video with a generated/scheduled
+              post, or a touched vertical) renders the rich VideoCard with full
+              push / schedule / re-roll controls; everything else — comparisons,
+              buying guides, link posts, and older/orphan reviews — renders the
+              lightweight card with social fan-out. Merged + chronological
+              2026-06-13 per user request: "if it's on the WordPress blog, it's
+              in Published Posts."
           */}
-          {(horizontalDone.length > 0 || verticalDone.length > 0) && (() => {
-            // Apply the Posts-tab search to Recent too (2026-06-07 fix).
-            // Without this, searching for "wag" on the Posts tab would
-            // still show every Recent row because the search only
-            // filtered the older-posts archive below. Search matches the
-            // video title OR the published post title OR the channel.
-            // Sort by BLOG PUBLISH date (newest first) — the date the
-            // post went live on WordPress, not the YouTube video date.
-            // Falls back to vertical-channel post times, then to the
-            // video's own published_at as a last resort. 2026-06-07 per
-            // user request: "posts should also be by default in order
-            // of actual posting blog posts."
-            const sortKey = (v: Record<string, unknown>): number => {
-              const post = posts[v.id as string]
-              if (post?.publishedAt) {
-                const t = new Date(post.publishedAt).getTime()
-                if (!isNaN(t)) return t
-              }
-              const fallback = (v.tiktok_posted_at as string) || (v.instagram_posted_at as string) || (v.published_at as string) || ''
-              const t = new Date(fallback || 0).getTime()
-              return isNaN(t) ? 0 : t
-            }
-            const recentAll = [...horizontalDone, ...verticalDone].sort((a, b) => sortKey(b) - sortKey(a))
-            const recent = postQuery
-              ? recentAll.filter(v => {
-                  const videoTitle = ((v.title as string) || '').toLowerCase()
-                  const postTitle = ((posts[v.id as string]?.title) || '').toLowerCase()
-                  const channel = ((v.channel_title as string) || '').toLowerCase()
-                  return videoTitle.includes(postQuery) || postTitle.includes(postQuery) || channel.includes(postQuery)
-                })
-              : recentAll
-            if (postQuery && recent.length === 0 && orphanPosts.length === 0) {
-              // Both Recent + Older returned nothing — render a focused
-              // "no match" state here instead of letting the older-list
-              // empty state confuse the user.
+          {(() => {
+            if (postsLoading) {
               return (
-                <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2 mb-3">
+                <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
+                  <Loader2 size={16} className="animate-spin" /> Loading posts from WordPress…
+                </div>
+              )
+            }
+            if (allBlogPosts.length === 0) {
+              return (
+                <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No posts live yet</p>
+                  <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Everything you publish lands here — from a video (Videos tab → Generate), a comparison, a buying guide, or just a product link (New post from a link). The full post lands on your site in about 60 seconds.</p>
+                </div>
+              )
+            }
+            // Sort by BLOG PUBLISH date, newest first. Video-backed posts use
+            // the post's publishedAt (falling back to social-push / video
+            // dates); standalone posts use their WordPress date.
+            const videoTs = (v: Record<string, unknown>): number => {
+              const p = posts[v.id as string]
+              if (p?.publishedAt) { const t = new Date(p.publishedAt).getTime(); if (!isNaN(t)) return t }
+              const fb = (v.tiktok_posted_at as string) || (v.instagram_posted_at as string) || (v.published_at as string) || ''
+              const t = new Date(fb || 0).getTime(); return isNaN(t) ? 0 : t
+            }
+            const postTs = (d: string | null): number => { const t = new Date(d || 0).getTime(); return isNaN(t) ? 0 : t }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            type StreamItem = { kind: 'video'; ts: number; video: any } | { kind: 'post'; ts: number; post: any }
+            const stream: StreamItem[] = [
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ...([...horizontalDone, ...verticalDone] as any[]).map((v): StreamItem => ({ kind: 'video', ts: videoTs(v), video: v })),
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ...(orphanPosts as any[]).map((p): StreamItem => ({ kind: 'post', ts: postTs(p.date), post: p })),
+            ].sort((a, b) => b.ts - a.ts)
+            const matched = postQuery
+              ? stream.filter(it => it.kind === 'video'
+                  ? (((it.video.title as string) || '').toLowerCase().includes(postQuery)
+                      || ((posts[it.video.id as string]?.title) || '').toLowerCase().includes(postQuery)
+                      || ((it.video.channel_title as string) || '').toLowerCase().includes(postQuery))
+                  : ((it.post.title || '').replace(/<[^>]+>/g, '').toLowerCase().includes(postQuery)))
+              : stream
+            if (matched.length === 0) {
+              return (
+                <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">
                   <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">No posts match &ldquo;{postSearch}&rdquo;</p>
                   <button onClick={() => setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">Clear search</button>
                 </div>
               )
             }
-            if (recent.length === 0) return null
-            // Paginate the Recent list so we don't dump 100+ VideoCards
-            // into the DOM on first render. Slice in-place; search +
-            // selection still operate on the full set above.
-            const recentTotalPages = Math.max(1, Math.ceil(recent.length / POSTS_PER_PAGE))
-            const safeRecentPage = Math.min(recentPage, recentTotalPages)
-            const recentStart = (safeRecentPage - 1) * POSTS_PER_PAGE
-            const recentEnd = Math.min(recentStart + POSTS_PER_PAGE, recent.length)
-            const recentSliced = recent.slice(recentStart, recentEnd)
+            const totalPages = Math.max(1, Math.ceil(matched.length / POSTS_PER_PAGE))
+            const safePage = Math.min(recentPage, totalPages)
+            const start = (safePage - 1) * POSTS_PER_PAGE
+            const end = Math.min(start + POSTS_PER_PAGE, matched.length)
+            const sliced = matched.slice(start, end)
             return (
               <div className="flex flex-col gap-3 mb-3">
                 <div className="flex items-baseline justify-between">
                   <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                    Recent ({recent.length}{postQuery && recent.length !== recentAll.length ? ` of ${recentAll.length}` : ''})
-                    {recentTotalPages > 1 && (
-                      <span className="ml-2 text-[11px] font-normal text-[#86868b] dark:text-[#8e8e93]">
-                        showing {recentStart + 1}–{recentEnd}
-                      </span>
+                    {matched.length}{postQuery && matched.length !== stream.length ? ` of ${stream.length}` : ''} post{matched.length !== 1 ? 's' : ''}
+                    {totalPages > 1 && (
+                      <span className="ml-2 text-[11px] font-normal text-[#86868b] dark:text-[#8e8e93]">showing {start + 1}–{end}</span>
                     )}
                   </h3>
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Posts with a source video — push, schedule, refresh, edit</p>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">Newest first · everything live on your blog</p>
                 </div>
-                {recentSliced.map((video) => (
+                {sliced.map(it => {
+                  if (it.kind === 'video') {
+                    const video = it.video
+                    return (
                   <VideoCard
                     key={video.id as string}
                     video={video}
@@ -3024,57 +3028,10 @@ export default function ContentPage() {
                     }}
                     onPinPreview={setPinPreview}
                   />
-                ))}
-                {recentTotalPages > 1 && (
-                  <Pagination
-                    page={safeRecentPage}
-                    totalPages={recentTotalPages}
-                    onChange={(p) => {
-                      setRecentPage(p)
-                      // Scroll to top of section on page change so the
-                      // user lands on the new rows, not at the previous
-                      // scroll offset (which is usually deep in the list).
-                      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
-                    }}
-                  />
-                )}
-                <div className="border-t border-[#e5e5ea] dark:border-white/10 mt-1" />
-                <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">
-                  Comparisons, buying guides, link posts &amp; older reviews — everything else live on your blog ({allBlogPosts.length} total)
-                </p>
-              </div>
-            )
-          })()}
-
-          {postsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-[#86868b] dark:text-[#8e8e93] py-12 justify-center">
-              <Loader2 size={16} className="animate-spin" /> Loading posts from WordPress…
-            </div>
-          ) : allBlogPosts.length === 0 ? (
-            <div className="card p-8 max-w-md flex flex-col items-center text-center gap-3">
-              <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">No posts live yet</p>
-              <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">Everything you publish lands here — from a video (Videos tab → Generate), a comparison, a buying guide, or just a product link (New post from a link). The full post lands on your site in about 60 seconds.</p>
-            </div>
-          ) : filteredPosts.length === 0 ? (
-            <div className="card p-6 max-w-md flex flex-col items-center text-center gap-2">
-              <p className="text-sm font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">No posts match &ldquo;{postSearch}&rdquo;</p>
-              <button onClick={() => setPostSearch('')} className="text-xs text-[#7C3AED] hover:underline">Clear search</button>
-            </div>
-          ) : (() => {
-            // Paginate the Older archive too — same logic as Recent.
-            const olderTotalPages = Math.max(1, Math.ceil(filteredPosts.length / POSTS_PER_PAGE))
-            const safeOlderPage = Math.min(olderPage, olderTotalPages)
-            const olderStart = (safeOlderPage - 1) * POSTS_PER_PAGE
-            const olderEnd = Math.min(olderStart + POSTS_PER_PAGE, filteredPosts.length)
-            const olderSliced = filteredPosts.slice(olderStart, olderEnd)
-            return (
-              <>
-                {olderTotalPages > 1 && (
-                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] -mt-1 mb-1">
-                    Showing {olderStart + 1}–{olderEnd} of {filteredPosts.length}
-                  </p>
-                )}
-                {olderSliced.map(post => (
+                    )
+                  }
+                  const post = it.post
+                  return (
             <div key={post.id} className={`card p-4 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#7C3AED]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
               <div className="flex items-center gap-3">
               <input
@@ -3182,18 +3139,19 @@ export default function ContentPage() {
                 fbAccounts={fbAccounts}
               />
             </div>
-                ))}
-                {olderTotalPages > 1 && (
+                  )
+                })}
+                {totalPages > 1 && (
                   <Pagination
-                    page={safeOlderPage}
-                    totalPages={olderTotalPages}
+                    page={safePage}
+                    totalPages={totalPages}
                     onChange={(p) => {
-                      setOlderPage(p)
+                      setRecentPage(p)
                       if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
                     }}
                   />
                 )}
-              </>
+              </div>
             )
           })()}
         </div>
