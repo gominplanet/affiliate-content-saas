@@ -729,7 +729,7 @@ function WorkflowSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            From video to eight outputs, fact-grounded and in your voice.
+            From a video — or just an Amazon ASIN — to a full content set, fact-grounded and in your voice.
           </p>
         </div>
 
@@ -788,8 +788,8 @@ interface Step {
 const STEPS: Step[] = [
   {
     icon: <Youtube size={18} />,
-    title: 'Pick a video.',
-    body: 'MVP already has your YouTube channel synced (transcript, product, gallery, and timestamps are pre-loaded). No URLs to paste. No copy-paste.',
+    title: 'Pick a video — or drop an ASIN.',
+    body: 'Your YouTube channel is synced (transcript, product, gallery and timestamps pre-loaded) — pick a video and go. No channel? Paste an Amazon ASIN and MVP pulls the product data itself. Either way, no copy-paste.',
   },
   {
     icon: <ShieldCheck size={18} />,
