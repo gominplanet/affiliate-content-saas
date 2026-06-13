@@ -787,8 +787,10 @@ export default function BrandPage() {
               affiliate links work" answer), so they live here rather than
               buried in /setup → Integrations. Moved 2026-06-05. Stored on
               the `integrations` table; loaded/saved alongside the brand
-              profile via the same Save button. */}
-          <div className="card p-6">
+              profile via the same Save button.
+              id="affiliate" is the anchor the sidebar "Affiliate Links" entry
+              (/brand#affiliate) jumps to; scroll-mt offsets the sticky header. */}
+          <div id="affiliate" className="card p-6 scroll-mt-24">
             <div className="flex items-center gap-1.5 mb-1">
               <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Affiliate Link Routing</h2>
               <InfoTip>

@@ -232,7 +232,7 @@ export default function DashboardShellV2({
         // — every video→blog flow starts here), separate from the full socials
         // grid. "Connect Socials" sits at the bottom of SET UP for everything else.
         { href: '/connect-youtube', icon: <Youtube size={15} />, label: 'YouTube' },
-        { href: '/brand', icon: <Link2 size={15} />, label: 'Affiliate Links' },
+        { href: '/brand#affiliate', icon: <Link2 size={15} />, label: 'Affiliate Links' },
         { href: '/brand', icon: <Palette size={15} />, label: 'Brand Profile' },
         { href: '/learn', icon: <Sparkles size={15} />, label: 'Voice Training' },
         { href: '/customize', icon: <Brush size={15} />, label: 'Customize Blog' },
@@ -373,6 +373,15 @@ export default function DashboardShellV2({
       return false
     }
     if (href === '/dashboard') return pathname === '/dashboard'
+    // Brand Profile (plain /brand) and Affiliate Links (/brand#affiliate) share
+    // the page. Without this, the plain entry's startsWith match below would
+    // light BOTH up. Mirror the /setup pattern: plain /brand highlights only
+    // when the #affiliate anchor ISN'T the active one.
+    if (href === '/brand') {
+      if (pathname !== '/brand') return false
+      if (typeof window !== 'undefined') return window.location.hash.slice(1) !== 'affiliate'
+      return true
+    }
     if (href === '/setup') {
       if (pathname !== '/setup') return false
       if (typeof window !== 'undefined') {
