@@ -3094,8 +3094,6 @@ export default function ContentPage() {
                   {refreshingImagesId === post.id ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
                   {refreshingImagesId === post.id ? 'Adding…' : 'Images'}
                 </button>
-                {/* Manual edit — same in-app HTML editor as the video cards. */}
-                <ManualEdit postId={String(post.id)} />
                 <button
                   onClick={() => deletePostFromList(post.id)}
                   disabled={deletingPostId === post.id}
@@ -3105,6 +3103,10 @@ export default function ContentPage() {
                 </button>
               </div>
               </div>
+              {/* Manual edit — full-width block in the card column so the
+                  editor stays contained (matches the video-card editor); inside
+                  the right-aligned action row it overflowed the card. */}
+              <ManualEdit postId={String(post.id)} />
               {/* Social fan-out — works for video-less ("from a link") posts
                   too, keyed on the WordPress post id. */}
               <OrphanPostShare
