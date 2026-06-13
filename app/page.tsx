@@ -2050,14 +2050,14 @@ function Hero() {
             className="text-[52px] lg:text-[64px] font-semibold tracking-[-0.02em] leading-[1.02]"
             style={{ color: 'var(--text)' }}
           >
-            Turn one review video<br />
-            into content that ranks.
+            Your reviews, on a<br />
+            blog you actually own.
           </h1>
           <p
             className="mt-4 text-[20px] font-medium tracking-tight"
             style={{ color: 'var(--text-muted)' }}
           >
-            Blog-first content, built to get found by Google — and cited by AI.
+            The content engine for affiliate creators — your first stop after every YouTube upload.
           </p>
 
           {/* Sub */}
@@ -2065,7 +2065,7 @@ function Hero() {
             className="mt-6 text-[16px] leading-relaxed max-w-xl"
             style={{ color: 'var(--text-soft)' }}
           >
-            From one review video: a published, SEO- and AI-optimized blog post — plus comparison and buying-guide articles, a CTR-tested thumbnail, a newsletter, and native posts for X, LinkedIn, Bluesky &amp; Telegram. All in your voice, <span style={{ color: 'var(--text)' }}>grounded in what you actually said on camera.</span>
+            Connect your channel and MVP turns each video into a published, SEO- and AI-optimized review post — and finishes the upload for you: optimized description, tags, affiliate links and a CTR-tested thumbnail pushed back to the video. <span style={{ color: 'var(--text)' }}>No video? Just drop an Amazon ASIN</span> and MVP writes the buying guides, comparisons and deal posts itself. Everything lands on a beautifully designed blog that&apos;s yours to keep — forever.
           </p>
 
           {/* CTAs — primary button + its supporting reassurance live as
