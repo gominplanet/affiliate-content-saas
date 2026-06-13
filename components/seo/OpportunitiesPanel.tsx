@@ -83,6 +83,7 @@ export default function OpportunitiesPanel() {
   const [error, setError] = useState<string | null>(null)
   const [indexing, setIndexing] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState(true) // closed by default — opens on click (header still shows the count badge)
+  const [showHelp, setShowHelp] = useState(false)  // "How this works" explainer
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -159,6 +160,49 @@ export default function OpportunitiesPanel() {
           Refresh
         </Button>
       </div>
+
+      {/* How this works — collapsible explainer so users understand the labels
+          and the priority ranking without leaving the page. */}
+      {!collapsed && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowHelp(h => !h)}
+            className="text-xs font-medium text-[var(--text-2)] hover:text-[var(--text)] inline-flex items-center gap-1 transition-colors"
+            aria-expanded={showHelp}
+          >
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showHelp ? '' : '-rotate-90'}`} />
+            How this works
+          </button>
+          {showHelp && (
+            <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-4 text-xs text-[var(--text-2)] leading-relaxed space-y-3">
+              <p>
+                Every published post is scored on real outcomes — not guesses — over the <strong className="text-[var(--text)]">last 28 days</strong>, joining three signals:
+              </p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li><strong className="text-[var(--text)]">Google Search Console</strong> — where it ranks (position), how often it shows (impressions), and how often it’s clicked (CTR / clicks).</li>
+                <li><strong className="text-[var(--text)]">Geniuslink</strong> — how many readers clicked your affiliate link (click-out).</li>
+                <li><strong className="text-[var(--text)]">Index status</strong> — whether Google has crawled the page at all.</li>
+              </ul>
+              <p>
+                Each post is sorted into the <strong className="text-[var(--text)]">single highest-leverage fix</strong> and the list is ranked so the biggest wins sit on top (more impressions + a bigger gap = higher priority — the colored bar on the left shows it). What the labels mean:
+              </p>
+              <ul className="space-y-1.5">
+                <li><span className="text-[#ff3b30] font-semibold">Not indexed</span> — Google can’t show it yet. <span className="text-[var(--text)]">Submit it for crawl.</span></li>
+                <li><span className="text-[#ff9500] font-semibold">Slipping</span> — it ranked well and is sliding. <span className="text-[var(--text)]">Rebuild to recover.</span></li>
+                <li><span className="text-[#b8860b] font-semibold">Striking distance</span> — page 1–2 cusp with real demand. <span className="text-[var(--text)]">Rebuild &amp; expand to crack page 1.</span></li>
+                <li><span className="text-[#4285F4] font-semibold">Low CTR</span> — ranks well but under-clicked. <span className="text-[var(--text)]">Rewrite the title &amp; meta.</span></li>
+                <li><span className="text-[#7C3AED] font-semibold">Not converting</span> — readers arrive but don’t click the affiliate link. <span className="text-[var(--text)]">Strengthen the CTA / product fit.</span></li>
+                <li><span className="text-[#1a7a3c] font-semibold">Winner</span> — ranks, gets read, converts. <span className="text-[var(--text)]">Make more like it.</span></li>
+                <li><span className="text-[var(--text-2)] font-semibold">Low demand</span> — fewer than 20 impressions, so there isn’t enough search traffic to act on. Parked on purpose — nothing to fix.</li>
+              </ul>
+              <p className="opacity-80">
+                New site? Most posts will read <em>“low demand”</em> until Google surfaces them — that’s expected. As impressions build, posts move into the actionable buckets above, each with a one-click fix. Requires Search Console connected (Brand&nbsp;Profile → Important Connections).
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* States — collapsible (accordion); the whole list hides when collapsed */}
       {!collapsed && (loading && !data ? (
