@@ -865,166 +865,6 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Where your published posts and shorts go out. Each connect is a one-time grant — connect what you'll actually use.</p>
       </div>
 
-      {/* Facebook */}
-      {metaUnlocked && (
-      <div className="card p-6">
-        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
-          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-            <Facebook size={16} className="text-[#1877F2]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Facebook Page</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-post blog links to your page when published</p>
-          </div>
-          {facebook.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
-        </div>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Click <strong>Connect Facebook</strong> and you'll be redirected to Facebook to grant permission. We only request access to post on your page's behalf — we never read your personal messages or profile data. Once connected, new blog posts can be shared to your page in one click.
-        </p>
-        {fbNotice && <p className={`text-xs mb-3 ${fbNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{fbNotice.msg}</p>}
-        {facebook.connected ? (
-          <div className="flex flex-col gap-3">
-            {facebook.pages.length > 1 && (
-              <div>
-                <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Active page</label>
-                <select value={facebook.pageId} onChange={e => selectFacebookPage(e.target.value)} className="input-field text-sm">
-                  {facebook.pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-            )}
-            {facebook.pages.length === 1 && (
-              <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
-                <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" /> {facebook.pageName}
-              </p>
-            )}
-            <button onClick={disconnectFacebook} disabled={fbDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
-              {fbDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {isUnlocked('facebook') ? (
-              <a
-                href="/api/auth/facebook"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
-                style={{ backgroundColor: '#1877F2' }}
-              >
-                <Facebook size={14} /> Connect Facebook
-              </a>
-            ) : (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#1877F2' }} title="Under approval — coming soon">
-                <Facebook size={14} /> Connect Facebook
-                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
-              </div>
-            )}
-            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
-              You&apos;ll be sent to Facebook to grant access — on that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post.
-            </p>
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* Pinterest */}
-      <div className="card p-6">
-        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#fef0f0' }}>
-            <Pin size={16} style={{ color: '#E60023' }} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinterest</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Pin blog posts to your Pinterest boards</p>
-          </div>
-          {pinterest.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
-        </div>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Connect via OAuth and each pin is automatically saved to a board that matches the blog post&apos;s category — we create the board for you if it doesn&apos;t exist yet (e.g. an Automotive post → your &ldquo;Automotive&rdquo; board). For posts with no specific category, pins go to the board you name below (created automatically if it doesn&apos;t exist).
-        </p>
-        {ptNotice && <p className={`text-xs mb-3 ${ptNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ptNotice.msg}</p>}
-        {pinterest.connected ? (
-          <div className="flex flex-col gap-3">
-            <div>
-              <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Board for posts with no category</label>
-              <input
-                type="text"
-                value={pinterest.fallbackBoard}
-                onChange={e => setPinterest(prev => ({ ...prev, fallbackBoard: e.target.value }))}
-                onBlur={e => savePinterestFallback(e.target.value)}
-                placeholder="Reviews"
-                className="input-field text-sm"
-              />
-              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
-                Defaults to &ldquo;Reviews&rdquo; if left blank. Categorized posts still get their own per-category board.
-              </p>
-            </div>
-            <button onClick={disconnectPinterest} disabled={ptDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
-              {ptDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
-            </button>
-          </div>
-        ) : (
-          isUnlocked('pinterest') ? (
-            <a
-              href="/api/auth/pinterest"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
-              style={{ backgroundColor: '#E60023' }}
-            >
-              <Pin size={14} /> Connect Pinterest
-            </a>
-          ) : (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#E60023' }} title="Under approval — coming soon">
-              <Pin size={14} /> Connect Pinterest
-              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
-            </div>
-          )
-        )}
-      </div>
-
-      {/* Threads */}
-      {metaUnlocked && (
-      <div className="card p-6">
-        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
-          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
-            <MessageCircle size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Threads</p>
-            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-post blog summaries to your Threads profile</p>
-          </div>
-          {threads.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
-        </div>
-        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-          Click <strong>Connect Threads</strong> and you&apos;ll be redirected to Threads to authorize the connection. We only request permission to read your basic profile and publish posts on your behalf — we never access your inbox or any other account data.
-        </p>
-        {thNotice && <p className={`text-xs mb-3 ${thNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{thNotice.msg}</p>}
-        {threads.connected ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
-              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" /> {threads.username ? <>Connected as <strong>@{threads.username}</strong></> : 'Threads account connected'}
-            </p>
-            <button onClick={disconnectThreads} disabled={thDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
-              {thDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {isUnlocked('threads') ? (
-              <a
-                href="/api/auth/threads"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors bg-black hover:bg-[#1d1d1f]"
-              >
-                <MessageCircle size={14} /> Connect Threads
-              </a>
-            ) : (
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-black" style={lockedCta} title="Under approval — coming soon">
-                <MessageCircle size={14} /> Connect Threads
-                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      )}
-
       {/* LinkedIn */}
       <div className="card p-6">
         <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
@@ -1242,6 +1082,166 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           </div>
         )}
       </div>
+
+      {/* Facebook */}
+      {metaUnlocked && (
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+            <Facebook size={16} className="text-[#1877F2]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Facebook Page</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-post blog links to your page when published</p>
+          </div>
+          {facebook.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Click <strong>Connect Facebook</strong> and you'll be redirected to Facebook to grant permission. We only request access to post on your page's behalf — we never read your personal messages or profile data. Once connected, new blog posts can be shared to your page in one click.
+        </p>
+        {fbNotice && <p className={`text-xs mb-3 ${fbNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{fbNotice.msg}</p>}
+        {facebook.connected ? (
+          <div className="flex flex-col gap-3">
+            {facebook.pages.length > 1 && (
+              <div>
+                <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Active page</label>
+                <select value={facebook.pageId} onChange={e => selectFacebookPage(e.target.value)} className="input-field text-sm">
+                  {facebook.pages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
+            {facebook.pages.length === 1 && (
+              <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+                <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" /> {facebook.pageName}
+              </p>
+            )}
+            <button onClick={disconnectFacebook} disabled={fbDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {fbDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {isUnlocked('facebook') ? (
+              <a
+                href="/api/auth/facebook"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
+                style={{ backgroundColor: '#1877F2' }}
+              >
+                <Facebook size={14} /> Connect Facebook
+              </a>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#1877F2' }} title="Under approval — coming soon">
+                <Facebook size={14} /> Connect Facebook
+                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
+              </div>
+            )}
+            <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] leading-relaxed">
+              You&apos;ll be sent to Facebook to grant access — on that screen, <strong>tick every Page</strong> you want to post to (or &ldquo;opt in to all&rdquo;). This is what lets you pick a Page per post.
+            </p>
+          </div>
+        )}
+      </div>
+      )}
+
+      {/* Pinterest */}
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: '#fef0f0' }}>
+            <Pin size={16} style={{ color: '#E60023' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Pinterest</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Pin blog posts to your Pinterest boards</p>
+          </div>
+          {pinterest.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Connect via OAuth and each pin is automatically saved to a board that matches the blog post&apos;s category — we create the board for you if it doesn&apos;t exist yet (e.g. an Automotive post → your &ldquo;Automotive&rdquo; board). For posts with no specific category, pins go to the board you name below (created automatically if it doesn&apos;t exist).
+        </p>
+        {ptNotice && <p className={`text-xs mb-3 ${ptNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{ptNotice.msg}</p>}
+        {pinterest.connected ? (
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[#1d1d1f] dark:text-[#f5f5f7] mb-1.5">Board for posts with no category</label>
+              <input
+                type="text"
+                value={pinterest.fallbackBoard}
+                onChange={e => setPinterest(prev => ({ ...prev, fallbackBoard: e.target.value }))}
+                onBlur={e => savePinterestFallback(e.target.value)}
+                placeholder="Reviews"
+                className="input-field text-sm"
+              />
+              <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-1">
+                Defaults to &ldquo;Reviews&rdquo; if left blank. Categorized posts still get their own per-category board.
+              </p>
+            </div>
+            <button onClick={disconnectPinterest} disabled={ptDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {ptDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+          </div>
+        ) : (
+          isUnlocked('pinterest') ? (
+            <a
+              href="/api/auth/pinterest"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors"
+              style={{ backgroundColor: '#E60023' }}
+            >
+              <Pin size={14} /> Connect Pinterest
+            </a>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start" style={{ ...lockedCta, backgroundColor: '#E60023' }} title="Under approval — coming soon">
+              <Pin size={14} /> Connect Pinterest
+              <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
+            </div>
+          )
+        )}
+      </div>
+
+      {/* Threads */}
+      {metaUnlocked && (
+      <div className="card p-6">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-white/10">
+          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+            <MessageCircle size={16} className="text-[#1d1d1f] dark:text-[#f5f5f7]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Threads</p>
+            <p className="text-xs text-[#86868b] dark:text-[#8e8e93]">Auto-post blog summaries to your Threads profile</p>
+          </div>
+          {threads.connected && <span className="flex items-center gap-1 text-xs font-medium text-[#34c759]"><Check size={12} /> Connected</span>}
+        </div>
+        <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
+          Click <strong>Connect Threads</strong> and you&apos;ll be redirected to Threads to authorize the connection. We only request permission to read your basic profile and publish posts on your behalf — we never access your inbox or any other account data.
+        </p>
+        {thNotice && <p className={`text-xs mb-3 ${thNotice.ok ? 'text-[#34c759]' : 'text-[#ff3b30]'}`}>{thNotice.msg}</p>}
+        {threads.connected ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-[#1d1d1f] dark:text-[#f5f5f7] flex items-center gap-2">
+              <Link2 size={13} className="text-[#86868b] dark:text-[#8e8e93]" /> {threads.username ? <>Connected as <strong>@{threads.username}</strong></> : 'Threads account connected'}
+            </p>
+            <button onClick={disconnectThreads} disabled={thDisconnecting} className="flex items-center gap-1.5 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors self-start">
+              {thDisconnecting ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />} Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {isUnlocked('threads') ? (
+              <a
+                href="/api/auth/threads"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start transition-colors bg-black hover:bg-[#1d1d1f]"
+              >
+                <MessageCircle size={14} /> Connect Threads
+              </a>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white self-start bg-black" style={lockedCta} title="Under approval — coming soon">
+                <MessageCircle size={14} /> Connect Threads
+                <span className="ml-1 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/25">Coming soon</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      )}
 
       {/* Instagram — Pro */}
       {metaUnlocked && (
