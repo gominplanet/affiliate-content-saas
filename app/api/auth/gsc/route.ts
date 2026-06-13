@@ -12,7 +12,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 
-export async function GET() {
+export async function GET(req: Request) {
   const clientId = process.env.GOOGLE_CLIENT_ID
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
   if (!clientId || !appUrl) {
@@ -23,7 +23,11 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${appUrl}/login`)
 
-  const state = Buffer.from(user.id).toString('base64url')
+  // Same-origin relative return path only (no open redirect). Lets Brand
+  // Profile send the user back to /brand instead of the default /setup.
+  const rawReturn = new URL(req.url).searchParams.get('returnTo') || ''
+  const returnTo = /^\/(?!\/)/.test(rawReturn) ? rawReturn : ''
+  const state = Buffer.from(JSON.stringify({ uid: user.id, rt: returnTo })).toString('base64url')
   const redirectUri = `${appUrl}/api/auth/gsc/callback`
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')

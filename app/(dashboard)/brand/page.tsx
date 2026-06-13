@@ -265,6 +265,32 @@ export default function BrandPage() {
   const [geniuslinkKey, setGeniuslinkKey] = useState('')
   const [geniuslinkSecret, setGeniuslinkSecret] = useState('')
   const [amazonAssociatesTag, setAmazonAssociatesTag] = useState('')
+  // Google Search Console — read-only SEO connection, lives in this card now.
+  const [gscConnected, setGscConnected] = useState(false)
+  const [gscBusy, setGscBusy] = useState(false)
+
+  // GSC OAuth returns here (returnTo=/brand) with a result marker — surface it,
+  // flip connected, then strip the params so a refresh doesn't re-toast.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search)
+    const ok = sp.get('gsc_connected'); const err = sp.get('gsc_error')
+    if (!ok && !err) return
+    if (ok) { setGscConnected(true); toast.success('Search Console connected.') }
+    else if (err) toast.error(`Couldn’t connect Search Console: ${decodeURIComponent(err)}`)
+    const url = new URL(window.location.href)
+    ;['gsc_connected', 'gsc_error', 'gsc_property', 'gsc_no_property'].forEach(k => url.searchParams.delete(k))
+    window.history.replaceState({}, '', url.pathname + url.search)
+  }, [])
+
+  async function disconnectGsc() {
+    setGscBusy(true)
+    try {
+      const res = await fetch('/api/auth/gsc/disconnect', { method: 'POST' })
+      if (res.ok) { setGscConnected(false); toast.success('Search Console disconnected.') }
+      else toast.error('Could not disconnect. Try again.')
+    } catch { toast.error('Something went wrong. Try again.') }
+    finally { setGscBusy(false) }
+  }
   // Geniuslink group-setup state. Powers the "Verify groups" panel inside
   // the Geniuslink card — runs POST /api/geniuslink/setup which finds or
   // auto-creates the required tracking groups (MVP-YOUTUBE for the YT
@@ -341,7 +367,7 @@ export default function BrandPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     supabase
       .from('integrations')
-      .select('geniuslink_api_key, geniuslink_api_secret, amazon_associates_tag, tier')
+      .select('geniuslink_api_key, geniuslink_api_secret, amazon_associates_tag, gsc_oauth_access_token, tier')
       .eq('user_id', user.id)
       .maybeSingle()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -350,6 +376,7 @@ export default function BrandPage() {
           setGeniuslinkKey(intRow.geniuslink_api_key ?? '')
           setGeniuslinkSecret(intRow.geniuslink_api_secret ?? '')
           setAmazonAssociatesTag(intRow.amazon_associates_tag ?? '')
+          setGscConnected(!!intRow.gsc_oauth_access_token)
           if (typeof intRow.tier === 'string') setUserTier(intRow.tier)
         }
       })
@@ -792,13 +819,13 @@ export default function BrandPage() {
               (/brand#affiliate) jumps to; scroll-mt offsets the sticky header. */}
           <div id="affiliate" className="card p-6 scroll-mt-24">
             <div className="flex items-center gap-1.5 mb-1">
-              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Affiliate Link Routing</h2>
+              <h2 className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Important Connections</h2>
               <InfoTip>
-                When MVP inserts an Amazon product link into your blog or YouTube description, it routes via Geniuslink (if configured) so shoppers land on their local Amazon store. If you haven&apos;t set up Geniuslink, your Amazon Associates tracking tag is appended as the fallback.
+                The accounts that make your affiliate links earn and your SEO measurable: Geniuslink routes Amazon links to each shopper&apos;s local store (your Amazon tag is the fallback), and Search Console reports how your posts rank.
               </InfoTip>
             </div>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0] mb-4">
-              How affiliate links are stamped into your content. Geniuslink is the smart routing layer; your Amazon tag is the simple fallback.
+              The key accounts behind monetization and SEO. Geniuslink is the smart link router (Amazon tag is the fallback), and Google Search Console powers your indexing + ranking data.
             </p>
 
             {/* Geniuslink */}
@@ -936,6 +963,48 @@ export default function BrandPage() {
                   className="input-field text-xs font-mono"
                 />
               </div>
+            </div>
+
+            {/* Google Search Console — read-only SEO data. Moved here from
+                Connect Socials so the monetization + measurement accounts live
+                together. OAuth (no Save button); connects/disconnects on click. */}
+            <div className="rounded-xl border border-gray-200 dark:border-white/10 p-4 mt-3">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#4285F4]/10 flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4285F4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7]">Google Search Console</p>
+                  <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93]">See if posts are indexed + the searches that find them</p>
+                </div>
+                {gscConnected && (
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0">
+                    <Check size={12} /> Connected
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-[#6e6e73] dark:text-[#ebebf0] mb-3 leading-relaxed">
+                Connect <strong>read-only</strong> Search Console so MVP can show whether each post is indexed by Google, its clicks, impressions and ranking, and the real queries readers use to find it — the data behind your SEO score. We never write to it.
+              </p>
+              {gscConnected ? (
+                <button
+                  type="button"
+                  onClick={disconnectGsc}
+                  disabled={gscBusy}
+                  className="inline-flex items-center gap-1.5 text-[11px] text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] disabled:opacity-50 transition-colors"
+                >
+                  {gscBusy ? <Loader2 size={12} className="animate-spin" /> : null} Disconnect Search Console
+                </button>
+              ) : (
+                <a
+                  href="/api/auth/gsc?returnTo=/brand"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90"
+                  style={{ backgroundColor: '#4285F4' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                  Connect Search Console
+                </a>
+              )}
             </div>
           </div>
 

@@ -1424,7 +1424,9 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
       </div>
       )}
 
-      {/* Google Search Console */}
+      {/* Google Search Console — hidden in 'socials' mode: it lives on Brand
+          Profile → Important Connections now. Still shown on /setup (mode all). */}
+      {mode !== 'socials' && (
       <div className="card p-5 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1466,6 +1468,7 @@ export function IntegrationsPanel({ onLoad, mode = 'all' }: { onLoad: () => void
           </a>
         )}
       </div>
+      )}
 
       {/* Geniuslink + Amazon-tag moved to Brand Profile on 2026-06-05.
           Leave a pointer so anyone hitting this URL knows where the

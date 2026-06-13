@@ -17,14 +17,32 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const state = searchParams.get('state')
 
-  if (error || !code) {
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&gsc_error=${error || 'no_code'}`)
+  // Decode state up front so both success + error can return to wherever the
+  // flow began (e.g. Brand Profile). New format JSON { uid, rt }; legacy = uid.
+  let userId: string | null = null
+  let returnTo = ''
+  if (state) {
+    try {
+      const decoded = Buffer.from(state, 'base64url').toString('utf-8')
+      if (decoded.startsWith('{')) {
+        const parsed = JSON.parse(decoded) as { uid?: string; rt?: string }
+        userId = typeof parsed.uid === 'string' ? parsed.uid : null
+        if (typeof parsed.rt === 'string' && /^\/(?!\/)/.test(parsed.rt)) returnTo = parsed.rt
+      } else {
+        userId = decoded
+      }
+    } catch { /* ignore — fall back to session */ }
   }
 
-  let userId: string | null = null
-  if (state) {
-    try { userId = Buffer.from(state, 'base64url').toString('utf-8') } catch { /* ignore */ }
+  const dest = (params: string) =>
+    returnTo
+      ? `${appUrl}${returnTo}${returnTo.includes('?') ? '&' : '?'}${params}`
+      : `${appUrl}/setup?tab=integrations&${params}`
+
+  if (error || !code) {
+    return NextResponse.redirect(dest(`gsc_error=${error || 'no_code'}`))
   }
+
   if (!userId) {
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -85,13 +103,13 @@ export async function GET(request: NextRequest) {
     )
     if (saveErr) throw new Error(saveErr.message || 'token save failed')
 
-    const tail = property ? `&gsc_property=${encodeURIComponent(property)}` : '&gsc_no_property=1'
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&gsc_connected=1${tail}`)
+    const tail = property ? `gsc_property=${encodeURIComponent(property)}` : 'gsc_no_property=1'
+    return NextResponse.redirect(dest(`gsc_connected=1&${tail}`))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // eslint-disable-next-line no-console
     console.error(`[gsc callback] ${step} failed:`, msg)
     const detail = encodeURIComponent(`${step}: ${msg}`.slice(0, 300))
-    return NextResponse.redirect(`${appUrl}/setup?tab=integrations&gsc_error=${detail}`)
+    return NextResponse.redirect(dest(`gsc_error=${detail}`))
   }
 }
