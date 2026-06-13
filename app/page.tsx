@@ -1554,6 +1554,7 @@ const PRICING_TIERS: PricingTier[] = [
       'Rebuild-from-video on any legacy WP post',
       'Creator Campaigns (Amazon EPC scout, one-click publish)',
       'Up to 10 WordPress sites + 3 Virtual Assistant seats',
+      'Multiple YouTube channels — a default channel per blog, or pull from any',
       'Multi-account social + one-click Publish All',
       '30 deal posts / month, 100 IG AI thumbs, 3 LoRA retrains',
       '150 video scripts, 100 brand pitches',

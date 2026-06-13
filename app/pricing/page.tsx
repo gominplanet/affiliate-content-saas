@@ -117,6 +117,7 @@ const plans: PlanExt[] = [
       'For Amazon influencers + associates: Creator Campaigns scout high-EPC programs, one-click research + write + publish',
       'Multi-account social: choose which connected account each post publishes to',
       'Up to 10 WordPress sites on one subscription',
+      'Multiple YouTube channels — set a default channel per blog, or pull from any channel onto any blog',
       'Up to 3 Virtual Assistant seats with per-VA permissions',
       'Deals Hub: 30 deal posts / month (Studio cap × 6)',
       '3 LoRA retrains / month, Photobooth 20 / month',

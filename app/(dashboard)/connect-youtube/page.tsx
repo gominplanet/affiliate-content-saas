@@ -48,7 +48,16 @@ export default function ConnectYouTubePage() {
     const err = sp.get('youtube_error')
     if (!ok && !err) return
     if (ok) { toast.success('YouTube connected.'); void load() }
-    else if (err) toast.error(`Couldn’t connect YouTube: ${decodeURIComponent(err)}`)
+    else if (err) {
+      const decoded = decodeURIComponent(err)
+      if (decoded === 'multi_channel_is_pro') {
+        toast.error('Connecting more than one YouTube channel is a Pro feature.', {
+          action: { label: 'Upgrade', onClick: () => { window.location.href = '/pricing' } },
+        })
+      } else {
+        toast.error(`Couldn’t connect YouTube: ${decoded}`)
+      }
+    }
     const url = new URL(window.location.href)
     url.searchParams.delete('youtube_oauth_connected')
     url.searchParams.delete('youtube_error')
