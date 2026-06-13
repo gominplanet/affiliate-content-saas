@@ -67,7 +67,7 @@ export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone
             </span>
             <div>
               <h2 className="text-base font-semibold" style={{ color: 'var(--text)' }}>New post from a link</h2>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>No video needed — paste a product and MVP researches, writes &amp; publishes it.</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-2)' }}>No video needed — paste any product or service link and MVP researches, writes &amp; publishes it.</p>
             </div>
           </div>
           <button onClick={() => !busy && onClose()} className="p-1 rounded-md hover:opacity-70" style={{ color: 'var(--text-2)' }} aria-label="Close"><X size={18} /></button>
@@ -90,12 +90,12 @@ export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone
         ) : (
           <div className="p-5 space-y-3.5">
             <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Product link or Amazon ASIN <span style={{ color: 'var(--text-faint)' }}>(any store / affiliate link works)</span></label>
-              <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://amzn.to/… or B0XXXXXXXX or any store link" className={inputCls} style={inputStyle} />
+              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Product or service link <span style={{ color: 'var(--text-faint)' }}>(any store, brand, SaaS or affiliate link — or an Amazon ASIN)</span></label>
+              <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Any product or service URL — a store page, brand site, SaaS page, affiliate link, or Amazon ASIN" className={inputCls} style={inputStyle} />
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Product / service name <span style={{ color: 'var(--text-faint)' }}>(optional — helps if the link is a cloaked redirect)</span></label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Anker 737 Power Bank" className={inputCls} style={inputStyle} />
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Anker 737 Power Bank, or Notion, Audible…" className={inputCls} style={inputStyle} />
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-2)' }}>Angle / focus <span style={{ color: 'var(--text-faint)' }}>(optional)</span></label>
@@ -106,7 +106,7 @@ export function FromLinkModal({ onClose, onDone }: { onClose: () => void; onDone
               <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Electronics & Tech" className={inputCls} style={inputStyle} />
             </div>
             <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-              MVP researches the product (the link, its name, and the web), writes a review in your voice grounded in real facts, recloaks your link with Geniuslink if connected, and adds a hero image. Counts as one post.
+              Works for any product or service — Amazon, any online store, or a SaaS/subscription. MVP researches it (the link, its name, and the web), writes a review in your voice grounded in real facts, recloaks your link with Geniuslink if connected, and adds a hero image. Counts as one post.
             </p>
             <button
               onClick={generate}

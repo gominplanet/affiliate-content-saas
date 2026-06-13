@@ -719,11 +719,11 @@ function AsinSection() {
           <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
             Don&apos;t make videos?{' '}
             <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              Start from an ASIN.
+              Start from a link.
             </span>
           </h2>
           <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
-            MVP isn&apos;t only for YouTubers. Paste an Amazon product ID and MVP builds the articles that win affiliate search — researched, fact-grounded, branded, and published to a blog you own. No camera required.
+            MVP isn&apos;t only for YouTubers. Paste a link to any product or service — an online store, a brand page, a SaaS, or an Amazon ASIN — and MVP builds the articles that win affiliate search: researched, fact-grounded, branded, and published to a blog you own. No camera required.
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -741,7 +741,7 @@ function AsinSection() {
           ))}
         </div>
         <p className="text-center mt-10 text-[13px]" style={{ color: 'var(--text-faint)' }}>
-          Drop the ASIN — MVP does the research, ranking and writing.
+          Drop a link — MVP does the research, ranking and writing.
         </p>
       </div>
     </section>
@@ -801,7 +801,7 @@ function WorkflowSection() {
             className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto"
             style={{ color: 'var(--text-soft)' }}
           >
-            From a video — or just an Amazon ASIN — to a full content set, fact-grounded and in your voice.
+            From a video — or just a product or service link — to a full content set, fact-grounded and in your voice.
           </p>
         </div>
 
@@ -860,8 +860,8 @@ interface Step {
 const STEPS: Step[] = [
   {
     icon: <Youtube size={18} />,
-    title: 'Pick a video — or drop an ASIN.',
-    body: 'Your YouTube channel is synced (transcript, product, gallery and timestamps pre-loaded) — pick a video and go. No channel? Paste an Amazon ASIN and MVP pulls the product data itself. Either way, no copy-paste.',
+    title: 'Pick a video — or drop a link.',
+    body: 'Your YouTube channel is synced (transcript, product, gallery and timestamps pre-loaded) — pick a video and go. No channel? Paste any product or service link (a store page, a SaaS, or an Amazon ASIN) and MVP researches it itself. Either way, no copy-paste.',
   },
   {
     icon: <ShieldCheck size={18} />,
@@ -2137,7 +2137,7 @@ function Hero() {
             className="mt-6 text-[16px] leading-relaxed max-w-xl"
             style={{ color: 'var(--text-soft)' }}
           >
-            Connect your channel and MVP turns each video into a published, SEO- and AI-optimized review post — and finishes the upload for you: optimized description, tags, affiliate links and a CTR-tested thumbnail pushed back to the video. <span style={{ color: 'var(--text)' }}>No video? Just drop an Amazon ASIN</span> and MVP writes the buying guides, comparisons and deal posts itself. Everything lands on a beautifully designed blog that&apos;s yours to keep — forever.
+            Connect your channel and MVP turns each video into a published, SEO- and AI-optimized review post — and finishes the upload for you: optimized description, tags, affiliate links and a CTR-tested thumbnail pushed back to the video. <span style={{ color: 'var(--text)' }}>No video? Just drop a product or service link</span> — any store, brand, or Amazon ASIN — and MVP writes the review, buying guides, comparisons and deal posts itself. Everything lands on a beautifully designed blog that&apos;s yours to keep — forever.
           </p>
 
           {/* CTAs — primary button + its supporting reassurance live as
