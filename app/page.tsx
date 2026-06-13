@@ -162,6 +162,7 @@ export default function LandingPreview() {
       <DemoVideoSection />
       <RolesSection />
       <WorkflowSection />
+      <AsinSection />
       <BeforeAfterSection />
       <GroundedSection />
       <DiscoverabilitySection />
@@ -673,6 +674,77 @@ function RoleCard({ icon, label, line }: Role) {
         {line}
       </p>
     </div>
+  )
+}
+
+/** "No channel? Start from an ASIN" — showcases the non-YouTube path. Many
+ *  affiliate creators don't make video; MVP still builds the article types
+ *  that win buyer-intent search from nothing but an Amazon product ID.
+ *  Availability notes are accurate to the tier/volume gates: Comparisons are
+ *  on every plan, Deals Hub is Studio+, Buying Guides unlock as the catalogue
+ *  grows. */
+const ASIN_OUTPUTS: { icon: React.ReactNode; title: string; body: string; tag: string }[] = [
+  {
+    icon: <Scale size={18} />,
+    title: 'Comparison articles',
+    body: 'Drop two or more ASINs and MVP researches each, ranks them, and writes the head-to-head — verdict box, pros & cons, and a spec table. The exact article shoppers search for right before they buy.',
+    tag: 'Every plan',
+  },
+  {
+    icon: <BadgePercent size={18} />,
+    title: 'Deals Hub',
+    body: 'A live deals page on your own blog. Drop ASINs and MVP writes the deal posts and keeps the hub fresh — built to catch seasonal and price-drop traffic.',
+    tag: 'Studio & Pro',
+  },
+  {
+    icon: <Bookmark size={18} />,
+    title: 'Buying guides',
+    body: '“Best [category]” round-ups MVP assembles from your catalogue plus fresh research — the format Google ranks at the top for buyer-intent searches.',
+    tag: 'Unlocks as your library grows',
+  },
+]
+
+function AsinSection() {
+  return (
+    <section id="asin" className="px-6 lg:px-8 pt-12 pb-28 relative">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center max-w-3xl mx-auto mb-14">
+          <span
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-[0.18em] mb-5"
+            style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF', border: '1px solid rgba(124,58,237,0.25)' }}
+          >
+            <Bookmark size={10} />
+            No channel? No problem
+          </span>
+          <h2 className="text-[40px] sm:text-[52px] font-semibold tracking-tight leading-[1.05] mb-5" style={{ color: 'var(--text)' }}>
+            Don&apos;t make videos?{' '}
+            <span style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #C026D3 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+              Start from an ASIN.
+            </span>
+          </h2>
+          <p className="text-[16px] sm:text-[17px] leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-soft)' }}>
+            MVP isn&apos;t only for YouTubers. Paste an Amazon product ID and MVP builds the articles that win affiliate search — researched, fact-grounded, branded, and published to a blog you own. No camera required.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {ASIN_OUTPUTS.map((o) => (
+            <div key={o.title} className="rounded-2xl border p-6 flex flex-col" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-xl mb-3" style={{ backgroundColor: 'rgba(124,58,237,0.12)', color: '#9D6BFF' }}>
+                {o.icon}
+              </span>
+              <h3 className="text-[15px] font-semibold mb-1.5" style={{ color: 'var(--text)' }}>{o.title}</h3>
+              <p className="text-[13.5px] leading-relaxed flex-1" style={{ color: 'var(--text-soft)' }}>{o.body}</p>
+              <span className="mt-4 inline-flex self-start items-center px-2 py-0.5 rounded-full text-[10.5px] font-medium uppercase tracking-wide" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}>
+                {o.tag}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="text-center mt-10 text-[13px]" style={{ color: 'var(--text-faint)' }}>
+          Drop the ASIN — MVP does the research, ranking and writing.
+        </p>
+      </div>
+    </section>
   )
 }
 
