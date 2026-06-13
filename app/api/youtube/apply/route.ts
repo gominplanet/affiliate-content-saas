@@ -24,10 +24,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import {
-  createYouTubeOAuthService,
-  getValidYouTubeToken,
-} from '@/services/youtube'
+import { createYouTubeOAuthService } from '@/services/youtube'
+import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { tierAllowsPublishAll, type Tier } from '@/lib/tier'
 import { resolveThumbnailInput } from '@/lib/youtube-thumbnail-input'
 import { bustYouTubeCache } from '@/app/api/youtube/drafts/route'
@@ -73,23 +71,21 @@ export async function POST(request: NextRequest) {
         { status: 403 },
       )
     }
-    if (!intData.youtube_oauth_access_token) {
-      return NextResponse.json({ error: 'YouTube not connected.' }, { status: 400 })
-    }
-
-    const expiry = intData.youtube_oauth_token_expiry as number | null
-    const needsRefresh = !!expiry && Date.now() > expiry - 120_000
-    const token = await getValidYouTubeToken(intData)
-
-    if (needsRefresh) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase
-        .from('integrations')
-        .update({
-          youtube_oauth_access_token: token,
-          youtube_oauth_token_expiry: Date.now() + 3600 * 1000,
-        })
-        .eq('user_id', user.id)
+    // Resolve the OAuth token for the channel THIS video belongs to (migration
+    // 127 multi-channel). getChannelOAuthToken refreshes + persists the token,
+    // and falls back to the legacy integrations token for the default channel —
+    // so single-channel users are unaffected, and a Pro user can push to a
+    // secondary channel's video using that channel's own token.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: vidRow } = await (supabase as any)
+      .from('youtube_videos')
+      .select('channel_id')
+      .eq('user_id', user.id)
+      .eq('youtube_video_id', body.videoId)
+      .maybeSingle()
+    const token = await getChannelOAuthToken(supabase, user.id, vidRow?.channel_id ?? null)
+    if (!token) {
+      return NextResponse.json({ error: 'That video’s YouTube channel isn’t connected. Reconnect it under Set Up → YouTube and try again.' }, { status: 400 })
     }
 
     const yt = createYouTubeOAuthService(token)

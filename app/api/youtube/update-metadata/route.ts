@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { createYouTubeOAuthService, getValidYouTubeToken } from '@/services/youtube'
+import { createYouTubeOAuthService } from '@/services/youtube'
+import { getChannelOAuthToken } from '@/lib/youtube-channels'
 import { resolveThumbnailInput } from '@/lib/youtube-thumbnail-input'
 
 export async function POST(request: Request) {
@@ -17,29 +18,19 @@ export async function POST(request: Request) {
       thumbnailDataUri?: string
     }
 
+    // Resolve the token for the channel THIS video belongs to (migration 127
+    // multi-channel). Refreshes + persists; falls back to the legacy default
+    // channel token, so single-channel users are unaffected.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: intRow } = await supabase
-      .from('integrations')
-      .select('youtube_oauth_access_token,youtube_oauth_refresh_token,youtube_oauth_token_expiry')
+    const { data: vidRow } = await (supabase as any)
+      .from('youtube_videos')
+      .select('channel_id')
       .eq('user_id', user.id)
-      .single()
-
-    const intData = intRow as Record<string, unknown>
-    const expiry = intData.youtube_oauth_token_expiry as number | null
-    const needsRefresh = expiry && Date.now() > expiry - 120_000
-
-    const token = await getValidYouTubeToken(intData)
-
-    // Persist refreshed token so it stays valid for future calls
-    if (needsRefresh) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase
-        .from('integrations')
-        .update({
-          youtube_oauth_access_token: token,
-          youtube_oauth_token_expiry: Date.now() + 3600 * 1000,
-        })
-        .eq('user_id', user.id)
+      .eq('youtube_video_id', videoId)
+      .maybeSingle()
+    const token = await getChannelOAuthToken(supabase, user.id, vidRow?.channel_id ?? null)
+    if (!token) {
+      return NextResponse.json({ error: 'That video’s YouTube channel isn’t connected. Reconnect it under Set Up → YouTube and try again.' }, { status: 400 })
     }
 
     const yt = createYouTubeOAuthService(token)
