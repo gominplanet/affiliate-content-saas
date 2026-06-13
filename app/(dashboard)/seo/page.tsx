@@ -170,6 +170,10 @@ export default function SeoPage() {
         body: JSON.stringify({ urls: [url] }),
       })
       const d = await res.json().catch(() => ({}))
+      if (res.status === 403 || d.proRequired) {
+        setFixMsg({ ok: false, text: d.error || 'Manual index submission is a Pro feature — your posts still index automatically via your sitemap.' })
+        return
+      }
       if (res.status === 412 || d.scopeMissing) {
         setFixMsg({ ok: false, text: `${d.error || 'We need indexing permission.'} On /seo, click Disconnect on the Search Console card, then Connect again — Google will show a new consent screen that includes the indexing scope.` })
         return
@@ -184,7 +188,7 @@ export default function SeoPage() {
       }
       const result = (d.results || [])[0]
       if (result?.outcome === 'submitted') {
-        setFixMsg({ ok: true, text: `Submitted to Google. Crawl usually happens within 24h. (${d.dailyRemaining ?? '–'} of 50 daily submissions left.)` })
+        setFixMsg({ ok: true, text: `Submitted to Google. Crawl usually happens within 24h. (${d.dailyRemaining ?? '–'} of 2 daily nudges left.)` })
       } else if (result?.outcome === 'quota') {
         setFixMsg({ ok: false, text: result.message || 'Google\'s daily quota is exhausted for now.' })
       } else if (result?.outcome === 'forbidden') {
@@ -1164,7 +1168,7 @@ function IndexingGuide({ property, connected }: { property: string | null; conne
                 <a href={sitemapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] hover:underline inline-flex items-center gap-0.5">Search Console → Sitemaps <ExternalLink size={11} /></a>, type <code className="px-1 py-0.5 rounded bg-gray-100 dark:bg-white/10 text-[12px]">wp-sitemap.xml</code> under “Add a new sitemap”, and click Submit. The status should read “Success” within a day. You only do this once.
               </li>
               <li>
-                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Request indexing for important posts.</span> Click <span className="font-semibold text-[#7C3AED] whitespace-nowrap">Index ↗</span> on any post below and MVP submits it straight to Google through its <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Indexing API</strong> — no Search Console, no pasting. Use the <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Not indexed</strong> filter below to work through them in order. You get up to <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">50 submissions a day</strong> (Google’s free quota is 200/day, shared across MVP, so each account is capped at 50). It’s the strongest automatic nudge you can send — not a guarantee.
+                <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Nudge a priority post (optional, Pro).</span> Your posts already index on their own via the sitemap above — you don’t need to do anything. On <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Pro</strong>, you also get a manual accelerator: click <span className="font-semibold text-[#7C3AED] whitespace-nowrap">Index ↗</span> on a post and MVP sends Google a direct request through its <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">Indexing API</strong> — no Search Console, no pasting. It’s capped at <strong className="text-[#1d1d1f] dark:text-[#f5f5f7]">2 a day</strong> (that quota is shared across all of MVP, so it’s deliberately small), and it’s a nudge, not a guarantee. Use it on the one or two posts you care most about; leave the rest to index naturally.
               </li>
               <li>
                 <span className="font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">Build links and momentum.</span> Share each post on social (MVP can auto-post to Pinterest, Facebook &amp; Instagram — every share is a crawlable link back). Internal links are already handled (a “Related reviews” block is added to each post). Over time, a few real backlinks from other sites are the single biggest accelerator.

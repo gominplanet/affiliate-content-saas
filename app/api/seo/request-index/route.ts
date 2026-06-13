@@ -9,20 +9,36 @@
  *   connections from before this feature shipped), returns scopeMissing
  *   with a 412 so the dashboard prompts the user to reconnect.
  *
- * Per-user soft cap of 50/day in addition to Google's hard 200/day on the
- * shared OAuth project — protects us from one creator burning the
- * project-wide quota everyone shares.
+ * Pro-only + a tiny per-user daily cap, because Google's Indexing API draws
+ * from a SINGLE 200/day quota on MVP's shared OAuth project — it physically
+ * can't scale to every account. So it's an optional Pro accelerator (a small
+ * daily nudge), NOT the indexing mechanism: every account's posts still index
+ * automatically via their sitemap regardless of this button.
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getValidGscToken, submitUrlForIndexing, tokenHasIndexingScope } from '@/lib/gsc'
 
-const PER_USER_DAILY_CAP = 50
+const PER_USER_DAILY_CAP = 2
 
 export async function POST(req: Request) {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Pro-only. The shared 200/day project quota means this can't be offered to
+  // every tier; it's a growth perk for Pro. Everyone else still gets automatic
+  // sitemap indexing — so this is additive, not a gate on getting indexed.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: intRow } = await (supabase as any)
+    .from('integrations').select('tier').eq('user_id', user.id).maybeSingle()
+  const tier = (intRow?.tier as string | null) || 'trial'
+  if (tier !== 'pro' && tier !== 'admin') {
+    return NextResponse.json({
+      error: 'Manual index submission is a Pro feature. Your posts still index automatically through your sitemap — this is just an optional speed-up.',
+      proRequired: true,
+    }, { status: 403 })
+  }
 
   let body: { urls?: string[] }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Bad request' }, { status: 400 }) }
@@ -62,7 +78,7 @@ export async function POST(req: Request) {
   const room = Math.max(0, PER_USER_DAILY_CAP - (count ?? 0))
   if (room <= 0) {
     return NextResponse.json({
-      error: `You've hit today's submit cap (${PER_USER_DAILY_CAP}/24h). Google's free quota is 200/day site-wide — we cap each creator at 50 so one user can't burn it.`,
+      error: `You've used today's ${PER_USER_DAILY_CAP} manual index nudges. They share one Google quota across all of MVP, so the daily allowance is small — but your posts keep indexing automatically via your sitemap regardless.`,
       limitReached: true,
     }, { status: 429 })
   }
