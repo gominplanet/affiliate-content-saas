@@ -304,7 +304,7 @@ export default function PhotoboothPage() {
   return (
     <>
       <PageHero
-        title="Photobooth"
+        title="Face Models"
         subtitle="Teach MVP your face once — then put the real you in every thumbnail, post, and studio-quality headshot."
       />
 

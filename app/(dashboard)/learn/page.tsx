@@ -124,7 +124,7 @@ export default function LearnPage() {
   if (loading) {
     return (
       <>
-        <PageHero title="Learning" subtitle="Train the blog writer in your voice. Everything here is read on every generation." />
+        <PageHero title="Voice Training" subtitle="Train the blog writer in your voice. Everything here is read on every generation." />
         <div className="flex items-center gap-2 text-sm text-[#86868b] py-12 justify-center">
           <Loader2 size={16} className="animate-spin" /> Loading…
         </div>
@@ -137,7 +137,7 @@ export default function LearnPage() {
   return (
     <>
       <PageHero
-        title="Learning"
+        title="Voice Training"
         subtitle="Train the blog writer in your voice. Every field here is read by MVP on every post — be specific."
       />
 

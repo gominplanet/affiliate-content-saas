@@ -172,7 +172,7 @@ export default function AssistantPage() {
 
   return (
     <>
-      <PageHero title="AI Assistant" subtitle="Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche." />
+      <PageHero title="MVP Help Desk" subtitle="Your product guide + affiliate coach. Ask how to do anything in MVP Affiliate, or get strategy advice for your niche." />
 
       <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[480px]">
         {/* Conversation list */}
