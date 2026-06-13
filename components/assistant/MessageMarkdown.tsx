@@ -60,7 +60,6 @@ const IN_APP_ROUTES = [
   '/customize',
   '/seo',
   '/agency',
-  '/tutorials',
   '/community',
 ] as const
 
