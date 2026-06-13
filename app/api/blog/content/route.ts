@@ -24,13 +24,17 @@ export async function GET(request: Request) {
     const postId = new URL(request.url).searchParams.get('postId')
     if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
 
+    // postId may be the blog_posts UUID (video-backed posts pass this) OR a
+    // WordPress numeric post id (video-less "link" posts pass this — the Posts
+    // tab only knows their WP id). Match the right column accordingly.
+    const byWpId = /^\d+$/.test(postId)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await supabase
       .from('blog_posts')
       .select('content,title')
-      .eq('id', postId)
+      .eq(byWpId ? 'wordpress_post_id' : 'id', byWpId ? Number(postId) : postId)
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
     return NextResponse.json({ content: post.content ?? '', title: post.title ?? '' })
@@ -51,20 +55,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Content is empty' }, { status: 400 })
     }
 
+    // postId may be the blog_posts UUID or a WordPress numeric post id (the
+    // video-less "link" posts only know their WP id). Match the right column.
+    const byWpId = /^\d+$/.test(postId)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: post } = await supabase
       .from('blog_posts')
       .select('id,wordpress_post_id,wordpress_site_id')
-      .eq('id', postId)
+      .eq(byWpId ? 'wordpress_post_id' : 'id', byWpId ? Number(postId) : postId)
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
     if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
 
+    // Always update by the resolved UUID so both id forms write the same row.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: updErr } = await supabase
       .from('blog_posts')
       .update({ content, updated_at: new Date().toISOString() })
-      .eq('id', postId)
+      .eq('id', (post as { id: string }).id)
       .eq('user_id', user.id)
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
