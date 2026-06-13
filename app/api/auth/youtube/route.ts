@@ -18,6 +18,10 @@ export async function GET(req: Request) {
   // /onboarding instead of dumping them on /setup mid-flow.
   const rawReturn = new URL(req.url).searchParams.get('returnTo') || ''
   const returnTo = /^\/(?!\/)/.test(rawReturn) ? rawReturn : ''
+  // When connecting an ADDITIONAL channel (Pro multi-channel), force Google's
+  // account chooser so the user can pick a different account / brand channel
+  // rather than silently re-authing the one they're already signed into.
+  const addChannel = new URL(req.url).searchParams.get('addChannel') === '1'
 
   // Encode user ID (+ optional return path) in state so the callback can
   // identify the user without a session cookie. JSON now; the callback still
@@ -34,7 +38,9 @@ export async function GET(req: Request) {
     'https://www.googleapis.com/auth/youtube.force-ssl',
   ].join(' '))
   url.searchParams.set('access_type', 'offline')
-  url.searchParams.set('prompt', 'consent') // force refresh token
+  // 'consent' forces a refresh token; 'select_account' (added when connecting an
+  // additional channel) shows the account chooser so they can pick another one.
+  url.searchParams.set('prompt', addChannel ? 'select_account consent' : 'consent')
   url.searchParams.set('state', state)
 
   return NextResponse.redirect(url.toString())
