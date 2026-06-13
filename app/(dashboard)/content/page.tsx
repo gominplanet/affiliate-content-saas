@@ -50,6 +50,10 @@ const FromLinkModal = dynamic(
   () => import('@/components/content/FromLinkModal').then(m => ({ default: m.FromLinkModal })),
   { ssr: false },
 )
+const PortraitImageModal = dynamic(
+  () => import('@/components/content/PortraitImageModal').then(m => ({ default: m.PortraitImageModal })),
+  { ssr: false },
+)
 const InstagramDirectModal = dynamic(
   () => import('@/components/InstagramDirectModal').then(m => ({ default: m.InstagramDirectModal })),
   { ssr: false },
@@ -621,6 +625,7 @@ const VideoCard = memo(function VideoCardImpl({
   const [tgPosting, setTgPosting] = useState(false)
   const [tgPosted, setTgPosted] = useState(!!post?.telegramMessageId)
   const [igModalOpen, setIgModalOpen] = useState(false)
+  const [portraitOpen, setPortraitOpen] = useState(false)
   const [igPosting, setIgPosting] = useState(false)
   const [igReelPosted, setIgReelPosted] = useState(!!post?.instagramReelId)
   const [igStoryPosted, setIgStoryPosted] = useState(!!post?.instagramStoryId)
@@ -950,10 +955,24 @@ const VideoCard = memo(function VideoCardImpl({
             {post ? (
               <>
                 <ManualEdit postId={post.postId} />
+                {/* Portrait (4:5) AI thumbnail — Studio/Pro. Standalone generate
+                    + download; no Instagram connection required. */}
+                {(userTier === 'studio' || userTier === 'pro' || userTier === 'admin') && (
+                  <button
+                    onClick={() => setPortraitOpen(true)}
+                    className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#7C3AED] transition-colors"
+                    title="Generate a 4:5 portrait AI thumbnail (face + product) to download"
+                  >
+                    <Wand2 size={11} /> Portrait 4:5
+                  </button>
+                )}
                 <button onClick={handleDelete} disabled={deleting} className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors disabled:opacity-60">
                   {deleting ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
                   {deleting ? 'Deleting…' : 'Delete'}
                 </button>
+                {portraitOpen && post.postId && (
+                  <PortraitImageModal postId={post.postId} onClose={() => setPortraitOpen(false)} />
+                )}
               </>
             ) : (
               <button onClick={onDismiss} className="inline-flex items-center gap-1 text-xs text-[#86868b] dark:text-[#8e8e93] hover:text-[#ff3b30] transition-colors">
