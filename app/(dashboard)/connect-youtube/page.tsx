@@ -15,6 +15,7 @@ import PageHero from '@/components/layout/PageHero'
 import { createBrowserClient } from '@/lib/supabase/client'
 import { Youtube, Check, Loader2, LogOut, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
+import { YouTubeChannelsManager } from '@/components/youtube/YouTubeChannelsManager'
 
 export default function ConnectYouTubePage() {
   const [loading, setLoading] = useState(true)
@@ -121,6 +122,11 @@ export default function ConnectYouTubePage() {
             </a>
           )}
         </div>
+
+        {/* Multi-channel manager (Pro) — connect more channels, set a default,
+            and choose which channel each blog pulls from. Renders only once at
+            least one channel is connected. */}
+        {!loading && connected && <YouTubeChannelsManager />}
 
         <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-3">
           Need to connect Instagram, TikTok, Pinterest, X and the rest? Those live on{' '}
