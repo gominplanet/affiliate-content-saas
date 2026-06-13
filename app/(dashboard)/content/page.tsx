@@ -14,6 +14,7 @@ import { SOCIAL_CAP } from '@/lib/social-cap'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import type { SchedulableSocial } from '@/lib/schedule-types'
 import { SocialPill } from '@/components/content/SocialPill'
+import { OrphanPostShare } from '@/components/content/OrphanPostShare'
 import { ManualEdit } from '@/components/content/ManualEdit'
 import { RewriteFeedbackModal } from '@/components/content/RewriteFeedbackModal'
 import { errText } from '@/lib/err-text'
@@ -2768,7 +2769,13 @@ export default function ContentPage() {
       {fromLinkOpen && (
         <FromLinkModal
           onClose={() => setFromLinkOpen(false)}
-          onDone={() => refreshActiveTabRef.current()}
+          onDone={() => {
+            // Land the user on the Posts tab and reload so the freshly
+            // published "from a link" post is immediately visible (it has no
+            // source video, so it shows in the orphan / Older-posts list).
+            setActiveTab('posts')
+            loadWpPosts()
+          }}
         />
       )}
 
@@ -3068,7 +3075,8 @@ export default function ContentPage() {
                   </p>
                 )}
                 {olderSliced.map(post => (
-            <div key={post.id} className={`card p-4 flex items-center gap-3 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#7C3AED]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
+            <div key={post.id} className={`card p-4 transition-colors ${selectedPostIds.has(post.id) ? 'ring-2 ring-[#7C3AED]/40 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
+              <div className="flex items-center gap-3">
               <input
                 type="checkbox"
                 checked={selectedPostIds.has(post.id)}
@@ -3156,6 +3164,23 @@ export default function ContentPage() {
                   {deletingPostId === post.id ? <Loader2 size={12} className="animate-spin" /> : 'Delete'}
                 </button>
               </div>
+              </div>
+              {/* Social fan-out — works for video-less ("from a link") posts
+                  too, keyed on the WordPress post id. */}
+              <OrphanPostShare
+                postId={String(post.id)}
+                postUrl={post.link}
+                userTier={userTier}
+                fbConnected={fbConnected}
+                threadsConnected={threadsConnected}
+                linkedInConnected={linkedInConnected}
+                twitterConnected={twitterConnected}
+                blueskyConnected={blueskyConnected}
+                telegramConnected={telegramConnected}
+                brandDisclaimer={brandDisclaimer}
+                brandFacebookGroups={brandFacebookGroups}
+                fbAccounts={fbAccounts}
+              />
             </div>
                 ))}
                 {olderTotalPages > 1 && (

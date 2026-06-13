@@ -24,7 +24,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { resolveFinalUrl } from '@/lib/product-link'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
-import { researchProductFromUrl } from '@/services/research'
+import { researchProductFromUrl, fetchProductImageFromPage } from '@/services/research'
 import { checkUsageLimit, normalizeTier } from '@/lib/tier'
 import { scrubBanned, BANNED_RULE } from '@/lib/scrub'
 import { learnProfileToPrompt } from '@/lib/learn'
@@ -110,6 +110,9 @@ export async function POST(req: Request) {
   let pDescription = ''
   let bullets: string[] = []
   let affiliateUrl: string | null = null
+  // A real product photo, used as the featured-image fallback when the
+  // generated hero is unavailable — so every post still gets a thumbnail.
+  let productImageUrl: string | null = null
 
   if (asin) {
     try {
@@ -117,6 +120,7 @@ export async function POST(req: Request) {
       if (p.title) productName = providedName || p.title
       pDescription = p.description || ''
       bullets = p.bullets || []
+      productImageUrl = p.imageUrl || p.images?.[0] || null
     } catch { /* fall back to research / provided name */ }
     // Recloak via Geniuslink when configured, else append the Amazon tag.
     if (genius) {
@@ -148,6 +152,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Couldn’t find enough about that product. Add the product name or a clearer link and try again.' }, { status: 422 })
   }
 
+  // Non-Amazon: pull the product/brand page's og:image as a featured-image
+  // fallback (Amazon already gave us a catalog photo above).
+  if (!productImageUrl && (finalUrl || link)) {
+    try { productImageUrl = await fetchProductImageFromPage(finalUrl || link) } catch { /* best-effort */ }
+  }
+
   // ── 3. Write the review (single product, grounded, MVP rules + voice) ───────
   const anthropic = createAnthropicClient()
   const sys = `You are the creator writing a FIRST-PERSON ("I"/"we") affiliate review of ONE product — you personally recommend it. Never write in third person or refer to "the reviewer". Only state facts present in the PRODUCT DATA or RESEARCH below — NEVER invent specs, numbers, prices, test results, or personal anecdotes you cannot support from that data. If first-hand detail is thin, write only at the level the data supports rather than fabricating. Lead each section answer-first. Naturally target the main buyer-intent keyword for this product in the title, the first paragraph, and one H2. ${BANNED_RULE}\n${learnBlock}`
@@ -167,6 +177,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   "title": "<= 65 char SEO title targeting the buyer keyword, no banned words",
   "meta_description": "150-160 char compelling meta description, no banned words",
   "target_keyword": "the main keyword you targeted",
+  "category": "a single concise blog category for this product/service, Title Case, 1-3 words (e.g. 'VPNs & Security', 'Headphones', 'Kitchen'); never the word 'blog'",
   "hero_prompt": "one vivid sentence describing an editorial, text-free HERO photo of this product's CATEGORY — clean, aspirational, magazine-style (no people required, no logos, no text)",
   "intro_html": "1-2 short intro paragraphs as raw HTML <p>...</p> (first person, answer-first hook)",
   "body_html": "700-1100 words as raw HTML <p>/<h2>/<ul><li> blocks. Real benefits, who it's for, how it's used, set-up, and trade-offs — specific and grounded, answer-first under each H2. No fabricated claims, no banned words.",
@@ -178,6 +189,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 
   let parsed: {
     title: string; meta_description: string; target_keyword?: string; hero_prompt?: string
+    category?: string
     intro_html: string; body_html: string; pros?: string[]; cons?: string[]; verdict?: string
     faq?: Array<{ q: string; a: string }>
   }
@@ -257,7 +269,16 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
         if (media?.id) featuredMedia = media.id
       }
     }
-  } catch { /* publish without a hero rather than fail */ }
+  } catch { /* publish without a generated hero — the product photo fallback below covers it */ }
+
+  // Fallback: no generated hero (FAL_KEY unset or flux failed) → use the real
+  // product/brand photo so EVERY post still ships with a featured thumbnail.
+  if (!featuredMedia && productImageUrl) {
+    try {
+      const media = await wpService.uploadImageFromUrl(productImageUrl, `${slug}-product.jpg`)
+      if (media?.id) featuredMedia = media.id
+    } catch { /* publish without a featured image as a last resort */ }
+  }
 
   // ── 6. JSON-LD (BlogPosting + FAQPage) ──────────────────────────────────────
   const siteBase = (site.wordpress_url || '').replace(/\/$/, '')
@@ -279,7 +300,18 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
   }
   const jsonld = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph })
 
-  // ── 7. Publish to WordPress ─────────────────────────────────────────────────
+  // ── 7. Resolve the category (never "blog") ──────────────────────────────────
+  // Priority: the category the user typed → the writer's suggestion → the
+  // creator's first brand niche → a sensible default. Find-or-create in WP.
+  const firstNiche = Array.isArray(brand?.niches) ? (brand?.niches as string[]).find(n => (n || '').trim()) : ''
+  const rawCategory = (category || (parsed.category || '').trim() || (firstNiche || '').trim() || 'Reviews').trim()
+  // Guard: an AI or user value of "blog"/"uncategorized" is exactly what we're
+  // trying to avoid — fall back to Reviews.
+  const categoryName = /^(blog|uncategorized|uncategorised)$/i.test(rawCategory) ? 'Reviews' : rawCategory.slice(0, 50)
+  let categoryId: number | null = null
+  try { categoryId = await wpService.createCategory(categoryName) } catch { /* publish uncategorized rather than fail */ }
+
+  // ── 8. Publish to WordPress ─────────────────────────────────────────────────
   let wpPost
   try {
     wpPost = await wpService.createPost({
@@ -289,6 +321,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
       slug,
       status: 'publish',
       ...(featuredMedia ? { featured_media: featuredMedia } : {}),
+      ...(categoryId ? { categories: [categoryId] } : {}),
       meta: { mvp_meta_description: scrub(parsed.meta_description), mvp_jsonld: jsonld },
     })
   } catch (err) {
@@ -297,7 +330,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
 
   void pingIndexNowForUrl(supabase, ownerId, wpPost.link, siteId).catch(() => {})
 
-  // ── 8. Hallucination guards (research is the source budget) ─────────────────
+  // ── 9. Hallucination guards (research is the source budget) ─────────────────
   let bodyAfterChecks = bodyHtml
   try {
     const claudeSvc = createClaudeService()
@@ -315,7 +348,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     }
   } catch { /* published post stands */ }
 
-  // ── 9. Save the blog_posts row (no video; treated as a normal review) ───────
+  // ── 10. Save the blog_posts row (no video; treated as a normal review) ──────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (supabase as any).from('blog_posts').insert({
     user_id: ownerId,
