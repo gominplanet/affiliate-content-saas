@@ -1546,6 +1546,9 @@ export default function ContentPage() {
   const [brandFacebookGroups, setBrandFacebookGroups] = useState<Array<{ name: string; url: string }>>([])
   const [checks, setChecks] = useState<ReadinessCheck | null>(null)
   const [syncing, setSyncing] = useState(false)
+  // Pro multi-channel: connected channels for the "sync a specific channel"
+  // picker. Only rendered when the user has more than one.
+  const [ytChannels, setYtChannels] = useState<Array<{ id: string; channelId: string; channelTitle: string; isDefault: boolean }>>([])
   const [fromLinkOpen, setFromLinkOpen] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ pulled: number; pages: number } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -1641,6 +1644,15 @@ export default function ContentPage() {
   const [showHidden, setShowHidden] = useState(false)
 
   useEffect(() => { setDismissed(getDismissed()) }, [])
+
+  // Load connected YouTube channels (Pro multi-channel) so the Sync control can
+  // offer a per-channel pull. Single-channel users get one entry → no picker.
+  useEffect(() => {
+    fetch('/api/youtube/channels')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.channels) setYtChannels(d.channels) })
+      .catch(() => { /* non-fatal — falls back to the plain Sync button */ })
+  }, [])
 
   // Reset pagination when the Posts-tab search changes — otherwise the
   // user can be sitting on page 4 of "all posts", type a query that
@@ -2354,7 +2366,7 @@ export default function ContentPage() {
     })
   }
 
-  async function syncVideos() {
+  async function syncVideos(channelId?: string) {
     setSyncing(true)
     setSyncProgress({ pulled: 0, pages: 0 })
     try {
@@ -2369,7 +2381,7 @@ export default function ContentPage() {
         const res: Response = await fetch('/api/youtube/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(token ? { pageToken: token } : {}),
+          body: JSON.stringify({ ...(token ? { pageToken: token } : {}), ...(channelId ? { channelId } : {}) }),
         })
         const data: { synced?: number; nextPageToken?: string | null; error?: string; code?: string } =
           await res.json().catch(() => ({}))
@@ -2406,13 +2418,13 @@ export default function ContentPage() {
       const msg = e?.message || 'Sync failed. Try again in a moment.'
       if (e?.code === 'no_channel_id') {
         toast.error(msg, {
-          action: { label: 'Open Setup', onClick: () => { window.location.href = '/setup?tab=integrations' } },
+          action: { label: 'Connect YouTube', onClick: () => { window.location.href = '/connect-youtube' } },
         })
       } else if (e?.code === 'youtube_quota') {
         toast.error('YouTube API daily quota hit. Try again after midnight Pacific time.')
       } else if (e?.code === 'channel_not_found') {
-        toast.error('YouTube channel id not found. Double-check the id in Setup → Integrations.', {
-          action: { label: 'Fix it', onClick: () => { window.location.href = '/setup?tab=integrations' } },
+        toast.error('YouTube channel not found. Reconnect your channel under Set Up → YouTube.', {
+          action: { label: 'Fix it', onClick: () => { window.location.href = '/connect-youtube' } },
         })
       } else {
         toast.error(msg)
@@ -2725,16 +2737,34 @@ export default function ContentPage() {
               {affPreviewLoading && affMode === 'regroup' ? 'Scanning links…' : 'Re-route Geniuslinks'}
             </Button>
             {(activeTab === 'horizontal' || activeTab === 'vertical') && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={syncVideos}
-                loading={syncing}
-                disabled={syncing}
-                leftIcon={!syncing ? <RefreshCw size={14} /> : undefined}
-              >
-                {syncing ? `Syncing${syncProgress ? ` (${syncProgress.pulled})` : ''}…` : 'Sync videos'}
-              </Button>
+              <>
+                {/* Pro multi-channel: pull videos from a specific connected
+                    channel (e.g. a secondary channel) onto this blog. */}
+                {ytChannels.length > 1 && (
+                  <select
+                    defaultValue=""
+                    disabled={syncing}
+                    onChange={(e) => { const id = e.target.value; if (id) { void syncVideos(id); e.currentTarget.value = '' } }}
+                    title="Pull videos from one of your connected channels"
+                    className="text-xs px-2 py-1.5 rounded-md bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 text-[#1d1d1f] dark:text-[#f5f5f7] focus:border-[#7C3AED] focus:outline-none max-w-[190px]"
+                  >
+                    <option value="">Sync a channel…</option>
+                    {ytChannels.map(c => (
+                      <option key={c.id} value={c.channelId}>{c.channelTitle}{c.isDefault ? ' (default)' : ''}</option>
+                    ))}
+                  </select>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => syncVideos()}
+                  loading={syncing}
+                  disabled={syncing}
+                  leftIcon={!syncing ? <RefreshCw size={14} /> : undefined}
+                >
+                  {syncing ? `Syncing${syncProgress ? ` (${syncProgress.pulled})` : ''}…` : 'Sync videos'}
+                </Button>
+              </>
             )}
             {/* Refresh — re-runs the loader for whichever tab is active
                 (videos, Posts, or Scheduled). 2026-06-09: was previously
@@ -3151,7 +3181,7 @@ export default function ContentPage() {
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">No videos synced yet</p>
             <p className="text-xs text-[#6e6e73] dark:text-[#ebebf0]">One click and we pull every public, unlisted, and draft video from your channel. ASIN-tagged videos become instant generation candidates.</p>
           </div>
-          <button onClick={syncVideos} disabled={syncing} className="btn-primary text-sm">
+          <button onClick={() => syncVideos()} disabled={syncing} className="btn-primary text-sm">
             {syncing ? <><Loader2 size={14} className="animate-spin" /> Syncing {syncProgress ? `(${syncProgress.pulled})` : ''}…</> : 'Sync now'}
           </button>
         </div>
@@ -3165,7 +3195,7 @@ export default function ContentPage() {
               ? 'No YouTube Shorts yet — these are the source for Instagram Reels & Stories. Record one on YouTube, hit Sync again, and it shows up here.'
               : 'All your synced videos look like Shorts. Hit Sync again to refresh, or open the Vertical Videos tab to publish them as Reels.'}
           </p>
-          <button onClick={syncVideos} disabled={syncing} className="btn-secondary text-xs">
+          <button onClick={() => syncVideos()} disabled={syncing} className="btn-secondary text-xs">
             {syncing ? <><Loader2 size={11} className="animate-spin" /> Syncing {syncProgress ? `(${syncProgress.pulled})` : ''}…</> : <><RefreshCw size={11} /> Re-sync videos</>}
           </button>
         </div>
