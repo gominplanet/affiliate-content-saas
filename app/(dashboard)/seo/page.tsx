@@ -1261,5 +1261,8 @@ function SummaryCard({ label, value, accent, sub }: { label: string; value: stri
 function IndexBadge({ indexed, coverage }: { indexed: boolean | null; coverage: string | null }) {
   if (indexed === true) return <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#34c759] flex-shrink-0"><CheckCircle2 size={12} /> Indexed</span>
   if (indexed === false) return <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#ff3b30] flex-shrink-0" title={coverage || undefined}><XCircle size={12} /> Not indexed</span>
-  return <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#86868b] flex-shrink-0"><AlertCircle size={12} /> Unknown</span>
+  // indexed === null → we simply haven't looked yet (the daily sweep checks
+  // automatically, or the user can click Check). Frame it as a neutral
+  // not-yet-checked state, never an alarming "Unknown".
+  return <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-[#86868b] flex-shrink-0" title="Indexing status is checked automatically overnight — or click Check to look now."><RefreshCw size={11} /> Not checked yet</span>
 }
