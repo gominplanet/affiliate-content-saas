@@ -65,9 +65,9 @@ interface NavItemDef {
    *  the user earns commission on, so they get a small ExternalLink
    *  glyph + always-new-tab behaviour. */
   external?: boolean
-  /** Optional solid background tint to make a row pop (e.g. Oink = Barbie
-   *  pink, the highest-converting partner link). Applied when the row isn't
-   *  active; hover darkens it slightly. White text for contrast. */
+  /** Optional TEXT colour to make a row pop (e.g. Oink = Barbie pink, the
+   *  highest-converting partner link). Tints the label + icon; background
+   *  stays normal. Persists through hover/active. */
   highlight?: string
 }
 
@@ -666,26 +666,23 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
     'relative flex items-center gap-2.5 py-2 rounded-lg text-[14px] font-semibold transition-colors',
     collapsed ? 'justify-center' : 'px-2.5',
   )
-  // Barbie-pink (or any) highlight tint for a spotlighted row (e.g. Oink).
+  // Barbie-pink (or any) TEXT colour for a spotlighted row (e.g. Oink) — the
+  // letters + icon are tinted, background stays normal so it pops without a
+  // heavy block. Stays pink on hover/active.
   const hl = item.highlight
   const style: React.CSSProperties = {
-    backgroundColor: active ? 'var(--nav-active-bg)' : (hl || 'transparent'),
-    color: active ? 'var(--nav-active-text)' : (hl ? '#ffffff' : 'var(--text-soft)'),
+    backgroundColor: active ? 'var(--nav-active-bg)' : 'transparent',
+    color: hl || (active ? 'var(--nav-active-text)' : 'var(--text-soft)'),
   }
   const onMouseEnter = (e: React.MouseEvent<HTMLElement>) => {
     if (active) return
-    if (hl) {
-      // Darken the tint slightly on hover; keep white text.
-      e.currentTarget.style.backgroundColor = '#C81E7E'
-    } else {
-      e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
-      e.currentTarget.style.color = 'var(--text)'
-    }
+    e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
+    if (!hl) e.currentTarget.style.color = 'var(--text)'
   }
   const onMouseLeave = (e: React.MouseEvent<HTMLElement>) => {
     if (active) return
-    e.currentTarget.style.backgroundColor = hl || 'transparent'
-    e.currentTarget.style.color = hl ? '#ffffff' : 'var(--text-soft)'
+    e.currentTarget.style.backgroundColor = 'transparent'
+    if (!hl) e.currentTarget.style.color = 'var(--text-soft)'
   }
 
   const inner = (
