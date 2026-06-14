@@ -41,7 +41,7 @@ function slugify(s: string): string {
 // Anthropic spend during EPC Scout testing. Hard-disabled at the server so no
 // client batch, retry, or worker can fire an Opus campaign write. Flip to true
 // (or remove this guard) once the cost path is understood + capped.
-const CAMPAIGN_GENERATION_ENABLED = false
+const CAMPAIGN_GENERATION_ENABLED = true
 
 export async function POST(request: Request) {
   try {
@@ -250,6 +250,20 @@ export async function POST(request: Request) {
     } catch { /* non-fatal — keep the generated text */ }
 
     const slug = generated.slug ? slugify(generated.slug) : slugify(generated.title)
+
+    // Persist the finished post BEFORE publishing. The Opus write is the
+    // expensive part; if the WordPress publish then fails (or the run is
+    // interrupted), this keeps the paid content recoverable on the campaign
+    // row instead of "paid, got nothing." (Incident 2026-06-14.)
+    if (campaignId) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await supabase.from('campaigns').update({
+        generated_title: generated.title,
+        generated_content: generated.content,
+        generated_excerpt: generated.excerpt,
+        generated_slug: slug,
+      }).eq('id', campaignId)
+    }
 
     // ── 5. Publish to WordPress ─────────────────────────────────────────────
     const wpService = createWordPressService(
