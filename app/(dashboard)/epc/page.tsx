@@ -58,22 +58,38 @@ function daysLeft(endsAt?: string | null): number {
 
 const PENDING_STATUSES = new Set(['pending', 'queued', 'ready', 'new', 'researching', 'generating'])
 
-// Poll a queued campaign-generation job to completion. Resolves on 'done',
-// throws on 'failed' or after the cap. Used by the async (enqueue) path.
-async function pollCampaignJob(jobId: string): Promise<void> {
-  const deadline = Date.now() + 12 * 60_000 // 12 min ceiling (worker runs ≤5)
+// Poll a queued campaign-generation job to completion. Resolves on 'done' OR
+// once the campaign row actually goes live (the worker hands off long runs and
+// leaves the job 'running' while the generate function keeps going and still
+// publishes — so the post is the source of truth, not the job). Throws on
+// 'failed' or after the cap. Used by the async (enqueue) path.
+async function pollCampaignJob(jobId: string, campaignId?: string): Promise<void> {
+  const start = Date.now()
+  const deadline = start + 12 * 60_000
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 3000))
-    let j: { status?: string; error?: string } = {}
+
+    let job: { status?: string; error?: string } | null = null
     try {
       const r = await fetch(`/api/campaigns/job/${jobId}`)
-      j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
-    } catch {
-      continue // transient network blip — keep polling until the deadline
+      if (r.ok) job = await r.json()
+    } catch { /* transient network blip — fall through to the row reconcile */ }
+    if (job?.status === 'done') return
+    if (job?.status === 'failed') throw new Error(job.error || 'Generation failed')
+
+    // After the worker's hand-off window, accept a now-live campaign row as
+    // success even if the job is still marked 'running'.
+    if (campaignId && Date.now() - start > 60_000) {
+      try {
+        const lr = await fetch('/api/campaigns/list')
+        if (lr.ok) {
+          const ld = await lr.json()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const row = (ld.campaigns || []).find((x: any) => x.id === campaignId)
+          if (row && isLiveRow(row)) return
+        }
+      } catch { /* ignore — keep polling */ }
     }
-    if (j.status === 'done') return
-    if (j.status === 'failed') throw new Error(j.error || 'Generation failed')
   }
   throw new Error('Still working in the background — refresh in a minute to see the result.')
 }
@@ -212,7 +228,7 @@ export default function EpcScoutPage() {
         } else {
           const eq = await enq.json().catch(() => ({}))
           if (!enq.ok) throw new Error(eq.error || `HTTP ${enq.status}`)
-          await pollCampaignJob(eq.jobId as string)  // resolves on done, throws on failed/timeout
+          await pollCampaignJob(eq.jobId as string, c.id)  // resolves on done OR row-live, throws on failed
         }
         setGen(g => ({ ...g, [c.asin]: 'done' }))
         ok++
