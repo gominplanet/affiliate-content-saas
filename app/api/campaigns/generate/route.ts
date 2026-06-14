@@ -282,7 +282,11 @@ export async function POST(request: Request) {
     let research: Awaited<ReturnType<typeof researchProduct>> | null = null
     if (!storedDraft) {
       try {
-        research = await researchProduct(product!, { userId: user.id, tier })
+        // Cap web searches at 2 (+120s timeout). The Amazon scrape already
+        // grounds the post; keeping research short stops it eating the 300s
+        // budget before the Opus write (the ECOVACS "stopped before finished"
+        // timeouts 2026-06-14).
+        research = await researchProduct(product!, { userId: user.id, tier }, { maxSearches: 2, timeoutMs: 120_000 })
       } catch (err) {
         return fail(`Research step failed: ${err instanceof Error ? err.message : 'unknown'}`)
       }

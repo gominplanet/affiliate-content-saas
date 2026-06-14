@@ -26,6 +26,7 @@ export interface ResearchBrief {
 export async function researchProduct(
   product: AmazonProduct,
   ctx?: { userId?: string | null; tier?: string | null },
+  opts?: { maxSearches?: number; timeoutMs?: number },
 ): Promise<ResearchBrief> {
   const client = createAnthropicClient()
 
@@ -72,11 +73,16 @@ Return ONLY the markdown brief.`
     max_tokens: 4000,
     tools: [
       // Server-side web search tool — Claude runs the queries itself.
+      // Default 6, but callers (campaigns) pass a lower cap: the Amazon scrape
+      // already supplies the facts, so a couple of searches for the "what
+      // buyers ask" angle is enough — and fewer searches keeps the whole
+      // generation comfortably inside the 300s function ceiling (a long
+      // listing's 6-search research was eating the budget before the write).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { type: 'web_search_20250305', name: 'web_search', max_uses: 6 } as any,
+      { type: 'web_search_20250305', name: 'web_search', max_uses: opts?.maxSearches ?? 6 } as any,
     ],
     messages: [{ role: 'user', content: prompt }],
-  })
+  }, { timeout: opts?.timeoutMs ?? 120_000 })
 
   {
     const u = usageFromAnthropic(msg)
