@@ -40,6 +40,20 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60)
 }
 
+// The shared blog-writer template hard-codes a YouTube thumbnail
+// (<img …/{VIDEO_ID}/…>) in the "Get it now" CTA card. Campaign posts have no
+// video, so that renders as a broken image. setCtaThumb points every CTA thumb
+// at the generated hero image; stripCtaThumb removes the thumb wrapper entirely
+// (used when there's no hero, e.g. a re-publish) so the card is clean text — the
+// CSS `:has(.gr-cta-thumb-wrap)` grid collapses back to one column on its own.
+const CTA_THUMB_IMG = /<img\b[^>]*class="gr-cta-thumb"[^>]*>/gi
+function setCtaThumb(html: string, url: string): string {
+  return html.replace(CTA_THUMB_IMG, `<img src="${url}" alt="" loading="lazy" class="gr-cta-thumb" />`)
+}
+function stripCtaThumb(html: string): string {
+  return html.replace(/<div class="gr-cta-thumb-wrap">[\s\S]*?<\/div>/gi, '')
+}
+
 // EMERGENCY KILL-SWITCH (2026-06-14): campaign generation was burning runaway
 // Anthropic spend during EPC Scout testing. Hard-disabled at the server so no
 // client batch, retry, or worker can fire an Opus campaign write. Flip to true
@@ -410,6 +424,8 @@ export async function POST(request: Request) {
     // product photo letterboxed to 16:9). PATCH only featured_media so
     // we don't disturb the already-published title/content/categories.
     let heroKind: 'ai' | 'product' | null = null
+    let heroMediaId: number | null = null
+    let heroUrl: string | null = null
     try {
       if (!product) throw new Error('no product image (re-publish)') // skip hero on re-publish
       // Vision-pick the clean isolated product shot (the Amazon main image is
@@ -422,10 +438,29 @@ export async function POST(request: Request) {
       })
       if (hero) {
         const media = await wpService.uploadImageFromBase64(hero.b64, `${asin}-hero.jpg`, hero.mime)
-        await wpService.updatePost(wpPost.id, { featured_media: media.id })
+        heroMediaId = media.id
+        heroUrl = media.source_url || null
         heroKind = hero.kind
       }
     } catch { /* non-fatal — post is live without a featured image */ }
+
+    // Fix the "Get it now" CTA card image: point the thumb at the hero we just
+    // generated, or strip the broken YouTube-thumbnail placeholder when there's
+    // no hero. Folded into a single PATCH with featured_media so we don't make
+    // an extra round-trip. Non-fatal — the post is already live either way.
+    const fixedContent = heroUrl
+      ? setCtaThumb(generated.content, heroUrl)
+      : stripCtaThumb(generated.content)
+    const contentChanged = fixedContent !== generated.content
+    if (contentChanged) generated.content = fixedContent
+    if (heroMediaId || contentChanged) {
+      try {
+        await wpService.updatePost(wpPost.id, {
+          ...(heroMediaId ? { featured_media: heroMediaId } : {}),
+          ...(contentChanged ? { content: generated.content } : {}),
+        })
+      } catch { /* non-fatal — post is live; this only refines the hero + CTA image */ }
+    }
 
     // ── 6. Persist blog_posts + finalize campaign ───────────────────────────
     // The post is already LIVE on WordPress at this point. The blog_posts
