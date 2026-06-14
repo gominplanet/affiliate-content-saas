@@ -56,7 +56,27 @@ function daysLeft(endsAt?: string | null): number {
   return Math.ceil((t - Date.now()) / 86400_000)
 }
 
-const PENDING_STATUSES = new Set(['pending', 'queued', 'ready', 'new'])
+const PENDING_STATUSES = new Set(['pending', 'queued', 'ready', 'new', 'researching', 'generating'])
+
+// Poll a queued campaign-generation job to completion. Resolves on 'done',
+// throws on 'failed' or after the cap. Used by the async (enqueue) path.
+async function pollCampaignJob(jobId: string): Promise<void> {
+  const deadline = Date.now() + 12 * 60_000 // 12 min ceiling (worker runs ≤5)
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 3000))
+    let j: { status?: string; error?: string } = {}
+    try {
+      const r = await fetch(`/api/campaigns/job/${jobId}`)
+      j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+    } catch {
+      continue // transient network blip — keep polling until the deadline
+    }
+    if (j.status === 'done') return
+    if (j.status === 'failed') throw new Error(j.error || 'Generation failed')
+  }
+  throw new Error('Still working in the background — refresh in a minute to see the result.')
+}
 // A row only counts as "done" when there's an actual published post. Anything
 // else (pending, failed, or a stuck 'researching'/'generating' from an aborted
 // run) is (re)generatable — so interrupted runs aren't orphaned.
@@ -172,13 +192,28 @@ export default function EpcScoutPage() {
       setGen(g => ({ ...g, [c.asin]: 'running' }))
       setGenErr(e => { const n = { ...e }; delete n[c.asin]; return n })
       try {
-        const res = await fetch('/api/campaigns/generate', {
+        const payload = { campaignId: c.id, asin: c.asin, campaignName: c.campaign_name, epc: c.epc, endsAt: c.ends_at }
+        // Async first: enqueue a background job (no 300s request ceiling) and
+        // poll it to completion. If async is disabled (503), fall back to the
+        // synchronous route — same payload, same result.
+        const enq = await fetch('/api/campaigns/enqueue', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ campaignId: c.id, asin: c.asin, campaignName: c.campaign_name, epc: c.epc, endsAt: c.ends_at }),
+          body: JSON.stringify(payload),
         })
-        const d = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
+        if (enq.status === 503) {
+          const res = await fetch('/api/campaigns/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+          const d = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
+        } else {
+          const eq = await enq.json().catch(() => ({}))
+          if (!enq.ok) throw new Error(eq.error || `HTTP ${enq.status}`)
+          await pollCampaignJob(eq.jobId as string)  // resolves on done, throws on failed/timeout
+        }
         setGen(g => ({ ...g, [c.asin]: 'done' }))
         ok++
       } catch (e) {
@@ -187,7 +222,7 @@ export default function EpcScoutPage() {
         setGenErr(er => ({ ...er, [c.asin]: msg }))
       }
     }
-    if (ok > 0) toast.success(`${ok} generated — check the Blog Post Generator.`)
+    if (ok > 0) toast.success(`${ok} campaign post${ok === 1 ? '' : 's'} published.`)
     loadList()
   }, [loadList])
 

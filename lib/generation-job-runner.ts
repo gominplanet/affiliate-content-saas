@@ -36,19 +36,25 @@ export async function runGenerationJob(
 ): Promise<Record<string, unknown>> {
   switch (job.kind) {
     case 'blog':
-      return runBlogJob(job)
-    case 'comparison':
+      return runServiceRouteJob(job, '/api/blog/generate', 'blog generation')
     case 'campaign':
+      return runServiceRouteJob(job, '/api/campaigns/generate', 'campaign generation')
+    case 'comparison':
       throw new Error(`generation job kind "${job.kind}" is not wired yet (needs its own service-auth branch)`)
     default:
       throw new Error(`unknown generation job kind: ${String(job.kind)}`)
   }
 }
 
-/** Run a blog-generation job by invoking the existing generate route internally
- *  in service mode. The route does the full pipeline (generate → post-process →
- *  publish → defer images) under the job's owner. */
-async function runBlogJob(job: GenerationJob): Promise<Record<string, unknown>> {
+/** Run a generation job by invoking an existing generate route internally in
+ *  service mode. The route does the full pipeline (generate → post-process →
+ *  publish) under the job's owner, off the user's request. Shared by every
+ *  job kind whose route has the x-mvp-service auth branch (blog, campaign). */
+async function runServiceRouteJob(
+  job: GenerationJob,
+  routePath: string,
+  label: string,
+): Promise<Record<string, unknown>> {
   const secret = process.env.CRON_SECRET
   if (!secret) throw new Error('CRON_SECRET not set — cannot make the internal service call')
 
@@ -80,7 +86,7 @@ async function runBlogJob(job: GenerationJob): Promise<Record<string, unknown>> 
     // redirect can stack with trailing-slash/host normalization (observed
     // 2026-06-11: 405 → fixed one hop → then "returned 307" = a second hop).
     // The hop log makes any remaining loop visible in Vercel logs.
-    let url = `${resolveSelfBaseUrl()}/api/blog/generate`
+    let url = `${resolveSelfBaseUrl()}${routePath}`
     const hops: string[] = []
     res = await fetch(url, init)
     while ([301, 302, 303, 307, 308].includes(res.status) && hops.length < 5) {
@@ -103,7 +109,7 @@ async function runBlogJob(job: GenerationJob): Promise<Record<string, unknown>> 
     // still be publishing on its side (it doesn't abort on our disconnect).
     const name = (e as { name?: string } | null)?.name
     if (name === 'TimeoutError' || name === 'AbortError') {
-      throw new Error('TIMEOUT: blog generation exceeded the worker budget')
+      throw new Error(`TIMEOUT: ${label} exceeded the worker budget`)
     }
     throw e
   }
@@ -112,7 +118,7 @@ async function runBlogJob(job: GenerationJob): Promise<Record<string, unknown>> 
   let data: any = null
   try { data = await res.json() } catch { /* non-JSON body (e.g. a raw 504) */ }
   if (!res.ok) {
-    const msg = (data && data.error) || `blog generation returned ${res.status}`
+    const msg = (data && data.error) || `${label} returned ${res.status}`
     // 4xx responses are deterministic refusals (review-worthiness gate, caps,
     // validation) — retrying replays the exact same refusal three times. Tag
     // them so the worker terminally fails the job on the first attempt; 5xx /

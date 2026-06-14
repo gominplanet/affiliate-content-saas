@@ -19,6 +19,7 @@
 
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
@@ -55,9 +56,26 @@ export async function POST(request: Request) {
         { status: 503 },
       )
     }
-    const supabase = await createServerClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Dual-mode auth. Normal: cookie session. Service: the async worker calls
+    // this route internally with the CRON_SECRET + the job's identity in headers
+    // (mirrors /api/blog/generate) — so the SAME generation pipeline runs off
+    // the request path with no 300s ceiling on the user-facing side.
+    const svcSecret = request.headers.get('x-mvp-service')
+    const isServiceCall = !!svcSecret && svcSecret === process.env.CRON_SECRET
+    let supabase: Awaited<ReturnType<typeof createServerClient>>
+    let user: { id: string }
+    if (isServiceCall) {
+      const svcUser = request.headers.get('x-mvp-service-user') || ''
+      if (!svcUser) return NextResponse.json({ error: 'Service call missing identity' }, { status: 400 })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase = createAdminClient() as unknown as Awaited<ReturnType<typeof createServerClient>>
+      user = { id: svcUser }
+    } else {
+      supabase = await createServerClient()
+      const { data: { user: sessionUser } } = await supabase.auth.getUser()
+      if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      user = { id: sessionUser.id }
+    }
 
     const body = await request.json() as { asin?: string; campaignName?: string; epc?: string; endsAt?: string; campaignId?: string }
     const asin = extractAsin((body.asin ?? '').toUpperCase()) || (body.asin ?? '').trim()
@@ -147,7 +165,8 @@ export async function POST(request: Request) {
         })
         .eq('id', body.campaignId)
         .eq('user_id', user.id)
-        .in('status', ['pending', 'failed'])
+        // 'queued' = the async enqueue parked it for the worker; claim it too.
+        .in('status', ['pending', 'failed', 'queued'])
         .select('id,generated_title,generated_content,generated_excerpt,generated_slug')
         .maybeSingle()
       if (reused?.id) {
