@@ -60,6 +60,8 @@ export default function SeoPage() {
   // Per-row "Check" button — set of postIds currently being rechecked, so we
   // can show a spinner on the right row(s) while the GSC call is in flight.
   const [rechecking, setRechecking] = useState<Set<string>>(new Set())
+  // "Check visible" bulk re-check progress (null = idle).
+  const [checkingAll, setCheckingAll] = useState<{ done: number; total: number } | null>(null)
   // Bulk-index selection — postIds the user has ticked. Cap is 50 (matches
   // Google's daily Indexing API quota per account, so we never start work
   // that's guaranteed to fail mid-batch).
@@ -352,6 +354,22 @@ export default function SeoPage() {
       setRechecking(prev => { const next = new Set(prev); next.delete(postId); return next })
     }
   }, [])
+
+  // "Check visible" — re-check indexing for every post currently shown, one at
+  // a time (Google's URL Inspection API is rate-limited, so we never fan out).
+  // Capped at BULK_INDEX_CAP so a huge library can't blow the daily quota in
+  // one click. Each row updates in place via recheckIndexing.
+  const checkVisible = useCallback(async (targets: { postId: string; url: string | null }[]) => {
+    const list = targets.filter(t => !!t.url).slice(0, 50)
+    if (!list.length) return
+    setCheckingAll({ done: 0, total: list.length })
+    for (let i = 0; i < list.length; i++) {
+      await recheckIndexing(list[i].postId)
+      setCheckingAll({ done: i + 1, total: list.length })
+    }
+    setCheckingAll(null)
+    setFixMsg({ ok: true, text: `Re-checked indexing for ${list.length} post${list.length === 1 ? '' : 's'}.` })
+  }, [recheckIndexing])
 
   // "Rebuild from video" — for legacy posts (pre-MVP or first-generation
   // posts on a thin prompt) that score low and can't be auto-fixed. The user
@@ -811,6 +829,18 @@ export default function SeoPage() {
                     title={`Select up to ${BULK_INDEX_CAP} posts for bulk indexing`}
                   />
                   <span>Select visible (max {BULK_INDEX_CAP}) for bulk indexing</span>
+                  {/* Bulk re-check indexing for every post shown (sequential,
+                      capped at 50 to respect Google's daily quota). */}
+                  <button
+                    onClick={() => checkVisible(posts)}
+                    disabled={!!checkingAll}
+                    className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED] hover:underline disabled:opacity-60 disabled:no-underline"
+                    title="Re-check Google indexing status for every post shown (up to 50)"
+                  >
+                    {checkingAll
+                      ? <><Loader2 size={11} className="animate-spin" /> Checking {checkingAll.done}/{checkingAll.total}…</>
+                      : <><RefreshCw size={11} /> Check visible</>}
+                  </button>
                 </div>
               )
             })()}
