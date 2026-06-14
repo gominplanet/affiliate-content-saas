@@ -1529,7 +1529,7 @@ const PRICING_TIERS: PricingTier[] = [
     highlight: true,
     icon: <Crown size={16} />,
     features: [
-      '60 posts / month (blog + thumbnail + metadata bundle)',
+      '45 posts / month (blog + thumbnail + metadata bundle)',
       'Adds Telegram auto-post on top of Creator',
       'Deals Hub: 5 deal posts / month + Amazon CSV bulk import',
       'Topic hubs + Refresh Images on published posts',
@@ -1549,7 +1549,7 @@ const PRICING_TIERS: PricingTier[] = [
     highlight: false,
     icon: <Rocket size={16} />,
     features: [
-      '200 posts / month + Comparisons + Buying Guides',
+      '100 posts / month + Comparisons + Buying Guides',
       'Adds X (Twitter) auto-post on top of Studio',
       'Rebuild-from-video on any legacy WP post',
       'Creator Campaigns (Amazon EPC scout, one-click publish)',

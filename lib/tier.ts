@@ -182,12 +182,15 @@ export const TIERS = {
     regularPrice: 199,
     /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial. */
     monthlyAiSpendCeilingUsd: 40 as number | null,
-    /** Shared counter: 60 generations/mo. */
-    postsPerMonth: 60,
+    /** Shared counter: 45 generations/mo (lowered 60 → 45, 2026-06-14). Honest
+     *  cap: 45 image-posts (~$28) + 30 scripts (~$3) sits comfortably under the
+     *  $40 ceiling, so a Studio user can consume the FULL advertised allowance
+     *  before the spendGate wall — the wall now only trips on abuse. */
+    postsPerMonth: 45,
     lifetimeMax: null as number | null,
     collabsPerMonth: 15 as number | null,
-    thumbnailsPerMonth: 60 as number | null,
-    metadataGensPerMonth: 60 as number | null,
+    thumbnailsPerMonth: 45 as number | null,
+    metadataGensPerMonth: 45 as number | null,
     /** IG AI thumbnails open to Studio at 30/mo (was Pro-only). */
     instagramAiThumbnailsPerMonth: 30 as number | null,
     /** Studio gets 5 deal posts / mo. Separate counter from blog. */
@@ -212,7 +215,7 @@ export const TIERS = {
     topicHubs: true,
     refreshImages: true,
     rebuildFromVideo: false,
-    basePosts: 60,
+    basePosts: 45,
     bonusPosts: 0,
     sites: 1,
     youtubeChannels: 1,
@@ -240,13 +243,16 @@ export const TIERS = {
      *  or ~180 text-posts/mo — far more than any real Pro user generates. The
      *  spendGate ceiling, not postsPerMonth, is the true cost cap. */
     monthlyAiSpendCeilingUsd: 90 as number | null,
-    /** Shared counter: 200 generations/mo (headline value; the spend ceiling
-     *  above is the real limiter for the rare power user). */
-    postsPerMonth: 200,
+    /** Shared counter: 100 generations/mo (lowered 200 → 100, 2026-06-14).
+     *  Honest cap: 100 image-posts (~$62) + 150 scripts (~$15) sits under the
+     *  $90 ceiling, so a Pro user can consume the FULL advertised allowance
+     *  before the spendGate wall — the wall now only trips on genuine abuse.
+     *  (At 200 the $90 ceiling gated users ~half-way, which was misleading.) */
+    postsPerMonth: 100,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
-    thumbnailsPerMonth: 200 as number | null,
-    metadataGensPerMonth: 200 as number | null,
+    thumbnailsPerMonth: 100 as number | null,
+    metadataGensPerMonth: 100 as number | null,
     instagramAiThumbnailsPerMonth: 100 as number | null,
     /** Pro: 30 deal posts/mo (revised down from 90 → 60 → 30 for COGS). */
     dealsPerMonth: 30 as number | null,
@@ -274,8 +280,8 @@ export const TIERS = {
     topicHubs: true,
     refreshImages: true,
     rebuildFromVideo: true,
-    basePosts: 140,
-    bonusPosts: 60,
+    basePosts: 100,
+    bonusPosts: 0,
     /** Pro multi-site: up to 10 WP sites. */
     sites: 10,
     /** Pro multi-channel: connect multiple YouTube channels (one default per WP site, plus pull from others). */
