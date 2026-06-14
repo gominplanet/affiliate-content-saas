@@ -702,14 +702,21 @@ export class WordPressService {
    *  publish fine via the proxy. Throws the actionable /setup/wp-doctor error
    *  if the chain is down. */
   async preflightWrite(): Promise<void> {
-    const ok = await this.checkConnection()
-    if (!ok) {
-      throw new Error(
-        'WordPress isn’t accepting authenticated requests right now. ' +
-        'Run the connection doctor at /setup/wp-doctor — it identifies the exact plugin or firewall ' +
-        '(Wordfence, SG Security, Cloudflare WAF, etc.) blocking us and gives the click-by-click fix.',
-      )
+    // Writes go through the body-auth PROXY; plain reads (checkConnection) use
+    // Basic-Auth with NO proxy. Many host WAFs block the Basic-Auth read while
+    // allowing the proxy write — so a read check is a false negative. Test the
+    // proxy path FIRST (what publishing actually uses); only if there's no
+    // proxy (older plugin) fall back to the Basic-Auth read check.
+    if (this.apiToken) {
+      const viaProxy = await this.tryProxyRequest<unknown>('/users/me', { method: 'GET' })
+      if (viaProxy !== null) return // proxy is healthy → createPost will publish
     }
+    if (await this.checkConnection()) return
+    throw new Error(
+      'WordPress isn’t accepting our requests right now. ' +
+      'Run the connection doctor at /setup/wp-doctor — it identifies the exact plugin or firewall ' +
+      '(Wordfence, SG Security, Cloudflare WAF, etc.) blocking us and gives the click-by-click fix.',
+    )
   }
 
   async updateCurrentUserDisplayName(displayName: string): Promise<void> {
