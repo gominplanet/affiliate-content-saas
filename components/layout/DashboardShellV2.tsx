@@ -33,7 +33,7 @@ import {
   Home, Youtube, Library, Mail, Palette, Brush, TrendingUp,
   Settings, CreditCard, Bot, ChevronsLeft, ChevronsRight,
   Bell, ChevronDown, Sparkles, PenLine, Scale, Calendar,
-  Sun, Moon, BookOpen, BadgePercent, Handshake,
+  Sun, Moon, BookOpen, BadgePercent, Handshake, Radar,
   Flame, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
@@ -250,6 +250,9 @@ export default function DashboardShellV2({
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuides },
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals },
+        // EPC Scout — Creator Connections cockpit. Admin-only while testing
+        // (no Pro paywall yet; flip `gate` to a tier check at launch).
+        { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: isAdmin },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
         // Instagram Burner hidden 2026-06-12 (not ready). Route stays alive.
