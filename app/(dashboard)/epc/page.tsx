@@ -174,8 +174,21 @@ export default function EpcScoutPage() {
     loadList()
   }, [loadList])
 
+  // Hard cap on a single bulk run — each generation is a full ~$0.50 AI job, so
+  // "Select all → Generate" must NOT fire dozens at once (that caused a runaway
+  // spend). Cap the batch and confirm the cost first.
+  const MAX_BATCH = 5
   const generateSelected = useCallback(() => {
-    runGenerate(filtered.filter(c => selected.has(c.asin) && (PENDING_STATUSES.has(c.status) || c.status === 'failed')))
+    const picks = filtered.filter(c => selected.has(c.asin) && (PENDING_STATUSES.has(c.status) || c.status === 'failed'))
+    if (!picks.length) return
+    const batch = picks.slice(0, MAX_BATCH)
+    const overflow = picks.length - batch.length
+    const ok = window.confirm(
+      `Generate ${batch.length} blog post${batch.length === 1 ? '' : 's'} now?\n\n` +
+      `Each is a full AI generation (research + write + image, ~$0.50 each).` +
+      (overflow > 0 ? `\n\nOnly the first ${MAX_BATCH} of ${picks.length} selected will run — repeat for the rest.` : ''),
+    )
+    if (ok) runGenerate(batch)
   }, [filtered, selected, runGenerate])
 
   return (
