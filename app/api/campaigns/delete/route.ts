@@ -32,6 +32,12 @@ function slugFromUrl(url: string | null): string | null {
   }
 }
 
+// Accept POST as an alias for DELETE. Some clients (and any cached older JS
+// bundle) call this endpoint with POST; without this they'd 405. Same handler.
+export async function POST(request: Request) {
+  return DELETE(request)
+}
+
 export async function DELETE(request: Request) {
   try {
     const supabase = await createServerClient()
