@@ -118,7 +118,9 @@ export default function EpcScoutPage() {
     return campaigns
       .map(c => ({ ...c, epcValue: parseDollar(c.epc) }))
       .filter(c => {
-        if (onlyPending && !PENDING_STATUSES.has(c.status)) return false
+        // "Not published yet" = anything without a live post — pending AND
+        // failed AND stuck (so money-spent failures stay visible + retryable).
+        if (onlyPending && isLiveRow(c)) return false
         if (minEpc > 0) {
           if (c.epcValue == null) return false
           if (c.epcValue < minEpc) return false
@@ -299,7 +301,7 @@ export default function EpcScoutPage() {
               </Field>
               <label className="flex items-center gap-2 text-[12px] font-medium pb-1.5 cursor-pointer" style={{ color: 'var(--text-soft)' }}>
                 <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} className="accent-[#7C3AED] w-4 h-4" />
-                Not yet generated
+                Not published yet
               </label>
               <span className="ml-auto text-[12px] pb-1.5" style={{ color: 'var(--text-faint)' }}>{filtered.length} match</span>
             </div>
@@ -372,7 +374,7 @@ export default function EpcScoutPage() {
             })}
             {filtered.length === 0 && (
               <div className="p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
-                No campaigns match these filters. Loosen them — e.g. lower Min EPC or untick “Not yet generated”.
+                No campaigns match these filters. Loosen them — e.g. lower Min EPC or untick “Not published yet”.
               </div>
             )}
           </div>
