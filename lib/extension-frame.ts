@@ -100,9 +100,19 @@ export interface ScoutedCampaign {
   image?: string | null
 }
 
+/** Why a scan returned what it did — surfaced so a 0 result explains itself. */
+export interface ScoutDiag {
+  url: string
+  title: string
+  gridFound: boolean
+  ariaLabelCount: number
+  asinCellCount: number
+  signedOut: boolean
+}
+
 export type ScoutResult =
-  | { ok: true; campaigns: ScoutedCampaign[] }
-  | { ok: false; error: ScoutError }
+  | { ok: true; campaigns: ScoutedCampaign[]; diag?: ScoutDiag | null }
+  | { ok: false; error: ScoutError; diag?: ScoutDiag | null }
 
 /** Structured failure reasons the EPC page maps to guidance copy. */
 export type ScoutError =

@@ -18,7 +18,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { scoutCreatorConnections, type ScoutedCampaign, type ScoutError } from '@/lib/extension-frame'
+import { scoutCreatorConnections, type ScoutedCampaign, type ScoutError, type ScoutDiag } from '@/lib/extension-frame'
 import { Loader2, Radar, ExternalLink, CheckCircle2, AlertCircle, Sparkles, Search } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -70,6 +70,7 @@ export default function EpcScoutPage() {
   const [scanning, setScanning] = useState(false)
   const [raw, setRaw] = useState<ScoutedCampaign[]>([])
   const [err, setErr] = useState<ScoutError | null>(null)
+  const [diag, setDiag] = useState<ScoutDiag | null>(null)
   const [scannedAt, setScannedAt] = useState<number | null>(null)
 
   // ── Filters (all in-app — re-filtering never re-scrapes Amazon) ──────────
@@ -88,6 +89,7 @@ export default function EpcScoutPage() {
     setErr(null)
     const res = await scoutCreatorConnections()
     setScanning(false)
+    setDiag(res.diag ?? null)
     if (!res.ok) {
       setErr(res.error)
       return
@@ -102,7 +104,15 @@ export default function EpcScoutPage() {
     setScannedAt(Date.now())
     setSelected(new Set())
     setGen({})
-    toast.success(`Scouted ${rows.length} campaign${rows.length === 1 ? '' : 's'} from Creator Connections.`)
+    if (rows.length > 0) {
+      toast.success(`Scouted ${rows.length} campaign${rows.length === 1 ? '' : 's'} from Creator Connections.`)
+    } else {
+      // 0 came back — diagnose WHY instead of a misleading "success".
+      const d = res.diag
+      if (d?.signedOut) toast.error('You’re not signed in to Amazon — sign in, then Scout again.')
+      else if (d && !d.gridFound) toast.error('Couldn’t find the opportunities grid on that page — see the note below.')
+      else toast('No campaigns on your Creator Connections opportunities list right now.')
+    }
   }, [])
 
   const filtered = useMemo(() => {
@@ -209,6 +219,32 @@ export default function EpcScoutPage() {
             <div>
               <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>{ERROR_COPY[err].title}</p>
               <p className="text-[12px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-faint)' }}>{ERROR_COPY[err].body}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Zero-result diagnosis — shown when a scan completed but found no
+            campaigns, so we know WHY (wrong page / signed out / stale selectors)
+            instead of treating 0 as an empty list. */}
+        {!err && scannedAt != null && raw.length === 0 && diag && (
+          <div className="mt-4 rounded-xl border p-3" style={{ borderColor: 'rgba(255,149,0,0.3)', backgroundColor: 'rgba(255,149,0,0.06)' }}>
+            <div className="flex items-start gap-2">
+              <AlertCircle size={15} className="text-[#FF9500] flex-shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>
+                  {diag.signedOut ? 'Not signed in to Amazon'
+                    : !diag.gridFound ? 'Couldn’t find the opportunities grid'
+                    : 'No campaigns found on the page'}
+                </p>
+                <p className="text-[12px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                  {diag.signedOut ? 'Sign in to Amazon, open Creator Connections → New Opportunities, then Scout again.'
+                    : !diag.gridFound ? 'We read the page but the campaign grid wasn’t there. Make sure the opened tab is on the New Opportunities list (not the dashboard or a detail page), then Scout again.'
+                    : 'The grid loaded but had no campaign cells — your opportunities list may genuinely be empty right now.'}
+                </p>
+                <p className="text-[10px] mt-2 font-mono break-all" style={{ color: 'var(--text-faint)' }}>
+                  scanned: {diag.url} · grid:{diag.gridFound ? 'yes' : 'no'} · cells:{diag.asinCellCount} · aria:{diag.ariaLabelCount}
+                </p>
+              </div>
             </div>
           </div>
         )}

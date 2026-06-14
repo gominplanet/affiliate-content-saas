@@ -203,14 +203,14 @@ async function scanTab(tabId) {
   const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_SCAN' })
   try {
     const resp = await ask()
-    if (resp && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns }
-    return { ok: false, error: resp?.error || 'scan-failed' }
+    if (resp && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns, diag: resp.diag || null }
+    return { ok: false, error: resp?.error || 'scan-failed', diag: resp?.diag || null }
   } catch (e) {
     try {
       await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] })
       const resp = await ask()
-      if (resp && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns }
-      return { ok: false, error: resp?.error || 'scan-failed' }
+      if (resp && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns, diag: resp.diag || null }
+      return { ok: false, error: resp?.error || 'scan-failed', diag: resp?.diag || null }
     } catch (e2) {
       return { ok: false, error: 'content-script-unreachable' }
     }

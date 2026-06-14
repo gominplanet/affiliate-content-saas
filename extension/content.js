@@ -213,13 +213,33 @@ async function parseCampaigns() {
 
 // Guard: this file may be (re)injected by the popup on every scan.
 // Register the message listener only once per page.
+// Snapshot of WHY a scan returned what it did — surfaced in the app so a 0
+// result tells us the cause (wrong page, not signed in, stale selectors)
+// instead of looking like an empty opportunities list.
+function collectDiag() {
+  const grid = findGrid()
+  const ariaCount = document.querySelectorAll('[aria-label]').length
+  const asinCount = [...document.querySelectorAll('[aria-label]')]
+    .filter(e => ASIN_RE.test((e.getAttribute('aria-label') || '').trim().toUpperCase())).length
+  const signedOut = /\bap\/signin\b/i.test(location.href) ||
+    !!document.querySelector('#ap_email, form[name="signIn"]')
+  return {
+    url: location.href,
+    title: (document.title || '').slice(0, 120),
+    gridFound: !!grid,
+    ariaLabelCount: ariaCount,
+    asinCellCount: asinCount,
+    signedOut,
+  }
+}
+
 if (!window.__ccScoutListener) {
   window.__ccScoutListener = true
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'CC_SCAN') {
       parseCampaigns()
-        .then(campaigns => sendResponse({ campaigns }))
-        .catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [] }))
+        .then(campaigns => sendResponse({ campaigns, diag: collectDiag() }))
+        .catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [], diag: collectDiag() }))
       return true // async response
     }
   })
