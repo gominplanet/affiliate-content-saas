@@ -76,6 +76,29 @@ export async function POST(request: Request) {
     if (!tierAllowsCampaigns(tier)) {
       return NextResponse.json({ error: 'Creator Campaigns is a Pro feature.' }, { status: 403 })
     }
+    // Idempotency by ASIN: if ANOTHER campaign row for this product already has
+    // a published post, don't generate a duplicate (the scout can ingest the
+    // same ASIN twice). Short-circuit BEFORE any AI spend. The extra row can be
+    // removed from the EPC list.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existingPub } = await supabase
+      .from('campaigns')
+      .select('id,wordpress_url,status')
+      .eq('user_id', user.id)
+      .eq('asin', asin)
+      .or('status.eq.published,blog_post_id.not.is.null')
+      .limit(1)
+      .maybeSingle()
+    if (existingPub && existingPub.id !== body.campaignId) {
+      return NextResponse.json({
+        ok: true,
+        alreadyGenerated: true,
+        status: 'published',
+        wordpressUrl: existingPub.wordpress_url ?? null,
+        message: 'A post for this product is already published — skipped to avoid a duplicate. Remove the extra row.',
+      })
+    }
+
     // Monthly AI-spend circuit breaker (Opus campaign writer).
     const spendBlocked = await spendGate(user.id, tier)
     if (spendBlocked) return spendBlocked

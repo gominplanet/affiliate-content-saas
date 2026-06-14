@@ -19,7 +19,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound } from 'lucide-react'
+import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 const CC_URL = 'https://www.amazon.com/creatorconnections/'
@@ -81,6 +81,8 @@ export default function EpcScoutPage() {
   const [genErr, setGenErr] = useState<Record<string, string>>({})
   // Per-row "Fix image" state for already-published rows (repairs the CTA hero).
   const [fixing, setFixing] = useState<Record<string, boolean>>({})
+  // Per-row "Remove" state (delete a campaign row + its WP post if any).
+  const [removing, setRemoving] = useState<Record<string, boolean>>({})
 
   const loadList = useCallback(async () => {
     try {
@@ -208,6 +210,32 @@ export default function EpcScoutPage() {
       setFixing(f => { const n = { ...f }; delete n[c.asin]; return n })
     }
   }, [])
+
+  // Remove a campaign row (and its WP post, if one exists). Used to clean up
+  // duplicate ASIN rows the scout ingested twice.
+  const removeRow = useCallback(async (c: CampaignRow) => {
+    const isLive = !!(c.wordpress_url || c.blog_post_id)
+    const msg = isLive
+      ? `Delete this campaign AND its published WordPress post?\n\n${c.product_title || c.asin}`
+      : `Remove this row?\n\n${c.product_title || c.asin}`
+    if (!window.confirm(msg)) return
+    setRemoving(r => ({ ...r, [c.asin]: true }))
+    try {
+      const res = await fetch('/api/campaigns/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: c.id }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
+      toast.success('Removed.')
+      loadList()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Couldn\'t remove the row')
+    } finally {
+      setRemoving(r => { const n = { ...r }; delete n[c.asin]; return n })
+    }
+  }, [loadList])
 
   // Hard cap on a single bulk run — each generation is a full ~$0.50 AI job, so
   // "Select all → Generate" must NOT fire dozens at once (that caused a runaway
@@ -395,13 +423,25 @@ export default function EpcScoutPage() {
                           className="inline-flex items-center gap-1 text-[11px] font-medium text-[#7C3AED] hover:underline disabled:opacity-50">
                           {fixing[c.asin] ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={11} />} Fix image
                         </button>
+                        <button onClick={() => removeRow(c)} disabled={!!removing[c.asin]}
+                          title="Delete this campaign + its WordPress post" aria-label="Delete this campaign"
+                          className="text-[var(--text-faint)] hover:text-[#ff3b30] disabled:opacity-50">
+                          {removing[c.asin] ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        </button>
                       </div>
                     ) : (
-                      <button onClick={() => runGenerate([c])}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
-                        style={{ background: (isFail || isStuck) ? '#ff3b30' : 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
-                        <Sparkles size={12} /> {(isFail || isStuck) ? 'Retry' : 'Generate'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => runGenerate([c])}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
+                          style={{ background: (isFail || isStuck) ? '#ff3b30' : 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
+                          <Sparkles size={12} /> {(isFail || isStuck) ? 'Retry' : 'Generate'}
+                        </button>
+                        <button onClick={() => removeRow(c)} disabled={!!removing[c.asin]}
+                          title="Remove this row" aria-label="Remove this row"
+                          className="text-[var(--text-faint)] hover:text-[#ff3b30] disabled:opacity-50">
+                          {removing[c.asin] ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
