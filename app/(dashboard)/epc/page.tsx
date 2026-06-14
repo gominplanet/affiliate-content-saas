@@ -32,16 +32,16 @@ const ERROR_COPY: Record<ScoutError, { title: string; body: string }> = {
     body: 'Install (or enable) the MVP Affiliate Co-Pilot Helper extension, then reload this page and try again.',
   },
   'no-cc-tab': {
-    title: 'Open Creator Connections first',
-    body: 'In another tab, sign in to Amazon and open the Creator Connections “New Opportunities” view. Leave it open, come back here, and Scout again.',
+    title: 'Couldn’t open Creator Connections',
+    body: 'Make sure you’re signed in to Amazon, then Scout again.',
   },
   'content-script-unreachable': {
     title: 'Reload your Creator Connections tab',
-    body: 'That tab was open before the latest extension update. Refresh the Creator Connections tab, then Scout again.',
+    body: 'A Creator Connections tab was open from before the latest extension update. Refresh it, then Scout again.',
   },
   'scan-failed': {
     title: 'Couldn’t read the opportunities grid',
-    body: 'Make sure you’re on the Creator Connections “New Opportunities” list (not a campaign detail page), then Scout again.',
+    body: 'We opened Creator Connections but couldn’t read the list. Make sure you’re signed in to Amazon and on the “New Opportunities” view, then Scout again.',
   },
   'timeout': {
     title: 'Scan timed out',
@@ -188,8 +188,9 @@ export default function EpcScoutPage() {
           <div className="min-w-0">
             <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Scan Creator Connections</p>
             <p className="text-[12px] mt-1 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-              Open Amazon Creator Connections in another tab on the <span className="font-medium">New Opportunities</span> view,
-              then hit Scout. The extension reads that page in your own session — nothing is posted or changed on Amazon.
+              Hit Scout — we’ll open (or focus) your Amazon Creator Connections <span className="font-medium">New Opportunities</span> view,
+              read it in your own logged-in session, pull the campaigns in here, and bring you right back. Nothing is posted or changed on Amazon.
+              Just make sure you’re signed in to Amazon.
             </p>
           </div>
           <button

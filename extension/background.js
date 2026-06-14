@@ -175,39 +175,75 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions }) {
 }
 
 // ── Creator Connections scout (scraper-only) ───────────────────────────────
-// The MVP "EPC" page drives this via externally_connectable. We do NOT open a
-// tab — the user must ALREADY be on their Creator Connections opportunities
-// view (their own logged-in Amazon session). We find that open tab, run the
-// existing CC_SCAN content script, and hand the RAW campaigns back. All
-// filtering / ranking / selection happens in the app, never here.
-async function scanCreatorConnections() {
-  const tabs = await chrome.tabs.query({
-    url: [
-      'https://www.amazon.com/creatorconnections/*',
-      'https://affiliate-program.amazon.com/*',
-    ],
-  })
-  if (!tabs.length) return { ok: false, error: 'no-cc-tab' }
-  // Prefer an active CC tab; otherwise the first match.
-  const tab = tabs.find((t) => t.active) || tabs[0]
-  if (!tab || tab.id == null) return { ok: false, error: 'no-cc-tab' }
+// The MVP "EPC" page drives this via externally_connectable. One click: we
+// FOCUS the user's already-open Creator Connections tab (or open the
+// opportunities view ourselves if none is open), run the existing CC_SCAN
+// content script in their own logged-in session, hand the RAW campaigns back,
+// and return focus to the MVP tab. We never open more than one CC tab — repeat
+// scouts reuse it. All filtering / ranking / selection happens in the app.
+const CC_OPPORTUNITIES_URL = 'https://www.amazon.com/creatorconnections/'
 
-  const ask = () => chrome.tabs.sendMessage(tab.id, { type: 'CC_SCAN' })
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+function waitForTabLoad(tabId, ms) {
+  return new Promise((resolve) => {
+    const onUpdated = (id, info) => {
+      if (id === tabId && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(onUpdated)
+        resolve()
+      }
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated)
+    setTimeout(() => { chrome.tabs.onUpdated.removeListener(onUpdated); resolve() }, ms)
+  })
+}
+
+// Run CC_SCAN on a tab; inject content.js once + retry if it isn't there yet.
+async function scanTab(tabId) {
+  const ask = () => chrome.tabs.sendMessage(tabId, { type: 'CC_SCAN' })
   try {
     const resp = await ask()
     if (resp && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns }
     return { ok: false, error: resp?.error || 'scan-failed' }
   } catch (e) {
-    // Content script not present (tab predates this extension build, or it's a
-    // CC sub-page the manifest didn't auto-inject). Inject once, then retry.
     try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] })
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] })
       const resp = await ask()
       if (resp && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns }
       return { ok: false, error: resp?.error || 'scan-failed' }
     } catch (e2) {
       return { ok: false, error: 'content-script-unreachable' }
     }
+  }
+}
+
+async function scanCreatorConnections(callerTabId) {
+  const open = await chrome.tabs.query({
+    url: [
+      'https://www.amazon.com/creatorconnections/*',
+      'https://affiliate-program.amazon.com/*',
+    ],
+  })
+  let tab = open.find((t) => t.active) || open[0] || null
+  let opened = false
+  try {
+    if (!tab || tab.id == null) {
+      // None open — open the opportunities view ourselves, FOREGROUND so the
+      // React/virtualized grid renders reliably (background tabs throttle).
+      tab = await chrome.tabs.create({ url: CC_OPPORTUNITIES_URL, active: true })
+      opened = true
+      await waitForTabLoad(tab.id, 25000)
+      await _sleep(3500) // let the SPA + grid paint before scrolling/harvesting
+    } else {
+      // Already open — focus it so its (possibly throttled) timers run live.
+      try { await chrome.tabs.update(tab.id, { active: true }) } catch (e) {}
+    }
+    return await scanTab(tab.id)
+  } catch (e) {
+    return { ok: false, error: opened ? 'scan-failed' : 'content-script-unreachable' }
+  } finally {
+    // Always hand focus back to MVP so the cockpit is where the user lands.
+    if (callerTabId != null) { try { await chrome.tabs.update(callerTabId, { active: true }) } catch (e) {} }
   }
 }
 
@@ -219,10 +255,11 @@ chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
     return // sync response
   }
   if (msg.type === 'MVP_CC_SCAN') {
-    // Scraping the virtualized grid (scroll + enrichment pass) can take a while
-    // on a large opportunities list, so allow up to 2 minutes.
+    // Scraping the virtualized grid (open/focus + scroll + enrichment pass) can
+    // take a while on a large opportunities list, so allow up to 2 minutes.
+    const callerTabId = sender && sender.tab ? sender.tab.id : null
     const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
-    scanCreatorConnections()
+    scanCreatorConnections(callerTabId)
       .then((res) => { clearTimeout(timeout); sendResponse(res) })
       .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
     return true // async response — keep the channel open
