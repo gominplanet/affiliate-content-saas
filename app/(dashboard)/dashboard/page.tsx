@@ -25,6 +25,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import SetupChecklist from '@/components/dashboard/SetupChecklist'
 import ChannelStats from '@/components/dashboard/ChannelStats'
 import NewsBanner from '@/components/dashboard/NewsBanner'
+import WhatsNewCard from '@/components/dashboard/WhatsNewCard'
 import ReferralBanner from '@/components/dashboard/ReferralBanner'
 import WpUpdateBanner from '@/components/dashboard/WpUpdateBanner'
 import AmazonSitesReminder from '@/components/dashboard/AmazonSitesReminder'
@@ -290,6 +291,10 @@ export default async function DashboardPage() {
         <WpUpdateBanner />
         {int?.wordpress_url ? <AmazonSitesReminder siteUrl={int.wordpress_url as string} /> : null}
         <ReferralBanner />
+
+        {/* "What's new" changelog for existing users — new users get the
+            welcome flow instead, so we don't clutter their first run. */}
+        {!isNewUser && <WhatsNewCard />}
 
         {/* New-user welcome card. Restyled to use the V2 surface tokens
             so it sits cohesively inside the new dark/light shell. */}
