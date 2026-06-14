@@ -19,7 +19,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, ExternalLink, CheckCircle2, AlertCircle, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound } from 'lucide-react'
+import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 
 const CC_URL = 'https://www.amazon.com/creatorconnections/'
@@ -35,6 +35,7 @@ interface CampaignRow {
   blog_post_id: string | null
   wordpress_url: string | null
   product_price: string | number | null
+  error_message: string | null
   created_at: string
 }
 
@@ -71,6 +72,7 @@ export default function EpcScoutPage() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [gen, setGen] = useState<Record<string, 'running' | 'done' | 'error'>>({})
+  const [genErr, setGenErr] = useState<Record<string, string>>({})
 
   const loadList = useCallback(async () => {
     try {
@@ -125,7 +127,8 @@ export default function EpcScoutPage() {
       .sort((a, b) => (b.epcValue ?? -1) - (a.epcValue ?? -1))
   }, [campaigns, minEpc, endsWithin, keyword, onlyPending])
 
-  const selectableShown = filtered.filter(c => PENDING_STATUSES.has(c.status))
+  const canGen = (c: CampaignRow) => PENDING_STATUSES.has(c.status) || c.status === 'failed'
+  const selectableShown = filtered.filter(canGen)
   const allShownSelected = selectableShown.length > 0 && selectableShown.every(c => selected.has(c.asin))
   function toggleAll() {
     setSelected(prev => {
@@ -142,27 +145,38 @@ export default function EpcScoutPage() {
   const anyRunning = Object.values(gen).some(s => s === 'running')
   const selectedCount = selectableShown.filter(c => selected.has(c.asin)).length
 
-  const generateSelected = useCallback(async () => {
-    const picks = filtered.filter(c => selected.has(c.asin) && PENDING_STATUSES.has(c.status))
+  // Generate posts for a set of campaign rows, sequentially. Passes campaignId
+  // so the route REUSES the pushed pending row (no duplicate insert), and keeps
+  // the real failure reason per-row so a "failed" is actually diagnosable.
+  const runGenerate = useCallback(async (picks: CampaignRow[]) => {
     if (!picks.length) return
+    let ok = 0
     for (const c of picks) {
       setGen(g => ({ ...g, [c.asin]: 'running' }))
+      setGenErr(e => { const n = { ...e }; delete n[c.asin]; return n })
       try {
         const res = await fetch('/api/campaigns/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ asin: c.asin, campaignName: c.campaign_name, epc: c.epc, endsAt: c.ends_at }),
+          body: JSON.stringify({ campaignId: c.id, asin: c.asin, campaignName: c.campaign_name, epc: c.epc, endsAt: c.ends_at }),
         })
-        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`) }
+        const d = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
         setGen(g => ({ ...g, [c.asin]: 'done' }))
+        ok++
       } catch (e) {
+        const msg = e instanceof Error ? e.message : 'generation failed'
         setGen(g => ({ ...g, [c.asin]: 'error' }))
-        toast.error(`${c.asin}: ${e instanceof Error ? e.message : 'generation failed'}`)
+        setGenErr(er => ({ ...er, [c.asin]: msg }))
       }
     }
-    toast.success('Done — check the Blog Post Generator for the new drafts.')
+    if (ok > 0) toast.success(`${ok} generated — check the Blog Post Generator.`)
     loadList()
-  }, [filtered, selected, loadList])
+  }, [loadList])
+
+  const generateSelected = useCallback(() => {
+    runGenerate(filtered.filter(c => selected.has(c.asin) && (PENDING_STATUSES.has(c.status) || c.status === 'failed')))
+  }, [filtered, selected, runGenerate])
 
   return (
     <>
@@ -288,22 +302,28 @@ export default function EpcScoutPage() {
 
           {/* Table */}
           <div className="card divide-y divide-gray-100 dark:divide-white/10">
-            <div className="px-3 py-2 grid grid-cols-[28px_1fr_80px_90px_110px] gap-2 text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>
-              <span /><span>Product</span><span className="text-right">EPC</span><span className="text-right">Ends</span><span className="text-center">Status</span>
+            <div className="px-3 py-2 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 text-[10px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-faint)' }}>
+              <span /><span>Product</span><span className="text-right">EPC</span><span className="text-right">Ends</span><span className="text-center">Generate</span>
             </div>
             {filtered.map(c => {
               const dl = daysLeft(c.ends_at)
               const g = gen[c.asin]
               const isPending = PENDING_STATUSES.has(c.status)
+              const isFail = g === 'error' || c.status === 'failed'
+              const err = genErr[c.asin] || c.error_message || ''
+              const isDone = !isPending && !isFail
               return (
-                <label key={c.id} className={`px-3 py-2.5 grid grid-cols-[28px_1fr_80px_90px_110px] gap-2 items-center ${isPending ? 'cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.02]' : 'opacity-70'}`}>
-                  <input type="checkbox" disabled={!isPending} checked={selected.has(c.asin)} onChange={() => toggle(c.asin)} className="accent-[#7C3AED] w-4 h-4" />
+                <div key={c.id} className={`px-3 py-2.5 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 items-center ${isDone ? 'opacity-80' : ''}`}>
+                  <input type="checkbox" disabled={!isPending && !isFail} checked={selected.has(c.asin)} onChange={() => toggle(c.asin)} className="accent-[#7C3AED] w-4 h-4" />
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{c.campaign_name || c.product_title || c.asin}</p>
                     <a href={`https://www.amazon.com/dp/${c.asin}`} target="_blank" rel="noopener noreferrer"
-                      className="text-[11px] inline-flex items-center gap-0.5 text-[#7C3AED] hover:underline" onClick={e => e.stopPropagation()}>
+                      className="text-[11px] inline-flex items-center gap-0.5 text-[#7C3AED] hover:underline">
                       {c.asin} <ExternalLink size={9} />
                     </a>
+                    {isFail && err && (
+                      <p className="text-[11px] text-[#ff3b30] mt-0.5 truncate" title={err}>⚠ {err}</p>
+                    )}
                   </div>
                   <span className="text-right text-[13px] font-semibold tabular-nums" style={{ color: parseDollar(c.epc) != null ? '#34c759' : 'var(--text-faint)' }}>
                     {parseDollar(c.epc) != null ? `$${parseDollar(c.epc)!.toFixed(2)}` : '—'}
@@ -311,15 +331,22 @@ export default function EpcScoutPage() {
                   <span className="text-right text-[12px] tabular-nums" style={{ color: dl <= 7 ? '#FF9500' : 'var(--text-faint)' }}>
                     {dl === Infinity ? 'open' : `${dl}d`}
                   </span>
-                  <span className="text-center text-[11px]">
-                    {g === 'running' ? <Loader2 size={13} className="animate-spin inline text-[#7C3AED]" />
-                      : g === 'error' || c.status === 'failed' ? <span className="text-[#ff3b30] inline-flex items-center gap-1"><AlertCircle size={12} /> failed</span>
-                      : !isPending ? (c.blog_post_id || c.wordpress_url
-                          ? <a href={c.wordpress_url || '/content'} target="_blank" rel="noopener noreferrer" className="text-[#34c759] inline-flex items-center gap-1 hover:underline"><CheckCircle2 size={12} /> live</a>
-                          : <span className="text-[#34c759] inline-flex items-center gap-1"><CheckCircle2 size={12} /> done</span>)
-                      : <span style={{ color: 'var(--text-faint)' }}>pending</span>}
-                  </span>
-                </label>
+                  <div className="flex justify-center">
+                    {g === 'running' ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED]"><Loader2 size={13} className="animate-spin" /> writing…</span>
+                    ) : isDone ? (
+                      <a href={c.wordpress_url || '/content'} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#34c759] hover:underline">
+                        <CheckCircle2 size={13} /> View post
+                      </a>
+                    ) : (
+                      <button onClick={() => runGenerate([c])}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
+                        style={{ background: isFail ? '#ff3b30' : 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
+                        <Sparkles size={12} /> {isFail ? 'Retry' : 'Generate'}
+                      </button>
+                    )}
+                  </div>
+                </div>
               )
             })}
             {filtered.length === 0 && (
