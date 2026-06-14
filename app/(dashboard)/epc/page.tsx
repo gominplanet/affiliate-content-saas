@@ -222,7 +222,7 @@ export default function EpcScoutPage() {
     setRemoving(r => ({ ...r, [c.asin]: true }))
     try {
       const res = await fetch('/api/campaigns/delete', {
-        method: 'POST',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ campaignId: c.id }),
       })
