@@ -512,7 +512,7 @@ export async function POST(request: Request) {
         status: 'published',
         wordpress_post_id: wpPost.id,
         wordpress_url: wpPost.link,
-        ai_model: 'claude-sonnet-4-6',
+        ai_model: 'claude-opus-4-8',
         generation_prompt_version: 'campaign-v1',
         published_at: new Date().toISOString(),
         ...(geniuslinkCode ? { geniuslink_code: geniuslinkCode } : {}),

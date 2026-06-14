@@ -560,7 +560,7 @@ export default function NewsletterPage() {
           'Sender domain verify + DKIM for inbox-first deliverability',
           'Creator: 500 subs, 1 send/mo (taster)',
           'Studio: 5,000 subs, weekly sends + scheduling',
-          'Pro: 10,000 subs, twice-weekly + A/B subject lines + segmented sends',
+          'Pro: 10,000 subs, weekly sends + A/B subject lines + segmented sends',
         ]}
         requiredTier="creator"
         currentTier={tier}

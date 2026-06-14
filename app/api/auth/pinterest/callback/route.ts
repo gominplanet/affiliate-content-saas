@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
 
   if (error || !code) {
-    return NextResponse.redirect(`${appUrl}/setup?pinterest_error=${error || 'no_code'}`)
+    return NextResponse.redirect(`${appUrl}/setup?pinterest_error=${encodeURIComponent(error || 'no_code')}`)
   }
 
   const supabase = await createServerClient()

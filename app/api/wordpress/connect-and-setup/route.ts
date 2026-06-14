@@ -5,6 +5,7 @@ import { generateAboutPage } from '@/lib/wordpress-about-template'
 import { generatePrivacyPolicy } from '@/lib/wordpress-privacy-template'
 import { wpLogin, getNonce } from '@/lib/wordpress-login'
 import { maybeEncrypt } from '@/lib/secrets'
+import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
 
 export const maxDuration = 60
 
@@ -114,6 +115,17 @@ export async function POST(request: Request) {
     let siteUrl = resolvedUrl.trim()
     if (!siteUrl.startsWith('http')) siteUrl = `https://${siteUrl}`
     siteUrl = siteUrl.replace(/\/wp-admin\/?.*$/, '').replace(/\/$/, '')
+
+    // SSRF guard — siteUrl is user-supplied and we're about to fetch it. Block
+    // private/loopback/metadata hosts before any request leaves the server.
+    try {
+      assertPublicHttpUrl(siteUrl)
+    } catch (e) {
+      if (e instanceof SsrfBlocked) {
+        return NextResponse.json({ error: 'That site URL isn\'t allowed. Use your public WordPress URL.' }, { status: 400 })
+      }
+      throw e
+    }
 
     // ── 1. Authenticate via Basic Auth + Application Password ─────────────────
     const appPwClean = appPwInput.replace(/\s+/g, '')

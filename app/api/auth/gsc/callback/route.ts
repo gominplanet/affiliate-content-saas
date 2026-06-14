@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       : `${appUrl}/brand?${params}`
 
   if (error || !code) {
-    return NextResponse.redirect(dest(`gsc_error=${error || 'no_code'}`))
+    return NextResponse.redirect(dest(`gsc_error=${encodeURIComponent(error || 'no_code')}`))
   }
 
   if (!userId) {

@@ -107,9 +107,8 @@ export default function BillingPage() {
     ? 'posts used (lifetime)'
     : `posts used this month · resets the 1st`
 
-  // Caps updated 2026-06-04 to match new tier matrix (lib/tier.ts). Prices
-  // unchanged. The bonus-post framing on Pro was dropped: clearer to just
-  // say 200/month than "140 + 60 bonus" which read like marketing math.
+  // Caps track lib/tier.ts (honest caps 2026-06-14: 20 / 45 / 100). Prices
+  // unchanged. Pro's bonus-post framing was dropped — just say the flat cap.
   const planDetails = [
     { tier: 'creator' as Tier, limit: '20 posts / month',  price: 49,  regularPrice: 99  },
     { tier: 'studio' as Tier,  limit: '45 posts / month',  price: 99,  regularPrice: 199 },

@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   if (error || !code) {
     return NextResponse.redirect(
-      `${appUrl}/connect-socials?twitter_error=${error || 'no_code'}`,
+      `${appUrl}/connect-socials?twitter_error=${encodeURIComponent(error || 'no_code')}`,
     )
   }
 

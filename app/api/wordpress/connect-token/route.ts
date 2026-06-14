@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { maybeEncrypt } from '@/lib/secrets'
+import { assertPublicHttpUrl, SsrfBlocked } from '@/lib/ssrf-guard'
 
 export const maxDuration = 60
 
@@ -55,6 +56,16 @@ export async function POST(request: Request) {
 
     let siteUrl = payload.url.trim().replace(/\/$/, '')
     if (!siteUrl.startsWith('http')) siteUrl = `https://${siteUrl}`
+    // SSRF guard — siteUrl comes from the connection token (user-supplied);
+    // block private/loopback/metadata hosts before we fetch it.
+    try {
+      assertPublicHttpUrl(siteUrl)
+    } catch (e) {
+      if (e instanceof SsrfBlocked) {
+        return NextResponse.json({ error: 'That site URL isn\'t allowed. Use your public WordPress URL.' }, { status: 400 })
+      }
+      throw e
+    }
     const username = payload.username.trim()
     const appPassword = payload.password.replace(/\s+/g, '')
 

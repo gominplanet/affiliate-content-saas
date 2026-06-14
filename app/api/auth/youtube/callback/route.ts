@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       : `${appUrl}/connect-youtube?${params}`
 
   if (error || !code) {
-    return NextResponse.redirect(dest(`youtube_error=${error || 'no_code'}`))
+    return NextResponse.redirect(dest(`youtube_error=${encodeURIComponent(error || 'no_code')}`))
   }
   if (!userId) {
     const supabase = await createServerClient()

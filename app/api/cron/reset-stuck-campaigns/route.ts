@@ -43,11 +43,29 @@ export async function GET(request: Request) {
   const admin = createAdminClient()
   const cutoff = new Date(Date.now() - STUCK_MINUTES * 60_000).toISOString()
 
-  // Atomic update: any row in researching/generating that hasn't been
-  // touched in 10+ minutes gets flipped to failed. The error_message
-  // is what the user sees on the row; keep it short + actionable.
+  // Don't flip a row that still has an ACTIVE async generation job. The worker
+  // deliberately leaves a timed-out job 'running' (the generate function keeps
+  // going and may still publish), so a row can sit in 'researching' past 10 min
+  // while it's legitimately in flight. Flipping it to 'failed' there shows a
+  // false "failed" + Retry, and a user-triggered Retry would double-bill the
+  // Opus write. The queue owns recovery for those (stale-reclaim + attempts cap).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error, count } = await (admin as any)
+  const { data: activeJobs } = await (admin as any)
+    .from('generation_jobs')
+    .select('input')
+    .eq('kind', 'campaign')
+    .in('status', ['queued', 'running'])
+  const activeCampaignIds: string[] = Array.from(new Set(
+    (activeJobs ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((j: any) => j?.input?.campaignId)
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
+  ))
+
+  // Atomic update: any row in researching/generating that hasn't been touched
+  // in 10+ minutes (and has no active job) gets flipped to failed.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = (admin as any)
     .from('campaigns')
     .update({
       status: 'failed',
@@ -56,7 +74,10 @@ export async function GET(request: Request) {
     }, { count: 'exact' })
     .in('status', ['researching', 'generating'])
     .lt('updated_at', cutoff)
-    .select('id')
+  if (activeCampaignIds.length) {
+    q = q.not('id', 'in', `(${activeCampaignIds.join(',')})`)
+  }
+  const { data, error, count } = await q.select('id')
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
