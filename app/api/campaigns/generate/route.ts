@@ -41,7 +41,7 @@ function slugify(s: string): string {
 // Anthropic spend during EPC Scout testing. Hard-disabled at the server so no
 // client batch, retry, or worker can fire an Opus campaign write. Flip to true
 // (or remove this guard) once the cost path is understood + capped.
-const CAMPAIGN_GENERATION_ENABLED = false
+const CAMPAIGN_GENERATION_ENABLED = true
 
 export async function POST(request: Request) {
   try {
@@ -168,6 +168,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: code })
     }
 
+    // ── 0. WordPress write pre-flight — BEFORE any AI spend ─────────────────
+    // The Opus write is the expensive part; if the site's firewall/security
+    // plugin is blocking REST writes, fail for $0 here with the wp-doctor
+    // message instead of paying for a post that can't publish. (Incident
+    // 2026-06-14: gominreviews.com WAF rejected writes after the AI ran.)
+    const wpService = createWordPressService(
+      intRow.wordpress_url,
+      intRow.wordpress_username,
+      intRow.wordpress_app_password,
+      intRow.wordpress_api_token || undefined,
+    )
+    try {
+      await wpService.preflightWrite()
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : 'WordPress is not accepting writes right now.', 400)
+    }
+
     // ── 1. Scrape the Amazon product ────────────────────────────────────────
     let product
     try {
@@ -267,14 +284,7 @@ export async function POST(request: Request) {
       }).eq('id', campaignId)
     }
 
-    // ── 5. Publish to WordPress ─────────────────────────────────────────────
-    const wpService = createWordPressService(
-      intRow.wordpress_url,
-      intRow.wordpress_username,
-      intRow.wordpress_app_password,
-      intRow.wordpress_api_token || undefined,
-    )
-
+    // ── 5. Publish to WordPress (wpService built + pre-flighted above) ───────
     let tagIds: number[] = []
     try { tagIds = await wpService.resolveTagIds((generated.tags || []).slice(0, 10)) } catch { /* non-fatal */ }
 

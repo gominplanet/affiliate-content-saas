@@ -694,6 +694,15 @@ export class WordPressService {
     } catch { return false }
   }
 
+  /** Cheap WRITE pre-flight: exercises the exact cookie+nonce login path that
+   *  createPost() uses, WITHOUT creating a post — so an expensive caller (AI
+   *  generation) can verify the site will accept writes BEFORE spending. Throws
+   *  the same actionable /setup/wp-doctor error the write path would (and the
+   *  login breaker makes it instant when writes are already known-blocked). */
+  async preflightWrite(): Promise<void> {
+    await this.loginAndGetNonce()
+  }
+
   async updateCurrentUserDisplayName(displayName: string): Promise<void> {
     await this.request('/users/me', {
       method: 'POST',
