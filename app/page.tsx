@@ -1556,7 +1556,7 @@ const PRICING_TIERS: PricingTier[] = [
       'Up to 10 WordPress sites + 3 Virtual Assistant seats',
       'Multiple YouTube channels — a default channel per blog, or pull from any',
       'Multi-account social + one-click Publish All',
-      '30 deal posts / month, 100 IG AI thumbs, 3 LoRA retrains',
+      '30 deal posts / month, 3 LoRA retrains, 20 Photobooth headshots',
       '150 video scripts, 100 brand pitches',
       'Newsletter: 10k subs, weekly + A/B + segments',
       '2,500 assistant messages / month',

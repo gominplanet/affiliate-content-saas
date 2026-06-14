@@ -83,7 +83,7 @@ const plans: PlanExt[] = [
     price: 99,
     regularPrice: 199,
     limit: '45 posts / month',
-    description: 'For the serious solo affiliate creator. Adds Telegram, scripts, Deals Hub, topic hubs, and weekly newsletter scheduling.',
+    description: 'For the solo creator going full-time — everything in Creator plus the tools that turn a blog into a real publication: Deals Hub, topic hubs, video scripts, and a weekly newsletter on schedule.',
     features: [
       '45 full reviews per month (blog + thumbnail + metadata bundle)',
       'Adds Telegram auto-post on top of Creator',
@@ -119,7 +119,7 @@ const plans: PlanExt[] = [
       'Up to 10 WordPress sites on one subscription',
       'Multiple YouTube channels — set a default channel per blog, or pull from any channel onto any blog',
       'Up to 3 Virtual Assistant seats with per-VA permissions',
-      'Deals Hub: 30 deal posts / month (Studio cap × 6)',
+      'Deals Hub: 30 deal posts / month with countdown banners + Amazon CSV bulk import',
       '3 LoRA retrains / month, Photobooth 20 / month',
       'Video Script & Shot List (150 / month)',
       '100 brand-collab pitch emails / month',
