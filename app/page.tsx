@@ -1379,9 +1379,10 @@ const SITE_COST_STACK: ReadonlyArray<readonly [string, string]> = [
  *  not as a fourth column — nobody chooses "trial" as a tier.
  *
  *  Studio is flagged as Most Popular per the audit (sits in the middle
- *  price point + unlocks the most-asked features: TikTok + Instagram +
- *  Scripts). Pro is the power tier (multi-site + IG AI thumbnails +
- *  face training + everything uncapped).
+ *  price point + unlocks the going-full-time features: Telegram, Deals Hub,
+ *  topic hubs, video scripts, and weekly newsletter scheduling). Pro is the
+ *  power tier (comparisons + buying guides + creator campaigns + multi-site +
+ *  multi-channel + VA seats).
  *
  *  Prices + features mirror lib/tier.ts exactly so the page never drifts
  *  from the live system. The regularPrice strikethrough sells the
