@@ -870,8 +870,8 @@ const STEPS: Step[] = [
   },
   {
     icon: <Sparkles size={18} />,
-    title: 'Generate 8 outputs from one video.',
-    body: 'Blog post, comparison, thumbnail, newsletter, plus native posts for X, LinkedIn, Bluesky & Telegram. All in your voice. All in about four minutes.',
+    title: 'Generate 9 outputs from one video.',
+    body: 'Blog post, comparison, thumbnail, newsletter, a script for your next video, plus native posts for X, LinkedIn, Bluesky & Telegram. All in your voice. All in about four minutes.',
   },
   {
     icon: <Upload size={18} />,
@@ -1670,7 +1670,7 @@ function PricingCard({ tier }: { tier: PricingTier }) {
  *
  *  The proof is the founder's own brand, Gominplanet: a +$3M/yr affiliate
  *  business run on MVP, and the edge it gives in attracting brand partners.
- *  Backed by defensible numbers (the 4-min workflow, 8 outputs/video, the
+ *  Backed by defensible numbers (the 4-min workflow, 9 outputs/video, the
  *  fact-grounding guarantee). No fabricated customer quotes.
  */
 function ProofSection() {
@@ -1723,8 +1723,8 @@ interface Stat {
 
 const STATS: Stat[] = [
   { value: '$3M+', label: '/yr at Gominplanet', detail: 'real affiliate revenue, run on MVP' },
-  { value: '4 min', label: 'average workflow', detail: 'video → 8 outputs' },
-  { value: '8', label: 'outputs per video', detail: 'blog, comparison, thumbnail, newsletter + 4 socials' },
+  { value: '4 min', label: 'average workflow', detail: 'video → 9 outputs' },
+  { value: '9', label: 'outputs per video', detail: 'blog, comparison, thumbnail, newsletter, script + 4 socials' },
   { value: '0', label: 'fabricated claims', detail: 'every output grounded in your video' },
 ]
 

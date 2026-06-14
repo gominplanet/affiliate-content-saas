@@ -350,7 +350,7 @@ export default function PricingPage() {
               body: 'Every spec, every quote, every &quot;I tested it for X days&quot; pulls from your real YouTube transcript + the actual product page. No hallucinated stories, no fake reviewer names, no fabricated experiences.',
             },
             {
-              title: 'One video → six outputs',
+              title: 'One video → nine outputs',
               body: 'Paste a YouTube link. Get back a published, SEO-tuned blog post, a comparison or buying guide, a thumbnail, a newsletter draft, a script for the next video, and native posts for X, LinkedIn, Bluesky &amp; Telegram. End-to-end, in one run.',
             },
             {

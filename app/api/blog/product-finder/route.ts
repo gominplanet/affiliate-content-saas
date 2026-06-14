@@ -40,6 +40,26 @@ export function OPTIONS() {
 
 interface PickOut { title: string; url: string; image: string | null; score: number | null; reason: string }
 
+// In-memory sliding-window rate limit. This endpoint is public (CORS *) and
+// every call hits Claude (Haiku) — so a loop could quietly burn a creator's
+// Anthropic spend. The limiter caps that with no external dependency. It's
+// per-Lambda-instance (resets on cold start), which is acceptable for an
+// abuse/cost guard: it stops a runaway loop from one source. Two keys —
+// per visitor IP (one client hammering) and per site (the AI cost lands on the
+// creator, so bound their exposure from distributed abuse too).
+const RL_HITS = new Map<string, number[]>()
+function rateLimited(key: string, perMinute: number): boolean {
+  const now = Date.now()
+  const recent = (RL_HITS.get(key) || []).filter(t => now - t < 60_000)
+  if (recent.length >= perMinute) { RL_HITS.set(key, recent); return true }
+  recent.push(now)
+  RL_HITS.set(key, recent)
+  if (RL_HITS.size > 5000) {
+    for (const [k, v] of RL_HITS) if (!v.some(t => now - t < 60_000)) RL_HITS.delete(k)
+  }
+  return false
+}
+
 /** Loose host-match so "https://site.com/" and "https://www.site.com" both
  *  resolve to the same integrations row. */
 function hostKey(u: string): string {
@@ -59,6 +79,12 @@ export async function POST(req: Request) {
 
   const wantHost = hostKey(site)
   if (!wantHost) return cors({ error: 'Bad site URL' }, 400)
+
+  // Rate limit before any DB/AI work: 15/min per visitor IP, 60/min per site.
+  const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown'
+  if (rateLimited(`ip:${ip}`, 15) || rateLimited(`site:${wantHost}`, 60)) {
+    return cors({ error: 'Too many requests — please wait a moment and try again.' }, 429)
+  }
 
   const admin = createAdminClient()
 
