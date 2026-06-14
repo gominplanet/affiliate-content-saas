@@ -471,19 +471,14 @@ function RolesSection() {
 
 /** The "business layer" — content-first doesn't mean content-ONLY. After the
  *  content engine, this section shows how MVP helps you EARN and SCALE: brand
- *  deals (live), Creator Connections campaign scouting (Pro, live — scout by
- *  EPC + publish, NOT auto-accept), and VA seats (Pro). All shipped today. */
+ *  deals (live), deal-moment posts (Studio+), and VA seats (Pro).
+ *  NOTE: EPC Scout / Creator Connections is admin-only while testing — do NOT
+ *  advertise it here or in /pricing until it's opened to Pro. */
 const BUSINESS_CARDS: Array<{ icon: React.ReactNode; title: string; body: string; pro?: boolean }> = [
   {
     icon: <HeartHandshake size={18} />,
     title: 'Land brand deals',
     body: 'MVP writes the pitch — researches the brand, cites your real track record and reach, and attaches your media kit. The founder’s own outreach method, built in. 5–100 pitches a month by tier.',
-  },
-  {
-    icon: <BadgePercent size={18} />,
-    title: 'Promote what pays',
-    body: 'Pull your Amazon Creator Connections campaigns, rank them by commission and EPC, and turn the best-paying ones into published reviews in one click.',
-    pro: true,
   },
   {
     icon: <Zap size={18} />,
@@ -1553,7 +1548,6 @@ const PRICING_TIERS: PricingTier[] = [
       '100 posts / month + Comparisons + Buying Guides',
       'Adds X (Twitter) auto-post on top of Studio',
       'Rebuild-from-video on any legacy WP post',
-      'Creator Campaigns (Amazon EPC scout, one-click publish)',
       'Up to 10 WordPress sites + 3 Virtual Assistant seats',
       'Multiple YouTube channels — a default channel per blog, or pull from any',
       'Multi-account social + one-click Publish All',
