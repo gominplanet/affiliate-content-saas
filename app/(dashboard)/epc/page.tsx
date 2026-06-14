@@ -16,13 +16,15 @@
  * paywall yet — that's a one-line flip when it launches.
  */
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { scoutCreatorConnections, type ScoutedCampaign, type ScoutError, type ScoutDiag } from '@/lib/extension-frame'
-import { Loader2, Radar, ExternalLink, CheckCircle2, AlertCircle, Sparkles, Search } from 'lucide-react'
+import { scoutCreatorConnections, isExtensionAvailable, type ScoutedCampaign, type ScoutError, type ScoutDiag } from '@/lib/extension-frame'
+import { Loader2, Radar, ExternalLink, CheckCircle2, AlertCircle, Sparkles, Search, Puzzle } from 'lucide-react'
 import { toast } from 'sonner'
 
 const BUD_RANK: Record<string, number> = { low: 1, medium: 2, high: 3 }
+// Where we send users to open/run the scout on Amazon's side.
+const CC_URL = 'https://www.amazon.com/creatorconnections/'
 
 // Structured-error → guidance copy. The extension returns one of these; we map
 // each to a clear next step instead of a generic "failed".
@@ -68,6 +70,8 @@ function daysLeft(endsAt?: string | null): number {
 
 export default function EpcScoutPage() {
   const [scanning, setScanning] = useState(false)
+  // Extension presence: null = checking, true = connected, false = missing.
+  const [extReady, setExtReady] = useState<boolean | null>(null)
   const [raw, setRaw] = useState<ScoutedCampaign[]>([])
   const [err, setErr] = useState<ScoutError | null>(null)
   const [diag, setDiag] = useState<ScoutDiag | null>(null)
@@ -83,6 +87,15 @@ export default function EpcScoutPage() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [gen, setGen] = useState<Record<string, 'running' | 'done' | 'error'>>({})
+
+  // Detect the Scout extension on mount (and let the user re-check after install).
+  const checkExtension = useCallback(async () => {
+    setExtReady(null)
+    setExtReady(await isExtensionAvailable())
+  }, [])
+  useEffect(() => { checkExtension() }, [checkExtension])
+
+  const openCC = useCallback(() => { window.open(CC_URL, '_blank', 'noopener') }, [])
 
   const scout = useCallback(async () => {
     setScanning(true)
@@ -194,23 +207,71 @@ export default function EpcScoutPage() {
 
       {/* Scout trigger + how-it-works */}
       <div className="card p-5 mb-5">
+        {/* Extension dependency — EPC Scout can't read Creator Connections
+            without the Co-Pilot extension. Make that explicit. */}
+        <div className="flex items-center gap-2 mb-3 text-[11px] font-medium">
+          {extReady === null ? (
+            <span className="inline-flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
+              <Loader2 size={12} className="animate-spin" /> Checking for the Scout extension…
+            </span>
+          ) : extReady ? (
+            <span className="inline-flex items-center gap-1.5 text-[#34c759]">
+              <CheckCircle2 size={13} /> Scout extension connected
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-[#FF9500]">
+              <Puzzle size={13} /> Scout extension not detected
+            </span>
+          )}
+        </div>
+
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0">
             <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Scan Creator Connections</p>
-            <p className="text-[12px] mt-1 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-              Hit Scout — we’ll open (or focus) your Amazon Creator Connections <span className="font-medium">New Opportunities</span> view,
-              read it in your own logged-in session, pull the campaigns in here, and bring you right back. Nothing is posted or changed on Amazon.
-              Just make sure you’re signed in to Amazon.
-            </p>
+            {extReady === false ? (
+              <p className="text-[12px] mt-1 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                EPC Scout reads your Creator Connections opportunities through the free <span className="font-medium">MVP Co-Pilot</span> Chrome
+                extension. Install it, then come back and re-check. In the meantime, you can open Creator Connections and run the extension’s
+                popup there directly.
+              </p>
+            ) : (
+              <p className="text-[12px] mt-1 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                Hit Scout — we’ll open (or focus) your Amazon Creator Connections <span className="font-medium">New Opportunities</span> view,
+                read it in your own logged-in session, pull the campaigns in here, and bring you right back. Nothing is posted or changed on Amazon.
+                Just make sure you’re signed in to Amazon.
+              </p>
+            )}
           </div>
-          <button
-            onClick={scout}
-            disabled={scanning}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60 flex-shrink-0"
-            style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}
-          >
-            {scanning ? <><Loader2 size={15} className="animate-spin" /> Scanning…</> : <><Radar size={15} /> Scout campaigns</>}
-          </button>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {extReady === false ? (
+              <>
+                <button
+                  onClick={openCC}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+                  style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}
+                >
+                  <ExternalLink size={15} /> Open Creator Connections
+                </button>
+                <button
+                  onClick={checkExtension}
+                  className="px-3 py-2 rounded-xl text-sm font-semibold border"
+                  style={{ borderColor: 'var(--border)', color: 'var(--text-soft)' }}
+                >
+                  Re-check
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={scout}
+                disabled={scanning || extReady === null}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+                style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}
+              >
+                {scanning ? <><Loader2 size={15} className="animate-spin" /> Scanning…</> : <><Radar size={15} /> Scout campaigns</>}
+              </button>
+            )}
+          </div>
         </div>
 
         {err && (
