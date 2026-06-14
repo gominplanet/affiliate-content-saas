@@ -70,7 +70,8 @@ export async function GET(req: Request) {
   // to exist — just that the namespace shows up in /wp-json/.
   const restRootJson = restRoot.json as { namespaces?: string[] } | null
   const pluginActive = Array.isArray(restRootJson?.namespaces)
-    && (restRootJson.namespaces.includes('mvp-affiliate/v1')
+    && (restRootJson.namespaces.includes('affiliateos/v1')
+        || restRootJson.namespaces.includes('mvp-affiliate/v1')
         || restRootJson.namespaces.includes('mvpaffiliate/v1'))
 
   // ── Test 4: Basic Auth POST write — the host might pass the Authorization
