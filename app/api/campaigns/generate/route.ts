@@ -24,6 +24,7 @@ import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { maybeEncrypt } from '@/lib/secrets'
+import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
@@ -38,20 +39,6 @@ export const maxDuration = 300
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60)
-}
-
-// The shared blog-writer template hard-codes a YouTube thumbnail
-// (<img …/{VIDEO_ID}/…>) in the "Get it now" CTA card. Campaign posts have no
-// video, so that renders as a broken image. setCtaThumb points every CTA thumb
-// at the generated hero image; stripCtaThumb removes the thumb wrapper entirely
-// (used when there's no hero, e.g. a re-publish) so the card is clean text — the
-// CSS `:has(.gr-cta-thumb-wrap)` grid collapses back to one column on its own.
-const CTA_THUMB_IMG = /<img\b[^>]*class="gr-cta-thumb"[^>]*>/gi
-function setCtaThumb(html: string, url: string): string {
-  return html.replace(CTA_THUMB_IMG, `<img src="${url}" alt="" loading="lazy" class="gr-cta-thumb" />`)
-}
-function stripCtaThumb(html: string): string {
-  return html.replace(/<div class="gr-cta-thumb-wrap">[\s\S]*?<\/div>/gi, '')
 }
 
 // EMERGENCY KILL-SWITCH (2026-06-14): campaign generation was burning runaway

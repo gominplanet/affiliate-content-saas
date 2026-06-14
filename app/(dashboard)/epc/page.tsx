@@ -79,6 +79,8 @@ export default function EpcScoutPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [gen, setGen] = useState<Record<string, 'running' | 'done' | 'error'>>({})
   const [genErr, setGenErr] = useState<Record<string, string>>({})
+  // Per-row "Fix image" state for already-published rows (repairs the CTA hero).
+  const [fixing, setFixing] = useState<Record<string, boolean>>({})
 
   const loadList = useCallback(async () => {
     try {
@@ -186,6 +188,26 @@ export default function EpcScoutPage() {
     if (ok > 0) toast.success(`${ok} generated — check the Blog Post Generator.`)
     loadList()
   }, [loadList])
+
+  // Fix the hero image on an already-published post (no Opus spend — just
+  // re-builds the product hero and rewrites the CTA card image on the same post).
+  const fixImage = useCallback(async (c: CampaignRow) => {
+    setFixing(f => ({ ...f, [c.asin]: true }))
+    try {
+      const res = await fetch('/api/campaigns/refresh-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: c.id }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
+      toast.success('Image fixed — refresh the live post to see it.')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Couldn\'t fix the image')
+    } finally {
+      setFixing(f => { const n = { ...f }; delete n[c.asin]; return n })
+    }
+  }, [])
 
   // Hard cap on a single bulk run — each generation is a full ~$0.50 AI job, so
   // "Select all → Generate" must NOT fire dozens at once (that caused a runaway
@@ -364,9 +386,16 @@ export default function EpcScoutPage() {
                     {g === 'running' ? (
                       <span className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED]"><Loader2 size={13} className="animate-spin" /> writing…</span>
                     ) : live ? (
-                      <a href={c.wordpress_url || '/content'} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#34c759] hover:underline">
-                        <CheckCircle2 size={13} /> View post
-                      </a>
+                      <div className="flex items-center gap-2">
+                        <a href={c.wordpress_url || '/content'} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#34c759] hover:underline">
+                          <CheckCircle2 size={13} /> View post
+                        </a>
+                        <button onClick={() => fixImage(c)} disabled={!!fixing[c.asin]}
+                          title="Rebuild the product image in the post's CTA card (no AI text spend)"
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-[#7C3AED] hover:underline disabled:opacity-50">
+                          {fixing[c.asin] ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={11} />} Fix image
+                        </button>
+                      </div>
                     ) : (
                       <button onClick={() => runGenerate([c])}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
