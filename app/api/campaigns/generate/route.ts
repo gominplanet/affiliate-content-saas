@@ -41,7 +41,7 @@ function slugify(s: string): string {
 // Anthropic spend during EPC Scout testing. Hard-disabled at the server so no
 // client batch, retry, or worker can fire an Opus campaign write. Flip to true
 // (or remove this guard) once the cost path is understood + capped.
-const CAMPAIGN_GENERATION_ENABLED = true
+const CAMPAIGN_GENERATION_ENABLED = false
 
 export async function POST(request: Request) {
   try {
