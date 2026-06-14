@@ -19,7 +19,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import PageHero from '@/components/layout/PageHero'
 import { scoutCreatorConnections, isExtensionAvailable, type ScoutedCampaign, type ScoutError, type ScoutDiag } from '@/lib/extension-frame'
-import { Loader2, Radar, ExternalLink, CheckCircle2, AlertCircle, Sparkles, Search, Puzzle } from 'lucide-react'
+import { Loader2, Radar, ExternalLink, CheckCircle2, AlertCircle, Sparkles, Search, Puzzle, Download } from 'lucide-react'
 import { toast } from 'sonner'
 
 const BUD_RANK: Record<string, number> = { low: 1, medium: 2, high: 3 }
@@ -273,6 +273,39 @@ export default function EpcScoutPage() {
             )}
           </div>
         </div>
+
+        {/* Install instructions — the extension isn't in the Chrome Web Store,
+            so it's a manual "Load unpacked" sideload. Shown when not detected. */}
+        {extReady === false && (
+          <div className="mt-4 rounded-xl border p-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-bright, rgba(124,58,237,0.04))' }}>
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+              <p className="text-[13px] font-semibold inline-flex items-center gap-2" style={{ color: 'var(--text)' }}>
+                <Puzzle size={14} className="text-[#7C3AED]" /> Install the Scout extension
+              </p>
+              <a
+                href="/mvp-cc-scout.zip"
+                download
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white"
+                style={{ background: 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}
+              >
+                <Download size={13} /> Download extension (.zip)
+              </a>
+            </div>
+            <p className="text-[12px] mb-2 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+              It’s not in the Chrome Web Store, so you install it once manually (Chrome / Edge / Brave):
+            </p>
+            <ol className="text-[12px] space-y-1.5 leading-relaxed list-decimal pl-5" style={{ color: 'var(--text-soft)' }}>
+              <li><span className="font-medium">Download</span> the .zip above and <span className="font-medium">unzip</span> it (you’ll get an <code className="text-[11px]">mvp-cc-scout</code> folder).</li>
+              <li>Open <code className="text-[11px]">chrome://extensions</code> in a new tab.</li>
+              <li>Turn on <span className="font-medium">Developer mode</span> (toggle, top-right).</li>
+              <li>Click <span className="font-medium">Load unpacked</span> and select the unzipped <code className="text-[11px]">mvp-cc-scout</code> folder.</li>
+              <li>Come back here and hit <span className="font-medium">Re-check</span>.</li>
+            </ol>
+            <p className="text-[11px] mt-3 leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+              Chrome may show a “developer mode extensions” notice on startup — that’s normal for a sideloaded extension and safe to keep enabled.
+            </p>
+          </div>
+        )}
 
         {err && (
           <div className="mt-4 rounded-xl border p-3 flex items-start gap-2" style={{ borderColor: 'rgba(255,149,0,0.3)', backgroundColor: 'rgba(255,149,0,0.06)' }}>

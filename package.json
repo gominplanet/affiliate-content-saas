@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run test:thumbnails && next build",
+    "build": "npm run build:extension && npm run test:thumbnails && next build",
+    "build:extension": "bash scripts/zip-extension.sh",
     "start": "next start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
