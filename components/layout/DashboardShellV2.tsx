@@ -65,6 +65,10 @@ interface NavItemDef {
    *  the user earns commission on, so they get a small ExternalLink
    *  glyph + always-new-tab behaviour. */
   external?: boolean
+  /** Optional solid background tint to make a row pop (e.g. Oink = Barbie
+   *  pink, the highest-converting partner link). Applied when the row isn't
+   *  active; hover darkens it slightly. White text for contrast. */
+  highlight?: string
 }
 
 interface NavGroupDef {
@@ -307,7 +311,7 @@ export default function DashboardShellV2({
     {
       label: 'Recommended tools',
       items: [
-        { href: 'https://geni.us/2y5sBo', icon: <ExternalLink size={13} />, label: 'Oink', external: true },
+        { href: 'https://geni.us/2y5sBo', icon: <ExternalLink size={13} />, label: 'Oink', external: true, highlight: '#E0218A' },
         { href: 'https://geni.us/Y70p9R', icon: <ExternalLink size={13} />, label: 'Geniuslink', external: true },
         { href: 'https://geni.us/GCad5Q', icon: <ExternalLink size={13} />, label: 'Levanta', external: true },
         { href: 'https://geni.us/Z0q3hY', icon: <ExternalLink size={13} />, label: 'PartnerBoost', external: true },
@@ -662,21 +666,26 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
     'relative flex items-center gap-2.5 py-2 rounded-lg text-[14px] font-semibold transition-colors',
     collapsed ? 'justify-center' : 'px-2.5',
   )
+  // Barbie-pink (or any) highlight tint for a spotlighted row (e.g. Oink).
+  const hl = item.highlight
   const style: React.CSSProperties = {
-    backgroundColor: active ? 'var(--nav-active-bg)' : 'transparent',
-    color: active ? 'var(--nav-active-text)' : 'var(--text-soft)',
+    backgroundColor: active ? 'var(--nav-active-bg)' : (hl || 'transparent'),
+    color: active ? 'var(--nav-active-text)' : (hl ? '#ffffff' : 'var(--text-soft)'),
   }
   const onMouseEnter = (e: React.MouseEvent<HTMLElement>) => {
-    if (!active) {
+    if (active) return
+    if (hl) {
+      // Darken the tint slightly on hover; keep white text.
+      e.currentTarget.style.backgroundColor = '#C81E7E'
+    } else {
       e.currentTarget.style.backgroundColor = 'var(--surface-hover)'
       e.currentTarget.style.color = 'var(--text)'
     }
   }
   const onMouseLeave = (e: React.MouseEvent<HTMLElement>) => {
-    if (!active) {
-      e.currentTarget.style.backgroundColor = 'transparent'
-      e.currentTarget.style.color = 'var(--text-soft)'
-    }
+    if (active) return
+    e.currentTarget.style.backgroundColor = hl || 'transparent'
+    e.currentTarget.style.color = hl ? '#ffffff' : 'var(--text-soft)'
   }
 
   const inner = (
