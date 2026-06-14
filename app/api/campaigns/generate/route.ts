@@ -22,6 +22,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { fetchWpProxySecret } from '@/lib/wp-proxy'
+import { maybeEncrypt } from '@/lib/secrets'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
@@ -198,11 +200,44 @@ export async function POST(request: Request) {
     // publish means a fresh run never LOSES its spend even if publish fails, and
     // a re-publish (stored draft) costs no AI. So we just attempt the real
     // publish and surface the true result.
+    // Proxy-secret self-heal. The body-auth proxy (plugin v1.0.25+) dispatches
+    // the write server-side via rest_do_request — the ONLY path that publishes
+    // reliably on hosts (Hostinger/LiteSpeed) that WAF-block a large post body
+    // or strip the Authorization header on POST. But it only works if the token
+    // we send IS the plugin's affiliateos_proxy_secret. The connect-token flow
+    // stored the Application Password in wordpress_api_token instead, so the
+    // proxy was rejecting every call (bad_token) and writes fell through to the
+    // blocked legacy cookie-login. Fetch the live secret from /status (Basic-Auth
+    // GET, which hosts pass even when they block POST) and use THAT as the proxy
+    // token. Best-effort: if the fetch fails we keep whatever we had.
+    let proxyToken = wpCreds.wordpress_api_token || undefined
+    const liveSecret = await fetchWpProxySecret({
+      siteUrl: wpCreds.wordpress_url,
+      username: wpCreds.wordpress_username,
+      appPassword: wpCreds.wordpress_app_password,
+    })
+    if (liveSecret && liveSecret !== wpCreds.wordpress_api_token) {
+      proxyToken = liveSecret
+      // Persist for next time so we don't re-fetch every publish. Mirror to both
+      // the multi-site row and the legacy column (best-effort, non-fatal).
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sb = supabase as any
+        await Promise.all([
+          sb.from('wordpress_sites')
+            .update({ api_token: maybeEncrypt(liveSecret) })
+            .eq('user_id', user.id).eq('url', wpCreds.wordpress_url),
+          sb.from('integrations')
+            .update({ wordpress_api_token: maybeEncrypt(liveSecret) })
+            .eq('user_id', user.id),
+        ])
+      } catch { /* non-fatal — the in-memory proxyToken still publishes this run */ }
+    }
     const wpService = createWordPressService(
       wpCreds.wordpress_url,
       wpCreds.wordpress_username,
       wpCreds.wordpress_app_password,
-      wpCreds.wordpress_api_token || undefined,
+      proxyToken,
     )
 
     // ── 1. Scrape the Amazon product ────────────────────────────────────────
