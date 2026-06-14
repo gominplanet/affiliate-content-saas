@@ -57,6 +57,12 @@ function daysLeft(endsAt?: string | null): number {
 }
 
 const PENDING_STATUSES = new Set(['pending', 'queued', 'ready', 'new'])
+// A row only counts as "done" when there's an actual published post. Anything
+// else (pending, failed, or a stuck 'researching'/'generating' from an aborted
+// run) is (re)generatable — so interrupted runs aren't orphaned.
+function isLiveRow(c: { status: string; blog_post_id: string | null; wordpress_url: string | null }) {
+  return c.status === 'published' || !!c.blog_post_id || !!c.wordpress_url
+}
 
 export default function EpcScoutPage() {
   const [token, setToken] = useState<string | null>(null)
@@ -127,8 +133,7 @@ export default function EpcScoutPage() {
       .sort((a, b) => (b.epcValue ?? -1) - (a.epcValue ?? -1))
   }, [campaigns, minEpc, endsWithin, keyword, onlyPending])
 
-  const canGen = (c: CampaignRow) => PENDING_STATUSES.has(c.status) || c.status === 'failed'
-  const selectableShown = filtered.filter(canGen)
+  const selectableShown = filtered.filter(c => !isLiveRow(c))
   const allShownSelected = selectableShown.length > 0 && selectableShown.every(c => selected.has(c.asin))
   function toggleAll() {
     setSelected(prev => {
@@ -179,7 +184,7 @@ export default function EpcScoutPage() {
   // spend). Cap the batch and confirm the cost first.
   const MAX_BATCH = 5
   const generateSelected = useCallback(() => {
-    const picks = filtered.filter(c => selected.has(c.asin) && (PENDING_STATUSES.has(c.status) || c.status === 'failed'))
+    const picks = filtered.filter(c => selected.has(c.asin) && !isLiveRow(c))
     if (!picks.length) return
     const batch = picks.slice(0, MAX_BATCH)
     const overflow = picks.length - batch.length
@@ -321,20 +326,23 @@ export default function EpcScoutPage() {
             {filtered.map(c => {
               const dl = daysLeft(c.ends_at)
               const g = gen[c.asin]
-              const isPending = PENDING_STATUSES.has(c.status)
+              const live = isLiveRow(c)
               const isFail = g === 'error' || c.status === 'failed'
-              const err = genErr[c.asin] || c.error_message || ''
-              const isDone = !isPending && !isFail
+              const isPending = PENDING_STATUSES.has(c.status)
+              // Not live, not pending, not failed = a 'researching'/'generating'
+              // row from an aborted run — stuck, money spent, no post. Retryable.
+              const isStuck = !live && !isPending && !isFail
+              const err = genErr[c.asin] || c.error_message || (isStuck ? 'Stopped before it finished — no post was published.' : '')
               return (
-                <div key={c.id} className={`px-3 py-2.5 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 items-center ${isDone ? 'opacity-80' : ''}`}>
-                  <input type="checkbox" disabled={!isPending && !isFail} checked={selected.has(c.asin)} onChange={() => toggle(c.asin)} className="accent-[#7C3AED] w-4 h-4" />
+                <div key={c.id} className={`px-3 py-2.5 grid grid-cols-[28px_1fr_64px_60px_140px] gap-2 items-center ${live ? 'opacity-80' : ''}`}>
+                  <input type="checkbox" disabled={live} checked={selected.has(c.asin)} onChange={() => toggle(c.asin)} className="accent-[#7C3AED] w-4 h-4" />
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium truncate" style={{ color: 'var(--text)' }}>{c.campaign_name || c.product_title || c.asin}</p>
                     <a href={`https://www.amazon.com/dp/${c.asin}`} target="_blank" rel="noopener noreferrer"
                       className="text-[11px] inline-flex items-center gap-0.5 text-[#7C3AED] hover:underline">
                       {c.asin} <ExternalLink size={9} />
                     </a>
-                    {isFail && err && (
+                    {(isFail || isStuck) && err && (
                       <p className="text-[11px] text-[#ff3b30] mt-0.5 truncate" title={err}>⚠ {err}</p>
                     )}
                   </div>
@@ -347,15 +355,15 @@ export default function EpcScoutPage() {
                   <div className="flex justify-center">
                     {g === 'running' ? (
                       <span className="inline-flex items-center gap-1 text-[11px] text-[#7C3AED]"><Loader2 size={13} className="animate-spin" /> writing…</span>
-                    ) : isDone ? (
+                    ) : live ? (
                       <a href={c.wordpress_url || '/content'} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#34c759] hover:underline">
                         <CheckCircle2 size={13} /> View post
                       </a>
                     ) : (
                       <button onClick={() => runGenerate([c])}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[12px] font-semibold text-white"
-                        style={{ background: isFail ? '#ff3b30' : 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
-                        <Sparkles size={12} /> {isFail ? 'Retry' : 'Generate'}
+                        style={{ background: (isFail || isStuck) ? '#ff3b30' : 'linear-gradient(45deg, #7C3AED 0%, #bc1888 100%)' }}>
+                        <Sparkles size={12} /> {(isFail || isStuck) ? 'Retry' : 'Generate'}
                       </button>
                     )}
                   </div>
