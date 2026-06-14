@@ -386,12 +386,8 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     const claudeSvc = createClaudeService()
     const sourceResearch = `Product: ${productName}\nDescription: ${(pDescription || '').slice(0, 800)}\nBullets:\n${bullets.slice(0, 10).join('\n')}\n\nResearch:\n${(research || '').slice(0, 6000)}`.slice(0, 12000)
     try {
-      const checked = await claudeSvc.factCheckProductClaims(bodyAfterChecks, '', sourceResearch, { userId: user.id, tier })
+      const checked = await claudeSvc.factCheckAndGuard(bodyAfterChecks, '', sourceResearch, { userId: user.id, tier })
       if (checked && checked !== bodyAfterChecks) bodyAfterChecks = scrub(checked)
-    } catch { /* non-fatal */ }
-    try {
-      const guarded = await claudeSvc.citationGuard(bodyAfterChecks, '', sourceResearch, { userId: user.id, tier })
-      if (guarded && guarded !== bodyAfterChecks) bodyAfterChecks = scrub(guarded)
     } catch { /* non-fatal */ }
     if (bodyAfterChecks !== bodyHtml) {
       try { await wpService.updatePost(wpPost.id, { content: bodyAfterChecks }) } catch { /* keep prior text */ }

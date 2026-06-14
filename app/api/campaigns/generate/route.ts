@@ -233,13 +233,9 @@ export async function POST(request: Request) {
     // calls before createPost, which means we publish the clean version
     // once instead of patching after.
     try {
-      const checked = await claude.factCheckProductClaims(generated.content, '', research.brief, { userId: user.id, tier })
+      const checked = await claude.factCheckAndGuard(generated.content, '', research.brief, { userId: user.id, tier })
       if (checked && checked !== generated.content) generated.content = scrubBanned(checked)
     } catch { /* non-fatal — keep the generated text */ }
-    try {
-      const guarded = await claude.citationGuard(generated.content, '', research.brief, { userId: user.id, tier })
-      if (guarded && guarded !== generated.content) generated.content = scrubBanned(guarded)
-    } catch { /* non-fatal — keep the prior text */ }
 
     const slug = generated.slug ? slugify(generated.slug) : slugify(generated.title)
 

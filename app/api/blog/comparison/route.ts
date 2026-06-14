@@ -555,16 +555,14 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.
   void pingIndexNowForUrl(supabase, ownerId, wpPost.link, siteId).catch(() => {})
 
-  // ── Hallucination guard passes (parity with blog/generate, 2026-06-09) ─────
+  // ── Hallucination guard pass (parity with blog/generate, 2026-06-09) ───────
   // Multi-product comparison posts have the SAME hallucination risk as a
-  // single-product review — Sonnet can invent specs, accessory lists, or
-  // "multi-function" claims for any of the N products. We run both layers
-  // here too:
-  //   1. factCheckProductClaims — broad pass, catches identity + price + spec
-  //      lies. Strips prices, validates product identity.
-  //   2. citationGuard — narrow pass, strips cite-or-omit classes (numeric
-  //      specs, model numbers, materials, certs, accessory lists, 2-in-1
-  //      identity claims) that the first pass might have left.
+  // single-product review — the writer can invent specs, accessory lists, or
+  // "multi-function" claims for any of the N products. factCheckAndGuard runs
+  // both layers in ONE Haiku call (cost #2, 2026-06-14): the broad pass
+  // (identity + price + spec lies) AND the narrow cite-or-omit classes (numeric
+  // specs, model numbers, materials, certs, accessory lists, 2-in-1 identity
+  // claims).
   //
   // Source budget concatenates all transcripts + descriptions across the
   // products. Same per-source slicing as the helpers expect (transcript +
@@ -586,13 +584,8 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       .slice(0, 2500)
 
     try {
-      const checked = await claudeSvc.factCheckProductClaims(bodyAfterChecks, combinedTranscript, combinedResearch, { userId: user.id, tier })
+      const checked = await claudeSvc.factCheckAndGuard(bodyAfterChecks, combinedTranscript, combinedResearch, { userId: user.id, tier })
       if (checked && checked !== bodyAfterChecks) bodyAfterChecks = scrub(checked)
-    } catch { /* non-fatal */ }
-
-    try {
-      const guarded = await claudeSvc.citationGuard(bodyAfterChecks, combinedTranscript, combinedResearch, { userId: user.id, tier })
-      if (guarded && guarded !== bodyAfterChecks) bodyAfterChecks = scrub(guarded)
     } catch { /* non-fatal */ }
 
     // Only push the corrected text back to WordPress if something actually

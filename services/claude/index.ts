@@ -1640,7 +1640,20 @@ Output only valid JSON. No explanation, no markdown.`,
   // support. Best-effort: on any failure or a suspicious result (truncated, or
   // the affiliate link dropped), the original content stands — this can never
   // break a post.
-  async factCheckProductClaims(
+  // ─────────────────────────────────────────────────────────────────────────
+  // Combined fact-check + citation-guard pass (2026-06-14 — cost #2).
+  //
+  // Previously TWO sequential Haiku calls: factCheckProductClaims (broad —
+  // identity + general facts + prices) followed by citationGuard (narrow —
+  // strict cite-or-omit claim classes). They re-sent the SAME ~18K-token
+  // transcript + product sources + full post body twice. Merged into ONE call
+  // that does both jobs: ~halves this stage's tokens and removes a 45s
+  // round-trip, with no quality loss (the model does both checks in one pass).
+  // Same safety rails as before (length floor, affiliate-link preservation,
+  // 45s hard cap). Recorded under the dominant historical 'blog_factcheck'
+  // feature so cost dashboards stay continuous.
+  // ─────────────────────────────────────────────────────────────────────────
+  async factCheckAndGuard(
     content: string,
     transcript: string,
     productResearch: string | null | undefined,
@@ -1652,26 +1665,43 @@ Output only valid JSON. No explanation, no markdown.`,
       const message = await this.client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 8000,
-        system: 'You are a meticulous fact-checking editor for affiliate product posts. You remove invented product facts while preserving the writing and all HTML exactly.',
+        system: 'You are a meticulous fact-checking and citation-guard editor for affiliate product posts. You remove invented product facts (identity, specs, prices) and strip unsupported numeric specs, model numbers, accessory lists, certifications, and multi-function identity claims — while preserving the writing, the writer\'s subjective voice, and all HTML exactly.',
         messages: [{
           role: 'user',
-          content: `Below is a ready-to-publish affiliate blog post (HTML) and the ONLY two sources of truth for product facts: the video transcript and product info.
+          content: `Below is a ready-to-publish affiliate blog post (HTML) and the ONLY two sources of truth for product facts: the video transcript and product info. Do ONE thorough fact-check + citation-guard pass.
 
 FIRST AND MOST IMPORTANT — VERIFY THE PRODUCT'S IDENTITY. Confirm the post describes ONLY the product the sources actually show: its real type/form factor and its real function(s). If the post invents a second function, an extra component, or a "2-in-1 / combo / convertible / multi-function / doubles-as-a-X" nature that the sources never state (e.g. it calls a plain water bottle a "water bottle lantern", says it has a built-in light/speaker/fan/cooler, or frames a single-purpose product as dual-purpose), that is a fabricated identity — REMOVE every sentence, claim, FAQ, verdict bullet, and aside that depends on the invented part, and rewrite surrounding text so the post is consistently about the REAL product only. Do not infer a feature from the setting, niche, or product name. This identity check overrides everything below: an invented "what the product is" is the worst error in the post.
 
 Then find every PRODUCT FACT in the post — specs, numbers, measurements, dimensions, weight, capacity, battery/run time, wattage, speed, materials, finishes, model numbers, prices, included accessories, warranty, certifications, ingredients, compatibility, and performance/result claims — and check each against the sources.
 
-For any product fact (or invented function/component) that is NOT supported by the transcript or product info:
+Be EXTRA STRICT about these CITATION-REQUIRED claim classes — every instance must be supported by the transcript or product info, or it must be stripped:
+1. Numeric specs with units: wattage, voltage, amperage, kWh, BTU, RPM, dB, GHz, Mbps, IP rating (IPX7, IP67), lumens, oz / fl oz / mL / L / gal, lbs / kg, inches / cm / mm, hours / minutes of runtime / battery life, charging time, brewing time, MPH, mAh.
+2. Dimensions, weight, capacity statements ("10-inch diameter", "weighs 5 pounds", "holds 32 oz").
+3. Model numbers, SKUs, part numbers, generation labels ("Gen 4", "v2.1"), specific year-model naming.
+4. Named materials + finishes given as fact ("304 stainless steel", "T6 aluminum", "borosilicate glass", "ABS plastic", "memory foam").
+5. Included-accessories lists ("ships with a charger, two filters, a cleaning brush").
+6. Certifications, standards, compliance labels (UL listed, ETL, IPX7, FCC, ENERGY STAR, GS mark, CE, RoHS).
+7. Multi-function / identity claims ("doubles as", "2-in-1", "3-in-1", "convertible into a", "also functions as a") — usually the most dangerous hallucination since they invent capability.
+8. Explicit comparison statements with numbers ("28% quieter than", "twice the battery life of", "30% faster than X").
+
+For any product fact, invented function/component, or unsupported citation-required claim:
 - Remove it, or minimally rewrite the sentence to drop the unsupported detail while keeping it natural and readable.
 - Do NOT replace it with a different invented fact, and do NOT add any new facts.
 - Direct quotes and the reviewer's stated opinions are fine to keep as long as they appear in the transcript.
+
+LENIENT — DO NOT TOUCH:
+- Subjective opinions and the writer's voice ("I liked the grip", "felt heavier than I expected", "the lid is satisfying to close").
+- Lived-experience anecdotes ("we tested it for two weeks", "used it at a tailgate") — personal observations, not product facts.
+- Feel / look / sound descriptions WITHOUT spec numbers ("it's quiet", "the finish is matte", "feels solid in the hand").
+- Generic capability statements ("makes coffee", "trims hedges", "tracks steps") — those describe the category, not a claim that needs citation.
+- Opening hook prose, verdict reasoning, closing, FAQs that don't include numeric claims, internal links, related-reviews list, schema markup.
 
 ALSO — PRICES: remove EVERY specific price, currency amount, list/sale price, and discount percentage (e.g. "$49.99", "was $68.99", "28% off", "under $50", "only $X"), EVEN IF it appears in the sources — prices go stale and make the post wrong. Replace with neutral live-price phrasing like "check the current price" / "see today's price at the link". Do not leave any "$" amount or "% off" in the body.
 
 OUTPUT RULES (critical):
 - Return the FULL corrected post as raw HTML and NOTHING else — no preamble, no markdown fences, no commentary.
 - Preserve ALL HTML structure exactly: every Gutenberg block comment (<!-- wp:... -->), heading, list, the CTA card markup, images, and EVERY hyperlink — especially affiliate links (rel="noopener sponsored nofollow"). Do not drop, alter, or reorder any link or block.
-- Change as LITTLE as possible. Only touch unsupported product facts. If everything checks out, return the post completely unchanged.
+- Change as LITTLE as possible. Only touch unsupported facts and the citation-required claim classes. If everything checks out, return the post completely unchanged.
 - Never use the word "honest".
 
 ${sources}
@@ -1690,112 +1720,6 @@ ${content}`,
       if (!out || out.length < content.length * 0.5) return content // truncated / over-stripped
       // Monetization guard: if the original had affiliate/sponsored links, the
       // corrected version must keep them.
-      if (/rel="[^"]*sponsored/i.test(content) && !/rel="[^"]*sponsored/i.test(out)) return content
-      return out
-    } catch {
-      return content
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Citation-guard fact-check pass (2026-06-09 — blog writer Sprint 2).
-  //
-  // Runs AFTER factCheckProductClaims as a belt-and-suspenders second layer.
-  // The original pass is broad: it catches identity hallucinations + general
-  // unsupported facts + prices. This second pass narrows to a SPECIFIC LIST
-  // of "dangerous claim classes" and is stricter about them:
-  //
-  //   - numeric specs (W, V, kWh, lbs, oz, kg, inches, cm, mm, hours, minutes,
-  //     RPM, dB, IP-rating, BTU, GHz, Mbps, etc.)
-  //   - dimensions / weight / capacity (e.g. "10 inches", "5 lb")
-  //   - model numbers / SKUs / part numbers
-  //   - named materials & finishes ("304 stainless", "T6 aluminum")
-  //   - included-accessories lists ("ships with X, Y, Z")
-  //   - certifications + standards (UL, ETL, IPX7, FCC, Energy Star)
-  //   - "doubles as / 2-in-1 / convertible / multi-function" identity claims
-  //   - explicit comparison statements ("X% quieter than", "twice the runtime of")
-  //
-  // What this pass LEAVES ALONE:
-  //   - subjective opinions ("I liked the grip", "felt sturdy")
-  //   - lived-experience anecdotes ("used it through the weekend")
-  //   - feel/look/sound descriptions without spec numbers
-  //   - generic capability statements ("it makes coffee")
-  //   - opening hook prose, verdict reasoning, closing
-  //
-  // Behavior is SILENT — no per-claim report, no UI surface, no DB row. The
-  // user picked silent strip; we just publish the cleaner version. If you ever
-  // want to surface what got stripped, bolt a JSON-report mode onto this method.
-  //
-  // Safety guards are identical to factCheckProductClaims (length floor,
-  // affiliate link preservation, 45s hard cap) so this second pass can never
-  // damage a post.
-  // ─────────────────────────────────────────────────────────────────────────
-  async citationGuard(
-    content: string,
-    transcript: string,
-    productResearch: string | null | undefined,
-    ctx?: UsageCtx,
-  ): Promise<string> {
-    if (!content || content.length < 200) return content
-    try {
-      // Same source budget as factCheckProductClaims — 18K transcript +
-      // 2.5K product info fits comfortably in one Haiku context with room
-      // for the post body.
-      const sources = `=== VIDEO TRANSCRIPT ===\n${(transcript || '').slice(0, 18000) || '(no transcript provided)'}\n\n=== PRODUCT INFO ===\n${(productResearch || '').slice(0, 2500) || '(none provided)'}`
-      const message = await this.client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 8000,
-        system: 'You are a strict citation-guard editor for affiliate product posts. You strip unsupported numeric specs, model numbers, accessory lists, certifications, and multi-function identity claims while preserving the writer\'s subjective voice exactly.',
-        messages: [{
-          role: 'user',
-          content: `Below is a fact-checked affiliate blog post (HTML). It has already had one pass to remove invented identity + prices. Your job is a SECOND, NARROWER pass focused only on the following CITATION-REQUIRED claim classes. For each one, the post may only state it if the transcript or product info SUPPORTS it. If it does not, strip it.
-
-CITATION-REQUIRED CLAIM CLASSES (be strict — every instance must be sourced):
-1. Numeric specs with units: wattage, voltage, amperage, kWh, BTU, RPM, dB, GHz, Mbps, IP rating (IPX7, IP67), lumens, oz / fl oz / mL / L / gal, lbs / kg, inches / cm / mm, hours / minutes of runtime / battery life, charging time, brewing time, MPH, mAh.
-2. Dimensions, weight, capacity statements ("10-inch diameter", "weighs 5 pounds", "holds 32 oz").
-3. Model numbers, SKUs, part numbers, generation labels ("Gen 4", "v2.1"), specific year-model naming.
-4. Named materials + finishes when given as a fact ("304 stainless steel", "T6 aluminum", "borosilicate glass", "ABS plastic", "memory foam").
-5. Included-accessories lists ("ships with a charger, two filters, a cleaning brush").
-6. Certifications, standards, and compliance labels (UL listed, ETL, IPX7, FCC, ENERGY STAR, GS mark, CE, RoHS).
-7. Multi-function / identity claims ("doubles as", "2-in-1", "3-in-1", "convertible into a", "also functions as a") — these are usually the most dangerous hallucination since they invent capability.
-8. Explicit comparison statements with numbers ("28% quieter than", "twice the battery life of", "30% faster than X").
-
-LENIENT — DO NOT TOUCH:
-- Subjective opinions and the writer's voice ("I liked the grip", "felt heavier than I expected", "the lid is satisfying to close").
-- Lived-experience anecdotes ("we tested it for two weeks", "used it at a tailgate") — these are personal observations, not product facts.
-- Feel / look / sound descriptions WITHOUT spec numbers ("it's quiet", "the finish is matte", "feels solid in the hand").
-- Generic capability statements ("makes coffee", "trims hedges", "tracks steps") — those describe the product category, not a claim that needs citation.
-- Opening hook prose, verdict reasoning, closing, FAQs that don't include numeric claims, internal links, related-reviews list, schema markup.
-- Affiliate / sponsored links and their surrounding markup (rel="noopener sponsored nofollow").
-
-RULES FOR STRIPPING:
-- Remove only the offending claim. Rewrite the surrounding sentence minimally so it still reads naturally.
-- Do NOT replace with an invented fact. Do NOT add new facts.
-- If a paragraph leans heavily on multiple unsupported claims, you may rewrite the paragraph more substantially BUT the rewritten paragraph must contain ONLY supported information or pure subjective voice.
-
-OUTPUT RULES (critical):
-- Return the FULL corrected post as raw HTML and NOTHING else — no preamble, no markdown fences, no commentary.
-- Preserve ALL HTML structure exactly: every Gutenberg block comment (<!-- wp:... -->), heading, list, CTA card markup, images, and EVERY hyperlink including affiliate links.
-- Change as LITTLE as possible. If everything in the citation-required classes is sourced, return the post completely unchanged.
-- Never use the word "honest".
-
-${sources}
-
-=== POST HTML (return the corrected version) ===
-${content}`,
-        }],
-      }, { timeout: 45000 })
-      let out = message.content.filter(b => b.type === 'text').map(b => (b as Anthropic.TextBlock).text).join('').trim()
-      out = out.replace(/^```(?:html)?\s*/i, '').replace(/\s*```$/i, '').trim()
-      const u = usageFromAnthropic(message)
-      recordUsage({ userId: ctx?.userId, tier: ctx?.tier, feature: 'blog_citation_guard', model: 'claude-haiku-4-5-20251001', input: u.input, output: u.output })
-
-      // Same safety guards as factCheckProductClaims:
-      //   - if Haiku truncated or over-stripped (< 50% of original length),
-      //     bail out — the prior fact-check pass output stands.
-      //   - if the original had affiliate/sponsored links and the corrected
-      //     version doesn't, bail out — monetization preservation.
-      if (!out || out.length < content.length * 0.5) return content
       if (/rel="[^"]*sponsored/i.test(content) && !/rel="[^"]*sponsored/i.test(out)) return content
       return out
     } catch {
