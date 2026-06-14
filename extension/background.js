@@ -174,12 +174,58 @@ async function captureYouTubeFrames({ youtubeVideoId, fractions }) {
   }
 }
 
+// ── Creator Connections scout (scraper-only) ───────────────────────────────
+// The MVP "EPC" page drives this via externally_connectable. We do NOT open a
+// tab — the user must ALREADY be on their Creator Connections opportunities
+// view (their own logged-in Amazon session). We find that open tab, run the
+// existing CC_SCAN content script, and hand the RAW campaigns back. All
+// filtering / ranking / selection happens in the app, never here.
+async function scanCreatorConnections() {
+  const tabs = await chrome.tabs.query({
+    url: [
+      'https://www.amazon.com/creatorconnections/*',
+      'https://affiliate-program.amazon.com/*',
+    ],
+  })
+  if (!tabs.length) return { ok: false, error: 'no-cc-tab' }
+  // Prefer an active CC tab; otherwise the first match.
+  const tab = tabs.find((t) => t.active) || tabs[0]
+  if (!tab || tab.id == null) return { ok: false, error: 'no-cc-tab' }
+
+  const ask = () => chrome.tabs.sendMessage(tab.id, { type: 'CC_SCAN' })
+  try {
+    const resp = await ask()
+    if (resp && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns }
+    return { ok: false, error: resp?.error || 'scan-failed' }
+  } catch (e) {
+    // Content script not present (tab predates this extension build, or it's a
+    // CC sub-page the manifest didn't auto-inject). Inject once, then retry.
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] })
+      const resp = await ask()
+      if (resp && Array.isArray(resp.campaigns)) return { ok: true, campaigns: resp.campaigns }
+      return { ok: false, error: resp?.error || 'scan-failed' }
+    } catch (e2) {
+      return { ok: false, error: 'content-script-unreachable' }
+    }
+  }
+}
+
 // ── Messages from the MVP dashboard (externally_connectable) ────────────────
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return
   if (msg.type === 'MVP_PING') {
     sendResponse({ ok: true, version: chrome.runtime.getManifest().version })
     return // sync response
+  }
+  if (msg.type === 'MVP_CC_SCAN') {
+    // Scraping the virtualized grid (scroll + enrichment pass) can take a while
+    // on a large opportunities list, so allow up to 2 minutes.
+    const timeout = setTimeout(() => sendResponse({ ok: false, error: 'timeout' }), 120000)
+    scanCreatorConnections()
+      .then((res) => { clearTimeout(timeout); sendResponse(res) })
+      .catch((e) => { clearTimeout(timeout); sendResponse({ ok: false, error: e && e.message ? e.message : 'error' }) })
+    return true // async response — keep the channel open
   }
   if (msg.type === 'MVP_CAPTURE_FRAME') {
     // Accept `fractions` (multi-frame, preferred) or legacy single `seekFraction`.
