@@ -90,13 +90,17 @@ export async function POST(request: Request) {
     // Scouted rows (from the extension ingest) already exist as `pending`;
     // reuse that row instead of inserting a duplicate. Otherwise insert.
     let campaignId: string | undefined
+    // If a reused row already holds content from a prior run whose PUBLISH
+    // failed (the WAF case), we RE-PUBLISH it with zero new AI spend.
+    let storedDraft: { title: string; content: string; excerpt: string; slug: string } | null = null
     if (body.campaignId) {
       // Atomically CLAIM the scouted campaign — only proceed if it's still
       // claimable (pending/failed). If it's already 'researching' or
       // 'published', a generation is in flight or already done, so we return
       // its post instead of creating a DUPLICATE (the double-submit bug).
+      // Cast past the not-yet-regenerated types (generated_* from migration 128).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: reused } = await supabase
+      const { data: reused } = await (supabase as any)
         .from('campaigns')
         .update({
           status: 'researching',
@@ -109,10 +113,20 @@ export async function POST(request: Request) {
         .eq('id', body.campaignId)
         .eq('user_id', user.id)
         .in('status', ['pending', 'failed'])
-        .select('id')
+        .select('id,generated_title,generated_content,generated_excerpt,generated_slug')
         .maybeSingle()
       if (reused?.id) {
         campaignId = reused.id as string
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = reused as any
+        if (r.generated_content && String(r.generated_content).trim()) {
+          storedDraft = {
+            title: r.generated_title || '',
+            content: r.generated_content,
+            excerpt: r.generated_excerpt || '',
+            slug: r.generated_slug || '',
+          }
+        }
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: existing } = await supabase
@@ -186,23 +200,27 @@ export async function POST(request: Request) {
     }
 
     // ── 1. Scrape the Amazon product ────────────────────────────────────────
-    let product
+    // Fresh run: required (grounds research + the write). Re-publish: only used
+    // for the featured image, so a scrape failure is non-fatal there.
+    let product: Awaited<ReturnType<typeof fetchAmazonProduct>> | null = null
     try {
       product = await fetchAmazonProduct(asin)
     } catch (err) {
-      return fail(`Couldn't fetch the Amazon product: ${err instanceof Error ? err.message : 'scrape failed'}`)
+      if (!storedDraft) return fail(`Couldn't fetch the Amazon product: ${err instanceof Error ? err.message : 'scrape failed'}`)
     }
-    if (campaignId) {
+    if (campaignId && product) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await supabase.from('campaigns').update({ product_title: product.title }).eq('id', campaignId)
     }
 
-    // ── 2. Web research ─────────────────────────────────────────────────────
-    let research
-    try {
-      research = await researchProduct(product, { userId: user.id, tier })
-    } catch (err) {
-      return fail(`Research step failed: ${err instanceof Error ? err.message : 'unknown'}`)
+    // ── 2. Web research (fresh runs only — re-publish reuses stored content) ─
+    let research: Awaited<ReturnType<typeof researchProduct>> | null = null
+    if (!storedDraft) {
+      try {
+        research = await researchProduct(product!, { userId: user.id, tier })
+      } catch (err) {
+        return fail(`Research step failed: ${err instanceof Error ? err.message : 'unknown'}`)
+      }
     }
 
     // ── 3. Affiliate URL — Geniuslink (CC boost rides this), else Amazon tag ─
@@ -211,7 +229,7 @@ export async function POST(request: Request) {
     if (intRow.geniuslink_api_key && intRow.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
-        const { url, code } = await genius.createAsinLinkWithCode(asin, product.title)
+        const { url, code } = await genius.createAsinLinkWithCode(asin, product?.title || asin)
         affiliateUrl = url
         geniuslinkCode = code
       } catch {
@@ -221,58 +239,65 @@ export async function POST(request: Request) {
       affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=${intRow.amazon_associates_tag}`
     }
 
-    // ── 4. Generate the blog post ───────────────────────────────────────────
-    if (campaignId) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase.from('campaigns').update({ status: 'generating' }).eq('id', campaignId)
+    // ── 4. Generate the post — OR re-publish a saved draft with NO AI spend ──
+    type GeneratedPost = {
+      title: string; excerpt: string; content: string; slug?: string
+      tags?: string[]; category?: string
+      imagePrompts: { hero: string; lifestyle: string; setting: string }
     }
-    const claude = createClaudeService()
-    let generated
-    try {
-      generated = await claude.generateCampaignBlogPost(brand, {
-        product,
-        researchBrief: research.brief,
-        affiliateUrl,
-      }, { userId: user.id, tier })
-    } catch (err) {
-      return fail(`Content generation failed: ${err instanceof Error ? err.message : 'unknown'}`)
+    let generated: GeneratedPost
+    if (storedDraft) {
+      // The content was already written + PAID FOR on a prior run whose publish
+      // failed (the WAF case). Re-publish it verbatim — skip all AI.
+      generated = {
+        title: storedDraft.title,
+        excerpt: storedDraft.excerpt,
+        content: storedDraft.content,
+        slug: storedDraft.slug,
+        tags: [],
+        category: '',
+        imagePrompts: { hero: '', lifestyle: '', setting: '' },
+      }
+    } else {
+      if (campaignId) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await supabase.from('campaigns').update({ status: 'generating' }).eq('id', campaignId)
+      }
+      const claude = createClaudeService()
+      try {
+        generated = await claude.generateCampaignBlogPost(brand, {
+          product: product!,
+          researchBrief: research!.brief,
+          affiliateUrl,
+        }, { userId: user.id, tier })
+      } catch (err) {
+        return fail(`Content generation failed: ${err instanceof Error ? err.message : 'unknown'}`)
+      }
+      // Hard-enforce the banned-word rule before publish/persist.
+      generated.title = scrubBanned(generated.title)
+      generated.excerpt = scrubBanned(generated.excerpt)
+      generated.content = scrubBanned(generated.content)
+      generated.imagePrompts = {
+        hero: scrubBanned(generated.imagePrompts.hero),
+        lifestyle: scrubBanned(generated.imagePrompts.lifestyle),
+        setting: scrubBanned(generated.imagePrompts.setting),
+      }
+      // Hallucination guard — the brief is the only source of truth (ASIN flow,
+      // no transcript). Non-fatal; runs before publish so we publish clean once.
+      try {
+        const checked = await claude.factCheckAndGuard(generated.content, '', research!.brief, { userId: user.id, tier })
+        if (checked && checked !== generated.content) generated.content = scrubBanned(checked)
+      } catch { /* non-fatal — keep the generated text */ }
     }
-
-    // Hard-enforce the banned-word rule on every user-facing field before
-    // publish/persist — LLM instructions alone aren't a guarantee.
-    generated.title = scrubBanned(generated.title)
-    generated.excerpt = scrubBanned(generated.excerpt)
-    generated.content = scrubBanned(generated.content)
-    generated.imagePrompts = {
-      hero: scrubBanned(generated.imagePrompts.hero),
-      lifestyle: scrubBanned(generated.imagePrompts.lifestyle),
-      setting: scrubBanned(generated.imagePrompts.setting),
-    }
-
-    // ── Hallucination guard (parity with blog/generate, 2026-06-09) ─────────
-    // Campaign posts have NO YouTube transcript (ASIN-only flow) — the ONLY
-    // source of truth is the scraped Amazon product info packed into
-    // research.brief. Both helpers tolerate an empty transcript via their
-    // "(no transcript provided)" fallback so we pass an empty string and
-    // route everything through productResearch.
-    //
-    // Runs BEFORE WP publish (unlike blog/generate which runs post-publish)
-    // because the campaigns route is much shorter — no SEO meta race, no
-    // streaming response. We can afford one synchronous pair of Haiku
-    // calls before createPost, which means we publish the clean version
-    // once instead of patching after.
-    try {
-      const checked = await claude.factCheckAndGuard(generated.content, '', research.brief, { userId: user.id, tier })
-      if (checked && checked !== generated.content) generated.content = scrubBanned(checked)
-    } catch { /* non-fatal — keep the generated text */ }
 
     const slug = generated.slug ? slugify(generated.slug) : slugify(generated.title)
 
-    // Persist the finished post BEFORE publishing. The Opus write is the
-    // expensive part; if the WordPress publish then fails (or the run is
-    // interrupted), this keeps the paid content recoverable on the campaign
-    // row instead of "paid, got nothing." (Incident 2026-06-14.)
-    if (campaignId) {
+    // Persist the finished post BEFORE publishing (fresh runs only — a
+    // re-publish already has it stored). The Opus write is the expensive part;
+    // if the WordPress publish then fails (or the run is interrupted), this
+    // keeps the paid content recoverable on the campaign row instead of
+    // "paid, got nothing." (Incident 2026-06-14.)
+    if (campaignId && !storedDraft) {
       // Columns added in migration 128 — cast past the not-yet-regenerated
       // Supabase types (same pattern used elsewhere in this route).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -345,6 +370,7 @@ export async function POST(request: Request) {
     // we don't disturb the already-published title/content/categories.
     let heroKind: 'ai' | 'product' | null = null
     try {
+      if (!product) throw new Error('no product image (re-publish)') // skip hero on re-publish
       // Vision-pick the clean isolated product shot (the Amazon main image is
       // often a lifestyle collage) so the hero grounds on the real product.
       const cleanProductImage = (await pickProductReferenceImage(product.images, product.title, { userId: user.id, tier })) || product.imageUrl
@@ -407,7 +433,8 @@ export async function POST(request: Request) {
       title: generated.title,
       socialFanoutAvailable: blogLinked,
       blogInsertError: blogLinked ? null : (blogErr?.message ?? null),
-      citations: research.citations,
+      citations: research?.citations ?? [],
+      republished: !!storedDraft,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
