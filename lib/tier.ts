@@ -233,9 +233,15 @@ export const TIERS = {
     label: 'Pro',
     price: 199,
     regularPrice: 499,
-    /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial. */
-    monthlyAiSpendCeilingUsd: 120 as number | null,
-    /** Shared counter: 200 generations/mo. */
+    /** Monthly AI-spend circuit breaker (USD of real ai_usage cost) — see trial.
+     *  Lowered 120 → 90 (2026-06-14 margin tune): 200 image-posts cost ~$124
+     *  so the old $120 ceiling already gated before the cap; $90 lifts Pro's
+     *  worst-case margin from 40% → ~55% while still covering ~145 image-posts
+     *  or ~180 text-posts/mo — far more than any real Pro user generates. The
+     *  spendGate ceiling, not postsPerMonth, is the true cost cap. */
+    monthlyAiSpendCeilingUsd: 90 as number | null,
+    /** Shared counter: 200 generations/mo (headline value; the spend ceiling
+     *  above is the real limiter for the rare power user). */
     postsPerMonth: 200,
     lifetimeMax: null as number | null,
     collabsPerMonth: 100 as number | null,
@@ -250,9 +256,12 @@ export const TIERS = {
     assistantMessagesPerMonth: 2500 as number | null,
     /** Pro: 3 LoRA retrains/mo (lowered from 5 — 2026-06-10 COGS tune). */
     faceTrainJobs: 3 as number | null,
-    /** Twice-weekly cadence: 10k subs, 8 sends/mo. */
+    /** Weekly cadence: 10k subs, 4 sends/mo. Lowered 8 → 4 (2026-06-14): at
+     *  10k subs, 8 sends = 80k Resend emails/mo (~$30) — a real cash cost that
+     *  sits OUTSIDE the AI-spend ceiling. 4 sends (weekly) is still generous
+     *  and roughly halves that bill. */
     newsletterSubscribers: 10000 as number | null,
-    newsletterBroadcastsPerMonth: 8 as number | null,
+    newsletterBroadcastsPerMonth: 4 as number | null,
     /** Pro newsletter unlocks: Scheduling (inherited), A/B subject lines,
      *  Segmented sends (segment-builder UI is a follow-up task). */
     newsletterScheduling: true,

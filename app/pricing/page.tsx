@@ -123,7 +123,7 @@ const plans: PlanExt[] = [
       '3 LoRA retrains / month, Photobooth 20 / month',
       'Video Script & Shot List (150 / month)',
       '100 brand-collab pitch emails / month',
-      'Newsletter: 10,000 subscribers, 8 broadcasts / month (twice weekly) + A/B subject lines + segmented sends',
+      'Newsletter: 10,000 subscribers, 4 broadcasts / month (weekly) + A/B subject lines + segmented sends',
       'One-click Publish All: site + every connected social in one shot',
       'MVP Help Desk: 2,500 messages / month',
       'Priority generation queue + priority Discord support',

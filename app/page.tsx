@@ -1558,7 +1558,7 @@ const PRICING_TIERS: PricingTier[] = [
       'Multi-account social + one-click Publish All',
       '30 deal posts / month, 100 IG AI thumbs, 3 LoRA retrains',
       '150 video scripts, 100 brand pitches',
-      'Newsletter: 10k subs, twice-weekly + A/B + segments',
+      'Newsletter: 10k subs, weekly + A/B + segments',
       '2,500 assistant messages / month',
       'Priority generation queue + priority Discord support',
     ],
