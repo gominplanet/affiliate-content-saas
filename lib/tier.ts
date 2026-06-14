@@ -432,6 +432,28 @@ export function allowedGenerationsPerMonth(tier: Tier): number | null {
   return TIERS[normalizeTier(tier)].postsPerMonth
 }
 
+// ── Transitional post-cap step-down (2026-06-14) ───────────────────────────
+// Studio 60→45 and Pro 200→100. To roll the lower caps out "to everyone on
+// their next cycle" — NO mid-cycle cut-off, NO permanent grandfather — a user
+// keeps their OLD cap for any billing window that STARTED before this
+// timestamp; the new (lower) cap takes effect from their next window onward.
+// New signups get the new cap immediately (their first window starts after
+// this date). Self-expiring: once every pre-change window has rolled over
+// (~by 2026-07-31), delete PREV_POST_CAPS + this helper and inline
+// TIERS[tier].postsPerMonth at the two call sites.
+const POST_CAP_STEPDOWN_ISO = '2026-06-14T00:00:00.000Z'
+const PREV_POST_CAPS: Partial<Record<Tier, number>> = { studio: 60, pro: 200 }
+
+/** The generation cap in force for a billing window that began at
+ *  windowStartISO: the previous (higher) cap if that window predates the
+ *  2026-06-14 step-down, otherwise the current TIERS cap. */
+export function effectivePostCap(tier: Tier, windowStartISO: string): number | null {
+  const t = normalizeTier(tier)
+  const prev = PREV_POST_CAPS[t]
+  if (prev != null && windowStartISO < POST_CAP_STEPDOWN_ISO) return prev
+  return TIERS[t].postsPerMonth
+}
+
 /** Generic feature-flag lookup. Cleaner than scattering `tier === 'pro'`
  *  checks across routes; reads one source of truth. Use for boolean gates:
  *    tierHas(tier, 'comparisonPosts') / 'buyingGuides' / 'rebuildFromVideo' /
@@ -564,6 +586,10 @@ export async function checkUsageLimit(
     periodEnd: ig?.subscription_period_end ?? null,
   })
 
+  // Transitional: users keep their pre-2026-06-14 cap until their current
+  // billing window rolls over (see effectivePostCap).
+  const monthlyCap = effectivePostCap(tier, startISO)
+
   // The RPC's bigint params can't be null; null in our tier config means
   // "no cap" (admin). Coerce to a number bigger than any real monthly
   // post volume so the SQL UPDATE ... < cap predicate always passes.
@@ -571,7 +597,7 @@ export async function checkUsageLimit(
   const { data: ok } = await supabase.rpc('try_consume_post_quota', {
     p_user: userId,
     p_lifetime: limits.lifetimeMax ?? NO_CAP,
-    p_monthly: limits.postsPerMonth ?? NO_CAP,
+    p_monthly: monthlyCap ?? NO_CAP,
     p_window_start: startISO,
   })
 
@@ -591,13 +617,13 @@ export async function checkUsageLimit(
       upgrade: next,
     }
   }
-  if (limits.postsPerMonth !== null) {
+  if (monthlyCap !== null) {
     const nextHint = next
       ? ` Upgrade to ${next.label} for ${next.limit === null ? 'unlimited' : `${next.limit} / month`}.`
       : ''
     return {
       allowed: false,
-      reason: `You've reached your ${limits.postsPerMonth} posts limit on the ${limits.label} plan for this billing period.${nextHint} Resets ${resetLabel}.`,
+      reason: `You've reached your ${monthlyCap} posts limit on the ${limits.label} plan for this billing period.${nextHint} Resets ${resetLabel}.`,
       tier,
       upgrade: next,
     }
@@ -787,14 +813,17 @@ export async function checkGenerationLimit(
   // Admin — unlimited, never gated.
   if (tier === 'admin') return { allowed: true }
 
-  const limit = allowedGenerationsPerMonth(tier)
-  // null = unlimited (admin only — handled above; this is a safety net).
-  if (limit === null) return { allowed: true }
-
   const { startISO, resetLabel } = billingWindow({
     periodStart: ig?.subscription_period_start ?? null,
     periodEnd: ig?.subscription_period_end ?? null,
   })
+
+  // Transitional: honor the user's pre-2026-06-14 cap until their current
+  // billing window rolls over (see effectivePostCap), so the lower caps land
+  // on the next cycle rather than mid-cycle.
+  const limit = effectivePostCap(tier, startISO)
+  // null = unlimited (admin only — handled above; this is a safety net).
+  if (limit === null) return { allowed: true }
 
   const units = Math.max(1, opts.units ?? 1)
 
