@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 function slugFromUrl(url: string | null): string | null {
   if (!url) return null
@@ -71,13 +72,10 @@ export async function DELETE(request: Request) {
       resolvedWpPostId = postRow?.wordpress_post_id ?? null
     }
 
-    const { data: wpRow } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-      .eq('user_id', user.id)
-      .single()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const wp = wpRow as any
+    // Decrypted creds via the canonical helper — reading integrations.* raw
+    // hands an encrypted blob (enc:v1:…) to the write path. (Same bug fixed in
+    // /api/campaigns/generate 2026-06-14.)
+    const wp = await getWordPressCredentials(supabase, user.id)
 
     if (wp?.wordpress_url) {
       try {

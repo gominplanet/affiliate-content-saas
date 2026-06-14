@@ -21,6 +21,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createClaudeService } from '@/services/claude'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { createGeniuslinkService } from '@/services/geniuslink'
 import { fetchAmazonProduct, extractAsin } from '@/services/amazon'
 import { pickProductReferenceImage } from '@/lib/product-image'
@@ -75,7 +76,15 @@ export async function POST(request: Request) {
     // Monthly AI-spend circuit breaker (Opus campaign writer).
     const spendBlocked = await spendGate(user.id, tier)
     if (spendBlocked) return spendBlocked
-    if (!intRow?.wordpress_url || !intRow?.wordpress_username || !intRow?.wordpress_app_password) {
+    // WordPress credentials MUST come from getWordPressCredentials — it reads
+    // the canonical multi-site table AND transparently DECRYPTS app_password +
+    // api_token (the 2026-06-02 secrets rollout stores them enc:v1:…). Reading
+    // intRow.wordpress_* raw handed encrypted blobs to the proxy/Basic-Auth →
+    // every write fell through to the blocked cookie-login breaker even though
+    // /setup/wp-doctor (which uses this same helper) was all-green. That was
+    // the "spent but nothing published" bug.
+    const wpCreds = await getWordPressCredentials(supabase, user.id)
+    if (!wpCreds?.wordpress_url || !wpCreds?.wordpress_username || !wpCreds?.wordpress_app_password) {
       return NextResponse.json({ error: 'WordPress not connected. Connect it in Setup first.' }, { status: 400 })
     }
 
@@ -190,10 +199,10 @@ export async function POST(request: Request) {
     // a re-publish (stored draft) costs no AI. So we just attempt the real
     // publish and surface the true result.
     const wpService = createWordPressService(
-      intRow.wordpress_url,
-      intRow.wordpress_username,
-      intRow.wordpress_app_password,
-      intRow.wordpress_api_token || undefined,
+      wpCreds.wordpress_url,
+      wpCreds.wordpress_username,
+      wpCreds.wordpress_app_password,
+      wpCreds.wordpress_api_token || undefined,
     )
 
     // ── 1. Scrape the Amazon product ────────────────────────────────────────
@@ -223,16 +232,16 @@ export async function POST(request: Request) {
     // ── 3. Affiliate URL — Geniuslink (CC boost rides this), else Amazon tag ─
     let affiliateUrl = `https://www.amazon.com/dp/${asin}`
     let geniuslinkCode: string | null = null
-    if (intRow.geniuslink_api_key && intRow.geniuslink_api_secret) {
+    if (intRow?.geniuslink_api_key && intRow?.geniuslink_api_secret) {
       try {
         const genius = createGeniuslinkService(intRow.geniuslink_api_key, intRow.geniuslink_api_secret)
         const { url, code } = await genius.createAsinLinkWithCode(asin, product?.title || asin)
         affiliateUrl = url
         geniuslinkCode = code
       } catch {
-        affiliateUrl = `https://www.amazon.com/dp/${asin}${intRow.amazon_associates_tag ? `?tag=${intRow.amazon_associates_tag}` : ''}`
+        affiliateUrl = `https://www.amazon.com/dp/${asin}${intRow?.amazon_associates_tag ? `?tag=${intRow.amazon_associates_tag}` : ''}`
       }
-    } else if (intRow.amazon_associates_tag) {
+    } else if (intRow?.amazon_associates_tag) {
       affiliateUrl = `https://www.amazon.com/dp/${asin}?tag=${intRow.amazon_associates_tag}`
     }
 

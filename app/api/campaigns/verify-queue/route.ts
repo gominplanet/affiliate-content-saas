@@ -24,6 +24,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 import { probeCarouselVideo } from '@/services/amazon'
 
 export const runtime = 'nodejs'
@@ -68,14 +69,11 @@ export async function POST() {
 
     // Pre-load the user's WP credentials once so we can clean up the
     // WordPress post during deletion (mirror of /api/campaigns/delete).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: wpRow } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-      .eq('user_id', user.id)
-      .single()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const wp = wpRow as any
+    // Decrypted creds via the canonical helper — reading integrations.* raw
+    // hands the proxy/Basic-Auth an encrypted blob (enc:v1:…) so every write
+    // falls through to the blocked cookie-login breaker. (Same bug fixed in
+    // /api/campaigns/generate 2026-06-14.)
+    const wp = await getWordPressCredentials(supabase, user.id)
     const wpService = wp?.wordpress_url
       ? createWordPressService(
           wp.wordpress_url,

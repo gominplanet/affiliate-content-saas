@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createWordPressService } from '@/services/wordpress'
+import { getWordPressCredentials } from '@/lib/wordpress-sites'
 
 const GENERIC = /^(blog|uncategorized|general|news|misc|other|posts?)$/i
 
@@ -62,13 +63,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, pushedToWp: false, reason: 'no_published_post' })
     }
 
-    const { data: wp } = await supabase
-      .from('integrations')
-      .select('wordpress_url,wordpress_username,wordpress_app_password,wordpress_api_token')
-      .eq('user_id', user.id)
-      .single()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const w = wp as any
+    // Decrypted creds via the canonical helper — raw integrations.* are
+    // encrypted (enc:v1:…). (Same bug fixed in /api/campaigns/generate 2026-06-14.)
+    const w = await getWordPressCredentials(supabase, user.id)
     if (!w?.wordpress_url) {
       return NextResponse.json({ ok: true, pushedToWp: false, warning: 'Saved, but WordPress not connected.' })
     }
