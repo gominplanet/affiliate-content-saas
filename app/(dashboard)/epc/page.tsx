@@ -121,11 +121,17 @@ export default function EpcScoutPage() {
         // "Not published yet" = anything without a live post — pending AND
         // failed AND stuck (so money-spent failures stay visible + retryable).
         if (onlyPending && isLiveRow(c)) return false
-        if (minEpc > 0) {
-          if (c.epcValue == null) return false
-          if (c.epcValue < minEpc) return false
+        // Failed/stuck rows already COST money — always surface them for retry,
+        // never hide behind the EPC / end-date browse filters (the row's stored
+        // EPC may be null). Keyword still applies so search stays useful.
+        const needsAttention = !isLiveRow(c) && !PENDING_STATUSES.has(c.status)
+        if (!needsAttention) {
+          if (minEpc > 0) {
+            if (c.epcValue == null) return false
+            if (c.epcValue < minEpc) return false
+          }
+          if (!isNaN(within) && daysLeft(c.ends_at) > within) return false
         }
-        if (!isNaN(within) && daysLeft(c.ends_at) > within) return false
         if (terms.length) {
           const hay = `${c.campaign_name || ''} ${c.product_title || ''} ${c.asin}`.toLowerCase()
           if (!terms.some(t => hay.includes(t))) return false
