@@ -182,22 +182,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: code })
     }
 
-    // ── 0. WordPress write pre-flight — BEFORE any AI spend ─────────────────
-    // The Opus write is the expensive part; if the site's firewall/security
-    // plugin is blocking REST writes, fail for $0 here with the wp-doctor
-    // message instead of paying for a post that can't publish. (Incident
-    // 2026-06-14: gominreviews.com WAF rejected writes after the AI ran.)
+    // WP client (used for publish below). A blocking pre-flight was removed:
+    // it kept false-negative-blocking publishes that actually work (reads use
+    // Basic-Auth while writes use the body-auth proxy — a host WAF can block
+    // the read but allow the write). The real safety nets stand: persist-before-
+    // publish means a fresh run never LOSES its spend even if publish fails, and
+    // a re-publish (stored draft) costs no AI. So we just attempt the real
+    // publish and surface the true result.
     const wpService = createWordPressService(
       intRow.wordpress_url,
       intRow.wordpress_username,
       intRow.wordpress_app_password,
       intRow.wordpress_api_token || undefined,
     )
-    try {
-      await wpService.preflightWrite()
-    } catch (err) {
-      return fail(err instanceof Error ? err.message : 'WordPress is not accepting writes right now.', 400)
-    }
 
     // ── 1. Scrape the Amazon product ────────────────────────────────────────
     // Fresh run: required (grounds research + the write). Re-publish: only used
