@@ -37,8 +37,20 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60)
 }
 
+// EMERGENCY KILL-SWITCH (2026-06-14): campaign generation was burning runaway
+// Anthropic spend during EPC Scout testing. Hard-disabled at the server so no
+// client batch, retry, or worker can fire an Opus campaign write. Flip to true
+// (or remove this guard) once the cost path is understood + capped.
+const CAMPAIGN_GENERATION_ENABLED = false
+
 export async function POST(request: Request) {
   try {
+    if (!CAMPAIGN_GENERATION_ENABLED) {
+      return NextResponse.json(
+        { error: 'Campaign generation is temporarily disabled while we tune its cost controls. Try again shortly.' },
+        { status: 503 },
+      )
+    }
     const supabase = await createServerClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
