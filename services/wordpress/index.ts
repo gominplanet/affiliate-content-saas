@@ -694,13 +694,22 @@ export class WordPressService {
     } catch { return false }
   }
 
-  /** Cheap WRITE pre-flight: exercises the exact cookie+nonce login path that
-   *  createPost() uses, WITHOUT creating a post — so an expensive caller (AI
-   *  generation) can verify the site will accept writes BEFORE spending. Throws
-   *  the same actionable /setup/wp-doctor error the write path would (and the
-   *  login breaker makes it instant when writes are already known-blocked). */
+  /** Cheap pre-flight so an expensive caller (AI generation) can verify the
+   *  site is reachable + authenticated BEFORE spending — without creating a
+   *  post. Validates the SAME auth chain createPost() uses (body-auth proxy /
+   *  Basic-Auth via request()), NOT the wp-login cookie path: testing wp-login
+   *  would falsely fail (and could trip the login breaker) on sites that
+   *  publish fine via the proxy. Throws the actionable /setup/wp-doctor error
+   *  if the chain is down. */
   async preflightWrite(): Promise<void> {
-    await this.loginAndGetNonce()
+    const ok = await this.checkConnection()
+    if (!ok) {
+      throw new Error(
+        'WordPress isn’t accepting authenticated requests right now. ' +
+        'Run the connection doctor at /setup/wp-doctor — it identifies the exact plugin or firewall ' +
+        '(Wordfence, SG Security, Cloudflare WAF, etc.) blocking us and gives the click-by-click fix.',
+      )
+    }
   }
 
   async updateCurrentUserDisplayName(displayName: string): Promise<void> {
