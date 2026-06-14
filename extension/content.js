@@ -157,6 +157,9 @@ async function parseCampaigns() {
         if (!prev.budget && fresh.budget) prev.budget = fresh.budget
       }
     }
+    // Stream live progress to the popup so it can show a running count while
+    // the grid scrolls (best-effort — the popup may be closed).
+    try { chrome.runtime.sendMessage({ type: 'CC_SCAN_PROGRESS', found: byAsin.size }) } catch (e) {}
   }
 
   // Scroll the virtualized grid in viewport-sized steps, harvesting at

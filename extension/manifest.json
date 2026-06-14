@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MVP Affiliate — Co-Pilot Helper",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "Scout Amazon Creator Connections from MVP's EPC page (the extension only scrapes; filtering + selection live in the app), AND let MVP's YouTube Co-Pilot grab a real frame from your video for grounded, viral thumbnails.",
   "homepage_url": "https://www.mvpaffiliate.io",
   "minimum_chrome_version": "114",

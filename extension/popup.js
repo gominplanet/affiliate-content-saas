@@ -107,31 +107,62 @@ $('saveToken').addEventListener('click', () => {
 })
 
 // ── Scan ────────────────────────────────────────────────────────────
+// Live progress: the content script streams CC_SCAN_PROGRESS as it scrolls;
+// we show elapsed seconds + a running found-count so the scan never looks
+// frozen. The count climbs, then settles when it reaches the bottom.
+let scanProgressFound = 0
+let scanProgressLastChange = 0
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg?.type === 'CC_SCAN_PROGRESS' && typeof msg.found === 'number') {
+    if (msg.found !== scanProgressFound) scanProgressLastChange = Date.now()
+    scanProgressFound = msg.found
+  }
+})
+
 async function doScan() {
-  setStatus('Scanning…')
   $('list').innerHTML = ''
   $('pushRow').style.display = 'none'
   found = []
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  if (!tab?.id) throw new Error('No active tab.')
-  if (!/^https:\/\/(affiliate-program|www)\.amazon\.com\//.test(tab.url || '')) {
-    throw new Error('Open your Amazon Creator Connections page in this tab first.')
-  }
+  scanProgressFound = 0
+  scanProgressLastChange = Date.now()
+
+  const start = Date.now()
+  // Tick a live "Scanning… Ns · M found" status. Once the count stops climbing
+  // for ~1s it's basically done — show "finishing up" so it reads as settling.
+  const timer = setInterval(() => {
+    const secs = Math.round((Date.now() - start) / 1000)
+    const settling = scanProgressFound > 0 && (Date.now() - scanProgressLastChange) > 1000
+    setStatus(
+      scanProgressFound > 0
+        ? `Scanning… ${secs}s · ${scanProgressFound} found${settling ? ' · finishing up' : ''}`
+        : `Scanning… ${secs}s`,
+    )
+  }, 250)
+
   try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] })
-  } catch (e) {
-    throw new Error(`Could not access this page (${e?.message || 'injection blocked'}). Reload the Amazon tab and retry.`)
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.id) throw new Error('No active tab.')
+    if (!/^https:\/\/(affiliate-program|www)\.amazon\.com\//.test(tab.url || '')) {
+      throw new Error('Open your Amazon Creator Connections page in this tab first.')
+    }
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] })
+    } catch (e) {
+      throw new Error(`Could not access this page (${e?.message || 'injection blocked'}). Reload the Amazon tab and retry.`)
+    }
+    const res = await chrome.tabs.sendMessage(tab.id, { type: 'CC_SCAN' }).catch(() => null)
+    if (!res || !Array.isArray(res.campaigns)) {
+      throw new Error('Scanner did not respond. Reload the Amazon tab and try again.')
+    }
+    found = res.campaigns
+    if (found.length === 0) throw new Error('No campaigns detected on this page.')
+    sortFound()
+    applySmartSelection()
+    persist()
+    renderList()
+  } finally {
+    clearInterval(timer)
   }
-  const res = await chrome.tabs.sendMessage(tab.id, { type: 'CC_SCAN' }).catch(() => null)
-  if (!res || !Array.isArray(res.campaigns)) {
-    throw new Error('Scanner did not respond. Reload the Amazon tab and try again.')
-  }
-  found = res.campaigns
-  if (found.length === 0) throw new Error('No campaigns detected on this page.')
-  sortFound()
-  applySmartSelection()
-  persist()
-  renderList()
 }
 
 $('scan').addEventListener('click', async () => {
