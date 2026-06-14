@@ -18,8 +18,8 @@ interface CostData {
   payingByTier: Record<string, number>
 }
 
-const TIER_ORDER = ['admin', 'pro', 'creator', 'trial', 'unknown']
-const PAID_TIERS = ['creator', 'pro'] as const
+const TIER_ORDER = ['admin', 'pro', 'studio', 'creator', 'trial', 'unknown']
+const PAID_TIERS = ['creator', 'studio', 'pro'] as const
 
 export default function AdminCostsPage() {
   const [days, setDays] = useState(30)
@@ -108,39 +108,44 @@ export default function AdminCostsPage() {
             <div className="card p-5">
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-1">Currently paying users</p>
               <p className="text-3xl font-bold text-[#1d1d1f] dark:text-[#f5f5f7]">
-                {(['creator', 'pro'] as const).reduce((s, t) => s + (data.payingByTier[t] || 0), 0)}
+                {PAID_TIERS.reduce((s, t) => s + (data.payingByTier[t] || 0), 0)}
               </p>
               <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mt-1">
-                Across all paid tiers
+                {PAID_TIERS.map(t => `${data.payingByTier[t] || 0} ${t}`).join(' · ')}
               </p>
             </div>
           </div>
 
-          {/* Unit economics — answers "what's my margin per Pro/Creator user?" */}
+          {/* Unit economics — answers "what's my margin per tier?" */}
           <div className="card p-5 mb-6">
             <p className="text-sm font-semibold text-[#1d1d1f] dark:text-[#f5f5f7] mb-1">Unit economics · last {data.days}d</p>
             <p className="text-xs text-[#86868b] dark:text-[#8e8e93] mb-4">
-              Realized cost = actual AI spend per tier ÷ active users on that tier.
-              Worst-case = the tier&apos;s post cap × overall cost-per-post.
-              Margin uses the current monthly price from <code className="text-[10px]">lib/tier.ts</code>.
+              <span className="font-semibold">Realized</span> = actual AI spend ÷ active users (people who generated this window).{' '}
+              <span className="font-semibold">Worst-case</span> = the tier&apos;s monthly AI-spend ceiling, the hard cap <code className="text-[10px]">spendGate</code> enforces.
+              Both margins use the price + ceiling from <code className="text-[10px]">lib/tier.ts</code>. Newsletter email (Resend) and fixed infra are NOT included.
             </p>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm whitespace-nowrap">
               <thead>
                 <tr className="text-[11px] uppercase tracking-wide text-[#86868b] dark:text-[#8e8e93] text-left">
                   <th className="pb-2">Tier</th>
                   <th className="pb-2 text-right">Price</th>
+                  <th className="pb-2 text-right">Ceiling</th>
                   <th className="pb-2 text-right">Paying</th>
+                  <th className="pb-2 text-right">Active</th>
                   <th className="pb-2 text-right">AI spend</th>
                   <th className="pb-2 text-right">Posts</th>
-                  <th className="pb-2 text-right">Cost / user</th>
-                  <th className="pb-2 text-right">Margin / user</th>
-                  <th className="pb-2 text-right">Worst-case / user</th>
+                  <th className="pb-2 text-right">$/post</th>
+                  <th className="pb-2 text-right">Cost/user</th>
+                  <th className="pb-2 text-right">Margin/user</th>
+                  <th className="pb-2 text-right">Worst-case margin</th>
                 </tr>
               </thead>
               <tbody>
                 {PAID_TIERS.map(t => {
                   const tierInfo = TIERS[t]
                   const price = tierInfo.price
+                  const ceiling = tierInfo.monthlyAiSpendCeilingUsd ?? 0
                   const paying = data.payingByTier[t] || 0
                   const tierSpend = data.byTier[t]?.cost || 0
                   const tierPosts = data.postsByTier[t] || 0
@@ -150,30 +155,38 @@ export default function AdminCostsPage() {
                   // paying count — otherwise dormant subs deflate the
                   // number and make margins look better than they are.
                   const costPerActiveUser = activeUsers > 0 ? tierSpend / activeUsers : 0
+                  const costPerPost = tierPosts > 0 ? tierSpend / tierPosts : 0
                   const marginPerUser = price - costPerActiveUser
-                  const overallCostPerPost = data.totalPosts > 0 ? data.total / data.totalPosts : 0
-                  const cap = tierInfo.postsPerMonth || 0
-                  const worstCaseCost = overallCostPerPost * cap
-                  const marginNegative = marginPerUser < 0
+                  // Worst case is the spend ceiling — spendGate stops most AI
+                  // paths once a user burns that much, so it's the true max
+                  // AI COGS the tier can incur in a month.
+                  const worstCaseMargin = price - ceiling
+                  const worstPct = price > 0 ? Math.round((worstCaseMargin / price) * 100) : 0
                   return (
                     <tr key={t} className="border-t border-gray-100 dark:border-white/5">
                       <td className="py-2 capitalize font-medium">{t}</td>
                       <td className="py-2 text-right">${price}</td>
+                      <td className="py-2 text-right text-[#86868b]">${ceiling}</td>
                       <td className="py-2 text-right text-[#6e6e73] dark:text-[#ebebf0]">{paying}</td>
+                      <td className="py-2 text-right text-[#6e6e73] dark:text-[#ebebf0]">{activeUsers}</td>
                       <td className="py-2 text-right text-[#6e6e73] dark:text-[#ebebf0]">${tierSpend.toFixed(2)}</td>
                       <td className="py-2 text-right text-[#6e6e73] dark:text-[#ebebf0]">{tierPosts}</td>
-                      <td className="py-2 text-right text-[#6e6e73] dark:text-[#ebebf0]">${costPerActiveUser.toFixed(2)}</td>
-                      <td className={`py-2 text-right font-semibold ${marginNegative ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>${marginPerUser.toFixed(2)}</td>
-                      <td className="py-2 text-right text-[#86868b]" title="At full tier post-cap, using overall cost-per-post">${worstCaseCost.toFixed(2)}</td>
+                      <td className="py-2 text-right text-[#6e6e73] dark:text-[#ebebf0]">{tierPosts > 0 ? `$${costPerPost.toFixed(2)}` : '—'}</td>
+                      <td className="py-2 text-right text-[#6e6e73] dark:text-[#ebebf0]">{activeUsers > 0 ? `$${costPerActiveUser.toFixed(2)}` : '—'}</td>
+                      <td className={`py-2 text-right font-semibold ${marginPerUser < 0 ? 'text-[#ff3b30]' : 'text-[#34c759]'}`}>{activeUsers > 0 ? `$${marginPerUser.toFixed(2)}` : '—'}</td>
+                      <td className={`py-2 text-right font-semibold ${worstCaseMargin < 0 ? 'text-[#ff3b30]' : worstPct < 40 ? 'text-[#FF9500]' : 'text-[#34c759]'}`} title="Price − monthly AI-spend ceiling (the hard cap)">
+                        ${worstCaseMargin}<span className="text-[10px] font-normal text-[#86868b]"> / {worstPct}%</span>
+                      </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+            </div>
             <p className="text-[11px] text-[#86868b] dark:text-[#8e8e93] mt-3 leading-relaxed">
-              Worst-case is the hard ceiling: if a user hits their post cap AND the overall cost-per-post stays flat,
-              that&apos;s the maximum AI spend they could trigger. Use it to sanity-check tier prices.
-              If <span className="font-semibold">Worst-case / user &gt; Price</span>, the tier loses money at full usage and the cap or the price needs to move.
+              <span className="font-semibold">Worst-case margin = Price − Ceiling.</span> Amber = under 40% (thin); red = negative.
+              This is AI-only — a tier&apos;s newsletter email volume (Resend) and fixed infra sit on top, so true margin is a few points lower,
+              heaviest on Pro. If realized Cost/user is far below the ceiling, the cap is generous headroom; if it&apos;s near the ceiling, power users are the risk.
             </p>
           </div>
 
