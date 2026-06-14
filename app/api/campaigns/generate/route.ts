@@ -256,8 +256,10 @@ export async function POST(request: Request) {
     // interrupted), this keeps the paid content recoverable on the campaign
     // row instead of "paid, got nothing." (Incident 2026-06-14.)
     if (campaignId) {
+      // Columns added in migration 128 — cast past the not-yet-regenerated
+      // Supabase types (same pattern used elsewhere in this route).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await supabase.from('campaigns').update({
+      await (supabase as any).from('campaigns').update({
         generated_title: generated.title,
         generated_content: generated.content,
         generated_excerpt: generated.excerpt,
