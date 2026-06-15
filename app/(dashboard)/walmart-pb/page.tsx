@@ -57,7 +57,10 @@ interface WMProduct {
 }
 
 const REL_FILTERS = ['', 'Joined', 'Pending', 'No Relationship'] as const
-const NETWORKS = ['Walmart', 'Amazon', 'DTC', 'TikTok'] as const
+// Only networks that actually return inventory through PartnerBoost's API.
+// TikTok dropped 2026-06-15 — the account has 0 TikTok brands (and the datafeed
+// returns none). Re-add if TikTok Shop campaigns ever appear.
+const NETWORKS = ['Walmart', 'Amazon', 'DTC'] as const
 
 function relStyle(rel: string): { bg: string; fg: string; icon: React.ReactNode } {
   const r = (rel || '').toLowerCase()
