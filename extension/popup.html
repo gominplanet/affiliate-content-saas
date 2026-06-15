@@ -5,80 +5,135 @@
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  body { width: 560px; margin: 0; padding: 16px; color: #1d1d1f; background: #fff; }
-  h1 { font-size: 14px; margin: 0 0 2px; }
+  body { width: 540px; margin: 0; padding: 16px; color: #1d1d1f; background: #fff; }
+
+  .head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 2px; }
+  h1 { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; margin: 0;
+       background: linear-gradient(90deg,#7C3AED,#2563eb); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .head .by { font-size: 10px; font-weight: 700; color: #c7c7cc; letter-spacing: .04em; text-transform: uppercase; }
   p.sub { font-size: 11px; color: #86868b; margin: 0 0 14px; }
-  label { display: block; font-size: 11px; font-weight: 600; color: #6e6e73; margin: 10px 0 4px; }
-  input { width: 100%; font-size: 12px; padding: 7px 9px; border: 1px solid #d2d2d7; border-radius: 8px; }
+
+  label { display: block; font-size: 11px; font-weight: 600; color: #6e6e73; margin: 0 0 4px; }
+  input { width: 100%; font-size: 12px; padding: 8px 10px; border: 1px solid #d2d2d7; border-radius: 9px; }
   input.mono { font-family: ui-monospace, Menlo, monospace; }
-  button { font-size: 12px; font-weight: 600; padding: 8px 12px; border-radius: 8px; border: 0; cursor: pointer; }
-  button.primary { background: #0071e3; color: #fff; }
-  button.primary:disabled { opacity: .6; cursor: default; }
-  button.ghost { background: #fff; border: 1px solid #d2d2d7; color: #1d1d1f; }
-  .row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  input:focus { outline: none; border-color: #7C3AED; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+
+  button { font-size: 12px; font-weight: 700; padding: 9px 14px; border-radius: 9px; border: 0; cursor: pointer; }
+  button.primary { background: #7C3AED; color: #fff; }
+  button.primary:hover { background: #6d28d9; }
+  button.primary:disabled { opacity: .55; cursor: default; }
+  button.block { display: block; width: 100%; }
+  button.link { background: none; border: 0; color: #7C3AED; font-size: 11px; font-weight: 700; padding: 2px 4px; cursor: pointer; }
+  button.link:hover { text-decoration: underline; }
+
+  .row { display: flex; gap: 8px; align-items: center; }
   .grow { flex: 1; }
+
+  /* Token — collapsed "connected" pill vs editable input */
+  .conn { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 10px;
+          background: #f0fdf4; border: 1px solid #bbf7d0; font-size: 12px; font-weight: 600; color: #15803d; margin-bottom: 6px; }
+  .conn .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex: none; }
+  .conn .meta { color: #16a34a; font-weight: 500; }
+  .conn .sp { flex: 1; }
+  .conn button.link { color: #15803d; }
+  #tokenEdit { margin-bottom: 6px; }
+  .hint { font-size: 10px; color: #a1a1a6; margin: 5px 0 0; }
+
+  /* Filters */
+  .filters { margin-top: 12px; padding: 12px; background: #f7f7f8; border: 1px solid #ececec; border-radius: 12px; }
+  .filters .frow { display: flex; align-items: flex-end; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+  .filters .epc { flex: none; }
+  .filters .epc input { width: 96px; }
+  .filters .epc .pre { font-weight: 600; color: #6e6e73; font-size: 11px; }
+  .chk { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; color: #1d1d1f; cursor: pointer; padding-bottom: 8px; }
+  .chk input { width: 15px; height: 15px; margin: 0; accent-color: #7C3AED; }
+
+  #scan { margin-top: 12px; }
+
   #status { font-size: 11px; margin-top: 12px; min-height: 14px; }
   #status.err { color: #ff3b30; }
   #status.ok { color: #1f8a3a; }
-  #list { margin-top: 12px; max-height: 360px; overflow-y: auto; overflow-x: hidden; border-top: 1px solid #f0f0f0; }
-  .item { display: grid; grid-template-columns: 20px 40px minmax(0, 1fr); column-gap: 10px;
-          align-items: center; padding: 8px 2px; border-bottom: 1px solid #f0f0f0; }
-  .item input[type=checkbox] { width: 15px; height: 15px; margin: 0; }
-  .item .thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: contain;
-                 background: #f5f5f7; border: 1px solid #ececec; }
+  #status.work { color: #6e6e73; }
+
+  /* Results */
+  .resbar { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-bottom: 6px; border-bottom: 1px solid #ececec; }
+  .resbar .count { font-size: 12px; font-weight: 700; color: #1d1d1f; }
+  .resbar .acts { display: flex; gap: 6px; }
+  #list { max-height: 340px; overflow-y: auto; overflow-x: hidden; }
+  .empty { padding: 18px 4px; font-size: 12px; color: #86868b; text-align: center; }
+
+  .item { display: grid; grid-template-columns: 18px 42px minmax(0,1fr) 22px; column-gap: 10px;
+          align-items: center; padding: 9px 2px; border-bottom: 1px solid #f0f0f0; }
+  .item input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: #7C3AED; }
+  .item .thumb { width: 42px; height: 42px; border-radius: 6px; object-fit: contain; background: #f5f5f7; border: 1px solid #ececec; }
   .item .thumb.ph { display: flex; align-items: center; justify-content: center; color: #c7c7cc; font-size: 9px; }
   .item .body { min-width: 0; }
-  .item .name { font-size: 12px; font-weight: 600; line-height: 1.3; white-space: nowrap;
-                overflow: hidden; text-overflow: ellipsis; }
+  .item .name { font-size: 12px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .name .brand { color: #86868b; }
-  .item .meta { margin-top: 2px; color: #6e6e73; font-size: 11px; white-space: nowrap;
-                overflow: hidden; text-overflow: ellipsis; }
+  .item .meta { margin-top: 2px; color: #6e6e73; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .meta .asin { font-family: ui-monospace, Menlo, monospace; color: #1d1d1f; }
   .item .meta .epc { color: #1f8a3a; font-weight: 700; }
-  .item .meta .ends { color: #86868b; }
   .item .meta .bud { font-weight: 700; text-transform: capitalize; }
   .item .meta .bud.high { color: #1f8a3a; }
   .item .meta .bud.medium { color: #b26a00; }
   .item .meta .bud.low { color: #c0001a; }
-  .item.dim { opacity: 0.5; }
-  .filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-             margin-top: 12px; padding: 10px 12px; background: #f7f7f8;
-             border: 1px solid #ececec; border-radius: 10px; font-size: 11px; color: #6e6e73; }
-  .filters label { margin: 0; display: flex; align-items: center; gap: 6px; font-weight: 600; }
-  .filters input[type=number] { width: 70px; padding: 5px 7px; }
-  .filters input[type=text] { width: 150px; padding: 5px 7px; }
-  .filters input[type=checkbox] { width: 14px; height: 14px; }
-  .filters .qual { margin-left: auto; font-weight: 700; color: #1d1d1f; }
+  .item .del { background: none; border: 0; color: #c7c7cc; font-size: 16px; line-height: 1; cursor: pointer; padding: 2px; border-radius: 6px; }
+  .item .del:hover { color: #ff3b30; background: #fff0f0; }
+  .item.off { opacity: 0.45; }
+
+  #push { margin-top: 12px; }
 </style>
 </head>
 <body>
-  <h1>MVP Affiliate — CC Scout</h1>
-  <p class="sub">Scan an Amazon Creator Connections page, then push the campaigns you pick into your MVP EPC Scout queue.</p>
+  <div class="head"><h1>SCOUT</h1><span class="by">for MVP Affiliate</span></div>
+  <p class="sub">Scan an Amazon Creator Connections page, filter the winners, and push them straight into MVP.</p>
 
-  <label for="token">Ingest token</label>
-  <input id="token" class="mono" placeholder="cc_…  (copy it from the EPC Scout page in MVP)" />
-
-  <div class="row">
-    <button id="scan" class="primary grow">Scan this page</button>
-    <button id="saveToken" class="ghost">Save token</button>
+  <!-- Token: collapses to a green "connected" pill once it validates -->
+  <div id="tokenConnected" class="conn" style="display:none">
+    <span class="dot"></span>
+    <span>Connected to MVP</span>
+    <span class="meta" id="connMeta"></span>
+    <span class="sp"></span>
+    <button id="editToken" class="link" type="button">Edit token</button>
   </div>
-  <div class="row">
-    <button id="oneClick" class="primary grow" style="background:#1f8a3a">⚡ Scan &amp; push qualifying</button>
+  <div id="tokenEdit">
+    <label for="token">MVP ingest token</label>
+    <div class="row">
+      <input id="token" class="mono grow" placeholder="cc_…" />
+      <button id="connect" class="primary" type="button">Connect</button>
+    </div>
+    <p class="hint">Copy it from the EPC Scout page inside MVP. Stored locally; only used to push into your account.</p>
   </div>
 
+  <!-- Filters -->
   <div class="filters">
-    <label>Keyword <input id="keyword" type="text" placeholder="e.g. cooler, kitchen" /></label>
-    <label>Min EPC&nbsp;$ <input id="minEpc" type="number" step="0.05" min="0" value="0.20" /></label>
-    <label><input id="reqBudget" type="checkbox" checked /> Budget ≥ Medium</label>
-    <span class="qual" id="qualCount"></span>
+    <label for="keyword">Keyword <span style="font-weight:400;color:#a1a1a6">— campaign, product or brand</span></label>
+    <input id="keyword" type="text" placeholder="e.g. vacuum, cooler, eufy" />
+    <div class="frow">
+      <div class="epc">
+        <label for="minEpc">Estimated EPC</label>
+        <span class="pre">Up to&nbsp;$</span>
+        <input id="minEpc" type="number" step="0.05" min="0" placeholder="0.20" style="display:inline-block;vertical-align:middle" />
+      </div>
+      <label class="chk"><input id="budgetHigh" type="checkbox" /> Budget availability: <strong>High</strong> only</label>
+    </div>
   </div>
+
+  <button id="scan" class="primary block" type="button">Scan this page</button>
 
   <div id="status"></div>
-  <div id="list"></div>
 
-  <div class="row" id="pushRow" style="display:none">
-    <button id="selectAll" class="ghost">Select all</button>
-    <button id="push" class="primary grow">Push selected</button>
+  <!-- Results -->
+  <div id="results" style="display:none">
+    <div class="resbar">
+      <span class="count" id="resCount"></span>
+      <div class="acts">
+        <button id="selectAll" class="link" type="button">Select all</button>
+        <button id="clearSel" class="link" type="button">Clear</button>
+      </div>
+    </div>
+    <div id="list"></div>
+    <button id="push" class="primary block" type="button">Push to MVP</button>
   </div>
 
   <script src="popup.js"></script>

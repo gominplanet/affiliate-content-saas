@@ -20,12 +20,50 @@ import { tierAllowsCampaigns, type Tier } from '@/lib/tier'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
 
 export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
+}
+
+// GET /api/campaigns/ingest — validate an ingest token (no writes). The SCOUT
+// extension calls this on Connect so it can confirm the token works, then
+// collapse the token field. Returns { ok, pro, queued } or 401.
+export async function GET(request: Request) {
+  try {
+    const auth = request.headers.get('authorization') || ''
+    const token = auth.toLowerCase().startsWith('bearer ')
+      ? auth.slice(7).trim()
+      : (request.headers.get('x-cc-token') || '').trim()
+    if (!token) {
+      return NextResponse.json({ ok: false, error: 'Missing ingest token' }, { status: 401, headers: CORS })
+    }
+    const admin = createAdminClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: intRow } = await admin
+      .from('integrations')
+      .select('user_id,tier')
+      .eq('cc_ingest_token', token)
+      .single()
+    if (!intRow?.user_id) {
+      return NextResponse.json({ ok: false, error: 'Invalid ingest token' }, { status: 401, headers: CORS })
+    }
+    const tier = (intRow.tier as Tier) ?? 'trial'
+    let queued = 0
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { count } = await admin
+        .from('campaigns')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', intRow.user_id as string)
+      queued = count ?? 0
+    } catch { /* count is best-effort */ }
+    return NextResponse.json({ ok: true, pro: tierAllowsCampaigns(tier), queued }, { headers: CORS })
+  } catch (err: unknown) {
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, { status: 500, headers: CORS })
+  }
 }
 
 interface IncomingCampaign {

@@ -316,9 +316,9 @@ export default function EpcScoutPage() {
       <div className="card p-5 mb-5">
         <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Connect the Scout extension</p>
         <ol className="text-[12px] leading-relaxed list-decimal pl-5 mb-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
-          <li><button onClick={() => setShowInstall(s => !s)} className="text-[#7C3AED] font-medium hover:underline">Install the Scout extension</button> (it’s not in the Chrome Web Store).</li>
-          <li>Copy your ingest token below.</li>
-          <li>On an Amazon <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Creator Connections <ExternalLink size={10} /></a> opportunities page, open the extension, paste the token, and hit <span className="font-medium">Scan &amp; push</span>.</li>
+          <li><button onClick={() => setShowInstall(s => !s)} className="text-[#7C3AED] font-medium hover:underline">Install the SCOUT extension</button> (it’s not in the Chrome Web Store).</li>
+          <li>Copy your ingest token below, paste it into SCOUT, and hit <span className="font-medium">Connect</span> (the token then collapses out of the way).</li>
+          <li>On an Amazon <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="text-[#7C3AED] font-medium hover:underline inline-flex items-center gap-0.5">Creator Connections <ExternalLink size={10} /></a> opportunities page, set your keyword / EPC / budget filters, hit <span className="font-medium">Scan this page</span>, pick the winners, and <span className="font-medium">Push to MVP</span>.</li>
           <li>Your campaigns land in the queue below — filter, pick, generate.</li>
         </ol>
 
@@ -383,7 +383,7 @@ export default function EpcScoutPage() {
 
       {!loading && campaigns.length === 0 ? (
         <div className="card p-6 text-center text-sm" style={{ color: 'var(--text-faint)' }}>
-          Nothing pushed yet. Install the extension, paste your token, and run <span className="font-medium">Scan &amp; push</span> on a Creator Connections page.
+          Nothing pushed yet. Install SCOUT, connect your token, then <span className="font-medium">Scan this page</span> → pick → <span className="font-medium">Push to MVP</span> on a Creator Connections page.
         </div>
       ) : (
         <>
