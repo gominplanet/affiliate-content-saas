@@ -115,64 +115,72 @@ export async function GET(request: Request) {
     const q = (searchParams.get('q') || '').trim().slice(0, 200)
     const includePublished = searchParams.get('includePublished') === '1'
 
-    // ── Search mode: filter the cache — never call search.list (100 units) ──
-    // search.list is 100× more expensive than videos.list. Instead we keep all
-    // videos in the cache (drafts + public) and do a cheap in-memory title
-    // filter here.  If the cache is empty we fall through to a full scan first.
+    // ── Search mode ─────────────────────────────────────────────────────────
+    // search.list (forMine + q) is the AUTHORITATIVE, channel-wide search —
+    // exactly what the YouTube Studio search bar uses. We make it the PRIMARY
+    // source (not a last-resort fallback): a stray/loose cache substring match
+    // must never suppress the real results, and the cache is only a recency
+    // window so it misses older uploads anyway. Cost is 100 quota units per
+    // query — affordable because the client debounces and only fires on a
+    // changed query. Everything is deduped by youtubeVideoId so a duplicated
+    // cache entry can't surface the same video twice.
     if (q && !pageToken) {
-      const cache = await readCache(supabase, user.id)
-      const cacheAge = cache ? Date.now() - new Date(cache.cached_at).getTime() : Infinity
-
-      let allVideos: ReturnType<typeof buildDraftVideo>[]
-      if (cache && cacheAge < CACHE_TTL_MS) {
-        // Fresh cache — search in memory, 0 API units
-        allVideos = cache.videos
-      } else {
-        // Stale / empty — populate the cache first, then search
-        const yt = createYouTubeOAuthService(token)
-        allVideos = await runFullScan(yt, supabase, user.id, cache?.uploads_playlist_id, undefined)
+      const lower = q.toLowerCase()
+      const byId = new Map<string, ReturnType<typeof buildDraftVideo>>()
+      const add = (v: ReturnType<typeof buildDraftVideo>) => {
+        if (v?.youtubeVideoId && !byId.has(v.youtubeVideoId)) byId.set(v.youtubeVideoId, v)
       }
 
-      const lower = q.toLowerCase()
-      let matched = allVideos.filter(
-        (v: ReturnType<typeof buildDraftVideo>) =>
-          v.title.toLowerCase().includes(lower) ||
-          (v.description ?? '').toLowerCase().includes(lower),
-      )
-
-      // Cache miss = the video is OLDER than the scanned window. The initial
-      // scan stops at a recency cutoff (MIN_*_HITS / MAX_PAGES), so an old
-      // upload may never be in the cache and the cheap in-memory filter finds
-      // nothing. Fall back to a real channel-wide search.list (forMine + q) so
-      // the search bar reaches ANY video on the channel — which is what the
-      // user expects when they type a title. search.list is 100 quota units, so
-      // we only call it on an actual miss + a real query (never as the default
-      // listing). Hits get merged into the cache so later loads don't re-query.
+      // 1. Authoritative channel-wide search (any age / privacy status).
       let viaSearch = false
-      if (matched.length === 0) {
+      try {
+        const yt = createYouTubeOAuthService(token)
+        const { videos: hits } = await yt.searchMyVideos(q, 25)
+        ;(hits as unknown as ReturnType<typeof buildDraftVideo>[]).forEach(add)
+        viaSearch = hits.length > 0
+      } catch { /* quota / transient — fall back to the cache below */ }
+
+      // 2. Supplement with cache TITLE matches (title-only so a loose
+      //    description hit can't inject an unrelated video — that was the
+      //    "Bamboo Mattress" surfacing for "boom" bug). Fresh cache only — a
+      //    search should never trigger a full uploads scan.
+      const cache = await readCache(supabase, user.id)
+      const cacheAge = cache ? Date.now() - new Date(cache.cached_at).getTime() : Infinity
+      const cacheFresh = !!cache && cacheAge < CACHE_TTL_MS
+      if (cacheFresh) {
+        for (const v of cache!.videos as ReturnType<typeof buildDraftVideo>[]) {
+          if (v.title.toLowerCase().includes(lower)) add(v)
+        }
+      }
+
+      // 3. Last resort: search.list failed AND no fresh cache → one scan so the
+      //    user isn't left empty on a cold cache.
+      if (byId.size === 0 && !cacheFresh) {
         try {
           const yt = createYouTubeOAuthService(token)
-          const { videos: hits } = await yt.searchMyVideos(q, 25)
-          if (hits.length) {
-            matched = hits as unknown as ReturnType<typeof buildDraftVideo>[]
-            viaSearch = true
-            const baseCache = cache ?? await readCache(supabase, user.id)
-            if (baseCache) {
-              const seen = new Set(baseCache.videos.map((v: ReturnType<typeof buildDraftVideo>) => v.youtubeVideoId))
-              const fresh = matched.filter(v => !seen.has(v.youtubeVideoId))
-              if (fresh.length) {
-                await writeCache(supabase, user.id, baseCache.uploads_playlist_id || '', [...baseCache.videos, ...fresh], false)
-              }
-            }
+          const scanned = await runFullScan(yt, supabase, user.id, cache?.uploads_playlist_id, undefined)
+          for (const v of scanned) {
+            if (v.title.toLowerCase().includes(lower) || (v.description ?? '').toLowerCase().includes(lower)) add(v)
           }
-        } catch { /* quota exhausted / transient — return the empty cache result */ }
+        } catch { /* ignore — return whatever we have */ }
+      }
+
+      const matched = [...byId.values()]
+
+      // Persist search hits into the cache so later browse/filter sees them.
+      if (viaSearch && cache) {
+        const seen = new Set((cache.videos as ReturnType<typeof buildDraftVideo>[]).map(v => v.youtubeVideoId))
+        const fresh = matched.filter(v => !seen.has(v.youtubeVideoId))
+        if (fresh.length) {
+          await writeCache(supabase, user.id, cache.uploads_playlist_id || '', [...cache.videos, ...fresh], false)
+        }
       }
 
       return NextResponse.json({
         drafts: await enrichWithPushState(supabase, user.id, matched),
         query: q,
-        fromCache: !viaSearch,
         viaSearch,
+        fromCache: !viaSearch,
       })
     }
 
