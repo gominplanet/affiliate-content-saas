@@ -19,7 +19,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2 } from 'lucide-react'
+import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 
 const CC_URL = 'https://www.amazon.com/creatorconnections/'
@@ -337,12 +337,29 @@ export default function EpcScoutPage() {
     <>
       <PageHero
         title="EPC Scout"
-        subtitle="Scout Amazon Creator Connections with the extension, then filter by EPC, price and end date and generate posts for the winners."
+        subtitle="Turn the Amazon Creator Connections campaigns you're offered into ready-to-publish blog posts — scan with SCOUT, keep the high-EPC winners, publish."
       />
 
-      {/* ── Setup: token + how to feed the queue ─────────────────────────── */}
+      {/* ── Eligibility gate: set expectations BEFORE the shiny tool ───────── */}
+      <div className="rounded-xl border p-4 mb-4 flex items-start gap-3"
+        style={{ background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.40)' }}>
+        <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
+        <div>
+          <p className="text-[13px] font-semibold" style={{ color: 'var(--text)' }}>Who this is for — you need Amazon Creator Connections (with EPC)</p>
+          <p className="text-[12px] leading-relaxed mt-1" style={{ color: 'var(--text-soft)' }}>
+            EPC Scout only does something if your Amazon Associates account has <strong>Creator Connections</strong> with the <strong>Sponsored Products for Creators</strong> program — the campaigns that show an <span className="font-medium">&ldquo;Estimated EPC: Up to&nbsp;$X&rdquo;</span>. That&rsquo;s an Amazon invite/eligibility, not a switch you flip here, and most creators don&rsquo;t have it yet. <strong>No &ldquo;Creator Connections&rdquo; tab in your <a href={CC_URL} target="_blank" rel="noopener noreferrer" className="underline">Amazon Associates</a> account = nothing for SCOUT to scan</strong>, and this tool won&rsquo;t do anything for you. If that&rsquo;s you, use Reviews, Comparisons or Buying Guides instead.
+          </p>
+        </div>
+      </div>
+
+      {/* ── What it does + how to run it ───────────────────────────────────── */}
       <div className="card p-5 mb-5">
-        <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text)' }}>Connect the Scout extension</p>
+        <p className="text-sm font-semibold mb-1 inline-flex items-center gap-2" style={{ color: 'var(--text)' }}>
+          <Sparkles size={14} className="text-[#7C3AED]" /> What it does &amp; how to run it
+        </p>
+        <p className="text-[12px] leading-relaxed mb-3" style={{ color: 'var(--text-soft)' }}>
+          Amazon pays you per click on the Creator Connections campaigns you accept. EPC Scout finds those campaigns, lets you keep the highest-earning ones, and writes + publishes a blog post for each — so your blog covers exactly what Amazon is already paying you to promote.
+        </p>
         <ol className="text-[12px] leading-relaxed list-decimal pl-5 mb-4 space-y-1" style={{ color: 'var(--text-soft)' }}>
           <li><button onClick={() => setShowInstall(s => !s)} className="text-[#7C3AED] font-medium hover:underline">Install the SCOUT extension</button> (it’s not in the Chrome Web Store).</li>
           <li>Copy your ingest token below, paste it into SCOUT, and hit <span className="font-medium">Connect</span> (the token then collapses out of the way).</li>
