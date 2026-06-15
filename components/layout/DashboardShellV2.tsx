@@ -37,7 +37,7 @@ import {
   Flame, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
-  Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical,
+  Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical, Store,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
@@ -333,6 +333,9 @@ export default function DashboardShellV2({
       label: 'Labs',
       items: [
         { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: canUseLabs },
+        // Walmart PB — live view of PartnerBoost Walmart brands. ADMIN-ONLY
+        // while we test the integration (gate: isAdmin, not canUseLabs).
+        { href: '/walmart-pb', icon: <Store size={15} />, label: 'Walmart PB', gate: isAdmin },
       ],
     },
     {
