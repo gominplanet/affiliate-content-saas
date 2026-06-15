@@ -7,6 +7,7 @@ import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
+import { resolveBlogPostId } from '@/lib/resolve-post-id'
 
 export const maxDuration = 60
 
@@ -35,10 +36,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json() as { postId?: string; dryRun?: boolean; text?: string }
-    const postId = body.postId
+    const rawPostId = body.postId
     const dryRun = body.dryRun === true
     const overrideText = body.text?.trim()
-    if (!postId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    if (!rawPostId) return NextResponse.json({ error: 'postId required' }, { status: 400 })
+    // Content-page "Published Posts" rows for video-less posts (guides,
+    // comparisons, link posts) send the WP post id, not the blog_posts UUID.
+    const postId = (await resolveBlogPostId(supabase, user.id, rawPostId)) || rawPostId
 
     // ── 1. Fetch blog post ─────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
