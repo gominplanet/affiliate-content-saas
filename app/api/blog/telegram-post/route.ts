@@ -135,6 +135,8 @@ Hard rules:
 - One emoji at the start of the hook is welcome. Don't pile them on.
 - One hashtag at the end is fine, max one.
 
+Truthfulness: Do NOT claim you personally tested or used a product unless the article says you did. If this is a comparison or round-up that may include other creators' videos, frame it as "I compared…" / "here's my pick", NEVER "I tested both/all of them". Never invent first-hand experience.
+
 Blog title: ${post.title}
 Blog excerpt: ${post.excerpt || plainContent.slice(0, 300)}
 Content preview: ${plainContent}

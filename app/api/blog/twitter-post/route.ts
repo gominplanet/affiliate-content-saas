@@ -155,6 +155,7 @@ Hard rules:
 - Do NOT include any URL — we will append one ourselves.
 - Do NOT use hashtags unless one feels genuinely necessary; at most one.
 - Plain text only, no markdown.
+- Stay TRUE to the article. Do NOT claim you personally tested or used a product unless the article actually says you did. If this is a comparison or round-up that may include other creators' videos, write "I compared…", "I put X against Y", or "here's my pick" — NEVER "I tested both/all of them". Never invent first-hand experience you don't have.
 
 Blog title: ${post.title}
 Blog excerpt: ${post.excerpt || plainContent.slice(0, 300)}
