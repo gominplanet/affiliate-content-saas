@@ -648,7 +648,24 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
       const media = await wpService.uploadImageFromUrl(heroSrc, `${slug}-hero.jpg`)
       if (media?.id) featuredMedia = media.id
     }
-  } catch { /* publish without a hero rather than fail */ }
+  } catch { /* fall through to the thumbnail fallback below */ }
+
+  // Guaranteed-hero fallback: AI generation is the slow, flaky step (timeout /
+  // transient fal error / missing FAL_KEY) and a guide MUST NOT publish with an
+  // empty featured image. When we still have no hero, use the first product's
+  // YouTube thumbnail (always public + fast; the WP upload path is the same one
+  // reviews use successfully). maxres first, hqdefault as a guaranteed backup.
+  if (!featuredMedia) {
+    const fallbackVideoId = resolved[0]?.videoId
+    if (fallbackVideoId) {
+      for (const q of ['maxresdefault', 'hqdefault'] as const) {
+        try {
+          const media = await wpService.uploadImageFromUrl(`https://i.ytimg.com/vi/${fallbackVideoId}/${q}.jpg`, `${slug}-hero.jpg`)
+          if (media?.id) { featuredMedia = media.id; break }
+        } catch { /* try the next quality, then publish without a hero */ }
+      }
+    }
+  }
 
   // ── JSON-LD: BlogPosting + ItemList (ranked products) + FAQPage ─────────────
   // Rendered in <head> by the MVP plugin via the mvp_jsonld post meta.
