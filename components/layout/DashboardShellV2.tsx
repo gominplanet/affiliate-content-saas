@@ -37,7 +37,7 @@ import {
   Flame, KeyRound, Users, LogOut, ExternalLink,
   UserCog, AlertTriangle, DollarSign, Newspaper, Plug, Wrench,
   Camera, MessageCircle, Activity, BarChart3, Upload, Wand2, ShieldCheck,
-  Share2, UserSquare, Lightbulb, LifeBuoy, Link2,
+  Share2, UserSquare, Lightbulb, LifeBuoy, Link2, FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
@@ -74,7 +74,22 @@ interface NavItemDef {
 interface NavGroupDef {
   label: string
   items: NavItemDef[]
+  /** Optional accent colour for the section header — tints the label text +
+   *  the leading icon so a special zone (e.g. Labs) reads as distinct from
+   *  the default grey section headers. */
+  accent?: string
+  /** Optional leading icon rendered before the section label. Pairs with
+   *  `accent` to give a group its own identity. */
+  icon?: React.ReactNode
 }
+
+// Labs identity colour — a distinct electric cyan that doesn't collide with the
+// brand violet (active state), Oink pink, amber warnings, or success green.
+// Two tones so it stays legible on BOTH the near-black dark sidebar AND the
+// near-white light sidebar (a single mid cyan washes out on one end). Picked
+// per theme in-component and reused for the Labs header + its rows.
+const LABS_ACCENT_DARK = '#22D3EE'  // cyan-400 — pops on the #0B0B0E dark sidebar
+const LABS_ACCENT_LIGHT = '#0E7490' // cyan-700 — legible on the #F4F2EE light sidebar
 
 // Per-theme CSS variable definitions. Components reference these via
 // `style={{ background: 'var(--bg)' }}` so flipping a theme is one state
@@ -169,6 +184,13 @@ export default function DashboardShellV2({
   }, [collapsed])
 
   const isAdmin = tier === 'admin'
+  // Labs (EPC Scout) is Pro-only by request (2026-06-15). Admins always retain
+  // access. Mirrors tierAllowsCampaigns() in lib/tier.ts — pro || admin — which
+  // already gates the campaign APIs, so a Pro user who sees the link can use it.
+  const canUseLabs = tier === 'pro' || isAdmin
+  // Theme-aware Labs accent (see LABS_ACCENT_* above) — keeps the cyan legible
+  // on both the dark and light sidebar.
+  const labsAccent = isDark ? LABS_ACCENT_DARK : LABS_ACCENT_LIGHT
 
   // Admin "view as tier" dropdown state. Sourced from localStorage so the
   // sidebar reflects whichever tier the admin is currently previewing.
@@ -276,14 +298,20 @@ export default function DashboardShellV2({
     },
     {
       // LABS — MVP's experimental / bonus tools we're trying out: opt-in extras
-      // that may change and aren't part of the core engine. EPC Scout lives here
-      // (not in Create) because it only works for creators with Amazon Creator
-      // Connections (EPC) access — most users can't use it, so it doesn't belong
-      // in the everyday flow. The whole section auto-hides when every item is
-      // gated out (admin-only today; flip gates as items open to Pro).
+      // that may change and aren't part of the core engine. Given its own
+      // identity (cyan accent + flask icon) so it reads as a distinct "special
+      // zone", set apart from the default grey section headers. Sits right
+      // below Collaborate. EPC Scout lives here (not in Create) because it only
+      // works for creators with Amazon Creator Connections (EPC) access — most
+      // users can't use it, so it doesn't belong in the everyday flow. PRO-ONLY
+      // (canUseLabs = pro || admin) per the 2026-06-15 request; the whole
+      // section auto-hides for everyone below Pro. As more bonus tools land,
+      // add them as items here (set each item's gate as it opens up).
       label: 'Labs',
+      accent: labsAccent,
+      icon: <FlaskConical size={12} />,
       items: [
-        { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: isAdmin },
+        { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: canUseLabs, highlight: labsAccent },
       ],
     },
     {
@@ -452,9 +480,10 @@ export default function DashboardShellV2({
               <div key={group.label}>
                 {!collapsed && group.label && (
                   <p
-                    className="px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold"
-                    style={{ color: 'var(--text-faint)' }}
+                    className="px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold flex items-center gap-1.5"
+                    style={{ color: group.accent || 'var(--text-faint)' }}
                   >
+                    {group.icon}
                     {group.label}
                   </p>
                 )}
@@ -698,7 +727,7 @@ function NavItem({ item, active, collapsed }: { item: NavItemDef; active: boolea
     <>
       {/* Left indicator bar — only for active internal items. External
           tools never get the bar even on hover. */}
-      {active && <span className="absolute -left-2 top-2 bottom-2 w-[3px] rounded-r-full bg-[#7C3AED]" />}
+      {active && <span className="absolute -left-2 top-2 bottom-2 w-[3px] rounded-r-full" style={{ background: hl || '#7C3AED' }} />}
       <span className="flex-shrink-0">{item.icon}</span>
       {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
       {/* External-link glyph — small tail icon hinting "opens off-site".

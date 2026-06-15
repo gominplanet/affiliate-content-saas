@@ -14,7 +14,10 @@
  *      and generate posts.
  *
  * The extension only scrapes + pushes; all review/filtering/generation lives
- * here. Nav-gated to admin while testing.
+ * here. Lives in the sidebar "Labs" group, Pro-only (canUseLabs = pro || admin
+ * in DashboardShellV2) — mirrors tierAllowsCampaigns(), which gates the
+ * campaign APIs. The eligibility callout below still sets expectations because
+ * even most Pro users won't have Amazon Creator Connections / EPC access.
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
