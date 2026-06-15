@@ -214,6 +214,38 @@ async function parseCampaigns() {
   return [...byAsin.values()]
 }
 
+// Drive Amazon's OWN search box so SCOUT queries the full catalogue, not just
+// the campaigns already rendered. The input is React-controlled, so we set it
+// via the native value setter + an input event, then wait for the grid to
+// re-render before the caller scrapes. No-ops (and reports why) if there's no
+// search box or the query is already applied.
+async function applyAmazonSearch(keyword) {
+  const kw = (keyword || '').trim()
+  if (!kw) return { searched: false }
+  const input = document.querySelector(
+    'input[type="search"], input[placeholder*="search" i], input[aria-label*="search" i]',
+  )
+  if (!input) return { searched: false, reason: 'no-search-box' }
+  if ((input.value || '').trim().toLowerCase() === kw.toLowerCase()) {
+    return { searched: true, already: true }
+  }
+  const g0 = findGrid()
+  const before = g0 ? cellsIn(g0).slice(0, 6).map(c => c.asin).join(',') : ''
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  if (setter) setter.call(input, kw); else input.value = kw
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  // Wait (≤7s) for the grid to actually re-render (debounce + fetch).
+  for (let i = 0; i < 28; i++) {
+    await sleep(250)
+    const g = findGrid()
+    const now = g ? cellsIn(g).slice(0, 6).map(c => c.asin).join(',') : ''
+    if (now !== before) { await sleep(500); return { searched: true } }
+  }
+  return { searched: true, settled: false }
+}
+
 // Guard: this file may be (re)injected by the popup on every scan.
 // Register the message listener only once per page.
 // Snapshot of WHY a scan returned what it did — surfaced in the app so a 0
@@ -240,9 +272,16 @@ if (!window.__ccScoutListener) {
   window.__ccScoutListener = true
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'CC_SCAN') {
-      parseCampaigns()
-        .then(campaigns => sendResponse({ campaigns, diag: collectDiag() }))
-        .catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [], diag: collectDiag() }))
+      ;(async () => {
+        // When a keyword is supplied, drive Amazon's own search box first so we
+        // scan the FULL catalogue's matches, not just the rendered page.
+        let search = { searched: false }
+        if (msg.keyword) {
+          try { search = await applyAmazonSearch(msg.keyword) } catch (e) { search = { searched: false, reason: e?.message || 'search-failed' } }
+        }
+        const campaigns = await parseCampaigns()
+        sendResponse({ campaigns, diag: { ...collectDiag(), search } })
+      })().catch(e => sendResponse({ error: e?.message || 'parse failed', campaigns: [], diag: collectDiag() }))
       return true // async response
     }
   })

@@ -162,13 +162,17 @@ async function doScan() {
   found = []; deleted.clear(); unchecked.clear()
   scanFound = 0; scanLastChange = Date.now()
 
+  // First keyword term drives Amazon's own search box so SCOUT scans the whole
+  // catalogue's matches — not just the campaigns already on the page.
+  const searchKw = filterCfg().terms[0] || ''
   const start = Date.now()
   const timer = setInterval(() => {
     const secs = Math.round((Date.now() - start) / 1000)
     const settling = scanFound > 0 && (Date.now() - scanLastChange) > 1000
+    const base = searchKw ? `Searching Amazon for “${searchKw}” + scanning` : 'Scanning the page'
     setStatus(scanFound > 0
-      ? `Scanning the page… ${secs}s · ${scanFound} found${settling ? ' · finishing up' : ''}`
-      : `Scanning the page… ${secs}s`, 'work')
+      ? `${base}… ${secs}s · ${scanFound} found${settling ? ' · finishing up' : ''}`
+      : `${base}… ${secs}s`, 'work')
   }, 250)
 
   try {
@@ -182,7 +186,7 @@ async function doScan() {
     } catch (e) {
       throw new Error(`Couldn't read this page (${e?.message || 'injection blocked'}). Reload the Amazon tab and retry.`)
     }
-    const res = await chrome.tabs.sendMessage(tab.id, { type: 'CC_SCAN' }).catch(() => null)
+    const res = await chrome.tabs.sendMessage(tab.id, { type: 'CC_SCAN', keyword: searchKw }).catch(() => null)
     if (!res || !Array.isArray(res.campaigns)) {
       throw new Error('Scanner did not respond. Reload the Amazon tab and try again.')
     }
@@ -191,6 +195,7 @@ async function doScan() {
     sortFound()
     persist()
     renderList()
+    return res.diag?.search || null
   } finally {
     clearInterval(timer)
   }
@@ -199,9 +204,13 @@ async function doScan() {
 $('scan').addEventListener('click', async () => {
   $('scan').disabled = true
   try {
-    await doScan()
+    const search = await doScan()
     const shown = visibleRows().length
-    setStatus(`Found ${found.length} campaign${found.length === 1 ? '' : 's'} · ${shown} match your filters.`, 'ok')
+    const kw = filterCfg().terms[0] || ''
+    const note = (kw && search && search.reason === 'no-search-box')
+      ? ' — couldn\'t find Amazon\'s search box, so this scanned the current page. Type the keyword in Amazon\'s search, then Scan.'
+      : ''
+    setStatus(`Found ${found.length} campaign${found.length === 1 ? '' : 's'} · ${shown} match your filters.${note}`, 'ok')
   } catch (e) {
     setStatus(e?.message || 'Scan failed.', 'err')
   } finally {
