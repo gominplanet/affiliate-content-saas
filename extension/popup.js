@@ -29,22 +29,19 @@ function filterCfg() {
   const terms = $('keyword').value.toLowerCase().split(/[,\n]/).map(s => s.trim()).filter(Boolean)
   return {
     minEpc: isNaN(minEpc) ? 0 : minEpc,
-    budgetHigh: $('budgetHigh').checked,
     keyword: $('keyword').value.trim(),
     terms,
   }
 }
 
 // A campaign matches the active filters: keyword (campaign/product/brand) AND
-// Budget availability = High (if ticked) AND Estimated EPC ≥ the "Up to $".
-// EPC-less campaigns can't be confirmed at/above a floor, so they drop out when
-// a minimum is set.
+// Estimated EPC ≥ the "Up to $". EPC-less campaigns can't be confirmed at/above
+// a floor, so they drop out when a minimum is set.
 function matches(c, cfg = filterCfg()) {
   if (cfg.terms.length) {
     const hay = `${c.campaignName || ''} ${c.brand || ''}`.toLowerCase()
     if (!cfg.terms.some(t => hay.includes(t))) return false
   }
-  if (cfg.budgetHigh && c.budget !== 'high') return false
   if (cfg.minEpc > 0) {
     if (c.epcValue == null || c.epcValue < cfg.minEpc) return false
   }
@@ -103,7 +100,6 @@ function showTokenEdit() {
 chrome.storage.local.get(['ccToken', 'ccScan', 'ccFilter'], async ({ ccToken, ccScan, ccFilter }) => {
   if (ccFilter) {
     if (typeof ccFilter.minEpc === 'number' && ccFilter.minEpc > 0) $('minEpc').value = ccFilter.minEpc
-    if (typeof ccFilter.budgetHigh === 'boolean') $('budgetHigh').checked = ccFilter.budgetHigh
     if (typeof ccFilter.keyword === 'string') $('keyword').value = ccFilter.keyword
   }
 
@@ -143,7 +139,7 @@ $('connect').addEventListener('click', async () => {
 $('editToken').addEventListener('click', showTokenEdit)
 
 // Live re-filter as the user types / toggles.
-;['minEpc', 'budgetHigh', 'keyword'].forEach(id => {
+;['minEpc', 'keyword'].forEach(id => {
   $(id).addEventListener('input', () => { if (found.length) { persist(); renderList() } })
 })
 
@@ -237,8 +233,8 @@ function renderList() {
   if (rows.length === 0) {
     const empty = document.createElement('div')
     empty.className = 'empty'
-    empty.textContent = cfg.terms.length || cfg.budgetHigh || cfg.minEpc > 0
-      ? 'No campaigns match these filters. Loosen the keyword, EPC, or budget filter.'
+    empty.textContent = cfg.terms.length || cfg.minEpc > 0
+      ? 'No campaigns match these filters. Loosen the keyword or EPC filter.'
       : 'Nothing to show.'
     list.appendChild(empty)
   }
