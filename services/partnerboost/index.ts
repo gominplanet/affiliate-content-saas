@@ -8,7 +8,7 @@
 
 const PB_ENDPOINT = 'https://app.partnerboost.com/api.php'
 
-export interface WalmartProduct {
+export interface PBProduct {
   name: string
   price: string | null
   oldPrice: string | null
@@ -24,6 +24,9 @@ export interface WalmartProduct {
   sku: string | null
   trackingUrl: string    // per-product affiliate deep-link (may be empty if brand not joined)
 }
+
+/** PartnerBoost networks (the API's `brand_type` values). */
+export type PBBrandType = 'Walmart' | 'Amazon' | 'DTC' | 'TikTok' | 'Indirect'
 
 interface PBEnvelope {
   status?: { code?: number; msg?: string }
@@ -53,7 +56,7 @@ async function pbGet(qs: URLSearchParams, timeoutMs = 30_000): Promise<PBEnvelop
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeProduct(p: any): WalmartProduct {
+function normalizeProduct(p: any): PBProduct {
   return {
     name: p.name ?? p.title ?? '',
     price: p.price != null ? String(p.price) : null,
@@ -77,15 +80,15 @@ function normalizeProduct(p: any): WalmartProduct {
  * Filter to a single brand via brandId (and/or mcid). Reliable product data
  * (name/price/image/description/url + per-product tracking_url) — no scraping.
  */
-export async function listWalmartProducts(
+export async function listPartnerBoostProducts(
   token: string,
-  opts: { brandId?: string; mcid?: string; keywords?: string; page?: number; limit?: number } = {},
-): Promise<{ products: WalmartProduct[]; total: number; totalPage: number }> {
+  opts: { brandType?: PBBrandType; brandId?: string; mcid?: string; keywords?: string; page?: number; limit?: number } = {},
+): Promise<{ products: PBProduct[]; total: number; totalPage: number }> {
   const qs = new URLSearchParams({
     mod: 'datafeed',
     op: 'list',
     token,
-    brand_type: 'Walmart',
+    brand_type: opts.brandType || 'Walmart',
     type: 'json',
     page: String(opts.page ?? 1),
     limit: String(opts.limit ?? 40),
@@ -100,7 +103,7 @@ export async function listWalmartProducts(
   }
   const data = json?.data || {}
   const list = Array.isArray(data.list) ? data.list : []
-  let products: WalmartProduct[] = list.map(normalizeProduct)
+  let products: PBProduct[] = list.map(normalizeProduct)
   // Defensive: if the API ignores the brand filter, narrow by mcid ourselves so
   // a brand's "Browse products" never bleeds in other merchants' items.
   if (opts.mcid) products = products.filter((p) => !p.mcid || p.mcid === opts.mcid)
@@ -118,7 +121,7 @@ export async function listWalmartProducts(
  * deep-linking / allow_sml enabled). Prefer a product's own datafeed
  * tracking_url when present — this is the fallback.
  */
-export function buildWalmartDeepLink(brandTrackingBase: string, productUrl: string): string {
+export function buildPartnerBoostDeepLink(brandTrackingBase: string, productUrl: string): string {
   if (!brandTrackingBase) return productUrl
   try {
     const u = new URL(brandTrackingBase)

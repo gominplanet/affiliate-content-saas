@@ -333,9 +333,10 @@ export default function DashboardShellV2({
       label: 'Labs',
       items: [
         { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: canUseLabs },
-        // Walmart PB — live view of PartnerBoost Walmart brands. ADMIN-ONLY
-        // while we test the integration (gate: isAdmin, not canUseLabs).
-        { href: '/walmart-pb', icon: <Store size={15} />, label: 'Walmart PB', gate: isAdmin },
+        // PartnerBoost — brands across all PartnerBoost networks (Walmart /
+        // Amazon / DTC / TikTok) + generate posts from a product. ADMIN-ONLY
+        // while testing (gate: isAdmin, not canUseLabs). Route stays /walmart-pb.
+        { href: '/walmart-pb', icon: <Store size={15} />, label: 'PartnerBoost', gate: isAdmin },
       ],
     },
     {

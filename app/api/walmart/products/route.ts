@@ -9,7 +9,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { listWalmartProducts } from '@/services/partnerboost'
+import { listPartnerBoostProducts, type PBBrandType } from '@/services/partnerboost'
 import type { Tier } from '@/lib/tier'
 
 export const dynamic = 'force-dynamic'
@@ -34,11 +34,14 @@ export async function GET(request: NextRequest) {
     const mcid = searchParams.get('mcid') || undefined
     const keywords = searchParams.get('keywords') || undefined
     const limit = Math.min(Number(searchParams.get('limit')) || 24, 100)
+    const ALLOWED_TYPES: PBBrandType[] = ['Walmart', 'Amazon', 'DTC', 'TikTok', 'Indirect']
+    const btRaw = (searchParams.get('brandType') || 'Walmart') as PBBrandType
+    const brandType: PBBrandType = ALLOWED_TYPES.includes(btRaw) ? btRaw : 'Walmart'
     if (!brandId && !mcid && !keywords) {
       return NextResponse.json({ ok: false, error: 'A brand (brandId or mcid) or keywords is required.' }, { status: 400 })
     }
 
-    const { products, total, totalPage } = await listWalmartProducts(token, { brandId, mcid, keywords, limit })
+    const { products, total, totalPage } = await listPartnerBoostProducts(token, { brandType, brandId, mcid, keywords, limit })
     return NextResponse.json({ ok: true, total, totalPage, products })
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : 'Unexpected error' }, { status: 500 })

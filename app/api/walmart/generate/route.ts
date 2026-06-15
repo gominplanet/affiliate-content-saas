@@ -20,7 +20,7 @@ import { fetchWpProxySecret } from '@/lib/wp-proxy'
 import { createWordPressService } from '@/services/wordpress'
 import { createClaudeService, type BrandProfile } from '@/services/claude'
 import { createGeniuslinkService } from '@/services/geniuslink'
-import { buildWalmartDeepLink } from '@/services/partnerboost'
+import { buildPartnerBoostDeepLink } from '@/services/partnerboost'
 import { setCtaThumb, stripCtaThumb } from '@/lib/cta-thumb'
 import { scrubBanned } from '@/lib/scrub'
 import type { Tier } from '@/lib/tier'
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Walmart PB is admin-only while in Labs.' }, { status: 403 })
     }
 
-    const body = await request.json() as { product?: WMProductInput; brandTrackingUrl?: string }
+    const body = await request.json() as { product?: WMProductInput; brandTrackingUrl?: string; network?: string }
     const p = body.product || {}
     if (!p.name || !p.url) {
       return NextResponse.json({ ok: false, error: 'A product with at least a name and URL is required.' }, { status: 400 })
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     if (p.trackingUrl && p.trackingUrl.trim()) {
       affiliateUrl = p.trackingUrl.trim(); linkSource = 'product_tracking'
     } else if (body.brandTrackingUrl && body.brandTrackingUrl.trim()) {
-      affiliateUrl = buildWalmartDeepLink(body.brandTrackingUrl.trim(), p.url); linkSource = 'deep_link'
+      affiliateUrl = buildPartnerBoostDeepLink(body.brandTrackingUrl.trim(), p.url); linkSource = 'deep_link'
     } else {
       affiliateUrl = p.url; linkSource = 'bare_url'
     }
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
       p.category ? `Category: ${p.category}` : '',
       priceDisplay ? `Price: ${priceDisplay}${p.oldPrice ? ` (was $${p.oldPrice})` : ''}` : '',
       p.description ? `Manufacturer description: ${p.description.slice(0, 1800)}` : '',
-      'Sold on Walmart. Write for a shopper deciding whether this is the right pick for them: who it suits, what problems it solves, the most common buyer questions, and honest considerations before buying.',
+      `${body.network ? `Sold via ${body.network}. ` : ''}Write for a shopper deciding whether this is the right pick for them: who it suits, what problems it solves, the most common buyer questions, and the real trade-offs worth knowing before buying.`,
     ].filter(Boolean).join('\n')
 
     // ── Generate (reuses the campaign writer — informational, no fake testing) ─

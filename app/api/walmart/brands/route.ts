@@ -52,12 +52,15 @@ export async function GET(request: NextRequest) {
     const country = searchParams.get('country') || ''
     const page = searchParams.get('page') || '1'
     const limit = searchParams.get('limit') || '100'
+    const ALLOWED_TYPES = ['Walmart', 'Amazon', 'DTC', 'TikTok', 'Indirect']
+    const brandTypeRaw = searchParams.get('brandType') || 'Walmart'
+    const brandType = ALLOWED_TYPES.includes(brandTypeRaw) ? brandTypeRaw : 'Walmart'
 
     const qs = new URLSearchParams({
       mod: 'medium',
       op: 'monetization_api',
       token,
-      brand_type: 'Walmart',
+      brand_type: brandType,
       type: 'json',
       page,
       limit,

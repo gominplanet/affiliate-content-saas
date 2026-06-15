@@ -57,6 +57,7 @@ interface WMProduct {
 }
 
 const REL_FILTERS = ['', 'Joined', 'Pending', 'No Relationship'] as const
+const NETWORKS = ['Walmart', 'Amazon', 'DTC', 'TikTok'] as const
 
 function relStyle(rel: string): { bg: string; fg: string; icon: React.ReactNode } {
   const r = (rel || '').toLowerCase()
@@ -74,11 +75,12 @@ export default function WalmartPBPage() {
   const [needsToken, setNeedsToken] = useState(false)
   const [forbidden, setForbidden] = useState(false)
   const [rel, setRel] = useState<string>('')
+  const [network, setNetwork] = useState<string>('Walmart')
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
-      const qs = new URLSearchParams()
+      const qs = new URLSearchParams({ brandType: network })
       if (rel) qs.set('relationship', rel)
       const res = await fetch(`/api/walmart/brands?${qs.toString()}`, { cache: 'no-store' })
       if (res.status === 403) { setForbidden(true); setBrands([]); return }
@@ -94,7 +96,7 @@ export default function WalmartPBPage() {
     } finally {
       setLoading(false)
     }
-  }, [rel])
+  }, [rel, network])
 
   useEffect(() => { load() }, [load])
 
@@ -122,7 +124,7 @@ export default function WalmartPBPage() {
     setProdLoading(b.mcid)
     setProdErr((m) => ({ ...m, [b.mcid!]: '' }))
     try {
-      const qs = new URLSearchParams({ limit: '24' })
+      const qs = new URLSearchParams({ limit: '24', brandType: network })
       if (b.brand_id) qs.set('brandId', b.brand_id)
       qs.set('mcid', b.mcid)
       const res = await fetch(`/api/walmart/products?${qs.toString()}`, { cache: 'no-store' })
@@ -143,7 +145,7 @@ export default function WalmartPBPage() {
       const res = await fetch('/api/walmart/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product: pr, brandTrackingUrl: b.tracking_url }),
+        body: JSON.stringify({ product: pr, brandTrackingUrl: b.tracking_url, network }),
       })
       const j = await res.json()
       if (!j.ok) { toast.error(j.error || 'Generation failed'); return }
@@ -167,8 +169,8 @@ export default function WalmartPBPage() {
       </div>
 
       <PageHero
-        title="Walmart PB"
-        subtitle="Your live PartnerBoost Walmart brands — commission, your join status, and the deep-link base for each. Read-only: joining happens in PartnerBoost; once a brand is Joined, MVP can monetize its products via deep-links."
+        title="PartnerBoost"
+        subtitle="Your live PartnerBoost brands across every network — commission, your join status, and the deep-link base for each. Pick a network, browse a Joined brand's products, and turn any one into a post with a cloaked affiliate link."
         accent="rgba(34,211,238,0.32)"
       />
 
@@ -178,7 +180,7 @@ export default function WalmartPBPage() {
         <p className="font-semibold mb-1 flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
           <Store size={14} style={{ color: '#0E7490' }} /> What this shows
         </p>
-        This is a live read of the PartnerBoost Monetization API (Walmart brands only). It can&rsquo;t join campaigns for you —
+        This is a live read of the PartnerBoost Monetization API across all networks. It can&rsquo;t join campaigns for you —
         joining means accepting a brand&rsquo;s terms (and, for manual programs, waiting on their approval), which lives in the
         PartnerBoost dashboard. Use <span className="font-medium">Join more in PartnerBoost</span> below, then come back and refresh
         to see new <span style={{ color: '#10B981', fontWeight: 600 }}>Joined</span> brands.
@@ -190,7 +192,7 @@ export default function WalmartPBPage() {
           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)' }}>
           <Lock size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
           <p className="text-[13px]" style={{ color: 'var(--text)' }}>
-            Walmart PB is admin-only while it&rsquo;s in Labs.
+            PartnerBoost is admin-only while it&rsquo;s in Labs.
           </p>
         </div>
       )}
@@ -211,6 +213,24 @@ export default function WalmartPBPage() {
         <div className="rounded-xl border p-4 mb-4 text-[13px]"
           style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'rgba(239,68,68,0.35)', color: 'var(--text)' }}>
           {error}
+        </div>
+      )}
+
+      {/* Network picker */}
+      {!forbidden && !needsToken && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          {NETWORKS.map((n) => (
+            <button key={n}
+              onClick={() => { if (n !== network) { setNetwork(n); setOpenBrand(null); setProducts({}); setProdErr({}) } }}
+              className="px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors"
+              style={{
+                background: network === n ? 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)' : 'var(--surface)',
+                color: network === n ? '#fff' : 'var(--text-soft)',
+                border: '1px solid var(--border)',
+              }}>
+              {n}
+            </button>
+          ))}
         </div>
       )}
 
@@ -241,7 +261,7 @@ export default function WalmartPBPage() {
             Join more in PartnerBoost <ExternalLink size={12} />
           </a>
           <span className="ml-auto text-[12px]" style={{ color: 'var(--text-soft)' }}>
-            {loading ? 'Loading…' : <>{total} Walmart brand{total === 1 ? '' : 's'} · {joined} joined</>}
+            {loading ? 'Loading…' : <>{total} {network} brand{total === 1 ? '' : 's'} · {joined} joined</>}
           </span>
         </div>
       )}
@@ -250,8 +270,8 @@ export default function WalmartPBPage() {
       {!forbidden && !needsToken && !loading && brands.length === 0 && !error && (
         <div className="rounded-xl border p-6 text-center text-[13px]"
           style={{ background: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text-soft)' }}>
-          No Walmart brands{rel ? ` with status “${rel}”` : ''} on this account yet. The Walmart program is new and still
-          onboarding sellers — check <span className="font-medium">Join more in PartnerBoost</span> and refresh.
+          No {network} brands{rel ? ` with status “${rel}”` : ''} on this account. Try another network above, or
+          <span className="font-medium"> Join more in PartnerBoost</span> and refresh.
         </div>
       )}
 
