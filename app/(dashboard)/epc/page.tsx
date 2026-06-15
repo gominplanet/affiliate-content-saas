@@ -119,6 +119,8 @@ export default function EpcScoutPage() {
   const [fixing, setFixing] = useState<Record<string, boolean>>({})
   // Per-row "Remove" state (delete a campaign row + its WP post if any).
   const [removing, setRemoving] = useState<Record<string, boolean>>({})
+  // "Clear queue" state (bulk-delete the scouted backlog).
+  const [clearing, setClearing] = useState(false)
 
   const loadList = useCallback(async () => {
     try {
@@ -288,6 +290,32 @@ export default function EpcScoutPage() {
     }
   }, [loadList])
 
+  // Clear the scouted backlog — the un-actioned rows piling up after repeated
+  // pushes. Never touches published posts or in-flight jobs (server enforces
+  // the same scope: status pending/ready/new/failed with no post).
+  const clearable = campaigns.filter(c => !isLiveRow(c) && !['queued', 'researching', 'generating'].includes(c.status))
+  const clearQueue = useCallback(async () => {
+    const n = campaigns.filter(c => !isLiveRow(c) && !['queued', 'researching', 'generating'].includes(c.status)).length
+    if (n === 0) return
+    if (!window.confirm(
+      `Clear ${n} scouted campaign${n === 1 ? '' : 's'} from the queue?\n\n` +
+      `This removes un-actioned pushes only. Published posts and any running generations are kept.`,
+    )) return
+    setClearing(true)
+    try {
+      const res = await fetch('/api/campaigns/clear', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
+      toast.success(`Cleared ${d.deleted} from the queue.`)
+      setSelected(new Set())
+      loadList()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Couldn\'t clear the queue')
+    } finally {
+      setClearing(false)
+    }
+  }, [campaigns, loadList])
+
   // Hard cap on a single bulk run — each generation is a full ~$0.50 AI job, so
   // "Select all → Generate" must NOT fire dozens at once (that caused a runaway
   // spend). Cap the batch and confirm the cost first.
@@ -376,9 +404,18 @@ export default function EpcScoutPage() {
         <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
           Campaign queue {campaigns.length > 0 && <span className="font-normal" style={{ color: 'var(--text-faint)' }}>· {campaigns.length} pushed</span>}
         </p>
-        <button onClick={loadList} className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] hover:underline">
-          <RefreshCw size={12} /> Refresh
-        </button>
+        <div className="flex items-center gap-4">
+          {clearable.length > 0 && (
+            <button onClick={clearQueue} disabled={clearing}
+              className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#c0001a] hover:underline disabled:opacity-50"
+              title="Delete the un-actioned scouted campaigns (published posts + running jobs are kept)">
+              {clearing ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Clear queue ({clearable.length})
+            </button>
+          )}
+          <button onClick={loadList} className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] hover:underline">
+            <RefreshCw size={12} /> Refresh
+          </button>
+        </div>
       </div>
 
       {!loading && campaigns.length === 0 ? (
