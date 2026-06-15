@@ -515,7 +515,8 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
     // ... one object per product, ORDERED by your ranking (best first for comparison)
   ],
   "winner_blurb": ${mode === 'comparison' ? '"one sentence on WHY the #1 pick wins — for the quick-verdict box at the top"' : 'null'},
-  "conclusion_html": "1 short closing paragraph as <p> blocks with a soft CTA",
+  "recommended_index": <0-based index of the ONE product you'd tell a reader to buy first — your top overall pick.${mode === 'comparison' ? ' Usually the same as winner_index.' : ' Choose the best all-round option even though this is a use-case guide.'} A prominent "Check price" button linking to THIS product is rendered right after the conclusion>,
+  "conclusion_html": "1 short closing paragraph as <p> blocks. Name your top pick (the recommended_index product) and tell the reader to check its current price/availability using the button below.",
   "feature_table": {
     "features": ["5-8 short feature/capability labels relevant to THIS product category that differentiate the products, e.g. 'Cordless', 'HEPA filter', 'Self-emptying', 'Pet-hair tool', 'App control', '2yr+ warranty'"],
     "rows": [ { "index": <0-based product index>, "values": ["yes" | "no" | "partial", ...] } ]
@@ -527,7 +528,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
 
   let parsed: {
     title: string; meta_description: string; hero_prompt?: string; intro_html: string; winner_index: number | null
-    winner_blurb?: string | null
+    winner_blurb?: string | null; recommended_index?: number | null
     products: Array<{ index: number; short_name?: string; heading: string; body_html: string; verdict: string; pros?: string[]; cons?: string[] }>
     conclusion_html: string; faq: Array<{ q: string; a: string }>
     feature_table?: { features: string[]; rows: Array<{ index: number; values: string[] }> }
@@ -646,6 +647,23 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
 
   // Conclusion
   body += `<!-- wp:heading --><h2>The bottom line</h2><!-- /wp:heading -->\n${scrub(parsed.conclusion_html)}\n`
+
+  // Closing CTA button → the single recommended product. The conclusion ends
+  // with "…using the button below", so ALWAYS render a prominent button here.
+  // Pick order: the model's recommended_index → the comparison winner → the
+  // first product that actually has a (cloaked) link.
+  const hasLink = (i: number | null | undefined): i is number =>
+    typeof i === 'number' && !!resolved[i]?.affiliateUrl
+  const recIdx: number | null =
+    hasLink(parsed.recommended_index) ? parsed.recommended_index
+      : (mode === 'comparison' && hasLink(parsed.winner_index)) ? parsed.winner_index
+      : (parsed.products.find(p => hasLink(p.index))?.index ?? null)
+  const recProduct = recIdx !== null ? resolved[recIdx] : undefined
+  if (recProduct?.affiliateUrl) {
+    const recItem = parsed.products.find(p => p.index === recIdx)
+    const recName = scrub(recItem?.short_name || recProduct.productName.split(',')[0] || recProduct.productName).slice(0, 48)
+    body += `<!-- wp:buttons {"layout":{"type":"flex","justifyContent":"center"}} -->\n<div class="wp-block-buttons" style="justify-content:center"><!-- wp:button {"backgroundColor":"vivid-amber","style":{"typography":{"fontSize":"18px"},"spacing":{"padding":{"top":"14px","bottom":"14px","left":"32px","right":"32px"}}}} --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="${recProduct.affiliateUrl}" target="_blank" rel="nofollow sponsored noopener">👉 Check today's price on ${recName}</a></div><!-- /wp:button --></div>\n<!-- /wp:buttons -->\n`
+  }
 
   // FAQ
   if (Array.isArray(parsed.faq) && parsed.faq.length) {
