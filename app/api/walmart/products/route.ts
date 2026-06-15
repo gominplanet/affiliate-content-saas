@@ -37,6 +37,12 @@ export async function GET(request: NextRequest) {
     const ALLOWED_TYPES: PBBrandType[] = ['Walmart', 'Amazon', 'DTC', 'TikTok', 'Indirect']
     const btRaw = (searchParams.get('brandType') || 'Walmart') as PBBrandType
     const brandType: PBBrandType = ALLOWED_TYPES.includes(btRaw) ? btRaw : 'Walmart'
+    // Amazon products aren't served by the generic datafeed (returns
+    // "brand_type is invalid") — they use PartnerBoost's dedicated
+    // amazon-service endpoint, not wired yet. Degrade with a clear note.
+    if (brandType === 'Amazon') {
+      return NextResponse.json({ ok: false, error: 'Amazon products use a separate PartnerBoost endpoint that isn’t wired up yet. Browsing & joining Amazon brands works here; post generation currently covers Walmart and DTC.' })
+    }
     if (!brandId && !mcid && !keywords) {
       return NextResponse.json({ ok: false, error: 'A brand (brandId or mcid) or keywords is required.' }, { status: 400 })
     }
