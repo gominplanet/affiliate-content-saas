@@ -39,7 +39,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Walmart PB is admin-only while in Labs.' }, { status: 403 })
     }
 
-    const token = process.env.PARTNERBOOST_API_TOKEN
+    // .trim() guards the common paste error: a trailing space/newline in the
+    // Vercel value makes PartnerBoost return "Publisher does not exist".
+    const token = process.env.PARTNERBOOST_API_TOKEN?.trim()
     if (!token) {
       // Not an error — the page shows a one-time setup notice.
       return NextResponse.json({ ok: false, needsToken: true, error: 'PARTNERBOOST_API_TOKEN is not set in the environment.' })
