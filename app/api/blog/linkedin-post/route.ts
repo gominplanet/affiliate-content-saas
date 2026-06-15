@@ -9,6 +9,7 @@ import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
 import { readSocialCount, incrementSocialCount, evaluateSocialCap, SOCIAL_CAP } from '@/lib/social-cap'
 import { resolveBlogPostId } from '@/lib/resolve-post-id'
+import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 
 export const maxDuration = 60
 
@@ -65,6 +66,23 @@ export async function POST(request: NextRequest) {
       }, { status: 429 })
     }
 
+    // ── Resolve a thumbnail for a native IMAGE post (mirrors the Facebook flow) ─
+    // Video posts → YouTube / stored thumbnail; video-less posts (campaigns,
+    // guides, comparisons) → the article's og:image (the featured image).
+    let imageUrl = ''
+    if (post.video_id) {
+      const { data: vid } = await supabase
+        .from('youtube_videos')
+        .select('youtube_video_id,thumbnail_url')
+        .eq('id', post.video_id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      imageUrl = vid?.youtube_video_id
+        ? `https://img.youtube.com/vi/${vid.youtube_video_id}/maxresdefault.jpg`
+        : (vid?.thumbnail_url || '')
+    }
+    if (!imageUrl) imageUrl = (await fetchOgImage(post.wordpress_url)) || ''
+
     // ── 2. Fetch brand voice ──────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: brandRow } = await supabase
@@ -110,11 +128,13 @@ export async function POST(request: NextRequest) {
           role: 'user',
           content: `Write a compelling LinkedIn post for this blog article.
 
-Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a call to action to read the full post. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
+Style: professional yet approachable, like a creator sharing a genuine find with their audience. Start with a strong hook that grabs attention. Share 2-3 key insights or takeaways from the article. End with a short call to action to read the full review. Use line breaks for readability. Include 3-5 relevant hashtags at the end.${voiceNote}${learnBlock ? `\n\n${learnBlock}` : ''}
 
 Keep the ENTIRE post under 600 characters (LinkedIn sweet spot for engagement).
 
 Truthfulness: Do NOT claim you personally tested or used a product unless the article says you did. If this is a comparison or round-up that may include other creators' videos, frame it as "I compared…" / "here's my pick", NEVER "I tested both/all of them". Never invent first-hand experience.
+
+The article link is attached automatically (as the post's image caption or a link card) — do NOT write the URL yourself, and NEVER write "[link in comments]", "link in comments", "[link]", or any bracketed placeholder. Write only the post copy.
 
 Blog title: ${post.title}
 Blog excerpt: ${post.excerpt || plainContent.slice(0, 300)}
@@ -130,8 +150,17 @@ Return ONLY the post text, no extra commentary.`,
       })
     }
 
+    // Strip any "link in comments" / bracketed placeholder the model may have
+    // invented — the link is the article card (ARTICLE share) or appended below
+    // (IMAGE share), never a comment.
+    const cleaned = stripLinkPlaceholders(rawText)
+    // For an IMAGE post the link must live in the caption (no card); for the
+    // ARTICLE fallback the card carries it, so don't duplicate it.
+    const withLink = (imageUrl && !cleaned.includes(post.wordpress_url))
+      ? `${cleaned}\n\n🔗 Read the full review: ${post.wordpress_url}`
+      : cleaned
     // LinkedIn's UGC API allows up to 3000 chars per post — defensive cap.
-    const postText = capSocialText(rawText, SOCIAL_LIMITS.linkedin)
+    const postText = capSocialText(withLink, SOCIAL_LIMITS.linkedin)
 
     if (dryRun) {
       return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText: postText })
@@ -143,12 +172,28 @@ Return ONLY the post text, no extra commentary.`,
       integration.linkedin_person_id,
     )
 
-    const result = await linkedin.createPost({
-      text: postText,
+    // Prefer a native IMAGE post (shows the thumbnail); fall back to the
+    // ARTICLE link-card share if there's no image or the upload fails.
+    let result: { id: string }
+    const articleArgs = {
       articleUrl: post.wordpress_url,
       articleTitle: post.title,
       articleDescription: post.excerpt || plainContent.slice(0, 200),
-    })
+    }
+    if (imageUrl) {
+      try {
+        result = await linkedin.createImagePost({
+          text: postText,
+          imageUrl,
+          title: post.title,
+          description: post.excerpt || plainContent.slice(0, 200),
+        })
+      } catch {
+        result = await linkedin.createPost({ text: postText, ...articleArgs })
+      }
+    } else {
+      result = await linkedin.createPost({ text: postText, ...articleArgs })
+    }
 
     // ── 6. Save linkedin_post_id ──────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -24,6 +24,7 @@ import { createTweet, refreshAccessToken as refreshTwitterToken } from '@/servic
 import { ThreadsService } from '@/services/threads'
 import { createFacebookService } from '@/services/facebook'
 import { createLinkedInService } from '@/services/linkedin'
+import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
 import { capSocialText, SOCIAL_LIMITS } from '@/lib/social-cap'
 import { decryptIntegrationRow, encryptIntegrationWrite } from '@/lib/integration-secrets'
@@ -315,14 +316,34 @@ async function publishOne(
       if (!integration.linkedin_access_token || !integration.linkedin_person_id) {
         throw new Error('LinkedIn not connected')
       }
-      const postText = capSocialText(row.body_text, SOCIAL_LIMITS.linkedin)
+      // Native IMAGE post (shows the thumbnail) when we can resolve one:
+      // video → YouTube thumbnail (joined), else the article's og:image. Scrub
+      // any "[link in comments]" placeholder from the stored caption and put the
+      // real link in the body (IMAGE posts have no link card).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const liYt = (post as any).youtube_videos?.youtube_video_id
+      let liImage = liYt
+        ? `https://img.youtube.com/vi/${liYt}/maxresdefault.jpg`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        : ((post as any).youtube_videos?.thumbnail_url || '')
+      if (!liImage) liImage = (await fetchOgImage(url)) || ''
+      const liClean = stripLinkPlaceholders(row.body_text)
+      const postText = capSocialText(
+        liImage && !liClean.includes(url) ? `${liClean}\n\n🔗 Read the full review: ${url}` : liClean,
+        SOCIAL_LIMITS.linkedin,
+      )
       const linkedin = createLinkedInService(integration.linkedin_access_token, integration.linkedin_person_id)
-      const result = await linkedin.createPost({
-        text: postText,
-        articleUrl: url,
-        articleTitle: post.title ?? '',
-        articleDescription: row.body_text.slice(0, 200),
-      })
+      const liArticle = { articleUrl: url, articleTitle: post.title ?? '', articleDescription: row.body_text.slice(0, 200) }
+      let result: { id: string }
+      if (liImage) {
+        try {
+          result = await linkedin.createImagePost({ text: postText, imageUrl: liImage, title: post.title ?? '', description: row.body_text.slice(0, 200) })
+        } catch {
+          result = await linkedin.createPost({ text: postText, ...liArticle })
+        }
+      } else {
+        result = await linkedin.createPost({ text: postText, ...liArticle })
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await admin.from('blog_posts').update({ linkedin_post_id: (result as any).id ?? null }).eq('id', row.blog_post_id)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
