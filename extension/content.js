@@ -229,21 +229,32 @@ async function applyAmazonSearch(keyword) {
   if ((input.value || '').trim().toLowerCase() === kw.toLowerCase()) {
     return { searched: true, already: true }
   }
-  const g0 = findGrid()
-  const before = g0 ? cellsIn(g0).slice(0, 6).map(c => c.asin).join(',') : ''
   const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
   if (setter) setter.call(input, kw); else input.value = kw
   input.dispatchEvent(new Event('input', { bubbles: true }))
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
   input.dispatchEvent(new Event('change', { bubbles: true }))
-  // Wait (≤7s) for the grid to actually re-render (debounce + fetch).
-  for (let i = 0; i < 28; i++) {
-    await sleep(250)
+
+  // Amazon debounces the query, BLANKS the grid, fetches, then repaints. If we
+  // scrape during that blank gap we get nothing ("No campaigns detected"). So
+  // wait for the results to actually POPULATE and SETTLE — ASIN cells present
+  // and their (virtualized) count stable across several polls — before the
+  // caller scrapes. Bails after ~16s (treated as a genuinely empty result set).
+  await sleep(900)            // let the debounced fetch kick off
+  let last = -1
+  let stable = 0
+  for (let i = 0; i < 50; i++) {
+    await sleep(300)
     const g = findGrid()
-    const now = g ? cellsIn(g).slice(0, 6).map(c => c.asin).join(',') : ''
-    if (now !== before) { await sleep(500); return { searched: true } }
+    const n = g ? cellsIn(g).length : 0
+    if (n > 0 && n === last) {
+      if (++stable >= 3) { await sleep(500); return { searched: true, count: n } } // populated + steady
+    } else {
+      stable = 0
+      last = n
+    }
   }
-  return { searched: true, settled: false }
+  return { searched: true, settled: false, count: last < 0 ? 0 : last }
 }
 
 // Guard: this file may be (re)injected by the popup on every scan.
