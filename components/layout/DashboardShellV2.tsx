@@ -83,13 +83,39 @@ interface NavGroupDef {
   icon?: React.ReactNode
 }
 
-// Labs identity colour — a distinct electric cyan that doesn't collide with the
-// brand violet (active state), Oink pink, amber warnings, or success green.
-// Two tones so it stays legible on BOTH the near-black dark sidebar AND the
-// near-white light sidebar (a single mid cyan washes out on one end). Picked
-// per theme in-component and reused for the Labs header + its rows.
-const LABS_ACCENT_DARK = '#22D3EE'  // cyan-400 — pops on the #0B0B0E dark sidebar
-const LABS_ACCENT_LIGHT = '#0E7490' // cyan-700 — legible on the #F4F2EE light sidebar
+// ── Per-section sidebar identity ────────────────────────────────────────────
+// Every nav section gets its own accent colour + a leading icon on its header
+// (the treatment we first gave Labs), so the sidebar reads as colour-coded
+// zones. Each accent is TWO tones — a bright one for the near-black dark
+// sidebar (#0B0B0E) and a deeper one for the near-white light sidebar
+// (#F4F2EE) — because a single mid-tone washes out on one end. Resolved per
+// theme at render time, keyed by the group label. Hues are spread so adjacent
+// sections stay distinct and steer clear of the brand violet (active state),
+// Oink pink, and amber warnings.
+const SECTION_ACCENTS: Record<string, { dark: string; light: string }> = {
+  'Set up':            { dark: '#60A5FA', light: '#1D4ED8' }, // blue    — foundational
+  'Create':            { dark: '#A78BFA', light: '#6D28D9' }, // violet  — creative core
+  'Grow':              { dark: '#34D399', light: '#047857' }, // emerald — growth
+  'Collaborate':       { dark: '#FBBF24', light: '#B45309' }, // amber   — deals / people
+  'Labs':              { dark: '#22D3EE', light: '#0E7490' }, // cyan    — experimental
+  'Help & Community':  { dark: '#FB7185', light: '#BE123C' }, // rose    — support
+  'Account':           { dark: '#94A3B8', light: '#475569' }, // slate   — neutral utility
+  'Recommended tools': { dark: '#2DD4BF', light: '#0F766E' }, // teal    — discovery
+  'Admin':             { dark: '#F87171', light: '#B91C1C' }, // red     — control / danger
+}
+
+// Leading icon per section header (matches the Labs flask). Keyed by label.
+const SECTION_ICONS: Record<string, React.ReactNode> = {
+  'Set up': <Plug size={12} />,
+  'Create': <Sparkles size={12} />,
+  'Grow': <BarChart3 size={12} />,
+  'Collaborate': <Share2 size={12} />,
+  'Labs': <FlaskConical size={12} />,
+  'Help & Community': <LifeBuoy size={12} />,
+  'Account': <UserCog size={12} />,
+  'Recommended tools': <Wrench size={12} />,
+  'Admin': <ShieldCheck size={12} />,
+}
 
 // Per-theme CSS variable definitions. Components reference these via
 // `style={{ background: 'var(--bg)' }}` so flipping a theme is one state
@@ -188,9 +214,6 @@ export default function DashboardShellV2({
   // access. Mirrors tierAllowsCampaigns() in lib/tier.ts — pro || admin — which
   // already gates the campaign APIs, so a Pro user who sees the link can use it.
   const canUseLabs = tier === 'pro' || isAdmin
-  // Theme-aware Labs accent (see LABS_ACCENT_* above) — keeps the cyan legible
-  // on both the dark and light sidebar.
-  const labsAccent = isDark ? LABS_ACCENT_DARK : LABS_ACCENT_LIGHT
 
   // Admin "view as tier" dropdown state. Sourced from localStorage so the
   // sidebar reflects whichever tier the admin is currently previewing.
@@ -308,10 +331,8 @@ export default function DashboardShellV2({
       // section auto-hides for everyone below Pro. As more bonus tools land,
       // add them as items here (set each item's gate as it opens up).
       label: 'Labs',
-      accent: labsAccent,
-      icon: <FlaskConical size={12} />,
       items: [
-        { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: canUseLabs, highlight: labsAccent },
+        { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: canUseLabs },
       ],
     },
     {
@@ -476,14 +497,19 @@ export default function DashboardShellV2({
           {NAV_GROUPS.map((group) => {
             const visibleItems = group.items.filter((it) => it.gate !== false)
             if (visibleItems.length === 0) return null
+            // Per-section header identity (colour + icon), theme-aware, keyed by
+            // label. group.accent/group.icon win if a group sets them explicitly.
+            const palette = group.label ? SECTION_ACCENTS[group.label] : undefined
+            const headerAccent = group.accent ?? (palette ? (isDark ? palette.dark : palette.light) : undefined)
+            const headerIcon = group.icon ?? (group.label ? SECTION_ICONS[group.label] : undefined)
             return (
               <div key={group.label}>
                 {!collapsed && group.label && (
                   <p
                     className="px-2.5 mb-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold flex items-center gap-1.5"
-                    style={{ color: group.accent || 'var(--text-faint)' }}
+                    style={{ color: headerAccent || 'var(--text-faint)' }}
                   >
-                    {group.icon}
+                    {headerIcon}
                     {group.label}
                   </p>
                 )}
