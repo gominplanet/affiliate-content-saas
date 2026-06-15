@@ -607,11 +607,55 @@ export class WordPressService {
   // ── Posts ─────────────────────────────────────────────────────────────────
 
   async createPost(post: WPPost): Promise<WPPostResponse> {
-    return this.request<WPPostResponse>('/posts', {
+    const created = await this.request<WPPostResponse>('/posts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(post),
     })
+
+    // ── Duplicate self-heal ─────────────────────────────────────────────────
+    // Writes go proxy-first with a legacy direct fallback. On a slow/flaky host
+    // the proxy POST can SUCCEED on WordPress yet look like a failure on our
+    // side (timeout — tryProxyRequest has no fast timeout — non-JSON, or a WAF
+    // page), so request() falls through and publishes a SECOND identical post.
+    // WordPress keeps the clean slug on the first and gives the retry a "-N"
+    // suffix. So: if our returned post got a collision suffix AND a post with
+    // the CLEAN slug was published in the last few minutes, that earlier one is
+    // our own duplicate — trash the suffixed copy (recoverable) and return the
+    // original. The recency check (via date_gmt, TZ-safe) means a coincidental
+    // slug clash with an unrelated OLD post never discards the new content.
+    const wantSlug = (post.slug || '').trim()
+    if (wantSlug && created?.slug && created.slug !== wantSlug && new RegExp(`^${wantSlug}-\\d+$`).test(created.slug)) {
+      const original = await this.findPostBySlug(wantSlug)
+      if (original && original.id !== created.id) {
+        const gmt = original.date_gmt
+          ? (original.date_gmt.endsWith('Z') ? original.date_gmt : `${original.date_gmt}Z`)
+          : null
+        const origMs = gmt ? Date.parse(gmt) : NaN
+        if (!Number.isNaN(origMs) && Date.now() - origMs < 5 * 60_000) {
+          // Our own in-call/quick-retry duplicate — trash the suffixed copy,
+          // keep the original (clean slug). force:false = recoverable trash.
+          try { await this.request(`/posts/${created.id}?force=false`, { method: 'DELETE' }) } catch { /* leave it in trash-able state */ }
+          return original
+        }
+      }
+    }
+    return created
+  }
+
+  /** Look up a post by EXACT slug (published). Returns the first match or null.
+   *  GET is idempotent/safe to retry. Used by createPost's duplicate self-heal.
+   *  Includes date_gmt so the caller can age-check in UTC. */
+  private async findPostBySlug(slug: string): Promise<(WPPostResponse & { date_gmt?: string }) | null> {
+    try {
+      const rows = await this.request<(WPPostResponse & { date_gmt?: string })[]>(
+        `/posts?slug=${encodeURIComponent(slug)}&per_page=1&_fields=id,slug,link,date,date_gmt,status`,
+        { method: 'GET' },
+      )
+      return Array.isArray(rows) && rows[0] ? rows[0] : null
+    } catch {
+      return null
+    }
   }
 
   async updatePost(id: number, post: Partial<WPPost>): Promise<WPPostResponse> {

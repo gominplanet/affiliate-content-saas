@@ -237,9 +237,11 @@ export async function POST(request: Request) {
   // ── Duplicate guard ─────────────────────────────────────────────────────────
   // Never publish the same line-up of videos twice — as a guide OR a comparison
   // (the user's complaint: one set of videos posted "in two different ways").
-  // We match on the sorted source_video_ids set recorded on each post. Runs
-  // BEFORE any AI spend. Wrapped: if the column doesn't exist yet (migration
-  // 129 not run) we skip the check rather than fail the request.
+  // We record the sorted source video-id set on each multi-video post and match
+  // on it here, BEFORE any AI spend. Storage reuses the existing
+  // `affiliate_keywords` text[] column (migration-free — it's only ever READ
+  // for post_type='review' rows, never guides/comparisons, so reusing it for
+  // the dedup key on guide/comparison rows is invisible to everything else).
   try {
     // `contains` (@>) finds posts whose set is a superset of this line-up;
     // the JS length check then confirms it's the SAME set (not a superset),
@@ -247,14 +249,14 @@ export async function POST(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: dups } = await (supabase as any)
       .from('blog_posts')
-      .select('title,wordpress_url,post_type,source_video_ids')
+      .select('title,wordpress_url,post_type,affiliate_keywords')
       .eq('user_id', ownerId)
       .in('post_type', ['guide', 'comparison'])
-      .contains('source_video_ids', videoIdSig)
+      .contains('affiliate_keywords', videoIdSig)
       .not('wordpress_url', 'is', null)
       .limit(5)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const dup = (dups || []).find((d: any) => Array.isArray(d.source_video_ids) && d.source_video_ids.length === videoIdSig.length)
+    const dup = (dups || []).find((d: any) => Array.isArray(d.affiliate_keywords) && d.affiliate_keywords.length === videoIdSig.length)
     if (dup?.wordpress_url) {
       return NextResponse.json({
         error: `You already published a ${dup.post_type === 'comparison' ? 'comparison' : 'guide'} from these exact videos: "${dup.title}". Edit or delete that one instead of posting a duplicate.`,
@@ -262,7 +264,7 @@ export async function POST(request: Request) {
         existingUrl: dup.wordpress_url,
       }, { status: 409 })
     }
-  } catch { /* source_video_ids column missing (pre-migration) — skip dedup */ }
+  } catch { /* dedup check failed — never block publishing on it */ }
 
   // ── Resolve every product in parallel ──────────────────────────────────────
   async function resolveOne(videoId: string): Promise<ResolvedProduct | null> {
@@ -757,7 +759,8 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   // no dedup data). NULL also dodges the unique(user_id, video_id) clash with
   // an existing single-video review of the same first video. The real line-up
   // lives in source_video_ids (the dedup key).
-  const blogRow: Record<string, unknown> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any).from('blog_posts').insert({
     user_id: ownerId,
     video_id: null,
     title,
@@ -768,21 +771,17 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     post_type: mode,
     wordpress_post_id: wpPost.id,
     wordpress_url: wpPost.link,
+    // The sorted source video-id set — the dedup key (see the duplicate guard
+    // above). Reuses affiliate_keywords (migration-free; never read for
+    // guide/comparison rows elsewhere).
+    affiliate_keywords: videoIdSig,
     // Tag with site (skip legacy sentinel — that means no wordpress_sites
     // row exists yet, can't FK-write to a uuid column).
     ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
     ai_model: 'claude-sonnet-4-6',
     generation_prompt_version: 'comparison-v2',
     published_at: new Date().toISOString(),
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: insErr } = await (supabase as any).from('blog_posts').insert({ ...blogRow, source_video_ids: videoIdSig })
-  if (insErr) {
-    // Most likely the source_video_ids column doesn't exist yet (migration 129
-    // not run). Retry without it so the post is still tracked + counted.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('blog_posts').insert(blogRow)
-  }
+  })
 
   return NextResponse.json({
     ok: true,
