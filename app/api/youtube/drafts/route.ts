@@ -70,7 +70,10 @@ function detectAsin(title: string): string | null {
 //
 // Query params:
 //   ?refresh=1           force re-scan, ignore cache age
-//   ?q=<term>            search titles in the cached video list (no search.list call)
+//   ?q=<term>            search the cached video list; on a cache MISS, fall
+//                        back to a channel-wide search.list (100 units) so the
+//                        bar finds any video on the channel, not just the
+//                        loaded window
 //   ?pageToken=<cursor>  continue a previous scan beyond MAX_PAGES
 //   ?includePublished=1  include public videos in the returned list
 //   ?debug=1             verbose classification view (admin only)
@@ -131,12 +134,46 @@ export async function GET(request: Request) {
       }
 
       const lower = q.toLowerCase()
-      const matched = allVideos.filter(
+      let matched = allVideos.filter(
         (v: ReturnType<typeof buildDraftVideo>) =>
           v.title.toLowerCase().includes(lower) ||
           (v.description ?? '').toLowerCase().includes(lower),
       )
-      return NextResponse.json({ drafts: matched, query: q, fromCache: true })
+
+      // Cache miss = the video is OLDER than the scanned window. The initial
+      // scan stops at a recency cutoff (MIN_*_HITS / MAX_PAGES), so an old
+      // upload may never be in the cache and the cheap in-memory filter finds
+      // nothing. Fall back to a real channel-wide search.list (forMine + q) so
+      // the search bar reaches ANY video on the channel — which is what the
+      // user expects when they type a title. search.list is 100 quota units, so
+      // we only call it on an actual miss + a real query (never as the default
+      // listing). Hits get merged into the cache so later loads don't re-query.
+      let viaSearch = false
+      if (matched.length === 0) {
+        try {
+          const yt = createYouTubeOAuthService(token)
+          const { videos: hits } = await yt.searchMyVideos(q, 25)
+          if (hits.length) {
+            matched = hits as unknown as ReturnType<typeof buildDraftVideo>[]
+            viaSearch = true
+            const baseCache = cache ?? await readCache(supabase, user.id)
+            if (baseCache) {
+              const seen = new Set(baseCache.videos.map((v: ReturnType<typeof buildDraftVideo>) => v.youtubeVideoId))
+              const fresh = matched.filter(v => !seen.has(v.youtubeVideoId))
+              if (fresh.length) {
+                await writeCache(supabase, user.id, baseCache.uploads_playlist_id || '', [...baseCache.videos, ...fresh], false)
+              }
+            }
+          }
+        } catch { /* quota exhausted / transient — return the empty cache result */ }
+      }
+
+      return NextResponse.json({
+        drafts: await enrichWithPushState(supabase, user.id, matched),
+        query: q,
+        fromCache: !viaSearch,
+        viaSearch,
+      })
     }
 
     // ── Load-more (cursor continuation) — always hits the API ────────────────
