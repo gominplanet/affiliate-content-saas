@@ -254,9 +254,6 @@ export default function DashboardShellV2({
         { href: '/comparison', icon: <Scale size={15} />, label: 'Comparisons' },
         { href: '/buying-guides', icon: <BookOpen size={15} />, label: 'Buying Guides', gate: showBuyingGuides },
         { href: '/deals', icon: <BadgePercent size={15} />, label: 'Deals Hub', gate: showDeals },
-        // EPC Scout — Creator Connections cockpit. Admin-only while testing
-        // (no Pro paywall yet; flip `gate` to a tier check at launch).
-        { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: isAdmin },
         { href: '/script', icon: <PenLine size={15} />, label: 'Scriptwriter' },
         { href: '/newsletter', icon: <Mail size={15} />, label: 'Newsletter' },
         // Instagram Burner hidden 2026-06-12 (not ready). Route stays alive.
@@ -275,6 +272,18 @@ export default function DashboardShellV2({
       items: [
         { href: '/collaborations', icon: <Handshake size={15} />, label: 'Brand Deals' },
         { href: '/agency', icon: <Users size={15} />, label: 'Virtual Assistant' },
+      ],
+    },
+    {
+      // LABS — MVP's experimental / bonus tools we're trying out: opt-in extras
+      // that may change and aren't part of the core engine. EPC Scout lives here
+      // (not in Create) because it only works for creators with Amazon Creator
+      // Connections (EPC) access — most users can't use it, so it doesn't belong
+      // in the everyday flow. The whole section auto-hides when every item is
+      // gated out (admin-only today; flip gates as items open to Pro).
+      label: 'Labs',
+      items: [
+        { href: '/epc', icon: <Radar size={15} />, label: 'EPC Scout', gate: isAdmin },
       ],
     },
     {

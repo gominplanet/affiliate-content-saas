@@ -19,7 +19,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2, Lock } from 'lucide-react'
+import { Loader2, ExternalLink, CheckCircle2, Sparkles, Search, Puzzle, Download, Copy, RefreshCw, KeyRound, Trash2, Lock, FlaskConical } from 'lucide-react'
 import { toast } from 'sonner'
 import { getScoutStatus } from '@/lib/extension-frame'
 import { SCOUT_LATEST_VERSION, SCOUT_WHATS_NEW, isScoutOutdated } from '@/lib/scout-version'
@@ -342,6 +342,12 @@ export default function EpcScoutPage() {
 
   return (
     <>
+      <div className="mb-2">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide"
+          style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}>
+          <FlaskConical size={11} /> MVP Labs · experimental
+        </span>
+      </div>
       <PageHero
         title="EPC Scout"
         subtitle="Turn the Amazon Creator Connections campaigns you're offered into ready-to-publish blog posts — scan with SCOUT, keep the high-EPC winners, publish."
