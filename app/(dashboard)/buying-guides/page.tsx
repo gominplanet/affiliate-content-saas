@@ -265,6 +265,15 @@ export default function BuyingGuidesPage() {
         }),
       })
       const j = await r.json().catch(() => ({}))
+      // Duplicate guard: a guide/comparison from these exact videos already
+      // exists. Point the user at it instead of posting a second one.
+      if (r.status === 409 && j.duplicate) {
+        toast.error(j.error || 'You already published a guide from these videos.', {
+          action: j.existingUrl ? { label: 'View existing', onClick: () => window.open(j.existingUrl, '_blank') } : undefined,
+          duration: 12_000,
+        })
+        return
+      }
       if (!r.ok) throw new Error(j.error || 'Generation failed')
       toast.success(`Published "${j.title}"`, {
         action: { label: 'View', onClick: () => window.open(j.url, '_blank') },
