@@ -14,13 +14,14 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PageHero from '@/components/layout/PageHero'
-import { Loader2, RefreshCw, ExternalLink, Copy, FlaskConical, Lock, Store, CheckCircle2, Clock } from 'lucide-react'
+import { Loader2, RefreshCw, ExternalLink, Copy, FlaskConical, Lock, Store, CheckCircle2, Clock, ChevronDown, Wand2, Package } from 'lucide-react'
 import { toast } from 'sonner'
 
 const PB_DASHBOARD = 'https://app.partnerboost.com/'
 
 interface Brand {
   mcid: string | null
+  brand_id: string | null
   merchant_name: string
   comm_rate: string
   avg_payout: string
@@ -36,6 +37,23 @@ interface Brand {
   tracking_url_short: string
   brand_status: string
   rd: string
+}
+
+interface WMProduct {
+  name: string
+  price: string | null
+  oldPrice: string | null
+  currency: string | null
+  description: string
+  image: string | null
+  url: string
+  category: string | null
+  brand: string | null
+  merchantName: string | null
+  mcid: string | null
+  brandId: string | null
+  sku: string | null
+  trackingUrl: string
 }
 
 const REL_FILTERS = ['', 'Joined', 'Pending', 'No Relationship'] as const
@@ -86,6 +104,56 @@ export default function WalmartPBPage() {
     if (!url) { toast.error('No tracking link on this brand yet'); return }
     try { await navigator.clipboard.writeText(url); toast.success('Tracking link copied') }
     catch { toast.error('Could not copy') }
+  }
+
+  // ── Per-brand product browsing + one-click post generation ────────────────
+  const [openBrand, setOpenBrand] = useState<string | null>(null)
+  const [products, setProducts] = useState<Record<string, WMProduct[]>>({})
+  const [prodLoading, setProdLoading] = useState<string | null>(null)
+  const [prodErr, setProdErr] = useState<Record<string, string>>({})
+  const [generating, setGenerating] = useState<string | null>(null)
+  const [results, setResults] = useState<Record<string, { url: string; cloaked: boolean }>>({})
+
+  const toggleProducts = async (b: Brand) => {
+    if (!b.mcid) return
+    if (openBrand === b.mcid) { setOpenBrand(null); return }
+    setOpenBrand(b.mcid)
+    if (products[b.mcid]) return // already loaded
+    setProdLoading(b.mcid)
+    setProdErr((m) => ({ ...m, [b.mcid!]: '' }))
+    try {
+      const qs = new URLSearchParams({ limit: '24' })
+      if (b.brand_id) qs.set('brandId', b.brand_id)
+      qs.set('mcid', b.mcid)
+      const res = await fetch(`/api/walmart/products?${qs.toString()}`, { cache: 'no-store' })
+      const j = await res.json()
+      if (!j.ok) { setProdErr((m) => ({ ...m, [b.mcid!]: j.error || 'Failed to load products' })); return }
+      setProducts((m) => ({ ...m, [b.mcid!]: Array.isArray(j.products) ? j.products : [] }))
+    } catch (e) {
+      setProdErr((m) => ({ ...m, [b.mcid!]: e instanceof Error ? e.message : 'Network error' }))
+    } finally {
+      setProdLoading(null)
+    }
+  }
+
+  const generatePost = async (b: Brand, pr: WMProduct) => {
+    const key = pr.url || pr.sku || pr.name
+    setGenerating(key)
+    try {
+      const res = await fetch('/api/walmart/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product: pr, brandTrackingUrl: b.tracking_url }),
+      })
+      const j = await res.json()
+      if (!j.ok) { toast.error(j.error || 'Generation failed'); return }
+      setResults((m) => ({ ...m, [key]: { url: j.wordpressUrl, cloaked: !!j.cloaked } }))
+      toast.success(j.cloaked ? 'Post published — link cloaked via Geniuslink' : 'Post published')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Network error')
+    } finally {
+      setGenerating(null)
+    }
   }
 
   return (
@@ -190,59 +258,123 @@ export default function WalmartPBPage() {
       <div className="flex flex-col gap-2">
         {brands.map((b) => {
           const rs = relStyle(b.relationship)
+          const isJoined = /joined/i.test(b.relationship)
+          const open = !!b.mcid && openBrand === b.mcid
+          const prods = b.mcid ? products[b.mcid] : undefined
+          const pErr = b.mcid ? prodErr[b.mcid] : ''
           return (
             <div key={(b.mcid || b.merchant_name) + b.relationship}
-              className="rounded-xl border p-3 flex items-center gap-3"
+              className="rounded-xl border"
               style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-              {/* Logo */}
-              <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center"
-                style={{ background: 'var(--surface-bright)' }}>
-                {b.logo
-                  ? <img src={b.logo} alt="" className="w-full h-full object-contain" />
-                  : <Store size={18} style={{ color: 'var(--text-soft)' }} />}
-              </div>
+              <div className="p-3 flex items-center gap-3">
+                {/* Logo */}
+                <div className="w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center"
+                  style={{ background: 'var(--surface-bright)' }}>
+                  {b.logo
+                    ? <img src={b.logo} alt="" className="w-full h-full object-contain" />
+                    : <Store size={18} style={{ color: 'var(--text-soft)' }} />}
+                </div>
 
-              {/* Name + meta */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-[14px] font-semibold truncate" style={{ color: 'var(--text)' }}>{b.merchant_name || '—'}</p>
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
-                    style={{ background: rs.bg, color: rs.fg }}>
-                    {rs.icon} {b.relationship || 'Unknown'}
-                  </span>
-                  {b.allow_sml && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                      style={{ background: 'rgba(34,211,238,0.12)', color: '#0E7490' }}
-                      title="Deep-linking enabled — any product URL on this brand can be affiliate-wrapped">
-                      deep-link
+                {/* Name + meta */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-[14px] font-semibold truncate" style={{ color: 'var(--text)' }}>{b.merchant_name || '—'}</p>
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
+                      style={{ background: rs.bg, color: rs.fg }}>
+                      {rs.icon} {b.relationship || 'Unknown'}
                     </span>
+                    {b.allow_sml && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                        style={{ background: 'rgba(34,211,238,0.12)', color: '#0E7490' }}
+                        title="Deep-linking enabled — any product URL on this brand can be affiliate-wrapped">
+                        deep-link
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[12px] truncate" style={{ color: 'var(--text-soft)' }}>
+                    {b.comm_rate || '—'}{b.offer_type ? ` · ${b.offer_type}` : ''}
+                    {b.categories ? ` · ${b.categories}` : ''}{b.country ? ` · ${b.country}` : ''}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {isJoined && b.mcid && (
+                    <button onClick={() => toggleProducts(b)}
+                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold"
+                      style={{ background: open ? 'rgba(34,211,238,0.16)' : 'var(--surface-bright)', color: open ? '#0E7490' : 'var(--text)' }}
+                      title="Browse this brand's products and generate a post">
+                      <Package size={12} /> Products
+                      <ChevronDown size={12} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+                    </button>
+                  )}
+                  {b.tracking_url && (
+                    <button onClick={() => copyLink(b.tracking_url)}
+                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold"
+                      style={{ background: 'var(--surface-bright)', color: 'var(--text)' }}
+                      title="Copy the deep-link tracking base">
+                      <Copy size={12} /> Link
+                    </button>
+                  )}
+                  {b.site_url && (
+                    <a href={b.site_url} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
+                      style={{ background: 'var(--surface-bright)', color: 'var(--text-soft)' }}
+                      title="Open brand site">
+                      <ExternalLink size={13} />
+                    </a>
                   )}
                 </div>
-                <p className="text-[12px] truncate" style={{ color: 'var(--text-soft)' }}>
-                  {b.comm_rate || '—'}{b.offer_type ? ` · ${b.offer_type}` : ''}
-                  {b.categories ? ` · ${b.categories}` : ''}{b.country ? ` · ${b.country}` : ''}
-                </p>
               </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-1 flex-shrink-0">
-                {b.tracking_url && (
-                  <button onClick={() => copyLink(b.tracking_url)}
-                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold"
-                    style={{ background: 'var(--surface-bright)', color: 'var(--text)' }}
-                    title="Copy the deep-link tracking base">
-                    <Copy size={12} /> Link
-                  </button>
-                )}
-                {b.site_url && (
-                  <a href={b.site_url} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg"
-                    style={{ background: 'var(--surface-bright)', color: 'var(--text-soft)' }}
-                    title="Open brand site">
-                    <ExternalLink size={13} />
-                  </a>
-                )}
-              </div>
+              {/* Products expander (joined brands) */}
+              {open && (
+                <div className="border-t px-3 py-3" style={{ borderColor: 'var(--border)' }}>
+                  {prodLoading === b.mcid ? (
+                    <p className="text-[12px] flex items-center gap-2" style={{ color: 'var(--text-soft)' }}>
+                      <Loader2 size={13} className="animate-spin" /> Loading products…
+                    </p>
+                  ) : pErr ? (
+                    <p className="text-[12px]" style={{ color: '#ef4444' }}>{pErr}</p>
+                  ) : (prods || []).length === 0 ? (
+                    <p className="text-[12px]" style={{ color: 'var(--text-soft)' }}>No products in the datafeed for this brand yet.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {(prods || []).map((pr) => {
+                        const key = pr.url || pr.sku || pr.name
+                        const gen = generating === key
+                        const done = results[key]
+                        return (
+                          <div key={key} className="flex items-center gap-3 rounded-lg p-2" style={{ background: 'var(--surface-bright)' }}>
+                            <div className="w-9 h-9 rounded-md flex-shrink-0 overflow-hidden flex items-center justify-center" style={{ background: 'var(--surface)' }}>
+                              {pr.image ? <img src={pr.image} alt="" className="w-full h-full object-contain" /> : <Package size={15} style={{ color: 'var(--text-soft)' }} />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[12.5px] font-medium truncate" style={{ color: 'var(--text)' }}>{pr.name}</p>
+                              <p className="text-[11px]" style={{ color: 'var(--text-soft)' }}>
+                                {pr.price ? `$${pr.price}` : '—'}{pr.oldPrice ? ` (was $${pr.oldPrice})` : ''}{pr.category ? ` · ${pr.category}` : ''}
+                              </p>
+                            </div>
+                            {done ? (
+                              <a href={done.url} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold flex-shrink-0"
+                                style={{ background: 'rgba(16,185,129,0.16)', color: '#10B981' }}>
+                                <CheckCircle2 size={12} /> View post <ExternalLink size={11} />
+                              </a>
+                            ) : (
+                              <button onClick={() => generatePost(b, pr)} disabled={gen}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold flex-shrink-0 disabled:opacity-60"
+                                style={{ background: 'linear-gradient(45deg, #0E7490 0%, #22D3EE 100%)', color: '#fff' }}>
+                                {gen ? <><Loader2 size={12} className="animate-spin" /> Writing…</> : <><Wand2 size={12} /> Generate post</>}
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}

@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const brands = list.map((b: any) => ({
       mcid: b.mcid ?? null,
+      brand_id: b.brand_id != null ? String(b.brand_id) : null,
       merchant_name: b.merchant_name ?? '',
       comm_rate: b.comm_rate ?? '',
       avg_payout: b.avg_payout ?? '',
