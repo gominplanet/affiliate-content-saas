@@ -114,6 +114,68 @@ export async function listPartnerBoostProducts(
   }
 }
 
+/** FBA prices come back with a leading "$" ("$61.99"); strip it so downstream
+ *  formatting doesn't double up. Returns null for empty. */
+function stripMoney(v: unknown): string | null {
+  if (v == null || v === '') return null
+  return String(v).replace(/^\s*\$/, '').trim() || null
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeFbaProduct(p: any): PBProduct {
+  const disc = stripMoney(p.discount_price)
+  const orig = stripMoney(p.original_price)
+  return {
+    name: p.product_name ?? '',
+    price: disc ?? orig,
+    oldPrice: disc && orig && disc !== orig ? orig : null,
+    currency: p.currency ?? null,
+    description: '',                       // FBA datafeed has no description field
+    image: p.image ?? null,
+    url: p.url ?? (p.asin ? `https://www.amazon.com/dp/${p.asin}` : ''),
+    category: p.category ?? null,
+    brand: p.brand_name ?? null,
+    merchantName: p.brand_name ?? null,
+    mcid: null,
+    brandId: p.brand_id != null ? String(p.brand_id) : null,
+    sku: p.asin != null ? String(p.asin) : null,
+    trackingUrl: p.partnerboost_link || p.link || '',  // ready affiliate link (joined brands)
+  }
+}
+
+/**
+ * Amazon products live behind a DIFFERENT op on the same api.php —
+ * `op=get_fba_products` (the generic `op=list` datafeed rejects
+ * brand_type=Amazon with "brand_type is invalid"). Envelope is
+ * { status, data: { has_more, list } } — no total count, just has_more.
+ * Filter to one brand via brand_id (verified server-side too).
+ */
+export async function listAmazonProducts(
+  token: string,
+  opts: { brandId?: string; keywords?: string; page?: number; limit?: number } = {},
+): Promise<{ products: PBProduct[]; total: number; totalPage: number }> {
+  const qs = new URLSearchParams({
+    mod: 'datafeed',
+    op: 'get_fba_products',
+    token,
+    type: 'json',
+    page: String(opts.page ?? 1),
+    page_size: String(opts.limit ?? 40),
+  })
+  if (opts.brandId) qs.set('brand_id', opts.brandId)
+  if (opts.keywords) qs.set('keywords', opts.keywords)
+
+  const json = await pbGet(qs)
+  if (json?.status?.code !== 0) {
+    throw new Error(json?.status?.msg ? `PartnerBoost: ${json.status.msg}` : 'PartnerBoost FBA datafeed error')
+  }
+  const data = json?.data || {}
+  const list = Array.isArray(data.list) ? data.list : []
+  let products: PBProduct[] = list.map(normalizeFbaProduct)
+  if (opts.brandId) products = products.filter((p) => !p.brandId || p.brandId === opts.brandId)
+  return { products, total: products.length, totalPage: data.has_more ? (opts.page ?? 1) + 1 : (opts.page ?? 1) }
+}
+
 /**
  * Build a per-product affiliate deep-link from a brand's monetization tracking
  * base. PartnerBoost tracking links are `…/track/<ID>?url=<encoded dest>`; we
