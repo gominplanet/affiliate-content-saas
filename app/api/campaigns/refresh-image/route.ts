@@ -126,24 +126,37 @@ export async function POST(request: Request) {
   // product-photo fallback (letterboxed to 16:9) — clean and zero AI spend.
   let heroMediaId: number | null = null
   let heroUrl: string | null = null
+  let productImageUrl: string | null = null
   try {
     const product = await fetchAmazonProduct(asin)
     if (product) {
-      const cleanProductImage = (await pickProductReferenceImage(product.images, product.title, { userId: user.id, tier })) || product.imageUrl
-      const hero = await buildCampaignHero({ heroPrompt: undefined, productImageUrl: cleanProductImage, ctx: { userId: user.id, tier } })
+      productImageUrl = (await pickProductReferenceImage(product.images, product.title, { userId: user.id, tier })) || product.imageUrl
+      const hero = await buildCampaignHero({ heroPrompt: undefined, productImageUrl: productImageUrl || undefined, ctx: { userId: user.id, tier } })
       if (hero) {
         const media = await wpService.uploadImageFromBase64(hero.b64, `${asin}-hero.jpg`, hero.mime)
         heroMediaId = media.id
         heroUrl = media.source_url || null
       }
     }
-  } catch { /* fall through to the no-hero error below */ }
+  } catch { /* fall through to the product-photo fallback below */ }
+
+  // Hero build failed but we have the real product photo → use it directly so
+  // the CTA card + featured image are NEVER left empty (user: the CTA box must
+  // always have an image — hero, or the product photo as a floor).
+  if (!heroUrl && productImageUrl) {
+    try {
+      const media = await wpService.uploadImageFromUrl(productImageUrl, `${asin}-cta.jpg`)
+      heroMediaId = media.id
+      heroUrl = media.source_url || null
+    } catch { /* ignore — handled by the guard below */ }
+  }
 
   if (!heroMediaId && !heroUrl) {
     return NextResponse.json({ error: "Couldn't build the product image (Amazon fetch or image step failed). Try again in a moment." }, { status: 502 })
   }
 
-  // Rewrite the CTA thumb to the hero (or strip the broken placeholder).
+  // Always point the CTA thumb at an image (hero or product photo). stripCtaThumb
+  // only as a last resort if somehow we have no url at all.
   const patched = content ? (heroUrl ? setCtaThumb(content, heroUrl) : stripCtaThumb(content)) : null
   const contentChanged = !!patched && patched !== content
 

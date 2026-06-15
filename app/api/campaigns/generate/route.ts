@@ -459,14 +459,15 @@ export async function POST(request: Request) {
     let heroKind: 'ai' | 'product' | null = null
     let heroMediaId: number | null = null
     let heroUrl: string | null = null
+    let cleanProductImage: string | null = null
     try {
       if (!product) throw new Error('no product image (re-publish)') // skip hero on re-publish
       // Vision-pick the clean isolated product shot (the Amazon main image is
       // often a lifestyle collage) so the hero grounds on the real product.
-      const cleanProductImage = (await pickProductReferenceImage(product.images, product.title, { userId: user.id, tier })) || product.imageUrl
+      cleanProductImage = (await pickProductReferenceImage(product.images, product.title, { userId: user.id, tier })) || product.imageUrl
       const hero = await buildCampaignHero({
         heroPrompt: generated.imagePrompts?.hero,
-        productImageUrl: cleanProductImage,
+        productImageUrl: cleanProductImage || undefined,
         ctx: { userId: user.id, tier },
       })
       if (hero) {
@@ -475,12 +476,24 @@ export async function POST(request: Request) {
         heroUrl = media.source_url || null
         heroKind = hero.kind
       }
-    } catch { /* non-fatal — post is live without a featured image */ }
+    } catch { /* non-fatal — fall through to the product-photo floor below */ }
 
-    // Fix the "Get it now" CTA card image: point the thumb at the hero we just
-    // generated, or strip the broken YouTube-thumbnail placeholder when there's
-    // no hero. Folded into a single PATCH with featured_media so we don't make
-    // an extra round-trip. Non-fatal — the post is already live either way.
+    // Hero build failed but we have the real product photo → upload it directly
+    // so the CTA card + featured image are NEVER empty (user: the CTA box must
+    // always carry an image — the product photo is the floor).
+    if (!heroUrl && cleanProductImage) {
+      try {
+        const media = await wpService.uploadImageFromUrl(cleanProductImage, `${asin}-cta.jpg`)
+        heroMediaId = media.id
+        heroUrl = media.source_url || null
+        heroKind = 'product'
+      } catch { /* non-fatal — post is live without a featured image */ }
+    }
+
+    // Fix the "Get it now" CTA card image: point the thumb at the hero/product
+    // photo. stripCtaThumb only as a last resort if we truly have no image.
+    // Folded into a single PATCH with featured_media so we don't make an extra
+    // round-trip. Non-fatal — the post is already live either way.
     const fixedContent = heroUrl
       ? setCtaThumb(generated.content, heroUrl)
       : stripCtaThumb(generated.content)
