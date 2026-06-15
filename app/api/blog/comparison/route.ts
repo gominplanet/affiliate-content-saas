@@ -420,9 +420,7 @@ export async function POST(request: Request) {
 
       // Every emitted link must point to the ACTUAL product, cloaked under the
       // USER's Geniuslink. If nothing resolved but the video TITLE carries an
-      // ASIN, cloak that (a real product). NO generic Amazon-search fallback —
-      // a search URL is not a product link; if we can't resolve a real product
-      // we leave it UNLINKED rather than emit a search/uncloaked link.
+      // ASIN, cloak that (a real product).
       if (!affiliateUrl && titleAsin) {
         if (genius) {
           try { affiliateUrl = (await genius.createAsinLinkWithCode(titleAsin, productName)).url } catch { /* fall through */ }
@@ -432,6 +430,22 @@ export async function POST(request: Request) {
           affiliateUrl = tag
             ? `https://www.amazon.com/dp/${titleAsin}?tag=${tag}`
             : `https://www.amazon.com/dp/${titleAsin}`
+        }
+      }
+
+      // LAST RESORT: no specific product URL/ASIN could be resolved (e.g. a
+      // public video whose creator didn't link the product). Rather than leave
+      // it unlinked, build an Amazon SEARCH for the product name — but CLOAK it
+      // through the user's Geniuslink so it's a branded geni.us link carrying
+      // the user's attribution (NOT a raw ?tag= search). Raw tagged search only
+      // when Geniuslink isn't configured.
+      if (!affiliateUrl && identity?.name) {
+        const searchUrl = `https://www.amazon.com/s?k=${encodeURIComponent(identity.name)}`
+        if (genius) {
+          try { affiliateUrl = await genius.createLink(searchUrl, productName) } catch { /* fall through */ }
+        }
+        if (!affiliateUrl && wp?.amazon_associates_tag) {
+          affiliateUrl = `${searchUrl}&tag=${wp.amazon_associates_tag}`
         }
       }
 
