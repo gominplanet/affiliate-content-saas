@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { sendPhoto, sendMessage, escapeMarkdownV2 } from '@/services/telegram'
+import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
       }, { status: 429 })
     }
 
-    const imageUrl = post.youtube_videos?.thumbnail_url as string | null
+    let imageUrl = (post.youtube_videos?.thumbnail_url as string | null) || null
 
     // ── Fetch brand voice ───────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,6 +152,7 @@ Return ONLY the post text.`,
       })
     }
 
+    captionText = stripLinkPlaceholders(captionText)
     if (captionText.length > CAPTION_BUDGET) {
       captionText = captionText.slice(0, CAPTION_BUDGET - 1).replace(/\s+\S*$/, '') + '…'
     }
@@ -168,6 +170,11 @@ Return ONLY the post text.`,
       // version that ships to Telegram (with the CTA link appended).
       return NextResponse.json({ ok: true, dryRun: true, text: captionText, finalText: `${captionText}\n\nRead the full review → ${post.wordpress_url}` })
     }
+
+    // Video-less posts (campaigns, guides, comparisons) have no YouTube
+    // thumbnail — fall back to the article's og:image so they still post WITH a
+    // photo (sendPhoto) instead of text-only.
+    if (!imageUrl) imageUrl = (await fetchOgImage(post.wordpress_url as string)) || null
 
     // ── Post to Telegram ────────────────────────────────────────────────────
     const result = imageUrl

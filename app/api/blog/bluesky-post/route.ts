@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { decryptIntegrationRow } from '@/lib/integration-secrets'
 import { createAnthropicClient } from '@/lib/anthropic'
 import { createSession, createPost } from '@/services/bluesky'
+import { fetchOgImage, stripLinkPlaceholders } from '@/lib/og-image'
 import { tierAllowsSocial, type Tier } from '@/lib/tier'
 import { learnProfileToPrompt } from '@/lib/learn'
 import { recordAnthropicUsage } from '@/lib/ai-usage'
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: postRow } = await supabase
       .from('blog_posts')
-      .select('id,title,excerpt,content,wordpress_url,social_publish_counts')
+      .select('id,title,excerpt,content,wordpress_url,social_publish_counts,youtube_videos(thumbnail_url)')
       .eq('id', postId)
       .eq('user_id', user.id)
       .single()
@@ -142,6 +143,9 @@ Return ONLY the post text.`,
       })
     }
 
+    // Defensive: strip any "[link in comments]"/placeholder before capping
+    // (rare here — the prompt forbids URLs — but keeps parity with LinkedIn).
+    postText = stripLinkPlaceholders(postText)
     // Always defensively cap, even user-edited (they could paste over the limit)
     if (postText.length > generationBudget) {
       postText = postText.slice(0, generationBudget - 1).replace(/\s+\S*$/, '') + '…'
@@ -155,12 +159,17 @@ Return ONLY the post text.`,
       return NextResponse.json({ ok: true, dryRun: true, text: postText, finalText })
     }
 
-    // ── 5. Login and post ──────────────────────────────────────────────────
+    // ── 5. Resolve thumbnail, login, post with a native link card ──────────
+    // Video → YouTube thumb; video-less (campaigns/guides/comparisons) → og:image.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let embedImage = (post as any).youtube_videos?.thumbnail_url as string | undefined
+    if (!embedImage) embedImage = (await fetchOgImage(url)) || undefined
     const session = await createSession(integration.bluesky_handle, integration.bluesky_app_password)
     const result = await createPost(session, {
       text: finalText,
       linkUrl: url,
       linkText: url,
+      embed: { url, title: post.title as string, description: (post.excerpt as string) || '', imageUrl: embedImage },
     })
 
     // ── 6. Save post URI on the blog row ───────────────────────────────────

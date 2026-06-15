@@ -258,9 +258,15 @@ async function publishOne(
       if (!integration.bluesky_handle || !integration.bluesky_app_password) {
         throw new Error('Bluesky not connected')
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let bsImage = (post as any).youtube_videos?.thumbnail_url as string | undefined
+      if (!bsImage) bsImage = (await fetchOgImage(url)) || undefined
       const session = await createBlueskySession(integration.bluesky_handle, integration.bluesky_app_password)
-      const finalText = `${row.body_text}\n\n${url}`
-      const result = await createBlueskyPost(session, { text: finalText, linkUrl: url, linkText: url })
+      const finalText = `${stripLinkPlaceholders(row.body_text)}\n\n${url}`
+      const result = await createBlueskyPost(session, {
+        text: finalText, linkUrl: url, linkText: url,
+        embed: { url, title: post.title ?? '', description: (row.body_text || '').slice(0, 200), imageUrl: bsImage },
+      })
       // Persist post URI on the blog row to match the manual flow.
       await admin.from('blog_posts').update({ bluesky_post_uri: result.uri }).eq('id', row.blog_post_id)
       return { externalId: result.uri }
@@ -403,8 +409,9 @@ async function publishOne(
         throw new Error('Telegram not connected')
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const imageUrl: string | null = (post as any).youtube_videos?.thumbnail_url ?? null
-      const escapedBody = escapeMarkdownV2(row.body_text)
+      let imageUrl: string | null = (post as any).youtube_videos?.thumbnail_url ?? null
+      if (!imageUrl) imageUrl = (await fetchOgImage(url)) || null
+      const escapedBody = escapeMarkdownV2(stripLinkPlaceholders(row.body_text))
       const escapedUrl = escapeMarkdownV2(url)
       const linkLabel = escapeMarkdownV2('Read the full review →')
       const finalCaption = `${escapedBody}\n\n[${linkLabel}](${escapedUrl})`
