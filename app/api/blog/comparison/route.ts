@@ -27,6 +27,7 @@ import { recordUsage, usageFromAnthropic } from '@/lib/ai-usage'
 import { pingIndexNowForUrl } from '@/lib/seo-on-publish'
 import { NO_BRAND_IMAGE_CLAUSE } from '@/lib/image-guard'
 import { getWordPressCredentials } from '@/lib/wordpress-sites'
+import { listYouTubeChannels } from '@/lib/youtube-channels'
 import { getAuthAndOwner } from '@/lib/agency-auth'
 import { spendGate } from '@/lib/ai-spend'
 import { fal } from '@fal-ai/client'
@@ -51,10 +52,45 @@ interface ResolvedProduct {
   bullets: string[]
   transcript: string
   affiliateUrl: string | null
+  /** True when the source video is the MVP user's OWN upload (synced library
+   *  row, or a channel that matches one of their connected channels). False =
+   *  a public/third-party video the user is curating — write it third-person
+   *  and credit the original creator. */
+  isOwn: boolean
+  /** Original creator's channel title + URL, for crediting public videos. */
+  sourceChannelName: string | null
+  sourceChannelUrl: string | null
 }
 
 const slugify = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70)
+
+/** Replace any stray calendar year that isn't the current year. The writer
+ *  (older model knowledge) tends to stamp a guide/comparison title with a past
+ *  year like "2024"; the year in a round-up title should always be the year
+ *  it's published. Only standalone 4-digit years 2000–2039 are touched, so a
+ *  product model number like "5000mAh" is never mangled (no word boundary). */
+function fixYearToCurrent(s: string, year: number): string {
+  if (!s) return s
+  return s.replace(/\b20[0-3]\d\b/g, (m) => (m === String(year) ? m : String(year)))
+}
+
+/** Wrap the FIRST plain-text mention of `name` in `html` with an affiliate
+ *  link, so each product earns a natural in-prose link (not only the button).
+ *  The model's body_html contains no anchors of its own, so the first hit is
+ *  always safe to wrap. Case-insensitive match; preserves the original casing;
+ *  no-ops when name/url is missing or not found. */
+function linkifyFirstMention(html: string, name: string, url: string): string {
+  if (!html || !name || !url) return html
+  const idx = html.toLowerCase().indexOf(name.toLowerCase())
+  if (idx === -1) return html
+  const actual = html.slice(idx, idx + name.length)
+  return (
+    html.slice(0, idx) +
+    `<a href="${url}" target="_blank" rel="nofollow sponsored noopener">${actual}</a>` +
+    html.slice(idx + name.length)
+  )
+}
 
 /** All candidate product URLs in a description (dedup, socials/own-site skipped),
  *  in order. Descriptions often list several affiliate links — we resolve each
@@ -118,6 +154,7 @@ export async function POST(request: Request) {
     siteId?: string | null
   }
   const mode = format === 'guide' ? 'guide' : 'comparison'
+  const currentYear = new Date().getUTCFullYear()
   const ids = Array.from(new Set((videoUrls || []).map(extractVideoId).filter((x): x is string => !!x))).slice(0, 10)
   if (ids.length < 2) {
     return NextResponse.json({ error: 'Please add at least 2 valid YouTube URLs (up to 10).' }, { status: 400 })
@@ -174,6 +211,18 @@ export async function POST(request: Request) {
   const disclaimer = (brand?.affiliate_disclaimer as string) ||
     '📌 As an Amazon Associate I earn from qualifying purchases. This post contains affiliate links — I may earn a small commission at no extra cost to you.'
 
+  // The user's connected YouTube channels — used to tell their OWN videos apart
+  // from PUBLIC videos they're curating. A pasted URL is "own" when it's in
+  // their synced library OR its channel matches one of these. Best-effort: if
+  // this fails, library-row presence alone still flags synced own uploads.
+  let ownChannelTitles = new Set<string>()
+  let ownChannelIds = new Set<string>()
+  try {
+    const chans = await listYouTubeChannels(supabase, ownerId)
+    ownChannelTitles = new Set(chans.map(c => (c.channelTitle || '').toLowerCase().trim()).filter(Boolean))
+    ownChannelIds = new Set(chans.map(c => (c.channelId || '').toLowerCase().trim()).filter(Boolean))
+  } catch { /* treat everything not-in-library as public */ }
+
   const ctx = { userId: user.id, tier }
   // wp may be null if the integrations row exists but doesn't have geniuslink
   // creds — the WP credential check is now on `site` (see above), so we
@@ -196,10 +245,33 @@ export async function POST(request: Request) {
       let videoTitle = (vid?.title as string) || ''
       const description = (vid?.description as string) || ''
       let transcript = (vid?.transcript as string) || ''
+
+      // ── Ownership: own video vs public video the user is curating ──────────
+      // A synced library row = the user's own upload. When there's no row we
+      // hit oEmbed below (for the title) and ALSO read the channel so an
+      // unsynced own video is still recognised — and a public one keeps its
+      // creator for crediting.
+      let isOwn = !!vid
+      let sourceChannelName: string | null = null
+      let sourceChannelUrl: string | null = null
       if (!videoTitle) {
         try {
           const o = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`)
-          if (o.ok) videoTitle = (await o.json())?.title || ''
+          if (o.ok) {
+            const j = (await o.json()) as { title?: string; author_name?: string; author_url?: string }
+            videoTitle = j?.title || ''
+            const author = (j?.author_name || '').trim()
+            const authorUrl = (j?.author_url || '').trim()
+            const authorMatches =
+              (!!author && ownChannelTitles.has(author.toLowerCase())) ||
+              (!!authorUrl && [...ownChannelIds].some(id => authorUrl.toLowerCase().includes(id)))
+            if (authorMatches) {
+              isOwn = true
+            } else if (author) {
+              sourceChannelName = author
+              sourceChannelUrl = authorUrl || null
+            }
+          }
         } catch { /* ignore */ }
       }
       if (!transcript) {
@@ -275,11 +347,35 @@ export async function POST(request: Request) {
             const research = await researchProductFromUrl(finalUrl, identity.name, ctx)
             if (research && matchesVideo(research)) {
               pDescription = research
-              affiliateUrl = rawLink
+              // Only adopt this raw store link when it's the USER's OWN video
+              // (their own affiliate link). For a PUBLIC video this is the
+              // original creator's link — never route the reader through it;
+              // the tagged-fallback below builds one under the user's account.
+              if (isOwn) affiliateUrl = rawLink
               matched = true
               break
             }
           } catch { /* skip */ }
+        }
+      }
+
+      // Ensure attribution + link density: if no link resolved but we know the
+      // product, build one under the USER's own account so every recommended
+      // product earns the user commission (re-tagged ASIN, or a tagged Amazon
+      // search as a last resort) — and never the source creator's link.
+      if (!affiliateUrl) {
+        const tag = wp?.amazon_associates_tag
+        if (titleAsin) {
+          if (genius) {
+            try { affiliateUrl = (await genius.createAsinLinkWithCode(titleAsin, productName)).url } catch { /* ignore */ }
+          }
+          if (!affiliateUrl) {
+            affiliateUrl = tag
+              ? `https://www.amazon.com/dp/${titleAsin}?tag=${tag}`
+              : `https://www.amazon.com/dp/${titleAsin}`
+          }
+        } else if (tag && identity?.name) {
+          affiliateUrl = `https://www.amazon.com/s?k=${encodeURIComponent(identity.name)}&tag=${tag}`
         }
       }
 
@@ -288,7 +384,7 @@ export async function POST(request: Request) {
       // alone — but never attach a wrong link. Drop only if we know nothing.
       if (!matched && !identity) return null
 
-      return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl }
+      return { videoId, videoTitle, productName, description: pDescription, bullets, transcript, affiliateUrl, isOwn, sourceChannelName, sourceChannelUrl }
     } catch {
       return null
     }
@@ -304,19 +400,26 @@ export async function POST(request: Request) {
   const productBlocks = resolved.map((p, i) => `PRODUCT ${i + 1}:
 - Name: ${p.productName}
 - Video title: ${p.videoTitle}
+- Source: ${p.isOwn
+    ? 'YOUR OWN video — write this product\'s section in FIRST PERSON ("I"/"we"), as the person who tested it on camera.'
+    : `PUBLIC video by "${p.sourceChannelName || 'another creator'}" — NOT your video. Write this product's section in THIRD PERSON. Credit ${p.sourceChannelName || 'the original creator'} (e.g. "In ${p.sourceChannelName || 'their'} video, they walk through…", "${p.sourceChannelName || 'the creator'} highlights…"). Summarize what THEIR video covers, drawn from the transcript below. NEVER write "I tested/used/tried/ran" this one — you did not personally test it. You may still recommend it to the reader where the transcript supports it.`}
 - Marketing description: ${(p.description || '').slice(0, 600)}
 - Key features: ${(p.bullets || []).slice(0, 6).join(' · ') || 'n/a'}
-- Transcript excerpt (the creator's REAL first-hand experience — only use facts actually stated here): ${(p.transcript || '').slice(0, 1500) || 'n/a'}`).join('\n\n')
+- Transcript excerpt (${p.isOwn ? 'your REAL first-hand experience' : `${p.sourceChannelName || 'the creator'}'s coverage`} — only use facts actually stated here): ${(p.transcript || '').slice(0, 1500) || 'n/a'}`).join('\n\n')
 
   const formatRules = mode === 'comparison'
-    ? `This is a head-to-head COMPARISON. RANK all ${resolved.length} products from best to worst and name a clear WINNER (#1 pick). Each product's heading should reflect its rank + a short superlative ("Best Overall", "Best Value", "Best for Beginners", "Runner-Up", etc.). Open the post by teasing that you tested them all and one stood out. Include a short verdict line per product.`
+    ? `This is a head-to-head COMPARISON. RANK all ${resolved.length} products from best to worst and name a clear WINNER (#1 pick). Each product's heading should reflect its rank + a short superlative ("Best Overall", "Best Value", "Best for Beginners", "Runner-Up", etc.). Open the post by teasing the line-up and that one stood out (do NOT claim you personally tested the products marked as PUBLIC videos). Include a short verdict line per product.`
     : `This is a BUYING GUIDE. Assign each product a distinct "Best for ___" use-case (best for small spaces, best on a budget, best premium pick, etc.) — no single loser, help the reader self-select. Open with what matters when choosing in this category.`
 
-  const sys = `You are the creator writing in FIRST PERSON ("I"/"we") — you are the person who reviewed these products on camera. Never refer to "the reviewer" or use a third-person name. Only state facts that appear in each product's transcript excerpt or marketing description — NEVER invent specs, numbers, test results, or experiences. CRITICAL: each entry is ONE specific product (the exact one named in "PRODUCT N" below); write that section about ONLY that product — never substitute a different product, confuse two products, or attribute one product's features/specs to another. If a product's data is thin, write only what its own transcript supports rather than borrowing from another. ${BANNED_RULE}\n${learnBlock}`
+  const anyPublic = resolved.some(p => !p.isOwn)
+  const sys = `You are an affiliate content creator writing a ${mode}. ${anyPublic
+    ? `IMPORTANT — the products below come from TWO kinds of source video, and EACH "PRODUCT N" block is tagged with its Source: (a) YOUR OWN videos → write those sections in FIRST PERSON ("I"/"we") as the person who tested them on camera; (b) OTHER creators' PUBLIC videos you are curating → write those in THIRD PERSON, credit the original creator by name, and summarize what their video covers — NEVER claim you personally tested those, and never use "I tested/used/tried" for them. Follow each block's Source tag exactly.`
+    : `You are the person who reviewed these products on camera, so write in FIRST PERSON ("I"/"we"). Never refer to "the reviewer" or use a third-person name.`} Only state facts that appear in each product's transcript excerpt or marketing description — NEVER invent specs, numbers, test results, or experiences. CRITICAL: each entry is ONE specific product (the exact one named in "PRODUCT N" below); write that section about ONLY that product — never substitute a different product, confuse two products, or attribute one product's features/specs to another. If a product's data is thin, write only what its own transcript supports rather than borrowing from another. ${BANNED_RULE}\n${learnBlock}`
 
   const userPrompt = `Write a ${mode === 'comparison' ? 'product comparison' : 'buying guide'} blog post covering these ${resolved.length} products.
 
-${topic?.trim() ? `TOPIC (use this): ${topic.trim()}` : `Infer the shared product CATEGORY from the products and create a compelling, SEO-friendly title for the ${mode} (e.g. "Best Wine Travel Protectors in 2026").`}
+${topic?.trim() ? `TOPIC (use this): ${topic.trim()}` : `Infer the shared product CATEGORY from the products and create a compelling, SEO-friendly title for the ${mode} (e.g. "Best Wine Travel Protectors in ${currentYear}").`}
+DATE: Today is in ${currentYear}. If the title (or any heading) references a year, it MUST be ${currentYear} — never an earlier year. Do not invent or recall a different year.
 
 ${formatRules}
 
@@ -334,7 +437,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape:
       "index": <0-based index matching the PRODUCT N above>,
       "short_name": "A SHORT product label: brand + model only, 2-4 words, NO marketing fluff or specs (e.g. 'DREAME L50 Ultra', 'Anker Stick Vacuum')",
       "heading": "Short heading with rank/use-case, e.g. '1. Acme Pro — Best Overall'",
-      "body_html": "About 450-500 words as raw HTML <p>...</p> (and optional <ul><li>) blocks. First person. Sell this product's real features + benefits from its data. Concrete, specific, no fabricated claims.",
+      "body_html": "About 450-500 words as raw HTML <p>...</p> (and optional <ul><li>) blocks. Use the VOICE from this product's Source tag above (first person for YOUR OWN videos; third person + credit the original creator for PUBLIC ones). Mention the product by its short_name at least once in the body. Sell this product's real features + benefits from its data. Concrete, specific, no fabricated claims.",
       "pros": ["2-4 short concrete pros, grounded in this product's real data/transcript"],
       "cons": ["1-3 short, real drawbacks/limitations, grounded in the data (every product has trade-offs)"],
       "verdict": "one punchy sentence — the bottom line for this product"
@@ -370,6 +473,11 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     const raw = (msg.content[0] as { type: string; text: string }).text
     const j = raw.match(/\{[\s\S]*\}/)
     parsed = JSON.parse(j?.[0] ?? raw)
+    // Bulletproof the date: correct any stray non-current year the model may
+    // have stamped on the title/meta (e.g. "2024"). Belt-and-suspenders with
+    // the DATE rule in the prompt above.
+    parsed.title = fixYearToCurrent(parsed.title, currentYear)
+    if (parsed.meta_description) parsed.meta_description = fixYearToCurrent(parsed.meta_description, currentYear)
   } catch (err) {
     return NextResponse.json({ error: `Writing failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
   }
@@ -410,7 +518,19 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     body += `<!-- wp:heading --><h2>${scrub(item.heading)}</h2><!-- /wp:heading -->\n`
     // Embed the source review video — readers see the thumbnail + can watch it.
     body += ytEmbed(p.videoId)
-    body += `${scrub(item.body_html)}\n`
+    // Credit the original creator when this is a PUBLIC video (not the user's).
+    if (!p.isOwn && p.sourceChannelName) {
+      const credit = p.sourceChannelUrl
+        ? `<a href="${p.sourceChannelUrl}" target="_blank" rel="noopener nofollow">${scrub(p.sourceChannelName)}</a>`
+        : scrub(p.sourceChannelName)
+      body += `<!-- wp:paragraph {"style":{"typography":{"fontSize":"13px"}}} --><p style="font-size:13px">📺 Video by ${credit} — featured here with an overview of what they cover.</p><!-- /wp:paragraph -->\n`
+    }
+    // Inline contextual affiliate link on the product's first mention (in
+    // addition to the button below) so links appear naturally through the prose.
+    const sectionBody = p.affiliateUrl
+      ? linkifyFirstMention(scrub(item.body_html), scrub(item.short_name || p.productName.split(',')[0] || ''), p.affiliateUrl)
+      : scrub(item.body_html)
+    body += `${sectionBody}\n`
     // Pros / cons lists.
     const pros = (item.pros || []).filter(Boolean)
     const cons = (item.cons || []).filter(Boolean)
@@ -612,7 +732,7 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
     // row exists yet, can't FK-write to a uuid column).
     ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
     ai_model: 'claude-sonnet-4-6',
-    generation_prompt_version: 'comparison-v1',
+    generation_prompt_version: 'comparison-v2',
     published_at: new Date().toISOString(),
   })
 
