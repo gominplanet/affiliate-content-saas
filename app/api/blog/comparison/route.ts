@@ -75,6 +75,25 @@ function fixYearToCurrent(s: string, year: number): string {
   return s.replace(/\b20[0-3]\d\b/g, (m) => (m === String(year) ? m : String(year)))
 }
 
+/** Strip affiliate/tracking query params from a resolved product URL so that
+ *  re-cloaking a PUBLIC creator's link under the MVP user's Geniuslink doesn't
+ *  carry the original creator's attribution (their ?ref/?tag/?utm_*). Keeps any
+ *  functional params (variant, etc.). */
+function stripTrackingParams(raw: string): string {
+  try {
+    const u = new URL(raw)
+    const drop = /^(tag|ref|ref_|aff|affiliate|affid|aff_id|irclickid|irgwc|clickid|subid|sub_id|pid|sid|cjevent|gclid|fbclid|mc_cid|mc_eid|epn|ascsubtag)$/i
+    const keep = new URLSearchParams()
+    for (const [k, v] of u.searchParams) {
+      if (!drop.test(k) && !/^utm_/i.test(k)) keep.set(k, v)
+    }
+    u.search = keep.toString()
+    return u.toString()
+  } catch {
+    return raw
+  }
+}
+
 /** Wrap the FIRST plain-text mention of `name` in `html` with an affiliate
  *  link, so each product earns a natural in-prose link (not only the button).
  *  The model's body_html contains no anchors of its own, so the first hit is
@@ -382,11 +401,16 @@ export async function POST(request: Request) {
             const research = await researchProductFromUrl(finalUrl, identity.name, ctx)
             if (research && matchesVideo(research)) {
               pDescription = research
-              // Only adopt this raw store link when it's the USER's OWN video
-              // (their own affiliate link). For a PUBLIC video this is the
-              // original creator's link — never route the reader through it;
-              // the tagged-fallback below builds one under the user's account.
-              if (isOwn) affiliateUrl = rawLink
+              if (isOwn) {
+                // The user's own video → their own (already-cloaked) link.
+                affiliateUrl = rawLink
+              } else if (genius) {
+                // PUBLIC video: never route the reader through the original
+                // creator's affiliate link. Re-cloak the RESOLVED product URL
+                // (their tracking params stripped) under the USER's Geniuslink,
+                // so the link points to the ACTUAL product but earns the USER.
+                try { affiliateUrl = await genius.createLink(stripTrackingParams(finalUrl), productName) } catch { /* leave unlinked */ }
+              }
               matched = true
               break
             }
@@ -394,23 +418,20 @@ export async function POST(request: Request) {
         }
       }
 
-      // Ensure attribution + link density: if no link resolved but we know the
-      // product, build one under the USER's own account so every recommended
-      // product earns the user commission (re-tagged ASIN, or a tagged Amazon
-      // search as a last resort) — and never the source creator's link.
-      if (!affiliateUrl) {
-        const tag = wp?.amazon_associates_tag
-        if (titleAsin) {
-          if (genius) {
-            try { affiliateUrl = (await genius.createAsinLinkWithCode(titleAsin, productName)).url } catch { /* ignore */ }
-          }
-          if (!affiliateUrl) {
-            affiliateUrl = tag
-              ? `https://www.amazon.com/dp/${titleAsin}?tag=${tag}`
-              : `https://www.amazon.com/dp/${titleAsin}`
-          }
-        } else if (tag && identity?.name) {
-          affiliateUrl = `https://www.amazon.com/s?k=${encodeURIComponent(identity.name)}&tag=${tag}`
+      // Every emitted link must point to the ACTUAL product, cloaked under the
+      // USER's Geniuslink. If nothing resolved but the video TITLE carries an
+      // ASIN, cloak that (a real product). NO generic Amazon-search fallback —
+      // a search URL is not a product link; if we can't resolve a real product
+      // we leave it UNLINKED rather than emit a search/uncloaked link.
+      if (!affiliateUrl && titleAsin) {
+        if (genius) {
+          try { affiliateUrl = (await genius.createAsinLinkWithCode(titleAsin, productName)).url } catch { /* fall through */ }
+        }
+        if (!affiliateUrl) {
+          const tag = wp?.amazon_associates_tag
+          affiliateUrl = tag
+            ? `https://www.amazon.com/dp/${titleAsin}?tag=${tag}`
+            : `https://www.amazon.com/dp/${titleAsin}`
         }
       }
 
