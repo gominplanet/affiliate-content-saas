@@ -334,7 +334,11 @@ export async function GET() {
   // WP REST is authoritative for "what's live on the blog" — blog_posts can
   // miss rows when the insert fails silently (NOT-NULL constraint on
   // video_id pre-migration-024, RLS edge cases, etc).
-  type GuideOut = { id: string; title: string; url: string | null; topic: string | null; created_at: string }
+  // `rebuildable` = this guide was built from a tracked video set (manual
+  // 2-10 URL mode → affiliate_keywords holds the sorted video ids), so the
+  // "Rebuild" action can re-resolve links/hero/CTA in place. Catalogue guides
+  // + WP-only rows can't be rebuilt that way.
+  type GuideOut = { id: string; title: string; url: string | null; topic: string | null; created_at: string; rebuildable: boolean }
   const guidesByUrl = new Map<string, GuideOut>()
 
   const stripUrl = (u: string) => u.replace(/\/+$/, '').toLowerCase()
@@ -344,15 +348,16 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: guideRows } = await (supabase as any)
     .from('blog_posts')
-    .select('id, title, wordpress_url, seo_keyword, created_at')
+    .select('id, title, wordpress_url, seo_keyword, created_at, affiliate_keywords')
     .eq('user_id', user.id)
     .eq('post_type', 'guide')
     .order('created_at', { ascending: false })
     .limit(30)
-  for (const g of (guideRows ?? []) as Array<{ id: string; title: string; wordpress_url: string | null; seo_keyword: string | null; created_at: string }>) {
+  for (const g of (guideRows ?? []) as Array<{ id: string; title: string; wordpress_url: string | null; seo_keyword: string | null; created_at: string; affiliate_keywords: string[] | null }>) {
     if (!g.wordpress_url) continue
     guidesByUrl.set(stripUrl(g.wordpress_url), {
       id: g.id, title: g.title, url: g.wordpress_url, topic: g.seo_keyword, created_at: g.created_at,
+      rebuildable: Array.isArray(g.affiliate_keywords) && g.affiliate_keywords.length >= 2,
     })
   }
 
@@ -389,6 +394,7 @@ export async function GET() {
                 url: g.link,
                 topic: null,
                 created_at: g.date,
+                rebuildable: false, // WP-only row — no tracked video set
               })
             }
           }

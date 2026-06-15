@@ -162,7 +162,7 @@ export async function POST(request: Request) {
   if (auth.error) return auth.error
   const { user, ownerId } = auth
 
-  const { videoUrls, format, topic, heroImageDataUrl, siteId } = (await request.json()) as {
+  const { videoUrls, format, topic, heroImageDataUrl, siteId, rebuildPostId } = (await request.json()) as {
     videoUrls?: string[]
     format?: 'comparison' | 'guide'
     topic?: string
@@ -171,10 +171,45 @@ export async function POST(request: Request) {
     heroImageDataUrl?: string
     /** Multi-site (Pro): target wordpress_sites row. Omit → default site. */
     siteId?: string | null
+    /** Rebuild an existing guide/comparison IN PLACE (same WP post + URL) — to
+     *  repair an old post (bad links, missing hero, no CTA, wrong year) without
+     *  delete+regenerate and WITHOUT creating a duplicate. The line-up is read
+     *  from the row's stored video set (affiliate_keywords). */
+    rebuildPostId?: string
   }
-  const mode = format === 'guide' ? 'guide' : 'comparison'
+
+  // Rebuild-in-place: load the existing row and derive the line-up + target
+  // from it. Skips the dedup guard + post-cap (it's editing, not creating) and
+  // UPDATES the same WP post at the end instead of publishing a new one.
+  let rebuildWpPostId: number | null = null
+  let rebuildRowId: string | null = null
+  let rebuildSlug: string | null = null
+  let effVideoUrls = videoUrls
+  let effFormat = format
+  let effSiteId = siteId
+  if (rebuildPostId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: row } = await (supabase as any)
+      .from('blog_posts')
+      .select('id, wordpress_post_id, wordpress_site_id, post_type, affiliate_keywords, slug')
+      .eq('id', rebuildPostId)
+      .eq('user_id', ownerId)
+      .in('post_type', ['guide', 'comparison'])
+      .maybeSingle()
+    if (!row?.wordpress_post_id || !Array.isArray(row.affiliate_keywords) || row.affiliate_keywords.length < 2) {
+      return NextResponse.json({ error: 'Can\'t rebuild this post — its source videos aren\'t on record (it predates video-set tracking). Delete it and generate a fresh one.' }, { status: 404 })
+    }
+    effVideoUrls = row.affiliate_keywords as string[]
+    effFormat = row.post_type as 'guide' | 'comparison'
+    effSiteId = (row.wordpress_site_id as string | null) ?? siteId
+    rebuildWpPostId = row.wordpress_post_id as number
+    rebuildRowId = row.id as string
+    rebuildSlug = (row.slug as string) || null
+  }
+
+  const mode = effFormat === 'guide' ? 'guide' : 'comparison'
   const currentYear = new Date().getUTCFullYear()
-  const ids = Array.from(new Set((videoUrls || []).map(extractVideoId).filter((x): x is string => !!x))).slice(0, 10)
+  const ids = Array.from(new Set((effVideoUrls || []).map(extractVideoId).filter((x): x is string => !!x))).slice(0, 10)
   if (ids.length < 2) {
     return NextResponse.json({ error: 'Please add at least 2 valid YouTube URLs (up to 10).' }, { status: 400 })
   }
@@ -209,18 +244,21 @@ export async function POST(request: Request) {
   // Multi-site: resolve target site (default if siteId omitted). See
   // app/api/blog/generate for the full pattern; comparison is a thin
   // variant that follows it.
-  const site = await getWordPressCredentials(supabase, ownerId, siteId)
+  const site = await getWordPressCredentials(supabase, ownerId, effSiteId)
   if (!site) {
     return NextResponse.json({ error: 'Connect your WordPress site first (Site & Integrations).' }, { status: 400 })
   }
 
-  // Posts cap — one comparison = one post.
-  const usage = await checkUsageLimit(supabase, user.id)
-  if (!usage.allowed) {
-    return NextResponse.json({
-      error: usage.reason, limitReached: true, cap: 'posts',
-      currentTier: usage.tier, upgrade: usage.upgrade,
-    }, { status: 429 })
+  // Posts cap — one comparison = one post. Skipped on rebuild (editing an
+  // existing post, not creating a new one).
+  if (!rebuildPostId) {
+    const usage = await checkUsageLimit(supabase, user.id)
+    if (!usage.allowed) {
+      return NextResponse.json({
+        error: usage.reason, limitReached: true, cap: 'posts',
+        currentTier: usage.tier, upgrade: usage.upgrade,
+      }, { status: 429 })
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -261,7 +299,8 @@ export async function POST(request: Request) {
   // `affiliate_keywords` text[] column (migration-free — it's only ever READ
   // for post_type='review' rows, never guides/comparisons, so reusing it for
   // the dedup key on guide/comparison rows is invisible to everything else).
-  try {
+  // Skipped on rebuild — we're updating THIS post, so it would match itself.
+  if (!rebuildPostId) try {
     // `contains` (@>) finds posts whose set is a superset of this line-up;
     // the JS length check then confirms it's the SAME set (not a superset),
     // so ordering never matters. Robust + a well-supported PostgREST operator.
@@ -674,7 +713,8 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   }
 
   const title = scrub(parsed.title) || (mode === 'comparison' ? 'Product Comparison' : 'Buying Guide')
-  const slug = slugify(title)
+  // On rebuild keep the EXISTING slug so the post's URL never changes.
+  const slug = rebuildSlug || slugify(title)
 
   // ── Hero / featured image ───────────────────────────────────────────────────
   // User-uploaded design wins; otherwise generate a category-themed AI hero
@@ -763,18 +803,30 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
 
   let wpPost
   try {
-    wpPost = await wpService.createPost({
-      title,
-      content: body,
-      excerpt: scrub(parsed.meta_description),
-      slug,
-      status: 'publish',
-      ...(categoryIds.length ? { categories: categoryIds } : {}),
-      ...(featuredMedia ? { featured_media: featuredMedia } : {}),
-      meta: { mvp_meta_description: scrub(parsed.meta_description), mvp_jsonld: jsonld },
-    })
+    if (rebuildWpPostId) {
+      // Rebuild: UPDATE the existing post in place (same id + slug + URL). Keep
+      // the slug stable; refresh title/content/excerpt/hero/meta.
+      wpPost = await wpService.updatePost(rebuildWpPostId, {
+        title,
+        content: body,
+        excerpt: scrub(parsed.meta_description),
+        ...(featuredMedia ? { featured_media: featuredMedia } : {}),
+        meta: { mvp_meta_description: scrub(parsed.meta_description), mvp_jsonld: jsonld },
+      })
+    } else {
+      wpPost = await wpService.createPost({
+        title,
+        content: body,
+        excerpt: scrub(parsed.meta_description),
+        slug,
+        status: 'publish',
+        ...(categoryIds.length ? { categories: categoryIds } : {}),
+        ...(featuredMedia ? { featured_media: featuredMedia } : {}),
+        meta: { mvp_meta_description: scrub(parsed.meta_description), mvp_jsonld: jsonld },
+      })
+    }
   } catch (err) {
-    return NextResponse.json({ error: `WordPress publish failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
+    return NextResponse.json({ error: `WordPress ${rebuildWpPostId ? 'rebuild' : 'publish'} failed: ${err instanceof Error ? err.message : 'unknown'}` }, { status: 502 })
   }
 
   // Fire IndexNow (Bing / Copilot / Yandex) — best-effort, non-blocking.
@@ -829,29 +881,43 @@ For "feature_table": pick features that actually DIFFERENTIATE these products. F
   // no dedup data). NULL also dodges the unique(user_id, video_id) clash with
   // an existing single-video review of the same first video. The real line-up
   // lives in source_video_ids (the dedup key).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('blog_posts').insert({
-    user_id: ownerId,
-    video_id: null,
-    title,
-    slug,
-    content: bodyAfterChecks,
-    excerpt: scrub(parsed.meta_description),
-    status: 'published',
-    post_type: mode,
-    wordpress_post_id: wpPost.id,
-    wordpress_url: wpPost.link,
-    // The sorted source video-id set — the dedup key (see the duplicate guard
-    // above). Reuses affiliate_keywords (migration-free; never read for
-    // guide/comparison rows elsewhere).
-    affiliate_keywords: videoIdSig,
-    // Tag with site (skip legacy sentinel — that means no wordpress_sites
-    // row exists yet, can't FK-write to a uuid column).
-    ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
-    ai_model: 'claude-sonnet-4-6',
-    generation_prompt_version: 'comparison-v2',
-    published_at: new Date().toISOString(),
-  })
+  if (rebuildRowId) {
+    // Rebuild: UPDATE the existing row in place (don't insert a duplicate).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('blog_posts').update({
+      title,
+      content: bodyAfterChecks,
+      excerpt: scrub(parsed.meta_description),
+      affiliate_keywords: videoIdSig,
+      ai_model: 'claude-sonnet-4-6',
+      generation_prompt_version: 'comparison-v2',
+      published_at: new Date().toISOString(),
+    }).eq('id', rebuildRowId).eq('user_id', ownerId)
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from('blog_posts').insert({
+      user_id: ownerId,
+      video_id: null,
+      title,
+      slug,
+      content: bodyAfterChecks,
+      excerpt: scrub(parsed.meta_description),
+      status: 'published',
+      post_type: mode,
+      wordpress_post_id: wpPost.id,
+      wordpress_url: wpPost.link,
+      // The sorted source video-id set — the dedup key (see the duplicate guard
+      // above). Reuses affiliate_keywords (migration-free; never read for
+      // guide/comparison rows elsewhere).
+      affiliate_keywords: videoIdSig,
+      // Tag with site (skip legacy sentinel — that means no wordpress_sites
+      // row exists yet, can't FK-write to a uuid column).
+      ...(site.site_id !== 'legacy' ? { wordpress_site_id: site.site_id } : {}),
+      ai_model: 'claude-sonnet-4-6',
+      generation_prompt_version: 'comparison-v2',
+      published_at: new Date().toISOString(),
+    })
+  }
 
   return NextResponse.json({
     ok: true,

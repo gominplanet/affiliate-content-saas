@@ -16,7 +16,7 @@
 import { useEffect, useState, FormEvent } from 'react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2, Trash2, Library, ListChecks, Plus } from 'lucide-react'
+import { BookOpen, Sparkles, ExternalLink, Loader2, ArrowRight, Lock, Zap, Eye, X, CheckCircle2, Trash2, Library, ListChecks, Plus, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/useConfirm'
 import FeatureLockedCard from '@/components/ui/FeatureLockedCard'
@@ -28,7 +28,7 @@ import { effectiveTier, VIEW_AS_EVENT } from '@/lib/view-as'
 const MAX_MANUAL_URLS = 10
 
 interface Suggestion { topic: string; count: number }
-interface GuideRow { id: string; title: string; url: string | null; topic: string | null; created_at: string }
+interface GuideRow { id: string; title: string; url: string | null; topic: string | null; created_at: string; rebuildable?: boolean }
 interface PreviewPick { wordpress_url: string; title: string; excerpt: string | null; image: string | null; label: string }
 
 type Mode = 'auto' | 'review'
@@ -38,6 +38,7 @@ export default function BuyingGuidesPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [guides, setGuides] = useState<GuideRow[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [rebuildingId, setRebuildingId] = useState<string | null>(null)
   const [reviewCount, setReviewCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [topic, setTopic] = useState('')
@@ -290,6 +291,33 @@ export default function BuyingGuidesPage() {
       toast.error(err instanceof Error ? err.message : 'Generation failed')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  /** Rebuild a guide IN PLACE — re-resolves cloaked product links, regenerates
+   *  the hero if missing, refreshes the closing CTA + fixes the year, all on
+   *  the SAME WordPress post/URL (no duplicate). Sourced from the row's stored
+   *  video set. ~1-2 min, like a fresh generation. */
+  async function rebuildGuide(g: GuideRow) {
+    if (rebuildingId) return
+    setRebuildingId(g.id)
+    try {
+      const r = await fetch('/api/blog/comparison', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rebuildPostId: g.id }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `Rebuild failed (${r.status})`)
+      toast.success('Guide rebuilt — links, hero & CTA refreshed.', {
+        action: j.url ? { label: 'View', onClick: () => window.open(j.url, '_blank') } : undefined,
+        duration: 10_000,
+      })
+      void refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Rebuild failed')
+    } finally {
+      setRebuildingId(null)
     }
   }
 
@@ -786,10 +814,24 @@ export default function BuyingGuidesPage() {
                       View <ExternalLink className="w-3.5 h-3.5" />
                     </Link>
                   )}
+                  {g.rebuildable && (
+                    <button
+                      type="button"
+                      onClick={() => void rebuildGuide(g)}
+                      disabled={rebuildingId === g.id || !!deletingId}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition hover:border-violet-300 disabled:opacity-40"
+                      style={{ background: 'var(--bg)', color: 'var(--fg)', borderColor: 'var(--border)' }}
+                      title="Rebuild this guide in place — refresh product links, hero image & CTA (same URL, ~1-2 min)"
+                    >
+                      {rebuildingId === g.id
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Rebuilding…</>
+                        : <><RefreshCw className="w-3.5 h-3.5" /> Rebuild</>}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => void deleteGuide(g)}
-                    disabled={deletingId === g.id}
+                    disabled={deletingId === g.id || rebuildingId === g.id}
                     className="inline-flex items-center justify-center w-8 h-8 rounded-lg border transition hover:border-red-300 hover:bg-red-50 disabled:opacity-40"
                     style={{ background: 'var(--bg)', borderColor: 'var(--border)' }}
                     title="Delete guide"
