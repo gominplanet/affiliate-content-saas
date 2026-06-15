@@ -52,6 +52,14 @@ export async function isExtensionAvailable(): Promise<boolean> {
   return !!resp?.ok
 }
 
+/** Installed state + version (the ping returns the manifest version). Lets the
+ *  EPC page show an "update SCOUT" banner when it's behind SCOUT_LATEST_VERSION.
+ *  version is null when the extension isn't installed / didn't respond. */
+export async function getScoutStatus(): Promise<{ installed: boolean; version: string | null }> {
+  const resp = await sendToExtension<{ ok?: boolean; version?: string }>({ type: 'MVP_PING' }, 1500)
+  return { installed: !!resp?.ok, version: (resp && typeof resp.version === 'string') ? resp.version : null }
+}
+
 /**
  * Ask the extension to grab SEVERAL real frames from the user's video (one per
  * fraction of the runtime). Returns an array of JPEG data URLs, or [] on any
